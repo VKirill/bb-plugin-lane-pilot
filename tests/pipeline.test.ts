@@ -416,6 +416,22 @@ describe("writer output validation", () => {
       reason:"never_touch matched src/production.ts",
     });
   });
+  it("rejects a pre-dirty file changed outside owns_paths", () => {
+    const produced = attemptProduced(
+      [{ path:"src/production.ts", sha256:"after-writer-change" }],
+      [{ path:"src/production.ts", sha256:"before-writer-change" }],
+    );
+    expect(produced).toEqual(["src/production.ts"]);
+    expect(classifyWriterOutput({
+      task:{ ...task, owns_paths:["hello.txt"], verify:"none", verification:[] },
+      produced,
+      contents:{},
+    })).toEqual({
+      ok:false,
+      state:"validation_failed",
+      reason:"owns_paths rejected src/production.ts",
+    });
+  });
 });
 
 describe("CLI run outcome", () => {
