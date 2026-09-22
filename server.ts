@@ -21,6 +21,7 @@ import {
   setRunThread,
   transitionAttempt,
 } from "./src/database";
+import { reconcile, type IdempotencyTriple } from "./src/reconcile";
 import { spawnWithSeam } from "./src/spawn-seam";
 
 export { rpcContract } from "./src/contracts";
@@ -98,6 +99,41 @@ export default async function plugin(bb: BbPluginApi) {
   const db = openDatabase(bb);
   const host = bb.hosts.experimental_client({ contract:hostContract });
 
+  async function reconcileAttemptThread(
+    projectId: string,
+    attempt: NonNullable<ReturnType<typeof getAttempt>>,
+  ): Promise<string> {
+    const key: IdempotencyTriple = {
+      lanePilotRunId:attempt.run_id,
+      lanePilotTaskId:attempt.task_id,
+      attemptId:attempt.id,
+    };
+    const result = await reconcile({
+      list: async ({ limit, offset }) => (await bb.sdk.threads.list({
+        projectId,
+        originPluginId:"lane-pilot",
+        includeHidden:true,
+        limit,
+        offset,
+      })).map((thread) => ({ id:thread.id })),
+      metadata: async (threadId) => bb.sdk.threads.getPluginMetadata({ threadId }),
+    }, key);
+    if (result.kind === "found") {
+      transitionAttempt(db, attempt.id, "running", { threadId:result.threadId });
+      return result.threadId;
+    }
+    if (result.kind === "not_found") {
+      transitionAttempt(db, attempt.id, "spawn_rejected", { reason:"reconcile completed on a short page without a matching thread" });
+      throw new Error("writer spawn was not created after a complete reconcile scan");
+    }
+    if (result.kind === "blocked") {
+      transitionAttempt(db, attempt.id, "blocked", { reason:`reconcile_${result.reason}` });
+      throw new Error(`writer reconcile blocked: ${result.reason}`);
+    }
+    transitionAttempt(db, attempt.id, "spawn_unknown", { reason:`reconcile_error: ${result.message}` });
+    throw new Error(`writer reconcile failed: ${result.message}`);
+  }
+
   async function activate(projectId: string, sourceThreadId: string): Promise<{threadId:string; runId:string}> {
     const sourceMetadata = await bb.sdk.threads.getPluginMetadata({ threadId:sourceThreadId });
     if (valueAt(sourceMetadata, "role") === "writer") {
@@ -166,7 +202,9 @@ export default async function plugin(bb: BbPluginApi) {
       transitionAttempt(db, attemptId, "running", { threadId:writerThreadId });
     } catch (cause) {
       transitionAttempt(db, attemptId, "spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });
-      throw cause;
+      const attempt = getAttempt(db, attemptId);
+      if (!attempt) throw new Error(`persisted attempt disappeared after spawn_unknown: ${attemptId}`);
+      writerThreadId = await reconcileAttemptThread(args.projectId, attempt);
     }
     try {
       const waited = await bb.sdk.threads.wait({ threadId:writerThreadId, status:"idle", timeoutMs:600_000 });
@@ -250,6 +288,100 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
+  async function startProviderErrorProbe(projectId: string, pmThreadId: string): Promise<Record<string,unknown>> {
+    const config = loadPrototypeConfig(db, projectId);
+    if (!config) throw new Error(`Lane Pilot prototype is not configured for ${projectId}`);
+    const runId = id("lperrorrun");
+    const taskId = id("lperrortask");
+    const attemptId = id("lperrorattempt");
+    createRun(db, runId, projectId);
+    setRunThread(db, runId, pmThreadId);
+    createAttempt(db, { id:attemptId, runId, taskId });
+    transitionAttempt(db, attemptId, "spawn_requested");
+    const spawned = await bb.sdk.threads.spawn({
+      projectId,
+      providerId:config.writerProviderId,
+      model:"__lane_pilot_missing_model__",
+      prompt:"Lane Pilot provider-error probe. Reply only ok.",
+      environment:{ type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.writerWorkspacePath } },
+      visibility:"hidden",
+      pluginMetadata:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId },
+      executionInputSources:{ providerId:"explicit", model:"explicit" },
+    });
+    const threadId = stringAt(spawned, "id");
+    if (!threadId) throw new Error("threads.spawn returned no provider-error probe thread id");
+    transitionAttempt(db, attemptId, "running", { threadId });
+    const observed = await bb.sdk.threads.wait({ threadId, status:"error", timeoutMs:60_000 });
+    const observedThread = valueAt(observed, "thread");
+    if (stringAt(observedThread, "status") !== "error") throw new Error("provider-error probe did not observe error status");
+    transitionAttempt(db, attemptId, "provider_error", { threadId, reason:"observed provider error from deliberately missing model" });
+    await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+    await bb.sdk.threads.archive({ threadId }).catch(() => undefined);
+    return { runId, taskId, attemptId, threadId, observedStatus:"error", state:"provider_error" };
+  }
+
+  async function startAmbiguousProbe(projectId: string, pmThreadId: string): Promise<Record<string,unknown>> {
+    const config = loadPrototypeConfig(db, projectId);
+    if (!config) throw new Error(`Lane Pilot prototype is not configured for ${projectId}`);
+    const runId = id("lpambiguousrun");
+    const taskId = id("lpambiguoustask");
+    const attemptId = id("lpambiguousattempt");
+    createRun(db, runId, projectId);
+    setRunThread(db, runId, pmThreadId);
+    createAttempt(db, { id:attemptId, runId, taskId });
+    transitionAttempt(db, attemptId, "spawn_unknown", { reason:"live ambiguous reconcile probe" });
+    const threadIds: string[] = [];
+    try {
+      for (const ordinal of [1, 2]) {
+        const spawned = await bb.sdk.threads.spawn({
+          projectId,
+          providerId:config.writerProviderId,
+          model:config.writerModel,
+          prompt:`Lane Pilot ambiguous reconcile probe ${ordinal}.`,
+          sendAt:Date.now() + 86_400_000,
+          environment:{ type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.writerWorkspacePath } },
+          visibility:"hidden",
+          pluginMetadata:{ role:"ambiguous-probe", probeOrdinal:ordinal },
+          executionInputSources:{ providerId:"explicit", model:"explicit" },
+        });
+        const threadId = stringAt(spawned, "id");
+        if (!threadId) throw new Error("threads.spawn returned no ambiguous-probe thread id");
+        threadIds.push(threadId);
+      }
+      for (const threadId of threadIds) {
+        await bb.sdk.threads.updatePluginMetadata({
+          threadId,
+          set:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId },
+          remove:["probeOrdinal"],
+        });
+      }
+      let reconcileError = "";
+      try {
+        const attempt = getAttempt(db, attemptId);
+        if (!attempt) throw new Error("ambiguous probe attempt disappeared");
+        await reconcileAttemptThread(projectId, attempt);
+      } catch (cause) {
+        reconcileError = cause instanceof Error ? cause.message : String(cause);
+      }
+      const persisted = getAttempt(db, attemptId);
+      if (persisted?.state !== "blocked" || persisted.thread_id !== null) {
+        throw new Error(`ambiguous reconcile did not fail closed: ${JSON.stringify(persisted)}`);
+      }
+      return {
+        runId, taskId, attemptId, threadIds,
+        metadataUpdated:true,
+        reconcileError,
+        state:persisted.state,
+        reason:"reconcile_ambiguous",
+      };
+    } finally {
+      for (const threadId of threadIds) {
+        await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+        await bb.sdk.threads.delete({ threadId, childThreadsConfirmed:true }).catch(() => undefined);
+      }
+    }
+  }
+
   bb.rpc.register(rpcContract, {
     activate_pm: ({ projectId, sourceThreadId }) => {
       if (!sourceThreadId) throw new Error("Open an ordinary thread before enabling Lane Pilot");
@@ -290,6 +422,8 @@ export default async function plugin(bb: BbPluginApi) {
     "bb lane-pilot cancel <attempt-id>",
     "bb lane-pilot recover <attempt-id>",
     "bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>",
+    "bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>",
+    "bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>",
     "bb lane-pilot host-detect <host-id> <workspace-path>",
     "bb lane-pilot host-snapshot <host-id> <absolute-path>...",
   ].join("\n");
@@ -303,6 +437,8 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"cancel", summary:"Stop a writer and persist canceled after observing idle", usage:"bb lane-pilot cancel <attempt-id>" },
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
+      { name:"start-provider-error-probe", summary:"Observe a live provider error and persist provider_error", usage:"bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>" },
+      { name:"start-ambiguous-probe", summary:"Create duplicate metadata and prove reconcile blocks", usage:"bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>" },
       { name:"host-detect", summary:"Call the read-only host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
       { name:"host-snapshot", summary:"Call read-only snapshotDryRun", usage:"bb lane-pilot host-snapshot <host-id> <absolute-path>..." },
     ],
@@ -331,34 +467,35 @@ export default async function plugin(bb: BbPluginApi) {
         }
         if (command === "recover" && args.length === 1) {
           const attempt = getAttempt(db, args[0]!);
-          if (!attempt?.thread_id) throw new Error("attempt has no writer thread");
+          if (!attempt) throw new Error("attempt does not exist");
           const run = getRun(db, attempt.run_id);
           if (!run?.pm_thread_id) throw new Error("attempt run has no PM thread");
-          const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:attempt.thread_id });
+          const writerThreadId = await reconcileAttemptThread(run.project_id, attempt);
+          const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:writerThreadId });
           if (valueAt(metadata, "lanePilotRunId") !== attempt.run_id
             || valueAt(metadata, "lanePilotTaskId") !== attempt.task_id
             || valueAt(metadata, "attemptId") !== attempt.id) {
-            transitionAttempt(db, attempt.id, "blocked", { threadId:attempt.thread_id, reason:"idempotency triple mismatch" });
+            transitionAttempt(db, attempt.id, "blocked", { threadId:writerThreadId, reason:"idempotency triple mismatch" });
             throw new Error("writer metadata does not match the persisted idempotency triple");
           }
-          const thread = await bb.sdk.threads.get({ threadId:attempt.thread_id });
+          const thread = await bb.sdk.threads.get({ threadId:writerThreadId });
           if (stringAt(thread, "status") !== "idle") throw new Error(`writer is not idle: ${stringAt(thread, "status") ?? "unknown"}`);
           const config = loadPrototypeConfig(db, run.project_id);
           if (!config) throw new Error("prototype configuration is missing");
           const [hello, test, output] = await Promise.all([
             bb.sdk.files.read({ hostId:config.hostId, rootPath:config.writerWorkspacePath, path:`${config.writerWorkspacePath}/hello.txt` }),
             bb.sdk.files.read({ hostId:config.hostId, rootPath:config.writerWorkspacePath, path:`${config.writerWorkspacePath}/tests/hello.test.txt` }),
-            bb.sdk.threads.output({ threadId:attempt.thread_id }),
+            bb.sdk.threads.output({ threadId:writerThreadId }),
           ]);
           if (stringAt(hello, "content") !== "hello from native BB writer\n"
             || stringAt(test, "content") !== "hello from native BB writer\n") {
-            transitionAttempt(db, attempt.id, "validation_failed", { threadId:attempt.thread_id, reason:"fixture output content mismatch" });
+            transitionAttempt(db, attempt.id, "validation_failed", { threadId:writerThreadId, reason:"fixture output content mismatch" });
             throw new Error("reconciled writer output failed validation");
           }
           const receipt = {
             schemaVersion:1, status:"accepted", reconciled:true,
             lanePilotRunId:attempt.run_id, lanePilotTaskId:attempt.task_id, attemptId:attempt.id,
-            pmThreadId:run.pm_thread_id, writerThreadId:attempt.thread_id,
+            pmThreadId:run.pm_thread_id, writerThreadId,
             ownsPaths:["hello.txt", "tests/hello.test.txt"], output:outputText(output),
           };
           await bb.sdk.files.write({
@@ -367,11 +504,17 @@ export default async function plugin(bb: BbPluginApi) {
             content:JSON.stringify(receipt, null, 2) + "\n", contentEncoding:"utf8",
             createParents:true, expectedSha256:null,
           });
-          transitionAttempt(db, attempt.id, "accepted", { threadId:attempt.thread_id });
+          transitionAttempt(db, attempt.id, "accepted", { threadId:writerThreadId });
           return { exitCode:0, stdout:JSON.stringify(receipt, null, 2) };
         }
         if (command === "start-cancel-probe" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await startCancelProbe(args[0]!, args[1]!), null, 2) };
+        }
+        if (command === "start-provider-error-probe" && args.length === 2) {
+          return { exitCode:0, stdout:JSON.stringify(await startProviderErrorProbe(args[0]!, args[1]!), null, 2) };
+        }
+        if (command === "start-ambiguous-probe" && args.length === 2) {
+          return { exitCode:0, stdout:JSON.stringify(await startAmbiguousProbe(args[0]!, args[1]!), null, 2) };
         }
         if (command === "host-detect" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await host.call("detect", { requestedHostId:args[0]!, workspacePath:args[1]! }, { hostId:args[0]! }), null, 2) };
