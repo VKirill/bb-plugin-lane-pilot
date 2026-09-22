@@ -14,6 +14,7 @@ import {
   transitionAttempt,
 } from "../src/database";
 import type { TaskV2 } from "../src/contracts";
+import { validateAcceptanceV2 } from "../src/acceptance-v2";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";
@@ -53,8 +54,66 @@ const task: TaskV2 = {
 };
 
 describe("BB writer validation on the server path", () => {
+  it("writes upstream acceptance-v2 under the run/task artifact directory", async () => {
+    const written = new Map<string, string>();
+    let snapshots = 0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{
+        threads:{
+          getPluginMetadata: async ({ threadId }) => threadId === pmThreadId
+            ? { role:"pm", lanePilotRunId:"run-accepted" }
+            : { role:"writer" },
+          spawn: async () => ({ id:"writer-accepted" }),
+          wait: async () => ({ matched:true, thread:{ status:"idle" } }),
+          get: async () => ({ id:"writer-accepted", status:"idle" }),
+          output: async () => ({ text:"writer output" }),
+          list: async () => [] as never,
+        },
+        files:{
+          read: async ({ path }) => path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
+          write: async ({ path, content }) => {
+            written.set(String(path), String(content));
+            return { ok:true };
+          },
+        },
+      },
+      experimental_callHostRpc: (call) => {
+        if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
+        const command = String((call.input as { command?:string }).command ?? "");
+        if (command.includes("porcelain")) {
+          snapshots += 1;
+          return {
+            hostId:"host-test", exitCode:0,
+            stdout:JSON.stringify(snapshots === 1 ? [] : [{ path:"hello.txt", sha256:"new-content" }]),
+            stderr:"",
+          };
+        }
+        return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
+      },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    createRun(db, "run-accepted", projectId);
+    setRunThread(db, "run-accepted", pmThreadId);
+    await plugin(bb);
+    await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, task:{ ...task, id:"accepted-task", verify:"none", verification:[] } },
+      { threadId:pmThreadId, projectId },
+    );
+
+    const acceptancePath = "/tmp/writer/.agents/runs/run-accepted/artifacts/accepted-task/acceptance.json";
+    const acceptance = JSON.parse(written.get(acceptancePath) ?? "null") as unknown;
+    expect(validateAcceptanceV2(acceptance)).toEqual({ ok:true });
+    expect(written.has("/tmp/writer/.agents/runs/run-accepted/artifacts/accepted-task/lane-pilot-receipt.json")).toBe(true);
+    expect(written.has("/tmp/writer/acceptance.json")).toBe(false);
+    await harness.lifecycle.dispose();
+  });
+
   it("runs every verification command and fails on the second", async () => {
     const ran: string[] = [];
+    let snapshots = 0;
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
       sdk:{
@@ -77,8 +136,10 @@ describe("BB writer validation on the server path", () => {
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         ran.push(command);
-        if (command.includes("git status")) {
-          return { hostId:"host-test", exitCode:0, stdout:"?? hello.txt\n", stderr:"" };
+        if (command.includes("porcelain")) {
+          return { hostId:"host-test", exitCode:0, stdout:JSON.stringify(
+            ++snapshots === 1 || snapshots === 3 ? [] : [{ path:"hello.txt", sha256:snapshots === 2 ? "attempt-1" : "attempt-2" }],
+          ), stderr:"" };
         }
         if (command === "true") return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
         if (command === "false") return { hostId:"host-test", exitCode:1, stdout:"", stderr:"boom" };
@@ -129,7 +190,7 @@ describe("BB writer validation on the server path", () => {
       },
       experimental_callHostRpc: (call) => {
         if (call.method === "runCommand") {
-          return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
+          return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
         }
         throw new Error(`unexpected ${call.method}`);
       },
@@ -150,7 +211,7 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("finishes an idle orphan on resume instead of leaving it running", async () => {
+  it("fails closed when a resumed attempt has a pre-dirty path without a content hash", async () => {
     const resumeTask: TaskV2 = { ...task, id:"resume-task", verify:"none", verification:[] };
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
@@ -171,7 +232,7 @@ describe("BB writer validation on the server path", () => {
       },
       experimental_callHostRpc: (call) => {
         if (call.method === "runCommand") {
-          return { hostId:"host-test", exitCode:0, stdout:"?? hello.txt\n", stderr:"" };
+          return { hostId:"host-test", exitCode:0, stdout:JSON.stringify([{ path:"hello.txt", sha256:"unchanged" }]), stderr:"" };
         }
         throw new Error(`unexpected ${call.method}`);
       },
@@ -185,7 +246,7 @@ describe("BB writer validation on the server path", () => {
     transitionAttempt(db, "attempt-resume", "running", { threadId:"writer-orphan" });
     setAttemptDirtBefore(db, "attempt-resume", ["hello.txt"]);
     await plugin(bb);
-    expect(getAttempt(db, "attempt-resume")?.state).toBe("empty_output");
+    expect(getAttempt(db, "attempt-resume")?.state).toBe("validation_failed");
     await harness.lifecycle.dispose();
   });
 

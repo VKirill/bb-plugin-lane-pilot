@@ -86,21 +86,26 @@ export function validateAcceptanceV2(value: unknown): { ok:true } | { ok:false; 
   for (const key of Object.keys(record)) {
     if (!(key in properties)) errors.push(`${key}: additionalProperties is false`);
   }
-  if (record.schema_version !== 2) errors.push("schema_version: must be 2");
-  if (record.accepted !== true) errors.push("accepted: must be true");
-  if (record.provider_exit !== 0) errors.push("provider_exit: must be 0");
-  if (record.report !== "complete") errors.push("report: must be complete");
-  if (record.owns_check !== "passed") errors.push("owns_check: must be passed");
-  if (record.verification !== "passed") errors.push("verification: must be passed");
-  if (record.review !== "passed" && record.review !== "not_required") errors.push("review: must be passed or not_required");
-  if (typeof record.task_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(record.task_sha256)) {
-    errors.push("task_sha256: must be 64 hex chars");
-  }
-  if (typeof record.report_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(record.report_sha256)) {
-    errors.push("report_sha256: must be 64 hex chars");
-  }
-  if (typeof record.accepted_at !== "string" || Number.isNaN(Date.parse(record.accepted_at))) {
-    errors.push("accepted_at: must be date-time");
+  for (const [key, rule] of Object.entries(properties)) {
+    if (!(key in record)) continue;
+    const actual = record[key];
+    if (rule.type === "string" && typeof actual !== "string") errors.push(`${key}: must be string`);
+    if (rule.type === "integer" && (!Number.isInteger(actual))) errors.push(`${key}: must be integer`);
+    if (rule.type === "boolean" && typeof actual !== "boolean") errors.push(`${key}: must be boolean`);
+    if (rule.const !== undefined && actual !== rule.const) errors.push(`${key}: must equal ${String(rule.const)}`);
+    if (Array.isArray(rule.enum) && !rule.enum.includes(actual)) errors.push(`${key}: value is not in enum`);
+    if (typeof actual === "string" && typeof rule.pattern === "string" && !new RegExp(rule.pattern).test(actual)) {
+      errors.push(`${key}: does not match pattern`);
+    }
+    if (typeof actual === "string" && typeof rule.minLength === "number" && actual.length < rule.minLength) {
+      errors.push(`${key}: shorter than minLength`);
+    }
+    if (typeof actual === "number" && typeof rule.minimum === "number" && actual < rule.minimum) {
+      errors.push(`${key}: below minimum`);
+    }
+    if (rule.format === "date-time" && (typeof actual !== "string" || Number.isNaN(Date.parse(actual)))) {
+      errors.push(`${key}: must be date-time`);
+    }
   }
   return errors.length === 0 ? { ok:true } : { ok:false, errors };
 }

@@ -166,7 +166,7 @@ export function attemptProduced(after: DirtSnapshot[] | string[], before: DirtSn
   const current = new Map(afterFiles.map((file) => [file.path, file.sha256]));
   const produced = new Set<string>();
   for (const file of afterFiles) {
-    if (previous.get(file.path) !== file.sha256) produced.add(file.path);
+    if (!previous.has(file.path) || previous.get(file.path) !== file.sha256) produced.add(file.path);
   }
   for (const file of beforeFiles) {
     if (!current.has(file.path)) produced.add(file.path);

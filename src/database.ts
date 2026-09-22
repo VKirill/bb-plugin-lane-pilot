@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig } from "./contracts";
+import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
 
 export type LanePilotDatabase = Database.Database;
 
@@ -271,17 +272,16 @@ export function inspectState(db: LanePilotDatabase, projectId: string): Record<s
 }
 
 export function getAttempt(db: LanePilotDatabase, attemptId: string): {
-  id:string; run_id:string; task_id:string; thread_id:string|null; state:string; attempt_no:number; dirt_before:import("./cli-outcome").DirtSnapshot[];
+  id:string; run_id:string; task_id:string; thread_id:string|null; state:string; attempt_no:number; dirt_before:DirtSnapshot[];
 }|undefined {
   const row = db.prepare("SELECT id,run_id,task_id,thread_id,state,attempt_no,dirt_before_json FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
     {id:string; run_id:string; task_id:string; thread_id:string|null; state:string; attempt_no:number; dirt_before_json?:string}|undefined;
   if (!row) return undefined;
-  const { parseDirtSnapshots } = require("./cli-outcome") as typeof import("./cli-outcome");
   const dirt_before = parseDirtSnapshots(row.dirt_before_json ?? "[]");
   return { id:row.id, run_id:row.run_id, task_id:row.task_id, thread_id:row.thread_id, state:row.state, attempt_no:row.attempt_no, dirt_before };
 }
 
-export function setAttemptDirtBefore(db: LanePilotDatabase, attemptId: string, files: import("./cli-outcome").DirtSnapshot[]): void {
+export function setAttemptDirtBefore(db: LanePilotDatabase, attemptId: string, files: DirtSnapshot[] | string[]): void {
   db.prepare("UPDATE lane_pilot_attempt SET dirt_before_json=?, updated_at=? WHERE id=?")
     .run(JSON.stringify(files), Date.now(), attemptId);
 }

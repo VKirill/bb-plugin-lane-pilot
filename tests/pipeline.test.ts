@@ -365,6 +365,18 @@ describe("writer output validation", () => {
       reason:"missing expected_outputs: hello.txt",
     });
   });
+  it("fails validation when only some expected outputs are missing", () => {
+    const classified = classifyWriterOutput({
+      task:{ ...task, expected_outputs:["hello.txt", "other.txt"], verify:"none", verification:[] },
+      produced:["hello.txt"],
+      contents:{ "hello.txt":"hello\n" },
+    });
+    expect(classified).toEqual({
+      ok:false,
+      state:"validation_failed",
+      reason:"missing expected_outputs: other.txt",
+    });
+  });
   it("reports never_touch as validation_failed even when expected output is missing", () => {
     const produced = attemptProduced(["hello.txt", "src/production.ts"], ["hello.txt"]);
     expect(produced).toEqual(["src/production.ts"]);
@@ -377,6 +389,26 @@ describe("writer output validation", () => {
       },
       produced,
       contents:{ "hello.txt":"stale\n" },
+    });
+    expect(classified).toEqual({
+      ok:false,
+      state:"validation_failed",
+      reason:"never_touch matched src/production.ts",
+    });
+  });
+  it("rejects a pre-dirty never_touch file when its content changes again", () => {
+    const produced = attemptProduced(
+      [
+        { path:"src/production.ts", sha256:"after-writer-change" },
+        { path:"hello.txt", sha256:"created-by-writer" },
+      ],
+      [{ path:"src/production.ts", sha256:"before-writer-change" }],
+    );
+    expect(produced).toContain("src/production.ts");
+    const classified = classifyWriterOutput({
+      task:{ ...task, never_touch:["src/production.ts"], verify:"none", verification:[] },
+      produced,
+      contents:{ "hello.txt":"hello\n" },
     });
     expect(classified).toEqual({
       ok:false,

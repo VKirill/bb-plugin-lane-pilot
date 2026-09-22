@@ -45,7 +45,7 @@ describe("production spawn_unknown reconciliation", () => {
       },
       experimental_callHostRpc: (call) => {
         if (call.method === "runCommand") {
-          return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
+          return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
         }
         throw new Error(`unexpected ${call.method}`);
       },

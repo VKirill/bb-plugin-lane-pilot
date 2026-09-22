@@ -13,8 +13,9 @@ import { TARGET_SHA } from "./src/constants";
 import { aggregateRun } from "./src/aggregation";
 import { buildCliInvocation } from "./src/argv-builder";
 import { requiredCliFlags } from "./src/cli-flags";
-import { attemptProduced, classifyCliOutcome } from "./src/cli-outcome";
-import { classifyWriterOutput, parseGitChangedPaths, type VerifyResult } from "./src/validate-output";
+import { attemptProduced, classifyCliOutcome, parseDirtSnapshots, type DirtSnapshot } from "./src/cli-outcome";
+import { classifyWriterOutput, type VerifyResult } from "./src/validate-output";
+import { acceptanceArtifactDir, buildAcceptanceV2, bbWriterReportMarkdown, validateAcceptanceV2 } from "./src/acceptance-v2";
 import {
   claimActivation,
   countAttempts,
@@ -293,7 +294,7 @@ export default async function plugin(bb: BbPluginApi) {
     projectId:string; runId:string; taskId:string; attemptId:string;
     config:PrototypeConfig; task:TaskV2; pmThreadId:string;
   }): Promise<
-    | { ok:true; threadId:string; dirtBefore:string[] }
+    | { ok:true; threadId:string; dirtBefore:import("./src/cli-outcome").DirtSnapshot[] }
     | { ok:false; status:"spawn_rejected"; reason:string; attemptId:string }
   > {
     const dirt = await workspaceDirt(input.config).catch((cause: unknown) => ({
@@ -305,7 +306,7 @@ export default async function plugin(bb: BbPluginApi) {
       transitionAttempt(db, input.attemptId, "spawn_rejected", { reason:dirt.reason });
       return { ok:false, status:"spawn_rejected", reason:dirt.reason, attemptId:input.attemptId };
     }
-    const dirtBefore = dirt.paths;
+    const dirtBefore = dirt.snapshots;
     setAttemptDirtBefore(db, input.attemptId, dirtBefore);
     transitionAttempt(db, input.attemptId, "spawn_requested");
     try {
@@ -341,10 +342,10 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
-  async function workspaceDirt(config: PrototypeConfig): Promise<{ ok:true; paths:string[] } | { ok:false; reason:string }> {
+  async function workspaceDirt(config: PrototypeConfig): Promise<{ ok:true; paths:string[]; snapshots:DirtSnapshot[] } | { ok:false; reason:string }> {
     const ran = await host.call("runCommand", {
       requestedHostId: config.hostId,
-      command: "git status --porcelain -uall; git diff --name-only HEAD",
+      command: "python3 - <<'PY'\nimport hashlib, json, os, subprocess\nraw = subprocess.run([\"git\", \"status\", \"--porcelain\", \"-z\", \"-uall\"], check=True, stdout=subprocess.PIPE).stdout\nparts = raw.split(bytes([0]))\npaths = []\ni = 0\nwhile i < len(parts) and parts[i]:\n    item = parts[i]\n    i += 1\n    name = item[3:]\n    if not name:\n        raise ValueError(\"empty git path\")\n    paths.append(name)\n    if item[:2] in (b\"R \", b\"C \", b\" R\", b\" C\"):\n        if i >= len(parts) or not parts[i]:\n            raise ValueError(\"missing rename source\")\n        paths.append(parts[i])\n        i += 1\nrows = []\nfor raw_path in sorted(set(paths)):\n    path = os.fsdecode(raw_path)\n    if os.path.isfile(path):\n        with open(path, \"rb\") as stream:\n            digest = hashlib.sha256(stream.read()).hexdigest()\n    elif os.path.lexists(path):\n        raise ValueError(\"dirty path is not regular: \" + path)\n    else:\n        digest = \"\"\n    rows.append({\"path\": path, \"sha256\": digest})\nprint(json.dumps(rows, ensure_ascii=True))\nPY",
       cwd: config.writerWorkspacePath,
       timeoutSec: 30,
     }, { hostId:config.hostId, timeoutMs:30_000 }).catch((cause: unknown) => ({
@@ -356,7 +357,18 @@ export default async function plugin(bb: BbPluginApi) {
     if (ran.exitCode !== 0) {
       return { ok:false, reason:`cannot read writer-workspace git diff: ${ran.stderr || `exit ${ran.exitCode}`}` };
     }
-    return { ok:true, paths:parseGitChangedPaths(ran.stdout) };
+    try {
+      const parsed = JSON.parse(ran.stdout) as unknown;
+      if (!Array.isArray(parsed) || parsed.some((row) => !row || typeof row !== "object"
+        || typeof (row as DirtSnapshot).path !== "string" || typeof (row as DirtSnapshot).sha256 !== "string")) {
+        return { ok:false, reason:"cannot snapshot writer-workspace file contents" };
+      }
+      const snapshots = parseDirtSnapshots(ran.stdout);
+      if (snapshots.length !== parsed.length) return { ok:false, reason:"incomplete writer-workspace content snapshot" };
+      return { ok:true, paths:snapshots.map((row) => row.path), snapshots };
+    } catch {
+      return { ok:false, reason:"invalid writer-workspace content snapshot" };
+    }
   }
 
   async function runVerification(config: PrototypeConfig, task: TaskV2): Promise<VerifyResult[]> {
@@ -378,15 +390,55 @@ export default async function plugin(bb: BbPluginApi) {
     return results;
   }
 
+  async function persistWriterAcceptance(input: {
+    config:PrototypeConfig; task:TaskV2; runId:string; taskId:string; attempt:number;
+    attemptId:string; pmThreadId:string; writerThreadId:string; output:string;
+  }): Promise<Record<string,unknown>> {
+    const reportText = bbWriterReportMarkdown(input.task, input.attempt);
+    const acceptance = buildAcceptanceV2({
+      task:input.task, attempt:input.attempt, providerId:input.config.writerProviderId,
+      model:input.config.writerModel, reportText,
+    });
+    const validation = validateAcceptanceV2(acceptance);
+    if (!validation.ok) throw new Error(`upstream acceptance-v2 rejected generated receipt: ${validation.errors.join("; ")}`);
+    const artifactDir = acceptanceArtifactDir(input.config.writerWorkspacePath, input.runId, input.taskId);
+    const internalReceipt = {
+      schemaVersion:1, status:"accepted", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
+      attemptId:input.attemptId, pmThreadId:input.pmThreadId, writerThreadId:input.writerThreadId,
+      ownsPaths:input.task.owns_paths, output:input.output,
+    };
+    for (const [name, content] of [
+      ["report.md", reportText],
+      ["acceptance.json", `${JSON.stringify(acceptance, null, 2)}\n`],
+      ["lane-pilot-receipt.json", `${JSON.stringify(internalReceipt, null, 2)}\n`],
+    ] as const) {
+      await bb.sdk.files.write({
+        hostId:input.config.hostId, rootPath:input.config.writerWorkspacePath,
+        path:`${artifactDir}/${name}`, content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
+      });
+    }
+    return { ...internalReceipt, acceptancePath:`${artifactDir}/acceptance.json` };
+  }
+
   async function validateWriterResult(input: {
-    config:PrototypeConfig; task:TaskV2; writerThreadId:string; attemptId:string; dirtBefore:string[];
+    config:PrototypeConfig; task:TaskV2; writerThreadId:string; attemptId:string; dirtBefore:import("./src/cli-outcome").DirtSnapshot[];
   }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[] }> {
     const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
     const dirt = await workspaceDirt(input.config);
     if (!dirt.ok) {
       return { status:"validation_failed", reason:dirt.reason, output:outputText(output), produced:[] };
     }
-    const produced = attemptProduced(dirt.paths, input.dirtBefore);
+    const unverifiable = input.dirtBefore
+      .filter((before) => !before.sha256 && dirt.snapshots.some((after) => after.path === before.path))
+      .map((file) => file.path);
+    if (unverifiable.length > 0) {
+      return {
+        status:"validation_failed",
+        reason:`cannot compare pre-existing dirty file content: ${unverifiable.join(", ")}`,
+        output:outputText(output), produced:[],
+      };
+    }
+    const produced = attemptProduced(dirt.snapshots, input.dirtBefore);
     const contents: Record<string, string | null> = {};
     for (const rel of new Set([...input.task.expected_outputs, ...produced])) {
       const absolute = rel.startsWith("/") ? rel : `${input.config.writerWorkspacePath}/${rel}`;
@@ -420,7 +472,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function finishWriterAttempt(input: {
     projectId:string; config:PrototypeConfig; task:TaskV2;
     runId:string; taskId:string; attemptId:string; pmThreadId:string; writerThreadId:string;
-    dirtBefore:string[];
+    dirtBefore:import("./src/cli-outcome").DirtSnapshot[];
   }): Promise<Record<string,unknown>> {
     try {
       const waited = await bb.sdk.threads.wait({ threadId:input.writerThreadId, status:"idle", timeoutMs:600_000 });
@@ -442,25 +494,10 @@ export default async function plugin(bb: BbPluginApi) {
         transitionAttempt(db, input.attemptId, checked.status, { reason:checked.reason });
         return { ...checked, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
-      const receipt = {
-        schemaVersion:1,
-        status:"accepted",
-        lanePilotRunId:input.runId,
-        lanePilotTaskId:input.taskId,
-        attemptId:input.attemptId,
-        pmThreadId:input.pmThreadId,
-        writerThreadId:input.writerThreadId,
-        ownsPaths:input.task.owns_paths,
-        output:checked.output,
-      };
-      await bb.sdk.files.write({
-        hostId:input.config.hostId,
-        rootPath:input.config.writerWorkspacePath,
-        path:`${input.config.writerWorkspacePath}/acceptance.json`,
-        content:JSON.stringify(receipt, null, 2) + "\n",
-        contentEncoding:"utf8",
-        createParents:true,
-        expectedSha256:null,
+      const receipt = await persistWriterAcceptance({
+        config:input.config, task:input.task, runId:input.runId, taskId:input.taskId,
+        attempt:countAttempts(db, input.runId, input.taskId), attemptId:input.attemptId,
+        pmThreadId:input.pmThreadId, writerThreadId:input.writerThreadId, output:checked.output,
       });
       transitionAttempt(db, input.attemptId, "accepted");
       return receipt;
@@ -906,17 +943,12 @@ export default async function plugin(bb: BbPluginApi) {
             transitionAttempt(db, attempt.id, "validation_failed", { threadId:writerThreadId, reason:"fixture output content mismatch" });
             throw new Error("reconciled writer output failed validation");
           }
-          const receipt = {
-            schemaVersion:1, status:"accepted", reconciled:true,
-            lanePilotRunId:attempt.run_id, lanePilotTaskId:attempt.task_id, attemptId:attempt.id,
-            pmThreadId:run.pm_thread_id, writerThreadId,
-            ownsPaths:["hello.txt", "tests/hello.test.txt"], output:outputText(output),
-          };
-          await bb.sdk.files.write({
-            hostId:config.hostId, rootPath:config.writerWorkspacePath,
-            path:`${config.writerWorkspacePath}/acceptance.json`,
-            content:JSON.stringify(receipt, null, 2) + "\n", contentEncoding:"utf8",
-            createParents:true, expectedSha256:null,
+          const savedTask = getTask(db, attempt.task_id);
+          if (!savedTask) throw new Error(`reconciled task missing: ${attempt.task_id}`);
+          const receipt = await persistWriterAcceptance({
+            config, task:taskV2Schema.parse(savedTask.contract), runId:attempt.run_id,
+            taskId:attempt.task_id, attempt:attempt.attempt_no, attemptId:attempt.id,
+            pmThreadId:run.pm_thread_id, writerThreadId, output:outputText(output),
           });
           transitionAttempt(db, attempt.id, "accepted", { threadId:writerThreadId });
           return { exitCode:0, stdout:JSON.stringify(receipt, null, 2) };
