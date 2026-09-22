@@ -43,6 +43,12 @@ describe("production spawn_unknown reconciliation", () => {
           get: async () => ({ id:"writer-existing", status:"active" }) as never,
         },
       },
+      experimental_callHostRpc: (call) => {
+        if (call.method === "runCommand") {
+          return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
+        }
+        throw new Error(`unexpected ${call.method}`);
+      },
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);

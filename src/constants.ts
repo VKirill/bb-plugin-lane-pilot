@@ -21,3 +21,5 @@ export const EXTERNAL_OPS_WARNING =
   "откат не гарантированно вернёт систему в исходное состояние — будет зафиксировано состояние до и после, не восстановление";
 
 export const PLUGIN_ID = "lane-pilot";
+export const INSTALLED_GUARD = "~/.agents/hooks/guard_shell.py";
+export const MAIN_ATTEMPT_LIMIT = 2;

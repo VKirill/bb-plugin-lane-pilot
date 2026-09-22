@@ -10,19 +10,38 @@ import {
   type TaskV2,
 } from "./src/contracts";
 import { TARGET_SHA } from "./src/constants";
+import { aggregateRun } from "./src/aggregation";
+import { buildCliInvocation } from "./src/argv-builder";
+import { requiredCliFlags } from "./src/cli-flags";
+import { attemptProduced, classifyCliOutcome } from "./src/cli-outcome";
+import { classifyWriterOutput, parseGitChangedPaths, type VerifyResult } from "./src/validate-output";
 import {
+  claimActivation,
+  countAttempts,
   createAttempt,
   createRun,
+  createTask,
+  getActivation,
   getAttempt,
   getRun,
+  getTask,
+  setAttemptDirtBefore,
   importSettingsOnce,
   inspectState,
+  listOpenAttempts,
+  listTaskKinds,
+  listTaskTerminalStates,
+  loadProjectSettings,
   loadPrototypeConfig,
   openDatabase,
   savePrototypeConfig,
+  saveProjectSetting,
+  setRunState,
   setRunThread,
   transitionAttempt,
 } from "./src/database";
+import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "./src/state-machine";
+import { validateTaskV2 } from "./src/task-v2";
 import { reconcile, type IdempotencyTriple } from "./src/reconcile";
 import { spawnWithSeam } from "./src/spawn-seam";
 
@@ -77,11 +96,10 @@ function buildTask(config: PrototypeConfig, taskId: string): TaskV2 {
 
 function writerPrompt(task: TaskV2): string {
   return [
-    "You are the native BB writer for a bounded Lane Pilot fixture task.",
-    "Use the task-v2 contract below. Work only inside owns_paths.",
-    "Create hello.txt with exactly `hello from native BB writer` and a trailing newline.",
-    "Create tests/hello.test.txt with the same line and a trailing newline.",
-    "Run the verification command, then answer with the changed paths and result.",
+    "You are the native BB writer for a bounded Lane Pilot task.",
+    "Use the task-v2 contract below. Work only inside owns_paths. Never touch never_touch.",
+    task.objective,
+    "Run the verification commands, then answer with the changed paths and result.",
     JSON.stringify(task, null, 2),
   ].join("\n\n");
 }
@@ -136,7 +154,91 @@ export default async function plugin(bb: BbPluginApi) {
     throw new Error(`writer reconcile failed: ${result.message}`);
   }
 
-  async function activate(projectId: string, sourceThreadId: string): Promise<{threadId:string; runId:string}> {
+  async function maybeFinishResumedAttempt(input: {
+    projectId:string; attempt:NonNullable<ReturnType<typeof getAttempt>>; writerThreadId:string;
+  }): Promise<boolean> {
+    if (input.attempt.state !== "running" || !input.writerThreadId) return false;
+    const thread = await bb.sdk.threads.get({ threadId:input.writerThreadId }).catch(() => null);
+    const status = stringAt(thread, "status");
+    if (status !== "idle" && status !== "error") return false;
+    const run = getRun(db, input.attempt.run_id);
+    const stored = getTask(db, input.attempt.task_id);
+    const config = loadPrototypeConfig(db, input.projectId);
+    if (!run || !config || stored?.kind !== "bb") return false;
+    const parsed = taskV2Schema.safeParse(stored.contract);
+    if (!parsed.success) return false;
+    await finishWriterAttempt({
+      projectId:input.projectId,
+      config,
+      task:parsed.data,
+      runId:input.attempt.run_id,
+      taskId:input.attempt.task_id,
+      attemptId:input.attempt.id,
+      pmThreadId:run.pm_thread_id ?? "",
+      writerThreadId:input.writerThreadId,
+      dirtBefore:input.attempt.dirt_before,
+    });
+    refreshRun(input.attempt.run_id);
+    return true;
+  }
+
+  async function resumeOrphans(projectId?: string): Promise<{ resumed:string[]; skipped:string[]; finished:string[] }> {
+    const resumed: string[] = [];
+    const skipped: string[] = [];
+    const finished: string[] = [];
+    for (const row of listOpenAttempts(db)) {
+      if (projectId && row.project_id !== projectId) continue;
+      const attempt = getAttempt(db, row.id);
+      if (!attempt) continue;
+      try {
+        const writerThreadId = await reconcileAttemptThread(row.project_id, attempt);
+        const current = getAttempt(db, row.id);
+        if (current && await maybeFinishResumedAttempt({
+          projectId:row.project_id, attempt:current, writerThreadId,
+        })) {
+          finished.push(row.id);
+        }
+        resumed.push(row.id);
+      } catch {
+        skipped.push(row.id);
+      }
+    }
+    return { resumed, skipped, finished };
+  }
+
+  function refreshRun(runId: string): void {
+    const states = listTaskTerminalStates(db, runId) as AttemptState[];
+    if (states.length === 0) {
+      const run = getRun(db, runId);
+      if (run?.state === "pending") setRunState(db, runId, "blocked");
+      return;
+    }
+    setRunState(db, runId, aggregateRun(states));
+  }
+
+  function cliSettingsFor(projectId: string, config: PrototypeConfig): Record<string, unknown> {
+    const stored = loadProjectSettings(db, projectId);
+    return {
+      "writer.provider": stored["writer.provider"] ?? config.writerProviderId,
+      "writer.model": stored["writer.model"] ?? config.writerModel,
+      "writer.reasoning_effort": stored["writer.reasoning_effort"] ?? "medium",
+      "writer.service_tier": stored["writer.service_tier"],
+      "writer.fast_mode": stored["writer.fast_mode"],
+      "jev.LANE_JEV_EFFORT": stored["jev.LANE_JEV_EFFORT"] ?? true,
+      "jev.LANE_OPENCODE_JEV": stored["jev.LANE_OPENCODE_JEV"] ?? true,
+      "ops.max_tasks": stored["ops.max_tasks"],
+      "ops.poll_interval": stored["ops.poll_interval"],
+      "ops.heartbeat_interval": stored["ops.heartbeat_interval"],
+      "ops.retry_backoff": stored["ops.retry_backoff"],
+      "ops.run_dir": stored["ops.run_dir"],
+      "ops.project_cwd": stored["ops.project_cwd"] ?? config.writerWorkspacePath,
+      "plan_critique.mode": stored["plan_critique.mode"] ?? "advisory",
+      "plan_critique.provider": stored["plan_critique.provider"],
+      "night_review.model": stored["night_review.model"],
+    };
+  }
+
+  async function activate(projectId: string, sourceThreadId: string, kind: "bb"|"cli" = "bb"): Promise<{threadId:string; runId:string}> {
     const sourceMetadata = await bb.sdk.threads.getPluginMetadata({ threadId:sourceThreadId });
     if (valueAt(sourceMetadata, "role") === "writer") {
       throw new Error("Lane Pilot writer threads cannot activate a PM");
@@ -156,8 +258,15 @@ export default async function plugin(bb: BbPluginApi) {
       projectId,
     }, { hostId: config.hostId, timeoutMs: 30_000 });
     importSettingsOnce(db, projectId, imported.imported);
+    const existing = getActivation(db, projectId);
+    if (existing) refreshRun(existing.run_id);
     const runId = id("lprun");
-    createRun(db, runId, projectId);
+    createRun(db, runId, projectId, kind);
+    claimActivation(db, { projectId, pmThreadId:`pending:${sourceThreadId}`, runId });
+    await host.call("writePmSettings", {
+      requestedHostId: config.hostId,
+      pmWorkspacePath: config.pmWorkspacePath,
+    }, { hostId: config.hostId, timeoutMs: 15_000 }).catch(() => undefined);
     const spawned = await bb.sdk.threads.spawn({
       projectId,
       providerId: config.pmProviderId,
@@ -175,101 +284,341 @@ export default async function plugin(bb: BbPluginApi) {
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("threads.spawn returned no PM thread id");
     setRunThread(db, runId, threadId);
+    claimActivation(db, { projectId, pmThreadId:threadId, runId });
+    await resumeOrphans(projectId);
     return { threadId, runId };
   }
 
-  async function dispatchWriter(args:{threadId:string; projectId:string}): Promise<Record<string,unknown>> {
+  async function spawnWriterAttempt(input: {
+    projectId:string; runId:string; taskId:string; attemptId:string;
+    config:PrototypeConfig; task:TaskV2; pmThreadId:string;
+  }): Promise<
+    | { ok:true; threadId:string; dirtBefore:string[] }
+    | { ok:false; status:"spawn_rejected"; reason:string; attemptId:string }
+  > {
+    const dirt = await workspaceDirt(input.config).catch((cause: unknown) => ({
+      ok:false as const,
+      reason: cause instanceof Error ? cause.message : String(cause),
+    }));
+    if (!dirt.ok) {
+      transitionAttempt(db, input.attemptId, "spawn_requested");
+      transitionAttempt(db, input.attemptId, "spawn_rejected", { reason:dirt.reason });
+      return { ok:false, status:"spawn_rejected", reason:dirt.reason, attemptId:input.attemptId };
+    }
+    const dirtBefore = dirt.paths;
+    setAttemptDirtBefore(db, input.attemptId, dirtBefore);
+    transitionAttempt(db, input.attemptId, "spawn_requested");
+    try {
+      const spawned = await spawnWithSeam(() => bb.sdk.threads.spawn({
+        projectId: input.projectId,
+        providerId: input.config.writerProviderId,
+        model: input.config.writerModel,
+        prompt: writerPrompt(input.task),
+        environment: {
+          type:"host",
+          hostId:input.config.hostId,
+          workspace:{ type:"unmanaged", path:input.config.writerWorkspacePath },
+        },
+        visibility:"hidden",
+        pluginMetadata:{
+          role:"writer",
+          lanePilotRunId:input.runId,
+          lanePilotTaskId:input.taskId,
+          attemptId:input.attemptId,
+          parentPmThreadId:input.pmThreadId,
+        },
+        executionInputSources:{ providerId:"explicit", model:"explicit" },
+      }));
+      const writerThreadId = stringAt(spawned, "id") ?? "";
+      if (!writerThreadId) throw new Error("threads.spawn returned no writer thread id");
+      transitionAttempt(db, input.attemptId, "running", { threadId:writerThreadId });
+      return { ok:true, threadId:writerThreadId, dirtBefore };
+    } catch (cause) {
+      transitionAttempt(db, input.attemptId, "spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });
+      const attempt = getAttempt(db, input.attemptId);
+      if (!attempt) throw new Error(`persisted attempt disappeared after spawn_unknown: ${input.attemptId}`);
+      return { ok:true, threadId: await reconcileAttemptThread(input.projectId, attempt), dirtBefore };
+    }
+  }
+
+  async function workspaceDirt(config: PrototypeConfig): Promise<{ ok:true; paths:string[] } | { ok:false; reason:string }> {
+    const ran = await host.call("runCommand", {
+      requestedHostId: config.hostId,
+      command: "git status --porcelain -uall; git diff --name-only HEAD",
+      cwd: config.writerWorkspacePath,
+      timeoutSec: 30,
+    }, { hostId:config.hostId, timeoutMs:30_000 }).catch((cause: unknown) => ({
+      hostId: config.hostId,
+      exitCode: 1,
+      stdout: "",
+      stderr: cause instanceof Error ? cause.message : String(cause),
+    }));
+    if (ran.exitCode !== 0) {
+      return { ok:false, reason:`cannot read writer-workspace git diff: ${ran.stderr || `exit ${ran.exitCode}`}` };
+    }
+    return { ok:true, paths:parseGitChangedPaths(ran.stdout) };
+  }
+
+  async function runVerification(config: PrototypeConfig, task: TaskV2): Promise<VerifyResult[]> {
+    const results: VerifyResult[] = [];
+    for (const command of task.verification) {
+      const ran = await host.call("runCommand", {
+        requestedHostId: config.hostId,
+        command: command.command,
+        cwd: command.cwd,
+        timeoutSec: command.timeout_sec,
+      }, { hostId:config.hostId, timeoutMs:(command.timeout_sec ?? 30) * 1000 }).catch((cause: unknown) => ({
+        hostId: config.hostId,
+        exitCode: 1,
+        stdout: "",
+        stderr: cause instanceof Error ? cause.message : String(cause),
+      }));
+      results.push({ command:command.command, exitCode:ran.exitCode, stderr:ran.stderr });
+    }
+    return results;
+  }
+
+  async function validateWriterResult(input: {
+    config:PrototypeConfig; task:TaskV2; writerThreadId:string; attemptId:string; dirtBefore:string[];
+  }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[] }> {
+    const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
+    const dirt = await workspaceDirt(input.config);
+    if (!dirt.ok) {
+      return { status:"validation_failed", reason:dirt.reason, output:outputText(output), produced:[] };
+    }
+    const produced = attemptProduced(dirt.paths, input.dirtBefore);
+    const contents: Record<string, string | null> = {};
+    for (const rel of new Set([...input.task.expected_outputs, ...produced])) {
+      const absolute = rel.startsWith("/") ? rel : `${input.config.writerWorkspacePath}/${rel}`;
+      const read = await bb.sdk.files.read({
+        hostId:input.config.hostId,
+        rootPath:input.config.writerWorkspacePath,
+        path:absolute,
+      }).catch(() => null);
+      contents[rel] = read ? stringAt(read, "content") : null;
+    }
+    const verifies = await runVerification(input.config, input.task);
+    const classified = classifyWriterOutput({ task:input.task, produced, contents, verifies });
+    if (input.task.expected_outputs.includes("hello.txt") && input.task.expected_outputs.includes("tests/hello.test.txt")) {
+      const helloOk = contents["hello.txt"] === "hello from native BB writer\n";
+      const testOk = contents["tests/hello.test.txt"] === "hello from native BB writer\n";
+      if (!helloOk || !testOk) {
+        return {
+          status: contents["hello.txt"] == null && contents["tests/hello.test.txt"] == null ? "empty_output" : "validation_failed",
+          reason:"fixture output content mismatch",
+          output:outputText(output),
+          produced,
+        };
+      }
+    }
+    if (!classified.ok) {
+      return { status:classified.state, reason:classified.reason, output:outputText(output), produced };
+    }
+    return { status:"accepted", output:outputText(output), produced };
+  }
+
+  async function finishWriterAttempt(input: {
+    projectId:string; config:PrototypeConfig; task:TaskV2;
+    runId:string; taskId:string; attemptId:string; pmThreadId:string; writerThreadId:string;
+    dirtBefore:string[];
+  }): Promise<Record<string,unknown>> {
+    try {
+      const waited = await bb.sdk.threads.wait({ threadId:input.writerThreadId, status:"idle", timeoutMs:600_000 });
+      if (!waited.matched) {
+        transitionAttempt(db, input.attemptId, "timeout", { reason:"threads.wait did not observe idle" });
+        await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
+        return { status:"timeout", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      }
+      const waitedThread = valueAt(waited, "thread");
+      if (stringAt(waitedThread, "status") === "error") {
+        transitionAttempt(db, input.attemptId, "provider_error", { reason:"writer thread status error" });
+        return { status:"provider_error", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      }
+      const checked = await validateWriterResult({
+        config:input.config, task:input.task, writerThreadId:input.writerThreadId, attemptId:input.attemptId,
+        dirtBefore:input.dirtBefore,
+      });
+      if (checked.status !== "accepted") {
+        transitionAttempt(db, input.attemptId, checked.status, { reason:checked.reason });
+        return { ...checked, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      }
+      const receipt = {
+        schemaVersion:1,
+        status:"accepted",
+        lanePilotRunId:input.runId,
+        lanePilotTaskId:input.taskId,
+        attemptId:input.attemptId,
+        pmThreadId:input.pmThreadId,
+        writerThreadId:input.writerThreadId,
+        ownsPaths:input.task.owns_paths,
+        output:checked.output,
+      };
+      await bb.sdk.files.write({
+        hostId:input.config.hostId,
+        rootPath:input.config.writerWorkspacePath,
+        path:`${input.config.writerWorkspacePath}/acceptance.json`,
+        content:JSON.stringify(receipt, null, 2) + "\n",
+        contentEncoding:"utf8",
+        createParents:true,
+        expectedSha256:null,
+      });
+      transitionAttempt(db, input.attemptId, "accepted");
+      return receipt;
+    } catch (cause) {
+      const thread = await bb.sdk.threads.get({ threadId:input.writerThreadId }).catch(() => null);
+      if (stringAt(thread, "status") === "error") {
+        transitionAttempt(db, input.attemptId, "provider_error", { reason:cause instanceof Error ? cause.message : String(cause) });
+        return { status:"provider_error", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      }
+      throw cause;
+    }
+  }
+
+  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
     if (!runId) throw new Error("PM thread has no lanePilotRunId");
     const config = loadPrototypeConfig(db, args.projectId);
     if (!config) throw new Error(`Lane Pilot prototype is not configured for ${args.projectId}`);
-    const taskId = id("lptask");
-    const attemptId = id("lpattempt");
-    const task = buildTask(config, taskId);
-    createAttempt(db, { id:attemptId, runId, taskId });
-    transitionAttempt(db, attemptId, "spawn_requested");
-    let writerThreadId: string;
-    try {
-      const spawned = await spawnWithSeam(() => bb.sdk.threads.spawn({
-        projectId: args.projectId,
-        providerId: config.writerProviderId,
-        model: config.writerModel,
-        prompt: writerPrompt(task),
-        environment: {
-          type:"host",
-          hostId:config.hostId,
-          workspace:{ type:"unmanaged", path:config.writerWorkspacePath },
-        },
-        visibility:"hidden",
-        pluginMetadata:{
-          role:"writer",
-          lanePilotRunId:runId,
-          lanePilotTaskId:taskId,
-          attemptId,
-          parentPmThreadId:args.threadId,
-        },
-        executionInputSources:{ providerId:"explicit", model:"explicit" },
-      }));
-      writerThreadId = stringAt(spawned, "id") ?? "";
-      if (!writerThreadId) throw new Error("threads.spawn returned no writer thread id");
-      transitionAttempt(db, attemptId, "running", { threadId:writerThreadId });
-    } catch (cause) {
-      transitionAttempt(db, attemptId, "spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });
-      const attempt = getAttempt(db, attemptId);
-      if (!attempt) throw new Error(`persisted attempt disappeared after spawn_unknown: ${attemptId}`);
-      writerThreadId = await reconcileAttemptThread(args.projectId, attempt);
+    if (listTaskKinds(db, runId).includes("cli")) {
+      throw new Error("V1: BB writer cannot join a CLI run-controller run");
     }
-    try {
-      const waited = await bb.sdk.threads.wait({ threadId:writerThreadId, status:"idle", timeoutMs:600_000 });
-      const waitedThread = valueAt(waited, "thread");
-      if (stringAt(waitedThread, "status") === "error") {
-        transitionAttempt(db, attemptId, "provider_error", { reason:"writer thread status error" });
-        throw new Error("writer provider error");
-      }
-      const output = await bb.sdk.threads.output({ threadId:writerThreadId });
-      const helloPath = `${config.writerWorkspacePath}/hello.txt`;
-      const testPath = `${config.writerWorkspacePath}/tests/hello.test.txt`;
-      const [hello, test] = await Promise.all([
-        bb.sdk.files.read({ hostId:config.hostId, rootPath:config.writerWorkspacePath, path:helloPath }),
-        bb.sdk.files.read({ hostId:config.hostId, rootPath:config.writerWorkspacePath, path:testPath }),
-      ]);
-      const helloContent = stringAt(hello, "content") ?? "";
-      const testContent = stringAt(test, "content") ?? "";
-      if (helloContent !== "hello from native BB writer\n" || testContent !== "hello from native BB writer\n") {
-        transitionAttempt(db, attemptId, "validation_failed", { reason:"fixture output content mismatch" });
-        throw new Error("writer output failed owns_paths/content validation");
-      }
-      const receipt = {
-        schemaVersion:1,
-        status:"accepted",
-        lanePilotRunId:runId,
-        lanePilotTaskId:taskId,
-        attemptId,
-        pmThreadId:args.threadId,
-        writerThreadId,
-        ownsPaths:["hello.txt", "tests/hello.test.txt"],
-        output:outputText(output),
-      };
-      await bb.sdk.files.write({
-        hostId:config.hostId,
-        rootPath:config.writerWorkspacePath,
-        path:`${config.writerWorkspacePath}/acceptance.json`,
-        content:JSON.stringify(receipt, null, 2) + "\n",
-        contentEncoding:"utf8",
-        createParents:true,
-        expectedSha256:null,
+    const taskId = args.task?.id ?? id("lptask");
+    const prepared = args.task ?? buildTask(config, taskId);
+    const valid = validateTaskV2(prepared);
+    if (!valid.ok) throw new Error(`task-v2 invalid: ${valid.errors.join("; ")}`);
+    createTask(db, { id:taskId, runId, kind:"bb", contract:valid.task });
+    let last: Record<string, unknown> = {};
+    while (countAttempts(db, runId, taskId) < MAIN_ATTEMPT_LIMIT) {
+      const attemptId = id("lpattempt");
+      createAttempt(db, { id:attemptId, runId, taskId });
+      const spawned = await spawnWriterAttempt({
+        projectId:args.projectId, runId, taskId, attemptId, config, task:valid.task, pmThreadId:args.threadId,
       });
-      transitionAttempt(db, attemptId, "accepted");
-      return receipt;
-    } catch (cause) {
-      const thread = await bb.sdk.threads.get({ threadId:writerThreadId }).catch(() => null);
-      if (stringAt(thread, "status") === "error") {
-        transitionAttempt(db, attemptId, "provider_error", { reason:cause instanceof Error ? cause.message : String(cause) });
+      if (!spawned.ok) {
+        last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
+      } else {
+        last = await finishWriterAttempt({
+          projectId:args.projectId, config, task:valid.task, runId, taskId, attemptId,
+          pmThreadId:args.threadId, writerThreadId:spawned.threadId, dirtBefore:spawned.dirtBefore,
+        });
       }
-      throw cause;
+      if (last.status === "accepted") {
+        refreshRun(runId);
+        return last;
+      }
+      const failed = String(last.status) as AttemptState;
+      if (!RETRY_ELIGIBLE.includes(failed)) {
+        refreshRun(runId);
+        return last;
+      }
+      const attempt = getAttempt(db, attemptId);
+      if (attempt?.state === "spawn_unknown" || attempt?.state === "spawn_requested") {
+        await reconcileAttemptThread(args.projectId, attempt).catch(() => undefined);
+      } else if (attempt) {
+        const key = { lanePilotRunId:attempt.run_id, lanePilotTaskId:attempt.task_id, attemptId:attempt.id };
+        const scanned = await reconcile({
+          list: async ({ limit, offset }) => (await bb.sdk.threads.list({
+            projectId:args.projectId, originPluginId:"lane-pilot", includeHidden:true, limit, offset,
+          })).map((thread) => ({ id:thread.id })),
+          metadata: async (threadId) => bb.sdk.threads.getPluginMetadata({ threadId }),
+        }, key);
+        if (scanned.kind === "blocked" || scanned.kind === "error") {
+          if (scanned.kind === "blocked") transitionAttempt(db, attempt.id, "blocked", { reason:`reconcile_${scanned.reason}` });
+          refreshRun(runId);
+          return { ...last, status:"blocked", reason:scanned.kind === "blocked" ? scanned.reason : scanned.message };
+        }
+      }
     }
+    const latest = getAttempt(db, String(last.attemptId ?? ""));
+    if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) {
+      transitionAttempt(db, latest.id, "blocked", { reason:"retry limit 2 exhausted" });
+    }
+    refreshRun(runId);
+    return { ...last, status:"blocked", reason:"retry limit 2 exhausted" };
+  }
+
+  async function dispatchCli(args:{
+    threadId:string; projectId:string; binary?:"run-controller"|"lane-ctl"; subcommand?:string;
+    taskFile?:string; taskId?:string; runDir?:string;
+  }): Promise<Record<string,unknown>> {
+    const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
+    if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
+    const runId = stringAt(metadata, "lanePilotRunId");
+    if (!runId) throw new Error("PM thread has no lanePilotRunId");
+    const config = loadPrototypeConfig(db, args.projectId);
+    if (!config) throw new Error(`Lane Pilot prototype is not configured for ${args.projectId}`);
+    if (listTaskKinds(db, runId).includes("bb")) {
+      throw new Error("V1: CLI writer cannot join a BB writer run");
+    }
+    const binary = args.binary ?? "run-controller";
+    const subcommand = args.subcommand ?? "run";
+    const settings = cliSettingsFor(args.projectId, config);
+    const runDir = args.runDir
+      ?? (typeof settings["ops.run_dir"] === "string" ? settings["ops.run_dir"] : undefined)
+      ?? `${config.writerWorkspacePath}/.agents/runs/lane-pilot-${runId}`;
+    const invocation = buildCliInvocation({
+      binary,
+      subcommand,
+      settings,
+      required: requiredCliFlags({
+        binary,
+        subcommand,
+        runDir,
+        projectCwd: String(settings["ops.project_cwd"] ?? config.writerWorkspacePath),
+        taskFile: args.taskFile ?? (typeof settings["ops.task_file"] === "string" ? settings["ops.task_file"] : undefined),
+        taskId: args.taskId ?? (typeof settings["ops.task_id"] === "string" ? settings["ops.task_id"] : undefined),
+      }),
+    });
+    const executed = await host.call("runCli", {
+      requestedHostId: config.hostId,
+      binary,
+      argv: invocation.argv,
+      env: invocation.env,
+      cwd: config.writerWorkspacePath,
+    }, { hostId:config.hostId, timeoutMs:180_000 });
+    const outcome = classifyCliOutcome({
+      subcommand,
+      exitCode:executed.exitCode,
+      stdout:executed.stdout,
+    });
+    const receiptPath = `${runDir}/cli-receipt.json`;
+    const receipt = {
+      schemaVersion:1,
+      kind:"cli",
+      status: outcome.status,
+      taskAccepted: outcome.taskAccepted,
+      upstreamAccepted: outcome.upstreamAccepted,
+      upstreamStatus: outcome.upstreamStatus,
+      reason: outcome.reason,
+      lanePilotRunId:runId,
+      pmThreadId:args.threadId,
+      binary,
+      argv: executed.argv,
+      env: executed.env,
+      exitCode: executed.exitCode,
+      stdout: executed.stdout,
+      stderr: executed.stderr,
+      applied: invocation.applied,
+      unapplied: invocation.unapplied,
+      receiptPath,
+    };
+    await bb.sdk.files.write({
+      hostId: config.hostId,
+      rootPath: config.writerWorkspacePath,
+      path: receiptPath,
+      content: `${JSON.stringify(receipt, null, 2)}\n`,
+      contentEncoding: "utf8",
+      createParents: true,
+      expectedSha256: null,
+    });
+    const mutating = subcommand === "start" || subcommand === "run";
+    if (mutating && !listTaskKinds(db, runId).includes("cli")) {
+      createTask(db, { id:id("lptask"), runId, kind:"cli", contract:{ binary, subcommand, argv:executed.argv, receiptPath } });
+    }
+    setRunState(db, runId, outcome.status);
+    return receipt;
   }
 
   async function startCancelProbe(projectId: string, pmThreadId: string): Promise<Record<string,unknown>> {
@@ -406,11 +755,35 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name:"lane_pilot_dispatch_writer",
-    description:"Dispatch the fixed stage-0 task to the configured native BB writer and return its validated receipt.",
-    instructions:"Use only from a Lane Pilot PM thread after the guard probes. The tool persists identity before spawn and returns acceptance.json data.",
-    parameters:z.object({ confirm:z.literal(true) }).strict(),
-    execute: async (_params, context) => JSON.stringify(
-      await dispatchWriter({ threadId:context.threadId, projectId:context.projectId }),
+    description:"Dispatch a task-v2 contract to the configured native BB writer and return its validated receipt.",
+    instructions:"Use only from a Lane Pilot PM thread. Persists identity before spawn, retries at most twice, never falls back to Codex.",
+    parameters:z.object({ confirm:z.literal(true), task:taskV2Schema.optional() }).strict(),
+    execute: async (params, context) => JSON.stringify(
+      await dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task }),
+      null,
+      2,
+    ),
+  });
+  bb.agents.registerTool({
+    name:"lane_pilot_dispatch_cli",
+    description:"Dispatch a CLI writer through run-controller or lane-ctl on the project host worker.",
+    instructions:"Use only from a Lane Pilot PM thread. Do not mix with a BB writer run. Receipt lists settings that have no runtime channel.",
+    parameters:z.object({
+      confirm:z.literal(true),
+      binary:z.enum(["run-controller","lane-ctl"]).optional(),
+      subcommand:z.string().min(1).optional(),
+      taskFile:z.string().min(1).optional(),
+      taskId:z.string().min(1).optional(),
+    }).strict(),
+    execute: async (params, context) => JSON.stringify(
+      await dispatchCli({
+        threadId:context.threadId,
+        projectId:context.projectId,
+        binary:params.binary,
+        subcommand:params.subcommand,
+        taskFile:params.taskFile,
+        taskId:params.taskId,
+      }),
       null,
       2,
     ),
@@ -422,7 +795,7 @@ export default async function plugin(bb: BbPluginApi) {
     if (context.origin.pluginId !== "lane-pilot" || role !== "pm" || typeof runId !== "string") return { tools:[], skills:[] };
     const config = loadPrototypeConfig(db, context.project.id);
     return {
-      tools:["lane_pilot_dispatch_writer"],
+      tools:["lane_pilot_dispatch_writer","lane_pilot_dispatch_cli"],
       skills:[],
       instructions:config
         ? `Lane Pilot PM ${runId}. Writer=${config.writerProviderId}/${config.writerModel}; writer workspace=${config.writerWorkspacePath}. The writer tool is available only in this PM thread.`
@@ -446,6 +819,10 @@ export default async function plugin(bb: BbPluginApi) {
     "bb lane-pilot host-rollback <host-id> <snapshot-path>",
     "bb lane-pilot host-connect-opencode <host-id>",
     "bb lane-pilot host-import-config <host-id> <project-id> [workspace-path]",
+    "bb lane-pilot host-run-cli <host-id> <cwd> <binary> <subcommand> [args...]",
+    "bb lane-pilot resume [project-id]",
+    "bb lane-pilot dispatch-cli <project-id> <pm-thread-id> [binary] [subcommand] [task-file] [task-id] [run-dir]",
+    "bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json]",
   ].join("\n");
   bb.cli.register({
     name:"lane-pilot",
@@ -466,6 +843,10 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"host-rollback", summary:"Rollback a snapshot", usage:"bb lane-pilot host-rollback <host-id> <snapshot-path>" },
       { name:"host-connect-opencode", summary:"S5 JSONC plugin patch", usage:"bb lane-pilot host-connect-opencode <host-id>" },
       { name:"host-import-config", summary:"S7 one-shot YAML read", usage:"bb lane-pilot host-import-config <host-id> <project-id> [workspace-path]" },
+      { name:"host-run-cli", summary:"Run run-controller/lane-ctl on the project host", usage:"bb lane-pilot host-run-cli <host-id> <cwd> <binary> <subcommand> [args...]" },
+      { name:"resume", summary:"Reconcile orphaned writer attempts without spawning duplicates", usage:"bb lane-pilot resume [project-id]" },
+      { name:"dispatch-cli", summary:"Dispatch a CLI writer run for a PM thread", usage:"bb lane-pilot dispatch-cli <project-id> <pm-thread-id> [binary] [subcommand]" },
+      { name:"dispatch-bb", summary:"Dispatch a BB writer task, optional task-v2 JSON", usage:"bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json]" },
     ],
     async run(argv) {
       try {
@@ -475,8 +856,8 @@ export default async function plugin(bb: BbPluginApi) {
           savePrototypeConfig(db, config);
           return { exitCode:0, stdout:JSON.stringify({ ok:true, projectId:config.projectId }) };
         }
-        if (command === "activate" && args.length === 2) {
-          return { exitCode:0, stdout:JSON.stringify(await activate(args[0]!, args[1]!)) };
+        if (command === "activate" && args.length >= 2) {
+          return { exitCode:0, stdout:JSON.stringify(await activate(args[0]!, args[1]!, args[2] === "cli" ? "cli" : "bb")) };
         }
         if (command === "state" && args.length === 1) {
           return { exitCode:0, stdout:JSON.stringify(inspectState(db, args[0]!), null, 2) };
@@ -484,11 +865,19 @@ export default async function plugin(bb: BbPluginApi) {
         if (command === "cancel" && args.length === 1) {
           const attempt = getAttempt(db, args[0]!);
           if (!attempt?.thread_id) throw new Error("attempt has no writer thread");
+          transitionAttempt(db, attempt.id, "cancel_requested", { threadId:attempt.thread_id });
           await bb.sdk.threads.stop({ threadId:attempt.thread_id });
-          const observed = await bb.sdk.threads.wait({ threadId:attempt.thread_id, status:"idle", timeoutMs:30_000 });
-          if (!observed.matched) throw new Error("writer stop was not independently observed");
+          const observed = await bb.sdk.threads.get({ threadId:attempt.thread_id });
+          const status = stringAt(observed, "status");
+          const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{id:string}>> }).listRunning;
+          const running = listRunning ? await listRunning({}) : [];
+          const stillRunning = running.some((thread) => thread.id === attempt.thread_id)
+            || status === "active" || status === "running";
+          if (stillRunning) throw new Error(`writer stop was not independently observed (status=${status ?? "unknown"})`);
           transitionAttempt(db, attempt.id, "canceled", { threadId:attempt.thread_id });
-          return { exitCode:0, stdout:JSON.stringify({ ok:true, attemptId:attempt.id, threadId:attempt.thread_id, state:"canceled" }) };
+          return { exitCode:0, stdout:JSON.stringify({
+            ok:true, attemptId:attempt.id, threadId:attempt.thread_id, state:"canceled", observedStatus:status,
+          }) };
         }
         if (command === "recover" && args.length === 1) {
           const attempt = getAttempt(db, args[0]!);
@@ -572,6 +961,39 @@ export default async function plugin(bb: BbPluginApi) {
             requestedHostId:args[0]!,
           }, { hostId:args[0]!, timeoutMs:30_000 }), null, 2) };
         }
+        if (command === "host-run-cli" && args.length >= 4) {
+          const config = loadPrototypeConfig(db, "unused") ;
+          void config;
+          return { exitCode:0, stdout:JSON.stringify(await host.call("runCli", {
+            requestedHostId:args[0]!,
+            cwd:args[1]!,
+            binary:args[2] as "run-controller"|"lane-ctl",
+            argv:args.slice(3),
+            env:{},
+          }, { hostId:args[0]!, timeoutMs:180_000 }), null, 2) };
+        }
+        if (command === "resume") {
+          return { exitCode:0, stdout:JSON.stringify(await resumeOrphans(args[0]), null, 2) };
+        }
+        if (command === "dispatch-cli" && args.length >= 2) {
+          return { exitCode:0, stdout:JSON.stringify(await dispatchCli({
+            projectId:args[0]!,
+            threadId:args[1]!,
+            binary:args[2] as "run-controller"|"lane-ctl"|undefined,
+            subcommand:args[3],
+            taskFile:args[4] || undefined,
+            taskId:args[5] || undefined,
+            runDir:args[6] || undefined,
+          }), null, 2) };
+        }
+        if (command === "dispatch-bb" && args.length >= 2) {
+          const task = args[2] ? taskV2Schema.parse(JSON.parse(args[2])) : undefined;
+          return { exitCode:0, stdout:JSON.stringify(await dispatchWriter({
+            projectId:args[0]!,
+            threadId:args[1]!,
+            task,
+          }), null, 2) };
+        }
         if (command === "host-import-config" && args.length >= 2) {
           const imported = await host.call("importConfig", {
             requestedHostId:args[0]!,
@@ -588,5 +1010,8 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
-  bb.log.info("Lane Pilot stage-0 loaded");
+  await resumeOrphans().catch((cause) => {
+    bb.log.warn(`Lane Pilot resume on start skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
+  });
+  bb.log.info("Lane Pilot PM-to-writer pipeline loaded");
 }

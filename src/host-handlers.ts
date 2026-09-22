@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, readlink } from "node:fs/promises";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contracts";
+import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
 import {
   connectOpencodeStack,
   detectStack,
@@ -53,6 +54,18 @@ export const importConfig: ExperimentalHostRpcHandlers<typeof hostContract>["imp
 
 export const connectOpencode: ExperimentalHostRpcHandlers<typeof hostContract>["connectOpencode"] = async (input) => (
   connectOpencodeStack(ctx(input))
+);
+
+export const runCli: ExperimentalHostRpcHandlers<typeof hostContract>["runCli"] = async (input) => (
+  runCliOnHost(input)
+);
+
+export const runCommand: ExperimentalHostRpcHandlers<typeof hostContract>["runCommand"] = async (input) => (
+  runCommandOnHost(input)
+);
+
+export const writePmSettings: ExperimentalHostRpcHandlers<typeof hostContract>["writePmSettings"] = async (input) => (
+  writePmSettingsOnHost(input)
 );
 
 export const snapshotDryRun: ExperimentalHostRpcHandlers<typeof hostContract>["snapshotDryRun"] = async (input) => ({

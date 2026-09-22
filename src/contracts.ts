@@ -129,6 +129,51 @@ export const hostContract = defineRpcContract({
     input: hostBaseInput,
     output: installReceiptSchema,
   },
+  runCli: {
+    input: z.object({
+      requestedHostId: z.string().min(1),
+      binary: z.enum(["run-controller", "lane-ctl"]),
+      argv: z.array(z.string()),
+      env: z.record(z.string(), z.string()),
+      cwd: z.string().startsWith("/"),
+      timeoutMs: z.number().int().min(1000).max(1_800_000).optional(),
+    }).strict(),
+    output: z.object({
+      hostId: z.string(),
+      binaryPath: z.string(),
+      argv: z.array(z.string()),
+      env: z.record(z.string(), z.string()),
+      cwd: z.string(),
+      exitCode: z.number().int(),
+      stdout: z.string(),
+      stderr: z.string(),
+    }).strict(),
+  },
+  runCommand: {
+    input: z.object({
+      requestedHostId: z.string().min(1),
+      command: z.string().min(1),
+      cwd: z.string().startsWith("/"),
+      timeoutSec: z.number().int().min(1).max(7200).optional(),
+    }).strict(),
+    output: z.object({
+      hostId: z.string(),
+      exitCode: z.number().int(),
+      stdout: z.string(),
+      stderr: z.string(),
+    }).strict(),
+  },
+  writePmSettings: {
+    input: z.object({
+      requestedHostId: z.string().min(1),
+      pmWorkspacePath: z.string().startsWith("/"),
+    }).strict(),
+    output: z.object({
+      hostId: z.string(),
+      settingsPath: z.string(),
+      guardPath: z.string(),
+    }).strict(),
+  },
 });
 
 export const rpcContract = defineRpcContract({
