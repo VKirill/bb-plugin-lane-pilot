@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { EXTERNAL_OPS } from "./constants";
@@ -15,13 +14,10 @@ export type InstallRunResult = {
   signal: NodeJS.Signals | null;
 };
 
-function findOnPath(name: string, exclude: string[] = []): string | null {
-  for (const dir of (process.env.PATH ?? "").split(":")) {
-    if (!dir || exclude.includes(dir)) continue;
-    const candidate = join(dir, name);
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
+export const SKIP_WRAPPER_NAMES = ["npm", "npx", "open-cursor"] as const;
+
+export function isolatedNpmPrefix(homeDir: string): string {
+  return join(homeDir, ".agents/lane-pilot/npm-prefix");
 }
 
 function checkpoint(phase: InstallPhase): string {
@@ -78,31 +74,22 @@ export async function instrumentInstallSh(stackRoot: string, destPath: string): 
 
 export async function writeSkipWrappers(dir: string, skipLog: string): Promise<void> {
   await mkdir(dir, { recursive: true });
-  const realNpm = findOnPath("npm", [dir]) ?? "/usr/bin/npm";
-  await writeFile(join(dir, "npm"), `#!/bin/bash
-set -euo pipefail
-case " $* " in
-  *" @rama_nigg/open-cursor "*|*" @rama_nigg/open-cursor@"*)
-    printf '%s\\n' "blocked npm $*" >> ${JSON.stringify(skipLog)}
-    echo "lane-pilot: skipped npm install -g @rama_nigg/open-cursor (confirmExternalOps=false)" >&2
-    exit 0
-    ;;
-esac
-exec ${JSON.stringify(realNpm)} "$@"
-`, { mode: 0o755 });
-  await writeFile(join(dir, "open-cursor"), `#!/bin/bash
-printf '%s\\n' "blocked open-cursor $*" >> ${JSON.stringify(skipLog)}
-echo "lane-pilot: skipped open-cursor (confirmExternalOps=false)" >&2
+  for (const name of SKIP_WRAPPER_NAMES) {
+    await writeFile(join(dir, name), `#!/bin/bash
+printf '%s\\n' "blocked ${name} $*" >> ${JSON.stringify(skipLog)}
+echo "lane-pilot: skipped ${name} (confirmExternalOps=false; real npm is never invoked)" >&2
 exit 0
 `, { mode: 0o755 });
-  await chmod(join(dir, "npm"), 0o755);
-  await chmod(join(dir, "open-cursor"), 0o755);
+    await chmod(join(dir, name), 0o755);
+  }
 }
 
 export function installEnv(input: {
   homeDir: string;
   confirmExternalOps: boolean;
   wrapperDir?: string;
+  npmPrefix?: string;
+  pathOverride?: string;
   executorPid?: number;
   stopAfterPhase?: InstallPhase;
 }): { env: NodeJS.ProcessEnv; skippedExternalOps: string[] } {
@@ -112,11 +99,21 @@ export function installEnv(input: {
     HOME: input.homeDir,
     LANE_INSTALL_CLAUDE_PLUGIN: input.confirmExternalOps ? "1" : "0",
   };
+  delete env.npm_config_prefix;
+  delete env.NPM_CONFIG_PREFIX;
   if (input.executorPid) env.LANE_PILOT_EXECUTOR_PID = String(input.executorPid);
   if (input.stopAfterPhase) env.LANE_PILOT_STOP_AFTER = input.stopAfterPhase;
-  if (!input.confirmExternalOps && input.wrapperDir) {
-    env.PATH = `${input.wrapperDir}:${env.PATH ?? "/usr/bin:/bin"}`;
+  if (!input.confirmExternalOps) {
+    const prefix = input.npmPrefix ?? isolatedNpmPrefix(input.homeDir);
+    env.npm_config_prefix = prefix;
+    env.NPM_CONFIG_PREFIX = prefix;
     env.LANE_PILOT_SKIP_OPEN_CURSOR = "1";
+    const rest = input.pathOverride ?? env.PATH ?? "/usr/bin:/bin";
+    if (input.wrapperDir) {
+      env.PATH = `${input.wrapperDir}:${rest}`;
+    } else {
+      env.PATH = rest;
+    }
   }
   return { env, skippedExternalOps: skipped };
 }
@@ -131,8 +128,12 @@ export async function runInstallSh(input: {
 }): Promise<InstallRunResult> {
   const wrapperDir = join(input.homeDir, ".agents/lane-pilot/bin-wrappers");
   const skipLog = join(input.homeDir, ".agents/lane-pilot/skipped-external-ops.log");
-  if (!input.confirmExternalOps) await writeSkipWrappers(wrapperDir, skipLog);
+  const npmPrefix = isolatedNpmPrefix(input.homeDir);
   await mkdir(join(input.homeDir, ".agents/lane-pilot"), { recursive: true });
+  if (!input.confirmExternalOps) {
+    await mkdir(npmPrefix, { recursive: true });
+    await writeSkipWrappers(wrapperDir, skipLog);
+  }
   let script = join(input.stackRoot, "install.sh");
   if (input.stopAfterPhase) {
     script = join(input.homeDir, ".agents/lane-pilot/instrumented-install.sh");
@@ -141,6 +142,8 @@ export async function runInstallSh(input: {
   const { env, skippedExternalOps } = installEnv({
     ...input,
     wrapperDir: input.confirmExternalOps ? undefined : wrapperDir,
+    npmPrefix: input.confirmExternalOps ? undefined : npmPrefix,
+    pathOverride: input.confirmExternalOps ? undefined : process.env.LANE_PILOT_SAFE_PATH,
     executorPid: input.executorPid ?? process.pid,
   });
   return new Promise((resolve, reject) => {

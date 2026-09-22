@@ -12,6 +12,7 @@ import {
   importConfigStack,
   installStack,
 } from "../src/stack-ops";
+import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
 
 const FALLBACK = join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack");
 const home = mkdtempSync(join(tmpdir(), "lane-pilot-s18-"));
@@ -53,6 +54,9 @@ function seedHome(target: string): void {
 }
 
 seedHome(home);
+const toolsDir = join(home, "safe-tools");
+linkSafeTools(toolsDir);
+process.env.LANE_PILOT_SAFE_PATH = isolatedTestPath([toolsDir]);
 
 const ctx = {
   requestedHostId: "host_test",
@@ -67,6 +71,7 @@ const ctx = {
 };
 
 afterAll(() => {
+  delete process.env.LANE_PILOT_SAFE_PATH;
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -78,6 +83,7 @@ describe("S1–S8 isolated HOME", () => {
   });
 
   it("S2/S3 install reaches target SHA without external ops or S8 writes", async () => {
+    const globalBefore = snapshotGlobalOpenCursor();
     const s8Before = {
       routing: await sha256FileOrNull(join(home, ".agents/routing.profile.yaml")),
       night: await sha256FileOrNull(join(home, ".agents/night-shift.yaml")),
@@ -95,6 +101,7 @@ describe("S1–S8 isolated HOME", () => {
     expect(readFileSync(join(workspace, ".claude/settings.json"), "utf8")).toContain(`${home}/.agents/hooks/guard_shell.py`);
     const detected = await detectStack(ctx);
     expect(detected.scenario).toBe("S1");
+    expect(snapshotGlobalOpenCursor()).toEqual(globalBefore);
   }, 180_000);
 
   it("S1/S4 second install is a no-op and does not duplicate hooks", async () => {
