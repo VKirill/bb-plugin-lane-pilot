@@ -5,7 +5,7 @@ import { EXTERNAL_OPS, EXTERNAL_OPS_WARNING, TARGET_SHA } from "./constants";
 import { observeExternalOps } from "./external-ops";
 import { applyInstalledGuard } from "./guard-apply";
 import { readImportConfig } from "./import-config";
-import { runInstallSh } from "./install-runner";
+import { runInstallSh, type InstallPhase } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
 import { agentsDir, resolveHome } from "./paths";
 import { skippedOpsReceipt, writeReceipt, type FileChange, type InstallReceipt } from "./receipt";
@@ -31,6 +31,7 @@ export type HostContext = {
   projectId?: string;
   snapshotPath?: string;
   moduleUrl?: string;
+  stopAfterPhase?: InstallPhase;
 };
 
 function commandVersion(command: string): { present: boolean; version: string | null } {
@@ -141,6 +142,8 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
       stackRoot: upstream.path,
       homeDir: home,
       confirmExternalOps: confirm,
+      stopAfterPhase: ctx.stopAfterPhase,
+      executorPid: process.pid,
     });
   } finally {
     await restoreS8Files(stash, home);

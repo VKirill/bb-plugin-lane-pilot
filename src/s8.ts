@@ -16,32 +16,42 @@ export async function s8Hashes(homeDir?: string): Promise<S8Hashes> {
   return result;
 }
 
-export async function hideS8Files(homeDir?: string, stashDir?: string): Promise<string> {
+export type S8Stash = { dir: string; existed: string[] };
+
+export async function hideS8Files(homeDir?: string, stashDir?: string): Promise<S8Stash> {
   const home = resolveHome(homeDir);
   const stash = stashDir ?? join(home, ".agents/lane-pilot/s8-stash");
   await mkdir(stash, { recursive: true });
+  const existed: string[] = [];
   for (const rel of S8_RELATIVE_PATHS) {
     const src = join(home, rel);
     const dest = join(stash, rel);
     if ((await sha256FileOrNull(src)) === null) continue;
+    existed.push(rel);
     await mkdir(dirname(dest), { recursive: true });
     await rm(dest, { recursive: true, force: true });
     await cp(src, dest);
     await rm(src, { force: true });
   }
-  return stash;
+  return { dir: stash, existed };
 }
 
-export async function restoreS8Files(stashDir: string, homeDir?: string): Promise<S8Hashes> {
+export async function restoreS8Files(stash: S8Stash | string, homeDir?: string): Promise<S8Hashes> {
   const home = resolveHome(homeDir);
+  const dir = typeof stash === "string" ? stash : stash.dir;
+  const existed = typeof stash === "string" ? null : stash.existed;
   for (const rel of S8_RELATIVE_PATHS) {
     const dest = join(home, rel);
-    const src = join(stashDir, rel);
-    if ((await sha256FileOrNull(src)) === null) continue;
-    await mkdir(dirname(dest), { recursive: true });
-    await rm(dest, { force: true });
-    await cp(src, dest);
+    const src = join(dir, rel);
+    const hadFile = existed ? existed.includes(rel) : (await sha256FileOrNull(src)) !== null;
+    if (hadFile) {
+      await mkdir(dirname(dest), { recursive: true });
+      await rm(dest, { force: true });
+      await cp(src, dest);
+    } else {
+      await rm(dest, { force: true });
+    }
   }
-  await rm(stashDir, { recursive: true, force: true });
+  await rm(dir, { recursive: true, force: true });
   return s8Hashes(home);
 }

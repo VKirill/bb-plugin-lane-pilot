@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { sha256FileOrNull } from "../src/hash";
+import { INSTALL_PHASES } from "../src/install-runner";
 import { rollbackSnapshot, takeSnapshot, verifyRollback } from "../src/snapshot";
 
-const STACK = join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack");
-const PHASES = ["mkdir", "rsync", "settings", "npm", "install_json"] as const;
+const FALLBACK = join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack");
+const GUARD = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 
 function seed(home: string): void {
   mkdirSync(join(home, ".agents"), { recursive: true });
@@ -16,24 +17,25 @@ function seed(home: string): void {
   writeFileSync(join(home, ".agents/keep.txt"), "before\n");
 }
 
-describe("fault-injection §11 five SIGKILL points", () => {
-  for (const phase of PHASES) {
-    it(`restores after SIGKILL at ${phase}`, async () => {
+describe("fault-injection §11 five SIGKILL points on production installStack", () => {
+  for (const phase of INSTALL_PHASES) {
+    it(`restores after SIGKILL of installStack at ${phase}`, async () => {
       const home = mkdtempSync(join(tmpdir(), `lane-pilot-fault-${phase}-`));
       seed(home);
       const settingsBefore = await sha256FileOrNull(join(home, ".claude/settings.json"));
       const keepBefore = await sha256FileOrNull(join(home, ".agents/keep.txt"));
       const snap = await takeSnapshot({ homeDir: home });
-      const child = spawnSync(process.execPath, [join(process.cwd(), "scripts/phased-install.mjs"), phase], {
+      const child = spawnSync("npx", ["--yes", "tsx", join(process.cwd(), "scripts/fault-install-stack.ts")], {
         env: {
           ...process.env,
           HOME: home,
-          STACK_ROOT: STACK,
-          LANE_PILOT_CONFIRM_EXTERNAL: "0",
+          LANE_PILOT_FALLBACK: FALLBACK,
+          LANE_PILOT_GUARD: GUARD,
+          LANE_PILOT_STOP_AFTER: phase,
         },
         encoding: "utf8",
       });
-      expect(child.signal === "SIGKILL" || child.status !== 0).toBe(true);
+      expect(child.signal === "SIGKILL" || child.status !== 0, `${child.stdout}\n${child.stderr}`).toBe(true);
       expect(readFileSync(join(home, ".lane-pilot-phase"), "utf8").trim()).toBe(phase);
       if (phase === "npm") {
         expect(readFileSync(join(home, ".lane-pilot-npm-skipped"), "utf8")).toContain("не применимо без подтверждения");
@@ -44,6 +46,6 @@ describe("fault-injection §11 five SIGKILL points", () => {
       expect(await sha256FileOrNull(join(home, ".claude/settings.json"))).toBe(settingsBefore);
       expect(await sha256FileOrNull(join(home, ".agents/keep.txt"))).toBe(keepBefore);
       rmSync(home, { recursive: true, force: true });
-    }, 60_000);
+    }, 180_000);
   }
 });
