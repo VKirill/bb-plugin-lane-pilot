@@ -8,10 +8,13 @@ export type FileChange = {
   sha256After: string | null;
 };
 
+export type InstallReceiptStatus = "ok" | "failed" | "rolled_back";
+
 export type InstallReceipt = {
   schemaVersion: 1;
   action: string;
   scenario: string | null;
+  status: InstallReceiptStatus;
   filesChanged: FileChange[];
   externalOpsBefore: Record<string, string | null>;
   externalOpsAfter: Record<string, string | null>;
@@ -25,7 +28,10 @@ export type InstallReceipt = {
 };
 
 export async function writeReceipt(
-  receipt: Omit<InstallReceipt, "receiptPath" | "schemaVersion"> & { receiptPath?: string | null },
+  receipt: Omit<InstallReceipt, "receiptPath" | "schemaVersion" | "status"> & {
+    receiptPath?: string | null;
+    status?: InstallReceiptStatus;
+  },
   receiptDir: string | null,
 ): Promise<InstallReceipt> {
   const ts = new Date().toISOString().replaceAll(":", "").replaceAll(".", "");
@@ -34,7 +40,12 @@ export async function writeReceipt(
     await mkdir(receiptDir, { recursive: true });
     receiptPath = join(receiptDir, `lane-pilot-install-${receipt.action}-${ts}.json`);
   }
-  const full: InstallReceipt = { ...receipt, schemaVersion: 1, receiptPath };
+  const full: InstallReceipt = {
+    ...receipt,
+    status: receipt.status ?? "ok",
+    schemaVersion: 1,
+    receiptPath,
+  };
   if (receiptPath) await writeFile(receiptPath, `${JSON.stringify(full, null, 2)}\n`);
   return full;
 }

@@ -66,6 +66,7 @@ export const installReceiptSchema = z.object({
   schemaVersion: z.literal(1),
   action: z.string(),
   scenario: z.string().nullable(),
+  status: z.enum(["ok", "failed", "rolled_back"]).optional(),
   filesChanged: z.array(fileChangeSchema),
   externalOpsBefore: z.record(z.string(), z.string().nullable()),
   externalOpsAfter: z.record(z.string(), z.string().nullable()),

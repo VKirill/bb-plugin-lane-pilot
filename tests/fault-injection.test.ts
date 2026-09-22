@@ -32,7 +32,8 @@ describe("fault-injection §11 five SIGKILL points on production installStack", 
       const globalBefore = snapshotGlobalOpenCursor();
       const snap = await takeSnapshot({ homeDir: home });
       expect(existsSync(TSX_CLI), "pinned local tsx is required; do not use npx").toBe(true);
-      const child = spawnSync(process.execPath, [TSX_CLI, FAULT_SCRIPT], {
+      const child = spawnSync(process.execPath, ["--import", "tsx", FAULT_SCRIPT], {
+        cwd: process.cwd(),
         env: {
           ...process.env,
           HOME: home,
@@ -45,7 +46,12 @@ describe("fault-injection §11 five SIGKILL points on production installStack", 
         },
         encoding: "utf8",
       });
-      expect(child.signal === "SIGKILL" || child.status !== 0, `${child.stdout}\n${child.stderr}`).toBe(true);
+      const sigkill = child.signal === "SIGKILL" || child.status === 137;
+      if (!sigkill) {
+        throw new Error(
+          `expected SIGKILL at ${phase}, got signal=${child.signal} status=${child.status}\nstdout:\n${child.stdout}\nstderr:\n${child.stderr}`,
+        );
+      }
       expect(readFileSync(join(home, ".lane-pilot-phase"), "utf8").trim()).toBe(phase);
       if (phase === "npm") {
         expect(readFileSync(join(home, ".lane-pilot-npm-skipped"), "utf8")).toContain("не применимо без подтверждения");

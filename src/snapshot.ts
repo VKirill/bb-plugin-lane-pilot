@@ -24,6 +24,31 @@ export type SnapshotResult = {
   entries: ManifestEntry[];
 };
 
+export class SnapshotReadError extends Error {
+  readonly path: string;
+  readonly causeCode: string | null;
+
+  constructor(path: string, cause: unknown) {
+    const code = errorCode(cause);
+    const message = cause instanceof Error ? cause.message : String(cause);
+    super(`cannot snapshot ${path}: ${code ?? "error"} ${message}`);
+    this.name = "SnapshotReadError";
+    this.path = path;
+    this.causeCode = code;
+  }
+}
+
+function errorCode(error: unknown): string | null {
+  if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
+    return error.code;
+  }
+  return null;
+}
+
+function isEnoent(error: unknown): boolean {
+  return errorCode(error) === "ENOENT";
+}
+
 function copyName(path: string, home: string): string {
   const expanded = expandHomePath(path, home);
   if (expanded.startsWith(home)) {
@@ -52,60 +77,81 @@ export async function takeSnapshot(input: {
     ? join(input.threadStoragePath, "tmp", `lane-pilot-install-snapshot-${ts}`)
     : join(lanePilotRoot(home), "snapshots", ts);
   await mkdir(snapshotPath, { recursive: true });
-  const externalBefore = await observeExternalOps(home);
-  const entries: ManifestEntry[] = [];
-  for (const row of MANIFEST_ROWS) {
-    if (row.kind === "external") {
+  try {
+    const externalBefore = await observeExternalOps(home);
+    const entries: ManifestEntry[] = [];
+    for (const row of MANIFEST_ROWS) {
+      if (row.kind === "external") {
+        entries.push({
+          id: row.id,
+          path: row.path,
+          kind: row.kind,
+          existedBefore: false,
+          sha256Before: null,
+          sha256After: null,
+          symlinkTarget: null,
+          externalOpsBefore: externalBefore[row.path] ?? null,
+          externalOpsAfter: null,
+        });
+        continue;
+      }
+      const abs = expandHomePath(row.path, home);
+      try {
+        await lstat(abs);
+      } catch (error) {
+        if (isEnoent(error)) {
+          entries.push({
+            id: row.id,
+            path: abs,
+            kind: row.kind,
+            existedBefore: false,
+            sha256Before: null,
+            sha256After: null,
+            symlinkTarget: null,
+            externalOpsBefore: null,
+            externalOpsAfter: null,
+          });
+          continue;
+        }
+        throw new SnapshotReadError(abs, error);
+      }
+      let sha256Before: string | null = null;
+      let symlinkTarget: string | null = null;
+      try {
+        const hashed = await hashPath(abs);
+        sha256Before = hashed.sha256;
+        symlinkTarget = hashed.symlinkTarget;
+        await copyEntry(abs, join(snapshotPath, copyName(row.path, home)), row.kind);
+      } catch (error) {
+        throw new SnapshotReadError(abs, error);
+      }
       entries.push({
         id: row.id,
-        path: row.path,
+        path: abs,
         kind: row.kind,
-        existedBefore: false,
-        sha256Before: null,
+        existedBefore: true,
+        sha256Before,
         sha256After: null,
-        symlinkTarget: null,
-        externalOpsBefore: externalBefore[row.path] ?? null,
+        symlinkTarget,
+        externalOpsBefore: null,
         externalOpsAfter: null,
       });
-      continue;
     }
-    const abs = expandHomePath(row.path, home);
-    let existed = false;
-    let sha256Before: string | null = null;
-    let symlinkTarget: string | null = null;
-    try {
-      await lstat(abs);
-      existed = true;
-      const hashed = await hashPath(abs);
-      sha256Before = hashed.sha256;
-      symlinkTarget = hashed.symlinkTarget;
-      await copyEntry(abs, join(snapshotPath, copyName(row.path, home)), row.kind);
-    } catch {
-      existed = false;
-    }
-    entries.push({
-      id: row.id,
-      path: abs,
-      kind: row.kind,
-      existedBefore: existed,
-      sha256Before,
-      sha256After: null,
-      symlinkTarget,
-      externalOpsBefore: null,
-      externalOpsAfter: null,
-    });
+    const manifest = {
+      schemaVersion: 1,
+      home,
+      createdAt: new Date().toISOString(),
+      externalOpsWarning: EXTERNAL_OPS_WARNING,
+      externalOps: EXTERNAL_OPS,
+      entries,
+    };
+    const manifestPath = join(snapshotPath, "manifest.json");
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    return { snapshotPath, manifestPath, entries };
+  } catch (error) {
+    await rm(snapshotPath, { recursive: true, force: true });
+    throw error;
   }
-  const manifest = {
-    schemaVersion: 1,
-    home,
-    createdAt: new Date().toISOString(),
-    externalOpsWarning: EXTERNAL_OPS_WARNING,
-    externalOps: EXTERNAL_OPS,
-    entries,
-  };
-  const manifestPath = join(snapshotPath, "manifest.json");
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  return { snapshotPath, manifestPath, entries };
 }
 
 export async function finalizeSnapshotAfter(

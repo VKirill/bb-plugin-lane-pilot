@@ -5,7 +5,7 @@ import { EXTERNAL_OPS, EXTERNAL_OPS_WARNING, TARGET_SHA } from "./constants";
 import { observeExternalOps } from "./external-ops";
 import { applyInstalledGuard } from "./guard-apply";
 import { readImportConfig } from "./import-config";
-import { runInstallSh, type InstallPhase } from "./install-runner";
+import { runInstallSh, type InstallPhase, type InstallRunResult } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
 import { agentsDir, resolveHome } from "./paths";
 import { skippedOpsReceipt, writeReceipt, type FileChange, type InstallReceipt } from "./receipt";
@@ -135,8 +135,9 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
   const snap = await takeSnapshot({ homeDir: home, threadStoragePath: ctx.threadStoragePath });
   const s8Before = await s8Hashes(home);
   const stash = await hideS8Files(home);
+  const receiptDir = await receiptDirOf(ctx);
 
-  let installResult;
+  let installResult: InstallRunResult | undefined;
   try {
     installResult = await runInstallSh({
       stackRoot: upstream.path,
@@ -145,69 +146,160 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
       stopAfterPhase: ctx.stopAfterPhase,
       executorPid: process.pid,
     });
-  } finally {
+  } catch (error) {
     await restoreS8Files(stash, home);
-  }
-
-  await applyInstalledGuard({
-    homeDir: home,
-    guardSourcePath: ctx.guardSourcePath,
-    moduleUrl: ctx.moduleUrl,
-    pmWorkspacePath: ctx.pmWorkspacePath,
-  });
-  const connected = await connectOpencode(home);
-  await finalizeSnapshotAfter(snap, home);
-  const s8After = await s8Hashes(home);
-  const s8Notes = Object.keys(s8Before).map((path) => (
-    s8Before[path] === s8After[path]
-      ? `S8 unchanged ${path}`
-      : `S8 MISMATCH ${path}`
-  ));
-
-  const filesChanged: FileChange[] = [];
-  for (const entry of snap.entries) {
-    if (entry.kind === "external") continue;
-    filesChanged.push({
-      path: entry.path,
-      sha256Before: entry.sha256Before,
-      sha256After: entry.sha256After,
+    return writeFailedInstallReceipt({
+      home,
+      scenario: before.scenario,
+      snap,
+      confirm,
+      installResult,
+      receiptDir,
+      notes: [
+        `upstream ${upstream.source} ${upstream.path}`,
+        error instanceof Error ? `install exception ${error.message}` : "install exception",
+        "install.sh did not finish",
+      ],
     });
   }
-  for (const file of connected.files) {
-    filesChanged.push({
-      path: file.path,
-      sha256Before: file.sha256Before,
-      sha256After: file.sha256After,
+  await restoreS8Files(stash, home);
+
+  if (installResult.exitCode !== 0 || installResult.signal) {
+    return writeFailedInstallReceipt({
+      home,
+      scenario: before.scenario,
+      snap,
+      confirm,
+      installResult,
+      receiptDir,
+      notes: [
+        `upstream ${upstream.source} ${upstream.path}`,
+        `install.sh exit ${installResult.exitCode}`,
+        installResult.signal ? `install.sh signal ${installResult.signal}` : "",
+        installResult.stderr.slice(0, 2000),
+      ],
     });
   }
 
-  const after = await readInstallJson(home);
-  const notes = [
-    `upstream ${upstream.source} ${upstream.path}`,
-    `install.sh exit ${installResult.exitCode}`,
-    connected.skipped ? `S5/S6 ${connected.reason}` : `S5 patched ${connected.files.map((file) => file.path).join(",")}`,
-    connected.files[0]?.limitation ? `§12 ${connected.files[0].limitation}` : "",
-    ...s8Notes,
-    confirm ? "external ops confirmed" : "external ops skipped; LANE_INSTALL_CLAUDE_PLUGIN=0",
-  ].filter(Boolean);
+  try {
+    await applyInstalledGuard({
+      homeDir: home,
+      guardSourcePath: ctx.guardSourcePath,
+      moduleUrl: ctx.moduleUrl,
+      pmWorkspacePath: ctx.pmWorkspacePath,
+    });
+    const connected = await connectOpencode(home);
+    await finalizeSnapshotAfter(snap, home);
+    const s8After = await s8Hashes(home);
+    const s8Notes = Object.keys(s8Before).map((path) => (
+      s8Before[path] === s8After[path]
+        ? `S8 unchanged ${path}`
+        : `S8 MISMATCH ${path}`
+    ));
 
+    const filesChanged: FileChange[] = [];
+    for (const entry of snap.entries) {
+      if (entry.kind === "external") continue;
+      filesChanged.push({
+        path: entry.path,
+        sha256Before: entry.sha256Before,
+        sha256After: entry.sha256After,
+      });
+    }
+    for (const file of connected.files) {
+      filesChanged.push({
+        path: file.path,
+        sha256Before: file.sha256Before,
+        sha256After: file.sha256After,
+      });
+    }
+
+    const after = await readInstallJson(home);
+    const notes = [
+      `upstream ${upstream.source} ${upstream.path}`,
+      `install.sh exit ${installResult.exitCode}`,
+      connected.skipped ? `S5/S6 ${connected.reason}` : `S5 patched ${connected.files.map((file) => file.path).join(",")}`,
+      connected.files[0]?.limitation ? `§12 ${connected.files[0].limitation}` : "",
+      ...s8Notes,
+      confirm ? "external ops confirmed" : "external ops skipped; LANE_INSTALL_CLAUDE_PLUGIN=0",
+    ].filter(Boolean);
+
+    return writeReceipt({
+      action: "install",
+      scenario: before.scenario,
+      status: "ok",
+      filesChanged,
+      externalOpsBefore: Object.fromEntries(snap.entries
+        .filter((entry) => entry.kind === "external")
+        .map((entry) => [entry.path, entry.externalOpsBefore])),
+      externalOpsAfter: Object.fromEntries(snap.entries
+        .filter((entry) => entry.kind === "external")
+        .map((entry) => [entry.path, entry.externalOpsAfter])),
+      skippedExternalOps: installResult.skippedExternalOps,
+      warning: installResult.skippedExternalOps.length > 0 ? EXTERNAL_OPS_WARNING : null,
+      exitCode: installResult.exitCode,
+      snapshotPath: snap.snapshotPath,
+      sourceSha: after.sourceSha,
+      notes: [...notes, installResult.stderr.slice(0, 2000)],
+    }, receiptDir);
+  } catch (error) {
+    return writeFailedInstallReceipt({
+      home,
+      scenario: before.scenario,
+      snap,
+      confirm,
+      installResult,
+      receiptDir,
+      notes: [
+        `upstream ${upstream.source} ${upstream.path}`,
+        error instanceof Error ? `install exception ${error.message}` : "install exception",
+        `install.sh exit ${installResult.exitCode}`,
+      ],
+    });
+  }
+}
+
+async function writeFailedInstallReceipt(input: {
+  home: string;
+  scenario: "S1" | "S2" | "S3";
+  snap: Awaited<ReturnType<typeof takeSnapshot>>;
+  confirm: boolean;
+  installResult?: InstallRunResult;
+  receiptDir: string | null;
+  notes: string[];
+}): Promise<InstallReceipt> {
+  const rollback = await rollbackSnapshot(input.snap.snapshotPath);
+  const verified = await verifyRollback(input.snap.snapshotPath);
+  const after = await readInstallJson(input.home);
   return writeReceipt({
     action: "install",
-    scenario: before.scenario,
-    filesChanged,
-    externalOpsBefore: Object.fromEntries(snap.entries
+    scenario: input.scenario,
+    status: verified.ok ? "rolled_back" : "failed",
+    filesChanged: input.snap.entries
+      .filter((entry) => entry.kind !== "external")
+      .map((entry) => ({
+        path: entry.path,
+        sha256Before: entry.sha256Before,
+        sha256After: entry.sha256After,
+      })),
+    externalOpsBefore: Object.fromEntries(input.snap.entries
       .filter((entry) => entry.kind === "external")
       .map((entry) => [entry.path, entry.externalOpsBefore])),
-    externalOpsAfter: Object.fromEntries(snap.entries
+    externalOpsAfter: Object.fromEntries(input.snap.entries
       .filter((entry) => entry.kind === "external")
       .map((entry) => [entry.path, entry.externalOpsAfter])),
-    skippedExternalOps: installResult.skippedExternalOps,
-    warning: installResult.skippedExternalOps.length > 0 ? EXTERNAL_OPS_WARNING : null,
-    exitCode: installResult.exitCode,
-    snapshotPath: snap.snapshotPath,
+    skippedExternalOps: input.installResult?.skippedExternalOps ?? (input.confirm ? [] : [...EXTERNAL_OPS]),
+    warning: EXTERNAL_OPS_WARNING,
+    exitCode: input.installResult?.exitCode ?? 1,
+    snapshotPath: input.snap.snapshotPath,
     sourceSha: after.sourceSha,
-    notes: [...notes, installResult.stderr.slice(0, 2000)],
-  }, await receiptDirOf(ctx));
+    notes: [
+      ...input.notes.filter(Boolean),
+      `rollback restored ${rollback.restored.length} removed ${rollback.removed.length}`,
+      verified.ok ? "rollback verified" : `rollback verify failed ${JSON.stringify(verified.mismatches)}`,
+      "guard/connect/finalize skipped after failed install",
+    ],
+  }, input.receiptDir);
 }
 
 export async function rollbackStack(ctx: HostContext): Promise<InstallReceipt> {
