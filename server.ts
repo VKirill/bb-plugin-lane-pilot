@@ -13,6 +13,7 @@ import {
   createAttempt,
   createRun,
   getAttempt,
+  getRun,
   inspectState,
   loadPrototypeConfig,
   openDatabase,
@@ -168,7 +169,7 @@ export default async function plugin(bb: BbPluginApi) {
       throw cause;
     }
     try {
-      const waited = await bb.sdk.threads.wait({ threadId:writerThreadId, status:"idle", timeoutMs:240_000 });
+      const waited = await bb.sdk.threads.wait({ threadId:writerThreadId, status:"idle", timeoutMs:600_000 });
       const waitedThread = valueAt(waited, "thread");
       if (stringAt(waitedThread, "status") === "error") {
         transitionAttempt(db, attemptId, "provider_error", { reason:"writer thread status error" });
@@ -256,6 +257,7 @@ export default async function plugin(bb: BbPluginApi) {
     "bb lane-pilot activate <project-id> <ordinary-source-thread-id>",
     "bb lane-pilot state <project-id>",
     "bb lane-pilot cancel <attempt-id>",
+    "bb lane-pilot recover <attempt-id>",
     "bb lane-pilot host-detect <host-id> <workspace-path>",
     "bb lane-pilot host-snapshot <host-id> <absolute-path>...",
   ].join("\n");
@@ -267,6 +269,7 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
       { name:"cancel", summary:"Stop a writer and persist canceled after observing idle", usage:"bb lane-pilot cancel <attempt-id>" },
+      { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"host-detect", summary:"Call the read-only host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
       { name:"host-snapshot", summary:"Call read-only snapshotDryRun", usage:"bb lane-pilot host-snapshot <host-id> <absolute-path>..." },
     ],
@@ -292,6 +295,47 @@ export default async function plugin(bb: BbPluginApi) {
           if (!observed.matched) throw new Error("writer stop was not independently observed");
           transitionAttempt(db, attempt.id, "canceled", { threadId:attempt.thread_id });
           return { exitCode:0, stdout:JSON.stringify({ ok:true, attemptId:attempt.id, threadId:attempt.thread_id, state:"canceled" }) };
+        }
+        if (command === "recover" && args.length === 1) {
+          const attempt = getAttempt(db, args[0]!);
+          if (!attempt?.thread_id) throw new Error("attempt has no writer thread");
+          const run = getRun(db, attempt.run_id);
+          if (!run?.pm_thread_id) throw new Error("attempt run has no PM thread");
+          const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:attempt.thread_id });
+          if (valueAt(metadata, "lanePilotRunId") !== attempt.run_id
+            || valueAt(metadata, "lanePilotTaskId") !== attempt.task_id
+            || valueAt(metadata, "attemptId") !== attempt.id) {
+            transitionAttempt(db, attempt.id, "blocked", { threadId:attempt.thread_id, reason:"idempotency triple mismatch" });
+            throw new Error("writer metadata does not match the persisted idempotency triple");
+          }
+          const thread = await bb.sdk.threads.get({ threadId:attempt.thread_id });
+          if (stringAt(thread, "status") !== "idle") throw new Error(`writer is not idle: ${stringAt(thread, "status") ?? "unknown"}`);
+          const config = loadPrototypeConfig(db, run.project_id);
+          if (!config) throw new Error("prototype configuration is missing");
+          const [hello, test, output] = await Promise.all([
+            bb.sdk.files.read({ hostId:config.hostId, rootPath:config.writerWorkspacePath, path:`${config.writerWorkspacePath}/hello.txt` }),
+            bb.sdk.files.read({ hostId:config.hostId, rootPath:config.writerWorkspacePath, path:`${config.writerWorkspacePath}/tests/hello.test.txt` }),
+            bb.sdk.threads.output({ threadId:attempt.thread_id }),
+          ]);
+          if (stringAt(hello, "content") !== "hello from native BB writer\n"
+            || stringAt(test, "content") !== "hello from native BB writer\n") {
+            transitionAttempt(db, attempt.id, "validation_failed", { threadId:attempt.thread_id, reason:"fixture output content mismatch" });
+            throw new Error("reconciled writer output failed validation");
+          }
+          const receipt = {
+            schemaVersion:1, status:"accepted", reconciled:true,
+            lanePilotRunId:attempt.run_id, lanePilotTaskId:attempt.task_id, attemptId:attempt.id,
+            pmThreadId:run.pm_thread_id, writerThreadId:attempt.thread_id,
+            ownsPaths:["hello.txt", "tests/hello.test.txt"], output:outputText(output),
+          };
+          await bb.sdk.files.write({
+            hostId:config.hostId, rootPath:config.writerWorkspacePath,
+            path:`${config.writerWorkspacePath}/acceptance.json`,
+            content:JSON.stringify(receipt, null, 2) + "\n", contentEncoding:"utf8",
+            createParents:true, expectedSha256:null,
+          });
+          transitionAttempt(db, attempt.id, "accepted", { threadId:attempt.thread_id });
+          return { exitCode:0, stdout:JSON.stringify(receipt, null, 2) };
         }
         if (command === "host-detect" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await host.call("detect", { requestedHostId:args[0]!, workspacePath:args[1]! }, { hostId:args[0]! }), null, 2) };

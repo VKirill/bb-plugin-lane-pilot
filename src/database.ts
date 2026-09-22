@@ -115,7 +115,16 @@ export function inspectState(db: LanePilotDatabase, projectId: string): Record<s
   return { projectId, settings, runs, attempts };
 }
 
-export function getAttempt(db: LanePilotDatabase, attemptId: string): {id:string; thread_id:string|null; state:string}|undefined {
-  return db.prepare("SELECT id,thread_id,state FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
-    {id:string; thread_id:string|null; state:string}|undefined;
+export function getAttempt(db: LanePilotDatabase, attemptId: string): {
+  id:string; run_id:string; task_id:string; thread_id:string|null; state:string;
+}|undefined {
+  return db.prepare("SELECT id,run_id,task_id,thread_id,state FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
+    {id:string; run_id:string; task_id:string; thread_id:string|null; state:string}|undefined;
+}
+
+export function getRun(db: LanePilotDatabase, runId: string): {
+  id:string; project_id:string; pm_thread_id:string|null; state:string;
+}|undefined {
+  return db.prepare("SELECT id,project_id,pm_thread_id,state FROM lane_pilot_run WHERE id=?").get(runId) as
+    {id:string; project_id:string; pm_thread_id:string|null; state:string}|undefined;
 }
