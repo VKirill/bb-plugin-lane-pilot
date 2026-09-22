@@ -1,4 +1,4 @@
-import { applyEdits, findNodeAtLocation, modify, parseTree, type Node } from "jsonc-parser";
+import { applyEdits, findNodeAtLocation, modify, parseTree, type Node } from "jsonc-parser/lib/esm/main.js";
 
 const OLD = "./plugins/lane-context.ts";
 const NEW = "./plugins/opencode-lane.ts";
