@@ -41,14 +41,54 @@ export const taskV2Schema = z.object({
 
 export type TaskV2 = z.infer<typeof taskV2Schema>;
 
+const hostBaseFields = {
+  requestedHostId: z.string().min(1),
+  workspacePath: z.string().startsWith("/").optional(),
+  threadStoragePath: z.string().startsWith("/").optional(),
+  receiptDir: z.string().startsWith("/").optional(),
+  confirmExternalOps: z.boolean().optional(),
+  localFallbackPath: z.string().startsWith("/").optional(),
+  guardSourcePath: z.string().startsWith("/").optional(),
+  pmWorkspacePath: z.string().startsWith("/").optional(),
+  projectId: z.string().min(1).optional(),
+  snapshotPath: z.string().startsWith("/").optional(),
+};
+
+const hostBaseInput = z.object(hostBaseFields).strict();
+
+const fileChangeSchema = z.object({
+  path: z.string(),
+  sha256Before: z.string().nullable(),
+  sha256After: z.string().nullable(),
+}).strict();
+
+export const installReceiptSchema = z.object({
+  schemaVersion: z.literal(1),
+  action: z.string(),
+  scenario: z.string().nullable(),
+  filesChanged: z.array(fileChangeSchema),
+  externalOpsBefore: z.record(z.string(), z.string().nullable()),
+  externalOpsAfter: z.record(z.string(), z.string().nullable()),
+  skippedExternalOps: z.array(z.string()),
+  warning: z.string().nullable(),
+  exitCode: z.number().int(),
+  receiptPath: z.string().nullable(),
+  snapshotPath: z.string().nullable(),
+  sourceSha: z.string().nullable(),
+  notes: z.array(z.string()),
+}).strict();
+
 export const hostContract = defineRpcContract({
   detect: {
-    input: z.object({ requestedHostId: z.string().min(1), workspacePath: z.string().startsWith("/") }).strict(),
+    input: z.object({ ...hostBaseFields, workspacePath: z.string().startsWith("/") }).strict(),
     output: z.object({
       hostId: z.string(),
       laneStack: z.object({ present: z.boolean(), version: z.string().nullable(), sourceSha: z.string().nullable() }),
       openCode: z.object({ present: z.boolean(), version: z.string().nullable() }),
       workspace: z.object({ path: z.string(), present: z.boolean() }),
+      targetSha: z.string(),
+      matchesTarget: z.boolean(),
+      scenario: z.enum(["S1", "S2", "S3"]),
     }).strict(),
   },
   snapshotDryRun: {
@@ -62,6 +102,31 @@ export const hostContract = defineRpcContract({
         symlinkTarget: z.string().nullable(),
       }).strict()),
     }).strict(),
+  },
+  snapshot: {
+    input: hostBaseInput,
+    output: installReceiptSchema,
+  },
+  install: {
+    input: hostBaseInput,
+    output: installReceiptSchema,
+  },
+  rollback: {
+    input: z.object({ ...hostBaseFields, snapshotPath: z.string().startsWith("/") }).strict(),
+    output: installReceiptSchema,
+  },
+  importConfig: {
+    input: hostBaseInput,
+    output: installReceiptSchema.extend({
+      imported: z.object({
+        routingProfile: z.object({ path: z.string(), text: z.string(), sha256: z.string() }).nullable(),
+        nightShift: z.object({ path: z.string(), text: z.string(), sha256: z.string() }).nullable(),
+      }).strict(),
+    }).strict(),
+  },
+  connectOpencode: {
+    input: hostBaseInput,
+    output: installReceiptSchema,
   },
 });
 

@@ -59,6 +59,30 @@ export function savePrototypeConfig(db: LanePilotDatabase, config: PrototypeConf
   })();
 }
 
+export type ImportedYaml = {
+  routingProfile: { path: string; text: string; sha256: string } | null;
+  nightShift: { path: string; text: string; sha256: string } | null;
+};
+
+export function importSettingsOnce(
+  db: LanePilotDatabase,
+  projectId: string,
+  imported: ImportedYaml,
+): { imported: boolean } {
+  const existing = db.prepare(`SELECT key FROM lane_pilot_project_settings
+    WHERE project_id=? AND binding_id='' AND key='import.completed'`).get(projectId);
+  if (existing) return { imported: false };
+  const now = Date.now();
+  const insert = db.prepare(`INSERT INTO lane_pilot_project_settings
+    (project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,1,?)`);
+  db.transaction(() => {
+    insert.run(projectId, "", "import.routing_profile", JSON.stringify(imported.routingProfile), now);
+    insert.run(projectId, "", "import.night_shift", JSON.stringify(imported.nightShift), now);
+    insert.run(projectId, "", "import.completed", JSON.stringify({ at: now, version: 1 }), now);
+  })();
+  return { imported: true };
+}
+
 export function loadPrototypeConfig(db: LanePilotDatabase, projectId: string): PrototypeConfig | null {
   const rows = db.prepare(`SELECT key,value FROM lane_pilot_project_settings
     WHERE project_id=? AND binding_id=''`).all(projectId) as Array<{key:string; value:string}>;

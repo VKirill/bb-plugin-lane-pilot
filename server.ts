@@ -9,11 +9,13 @@ import {
   type PrototypeConfig,
   type TaskV2,
 } from "./src/contracts";
+import { TARGET_SHA } from "./src/constants";
 import {
   createAttempt,
   createRun,
   getAttempt,
   getRun,
+  importSettingsOnce,
   inspectState,
   loadPrototypeConfig,
   openDatabase,
@@ -141,6 +143,19 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const config = loadPrototypeConfig(db, projectId);
     if (!config) throw new Error(`Lane Pilot prototype is not configured for ${projectId}`);
+    const detected = await host.call("detect", {
+      requestedHostId: config.hostId,
+      workspacePath: config.pmWorkspacePath,
+    }, { hostId: config.hostId, timeoutMs: 30_000 });
+    if (!detected.matchesTarget || detected.laneStack.sourceSha !== TARGET_SHA) {
+      throw new Error(`Lane Pilot PM requires detect S1: ~/.agents/install.json.source_sha must be ${TARGET_SHA}`);
+    }
+    const imported = await host.call("importConfig", {
+      requestedHostId: config.hostId,
+      workspacePath: config.pmWorkspacePath,
+      projectId,
+    }, { hostId: config.hostId, timeoutMs: 30_000 });
+    importSettingsOnce(db, projectId, imported.imported);
     const runId = id("lprun");
     createRun(db, runId, projectId);
     const spawned = await bb.sdk.threads.spawn({
@@ -426,6 +441,11 @@ export default async function plugin(bb: BbPluginApi) {
     "bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>",
     "bb lane-pilot host-detect <host-id> <workspace-path>",
     "bb lane-pilot host-snapshot <host-id> <absolute-path>...",
+    "bb lane-pilot host-snapshot-manifest <host-id> [thread-storage]",
+    "bb lane-pilot host-install <host-id> [thread-storage] [pm-workspace]",
+    "bb lane-pilot host-rollback <host-id> <snapshot-path>",
+    "bb lane-pilot host-connect-opencode <host-id>",
+    "bb lane-pilot host-import-config <host-id> <project-id> [workspace-path]",
   ].join("\n");
   bb.cli.register({
     name:"lane-pilot",
@@ -439,8 +459,13 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
       { name:"start-provider-error-probe", summary:"Observe a live provider error and persist provider_error", usage:"bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>" },
       { name:"start-ambiguous-probe", summary:"Create duplicate metadata and prove reconcile blocks", usage:"bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>" },
-      { name:"host-detect", summary:"Call the read-only host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
+      { name:"host-detect", summary:"Call the host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
       { name:"host-snapshot", summary:"Call read-only snapshotDryRun", usage:"bb lane-pilot host-snapshot <host-id> <absolute-path>..." },
+      { name:"host-snapshot-manifest", summary:"Full §11.1 snapshot", usage:"bb lane-pilot host-snapshot-manifest <host-id> [thread-storage]" },
+      { name:"host-install", summary:"Install target SHA without external ops", usage:"bb lane-pilot host-install <host-id> [thread-storage] [pm-workspace]" },
+      { name:"host-rollback", summary:"Rollback a snapshot", usage:"bb lane-pilot host-rollback <host-id> <snapshot-path>" },
+      { name:"host-connect-opencode", summary:"S5 JSONC plugin patch", usage:"bb lane-pilot host-connect-opencode <host-id>" },
+      { name:"host-import-config", summary:"S7 one-shot YAML read", usage:"bb lane-pilot host-import-config <host-id> <project-id> [workspace-path]" },
     ],
     async run(argv) {
       try {
@@ -521,6 +546,40 @@ export default async function plugin(bb: BbPluginApi) {
         }
         if (command === "host-snapshot" && args.length >= 2) {
           return { exitCode:0, stdout:JSON.stringify(await host.call("snapshotDryRun", { requestedHostId:args[0]!, paths:args.slice(1) }, { hostId:args[0]! }), null, 2) };
+        }
+        if (command === "host-snapshot-manifest" && args.length >= 1) {
+          return { exitCode:0, stdout:JSON.stringify(await host.call("snapshot", {
+            requestedHostId:args[0]!,
+            threadStoragePath:args[1],
+          }, { hostId:args[0]!, timeoutMs:120_000 }), null, 2) };
+        }
+        if (command === "host-install" && args.length >= 1) {
+          return { exitCode:0, stdout:JSON.stringify(await host.call("install", {
+            requestedHostId:args[0]!,
+            threadStoragePath:args[1],
+            pmWorkspacePath:args[2],
+            confirmExternalOps:false,
+          }, { hostId:args[0]!, timeoutMs:600_000 }), null, 2) };
+        }
+        if (command === "host-rollback" && args.length === 2) {
+          return { exitCode:0, stdout:JSON.stringify(await host.call("rollback", {
+            requestedHostId:args[0]!,
+            snapshotPath:args[1]!,
+          }, { hostId:args[0]!, timeoutMs:180_000 }), null, 2) };
+        }
+        if (command === "host-connect-opencode" && args.length === 1) {
+          return { exitCode:0, stdout:JSON.stringify(await host.call("connectOpencode", {
+            requestedHostId:args[0]!,
+          }, { hostId:args[0]!, timeoutMs:30_000 }), null, 2) };
+        }
+        if (command === "host-import-config" && args.length >= 2) {
+          const imported = await host.call("importConfig", {
+            requestedHostId:args[0]!,
+            projectId:args[1]!,
+            workspacePath:args[2],
+          }, { hostId:args[0]!, timeoutMs:30_000 });
+          const persisted = importSettingsOnce(db, args[1]!, imported.imported);
+          return { exitCode:0, stdout:JSON.stringify({ ...imported, persisted }, null, 2) };
         }
         return { exitCode:1, stderr:usage };
       } catch (cause) {

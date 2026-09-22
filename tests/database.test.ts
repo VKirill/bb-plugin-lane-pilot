@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { casSetting, openDatabase } from "../src/database";
+import { casSetting, importSettingsOnce, openDatabase } from "../src/database";
 
 describe("section 9 storage.database DDL", () => {
   it("covers DDL, PK isolation, CAS and project isolation", async () => {
@@ -19,6 +19,12 @@ describe("section 9 storage.database DDL", () => {
     expect((db.prepare("SELECT COUNT(*) count FROM lane_pilot_project_settings WHERE project_id='B'").get() as {count:number}).count).toBe(0);
     const winners = [2,2].map((version) => casSetting(db,{projectId:"A",key:"writer.provider",value:"race",expectedVersion:version}));
     expect(winners.filter(Boolean)).toHaveLength(1);
+    const payload = {
+      routingProfile: { path: "/tmp/r.yaml", text: "a: 1\n", sha256: "aa" },
+      nightShift: { path: "/tmp/n.yaml", text: "b: 2\n", sha256: "bb" },
+    };
+    expect(importSettingsOnce(db, "A", payload).imported).toBe(true);
+    expect(importSettingsOnce(db, "A", payload).imported).toBe(false);
     await harness.lifecycle.dispose();
   });
 });

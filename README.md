@@ -10,6 +10,9 @@ upstream behavior; Lane Pilot adds a stricter `lane-pilot-pm` branch before
 `PM_AGENTS`.
 
 This prototype uses only public Plugin SDK surfaces. It does not call Agency RPC.
-The host worker exposes only read-only `detect` and `snapshotDryRun` methods.
+The host worker exposes `detect`, `snapshot`, `install`, `rollback`,
+`importConfig`, `connectOpencode`, and the original `snapshotDryRun`.
+Install uses a managed checkout at `~/.agents/lane-pilot/upstream/<sha>`.
+External operations run only when `confirmExternalOps` is true.
 
 See `.agency/jobs/AG-190/stage0.md` for the reproducible live scenario and rollback.
