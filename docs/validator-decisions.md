@@ -17,6 +17,7 @@ tags: [lane-pilot, validation, bb-writer]
 | Не создан один из нескольких ожидаемых файлов | `validation_failed` | [`pipeline.test.ts`](../tests/pipeline.test.ts): `fails validation when only some expected outputs are missing` |
 | Ни один ожидаемый файл не создан в текущей попытке | `empty_output` | [`pipeline.test.ts`](../tests/pipeline.test.ts): `rejects a pre-existing expected file that this attempt did not produce` |
 | Receipt содержит противоречивые сигналы (например, `accepted: true` вместе с failed status или ненулевым exit) | `blocked`; принимать нельзя | [`pipeline.test.ts`](../tests/pipeline.test.ts): `blocks a conflicting failed receipt even when accepted is true` |
+| Host-команда завершилась с ненулевым exit code, даже если stdout сообщает `accepted: true` и exit code из receipt равен 0 | `blocked`; принимать нельзя | [`pipeline.test.ts`](../tests/pipeline.test.ts): `rejects a nonzero host exit even when stdout claims accepted` |
 | Невозможно получить или разобрать снимок dirty-файлов | Отказать до spawn либо отметить `validation_failed` после spawn; никогда не принимать | [`writer-validate.test.ts`](../tests/writer-validate.test.ts): `does not spawn when the dirt snapshot fails` |
 | Upstream `acceptance.json` не соответствует схеме acceptance-v2 | Не публиковать как принятое; генератор выбрасывает ошибку и состояние остаётся непринятым | [`acceptance-v2.test.ts`](../tests/acceptance-v2.test.ts): сериализованный `acceptance.json` проверяется Draft 2020-12 валидатором по байт-в-байт совпадающей upstream schema с 0 ошибками |
 

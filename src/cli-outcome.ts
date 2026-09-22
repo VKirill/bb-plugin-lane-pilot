@@ -41,6 +41,15 @@ export function classifyCliOutcome(input: {
   exitCode: number;
   stdout: string;
 }): CliOutcome {
+  if (input.exitCode !== 0) {
+    return {
+      status:"blocked",
+      taskAccepted:false,
+      upstreamAccepted:null,
+      upstreamStatus:null,
+      reason:`control exit ${input.exitCode}`,
+    };
+  }
   const parsed = parseJsonObject(input.stdout);
   const accepted = typeof parsed?.accepted === "boolean" ? parsed.accepted : null;
   const upstream = typeof parsed?.status === "string"
@@ -111,15 +120,6 @@ export function classifyCliOutcome(input: {
       upstreamAccepted:accepted,
       upstreamStatus:upstream,
       reason:"control command started, writer not accepted",
-    };
-  }
-  if (input.exitCode !== 0) {
-    return {
-      status:"blocked",
-      taskAccepted:false,
-      upstreamAccepted:accepted,
-      upstreamStatus:upstream,
-      reason:`control exit ${input.exitCode}`,
     };
   }
   return {

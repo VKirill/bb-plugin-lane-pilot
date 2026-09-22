@@ -435,6 +435,16 @@ describe("writer output validation", () => {
 });
 
 describe("CLI run outcome", () => {
+  it("rejects a nonzero host exit even when stdout claims accepted", () => {
+    const outcome = classifyCliOutcome({
+      subcommand:"status",
+      exitCode:73,
+      stdout: JSON.stringify({ accepted:true, status:"accepted", exit_code:0 }),
+    });
+    expect(outcome.status).toBe("blocked");
+    expect(outcome.taskAccepted).toBe(false);
+    expect(outcome.reason).toBe("control exit 73");
+  });
   it("does not accept lane-ctl status exit 0 when the task failed", () => {
     const outcome = classifyCliOutcome({
       subcommand:"status",
