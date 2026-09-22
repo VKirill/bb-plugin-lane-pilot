@@ -219,6 +219,37 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
+  async function startCancelProbe(projectId: string, pmThreadId: string): Promise<Record<string,unknown>> {
+    const config = loadPrototypeConfig(db, projectId);
+    if (!config) throw new Error(`Lane Pilot prototype is not configured for ${projectId}`);
+    const runId = id("lpcancelrun");
+    const taskId = id("lpcanceltask");
+    const attemptId = id("lpcancelattempt");
+    createRun(db, runId, projectId);
+    setRunThread(db, runId, pmThreadId);
+    createAttempt(db, { id:attemptId, runId, taskId });
+    transitionAttempt(db, attemptId, "spawn_requested");
+    try {
+      const spawned = await bb.sdk.threads.spawn({
+        projectId,
+        providerId:config.writerProviderId,
+        model:config.writerModel,
+        prompt:"Lane Pilot cancel probe. Run `sleep 300` using Bash before responding. Do not edit any file.",
+        environment:{ type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.writerWorkspacePath } },
+        visibility:"hidden",
+        pluginMetadata:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId },
+        executionInputSources:{ providerId:"explicit", model:"explicit" },
+      });
+      const threadId = stringAt(spawned, "id");
+      if (!threadId) throw new Error("threads.spawn returned no cancel-probe thread id");
+      transitionAttempt(db, attemptId, "running", { threadId });
+      return { runId, taskId, attemptId, threadId, state:"running" };
+    } catch (cause) {
+      transitionAttempt(db, attemptId, "spawn_rejected", { reason:cause instanceof Error ? cause.message : String(cause) });
+      throw cause;
+    }
+  }
+
   bb.rpc.register(rpcContract, {
     activate_pm: ({ projectId, sourceThreadId }) => {
       if (!sourceThreadId) throw new Error("Open an ordinary thread before enabling Lane Pilot");
@@ -258,6 +289,7 @@ export default async function plugin(bb: BbPluginApi) {
     "bb lane-pilot state <project-id>",
     "bb lane-pilot cancel <attempt-id>",
     "bb lane-pilot recover <attempt-id>",
+    "bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>",
     "bb lane-pilot host-detect <host-id> <workspace-path>",
     "bb lane-pilot host-snapshot <host-id> <absolute-path>...",
   ].join("\n");
@@ -270,6 +302,7 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
       { name:"cancel", summary:"Stop a writer and persist canceled after observing idle", usage:"bb lane-pilot cancel <attempt-id>" },
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
+      { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
       { name:"host-detect", summary:"Call the read-only host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
       { name:"host-snapshot", summary:"Call read-only snapshotDryRun", usage:"bb lane-pilot host-snapshot <host-id> <absolute-path>..." },
     ],
@@ -336,6 +369,9 @@ export default async function plugin(bb: BbPluginApi) {
           });
           transitionAttempt(db, attempt.id, "accepted", { threadId:attempt.thread_id });
           return { exitCode:0, stdout:JSON.stringify(receipt, null, 2) };
+        }
+        if (command === "start-cancel-probe" && args.length === 2) {
+          return { exitCode:0, stdout:JSON.stringify(await startCancelProbe(args[0]!, args[1]!), null, 2) };
         }
         if (command === "host-detect" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await host.call("detect", { requestedHostId:args[0]!, workspacePath:args[1]! }, { hostId:args[0]! }), null, 2) };
