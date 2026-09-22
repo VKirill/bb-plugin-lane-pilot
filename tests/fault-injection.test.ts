@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,8 @@ import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm
 
 const FALLBACK = join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack");
 const GUARD = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+const TSX_CLI = join(process.cwd(), "node_modules/tsx/dist/cli.mjs");
+const FAULT_SCRIPT = join(process.cwd(), "scripts/fault-install-stack.ts");
 
 function seed(home: string): void {
   mkdirSync(join(home, ".agents"), { recursive: true });
@@ -29,7 +31,8 @@ describe("fault-injection §11 five SIGKILL points on production installStack", 
       const keepBefore = await sha256FileOrNull(join(home, ".agents/keep.txt"));
       const globalBefore = snapshotGlobalOpenCursor();
       const snap = await takeSnapshot({ homeDir: home });
-      const child = spawnSync("npx", ["--yes", "tsx", join(process.cwd(), "scripts/fault-install-stack.ts")], {
+      expect(existsSync(TSX_CLI), "pinned local tsx is required; do not use npx").toBe(true);
+      const child = spawnSync(process.execPath, [TSX_CLI, FAULT_SCRIPT], {
         env: {
           ...process.env,
           HOME: home,

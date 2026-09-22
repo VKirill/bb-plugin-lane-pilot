@@ -10,7 +10,9 @@
   "bb": {
     "name": "Lane Pilot",
     "description": "Stage 0 prototype: isolated PM activation and native BB writer dispatch.",
-    "branding": { "icon": "Workflow" },
+    "branding": {
+      "icon": "Workflow"
+    },
     "server": "./server.ts",
     "host": "./host.ts",
     "app": "./app.tsx"
@@ -45,6 +47,7 @@
     "react-dom": "^19.0.0",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.4.0",
+    "tsx": "4.23.15",
     "typescript": "^5.7.0",
     "vaul": "^1.1.2",
     "vitest": "4.1.11"
