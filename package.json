@@ -1,0 +1,42 @@
+{
+  "name": "bb-plugin-lane-pilot",
+  "version": "0.0.1-stage0",
+  "type": "module",
+  "engines": {
+    "node": "^22.19.0 || ^24.0.0 || ^26.0.0",
+    "bb": ">=0.43.3 <0.44",
+    "bbPluginSdk": ">=0.4.104 <0.5"
+  },
+  "bb": {
+    "name": "Lane Pilot",
+    "description": "Stage 0 prototype: isolated PM activation and native BB writer dispatch.",
+    "branding": { "icon": "Workflow" },
+    "server": "./server.ts",
+    "host": "./host.ts",
+    "app": "./app.tsx"
+  },
+  "dependencies": {
+    "jsonc-parser": "3.3.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.104",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "better-sqlite3": "^12.0.0",
+    "cron-parser": "^5.4.0",
+    "hono": "^4.11.9",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "4.1.11"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "bb plugin build",
+    "check": "npm test && npm run typecheck && npm run build"
+  }
+}

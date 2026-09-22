@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.gitnexus/
+coverage/
+*.log
+.bb/
+AGENTS.md
+CLAUDE.md
