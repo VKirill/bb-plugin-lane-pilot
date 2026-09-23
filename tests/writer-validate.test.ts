@@ -7,6 +7,7 @@ import {
   createTask,
   getAttempt,
   getRun,
+  listAttemptsForTask,
   openDatabase,
   savePrototypeConfig,
   saveProjectSetting,
@@ -58,6 +59,7 @@ describe("BB writer validation on the server path", () => {
   it("returns dispatch immediately and exposes the persisted receipt through bounded wait", async () => {
     let releaseWait!: (value:{matched:boolean; thread:{status:string}}) => void;
     let snapshots = 0;
+    let writerIdle = false;
     const taskWorkspace = config.writerWorkspacePath;
     const cwdCalls:string[] = [];
     const fileRoots:string[] = [];
@@ -73,7 +75,7 @@ describe("BB writer validation on the server path", () => {
           return { id:"writer-delayed" };
         },
         wait: async () => delayed,
-        get: async () => ({ id:"writer-delayed", status:"idle" }),
+        get: async () => ({ id:"writer-delayed", status:writerIdle ? "idle" : "active" }),
         output: async () => ({ text:"writer output" }),
         list: async () => [] as never,
       }, files:{
@@ -118,6 +120,7 @@ describe("BB writer validation on the server path", () => {
     const stillRunning = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_wait_writer", { runId:"run-delayed", timeoutSec:1 }, { threadId:pmThreadId, projectId },
     )));
+    writerIdle = true;
     releaseWait({ matched:true, thread:{ status:"idle" } });
     expect(stillRunning).toMatchObject({ state:"running", attemptId:dispatched.attemptId, writerThreadId:"writer-delayed" });
     const completed = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -306,8 +309,10 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("marks timeout and calls threads.stop when wait does not match idle", async () => {
-    const order: string[] = [];
+  it("observes a writer error during wait, retries once and returns blocked", async () => {
+    const threadStates = new Map<string, string>();
+    let spawnCount = 0;
+    let waitCount = 0;
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
       sdk:{
@@ -315,15 +320,17 @@ describe("BB writer validation on the server path", () => {
           getPluginMetadata: async ({ threadId }) => threadId === pmThreadId
             ? { role:"pm", lanePilotRunId:"run-v" }
             : { role:"writer" },
-          spawn: async () => ({ id:"writer-timeout" }),
-          wait: async () => ({ matched:false, thread:{ status:"active" } }),
-          get: async () => ({ id:"writer-timeout", status:"active" }),
-          stop: async () => {
-            const row = db.prepare("SELECT state FROM lane_pilot_attempt ORDER BY created_at DESC LIMIT 1").get() as {state:string};
-            order.push(`state:${row.state}`);
-            order.push("stop");
-            return { ok:true };
+          spawn: async () => {
+            const id = `writer-error-${++spawnCount}`;
+            threadStates.set(id, "active");
+            return { id };
           },
+          wait: async ({ threadId }) => {
+            waitCount += 1;
+            threadStates.set(threadId, "error");
+            return { matched:false, thread:{ id:threadId, status:"active" } };
+          },
+          get: async ({ threadId }) => ({ id:threadId, status:threadStates.get(threadId) ?? "error" }),
           output: async () => ({ text:"ok" }),
           list: async () => [] as never,
         },
@@ -346,20 +353,23 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, task:{ ...task, id:"timeout1", verification:[{ command:"true", cwd:config.writerWorkspacePath }] } },
+      { confirm:true, task:{ ...task, id:"error-retry", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
     )));
-    expect(order[0]).toBe("state:timeout");
-    expect(order[1]).toBe("stop");
-    expect(result.state === "timeout" || result.state === "blocked").toBe(true);
+    expect(result.state).toBe("blocked");
+    expect(spawnCount).toBe(2);
+    expect(waitCount).toBe(2);
+    expect(listAttemptsForTask(db, dispatched.runId, "error-retry").map((attempt) => attempt.state)).toEqual(["provider_error", "blocked"]);
+    expect(getRun(db, dispatched.runId)?.state).toBe("blocked");
     await harness.lifecycle.dispose();
   });
 
   it("fails closed when a resumed attempt has a pre-dirty path without a content hash", async () => {
     const resumeTask: TaskV2 = { ...task, id:"resume-task", verify:"none", verification:[] };
+    const snapshotCwds:string[] = [];
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
       sdk:{
@@ -379,6 +389,7 @@ describe("BB writer validation on the server path", () => {
       },
       experimental_callHostRpc: (call) => {
         if (call.method === "runCommand") {
+          snapshotCwds.push(String((call.input as { cwd?:string }).cwd ?? ""));
           return { hostId:"host-test", exitCode:0, stdout:JSON.stringify([{ path:"hello.txt", sha256:"unchanged" }]), stderr:"" };
         }
         throw new Error(`unexpected ${call.method}`);
@@ -387,6 +398,7 @@ describe("BB writer validation on the server path", () => {
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
     createRun(db, "run-resume", projectId, "bb", config.writerWorkspacePath);
+    savePrototypeConfig(db, { ...config, writerWorkspacePath:"/tmp/changed-after-resume-run-start" });
     setRunThread(db, "run-resume", pmThreadId);
     createTask(db, { id:"resume-task", runId:"run-resume", kind:"bb", contract:resumeTask });
     createAttempt(db, { id:"attempt-resume", runId:"run-resume", taskId:"resume-task" });
@@ -394,6 +406,7 @@ describe("BB writer validation on the server path", () => {
     setAttemptDirtBefore(db, "attempt-resume", ["hello.txt"]);
     await plugin(bb);
     expect(getAttempt(db, "attempt-resume")?.state).toBe("validation_failed");
+    expect(snapshotCwds).toEqual([config.writerWorkspacePath]);
     await harness.lifecycle.dispose();
   });
 

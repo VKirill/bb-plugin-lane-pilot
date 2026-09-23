@@ -219,20 +219,26 @@ export default async function plugin(bb: BbPluginApi) {
   async function maybeFinishResumedAttempt(input: {
     projectId:string; attempt:NonNullable<ReturnType<typeof getAttempt>>; writerThreadId:string;
   }): Promise<boolean> {
-    if (input.attempt.state !== "running" || !input.writerThreadId) return false;
+    if (!input.writerThreadId) return false;
     const thread = await bb.sdk.threads.get({ threadId:input.writerThreadId }).catch(() => null);
     const status = stringAt(thread, "status");
     if (status !== "idle" && status !== "error") return false;
+    if (input.attempt.state === "cancel_requested") {
+      transitionAttempt(db, input.attempt.id, "canceled", { threadId:input.writerThreadId, reason:"writer stop observed during recovery" });
+      refreshRun(input.attempt.run_id);
+      return true;
+    }
+    if (input.attempt.state !== "running") return false;
     const run = getRun(db, input.attempt.run_id);
     const stored = getTask(db, input.attempt.task_id);
     const config = loadPrototypeConfig(db, input.projectId);
-    if (!run || !config || stored?.kind !== "bb") return false;
+    if (!run?.writer_workspace_path || !config || stored?.kind !== "bb") return false;
     const parsed = taskV2Schema.safeParse(stored.contract);
     if (!parsed.success) return false;
     await finishWriterAttempt({
       projectId:input.projectId,
-      config,
-      task:parsed.data,
+      config:{ ...config, writerWorkspacePath:run.writer_workspace_path },
+      task:{ ...parsed.data, project_cwd:run.writer_workspace_path },
       runId:input.attempt.run_id,
       taskId:input.attempt.task_id,
       attemptId:input.attempt.id,
@@ -575,16 +581,39 @@ export default async function plugin(bb: BbPluginApi) {
     dirtBefore:import("./src/cli-outcome").DirtSnapshot[];
   }): Promise<Record<string,unknown>> {
     try {
-      const waited = await bb.sdk.threads.wait({ threadId:input.writerThreadId, status:"idle", timeoutMs:600_000 });
-      if (!waited.matched) {
+      const deadline = Date.now() + 600_000;
+      let completedThread: unknown;
+      while (Date.now() < deadline) {
+        const currentThread = await bb.sdk.threads.get({ threadId:input.writerThreadId }).catch(() => null);
+        const currentStatus = stringAt(currentThread, "status");
+        if (currentStatus === "error") {
+          transitionAttempt(db, input.attemptId, "provider_error", { reason:"writer thread status error" });
+          return { status:"provider_error", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+        }
+        if (currentStatus === "idle") {
+          completedThread = currentThread;
+          break;
+        }
+        const waited = await bb.sdk.threads.wait({
+          threadId:input.writerThreadId,
+          status:"idle",
+          timeoutMs:Math.min(1_000, Math.max(1, deadline - Date.now())),
+        });
+        const waitedThread = valueAt(waited, "thread");
+        const waitedStatus = stringAt(waitedThread, "status");
+        if (waitedStatus === "error") {
+          transitionAttempt(db, input.attemptId, "provider_error", { reason:"writer thread status error" });
+          return { status:"provider_error", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+        }
+        if (waited.matched && waitedStatus === "idle") {
+          completedThread = waitedThread;
+          break;
+        }
+      }
+      if (!completedThread) {
         transitionAttempt(db, input.attemptId, "timeout", { reason:"threads.wait did not observe idle" });
         await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
         return { status:"timeout", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
-      }
-      const waitedThread = valueAt(waited, "thread");
-      if (stringAt(waitedThread, "status") === "error") {
-        transitionAttempt(db, input.attemptId, "provider_error", { reason:"writer thread status error" });
-        return { status:"provider_error", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
       const checked = await validateWriterResult({
         config:input.config, task:input.task, writerThreadId:input.writerThreadId, attemptId:input.attemptId,
@@ -727,11 +756,54 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const deadline = Date.now() + Math.min(240, Math.max(1, args.timeoutSec)) * 1000;
     while (Date.now() < deadline) {
+      const listedRun = listRunsWithAttempts(db, args.projectId).find((item) => item.id === args.runId);
+      const latestByTask = new Map<string, {id:string;state:string;attempt_no:number;thread_id:string|null;reason:string|null;task_id:string}>();
+      for (const attempt of listedRun?.attempts ?? []) {
+        if (!latestByTask.has(attempt.task_id) || latestByTask.get(attempt.task_id)!.attempt_no < attempt.attempt_no) {
+          latestByTask.set(attempt.task_id, attempt);
+        }
+      }
+      for (const attempt of latestByTask.values()) {
+        if ((attempt.state !== "running" && attempt.state !== "cancel_requested") || !attempt.thread_id) continue;
+        const thread = await bb.sdk.threads.get({ threadId:attempt.thread_id }).catch(() => null);
+        const threadStatus = stringAt(thread, "status");
+        if (threadStatus === "error" || (attempt.state === "cancel_requested" && threadStatus === "idle")) {
+          const failedState = attempt.state === "cancel_requested" ? "canceled" : "provider_error";
+          const reason = attempt.state === "cancel_requested" ? "writer stop observed" : "writer thread status error";
+          transitionAttempt(db, attempt.id, failedState, { reason });
+          refreshRun(args.runId);
+          latestByTask.set(attempt.task_id, { ...attempt, state:failedState, reason });
+        }
+      }
+      for (const attempt of latestByTask.values()) {
+        const key = `${args.runId}:${attempt.task_id}`;
+        if (attempt.state !== "provider_error" || activeWriterTasks.has(key)) continue;
+        const task = getTask(db, attempt.task_id);
+        const currentRun = getRun(db, args.runId);
+        const config = loadPrototypeConfig(db, args.projectId);
+        const parsed = task?.kind === "bb" ? taskV2Schema.safeParse(task.contract) : null;
+        if (currentRun?.writer_workspace_path && currentRun.pm_thread_id && config && parsed?.success) {
+          startWriterTask({
+            projectId:args.projectId,
+            runId:args.runId,
+            taskId:attempt.task_id,
+            firstAttemptId:attempt.id,
+            pmThreadId:currentRun.pm_thread_id,
+            writerThreadId:attempt.thread_id ?? undefined,
+            config:{ ...config, writerWorkspacePath:currentRun.writer_workspace_path },
+            task:{ ...parsed.data, project_cwd:currentRun.writer_workspace_path },
+          });
+        }
+      }
       const states = listTaskTerminalStates(db, args.runId);
       const state = states.length && states.every((item) => !["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(item))
         ? (states.includes("accepted") ? "accepted" : states.includes("blocked") ? "blocked" : states.at(-1)!)
         : "running";
       if (state !== "running") {
+        if (state === "provider_error" && [...activeWriterTasks].some((key) => key.startsWith(`${args.runId}:`))) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          continue;
+        }
         const settings = loadProjectSettings(db, args.projectId);
         const receipt = valueAt(settings["writer.lastResult"], "lanePilotRunId") === args.runId ? settings["writer.lastResult"] : null;
         return { runId:args.runId, state, receipt };
