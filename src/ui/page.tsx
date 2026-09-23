@@ -643,7 +643,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
 
             <section className="space-y-2" data-testid="cli-preview">
               <h2 className="text-sm font-medium">{t("cliPreview")}</h2>
-              {data?.cliPreview ? <SourceCode content={JSON.stringify(data.cliPreview, null, 2)} path="cli-preview.json" overflow="scroll" />
+              {data?.cliPreview ? <pre className="max-h-80 max-w-full overflow-auto rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground"><code>{JSON.stringify(data.cliPreview, null, 2)}</code></pre>
                 : <p className="text-xs text-muted-foreground">{t("noDiagnosticData")}</p>}
             </section>
 

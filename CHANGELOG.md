@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.11 — 2026-09-23
+
+- Render Diagnostics CLI preview as scrollable JSON after a live SourceCode renderer failure on the hub.
+- Keep the missing-credential Jev test independent of a permanently installed host credential file.
+
 ## 0.1.0 — 2026-09-23
 
 First public release of Lane Pilot for BB.

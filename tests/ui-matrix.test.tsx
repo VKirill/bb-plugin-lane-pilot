@@ -39,6 +39,7 @@ function screenFixture() {
       }],
     }],
     unapplied: [{ key: "plan_critique.mode", reason: "no proven runtime channel" }],
+    cliPreview: { argv:["run", "--provider", "codex", "--service-tier", "fast"], env:{}, applied:["writer.provider"], unapplied:[] },
     lastSnapshotPath: "/tmp/snapshot",
     lastReceiptJson: "{\"action\":\"install\"}",
     writerResultJson: "{\"status\":\"accepted\",\"output\":\"hello from writer\"}",
@@ -211,6 +212,10 @@ describe("Lane Pilot UI", () => {
     fireEvent.click(slot.getByTestId("tab-monitor"));
     expect(slot.queryByTestId("writer-result")).toBeNull();
     fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    const preview = await slot.findByTestId("cli-preview");
+    const previewJson = JSON.parse(preview.querySelector("code")!.textContent!) as { argv:string[] };
+    expect(previewJson.argv.filter((arg) => arg === "--provider")).toHaveLength(1);
+    expect(previewJson.argv).toContain("fast");
     const writer = await slot.findByTestId("writer-result");
     expect(writer.textContent).toContain("hello from writer");
     expect(slot.getByTestId("diagnostics-panel").textContent).toContain("\"action\":\"install\"");

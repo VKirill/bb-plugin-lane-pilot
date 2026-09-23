@@ -2,10 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyPlan } from "../src/host-handlers";
 import { bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../src/jev-reasoning";
 
+const { missingCredentialFile } = vi.hoisted(() => ({ missingCredentialFile:{ value:false } }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, readFile: (...args: Parameters<typeof actual.readFile>) =>
+    missingCredentialFile.value ? Promise.reject(new Error("ENOENT")) : actual.readFile(...args) };
+});
+
 const priorFetch = globalThis.fetch;
 const priorEnv = { typesafe:process.env.TYPESAFE_API_KEY, jev:process.env.JEV_API_KEY };
 
 afterEach(() => {
+  missingCredentialFile.value = false;
   globalThis.fetch = priorFetch;
   if (priorEnv.typesafe === undefined) delete process.env.TYPESAFE_API_KEY;
   else process.env.TYPESAFE_API_KEY = priorEnv.typesafe;
@@ -70,7 +78,9 @@ describe("Lane Pilot Jev complete-plan adapter", () => {
   it("reports disabled, HTTP errors, and timeouts without returning truncated plan text", async () => {
     delete process.env.TYPESAFE_API_KEY;
     delete process.env.JEV_API_KEY;
+    missingCredentialFile.value = true;
     expect(await classifyPlan({ requestedHostId:"host-a", plan:"Full plan" }, {} as never)).toMatchObject({ status:"disabled", reason:"missing_typesafe_api_key" });
+    missingCredentialFile.value = false;
     process.env.JEV_API_KEY = "test-key";
     globalThis.fetch = vi.fn(async () => new Response("private server response", { status:503 })) as typeof fetch;
     expect(await classifyPlan({ requestedHostId:"host-a", plan:"Full plan" }, {} as never)).toMatchObject({ status:"error", reason:"http_503" });

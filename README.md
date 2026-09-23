@@ -9,7 +9,7 @@ Based on [VKirill/claude-lane-stack](https://github.com/VKirill/claude-lane-stac
 Назначение: isolated PM + writer dispatch for Lane Stack on BB.
 Владелец работы: AG-196 / AG-177.
 Статус: active.
-Проверено: 2026-09-23; source UI and native writer selection are covered by local integration tests; hub remains on 0.1.9 pending the shared QA window.
+Проверено: 2026-09-23; 0.1.10 на хабе прошла полный Jev→native writer→PM receipt и живые клики EN/RU. Версия 0.1.11 исправляет отображение CLI preview в Diagnostics; запись о её live-проверке — в отчёте AG-246.
 
 | Field | Value |
 |---|---|
