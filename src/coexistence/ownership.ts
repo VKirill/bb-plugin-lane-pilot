@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { hashPath, sha256Buffer } from "../hash";
 import type { CoexistenceManager, CoexistenceOwner } from "./contracts";
 import { compareAndSwapText, readTextState } from "./cas";
 
@@ -233,33 +234,151 @@ export async function removeOwnershipEntryIfMatches(
   return "conflict";
 }
 
-export async function saveSnapshot(home: string, snapshot: Omit<CoexistenceSnapshot, "schemaVersion" | "createdAt">): Promise<void> {
+export type SnapshotFingerprint = {
+  snapshotId: string;
+  bytes: Buffer;
+  sha256: string;
+};
+
+export type SnapshotResidual = {
+  path: string;
+  sha256: string | null;
+  detail: string;
+};
+
+export type SnapshotRemovalResult = {
+  status: "removed" | "absent" | "conflict";
+  residuals: SnapshotResidual[];
+};
+
+export async function saveSnapshot(home: string, snapshot: Omit<CoexistenceSnapshot, "schemaVersion" | "createdAt">): Promise<SnapshotFingerprint> {
   const path = snapshotPath(home, snapshot.snapshotId);
   await mkdir(join(coexistenceRoot(home), "snapshots"), { recursive: true });
-  await writeFile(path, `${JSON.stringify({ schemaVersion: 1, createdAt: new Date().toISOString(), ...snapshot }, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+  const bytes = Buffer.from(`${JSON.stringify({ schemaVersion: 1, createdAt: new Date().toISOString(), ...snapshot }, null, 2)}\n`, "utf8");
+  await writeFile(path, bytes, { flag: "wx", mode: 0o600 });
+  return { snapshotId: snapshot.snapshotId, bytes, sha256: sha256Buffer(bytes) };
+}
+
+async function residualFor(path: string, detail: string): Promise<SnapshotResidual | null> {
+  try { return { path, sha256: (await hashPath(path)).sha256, detail }; }
+  catch { return null; }
+}
+
+async function removeEmptyClaimDirectory(path: string): Promise<SnapshotResidual[]> {
+  try {
+    await rmdir(path);
+    return [];
+  } catch {
+    const residual = await residualFor(path, "Snapshot compensation left its private claim directory in place.");
+    return residual ? [residual] : [];
+  }
+}
+
+async function preserveClaimedSnapshot(
+  originalPath: string,
+  claimedPath: string,
+  claimDirectory: string,
+  claimedBytes: Buffer,
+  detail: string,
+): Promise<SnapshotRemovalResult> {
+  let restoredAtOriginal = false;
+  try {
+    await writeFile(originalPath, claimedBytes, { flag: "wx", mode: 0o600 });
+    const restored = await readFile(originalPath);
+    restoredAtOriginal = restored.equals(claimedBytes);
+  } catch {
+    // An existing path belongs to a concurrent writer; keep the captured file below.
+  }
+
+  if (restoredAtOriginal) {
+    try { await unlink(claimedPath); }
+    catch { /* Keep and report the claimed copy if cleanup cannot complete. */ }
+  }
+
+  const residuals: SnapshotResidual[] = [];
+  const originalResidual = await residualFor(originalPath, detail);
+  if (originalResidual) residuals.push(originalResidual);
+  const claimedResidual = await residualFor(claimedPath, "Captured concurrent snapshot bytes are preserved in the private claim path.");
+  if (claimedResidual) residuals.push(claimedResidual);
+  residuals.push(...await removeEmptyClaimDirectory(claimDirectory));
+  return { status: "conflict", residuals };
 }
 
 export async function removeSnapshotIfMatches(
   home: string,
-  expected: Pick<CoexistenceSnapshot, "snapshotId" | "manager" | "path" | "operation" | "afterSha256">,
-): Promise<"removed" | "absent" | "conflict"> {
+  expected: SnapshotFingerprint,
+  options: { beforeClaim?: (path: string) => Promise<void> } = {},
+): Promise<SnapshotRemovalResult> {
   const path = snapshotPath(home, expected.snapshotId);
   let info;
   try { info = await lstat(path); }
   catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return "absent";
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return { status: "absent", residuals: [] };
     throw error;
   }
-  if (info.isSymbolicLink() || !info.isFile()) return "conflict";
-  let parsed: CoexistenceSnapshot;
-  try { parsed = JSON.parse(await readFile(path, "utf8")) as CoexistenceSnapshot; }
-  catch { return "conflict"; }
-  if (!parsed || typeof parsed !== "object" || parsed.schemaVersion !== 1 || parsed.owner !== "lane-pilot"
-    || parsed.snapshotId !== expected.snapshotId || parsed.manager !== expected.manager
-    || parsed.path !== expected.path || parsed.operation !== expected.operation
-    || parsed.afterSha256 !== expected.afterSha256) return "conflict";
-  await unlink(path);
-  return "removed";
+  const expectedHash = sha256Buffer(expected.bytes);
+  if (info.isSymbolicLink() || !info.isFile() || expectedHash !== expected.sha256) {
+    const residual = await residualFor(path, "Snapshot was not removed because it is not the exact file written by this transaction.");
+    return { status: "conflict", residuals: residual ? [residual] : [] };
+  }
+
+  const currentBytes = await readFile(path);
+  if (!currentBytes.equals(expected.bytes) || sha256Buffer(currentBytes) !== expected.sha256) {
+    const residual = await residualFor(path, "Snapshot bytes changed after this transaction wrote them; the changed file was preserved.");
+    return { status: "conflict", residuals: residual ? [residual] : [] };
+  }
+
+  await options.beforeClaim?.(path);
+  const claimDirectory = join(dirname(path), `.${expected.snapshotId}.claim-${randomUUID()}`);
+  await mkdir(claimDirectory, { mode: 0o700 });
+  const claimedPath = join(claimDirectory, "snapshot.json");
+  try {
+    await rename(path, claimedPath);
+  } catch (error) {
+    const directoryResiduals = await removeEmptyClaimDirectory(claimDirectory);
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return directoryResiduals.length
+        ? { status: "conflict", residuals: directoryResiduals }
+        : { status: "absent", residuals: [] };
+    }
+    throw error;
+  }
+
+  let claimedInfo;
+  try { claimedInfo = await lstat(claimedPath); }
+  catch {
+    const residual = await residualFor(claimedPath, "Snapshot claim could not be inspected after atomic capture.");
+    return { status: "conflict", residuals: residual ? [residual] : [] };
+  }
+  if (claimedInfo.isSymbolicLink() || !claimedInfo.isFile()) {
+    const residuals: SnapshotResidual[] = [];
+    const claimedResidual = await residualFor(claimedPath, "A concurrent non-file snapshot replacement was captured and preserved.");
+    if (claimedResidual) residuals.push(claimedResidual);
+    const originalResidual = await residualFor(path, "A replacement appeared at the snapshot path during compensation and was preserved.");
+    if (originalResidual) residuals.push(originalResidual);
+    return { status: "conflict", residuals };
+  }
+
+  const claimedBytes = await readFile(claimedPath);
+  if (!claimedBytes.equals(expected.bytes) || sha256Buffer(claimedBytes) !== expected.sha256) {
+    return preserveClaimedSnapshot(
+      path,
+      claimedPath,
+      claimDirectory,
+      claimedBytes,
+      "Snapshot was replaced between the byte check and atomic claim; the replacement was preserved.",
+    );
+  }
+
+  try { await unlink(claimedPath); }
+  catch {
+    const residual = await residualFor(claimedPath, "The exact transaction snapshot was captured but could not be removed.");
+    return { status: "conflict", residuals: residual ? [residual] : [] };
+  }
+  const directoryResiduals = await removeEmptyClaimDirectory(claimDirectory);
+  const replacementResidual = await residualFor(path, "A new snapshot file appeared after the transaction snapshot was removed and was preserved.");
+  const residuals = [...directoryResiduals, ...(replacementResidual ? [replacementResidual] : [])];
+  return residuals.length ? { status: "conflict", residuals } : { status: "removed", residuals: [] };
 }
 
 export async function readSnapshot(home: string, id: string): Promise<CoexistenceSnapshot | null> {

@@ -428,7 +428,8 @@ export async function runCoexistenceOperationAtHome(
     localFallbackPath?: string;
     moduleUrl?: string;
     faultAt?: "after-rename" | "after-snapshot" | "after-ledger-commit" | "rollback-conflict";
-    beforeCompensation?: (managedPath: string) => Promise<void>;
+    beforeCompensation?: (managedPath: string, snapshotFile: string) => Promise<void>;
+    beforeSnapshotClaim?: (snapshotFile: string) => Promise<void>;
   } = {},
 ): Promise<CoexistenceOperationResult> {
   assertInput(input.projectId, input.hostId);
@@ -499,6 +500,8 @@ export async function runCoexistenceOperationAtHome(
     let installed: Awaited<ReturnType<typeof ensureUpstream>> | null = null;
     let after: string | null = null;
     let ledgerWrite: Awaited<ReturnType<typeof addOwnershipEntry>> | null = null;
+    let snapshotFingerprint: Awaited<ReturnType<typeof saveSnapshot>> | null = null;
+    let snapshotResidual = false;
     try {
       installed = await ensureUpstream({
         homeDir: home,
@@ -539,7 +542,7 @@ export async function runCoexistenceOperationAtHome(
       if (sourceOptions.faultAt === "after-rename" || sourceOptions.faultAt === "rollback-conflict") {
         throw new Error("Injected failure after managed engine rename.");
       }
-      await saveSnapshot(home, snapshot);
+      snapshotFingerprint = await saveSnapshot(home, snapshot);
       if (sourceOptions.faultAt === "after-snapshot") throw new Error("Injected failure after snapshot write.");
       ledgerWrite = await addOwnershipEntry(home, {
         manager: input.manager,
@@ -553,8 +556,8 @@ export async function runCoexistenceOperationAtHome(
       if (sourceOptions.faultAt === "after-ledger-commit") throw new Error("Injected failure after ownership ledger commit.");
       return resultOf(input, { status: "ok", owner: "lane-pilot", path: installed.path, beforeSha256: null, afterSha256: after, snapshotId, evidence: [{ kind: "installed", path: installed.path, sha256: after, detail: `Immutable managed engine ${installed.sha} installed; adapted capabilities: ${installed.adaptedCapabilities.join(", ") || "none"}.` }], reason: null });
     } catch (error) {
-      if (installed && installed.source !== "reuse" && sourceOptions.faultAt === "rollback-conflict") {
-        await sourceOptions.beforeCompensation?.(installed.path).catch(() => undefined);
+      if (installed && installed.source !== "reuse" && sourceOptions.beforeCompensation) {
+        await sourceOptions.beforeCompensation(installed.path, snapshotPath(home, snapshotId)).catch(() => undefined);
       }
       const residuals: CoexistenceEvidence[] = [];
       let metadataConflict = false;
@@ -586,19 +589,29 @@ export async function runCoexistenceOperationAtHome(
         }
         if (!metadataConflict) {
           try {
-            const snapshotRemoval = await removeSnapshotIfMatches(home, {
-              snapshotId,
-              manager: input.manager,
-              path: installed.path,
-              operation: "install",
-              afterSha256: after,
-            });
-            if (snapshotRemoval === "conflict") {
-              metadataConflict = true;
-              residuals.push({ kind: "rollback-residual", path: snapshotPath(home, snapshotId), sha256: await anyPathHash(snapshotPath(home, snapshotId)), detail: "Rollback conflict: snapshot no longer matches this install transaction and was preserved." });
+            if (!snapshotFingerprint) {
+              const snapshotFile = snapshotPath(home, snapshotId);
+              const hash = await anyPathHash(snapshotFile);
+              if (hash) {
+                metadataConflict = true;
+                snapshotResidual = true;
+                residuals.push({ kind: "rollback-residual", path: snapshotFile, sha256: hash, detail: "Rollback conflict: a snapshot exists but this transaction did not capture its post-write bytes; it was preserved." });
+              }
+            } else {
+              const snapshotRemoval = await removeSnapshotIfMatches(home, snapshotFingerprint, {
+                beforeClaim: (path) => sourceOptions.beforeSnapshotClaim?.(path) ?? Promise.resolve(),
+              });
+              if (snapshotRemoval.status === "conflict") {
+                metadataConflict = true;
+                snapshotResidual = true;
+                for (const item of snapshotRemoval.residuals) {
+                  residuals.push({ kind: "rollback-residual", path: item.path, sha256: item.sha256, detail: `Rollback conflict: ${item.detail}` });
+                }
+              }
             }
           } catch (cleanupError) {
             metadataConflict = true;
+            snapshotResidual = true;
             residuals.push({ kind: "rollback-residual", path: snapshotPath(home, snapshotId), sha256: await anyPathHash(snapshotPath(home, snapshotId)), detail: `Rollback conflict: snapshot could not be safely removed (${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}).` });
           }
         }
@@ -620,9 +633,15 @@ export async function runCoexistenceOperationAtHome(
       }
       const engineAfter = installed?.source !== "reuse" && installed ? await anyPathHash(installed.path) : currentHash;
       if (installed?.source !== "reuse" && installed && engineAfter && !residuals.some((item) => item.path === installed!.path)) {
-        residuals.push({ kind: "rollback-residual", path: installed.path, sha256: engineAfter, detail: "Rollback conflict: a path appeared at the managed destination during compensation and was preserved." });
+        residuals.push({
+          kind: "rollback-residual",
+          path: installed.path,
+          sha256: engineAfter,
+          detail: metadataConflict
+            ? "Rollback conflict: the managed engine was retained because metadata compensation conflicted."
+            : "Rollback conflict: a path appeared at the managed destination during compensation and was preserved.",
+        });
       }
-      const snapshotResidual = residuals.some((item) => item.path === snapshotPath(home, snapshotId));
       const summary = residuals.length
         ? `Managed install failed; rollback left ${residuals.length} reported residual path(s) and preserved them. ${residuals.map((item) => item.detail).join(" ")} Retry will choose a fresh owned engine path.`
         : "Managed install failed; engine and metadata compensation completed. Retry is safe.";

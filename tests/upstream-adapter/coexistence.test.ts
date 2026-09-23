@@ -1,11 +1,11 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { TARGET_SHA } from "../../src/constants";
-import { hashPath } from "../../src/hash";
+import { hashPath, sha256Buffer } from "../../src/hash";
 import { inventoryCoexistenceAtHome, runCoexistenceOperation, runCoexistenceOperationAtHome } from "../../src/coexistence";
 import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readSnapshot, saveSnapshot } from "../../src/coexistence/ownership";
 import { managedEngineDir } from "../../src/paths";
@@ -469,7 +469,8 @@ async function managedInstall(
   home: string,
   fallback: string,
   faultAt?: "after-rename" | "after-snapshot" | "after-ledger-commit" | "rollback-conflict",
-  beforeCompensation?: (managedPath: string) => Promise<void>,
+  beforeCompensation?: (managedPath: string, snapshotFile: string) => Promise<void>,
+  beforeSnapshotClaim?: (snapshotFile: string) => Promise<void>,
 ) {
   const row = (await inventory(home)).managers.find((item) => item.manager === "managed-checkout");
   if (!row) throw new Error("managed checkout inventory row is missing");
@@ -481,7 +482,7 @@ async function managedInstall(
     path: row.path,
     expectedSha256: row.sha256,
     targetSha: TARGET_SHA,
-  }, home, { localFallbackPath: fallback, faultAt, beforeCompensation });
+  }, home, { localFallbackPath: fallback, faultAt, beforeCompensation, beforeSnapshotClaim });
 }
 
 describe("managed install transaction failure integrity", () => {
@@ -544,6 +545,77 @@ describe("managed install transaction failure integrity", () => {
     expect(entry?.snapshotId).toBe(retry.snapshotId);
     expect(await readSnapshot(home, retry.snapshotId!)).toMatchObject({ path: retry.path, afterSha256: retry.afterSha256 });
     expect({ claude: await treeHash(claude), openCode: await treeHash(openCode) }).toEqual(ordinaryBefore);
+  }, 180_000);
+
+  it.each(["after-snapshot", "after-ledger-commit"] as const)("preserves complete concurrent snapshot bytes after %s", async (faultAt) => {
+    const home = await makeHome();
+    const fallback = await incompatibleFallback(home);
+    let editedBytes: Buffer | null = null;
+    let snapshotFile = "";
+    const failed = await managedInstall(home, fallback, faultAt, async (_managedPath, path) => {
+      snapshotFile = path;
+      const snapshot = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+      snapshot.createdAt = "late-user-edit-created-at";
+      snapshot.note = { preserved: true, source: "concurrent writer" };
+      editedBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`, "utf8");
+      await writeFile(path, editedBytes);
+    });
+
+    expect(failed.status, failed.reason ?? "").toBe("failed");
+    expect(failed.reason).toContain("residual path(s)");
+    expect(failed.reason).not.toContain("metadata compensation completed");
+    expect(failed.snapshotId).toBeTruthy();
+    expect(editedBytes).not.toBeNull();
+    expect(await readFile(snapshotFile)).toEqual(editedBytes);
+    const snapshotHash = sha256Buffer(editedBytes!);
+    expect(failed.evidence.some((item) => item.kind === "rollback-residual" && item.path === snapshotFile && item.sha256 === snapshotHash)).toBe(true);
+
+    const retainedEngine = failed.path;
+    const retainedEngineHash = await treeHash(retainedEngine);
+    expect(retainedEngineHash).not.toBeNull();
+    expect(failed.evidence.some((item) => item.kind === "rollback-residual" && item.path === retainedEngine && item.sha256 === retainedEngineHash)).toBe(true);
+
+    const retry = await managedInstall(home, fallback);
+    expect(retry.status, retry.reason ?? "").toBe("ok");
+    expect(retry.path).not.toBe(retainedEngine);
+    expect(await treeHash(retainedEngine)).toBe(retainedEngineHash);
+    expect(await readFile(snapshotFile)).toEqual(editedBytes);
+  }, 180_000);
+
+  it("captures and restores a replacement that races the snapshot claim", async () => {
+    const home = await makeHome();
+    const fallback = await incompatibleFallback(home);
+    let changedBytes: Buffer | null = null;
+    let snapshotFile = "";
+    const failed = await managedInstall(home, fallback, "after-snapshot", undefined, async (path) => {
+      snapshotFile = path;
+      const snapshot = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+      snapshot.createdAt = "replacement-race-created-at";
+      snapshot.note = "replacement raced after the initial byte check";
+      changedBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`, "utf8");
+      const replacement = `${path}.replacement`;
+      await writeFile(replacement, changedBytes, { flag: "wx" });
+      await rename(replacement, path);
+    });
+
+    expect(failed.status, failed.reason ?? "").toBe("failed");
+    expect(failed.reason).toContain("replaced between the byte check and atomic claim");
+    expect(changedBytes).not.toBeNull();
+    expect(await readFile(snapshotFile)).toEqual(changedBytes);
+    const changedHash = sha256Buffer(changedBytes!);
+    expect(failed.evidence.some((item) => item.kind === "rollback-residual" && item.path === snapshotFile && item.sha256 === changedHash)).toBe(true);
+    const snapshotsDir = join(home, ".agents/lane-pilot/coexistence/snapshots");
+    expect(await readdir(snapshotsDir)).toEqual([`${failed.snapshotId}.json`]);
+
+    const retainedEngine = failed.path;
+    const retainedEngineHash = await treeHash(retainedEngine);
+    expect(retainedEngineHash).not.toBeNull();
+    expect(failed.evidence.some((item) => item.path === retainedEngine && item.sha256 === retainedEngineHash)).toBe(true);
+    const retry = await managedInstall(home, fallback);
+    expect(retry.status, retry.reason ?? "").toBe("ok");
+    expect(retry.path).not.toBe(retainedEngine);
+    expect(await treeHash(retainedEngine)).toBe(retainedEngineHash);
+    expect(await readFile(snapshotFile)).toEqual(changedBytes);
   }, 180_000);
 
   it("fails closed on malformed ownership metadata before rename and reports no false writes", async () => {
