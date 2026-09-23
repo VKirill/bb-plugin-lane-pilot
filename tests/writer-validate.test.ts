@@ -8,6 +8,7 @@ import {
   createTask,
   getAttempt,
   getRun,
+  getReasoningTrace,
   listAttemptsForTask,
   openDatabase,
   savePrototypeConfig,
@@ -147,6 +148,62 @@ describe("BB writer validation on the server path", () => {
     });
     expect(cwdCalls).toEqual([taskWorkspace, taskWorkspace]);
     expect(fileRoots.every((root) => root === taskWorkspace)).toBe(true);
+    await harness.lifecycle.dispose();
+  });
+
+  it("uses the explicit manual reasoning fallback when the classifier RPC itself rejects", async () => {
+    let snapshots = 0;
+    let spawnedInput:Record<string, unknown>|null = null;
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{
+        threads:{
+          getPluginMetadata:async ({ threadId }) => threadId === pmThreadId
+            ? { role:"pm", lanePilotRunId:"run-classifier-rpc-failure" }
+            : { role:"writer" },
+          spawn:async (input) => { spawnedInput = input as unknown as Record<string, unknown>; return { id:"writer-classifier-rpc-failure" }; },
+          wait:async () => ({ matched:true, thread:{ status:"idle" } }),
+          get:async () => ({ id:"writer-classifier-rpc-failure", status:"idle" }),
+          output:async () => ({ text:"created hello.txt" }),
+          list:async () => [] as never,
+        },
+        providers:{ models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium","high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }) },
+        files:{
+          read:async ({ path }) => path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
+          write:async () => ({ ok:true }),
+        },
+      },
+      experimental_callHostRpc:(call) => {
+        if (call.method === "classifyPlan") throw new Error("RPC transport failed");
+        if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
+        const command = String((call.input as { command?:string }).command ?? "");
+        if (command.includes("porcelain")) {
+          snapshots += 1;
+          return { hostId:"host-test", exitCode:0, stdout:JSON.stringify(snapshots === 1 ? [] : [{ path:"hello.txt", sha256:"new-file" }]), stderr:"" };
+        }
+        return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
+      },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "writer.reasoning_effort", "high");
+    createRun(db, "run-classifier-rpc-failure", projectId, "bb", config.writerWorkspacePath);
+    setRunThread(db, "run-classifier-rpc-failure", pmThreadId);
+    await plugin(bb);
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, plan:"Complete plan for RPC fallback test", task:{ ...task, id:"rpc-fallback-task", verify:"none", verification:[] } },
+      { threadId:pmThreadId, projectId },
+    )));
+    expect(dispatched.state).toBe("queued");
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:"run-classifier-rpc-failure", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+    )));
+    expect(result.state).toBe("accepted");
+    expect(spawnedInput).toMatchObject({ providerId:"codex", model:"codex-test", reasoningLevel:"high", executionInputSources:{ reasoningLevel:"explicit" } });
+    expect(getReasoningTrace(db, dispatched.attemptId)).toMatchObject({
+      jevStatus:"error", jevDecision:null, effectiveReasoningLevel:"high", fallbackReason:"jev_error;host_classify_rpc_failed", sentPlanSha256:null, sentLength:null,
+    });
     await harness.lifecycle.dispose();
   });
 

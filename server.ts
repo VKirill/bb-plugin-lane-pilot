@@ -435,12 +435,24 @@ export default async function plugin(bb: BbPluginApi) {
       const disabled = flag === false || flag === 0
         || (typeof flag === "string" && ["0", "off", "false", "no"].includes(flag.trim().toLowerCase()));
       const enabled = !disabled;
-      const jev = enabled
-        ? await host.call("classifyPlan", { requestedHostId:input.config.hostId, plan:input.plan }, { hostId:input.config.hostId, timeoutMs:35_000 })
-        : { hostId:input.config.hostId, status:"disabled" as const, effort:null, reason:"jev_disabled_by_project_setting", planSha256:digest.sha256, sentPlanSha256:null, sourceLength:digest.length, sentLength:null };
+      let jev:Awaited<ReturnType<typeof host.call<"classifyPlan">>>;
+      if (!enabled) {
+        jev = { hostId:input.config.hostId, status:"disabled", effort:null, reason:"jev_disabled_by_project_setting",
+          planSha256:digest.sha256, sentPlanSha256:null, sourceLength:digest.length, sentLength:null };
+      } else {
+        try {
+          jev = await host.call("classifyPlan", { requestedHostId:input.config.hostId, plan:input.plan }, { hostId:input.config.hostId, timeoutMs:35_000 });
+        } catch {
+          // The RPC boundary itself can fail before the host adapter returns its normal fail-open result.
+          jev = { hostId:input.config.hostId, status:"error", effort:null, reason:"host_classify_rpc_failed",
+            planSha256:digest.sha256, sentPlanSha256:null, sourceLength:digest.length, sentLength:null };
+        }
+      }
+      const noSentProof = jev.sentPlanSha256 === null && jev.sentLength === null;
+      const validSentProof = jev.sentPlanSha256 === digest.sha256 && jev.sentLength === digest.length;
+      const allowedWithoutSentProof = jev.status === "disabled" || jev.reason === "host_classify_rpc_failed";
       if (jev.planSha256 !== digest.sha256 || jev.sourceLength !== digest.length
-        || (jev.status === "disabled" ? jev.sentPlanSha256 !== null || jev.sentLength !== null
-          : jev.sentPlanSha256 !== digest.sha256 || jev.sentLength !== digest.length)) {
+        || (noSentProof ? !allowedWithoutSentProof : !validSentProof)) {
         throw new Error("Jev full-plan transport proof mismatch");
       }
       let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>|null = null;
