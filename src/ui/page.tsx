@@ -16,7 +16,7 @@ import {
   WRITER_EFFORT_CHOICES_BY_PROVIDER,
   type CatalogRow,
 } from "../ui-catalog";
-import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, type I18nKey, type Locale } from "../../i18n";
+import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, bbInterfaceLanguage, type I18nKey, type Locale } from "../../i18n";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import {
   AlertDialog,
@@ -212,8 +212,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const [resultPatch, setResultPatch] = useState<string | null>(null);
   const [resultSource, setResultSource] = useState<string | null>(null);
   const [locale, setLocale] = useState<Locale>(() => {
-    const lang = globalThis.document?.documentElement?.lang ?? "";
-    return lang.toLowerCase().startsWith("ru") ? "ru" : "en";
+    return localeFromSources(bbInterfaceLanguage(), globalThis.document?.documentElement?.lang, globalThis.navigator?.language);
   });
   const bbLocaleRef = useRef<Locale>(locale);
 
@@ -228,7 +227,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
 
   useEffect(() => {
     const refresh = () => {
-      const next = localeFromSources(null, globalThis.document?.documentElement?.lang, globalThis.navigator?.language);
+      const next = localeFromSources(bbInterfaceLanguage(), globalThis.document?.documentElement?.lang, globalThis.navigator?.language);
       bbLocaleRef.current = next;
       if (data?.values[LANGUAGE_KEY] !== "ru" && data?.values[LANGUAGE_KEY] !== "en") {
         setLocaleOverride(null);
@@ -238,10 +237,17 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     const observer = typeof MutationObserver === "undefined" || !globalThis.document ? null : new MutationObserver(refresh);
     observer?.observe(document.documentElement, { attributes:true, attributeFilter:["lang"] });
     globalThis.addEventListener?.("languagechange", refresh);
-    return () => { observer?.disconnect(); globalThis.removeEventListener?.("languagechange", refresh); };
+    const poll = globalThis.setInterval?.(refresh, 300);
+    return () => { observer?.disconnect(); globalThis.removeEventListener?.("languagechange", refresh); if (poll) globalThis.clearInterval(poll); };
   }, [data?.values]);
 
   const applyLocale = (values: Record<string, unknown>) => {
+    const bbLanguage = bbInterfaceLanguage();
+    if (bbLanguage) {
+      setLocaleOverride(null);
+      setLocale(bbLanguage);
+      return;
+    }
     const saved = values[LANGUAGE_KEY];
     if (saved === "ru" || saved === "en") {
       setLocaleOverride(saved);
