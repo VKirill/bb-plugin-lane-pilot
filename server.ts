@@ -34,6 +34,9 @@ import {
   listTaskTerminalStates,
   loadProjectSettings,
   loadPrototypeConfig,
+  listSettingRows,
+  listRunsWithAttempts,
+  casUpsertSetting,
   openDatabase,
   savePrototypeConfig,
   saveProjectSetting,
@@ -45,6 +48,8 @@ import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "./src/sta
 import { validateTaskV2 } from "./src/task-v2";
 import { reconcile, type IdempotencyTriple } from "./src/reconcile";
 import { spawnWithSeam } from "./src/spawn-seam";
+import { VISIBLE_CATALOG } from "./src/ui-catalog";
+import { SETTING_CATALOG } from "./src/channels";
 
 export { rpcContract } from "./src/contracts";
 
@@ -67,6 +72,21 @@ function outputText(value: unknown): string {
     if (typeof found === "string") return found;
   }
   return JSON.stringify(value);
+}
+
+function asJsonText(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 2);
+}
+
+function writerPatchFromOutput(output: string): string | null {
+  const text = output.trim();
+  if (!text) return null;
+  if (text.startsWith("diff --git") || text.startsWith("--- ")) return text;
+  const lines = text.split("\n");
+  const body = lines.map((line) => `+${line}`).join("\n");
+  return `--- /dev/null\n+++ b/writer-output.txt\n@@ -0,0 +1,${lines.length} @@\n${body}\n`;
 }
 
 function buildTask(config: PrototypeConfig, taskId: string): TaskV2 {
@@ -417,7 +437,15 @@ export default async function plugin(bb: BbPluginApi) {
         path:`${artifactDir}/${name}`, content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
       });
     }
-    return { ...internalReceipt, acceptancePath:`${artifactDir}/acceptance.json` };
+    const stored = {
+      ...internalReceipt,
+      acceptancePath: `${artifactDir}/acceptance.json`,
+      acceptance,
+    };
+    saveProjectSetting(db, input.config.projectId, "writer.lastResult", stored);
+    const patch = writerPatchFromOutput(input.output);
+    if (patch) saveProjectSetting(db, input.config.projectId, "writer.lastPatch", patch);
+    return stored;
   }
 
   async function validateWriterResult(input: {
@@ -787,6 +815,136 @@ export default async function plugin(bb: BbPluginApi) {
     activate_pm: ({ projectId, sourceThreadId }) => {
       if (!sourceThreadId) throw new Error("Open an ordinary thread before enabling Lane Pilot");
       return activate(projectId, sourceThreadId);
+    },
+    get_screen: ({ projectId }) => {
+      const config = loadPrototypeConfig(db, projectId);
+      const rows = listSettingRows(db, projectId);
+      const values: Record<string, unknown> = {};
+      const versions: Record<string, number> = {};
+      for (const row of rows) {
+        values[row.key] = row.value;
+        versions[row.key] = row.version;
+      }
+      for (const row of VISIBLE_CATALOG) {
+        if (!(row.storageKey in values)) {
+          if (row.storageKey === "jev.LANE_JEV_EFFORT" || row.storageKey === "jev.LANE_OPENCODE_JEV") {
+            values[row.storageKey] = "1";
+          }
+        }
+      }
+      const completed = values["import.completed"];
+      const routing = values["import.routing_profile"];
+      const night = values["import.night_shift"];
+      const settings = loadProjectSettings(db, projectId);
+      const mapped: Record<string, unknown> = {};
+      for (const spec of SETTING_CATALOG) {
+        if (spec.key in settings) mapped[spec.key] = settings[spec.key];
+      }
+      const unapplied = buildCliInvocation({
+        binary: "run-controller",
+        subcommand: "run",
+        settings: { ...mapped, ...Object.fromEntries(VISIBLE_CATALOG.filter((row) => row.uiStatus !== "editable").map((row) => [row.storageKey, values[row.storageKey]])) },
+      }).unapplied.map((item) => ({ key: item.key, reason: item.reason }));
+      return {
+        projectId,
+        hostId: config?.hostId ?? null,
+        workspacePath: config?.writerWorkspacePath ?? null,
+        values,
+        versions,
+        importSource: {
+          completed: Boolean(completed),
+          at: completed && typeof completed === "object" && completed && "at" in completed
+            ? Number((completed as { at?: number }).at ?? null)
+            : null,
+          routingPath: routing && typeof routing === "object" && routing && "path" in routing
+            ? String((routing as { path?: string }).path ?? "") || null
+            : null,
+          nightPath: night && typeof night === "object" && night && "path" in night
+            ? String((night as { path?: string }).path ?? "") || null
+            : null,
+        },
+        runs: listRunsWithAttempts(db, projectId),
+        unapplied,
+        lastSnapshotPath: typeof values["install.lastSnapshotPath"] === "string" ? values["install.lastSnapshotPath"] as string : null,
+        lastReceiptJson: asJsonText(values["install.lastReceipt"]),
+        writerResultJson: asJsonText(values["writer.lastResult"]),
+        writerResultPatch: asJsonText(values["writer.lastPatch"]),
+      };
+    },
+    save_setting: ({ projectId, key, value, expectedVersion }) => {
+      const result = casUpsertSetting(db, { projectId, key, value, expectedVersion });
+      if (!result.ok) {
+        return { ok: false, conflict: true, version: result.version, value: result.value };
+      }
+      return { ok: true, conflict: false, version: result.version, value };
+    },
+    cancel_attempt: async ({ attemptId }) => {
+      const attempt = getAttempt(db, attemptId);
+      if (!attempt?.thread_id) return { ok: false, state: attempt?.state ?? "missing", reason: "attempt has no writer thread" };
+      transitionAttempt(db, attempt.id, "cancel_requested", { threadId: attempt.thread_id });
+      await bb.sdk.threads.stop({ threadId: attempt.thread_id });
+      const observed = await bb.sdk.threads.get({ threadId: attempt.thread_id });
+      const status = stringAt(observed, "status");
+      const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{ id: string }>> }).listRunning;
+      const running = listRunning ? await listRunning({}) : [];
+      const stillRunning = running.some((thread) => thread.id === attempt.thread_id)
+        || status === "active" || status === "running";
+      if (stillRunning) return { ok: false, state: "cancel_requested", reason: `writer stop was not independently observed (status=${status ?? "unknown"})` };
+      transitionAttempt(db, attempt.id, "canceled", { threadId: attempt.thread_id });
+      return { ok: true, state: "canceled", reason: null };
+    },
+    retry_attempt: ({ attemptId }) => {
+      const attempt = getAttempt(db, attemptId);
+      if (!attempt) return { ok: false, state: "missing", attemptId, reason: "attempt does not exist" };
+      const used = countAttempts(db, attempt.run_id, attempt.task_id);
+      if (!RETRY_ELIGIBLE.includes(attempt.state as AttemptState)) {
+        return { ok: false, state: attempt.state, attemptId, reason: `retry is not legal from ${attempt.state}` };
+      }
+      if (used >= MAIN_ATTEMPT_LIMIT) {
+        transitionAttempt(db, attempt.id, "blocked", { reason: "retry limit 2 exhausted" });
+        return { ok: false, state: "blocked", attemptId, reason: "retry limit 2 exhausted" };
+      }
+      const nextId = id("lpattempt");
+      createAttempt(db, { id: nextId, runId: attempt.run_id, taskId: attempt.task_id });
+      return { ok: true, state: "queued", attemptId: nextId, reason: null };
+    },
+    resume_runs: ({ projectId }) => resumeOrphans(projectId),
+    stack_detect: async ({ projectId }) => {
+      const config = loadPrototypeConfig(db, projectId);
+      if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
+      return host.call("detect", { requestedHostId: config.hostId, workspacePath: config.writerWorkspacePath }, { hostId: config.hostId });
+    },
+    stack_install: async ({ projectId, confirmExternalOps }) => {
+      const config = loadPrototypeConfig(db, projectId);
+      if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
+      const receipt = await host.call("install", {
+        requestedHostId: config.hostId,
+        pmWorkspacePath: config.pmWorkspacePath,
+        confirmExternalOps,
+      }, { hostId: config.hostId, timeoutMs: 600_000 });
+      if (receipt.snapshotPath) saveProjectSetting(db, projectId, "install.lastSnapshotPath", receipt.snapshotPath);
+      saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
+      return receipt;
+    },
+    stack_connect: async ({ projectId, confirmExternalOps }) => {
+      const config = loadPrototypeConfig(db, projectId);
+      if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
+      const receipt = await host.call("connectOpencode", {
+        requestedHostId: config.hostId,
+        confirmExternalOps,
+      }, { hostId: config.hostId, timeoutMs: 30_000 });
+      saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
+      return receipt;
+    },
+    stack_rollback: async ({ projectId, snapshotPath }) => {
+      const config = loadPrototypeConfig(db, projectId);
+      if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
+      const receipt = await host.call("rollback", {
+        requestedHostId: config.hostId,
+        snapshotPath,
+      }, { hostId: config.hostId, timeoutMs: 180_000 });
+      saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
+      return receipt;
     },
   });
 

@@ -1,0 +1,524 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  experimental_Diff as Diff,
+  experimental_ProviderModelPicker as ProviderModelPicker,
+  experimental_SourceCode as SourceCode,
+  experimental_useProviders as useProviders,
+  useBbContext,
+  useRpc,
+  type ExperimentalProviderModelPickerValue,
+} from "@get-bb/plugin-sdk/app";
+import { toast } from "sonner";
+import type { rpcContract } from "../contracts";
+import {
+  SECTION_ORDER,
+  VISIBLE_CATALOG,
+  type CatalogRow,
+} from "../ui-catalog";
+import { t, stateLabel, unappliedReason, setLocaleOverride, type I18nKey, type Locale } from "../../i18n";
+import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../components/ui/alert-dialog";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
+import { Slider } from "../../components/ui/slider";
+import { Switch } from "../../components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { EXTERNAL_OPS_BY_ACTION } from "../constants";
+import { ATTEMPT_STATES, RUN_STATES } from "../state-machine";
+
+type ScreenPayload = {
+  projectId: string;
+  hostId: string | null;
+  workspacePath: string | null;
+  values: Record<string, unknown>;
+  versions: Record<string, number>;
+  importSource: { completed: boolean; at: number | null; routingPath: string | null; nightPath: string | null };
+  runs: Array<{
+    id: string;
+    state: string;
+    kind: string;
+    created_at: number;
+    updated_at: number;
+    attempts: Array<{
+      id: string;
+      state: string;
+      attempt_no: number;
+      thread_id: string | null;
+      reason: string | null;
+      task_id: string;
+    }>;
+  }>;
+  unapplied: Array<{ key: string; reason: string }>;
+  lastSnapshotPath: string | null;
+  lastReceiptJson: string | null;
+  writerResultJson: string | null;
+  writerResultPatch: string | null;
+};
+
+const JEV_KEYS = new Set(["jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV"]);
+const WRITER_PROVIDER = "writer.provider";
+const WRITER_MODEL = "writer.model";
+const WRITER_EFFORT = "writer.reasoning_effort";
+const LANGUAGE_KEY = "ui.language";
+
+function fieldKey(id: string): I18nKey {
+  return `field_${id}` as I18nKey;
+}
+function reasonKey(id: string): I18nKey {
+  return `reason_${id}` as I18nKey;
+}
+function sectionKey(section: string): I18nKey {
+  return `section_${section}` as I18nKey;
+}
+
+function asBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (value === "1" || value === "on" || value === "true") return true;
+  if (value === "0" || value === "off" || value === "false" || value === "no") return false;
+  return fallback;
+}
+
+function FieldControl({
+  row,
+  value,
+  disabled,
+  onChange,
+}: {
+  row: CatalogRow;
+  value: unknown;
+  disabled: boolean;
+  onChange: (next: unknown) => void;
+}) {
+  const control = JEV_KEYS.has(row.storageKey) ? "switch" : row.control;
+  const label = t(fieldKey(row.id));
+  if (control === "switch") {
+    const checked = asBoolean(value, JEV_KEYS.has(row.storageKey) ? true : false);
+    return (
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(next) => onChange(JEV_KEYS.has(row.storageKey) ? (next ? "1" : "0") : next)}
+        aria-label={label}
+      />
+    );
+  }
+  if (control === "select") {
+    const options = row.options.length > 0 ? row.options : ["auto"];
+    const current = String(value ?? options[0] ?? "");
+    return (
+      <Select value={current} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option} value={option}>{option}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+  if (control === "slider" && row.min !== null && row.max !== null) {
+    const numeric = typeof value === "number" ? value : Number(value ?? row.min);
+    return (
+      <Slider
+        min={row.min}
+        max={row.max}
+        step={1}
+        disabled={disabled}
+        value={[Number.isFinite(numeric) ? numeric : row.min]}
+        onValueChange={(next) => onChange(next[0])}
+        aria-label={label}
+      />
+    );
+  }
+  return (
+    <Input
+      type={control === "number" ? "number" : "text"}
+      disabled={disabled}
+      value={value == null ? "" : String(value)}
+      onChange={(event) => onChange(control === "number" ? Number(event.target.value) : event.target.value)}
+      aria-label={label}
+    />
+  );
+}
+
+function StatusBadge({ status }: { status: CatalogRow["uiStatus"] }) {
+  if (status === "editable") return <Badge variant="secondary">{t("editableBadge")}</Badge>;
+  if (status === "gap") return <Badge variant="destructive">{t("gapBadge")}</Badge>;
+  return <Badge variant="outline">{t("readonlyBadge")}</Badge>;
+}
+
+function runTone(state: string): "default" | "secondary" | "destructive" | "outline" {
+  if (state === "accepted") return "default";
+  if (state === "blocked" || state === "provider_error" || state === "validation_failed") return "destructive";
+  if (state === "running" || state === "pending") return "secondary";
+  return "outline";
+}
+
+export function LanePilotPage() {
+  const rpc = useRpc<typeof rpcContract>();
+  const { projectId } = useBbContext();
+  const providers = useProviders();
+  const [tab, setTab] = useState("settings");
+  const [data, setData] = useState<ScreenPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingOp, setPendingOp] = useState<"install" | "connect" | "rollback" | null>(null);
+  const [snapshotPath, setSnapshotPath] = useState("");
+  const [resultPatch, setResultPatch] = useState<string | null>(null);
+  const [resultSource, setResultSource] = useState<string | null>(null);
+  const [locale, setLocale] = useState<Locale>(() => {
+    const lang = globalThis.document?.documentElement?.lang ?? "";
+    return lang.toLowerCase().startsWith("ru") ? "ru" : "en";
+  });
+
+  const applyLocale = (values: Record<string, unknown>) => {
+    const saved = values[LANGUAGE_KEY];
+    if (saved === "ru" || saved === "en") {
+      setLocaleOverride(saved);
+      if (globalThis.document) globalThis.document.documentElement.lang = saved;
+      setLocale(saved);
+      return;
+    }
+    setLocaleOverride(null);
+    const lang = globalThis.document?.documentElement?.lang ?? "";
+    setLocale(lang.toLowerCase().startsWith("ru") ? "ru" : "en");
+  };
+
+  const load = useCallback(async () => {
+    if (!projectId) return;
+    setError(null);
+    try {
+      const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
+      setData(next);
+      applyLocale(next.values);
+      if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
+      setResultSource(next.writerResultJson);
+      setResultPatch(next.writerResultPatch);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [projectId, rpc]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, CatalogRow[]>();
+    for (const section of SECTION_ORDER) map.set(section, []);
+    for (const row of VISIBLE_CATALOG) {
+      const section = JEV_KEYS.has(row.storageKey) ? "jev" : row.section;
+      const list = map.get(section) ?? [];
+      list.push(row);
+      map.set(section, list);
+    }
+    return SECTION_ORDER.filter((section) => (map.get(section) ?? []).length > 0)
+      .map((section) => ({ section, rows: map.get(section) ?? [] }));
+  }, []);
+
+  const save = async (row: CatalogRow, value: unknown) => {
+    if (!projectId || !data) return;
+    const expectedVersion = data.versions[row.storageKey] ?? 0;
+    const result = await rpc.call("save_setting", {
+      projectId,
+      key: row.storageKey,
+      value,
+      expectedVersion,
+    });
+    if (result.conflict) {
+      setConflict(t("casConflict"));
+      await load();
+      return;
+    }
+    setConflict(null);
+    const nextValues = { ...data.values, [row.storageKey]: result.value };
+    setData({
+      ...data,
+      values: nextValues,
+      versions: { ...data.versions, [row.storageKey]: result.version },
+    });
+    if (row.storageKey === LANGUAGE_KEY) applyLocale(nextValues);
+  };
+
+  const pickerValue: ExperimentalProviderModelPickerValue = {
+    providerId: String(data?.values[WRITER_PROVIDER] ?? ""),
+    model: String(data?.values[WRITER_MODEL] ?? ""),
+    reasoningLevel: (String(data?.values[WRITER_EFFORT] ?? "none") || "none") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+  };
+
+  const hostId = data?.hostId;
+  const routing = hostId ? { kind: "host" as const, hostId } : undefined;
+
+  const runStack = async (op: "detect" | "install" | "connect" | "rollback", confirm = false) => {
+    if (!projectId) return;
+    try {
+      if (op === "detect") await rpc.call("stack_detect", { projectId });
+      if (op === "install") await rpc.call("stack_install", { projectId, confirmExternalOps: confirm });
+      if (op === "connect") await rpc.call("stack_connect", { projectId, confirmExternalOps: confirm });
+      if (op === "rollback") await rpc.call("stack_rollback", { projectId, snapshotPath });
+      toast.success(t("toastOk"));
+      await load();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : t("toastError"));
+    }
+  };
+
+  if (!projectId) {
+    return <p className="p-4 text-sm text-muted-foreground">{t("emptyProject")}</p>;
+  }
+
+  return (
+    <div className="h-full overflow-auto p-4 md:p-5" data-locale={locale}>
+      <div className="mx-auto w-full max-w-5xl space-y-6">
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTitle>{t("loadError")}</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+        {conflict ? (
+          <Alert variant="destructive" data-testid="cas-conflict">
+            <AlertTitle>{t("casConflict")}</AlertTitle>
+            <AlertDescription>
+              <Button size="sm" variant="outline" onClick={() => void load()}>{t("reload")}</Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="settings" data-testid="tab-settings">{t("tabSettings")}</TabsTrigger>
+            <TabsTrigger value="monitor" data-testid="tab-monitor">{t("tabMonitor")}</TabsTrigger>
+            <TabsTrigger value="install" data-testid="tab-install">{t("tabInstall")}</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="settings" forceMount={true} className="space-y-6" hidden={tab !== "settings"} data-testid="settings-panel">
+            <p className="text-xs text-muted-foreground">{t("projectIsolation")}</p>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">{t("importSource")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1 text-xs text-muted-foreground">
+                {data?.importSource.completed ? (
+                  <>
+                    <p>{t("importRouting")}: {data.importSource.routingPath ?? "—"}</p>
+                    <p>{t("importNight")}: {data.importSource.nightPath ?? "—"}</p>
+                  </>
+                ) : <p>{t("importNone")}</p>}
+              </CardContent>
+            </Card>
+
+            <section className="space-y-2" data-testid="writer-picker">
+              <h2 className="text-sm font-medium">{t("writerPicker")}</h2>
+              {pickerValue.providerId || (providers.providers?.length ?? 0) > 0 ? (
+                <ProviderModelPicker
+                  value={pickerValue.providerId ? pickerValue : {
+                    providerId: providers.providers?.[0]?.id ?? "none",
+                    model: "",
+                    reasoningLevel: "none",
+                  }}
+                  routing={routing}
+                  onChange={(next) => {
+                    const providerRow = VISIBLE_CATALOG.find((row) => row.storageKey === WRITER_PROVIDER);
+                    const modelRow = VISIBLE_CATALOG.find((row) => row.storageKey === WRITER_MODEL);
+                    const effortRow = VISIBLE_CATALOG.find((row) => row.storageKey === WRITER_EFFORT);
+                    if (providerRow) void save(providerRow, next.providerId);
+                    if (modelRow) void save(modelRow, next.model);
+                    if (effortRow) void save(effortRow, next.reasoningLevel);
+                  }}
+                />
+              ) : null}
+            </section>
+
+            {grouped.map(({ section, rows }) => (
+              <section key={section} className="space-y-3">
+                <h2 className="text-sm font-medium">{t(sectionKey(section))}</h2>
+                <div className="space-y-3">
+                  {rows.map((row) => {
+                    const disabled = row.uiStatus !== "editable";
+                    const value = data?.values[row.storageKey];
+                    return (
+                      <div
+                        key={row.id}
+                        data-testid={`field-${row.id}`}
+                        data-ui-status={row.uiStatus}
+                        className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center"
+                      >
+                        <div className="space-y-1">
+                          <Label htmlFor={row.id} className="text-sm">{t(fieldKey(row.id))}</Label>
+                          <p className="text-xs text-muted-foreground">{row.area}</p>
+                          <div className="flex flex-wrap gap-2">
+                            <StatusBadge status={row.uiStatus} />
+                            {disabled ? <span className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</span> : null}
+                            <span className="text-xs text-muted-foreground">{t("casVersion")} {data?.versions[row.storageKey] ?? 0}</span>
+                          </div>
+                        </div>
+                        <FieldControl
+                          row={row}
+                          value={value}
+                          disabled={disabled}
+                          onChange={(next) => { if (!disabled) void save(row, next); }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </TabsContent>
+
+          <TabsContent value="monitor" forceMount={true} className="space-y-4" data-testid="run-monitor" hidden={tab !== "monitor"}>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => projectId && void rpc.call("resume_runs", { projectId }).then(load)}>
+                {t("resume")}
+              </Button>
+            </div>
+            {!data?.runs.length ? (
+              <p className="text-sm text-muted-foreground">{t("emptyRuns")}</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("runId")}</TableHead>
+                    <TableHead>{t("kind")}</TableHead>
+                    <TableHead>{t("state")}</TableHead>
+                    <TableHead>{t("attempt")}</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.runs.flatMap((run) => (run.attempts.length ? run.attempts : [{
+                    id: `${run.id}-none`, state: run.state, attempt_no: 0, thread_id: null, reason: null, task_id: "",
+                  }]).map((attempt) => (
+                    <TableRow key={attempt.id} data-testid={`attempt-${attempt.id}`}>
+                      <TableCell className="font-mono text-xs">{run.id}</TableCell>
+                      <TableCell>{run.kind}</TableCell>
+                      <TableCell>
+                        <Badge variant={runTone(attempt.state)}>{stateLabel(attempt.state)}</Badge>
+                      </TableCell>
+                      <TableCell>{attempt.attempt_no || "—"}</TableCell>
+                      <TableCell className="space-x-2">
+                        <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId: attempt.id }).then(load)}>
+                          {t("cancel")}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId: attempt.id }).then(load)}>
+                          {t("retry")}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )))}
+                </TableBody>
+              </Table>
+            )}
+            <div>
+              <h2 className="text-sm font-medium">{t("unapplied")}</h2>
+              {data?.unapplied.length ? (
+                <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground">
+                  {data.unapplied.map((item) => <li key={item.key}>{item.key}: {unappliedReason(item.reason)}</li>)}
+                </ul>
+              ) : <p className="text-xs text-muted-foreground">{t("noUnapplied")}</p>}
+            </div>
+            {(resultPatch || resultSource) ? (
+              <div className="space-y-2" data-testid="writer-result">
+                <h2 className="text-sm font-medium">{t("result")}</h2>
+                {resultPatch ? <Diff patch={resultPatch} path="writer-output.txt" view="unified" /> : null}
+                {resultSource ? <SourceCode content={resultSource} path="acceptance.json" overflow="scroll" /> : null}
+                {resultSource ? <span className="sr-only">{resultSource}</span> : null}
+              </div>
+            ) : null}
+            <p className="sr-only">{[...RUN_STATES, ...ATTEMPT_STATES].join(" ")}</p>
+          </TabsContent>
+
+          <TabsContent value="install" forceMount={true} className="space-y-3" hidden={tab !== "install"} data-testid="install-panel">
+            {!data?.hostId ? <p className="text-sm text-muted-foreground">{t("hostMissing")}</p> : null}
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => void runStack("detect")}>{t("detect")}</Button>
+              <Button size="sm" data-testid="install-stack" onClick={() => { setPendingOp("install"); setConfirmOpen(true); }}>{t("install")}</Button>
+              <Button size="sm" variant="outline" onClick={() => { setPendingOp("connect"); setConfirmOpen(true); }}>{t("connectOpencode")}</Button>
+              <Button size="sm" variant="destructive" onClick={() => { setPendingOp("rollback"); setConfirmOpen(true); }}>{t("rollback")}</Button>
+            </div>
+            <div className="space-y-1">
+              <Label>{t("snapshotPath")}</Label>
+              <Input value={snapshotPath} onChange={(event) => setSnapshotPath(event.target.value)} />
+            </div>
+            {data?.lastReceiptJson ? (
+              <div className="space-y-2" data-testid="install-receipt">
+                <h2 className="text-sm font-medium">{t("installReceipt")}</h2>
+                <SourceCode content={data.lastReceiptJson} path="install-receipt.json" overflow="scroll" />
+                <span className="sr-only">{data.lastReceiptJson}</span>
+              </div>
+            ) : null}
+          </TabsContent>
+        </Tabs>
+
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent
+            data-testid="external-ops-dialog"
+            className="left-4 right-4 top-1/2 w-auto max-w-none translate-x-0 -translate-y-1/2 max-h-[min(80vh,100dvh)] overflow-y-auto overflow-x-hidden p-4"
+          >
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-wrap break-words">{t("confirmTitle")}</AlertDialogTitle>
+              <AlertDialogDescription className="max-w-full overflow-x-hidden text-left text-wrap break-words">
+                {t("confirmList")}
+                {pendingOp === "install" ? (
+                  <ul className="mt-2 list-disc pl-4 text-left">
+                    {EXTERNAL_OPS_BY_ACTION.install.map((op) => (
+                      <li key={op} className="break-all">{op}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {pendingOp === "connect" ? (
+                  <p className="mt-2 break-words">{t("confirmConnectOps")}</p>
+                ) : null}
+                {pendingOp === "rollback" ? (
+                  <p className="mt-2 break-words">{t("confirmRollbackOps")}</p>
+                ) : null}
+                <span className="mt-2 block break-words">{t("confirmBody")}</span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("confirmCancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const op = pendingOp;
+                  setConfirmOpen(false);
+                  if (op) void runStack(op, true);
+                }}
+              >
+                {t("confirmContinue")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </div>
+  );
+}

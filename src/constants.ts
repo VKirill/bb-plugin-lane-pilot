@@ -17,6 +17,12 @@ export const EXTERNAL_OPS = [
   "claude plugin uninstall fast-jev-compaction@*",
 ] as const;
 
+export const EXTERNAL_OPS_BY_ACTION = {
+  install: EXTERNAL_OPS,
+  connect: [] as readonly string[],
+  rollback: [] as readonly string[],
+} as const;
+
 export const EXTERNAL_OPS_WARNING =
   "откат не гарантированно вернёт систему в исходное состояние — будет зафиксировано состояние до и после, не восстановление";
 

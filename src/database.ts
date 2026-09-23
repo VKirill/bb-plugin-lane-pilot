@@ -286,6 +286,67 @@ export function setAttemptDirtBefore(db: LanePilotDatabase, attemptId: string, f
     .run(JSON.stringify(files), Date.now(), attemptId);
 }
 
+export function listSettingRows(db: LanePilotDatabase, projectId: string): Array<{
+  key:string; value:unknown; version:number; updated_at:number;
+}> {
+  return (db.prepare(`SELECT key,value,version,updated_at FROM lane_pilot_project_settings
+    WHERE project_id=? AND binding_id=''`).all(projectId) as Array<{
+    key:string; value:string; version:number; updated_at:number;
+  }>).map((row) => {
+    let value: unknown = row.value;
+    try { value = JSON.parse(row.value); } catch { /* keep text */ }
+    return { key:row.key, value, version:row.version, updated_at:row.updated_at };
+  });
+}
+
+export function casUpsertSetting(
+  db: LanePilotDatabase,
+  args: { projectId:string; key:string; value:unknown; expectedVersion:number },
+): { ok:true; version:number } | { ok:false; conflict:true; version:number; value:unknown } {
+  const current = db.prepare(`SELECT value,version FROM lane_pilot_project_settings
+    WHERE project_id=? AND binding_id='' AND key=?`).get(args.projectId, args.key) as
+    {value:string; version:number}|undefined;
+  if (args.expectedVersion === 0) {
+    if (current) {
+      let value: unknown = current.value;
+      try { value = JSON.parse(current.value); } catch { /* keep */ }
+      return { ok:false, conflict:true, version:current.version, value };
+    }
+    db.prepare(`INSERT INTO lane_pilot_project_settings
+      (project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,1,?)`)
+      .run(args.projectId, "", args.key, JSON.stringify(args.value), Date.now());
+    return { ok:true, version:1 };
+  }
+  if (!casSetting(db, args)) {
+    if (!current) return { ok:false, conflict:true, version:0, value:null };
+    let value: unknown = current.value;
+    try { value = JSON.parse(current.value); } catch { /* keep */ }
+    return { ok:false, conflict:true, version:current.version, value };
+  }
+  const next = db.prepare(`SELECT version FROM lane_pilot_project_settings
+    WHERE project_id=? AND binding_id='' AND key=?`).get(args.projectId, args.key) as {version:number};
+  return { ok:true, version:next.version };
+}
+
+export function listRunsWithAttempts(db: LanePilotDatabase, projectId: string): Array<{
+  id:string; state:string; kind:string; created_at:number; updated_at:number;
+  attempts: Array<{
+    id:string; state:string; attempt_no:number; thread_id:string|null; reason:string|null; task_id:string;
+  }>;
+}> {
+  const runs = db.prepare(`SELECT id,state,kind,created_at,updated_at FROM lane_pilot_run
+    WHERE project_id=? ORDER BY created_at DESC`).all(projectId) as Array<{
+    id:string; state:string; kind:string; created_at:number; updated_at:number;
+  }>;
+  return runs.map((run) => ({
+    ...run,
+    attempts: db.prepare(`SELECT id,state,attempt_no,thread_id,reason,task_id FROM lane_pilot_attempt
+      WHERE run_id=? ORDER BY attempt_no`).all(run.id) as Array<{
+      id:string; state:string; attempt_no:number; thread_id:string|null; reason:string|null; task_id:string;
+    }>,
+  }));
+}
+
 export function getRun(db: LanePilotDatabase, runId: string): {
   id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string;
 }|undefined {

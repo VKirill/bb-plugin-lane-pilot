@@ -181,4 +181,86 @@ export const rpcContract = defineRpcContract({
     input: z.object({ projectId: z.string().min(1), sourceThreadId: z.string().nullable() }).strict(),
     output: z.object({ threadId: z.string().min(1), runId: z.string().min(1) }).strict(),
   },
+  get_screen: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.object({
+      projectId: z.string(),
+      hostId: z.string().nullable(),
+      workspacePath: z.string().nullable(),
+      values: z.record(z.string(), z.unknown()),
+      versions: z.record(z.string(), z.number()),
+      importSource: z.object({
+        completed: z.boolean(),
+        at: z.number().nullable(),
+        routingPath: z.string().nullable(),
+        nightPath: z.string().nullable(),
+      }).strict(),
+      runs: z.array(z.object({
+        id: z.string(),
+        state: z.string(),
+        kind: z.string(),
+        created_at: z.number(),
+        updated_at: z.number(),
+        attempts: z.array(z.object({
+          id: z.string(),
+          state: z.string(),
+          attempt_no: z.number(),
+          thread_id: z.string().nullable(),
+          reason: z.string().nullable(),
+          task_id: z.string(),
+        }).strict()),
+      }).strict()),
+      unapplied: z.array(z.object({ key: z.string(), reason: z.string() }).strict()),
+      lastSnapshotPath: z.string().nullable(),
+      lastReceiptJson: z.string().nullable(),
+      writerResultJson: z.string().nullable(),
+      writerResultPatch: z.string().nullable(),
+    }).strict(),
+  },
+  save_setting: {
+    input: z.object({
+      projectId: z.string().min(1),
+      key: z.string().min(1),
+      value: z.unknown(),
+      expectedVersion: z.number().int().min(0),
+    }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      conflict: z.boolean(),
+      version: z.number().int(),
+      value: z.unknown(),
+    }).strict(),
+  },
+  cancel_attempt: {
+    input: z.object({ attemptId: z.string().min(1) }).strict(),
+    output: z.object({ ok: z.boolean(), state: z.string(), reason: z.string().nullable() }).strict(),
+  },
+  retry_attempt: {
+    input: z.object({ attemptId: z.string().min(1) }).strict(),
+    output: z.object({ ok: z.boolean(), state: z.string(), attemptId: z.string(), reason: z.string().nullable() }).strict(),
+  },
+  resume_runs: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.object({
+      resumed: z.array(z.string()),
+      skipped: z.array(z.string()),
+      finished: z.array(z.string()),
+    }).strict(),
+  },
+  stack_detect: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.unknown(),
+  },
+  stack_install: {
+    input: z.object({ projectId: z.string().min(1), confirmExternalOps: z.boolean() }).strict(),
+    output: z.unknown(),
+  },
+  stack_connect: {
+    input: z.object({ projectId: z.string().min(1), confirmExternalOps: z.boolean() }).strict(),
+    output: z.unknown(),
+  },
+  stack_rollback: {
+    input: z.object({ projectId: z.string().min(1), snapshotPath: z.string().min(1) }).strict(),
+    output: z.unknown(),
+  },
 });

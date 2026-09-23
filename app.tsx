@@ -5,8 +5,9 @@ import {
   useBbNavigate,
   useRpc,
 } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "./server";
-import { currentStrings } from "./i18n";
+import type { rpcContract } from "./src/contracts";
+import { t } from "./i18n";
+import { LanePilotPage } from "./src/ui/page";
 
 function EnableLanePilotAction() {
   const rpc = useRpc<typeof rpcContract>();
@@ -14,7 +15,6 @@ function EnableLanePilotAction() {
   const navigate = useBbNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const t = currentStrings();
   const activate = async () => {
     if (!projectId || pending) return;
     setPending(true);
@@ -36,16 +36,23 @@ function EnableLanePilotAction() {
       type="button"
       onClick={activate}
       disabled={!projectId || pending}
-      aria-label={pending ? t.enabling : t.enable}
-      title={error ?? t.enable}
+      aria-label={pending ? t("enabling") : t("enable")}
+      title={error ?? t("enable")}
       className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2 text-xs font-medium text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {pending ? t.enabling : error ? t.failed : t.enable}
+      {pending ? t("enabling") : error ? t("failed") : t("enable")}
     </button>
   );
 }
 
 export default definePluginApp((app) => {
+  app.slots.navPanel({
+    id: "lane-pilot",
+    title: t("panelTitle"),
+    icon: "Workflow",
+    path: "lane-pilot",
+    component: LanePilotPage,
+  });
   app.composer.customize({
     id: "lane-pilot-activation",
     scopes: ["thread", "new-thread"],

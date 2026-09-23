@@ -7,8 +7,11 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM"],
     "types": ["node", "vitest/globals"],
+    "paths": {
+      "@/*": ["./*"]
+    },
     "noEmit": true,
     "skipLibCheck": false
   },
-  "include": ["server.ts", "host.ts", "app.tsx", "i18n.ts", "src", "tests"]
+  "include": ["server.ts", "host.ts", "app.tsx", "i18n.ts", "src", "tests", "components", "lib"]
 }
