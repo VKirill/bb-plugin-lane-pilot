@@ -180,6 +180,14 @@ export const hostContract = defineRpcContract({
 });
 
 export const rpcContract = defineRpcContract({
+  list_projects: {
+    input: z.object({}).strict(),
+    output: z.object({ projects: z.array(z.object({ id: z.string(), name: z.string() }).strict()) }).strict(),
+  },
+  finish_run: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.object({ projectId: z.string(), finishedRunIds: z.array(z.string()), closed: z.boolean() }).strict(),
+  },
   activate_pm: {
     input: z.object({ projectId: z.string().min(1), sourceThreadId: z.string().nullable() }).strict(),
     output: z.object({ threadId: z.string().min(1), runId: z.string().min(1) }).strict(),

@@ -53,6 +53,7 @@ export const migrations = [
   `ALTER TABLE lane_pilot_run ADD COLUMN kind TEXT NOT NULL DEFAULT 'bb'`,
   `ALTER TABLE lane_pilot_attempt ADD COLUMN attempt_no INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE lane_pilot_attempt ADD COLUMN dirt_before_json TEXT NOT NULL DEFAULT '[]'`,
+  `ALTER TABLE lane_pilot_run ADD COLUMN closed_at INTEGER`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -130,6 +131,20 @@ export function createRun(db: LanePilotDatabase, id: string, projectId: string, 
 
 export function setRunState(db: LanePilotDatabase, runId: string, state: string): void {
   db.prepare("UPDATE lane_pilot_run SET state=?, updated_at=? WHERE id=?").run(state, Date.now(), runId);
+}
+
+export function closeRun(db: LanePilotDatabase, runId: string): boolean {
+  return db.transaction(() => {
+    const run = db.prepare("SELECT state,closed_at FROM lane_pilot_run WHERE id=?").get(runId) as
+      {state:string;closed_at:number|null}|undefined;
+    if (!run) throw new Error("run does not exist");
+    if (run.closed_at) return true;
+    const open = db.prepare("SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') LIMIT 1").get(runId);
+    if (open) return false;
+    db.prepare("UPDATE lane_pilot_run SET closed_at=?,updated_at=? WHERE id=? AND closed_at IS NULL")
+      .run(Date.now(), Date.now(), runId);
+    return true;
+  }).immediate();
 }
 
 export function createTask(
@@ -423,14 +438,14 @@ export function casUpsertSettings(
 }
 
 export function listRunsWithAttempts(db: LanePilotDatabase, projectId: string): Array<{
-  id:string; state:string; kind:string; created_at:number; updated_at:number;
+  id:string; state:string; kind:string; created_at:number; updated_at:number; closed_at:number|null; pm_thread_id:string|null;
   attempts: Array<{
     id:string; state:string; attempt_no:number; thread_id:string|null; reason:string|null; task_id:string;
   }>;
 }> {
-  const runs = db.prepare(`SELECT id,state,kind,created_at,updated_at FROM lane_pilot_run
+  const runs = db.prepare(`SELECT id,state,kind,created_at,updated_at,closed_at,pm_thread_id FROM lane_pilot_run
     WHERE project_id=? ORDER BY created_at DESC`).all(projectId) as Array<{
-    id:string; state:string; kind:string; created_at:number; updated_at:number;
+    id:string; state:string; kind:string; created_at:number; updated_at:number; closed_at:number|null; pm_thread_id:string|null;
   }>;
   return runs.map((run) => ({
     ...run,
@@ -442,8 +457,8 @@ export function listRunsWithAttempts(db: LanePilotDatabase, projectId: string): 
 }
 
 export function getRun(db: LanePilotDatabase, runId: string): {
-  id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string;
+  id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null;
 }|undefined {
-  return db.prepare("SELECT id,project_id,pm_thread_id,state,kind FROM lane_pilot_run WHERE id=?").get(runId) as
-    {id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string}|undefined;
+  return db.prepare("SELECT id,project_id,pm_thread_id,state,kind,closed_at FROM lane_pilot_run WHERE id=?").get(runId) as
+    {id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null}|undefined;
 }

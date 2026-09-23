@@ -16,7 +16,7 @@ import {
   WRITER_EFFORT_CHOICES_BY_PROVIDER,
   type CatalogRow,
 } from "../ui-catalog";
-import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, type I18nKey, type Locale } from "../../i18n";
+import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, type I18nKey, type Locale } from "../../i18n";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import {
   AlertDialog,
@@ -192,9 +192,15 @@ function runTone(state: string): "default" | "secondary" | "destructive" | "outl
   return "outline";
 }
 
-export function LanePilotPage() {
+export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const rpc = useRpc<typeof rpcContract>();
-  const { projectId } = useBbContext();
+  const { projectId: routeProjectId } = useBbContext();
+  const [projectChoice, setProjectChoice] = useState("");
+  const projectId = routeProjectId ?? (subPath || projectChoice || null);
+  const [projects, setProjects] = useState<Array<{ id:string; name:string }>>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [projectListError, setProjectListError] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const providers = useProviders();
   const [tab, setTab] = useState("settings");
   const [data, setData] = useState<ScreenPayload | null>(null);
@@ -211,6 +217,30 @@ export function LanePilotPage() {
   });
   const bbLocaleRef = useRef<Locale>(locale);
 
+  useEffect(() => {
+    if (projectId) return;
+    let current = true;
+    void rpc.call("list_projects", {}).then((result) => {
+      if (current) { setProjects(result.projects); setProjectsLoaded(true); }
+    }).catch(() => { if (current) setProjectListError(true); });
+    return () => { current = false; };
+  }, [projectId, rpc]);
+
+  useEffect(() => {
+    const refresh = () => {
+      const next = localeFromSources(null, globalThis.document?.documentElement?.lang, globalThis.navigator?.language);
+      bbLocaleRef.current = next;
+      if (data?.values[LANGUAGE_KEY] !== "ru" && data?.values[LANGUAGE_KEY] !== "en") {
+        setLocaleOverride(null);
+        setLocale(next);
+      }
+    };
+    const observer = typeof MutationObserver === "undefined" || !globalThis.document ? null : new MutationObserver(refresh);
+    observer?.observe(document.documentElement, { attributes:true, attributeFilter:["lang"] });
+    globalThis.addEventListener?.("languagechange", refresh);
+    return () => { observer?.disconnect(); globalThis.removeEventListener?.("languagechange", refresh); };
+  }, [data?.values]);
+
   const applyLocale = (values: Record<string, unknown>) => {
     const saved = values[LANGUAGE_KEY];
     if (saved === "ru" || saved === "en") {
@@ -225,6 +255,7 @@ export function LanePilotPage() {
   const load = useCallback(async () => {
     if (!projectId) return;
     setError(null);
+    setData(null);
     try {
       const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
       setData(next);
@@ -349,8 +380,31 @@ export function LanePilotPage() {
     }
   };
 
+  const finishRuns = async () => {
+    if (!projectId || finishing) return;
+    setFinishing(true);
+    try {
+      const result = await rpc.call("finish_run", { projectId });
+      if (!result.closed) toast.error(t("finishRunBlocked"));
+      else toast.success(t("runClosed"));
+      await load();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : t("toastError"));
+    } finally { setFinishing(false); }
+  };
+
   if (!projectId) {
-    return <p className="p-4 text-sm text-muted-foreground">{t("emptyProject")}</p>;
+    return <div className="space-y-3 p-4" data-testid="project-picker">
+      <p className="text-sm text-muted-foreground">{t("selectProject")}</p>
+      {projectListError ? <p role="alert" className="text-sm text-destructive">{t("projectListError")}</p> : null}
+      {!projectsLoaded && !projectListError ? <p className="text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
+      {projectsLoaded && projects.length === 0 && !projectListError ? <p className="text-sm text-muted-foreground">{t("noProjects")}</p> : null}
+      <select aria-label={t("selectProject")} value={projectChoice} onChange={(event) => setProjectChoice(event.target.value)}
+        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground">
+        <option value="">{t("selectProject")}</option>
+        {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+      </select>
+    </div>;
   }
 
   return (
@@ -466,6 +520,9 @@ export function LanePilotPage() {
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => projectId && void rpc.call("resume_runs", { projectId }).then(load)}>
                 {t("resume")}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void finishRuns()} disabled={finishing}>
+                {finishing ? t("finishRunBusy") : t("finishRun")}
               </Button>
             </div>
             {!data?.runs.length ? (

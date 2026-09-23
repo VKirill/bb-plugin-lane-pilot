@@ -21,6 +21,7 @@ import {
   countAttempts,
   createAttempt,
   createRun,
+  closeRun,
   createTask,
   getActivation,
   getAttempt,
@@ -39,6 +40,7 @@ import {
   casUpsertSetting,
   casUpsertSettings,
   openDatabase,
+  releaseActivation,
   savePrototypeConfig,
   saveProjectSetting,
   setRunState,
@@ -854,6 +856,33 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   bb.rpc.register(rpcContract, {
+    list_projects: async () => {
+      const projects = await bb.sdk.projects.list({ includePersonal: true });
+      return { projects: projects.map(({ id, name }) => ({ id, name })) };
+    },
+    finish_run: async ({ projectId }) => {
+      const runs = listRunsWithAttempts(db, projectId).filter((run) => !run.closed_at);
+      const finishedRunIds: string[] = [];
+      for (const run of runs) {
+        const open = listOpenAttempts(db).filter((attempt) => attempt.run_id === run.id);
+        if (open.length) return { projectId, finishedRunIds, closed: false };
+        const thread = run.pm_thread_id;
+        if (thread) {
+          await bb.sdk.threads.stop({ threadId: thread }).catch(() => undefined);
+          const info = await bb.sdk.threads.get({ threadId: thread }).catch(() => null);
+          const status = stringAt(info, "status");
+          const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{ id: string }>> }).listRunning;
+          const running = listRunning ? await listRunning({}) : [];
+          if (running.some((item) => item.id === thread) || status === "active" || status === "running") {
+            throw new Error(`PM thread is still running (${status ?? "unknown"})`);
+          }
+        }
+        if (!closeRun(db, run.id)) return { projectId, finishedRunIds, closed: false };
+        finishedRunIds.push(run.id);
+      }
+      releaseActivation(db, projectId);
+      return { projectId, finishedRunIds, closed: true };
+    },
     activate_pm: ({ projectId, sourceThreadId }) => {
       if (!sourceThreadId) throw new Error("Open an ordinary thread before enabling Lane Pilot");
       return activate(projectId, sourceThreadId);
@@ -894,7 +923,11 @@ export default async function plugin(bb: BbPluginApi) {
       const listed = listRunsWithAttempts(db, projectId).map((run) => {
         const runReceipt = asJsonText(values[cliReceiptRunKey(run.id)]);
         return {
-          ...run,
+          id:run.id,
+          state: run.closed_at ? "closed" : run.state,
+          kind:run.kind,
+          created_at:run.created_at,
+          updated_at:run.updated_at,
           cliReceiptJson: runReceipt,
           attempts: run.attempts.map((attempt) => ({
             ...attempt,
@@ -1074,6 +1107,8 @@ export default async function plugin(bb: BbPluginApi) {
     "bb lane-pilot configure <json>",
     "bb lane-pilot activate <project-id> <ordinary-source-thread-id>",
     "bb lane-pilot state <project-id>",
+    "bb lane-pilot finish <project-id>",
+    "bb lane-pilot deactivate <project-id>",
     "bb lane-pilot cancel <attempt-id>",
     "bb lane-pilot recover <attempt-id>",
     "bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>",
@@ -1098,6 +1133,8 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"configure", summary:"Save prototype project settings", usage:"bb lane-pilot configure '<json>'" },
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
+      { name:"finish", summary:"Close runs with no live attempts and release project activation", usage:"bb lane-pilot finish <project-id>" },
+      { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id>" },
       { name:"cancel", summary:"Stop a writer and persist canceled after observing idle", usage:"bb lane-pilot cancel <attempt-id>" },
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
@@ -1128,6 +1165,30 @@ export default async function plugin(bb: BbPluginApi) {
         }
         if (command === "state" && args.length === 1) {
           return { exitCode:0, stdout:JSON.stringify(inspectState(db, args[0]!), null, 2) };
+        }
+        if ((command === "finish" || command === "deactivate") && args.length === 1) {
+          const projectId = args[0]!;
+          const runs = listRunsWithAttempts(db, projectId).filter((run) => !run.closed_at);
+          const finishedRunIds: string[] = [];
+          for (const run of runs) {
+            if (listOpenAttempts(db).some((attempt) => attempt.run_id === run.id)) {
+              return { exitCode:1, stdout:JSON.stringify({ projectId, finishedRunIds, closed:false, reason:"running attempts remain" }) };
+            }
+            if (run.pm_thread_id) {
+              await bb.sdk.threads.stop({ threadId:run.pm_thread_id }).catch(() => undefined);
+              const info = await bb.sdk.threads.get({ threadId:run.pm_thread_id }).catch(() => null);
+              const status = stringAt(info, "status");
+              const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{id:string}>> }).listRunning;
+              const running = listRunning ? await listRunning({}) : [];
+              if (running.some((thread) => thread.id === run.pm_thread_id) || status === "active" || status === "running") {
+                throw new Error(`PM thread is still running (${status ?? "unknown"})`);
+              }
+            }
+            if (!closeRun(db, run.id)) return { exitCode:1, stdout:JSON.stringify({ projectId, finishedRunIds, closed:false }) };
+            finishedRunIds.push(run.id);
+          }
+          releaseActivation(db, projectId);
+          return { exitCode:0, stdout:JSON.stringify({ projectId, finishedRunIds, closed:true }) };
         }
         if (command === "cancel" && args.length === 1) {
           const attempt = getAttempt(db, args[0]!);

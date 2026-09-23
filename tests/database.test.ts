@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { casSetting, importSettingsOnce, openDatabase } from "../src/database";
+import { casSetting, closeRun, createAttempt, createRun, createTask, importSettingsOnce, openDatabase } from "../src/database";
 
 describe("section 9 storage.database DDL", () => {
   it("covers DDL, PK isolation, CAS and project isolation", async () => {
@@ -25,6 +25,14 @@ describe("section 9 storage.database DDL", () => {
     };
     expect(importSettingsOnce(db, "A", payload).imported).toBe(true);
     expect(importSettingsOnce(db, "A", payload).imported).toBe(false);
+    createRun(db, "run-close", "A");
+    expect(closeRun(db, "run-close")).toBe(true);
+    expect(closeRun(db, "run-close")).toBe(true);
+    createRun(db, "run-open", "A");
+    createTask(db, { id:"task-open", runId:"run-open", kind:"bb", contract:{} });
+    createAttempt(db, { id:"attempt-open", runId:"run-open", taskId:"task-open" });
+    expect(closeRun(db, "run-open")).toBe(false);
+    expect((db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id='run-open'").get() as {closed_at:number|null}).closed_at).toBeNull();
     await harness.lifecycle.dispose();
   });
 });

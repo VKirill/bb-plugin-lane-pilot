@@ -4,6 +4,15 @@ import { fieldEn, fieldRu } from "./src/i18n-fields";
 const chromeEn = {
   panelTitle: "Lane Pilot",
   enable: "Enable Lane Pilot",
+  openSettings: "Lane Pilot settings",
+  selectProject: "Choose a project",
+  loadingProjects: "Loading projects…",
+  noProjects: "No projects are available.",
+  projectListError: "Could not load projects.",
+  finishRun: "Finish PM run",
+  finishRunBusy: "Finishing…",
+  finishRunBlocked: "A writer attempt is still running. Stop or finish it first.",
+  runClosed: "Closed",
   enabling: "Starting Lane Pilot…",
   failed: "Lane Pilot could not start",
   alreadyActive: "Lane Pilot is already active in this project",
@@ -97,11 +106,21 @@ const chromeEn = {
   state_canceled: "canceled",
   state_accepted: "accepted",
   state_blocked: "blocked",
+  state_closed: "closed",
 };
 
 const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   panelTitle: "Lane Pilot",
   enable: "Включить Lane Pilot",
+  openSettings: "Настройки Lane Pilot",
+  selectProject: "Выберите проект",
+  loadingProjects: "Загружаю проекты…",
+  noProjects: "Нет доступных проектов.",
+  projectListError: "Не удалось загрузить проекты.",
+  finishRun: "Завершить PM-запуск",
+  finishRunBusy: "Завершение…",
+  finishRunBlocked: "Запуск писателя ещё выполняется. Сначала остановите или завершите его.",
+  runClosed: "Закрыт",
   enabling: "Lane Pilot запускается…",
   failed: "Не удалось запустить Lane Pilot",
   alreadyActive: "Lane Pilot уже активен в этом проекте",
@@ -195,6 +214,7 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   state_canceled: "отменено",
   state_accepted: "принято",
   state_blocked: "заблокировано",
+  state_closed: "закрыт",
 };
 
 export const en = { ...chromeEn, ...fieldEn };
@@ -209,10 +229,14 @@ export function setLocaleOverride(next: Locale | null): void {
   localeOverride = next;
 }
 
+export function localeFromSources(bbUiLanguage?: string | null, documentLanguage?: string | null, navigatorLanguage?: string | null): Locale {
+  const value = bbUiLanguage || documentLanguage || navigatorLanguage || "";
+  return value.toLowerCase().startsWith("ru") ? "ru" : "en";
+}
+
 export function detectLocale(): Locale {
   if (localeOverride) return localeOverride;
-  const lang = globalThis.document?.documentElement?.lang ?? "";
-  return lang.toLowerCase().startsWith("ru") ? "ru" : "en";
+  return localeFromSources(null, globalThis.document?.documentElement?.lang, globalThis.navigator?.language);
 }
 
 export function t(key: I18nKey): string {

@@ -8,6 +8,14 @@ import {
 import type { rpcContract } from "./src/contracts";
 import { t } from "./i18n";
 import { LanePilotPage } from "./src/ui/page";
+import type { PluginThreadHeaderActionProps } from "@get-bb/plugin-sdk/app";
+
+function OpenLanePilotSettings({ projectId }: PluginThreadHeaderActionProps) {
+  const navigate = useBbNavigate();
+  return <button type="button" onClick={() => navigate.toPluginPanel("lane-pilot", { subPath: projectId })}
+    title={t("openSettings")} aria-label={t("openSettings")}
+    className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2 text-xs text-foreground hover:bg-accent">{t("openSettings")}</button>;
+}
 
 function EnableLanePilotAction() {
   const rpc = useRpc<typeof rpcContract>();
@@ -51,8 +59,9 @@ export default definePluginApp((app) => {
     title: t("panelTitle"),
     icon: "Workflow",
     path: "lane-pilot",
-    component: LanePilotPage,
+    component: ({ subPath }) => <LanePilotPage subPath={subPath} />,
   });
+  app.slots.experimental_threadHeaderAction({ id: "lane-pilot-settings", title: t("panelTitle"), component: OpenLanePilotSettings });
   app.composer.customize({
     id: "lane-pilot-activation",
     scopes: ["thread", "new-thread"],
