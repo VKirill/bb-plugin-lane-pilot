@@ -1,3 +1,4 @@
+import { UNAPPLIED_REASON } from "./src/channels";
 import { fieldEn, fieldRu } from "./src/i18n-fields";
 
 const chromeEn = {
@@ -66,6 +67,16 @@ const chromeEn = {
   confirmConnectOps: "Only OpenCode JSONC plugin list will be patched. install.sh commands are not run.",
   confirmRollbackOps: "Only snapshot files will be restored. install.sh commands are not repeated.",
   unappliedNoChannel: "no proven runtime channel",
+  unappliedNoConsumer: "stored key has no runtime consumer",
+  unappliedInstallNotCli: "INSTALL-ENV applies on install.sh/host-worker, not this CLI binary",
+  unappliedNotValid: "{channel} flag {flag} is not valid on {target}",
+  unappliedPlanCritiqueMode: "plan-critique argparse has no --mode; task-v2 has no such field (E1)",
+  unappliedPlanCritiqueEnabled: "plan-critique argparse has no --enabled flag",
+  unappliedPlanCritiqueProvider: "plan-critique argparse has no --provider",
+  unappliedPlanCritiqueModel: "plan-critique argparse has no --model",
+  unappliedNightReviewModel: "night-shift has --provider but no --model",
+  unappliedNightReviewEffort: "night-shift has no --reasoning-effort",
+  cliReceipt: "CLI receipt",
   state_pending: "pending",
   state_queued: "queued",
   state_spawn_requested: "spawn requested",
@@ -148,6 +159,16 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   confirmConnectOps: "Будет изменён только список плагинов в OpenCode JSONC. Команды install.sh не запускаются.",
   confirmRollbackOps: "Будут восстановлены только файлы снимка. Команды install.sh повторно не выполняются.",
   unappliedNoChannel: "нет доказанного канала runtime",
+  unappliedNoConsumer: "сохранённый ключ не имеет потребителя runtime",
+  unappliedInstallNotCli: "INSTALL-ENV применяется в install.sh/host-worker, не в этом CLI",
+  unappliedNotValid: "флаг {channel} {flag} недопустим для {target}",
+  unappliedPlanCritiqueMode: "у plan-critique нет argparse --mode; в task-v2 такого поля нет (E1)",
+  unappliedPlanCritiqueEnabled: "у plan-critique нет флага --enabled",
+  unappliedPlanCritiqueProvider: "у plan-critique нет argparse --provider",
+  unappliedPlanCritiqueModel: "у plan-critique нет argparse --model",
+  unappliedNightReviewModel: "у night-shift есть --provider, но нет --model",
+  unappliedNightReviewEffort: "у night-shift нет --reasoning-effort",
+  cliReceipt: "Квитанция CLI",
   state_pending: "ожидание",
   state_queued: "в очереди",
   state_spawn_requested: "запрошен запуск",
@@ -192,7 +213,26 @@ export function stateLabel(state: string): string {
 }
 
 export function unappliedReason(reason: string): string {
-  if (reason === "no proven runtime channel") return t("unappliedNoChannel");
+  const exact: Record<string, I18nKey> = {
+    [UNAPPLIED_REASON.noChannel]: "unappliedNoChannel",
+    [UNAPPLIED_REASON.noConsumer]: "unappliedNoConsumer",
+    [UNAPPLIED_REASON.installNotCli]: "unappliedInstallNotCli",
+    [UNAPPLIED_REASON.planCritiqueMode]: "unappliedPlanCritiqueMode",
+    [UNAPPLIED_REASON.planCritiqueEnabled]: "unappliedPlanCritiqueEnabled",
+    [UNAPPLIED_REASON.planCritiqueProvider]: "unappliedPlanCritiqueProvider",
+    [UNAPPLIED_REASON.planCritiqueModel]: "unappliedPlanCritiqueModel",
+    [UNAPPLIED_REASON.nightReviewModel]: "unappliedNightReviewModel",
+    [UNAPPLIED_REASON.nightReviewEffort]: "unappliedNightReviewEffort",
+  };
+  const key = exact[reason];
+  if (key) return t(key);
+  const invalid = /^(W-DIRECT|OPS-DIRECT|ENV-PASSTHROUGH|INSTALL-ENV) flag (.+) is not valid on (.+)$/.exec(reason);
+  if (invalid) {
+    return t("unappliedNotValid")
+      .replace("{channel}", invalid[1] ?? "")
+      .replace("{flag}", invalid[2] ?? "")
+      .replace("{target}", invalid[3] ?? "");
+  }
   return reason;
 }
 

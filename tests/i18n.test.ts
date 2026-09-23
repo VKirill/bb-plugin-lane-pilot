@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { en, ru, setLocaleOverride, type I18nKey } from "../i18n";
+import { UNAPPLIED_REASON, SETTING_CATALOG, unappliedNotValidReason } from "../src/channels";
+import { en, ru, setLocaleOverride, unappliedReason, type I18nKey } from "../i18n";
 
 describe("i18n dictionaries", () => {
   it("has the same keys in English and Russian with no empty strings", () => {
@@ -11,5 +12,25 @@ describe("i18n dictionaries", () => {
       expect(en[key].length).toBeGreaterThan(0);
       expect(ru[key].length).toBeGreaterThan(0);
     }
+  });
+
+  it("translates every catalog unapplied reason in Russian", () => {
+    setLocaleOverride("ru");
+    for (const reason of Object.values(UNAPPLIED_REASON)) {
+      const translated = unappliedReason(reason);
+      expect(translated).not.toBe(reason);
+      expect(translated.length).toBeGreaterThan(0);
+    }
+    for (const spec of SETTING_CATALOG) {
+      if (spec.channel !== "NONE" || !spec.reason) continue;
+      expect(unappliedReason(spec.reason)).not.toBe(spec.reason);
+    }
+    const dynamic = unappliedNotValidReason(
+      { key: "ops.poll_interval", channel: "OPS-DIRECT", flag: "--poll-interval" },
+      "lane-ctl",
+      "status",
+    );
+    expect(unappliedReason(dynamic)).toMatch(/недопустим/);
+    setLocaleOverride(null);
   });
 });
