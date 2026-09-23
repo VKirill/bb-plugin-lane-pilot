@@ -6,18 +6,19 @@ import {
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "./src/contracts";
-import { detectLocale, setLocaleOverride, t, type Locale } from "./i18n";
+import { detectLocale, setLocaleOverride, subscribeToLocaleHintChanges, t, type Locale, type LocalePreference } from "./i18n";
 import { LanePilotPage } from "./src/ui/page";
 import type { PluginThreadHeaderActionProps } from "@get-bb/plugin-sdk/app";
 
 function useLiveLocale(): Locale {
   const rpc = useRpc<typeof rpcContract>();
   const [locale, setLocale] = useState(detectLocale);
+  const [preference, setPreference] = useState<LocalePreference>("auto");
   useEffect(() => {
     let current = true;
     const suggestedLocale = detectLocale();
     void rpc.call("get_preferences", { suggestedLocale }).then((result) => {
-      if (current) { setLocaleOverride(result.preference === "auto" ? null : result.preference); setLocale(result.locale); }
+      if (current) { setPreference(result.preference); setLocaleOverride(result.preference === "auto" ? null : result.preference); setLocale(result.locale); }
     });
     const refresh = (event: Event) => {
       const next = (event as CustomEvent<Locale>).detail;
@@ -26,6 +27,14 @@ function useLiveLocale(): Locale {
     globalThis.addEventListener?.("lane-pilot-locale", refresh);
     return () => { current = false; globalThis.removeEventListener?.("lane-pilot-locale", refresh); };
   }, [rpc]);
+  useEffect(() => {
+    if (preference !== "auto") return;
+    return subscribeToLocaleHintChanges((next) => {
+      setLocaleOverride(null);
+      setLocale(next);
+      globalThis.dispatchEvent?.(new CustomEvent("lane-pilot-locale", { detail: next }));
+    });
+  }, [preference]);
   return locale;
 }
 

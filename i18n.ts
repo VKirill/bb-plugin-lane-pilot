@@ -245,12 +245,12 @@ export function setLocaleOverride(next: Locale | null): void {
 }
 
 export function localeFromSources(documentLanguage?: string | null, navigatorLanguage?: string | null, russianizerHint?: string | null): Locale {
-  // Each source is authoritative when present. A weaker Russian hint must not
-  // override an explicit non-Russian language from a stronger source.
-  for (const value of [documentLanguage, navigatorLanguage, russianizerHint]) {
-    if (value == null || value.trim() === "") continue;
-    return value.toLowerCase().startsWith("ru") ? "ru" : "en";
-  }
+  // The Russianizer is the only signal for BB's translated UI. Its `off`
+  // value is not a language preference; let browser/document language apply.
+  if (russianizerHint?.toLowerCase().startsWith("ru")) return "ru";
+  const documentValue = documentLanguage?.trim().toLowerCase();
+  if (documentValue && documentValue !== "en") return documentValue.startsWith("ru") ? "ru" : "en";
+  if (navigatorLanguage?.trim()) return navigatorLanguage.trim().toLowerCase().startsWith("ru") ? "ru" : "en";
   return "en";
 }
 
@@ -264,10 +264,37 @@ export function detectLocale(): Locale {
 export function detectLocaleHint(): Locale {
   let russianizerHint: string | null = null;
   try {
-    const value = globalThis.localStorage?.getItem("bb-plugin-ru:enabled");
-    russianizerHint = value === "on" ? "ru" : value === "off" ? "en" : null;
+    // Bind the setting to the live Russianizer footer action so another
+    // plugin's similarly named storage key cannot become a language source.
+    const marker = globalThis.document?.querySelector('[data-footer-item="plugin:ru/toggle"]');
+    if (marker) {
+      const value = globalThis.localStorage?.getItem("bb-plugin-ru:enabled");
+      russianizerHint = value === "on" ? "ru" : null;
+    }
   } catch { /* browser storage can be unavailable */ }
   return localeFromSources(globalThis.document?.documentElement?.lang, globalThis.navigator?.language, russianizerHint);
+}
+
+export function subscribeToLocaleHintChanges(listener: (locale: Locale) => void): () => void {
+  let previous = detectLocaleHint();
+  const notifyIfChanged = () => {
+    const next = detectLocaleHint();
+    if (next === previous) return;
+    previous = next;
+    listener(next);
+  };
+  const observer = typeof MutationObserver === "undefined" || !globalThis.document?.documentElement
+    ? null
+    : new MutationObserver(notifyIfChanged);
+  observer?.observe(globalThis.document.documentElement, { attributes: true, childList: true, characterData: true, subtree: true });
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === null || event.key === "bb-plugin-ru:enabled") notifyIfChanged();
+  };
+  globalThis.addEventListener?.("storage", onStorage);
+  return () => {
+    observer?.disconnect();
+    globalThis.removeEventListener?.("storage", onStorage);
+  };
 }
 
 export function t(key: I18nKey): string {

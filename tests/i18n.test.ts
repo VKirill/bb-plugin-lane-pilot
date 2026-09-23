@@ -1,16 +1,64 @@
+/** @vitest-environment jsdom */
 import { describe, expect, it } from "vitest";
+import { afterEach, vi } from "vitest";
 import { UNAPPLIED_REASON, SETTING_CATALOG, unappliedNotValidReason } from "../src/channels";
-import { detectLocale, en, localeFromSources, ru, setLocaleOverride, unappliedReason, type I18nKey } from "../i18n";
+import { detectLocale, detectLocaleHint, en, localeFromSources, ru, setLocaleOverride, subscribeToLocaleHintChanges, unappliedReason, type I18nKey } from "../i18n";
+
+afterEach(() => {
+  document.body.replaceChildren();
+  vi.unstubAllGlobals();
+});
+
+function stubBrowserStorage(): void {
+  const values = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, String(value)),
+    removeItem: (key: string) => values.delete(key),
+    clear: () => values.clear(),
+  });
+  vi.stubGlobal("navigator", { language: "en-US" });
+}
 
 describe("i18n dictionaries", () => {
-  it("uses document and browser locale before the Russianizer hint", () => {
+  it("uses the active Russianizer hint, then non-default document and browser locale", () => {
     expect(localeFromSources("ru-RU", "en-US", "en")).toBe("ru");
-    expect(localeFromSources("en", "ru-RU", null)).toBe("en");
+    expect(localeFromSources("en", "ru-RU", null)).toBe("ru");
     expect(localeFromSources(null, "ru-RU", null)).toBe("ru");
     expect(localeFromSources("", "ru-RU", null)).toBe("ru");
     expect(localeFromSources(null, null, "ru")).toBe("ru");
-    expect(localeFromSources("en", "en-US", "ru")).toBe("en");
+    expect(localeFromSources("en", "en-US", "ru")).toBe("ru");
+    expect(localeFromSources("de", "ru-RU", null)).toBe("en");
+    expect(localeFromSources("ru", "en-US", null)).toBe("ru");
+    expect(localeFromSources("en", "en-US", "en")).toBe("en");
     expect(localeFromSources(null, null, null)).toBe("en");
+  });
+  it("only accepts the Russianizer preference when its actual sidebar action is present", () => {
+    stubBrowserStorage();
+    localStorage.setItem("bb-plugin-ru:enabled", "on");
+    expect(detectLocaleHint()).toBe(navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en");
+    const marker = document.createElement("li");
+    marker.setAttribute("data-footer-item", "plugin:ru/toggle");
+    document.body.append(marker);
+    expect(detectLocaleHint()).toBe("ru");
+    marker.remove();
+    localStorage.removeItem("bb-plugin-ru:enabled");
+  });
+  it("notifies auto consumers when the translated DOM changes locale", async () => {
+    stubBrowserStorage();
+    document.documentElement.lang = "en";
+    Object.defineProperty(navigator, "language", { configurable: true, value: "en-US" });
+    localStorage.setItem("bb-plugin-ru:enabled", "on");
+    const marker = document.createElement("li");
+    marker.setAttribute("data-footer-item", "plugin:ru/toggle");
+    const changed: string[] = [];
+    const dispose = subscribeToLocaleHintChanges((locale) => changed.push(locale));
+    document.body.append(marker);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(changed).toEqual(["ru"]);
+    marker.remove();
+    localStorage.removeItem("bb-plugin-ru:enabled");
+    dispose();
   });
   it("shares an explicit locale override across plugin bundles", () => {
     setLocaleOverride("en");

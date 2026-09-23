@@ -16,7 +16,7 @@ import {
   WRITER_EFFORT_CHOICES_BY_PROVIDER,
   type CatalogRow,
 } from "../ui-catalog";
-import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, detectLocale, detectLocaleHint, type I18nKey, type Locale, type LocalePreference } from "../../i18n";
+import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, detectLocale, detectLocaleHint, subscribeToLocaleHintChanges, type I18nKey, type Locale, type LocalePreference } from "../../i18n";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import {
   AlertDialog,
@@ -249,6 +249,15 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     globalThis.addEventListener?.("lane-pilot-locale", onLocale);
     return () => { current = false; globalThis.removeEventListener?.("lane-pilot-locale", onLocale); };
   }, [rpc]);
+
+  useEffect(() => {
+    if (localePreference !== "auto") return;
+    return subscribeToLocaleHintChanges((next) => {
+      setLocaleOverride(null);
+      setLocale(next);
+      globalThis.dispatchEvent?.(new CustomEvent("lane-pilot-locale", { detail: next }));
+    });
+  }, [localePreference]);
 
   const chooseLocale = async (next: LocalePreference) => {
     const suggestedLocale = detectLocaleHint();
