@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UNAPPLIED_REASON, SETTING_CATALOG, unappliedNotValidReason } from "../src/channels";
-import { en, localeFromSources, ru, setLocaleOverride, unappliedReason, type I18nKey } from "../i18n";
+import { detectLocale, en, localeFromSources, ru, setLocaleOverride, unappliedReason, type I18nKey } from "../i18n";
 
 describe("i18n dictionaries", () => {
   it("uses the BB language hint, a Russian document locale, then browser and document fallbacks", () => {
@@ -9,6 +9,12 @@ describe("i18n dictionaries", () => {
     expect(localeFromSources(null, "ru-RU", null)).toBe("ru");
     expect(localeFromSources(null, null, "ru")).toBe("ru");
     expect(localeFromSources(null, null, null)).toBe("en");
+  });
+  it("shares an explicit locale override across plugin bundles", () => {
+    setLocaleOverride("en");
+    expect((globalThis as typeof globalThis & { __lanePilotLocaleOverride?: string }).__lanePilotLocaleOverride).toBe("en");
+    expect(detectLocale()).toBe("en");
+    setLocaleOverride(null);
   });
   it("has the same keys in English and Russian with no empty strings", () => {
     setLocaleOverride(null);

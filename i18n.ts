@@ -232,9 +232,13 @@ export type I18nKey = keyof typeof en;
 export type Locale = "en" | "ru";
 
 let localeOverride: Locale | null = null;
+type LocaleGlobal = typeof globalThis & { __lanePilotLocaleOverride?: Locale };
 
 export function setLocaleOverride(next: Locale | null): void {
   localeOverride = next;
+  const root = globalThis as LocaleGlobal;
+  if (next) root.__lanePilotLocaleOverride = next;
+  else delete root.__lanePilotLocaleOverride;
 }
 
 export function localeFromSources(documentLanguage?: string | null, navigatorLanguage?: string | null, russianizerHint?: string | null): Locale {
@@ -243,6 +247,8 @@ export function localeFromSources(documentLanguage?: string | null, navigatorLan
 }
 
 export function detectLocale(): Locale {
+  const sharedOverride = (globalThis as LocaleGlobal).__lanePilotLocaleOverride;
+  if (sharedOverride === "en" || sharedOverride === "ru") return sharedOverride;
   if (localeOverride) return localeOverride;
   let russianizerHint: string | null = null;
   try {
