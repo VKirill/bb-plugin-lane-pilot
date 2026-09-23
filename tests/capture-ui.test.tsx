@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG } from "../src/ui-catalog";
+import { en, ru } from "../i18n";
+import { EXTERNAL_OPS } from "../src/constants";
 
 const root = process.cwd();
 const outDir = resolve(root, "../../.agency/jobs/AG-195/tmp/ui-html");
@@ -26,6 +28,7 @@ function screenFixture() {
       kind: "bb",
       created_at: 1,
       updated_at: 1,
+      cliReceiptJson: "{\"kind\":\"cli\",\"applied\":[\"writer.provider\"]}",
       attempts: [{
         id: "lpattempt_1",
         state: "running",
@@ -33,6 +36,7 @@ function screenFixture() {
         thread_id: "thr_writer",
         reason: null,
         task_id: "task_1",
+        cliReceiptJson: "{\"kind\":\"cli\",\"applied\":[\"writer.provider\"]}",
       }],
     }],
     unapplied: [{ key: "plan_critique.mode", reason: "no proven runtime channel" }],
@@ -71,10 +75,14 @@ function wrap(html: string, lang: string, theme: "light" | "dark", view: "settin
   const show = view === "monitor" ? "run-monitor" : view === "dialog" ? "install-panel" : "settings-panel";
   const activeTab = view === "monitor" ? "tab-monitor" : view === "dialog" ? "tab-install" : "tab-settings";
   const dialogCss = view === "dialog"
-    ? `[data-testid="external-ops-dialog"]{position:relative!important;transform:none!important;translate:none!important;--tw-translate-x:0!important;--tw-translate-y:0!important;--tw-enter-translate-x:0!important;--tw-enter-translate-y:0!important;inset:auto!important;top:auto!important;left:0!important;right:0!important;width:375px!important;max-width:375px!important;min-width:0!important;max-height:none!important;margin:0!important;display:block!important;overflow-x:hidden!important;overflow-y:visible!important;opacity:1!important;animation:none!important;background:var(--background)!important;color:var(--foreground)!important;border:1px solid var(--border)!important;box-sizing:border-box!important;}`
+    ? `[data-radix-alert-dialog-overlay],[data-slot="alert-dialog-overlay"]{display:none!important;}
+[data-testid="external-ops-dialog"]{position:relative!important;transform:none!important;translate:none!important;--tw-translate-x:0!important;--tw-translate-y:0!important;--tw-enter-translate-x:0!important;--tw-enter-translate-y:0!important;inset:auto!important;top:0!important;left:0!important;right:0!important;width:375px!important;max-width:375px!important;min-width:0!important;max-height:none!important;margin:0!important;display:block!important;overflow-x:hidden!important;overflow-y:visible!important;opacity:1!important;animation:none!important;background:var(--background)!important;color:var(--foreground)!important;border:1px solid var(--border)!important;box-sizing:border-box!important;}`
     : "";
   const hidePanels = view === "dialog"
-    ? ""
+    ? `[data-testid="settings-panel"],[data-testid="run-monitor"]{display:none!important;}
+[data-testid="install-panel"]{display:block!important;}
+[data-testid="tab-settings"],[data-testid="tab-monitor"]{opacity:.7;}
+[data-testid="tab-install"]{opacity:1;}`
     : `[data-testid="settings-panel"],[data-testid="run-monitor"],[data-testid="install-panel"]{display:none!important;}
 [data-testid="${show}"]{display:block!important;}
 [data-testid="tab-settings"],[data-testid="tab-monitor"],[data-testid="tab-install"]{opacity:.7;}
@@ -86,7 +94,18 @@ html,body{margin:0;padding:0;width:375px;max-width:375px;min-width:375px;overflo
 ${hidePanels}
 ${dialogCss}
 </style></head><body data-bb-plugin="lane-pilot" data-bb-plugin-root class="bg-background text-foreground">${html}<script>
-document.documentElement.setAttribute("data-scroll-width", String(document.documentElement.scrollWidth));
+(function () {
+  document.documentElement.style.setProperty("width", "375px", "important");
+  document.documentElement.style.setProperty("max-width", "375px", "important");
+  document.body.style.setProperty("width", "375px", "important");
+  document.body.style.setProperty("max-width", "375px", "important");
+  const widths = [document.body.scrollWidth];
+  for (const el of document.querySelectorAll('[data-testid="external-ops-dialog"],[data-testid="install-panel"]')) {
+    widths.push(el.scrollWidth);
+    widths.push(Math.ceil(el.getBoundingClientRect().width));
+  }
+  document.documentElement.setAttribute("data-scroll-width", String(Math.max(...widths)));
+})();
 </script></body></html>`;
 }
 
@@ -102,16 +121,27 @@ function chromeShot(htmlPath: string, pngPath: string): number {
     "--allow-file-access-from-files",
     "--hide-scrollbars",
     "--force-device-scale-factor=1",
-    "--window-size=375,1600",
+    "--window-size=375,4000",
     "--virtual-time-budget=5000",
     `--screenshot=${pngPath}`,
     `file://${htmlPath}`,
   ], { timeout: 60_000 });
-  const width = pngPixelWidth(pngPath);
-  if (width !== 375) {
-    execFileSync("sips", ["--cropToHeightWidth", "1600", "375", pngPath]);
-  }
   return pngPixelWidth(pngPath);
+}
+
+function chromeDump(htmlPath: string): string {
+  return execFileSync(chrome, [
+    "--headless=new",
+    "--disable-gpu",
+    "--allow-file-access-from-files",
+    "--hide-scrollbars",
+    "--force-device-scale-factor=1",
+    "--window-size=375,4000",
+    "--virtual-time-budget=5000",
+    `--screenshot=${resolve(outDir, "dump-viewport.png")}`,
+    "--dump-dom",
+    `file://${htmlPath}`,
+  ], { encoding: "utf8", timeout: 60_000 });
 }
 
 describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
@@ -125,17 +155,32 @@ describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
           const slot = await mount(lang);
           await slot.findByText(/\/tmp\/routing\.profile\.yaml/);
           if (view === "monitor") fireEvent.click(slot.getByTestId("tab-monitor"));
-          if (view === "dialog") fireEvent.click(slot.getByTestId("install-stack"));
+          if (view === "dialog") {
+            fireEvent.click(slot.getByTestId("tab-install"));
+            fireEvent.click(slot.getByTestId("install-stack"));
+          }
           const dialog = document.querySelector('[data-testid="external-ops-dialog"]');
-          const html = view === "dialog" && dialog ? dialog.outerHTML : document.body.innerHTML;
+          if (view === "dialog") {
+            expect(dialog?.textContent, `${view}-${lang}-${theme} title`).toContain(lang === "ru" ? ru.confirmTitle : en.confirmTitle);
+            for (const op of EXTERNAL_OPS) {
+              expect(dialog?.textContent, `${view}-${lang}-${theme} ${op}`).toContain(op);
+            }
+          }
+          const html = document.body.innerHTML;
           const htmlPath = resolve(outDir, `${view}-${lang}-${theme}.html`);
           writeFileSync(htmlPath, wrap(html, lang, theme, view));
           const pngPath = resolve(pngDir, `${view}-${lang}-${theme}.png`);
           const pixelWidth = chromeShot(htmlPath, pngPath);
           expect(pixelWidth, `${view}-${lang}-${theme}`).toBe(375);
           if (view === "dialog") {
-            expect(pixelWidth, `${view}-${lang}-${theme} scrollWidth/viewport`).toBeLessThanOrEqual(375);
-            dialogWidths.push(pixelWidth);
+            const dumped = chromeDump(htmlPath);
+            expect(dumped, `${view}-${lang}-${theme} dump title`).toContain(lang === "ru" ? ru.confirmTitle : en.confirmTitle);
+            for (const op of EXTERNAL_OPS) {
+              expect(dumped, `${view}-${lang}-${theme} dump ${op}`).toContain(op);
+            }
+            const scrollWidth = Number(dumped.match(/data-scroll-width="(\d+)"/)?.[1] ?? "NaN");
+            expect(scrollWidth, `${view}-${lang}-${theme} document.scrollWidth`).toBeLessThanOrEqual(375);
+            dialogWidths.push(scrollWidth);
           }
           slot.lifecycle.unmount();
         }

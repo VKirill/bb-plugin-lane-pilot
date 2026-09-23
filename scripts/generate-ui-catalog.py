@@ -145,7 +145,7 @@ EDITABLE_RATIONALE = {
     "writer.model": "W-DIRECT --model on run-controller/lane-ctl start (bin/run-controller:1686, bin/lane-ctl:3405)",
     "writer.reasoning_effort": "W-DIRECT --reasoning-effort on run-controller/lane-ctl start (bin/run-controller:1688, bin/lane-ctl:3407)",
     "writer.service_tier": "W-DIRECT --service-tier on run-controller/lane-ctl start (bin/run-controller:1694, bin/lane-ctl:3413)",
-    "writer.fast_mode": "W-DIRECT --fast-mode on run-controller/lane-ctl start (bin/run-controller:1700, bin/lane-ctl:3419)",
+    "writer.fast_mode": "W-DIRECT --fast-mode applies true only; false has no off flag (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200)",
     "jev.LANE_JEV_EFFORT": "ENV-PASSTHROUGH LANE_JEV_EFFORT into writer subprocess (profiles/opencode/opencode-lane/index.ts:111)",
     "jev.LANE_OPENCODE_JEV": "ENV-PASSTHROUGH LANE_OPENCODE_JEV into writer subprocess (profiles/opencode/opencode-lane/jev.ts:37)",
     "ops.max_tasks": "OPS-DIRECT --max-tasks on lane-ctl start (bin/lane-ctl:3449)",

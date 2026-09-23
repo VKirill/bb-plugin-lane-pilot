@@ -4,6 +4,7 @@ import { fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
 import { en, ru, setLocaleOverride, t } from "../i18n";
+import { EXTERNAL_OPS } from "../src/constants";
 
 function screenFixture() {
   return {
@@ -19,6 +20,7 @@ function screenFixture() {
       kind: "bb",
       created_at: 1,
       updated_at: 1,
+      cliReceiptJson: null,
       attempts: [{
         id: "lpattempt_1",
         state: "running",
@@ -26,6 +28,7 @@ function screenFixture() {
         thread_id: "thr_writer",
         reason: null,
         task_id: "task_1",
+        cliReceiptJson: null,
       }],
     }],
     unapplied: [{ key: "plan_critique.mode", reason: "no proven runtime channel" }],
@@ -177,15 +180,93 @@ describe("Lane Pilot UI", () => {
     const slot = await mountPage({
       get_screen: () => ({
         ...base,
-        runs: [{ id: "lprun_cli", state: "accepted", kind: "cli", created_at: 1, updated_at: 1, attempts: [] }],
+        runs: [{
+          id: "lprun_cli",
+          state: "accepted",
+          kind: "cli",
+          created_at: 1,
+          updated_at: 1,
+          cliReceiptJson: "{\"kind\":\"cli\",\"receiptPath\":\"/tmp/cli-receipt.json\"}",
+          attempts: [],
+        }],
         cliReceiptJson: "{\"kind\":\"cli\",\"receiptPath\":\"/tmp/cli-receipt.json\"}",
       }),
     });
-    await slot.findByTestId("cli-receipt");
+    await slot.findByTestId("cli-receipt-lprun_cli");
     expect(slot.getByTestId("run-lprun_cli")).toBeTruthy();
     const monitor = slot.getByTestId("run-monitor");
     expect(monitor.textContent).not.toContain(en.cancel);
     expect(monitor.textContent).toContain("cli-receipt.json");
+    slot.lifecycle.unmount();
+  });
+
+  it("opens a distinct CLI receipt for each run", async () => {
+    const base = screenFixture();
+    const slot = await mountPage({
+      get_screen: () => ({
+        ...base,
+        runs: [
+          {
+            id: "lprun_a",
+            state: "accepted",
+            kind: "cli",
+            created_at: 1,
+            updated_at: 2,
+            cliReceiptJson: "{\"lanePilotRunId\":\"lprun_a\",\"mark\":\"first\"}",
+            attempts: [{
+              id: "lpattempt_a",
+              state: "accepted",
+              attempt_no: 1,
+              thread_id: null,
+              reason: null,
+              task_id: "task_a",
+              cliReceiptJson: "{\"lanePilotRunId\":\"lprun_a\",\"mark\":\"first\"}",
+            }],
+          },
+          {
+            id: "lprun_b",
+            state: "accepted",
+            kind: "cli",
+            created_at: 2,
+            updated_at: 3,
+            cliReceiptJson: "{\"lanePilotRunId\":\"lprun_b\",\"mark\":\"second\"}",
+            attempts: [{
+              id: "lpattempt_b",
+              state: "accepted",
+              attempt_no: 1,
+              thread_id: null,
+              reason: null,
+              task_id: "task_b",
+              cliReceiptJson: "{\"lanePilotRunId\":\"lprun_b\",\"mark\":\"second\"}",
+            }],
+          },
+        ],
+      }),
+    });
+    await slot.findByTestId("cli-receipt-lpattempt_a");
+    fireEvent.click(slot.getByTestId("tab-monitor"));
+    expect(slot.getByTestId("cli-receipt-lpattempt_a").textContent).toContain("first");
+    expect(slot.getByTestId("cli-receipt-lpattempt_b").textContent).toContain("second");
+    slot.lifecycle.unmount();
+  });
+
+  it("shows the off-value limitation on writer.fast_mode fields", async () => {
+    const slot = await mountPage();
+    const limitation = await slot.findByTestId("channel-limitation-s024");
+    expect(limitation.textContent).toBe(en.channelOffLimitation);
+    slot.lifecycle.unmount();
+  });
+
+  it("keeps the confirm dialog title and full install ops list in the DOM", async () => {
+    const slot = await mountPage();
+    await slot.findByTestId("install-stack");
+    fireEvent.click(slot.getByTestId("tab-install"));
+    fireEvent.click(slot.getByTestId("install-stack"));
+    const dialog = await slot.findByTestId("external-ops-dialog");
+    expect(dialog.textContent).toContain(en.confirmTitle);
+    for (const op of EXTERNAL_OPS) {
+      expect(dialog.textContent).toContain(op);
+    }
     slot.lifecycle.unmount();
   });
 });

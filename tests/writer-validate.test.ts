@@ -382,3 +382,65 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 });
+
+describe("CLI receipts per run", () => {
+  it("keeps both dispatch-cli receipts on get_screen", async () => {
+    const metadata: Record<string, { role: string; lanePilotRunId: string }> = {
+      "pm-a": { role: "pm", lanePilotRunId: "run-a" },
+      "pm-b": { role: "pm", lanePilotRunId: "run-b" },
+    };
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: {
+        threads: {
+          getPluginMetadata: async ({ threadId }) => metadata[threadId] ?? {},
+        },
+        files: { write: async () => ({ ok: true }) },
+      },
+      experimental_callHostRpc: (call) => {
+        if (call.method !== "runCli") throw new Error(`unexpected ${call.method}`);
+        return {
+          hostId: "host-test",
+          binaryPath: "/usr/bin/run-controller",
+          argv: ["run"],
+          env: {},
+          cwd: "/tmp/writer",
+          exitCode: 0,
+          stdout: JSON.stringify({ status: "accepted" }),
+          stderr: "",
+        };
+      },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    createRun(db, "run-a", projectId, "cli");
+    setRunThread(db, "run-a", "pm-a");
+    createRun(db, "run-b", projectId, "cli");
+    setRunThread(db, "run-b", "pm-b");
+    await plugin(bb);
+    await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_cli",
+      { confirm: true, binary: "run-controller", subcommand: "run" },
+      { threadId: "pm-a", projectId },
+    );
+    await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_cli",
+      { confirm: true, binary: "run-controller", subcommand: "run" },
+      { threadId: "pm-b", projectId },
+    );
+    const screen = await harness.behavior.callRpc("get_screen", { projectId }) as {
+      runs: Array<{
+        id: string;
+        cliReceiptJson: string | null;
+        attempts: Array<{ cliReceiptJson: string | null }>;
+      }>;
+    };
+    const first = screen.runs.find((run) => run.id === "run-a");
+    const second = screen.runs.find((run) => run.id === "run-b");
+    expect(first?.cliReceiptJson).toContain("run-a");
+    expect(second?.cliReceiptJson).toContain("run-b");
+    expect(first?.attempts[0]?.cliReceiptJson).toContain("run-a");
+    expect(second?.attempts[0]?.cliReceiptJson).toContain("run-b");
+    await harness.lifecycle.dispose();
+  });
+});

@@ -26,6 +26,14 @@ export const EXTERNAL_OPS_BY_ACTION = {
 export const EXTERNAL_OPS_WARNING =
   "откат не гарантированно вернёт систему в исходное состояние — будет зафиксировано состояние до и после, не восстановление";
 
+export function cliReceiptRunKey(runId: string): string {
+  return `cli.receipt.run.${runId}`;
+}
+
+export function cliReceiptAttemptKey(attemptId: string): string {
+  return `cli.receipt.attempt.${attemptId}`;
+}
+
 export const PLUGIN_ID = "lane-pilot";
 export const INSTALLED_GUARD = "~/.agents/hooks/guard_shell.py";
 export const MAIN_ATTEMPT_LIMIT = 2;

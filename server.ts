@@ -9,7 +9,7 @@ import {
   type PrototypeConfig,
   type TaskV2,
 } from "./src/contracts";
-import { TARGET_SHA } from "./src/constants";
+import { TARGET_SHA, cliReceiptAttemptKey, cliReceiptRunKey } from "./src/constants";
 import { aggregateRun } from "./src/aggregation";
 import { buildCliInvocation } from "./src/argv-builder";
 import { requiredCliFlags } from "./src/cli-flags";
@@ -696,19 +696,22 @@ export default async function plugin(bb: BbPluginApi) {
       expectedSha256: null,
     });
     const mutating = subcommand === "start" || subcommand === "run";
-    let taskId: string | null = null;
+    let attemptId: string | null = null;
     if (mutating) {
       const existing = db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=? AND kind='cli'")
         .get(runId) as { id: string } | undefined;
-      taskId = existing?.id ?? id("lptask");
+      const taskId = existing?.id ?? id("lptask");
       if (!existing) {
         createTask(db, { id: taskId, runId, kind:"cli", contract:{ binary, subcommand, argv:executed.argv, receiptPath } });
       }
-      const attemptId = id("lpattempt");
+      attemptId = id("lpattempt");
       createAttempt(db, { id: attemptId, runId, taskId });
       transitionAttempt(db, attemptId, outcome.status, { reason: outcome.reason });
     }
-    saveProjectSetting(db, args.projectId, "cli.lastReceipt", JSON.stringify(receipt));
+    saveProjectSetting(db, args.projectId, cliReceiptRunKey(runId), JSON.stringify(receipt));
+    if (attemptId) {
+      saveProjectSetting(db, args.projectId, cliReceiptAttemptKey(attemptId), JSON.stringify(receipt));
+    }
     setRunState(db, runId, outcome.status);
     return receipt;
   }
@@ -876,6 +879,23 @@ export default async function plugin(bb: BbPluginApi) {
         subcommand: "run",
         settings: invocationSettings,
       }).unapplied.map((item) => ({ key: item.key, reason: item.reason }));
+      const listed = listRunsWithAttempts(db, projectId).map((run) => {
+        const runReceipt = asJsonText(values[cliReceiptRunKey(run.id)]);
+        return {
+          ...run,
+          cliReceiptJson: runReceipt,
+          attempts: run.attempts.map((attempt) => ({
+            ...attempt,
+            cliReceiptJson: asJsonText(values[cliReceiptAttemptKey(attempt.id)]),
+          })),
+        };
+      });
+      const latestReceipt = listed
+        .flatMap((run) => [
+          ...run.attempts.map((attempt) => attempt.cliReceiptJson),
+          run.cliReceiptJson,
+        ])
+        .find((text) => text != null) ?? null;
       return {
         projectId,
         hostId: config?.hostId ?? null,
@@ -894,13 +914,13 @@ export default async function plugin(bb: BbPluginApi) {
             ? String((night as { path?: string }).path ?? "") || null
             : null,
         },
-        runs: listRunsWithAttempts(db, projectId),
+        runs: listed,
         unapplied,
         lastSnapshotPath: typeof values["install.lastSnapshotPath"] === "string" ? values["install.lastSnapshotPath"] as string : null,
         lastReceiptJson: asJsonText(values["install.lastReceipt"]),
         writerResultJson: asJsonText(values["writer.lastResult"]),
         writerResultPatch: asJsonText(values["writer.lastPatch"]),
-        cliReceiptJson: asJsonText(values["cli.lastReceipt"]),
+        cliReceiptJson: latestReceipt,
       };
     },
     save_setting: ({ projectId, key, value, expectedVersion }) => {

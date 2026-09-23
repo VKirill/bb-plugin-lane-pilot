@@ -204,6 +204,7 @@ export const rpcContract = defineRpcContract({
         kind: z.string(),
         created_at: z.number(),
         updated_at: z.number(),
+        cliReceiptJson: z.string().nullable(),
         attempts: z.array(z.object({
           id: z.string(),
           state: z.string(),
@@ -211,6 +212,7 @@ export const rpcContract = defineRpcContract({
           thread_id: z.string().nullable(),
           reason: z.string().nullable(),
           task_id: z.string(),
+          cliReceiptJson: z.string().nullable(),
         }).strict()),
       }).strict()),
       unapplied: z.array(z.object({ key: z.string(), reason: z.string() }).strict()),

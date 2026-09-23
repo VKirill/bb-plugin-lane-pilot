@@ -76,6 +76,9 @@ const chromeEn = {
   unappliedPlanCritiqueModel: "plan-critique argparse has no --model",
   unappliedNightReviewModel: "night-shift has --provider but no --model",
   unappliedNightReviewEffort: "night-shift has no --reasoning-effort",
+  unappliedBooleanOff: "upstream argparse is store_true; false has no off flag (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200)",
+  channelOffLimitation: "Off is not applied: run-controller/lane-ctl accept only --fast-mode (store_true). Saved false is listed as unapplied.",
+  openReceipt: "Open CLI receipt",
   cliReceipt: "CLI receipt",
   state_pending: "pending",
   state_queued: "queued",
@@ -168,6 +171,9 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   unappliedPlanCritiqueModel: "у plan-critique нет argparse --model",
   unappliedNightReviewModel: "у night-shift есть --provider, но нет --model",
   unappliedNightReviewEffort: "у night-shift нет --reasoning-effort",
+  unappliedBooleanOff: "у argparse только store_true; флага выключения нет (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200)",
+  channelOffLimitation: "Выключение не применяется: run-controller/lane-ctl принимают только --fast-mode (store_true). Сохранённое false попадает в неприменённые.",
+  openReceipt: "Открыть квитанцию CLI",
   cliReceipt: "Квитанция CLI",
   state_pending: "ожидание",
   state_queued: "в очереди",
@@ -223,6 +229,7 @@ export function unappliedReason(reason: string): string {
     [UNAPPLIED_REASON.planCritiqueModel]: "unappliedPlanCritiqueModel",
     [UNAPPLIED_REASON.nightReviewModel]: "unappliedNightReviewModel",
     [UNAPPLIED_REASON.nightReviewEffort]: "unappliedNightReviewEffort",
+    [UNAPPLIED_REASON.booleanOffUnsupported]: "unappliedBooleanOff",
   };
   const key = exact[reason];
   if (key) return t(key);

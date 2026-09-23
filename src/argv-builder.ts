@@ -34,6 +34,14 @@ function asFlagValue(value: unknown): string | null {
   return String(value);
 }
 
+export function isFlagOn(value: unknown): boolean {
+  return value === true || value === "1" || value === "true" || value === "on";
+}
+
+export function isFlagOff(value: unknown): boolean {
+  return value === false || value === "0" || value === "false" || value === "off" || value === "no";
+}
+
 export function assertSafeArgv(argv: string[]): void {
   for (const token of argv) {
     if (FORBIDDEN_TOKENS.some((forbidden) => token === forbidden || token.startsWith(`${forbidden}=`))) {
@@ -102,10 +110,25 @@ export function buildCliInvocation(input: {
       continue;
     }
     if (spec.booleanFlag) {
-      if (value === true || value === "1" || value === "true") {
+      if (isFlagOn(value)) {
         argv.push(spec.flag);
         usedFlags.add(spec.flag);
         applied.push(spec.key);
+        continue;
+      }
+      if (isFlagOff(value)) {
+        if (spec.offFlag) {
+          argv.push(spec.offFlag);
+          usedFlags.add(spec.offFlag);
+          applied.push(spec.key);
+          continue;
+        }
+        unapplied.push({
+          key: spec.key,
+          value,
+          channel: "NONE",
+          reason: UNAPPLIED_REASON.booleanOffUnsupported,
+        });
       }
       continue;
     }

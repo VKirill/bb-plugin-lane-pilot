@@ -1,27 +1,88 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { SETTING_CATALOG, CONSUMER_KEYS, specFor, type SettingSpec } from "../src/channels";
+import { SETTING_CATALOG, CONSUMER_KEYS, specFor, UNAPPLIED_REASON, type SettingSpec } from "../src/channels";
 import { UI_CATALOG } from "../src/ui-catalog";
-import { buildCliInvocation } from "../src/argv-builder";
+import { buildCliInvocation, isFlagOff, isFlagOn } from "../src/argv-builder";
 import { requiredCliFlags } from "../src/cli-flags";
 import { installEnv } from "../src/install-runner";
 import plugin from "../server";
 
+function representativeValues(spec: SettingSpec): unknown[] {
+  if (spec.booleanFlag || spec.key.startsWith("jev.")) return [true, false];
+  if (spec.key === "install.LANE_INSTALL_LOCAL_MARKETPLACE" || spec.key === "install.LANE_INSTALL_CLAUDE_PLUGIN") {
+    return [true, false];
+  }
+  if (spec.key === "writer.provider") return ["kimi", "qwen", "agy", "grok", "codex", "cursor", "opencode"];
+  if (spec.key === "writer.service_tier") return ["standard", "fast"];
+  if (spec.key === "writer.reasoning_effort") return ["low", "medium", "high", "xhigh", "max"];
+  if (spec.key === "ops.tail_source") return ["supervisor", "executor", "provider", "report", "verification"];
+  if (spec.key === "install.CODEX_HOME") return ["/tmp/codex"];
+  if (spec.key === "install.CLAUDE_CONFIG_DIR") return ["/tmp/claude"];
+  const row = UI_CATALOG.find((item) => item.storageKey === spec.key && item.uiStatus === "editable");
+  if (row?.min != null && row.max != null) return [row.min, row.max];
+  if (row?.control === "path" || spec.key.includes("dir") || spec.key.includes("cwd") || spec.key.includes("file")) {
+    return ["/tmp/lane-pilot"];
+  }
+  if (row?.options.length && row.options[0] && row.options[0] !== "bool") return row.options;
+  return ["1"];
+}
+
+function assertChannelValue(spec: SettingSpec, value: unknown): void {
+  const label = `${spec.key}=${JSON.stringify(value)}`;
+  if (spec.channel === "INSTALL-ENV") {
+    const result = installEnv({
+      homeDir: "/tmp/home",
+      confirmExternalOps: true,
+      settings: { [spec.key]: value },
+    });
+    expect(result.applied, label).toContain(spec.key);
+    const envName = spec.env ?? "";
+    if (isFlagOn(value)) expect(result.env[envName], label).toBe("1");
+    else if (isFlagOff(value)) expect(result.env[envName], label).toBe("0");
+    else expect(result.env[envName], label).toBe(String(value));
+    const cli = buildCliInvocation({ binary: "run-controller", subcommand: "run", settings: { [spec.key]: value } });
+    expect(cli.unapplied.some((row) => row.key === spec.key), `${label} CLI`).toBe(true);
+    return;
+  }
+  const target = requiredFor(spec);
+  const built = buildCliInvocation({
+    binary: target.binary,
+    subcommand: target.subcommand,
+    settings: { [spec.key]: value },
+    required: target.required,
+  });
+  if (spec.booleanFlag && isFlagOff(value) && !spec.offFlag) {
+    expect(built.applied, label).not.toContain(spec.key);
+    expect(built.argv, label).not.toContain(spec.flag);
+    const row = built.unapplied.find((item) => item.key === spec.key);
+    expect(row?.reason, label).toBe(UNAPPLIED_REASON.booleanOffUnsupported);
+    return;
+  }
+  if (spec.channel === "ENV-PASSTHROUGH" && spec.env) {
+    expect(built.applied, label).toContain(spec.key);
+    if (isFlagOn(value)) expect(built.env[spec.env], label).toBe("1");
+    else if (isFlagOff(value)) expect(built.env[spec.env], label).toBe("0");
+    else expect(built.env[spec.env], label).toBe(String(value));
+    return;
+  }
+  expect(built.applied, label).toContain(spec.key);
+  expect(built.argv, label).toContain(spec.flag);
+  if (!spec.booleanFlag) expect(built.argv, label).toContain(String(value));
+}
+
 function requiredFor(spec: SettingSpec): { binary: "run-controller" | "lane-ctl"; subcommand: string; required: Record<string, string> } {
   const binary = spec.binaries?.[0] ?? "run-controller";
   const subcommand = spec.subcommands?.[0] ?? "run";
-  return {
+  const required = requiredCliFlags({
     binary,
     subcommand,
-    required: requiredCliFlags({
-      binary,
-      subcommand,
-      runDir: "/tmp/run",
-      projectCwd: "/tmp/proj",
-      taskFile: "/tmp/run/tasks/001.yaml",
-      taskId: "001",
-    }),
-  };
+    runDir: "/tmp/run",
+    projectCwd: "/tmp/proj",
+    taskFile: "/tmp/run/tasks/001.yaml",
+    taskId: "001",
+  });
+  if (spec.flag) delete required[spec.flag];
+  return { binary, subcommand, required };
 }
 
 describe("UI storage keys feed runtime channels", () => {
@@ -36,32 +97,37 @@ describe("UI storage keys feed runtime channels", () => {
     expect(missing.map((row) => `${row.id}:${row.storageKey}`)).toEqual([]);
   });
 
-  it("applies every editable runtime key via argv-builder or installEnv", () => {
+  it("table-drives every editable row and every representative value to argv/env or unapplied", () => {
+    const seen = new Set<string>();
+    const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
+    expect(booleanFlags.map((spec) => spec.key)).toEqual(["writer.fast_mode"]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
     for (const row of editable) {
-      if (row.storageKey === "ui.language") continue;
+      if (row.storageKey === "ui.language" || seen.has(row.storageKey)) continue;
+      seen.add(row.storageKey);
       const spec = specFor(row.storageKey);
       expect(spec, row.storageKey).toBeTruthy();
       if (!spec || spec.channel === "NONE") throw new Error(`${row.storageKey} is editable without a consumer`);
-      if (spec.channel === "INSTALL-ENV") {
-        const result = installEnv({
-          homeDir: "/tmp/home",
-          confirmExternalOps: true,
-          settings: { [spec.key]: spec.env === "CODEX_HOME" ? "/tmp/codex" : "1" },
-        });
-        expect(result.applied).toContain(spec.key);
-        expect(result.env[spec.env ?? ""]).toBeTruthy();
-        continue;
+      for (const value of representativeValues(spec)) {
+        assertChannelValue(spec, value);
       }
-      const target = requiredFor(spec);
-      const built = buildCliInvocation({
-        binary: target.binary,
-        subcommand: target.subcommand,
-        settings: { [spec.key]: spec.booleanFlag ? true : "1" },
-        required: target.required,
-      });
-      expect(built.applied, `${spec.key} on ${target.binary} ${target.subcommand}`).toContain(spec.key);
     }
+  });
+
+  it("AG-213 R1: writer.fast_mode=false is unapplied, not silent", () => {
+    const built = buildCliInvocation({
+      binary: "run-controller",
+      subcommand: "run",
+      settings: { "writer.fast_mode": false },
+    });
+    expect(built.argv).toEqual(["run"]);
+    expect(built.applied).toEqual([]);
+    expect(built.unapplied).toEqual([{
+      key: "writer.fast_mode",
+      value: false,
+      channel: "NONE",
+      reason: UNAPPLIED_REASON.booleanOffUnsupported,
+    }]);
   });
 
   it("reports stored adoc keys without a consumer as unapplied", () => {

@@ -50,6 +50,7 @@ import {
   TableRow,
 } from "../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { specFor } from "../channels";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, RUN_STATES } from "../state-machine";
 
@@ -66,6 +67,7 @@ type ScreenPayload = {
     kind: string;
     created_at: number;
     updated_at: number;
+    cliReceiptJson: string | null;
     attempts: Array<{
       id: string;
       state: string;
@@ -73,6 +75,7 @@ type ScreenPayload = {
       thread_id: string | null;
       reason: string | null;
       task_id: string;
+      cliReceiptJson: string | null;
     }>;
   }>;
   unapplied: Array<{ key: string; reason: string }>;
@@ -378,6 +381,9 @@ export function LanePilotPage() {
                           <div className="flex flex-wrap gap-2">
                             <StatusBadge status={row.uiStatus} />
                             {disabled ? <span className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</span> : null}
+                            {specFor(row.storageKey)?.positiveOnly ? (
+                              <span className="text-xs text-muted-foreground" data-testid={`channel-limitation-${row.id}`}>{t("channelOffLimitation")}</span>
+                            ) : null}
                             <span className="text-xs text-muted-foreground">{t("casVersion")} {data?.versions[row.storageKey] ?? 0}</span>
                           </div>
                         </div>
@@ -425,7 +431,7 @@ export function LanePilotPage() {
                             <Badge variant={runTone(run.state)}>{stateLabel(run.state)}</Badge>
                           </TableCell>
                           <TableCell>—</TableCell>
-                          <TableCell />
+                          <TableCell>{run.cliReceiptJson ? t("openReceipt") : null}</TableCell>
                         </TableRow>
                       )];
                     }
@@ -448,6 +454,7 @@ export function LanePilotPage() {
                             </Button>
                           </>
                         ) : null}
+                        {(attempt.cliReceiptJson ?? run.cliReceiptJson) ? t("openReceipt") : null}
                       </TableCell>
                     </TableRow>
                     ));
@@ -455,6 +462,27 @@ export function LanePilotPage() {
                 </TableBody>
               </Table>
             )}
+            <div data-testid="cli-receipt" className="space-y-3">
+              {data?.runs.flatMap((run) => {
+                const seen = new Set<string>();
+                const items: Array<{ id: string; json: string }> = [];
+                for (const attempt of run.attempts) {
+                  if (!attempt.cliReceiptJson || seen.has(attempt.cliReceiptJson)) continue;
+                  seen.add(attempt.cliReceiptJson);
+                  items.push({ id: attempt.id, json: attempt.cliReceiptJson });
+                }
+                if (run.cliReceiptJson && !seen.has(run.cliReceiptJson)) {
+                  items.push({ id: run.id, json: run.cliReceiptJson });
+                }
+                return items.map((item) => (
+                  <div key={item.id} className="space-y-2" data-testid={`cli-receipt-${item.id}`}>
+                    <h2 className="text-sm font-medium">{t("cliReceipt")} {item.id}</h2>
+                    <SourceCode content={item.json} path={`cli-receipt-${item.id}.json`} overflow="scroll" />
+                    <span className="sr-only">{item.json}</span>
+                  </div>
+                ));
+              })}
+            </div>
             <div>
               <h2 className="text-sm font-medium">{t("unapplied")}</h2>
               {data?.unapplied.length ? (
@@ -471,8 +499,8 @@ export function LanePilotPage() {
                 {resultSource ? <span className="sr-only">{resultSource}</span> : null}
               </div>
             ) : null}
-            {data?.cliReceiptJson ? (
-              <div className="space-y-2" data-testid="cli-receipt">
+            {data?.cliReceiptJson && !data.runs.some((run) => run.cliReceiptJson || run.attempts.some((attempt) => attempt.cliReceiptJson)) ? (
+              <div className="space-y-2">
                 <h2 className="text-sm font-medium">{t("cliReceipt")}</h2>
                 <SourceCode content={data.cliReceiptJson} path="cli-receipt.json" overflow="scroll" />
                 <span className="sr-only">{data.cliReceiptJson}</span>
