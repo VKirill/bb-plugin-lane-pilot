@@ -13,11 +13,9 @@ describe("install failure rollback and snapshot integrity", () => {
   it("D3 rolls back provable paths and preserves a directory changed after its last checkpoint", async () => {
     const home = mkdtempSync(join(tmpdir(), "lane-pilot-d3-"));
     const toolsDir = join(home, "safe-tools");
-    const oldInstall = '{"source_sha":"old"}\n';
     const oldSettings = '{"env":{"KEEP":"1"}}\n';
     mkdirSync(join(home, ".agents"), { recursive: true });
     mkdirSync(join(home, ".claude"), { recursive: true });
-    writeFileSync(join(home, ".agents/install.json"), oldInstall);
     writeFileSync(join(home, ".claude/settings.json"), oldSettings);
     linkSafeTools(toolsDir);
     rmSync(join(toolsDir, "rsync"), { force: true });
@@ -39,8 +37,7 @@ describe("install failure rollback and snapshot integrity", () => {
       expect(receipt.status, receipt.notes.join("\n")).toBe("failed");
       expect(receipt.notes.join("\n")).toContain("rollback CAS conflicts 1");
       expect(receipt.notes.join("\n")).toContain("guard/connect/finalize skipped");
-      expect(existsSync(join(home, ".agents/install.json"))).toBe(true);
-      expect(readFileSync(join(home, ".agents/install.json"), "utf8")).toBe(oldInstall);
+      expect(existsSync(join(home, ".agents/install.json"))).toBe(false);
       expect(readFileSync(join(home, ".claude/settings.json"), "utf8")).toBe(oldSettings);
       expect(existsSync(join(home, ".agents/bin"))).toBe(true);
       expect(existsSync(join(home, ".agents/hooks"))).toBe(false);

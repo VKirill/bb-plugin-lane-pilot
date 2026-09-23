@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -28,25 +29,38 @@ async function seedCompatibleEngine(root: string, missing: string[] = []): Promi
     await writeFile(full, text);
   };
   const files: Array<[string, string, string]> = [
-    ["opencode.plugin.default_export", "profiles/opencode/opencode-lane.ts", "export { default } from './opencode-lane/index.js';\n"],
+    ["opencode.plugin.default_export", "profiles/opencode/opencode-lane.ts", "export { default } from './opencode-lane/index.ts';\n"],
     ["opencode.hook.event", "profiles/opencode/opencode-lane/index.ts", "event: async () => {}\n"],
-    ["opencode.hook.chat_message", "profiles/opencode/opencode-lane/index.ts", "\"chat.message\": {}\n"],
-    ["opencode.hook.chat_params", "profiles/opencode/opencode-lane/index.ts", "\"chat.params\": {}\n"],
-    ["opencode.hook.tool_execute_after", "profiles/opencode/opencode-lane/index.ts", "\"tool.execute.after\": {}\n"],
-    ["opencode.hook.messages_transform", "profiles/opencode/opencode-lane/index.ts", "experimental.chat.messages.transform\n"],
-    ["opencode.telemetry.session_compacted", "profiles/opencode/opencode-lane/telemetry.ts", "session.compacted\n"],
-    ["opencode.sticky.contract_recovery", "profiles/opencode/opencode-lane/sticky.ts", "ensureStickyMessages\n"],
-    ["opencode.sticky.dumped_tool_recovery", "profiles/opencode/opencode-lane/sticky.ts", "dumpedToolNote\n"],
-    ["opencode.native_tool_route", "bin/lane-session", "CURSOR_ACP_FORWARD_TOOL_CALLS=false\n"],
+    ["opencode.hook.chat_message", "profiles/opencode/opencode-lane/index.ts", "\"chat.message\": async () => {}\n"],
+    ["opencode.hook.chat_params", "profiles/opencode/opencode-lane/index.ts", "\"chat.params\": async () => {}\n"],
+    ["opencode.hook.tool_execute_after", "profiles/opencode/opencode-lane/index.ts", "\"tool.execute.after\": async () => {}\n"],
+    ["opencode.hook.messages_transform", "profiles/opencode/opencode-lane/index.ts", "\"experimental.chat.messages.transform\": async () => {}\n"],
+    ["opencode.telemetry.session_compacted", "profiles/opencode/opencode-lane/telemetry.ts", "export function createTelemetry() { return { event: async () => { if (\"session.compacted\") return; }, after: async () => ({}) }; }\n"],
+    ["opencode.sticky.contract_recovery", "profiles/opencode/opencode-lane/sticky.ts", "export function ensureStickyMessages(messages: unknown[], block: string) { if (block) messages.push(block); }\n"],
+    ["opencode.sticky.dumped_tool_recovery", "profiles/opencode/opencode-lane/sticky.ts", "export function dumpedToolNote(text: string) { return text ? \"note\" : \"\"; }\n"],
+    ["opencode.native_tool_route", "bin/lane-session", "export CURSOR_ACP_FORWARD_TOOL_CALLS=false\n"],
     ["execution_packet.line_windows", "bin/execution_packet.py", "_WINDOW_RE = None\n"],
   ];
   const combined = new Map<string, string>();
   for (const [capability, path, content] of files) {
     if (missing.includes(capability)) continue;
-    combined.set(path, `${combined.get(path) ?? ""}${content}`);
+    const separator = path === "profiles/opencode/opencode-lane/index.ts" ? ",\n" : "\n";
+    combined.set(path, `${combined.get(path) ?? ""}${combined.has(path) ? separator : ""}${content.trim()}`);
   }
   for (const [path, content] of combined) await write(path, content);
+  await write("profiles/opencode/opencode-lane.ts", `export { default } from "./opencode-lane/index.ts";\n`);
+  const hooks = [...combined.entries()]
+    .filter(([path]) => path === "profiles/opencode/opencode-lane/index.ts")
+    .map(([, content]) => content)
+    .join("");
+  await write("profiles/opencode/opencode-lane/index.ts", `export const OpenCodeLanePlugin = async () => ({\n${hooks}\n});\nexport default OpenCodeLanePlugin;\n`);
   await write("package.json", '{"version":"99.0.0-custom"}\n');
+}
+
+async function makeGitRepo(root: string): Promise<void> {
+  execFileSync("git", ["init", "--quiet", root]);
+  execFileSync("git", ["-C", root, "-c", "user.name=AG-251 test", "-c", "user.email=ag251@example.invalid", "add", "-A"]);
+  execFileSync("git", ["-C", root, "-c", "user.name=AG-251 test", "-c", "user.email=ag251@example.invalid", "commit", "--quiet", "-m", "fixture"]);
 }
 
 async function inventory(home: string) {
@@ -64,6 +78,17 @@ afterEach(async () => {
 });
 
 describe("typed coexistence operations", () => {
+  it("snapshots only owned guard files without probing external operations", async () => {
+    const home = await makeHome();
+    const settingsPath = join(home, ".claude/settings.json");
+    await mkdir(join(home, ".claude"), { recursive: true });
+    await writeFile(settingsPath, '{"hooks":{}}\n');
+    const snapshot = await takeSnapshot({ homeDir: home, additionalPaths: [settingsPath], includeManifest: false });
+    expect(snapshot.entries.map((entry) => entry.path)).toEqual([settingsPath]);
+    await finalizeSnapshotAfter(snapshot, home);
+    expect(await treeHash(join(home, ".claude/backups"))).toBeNull();
+  });
+
   it("reuses a newer compatible custom source with zero engine, config, or cache writes", async () => {
     const home = await makeHome();
     const custom = join(home, ".claude/plugins/cache/claude-lane-stack/lane-stack/99.0.0-custom");
@@ -117,6 +142,43 @@ describe("typed coexistence operations", () => {
     expect(marker?.missingCapabilities).toEqual(["opencode.hook.tool_execute_after"]);
     expect(marker?.evidence.some((item) => item.kind === "capability" && item.detail.includes("OpenCode tool evidence, budget, and winnow result handling"))).toBe(true);
     expect(await treeHash(custom)).toBe(before);
+  });
+
+  it("isolates an incompatible legacy install and keeps user engine/config/cache unchanged", async () => {
+    const home = await makeHome();
+    const incompatible = join(home, ".agents/custom-lane-stack");
+    const compatibleFallback = join(home, "fixture-compatible-engine");
+    await seedCompatibleEngine(incompatible, ["opencode.hook.tool_execute_after"]);
+    await seedCompatibleEngine(compatibleFallback);
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents/install.json"), `${JSON.stringify({ source_sha: "custom-dirty-sha", source_repo: incompatible, version: "custom" })}\n`);
+    await mkdir(join(home, ".claude/plugins/cache/claude-lane-stack/lane-stack/custom"), { recursive: true });
+    await writeFile(join(home, ".claude/settings.json"), '{"hooks":{"UserHook":"keep"}}\n');
+    await mkdir(join(home, ".config/opencode"), { recursive: true });
+    await writeFile(join(home, ".config/opencode/opencode.jsonc"), '{\n  // user\n  "model": "custom/model",\n  "plugin": ["./plugins/other.ts"]\n}\n');
+    await writeFile(join(compatibleFallback, "install.sh"), `#!/bin/sh\nprintf leaked > "$HOME/.agents/legacy-installer-leak"\n`);
+    await makeGitRepo(compatibleFallback);
+
+    const before = {
+      incompatible: await treeHash(incompatible),
+      marker: await treeHash(join(home, ".agents/install.json")),
+      claude: await treeHash(join(home, ".claude")),
+      opencode: await treeHash(join(home, ".config/opencode")),
+      cache: await treeHash(join(home, ".claude/plugins/cache")),
+    };
+    const receipt = await installStack({ requestedHostId: hostId, homeDir: home, localFallbackPath: compatibleFallback });
+
+    expect(receipt.exitCode, receipt.notes.join("\n")).toBe(0);
+    expect(receipt.notes.join("\n").toLowerCase()).toContain("legacy install.sh was not run with the ordinary home");
+    expect(receipt.sourceSha).toBeTruthy();
+    expect(await treeHash(join(home, ".agents/legacy-installer-leak"))).toBeNull();
+    expect({
+      incompatible: await treeHash(incompatible),
+      marker: await treeHash(join(home, ".agents/install.json")),
+      claude: await treeHash(join(home, ".claude")),
+      opencode: await treeHash(join(home, ".config/opencode")),
+      cache: await treeHash(join(home, ".claude/plugins/cache")),
+    }).toEqual(before);
   });
 
   it("returns conflict without writing when the expected config hash is stale", async () => {

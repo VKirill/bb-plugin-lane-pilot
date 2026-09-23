@@ -6,7 +6,7 @@ import { parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { TARGET_SHA } from "../constants";
 import { hashPath } from "../hash";
 import { agentsDir, resolveHome } from "../paths";
-import { assessEngineCapabilities, IMPACTED_FUNCTIONS, inspectEngineCapabilities } from "../upstream-adapter/capabilities";
+import { assessEngineCapabilities, IMPACTED_FUNCTIONS, inspectEngineCapabilities, inspectEngineCapabilitiesDetailed } from "../upstream-adapter/capabilities";
 import { createOpenCodePluginShim, isManagedOpenCodePlugin } from "../upstream-adapter/opencode-plugin";
 import { ensureUpstream } from "../upstream";
 import { ensureOpenCodePluginEntry, removeOpenCodePluginEntry } from "../jsonc";
@@ -68,8 +68,8 @@ async function addEngineEvidence(
   if (!root) return;
   const rootSha256 = await pathHash(root);
   state.evidence.push({ kind: "engine-root", path: root, sha256: rootSha256, detail: "Read-only source root used for capability inspection." });
-  const capabilities = await inspectEngineCapabilities(root);
-  const assessment = assessEngineCapabilities(capabilities);
+  const detailed = await inspectEngineCapabilitiesDetailed(root);
+  const assessment = assessEngineCapabilities(detailed.capabilities);
   state.capabilities = [...new Set([...assessment.capabilities, ...assessment.adaptedCapabilities])].sort();
   state.missingCapabilities = assessment.missingCapabilities;
   state.compatible = assessment.compatible;
@@ -83,6 +83,9 @@ async function addEngineEvidence(
   }
   for (const diagnostic of assessment.diagnostics) {
     state.evidence.push({ kind: "capability", path: root, sha256: rootSha256, detail: diagnostic.message });
+  }
+  for (const diagnostic of detailed.diagnostics) {
+    state.evidence.push({ kind: "capability", path: join(root, diagnostic.path), sha256: rootSha256, detail: diagnostic.detail });
   }
 }
 
@@ -373,8 +376,16 @@ async function snapshotOfWrite(input: {
 const OPENCODE_PLUGIN_REF = "./plugins/opencode-lane.ts";
 
 export async function runCoexistenceOperation(input: CoexistenceOperationInput): Promise<CoexistenceOperationResult> {
+  return runCoexistenceOperationAtHome(input, resolveHome());
+}
+
+export async function runCoexistenceOperationAtHome(
+  input: CoexistenceOperationInput,
+  homeDir: string,
+  sourceOptions: { localFallbackPath?: string; moduleUrl?: string } = {},
+): Promise<CoexistenceOperationResult> {
   assertInput(input.projectId, input.hostId);
-  const home = resolveHome();
+  const home = resolveHome(homeDir);
   const targetSha = input.targetSha ?? TARGET_SHA;
   const row = await currentOperationRow(home, input);
   if (!row) return resultOf(input, { status: "blocked", owner: "unknown", reason: "Manager/path pair is not present in the read-only inventory; arbitrary paths are rejected." });
@@ -408,7 +419,18 @@ export async function runCoexistenceOperation(input: CoexistenceOperationInput):
     if (selected.assessment?.compatible) {
       return resultOf(input, { status: "skipped", owner: row.owner, beforeSha256: currentHash, afterSha256: currentHash, evidence: [{ kind: "reuse", path: selected.root, sha256: await anyPathHash(selected.root!), detail: "Installed engine satisfies required interfaces; no engine/config/cache writes were made." }], reason: "Compatible engine reused." });
     }
-    const installed = await ensureUpstream({ homeDir: home, preferredRoot: selected.root ?? undefined });
+    const installed = await ensureUpstream({ homeDir: home, preferredRoot: selected.root ?? undefined, ...sourceOptions });
+    if (installed.source === "reuse") {
+      return resultOf(input, {
+        status: "skipped",
+        owner: "upstream",
+        path: installed.path,
+        beforeSha256: currentHash,
+        afterSha256: currentHash,
+        evidence: [{ kind: "reuse", path: installed.path, sha256: await anyPathHash(installed.path), detail: `Compatible source reused read-only (${installed.sha}); no managed, user config, Claude cache, or marker writes were made.` }],
+        reason: "A compatible external engine source was reused without copying or modifying it.",
+      });
+    }
     const after = await anyPathHash(installed.path);
     if (!after) return resultOf(input, { status: "failed", owner: "lane-pilot", beforeSha256: currentHash, reason: "Managed engine installation completed without a readable path hash." });
     const snapshotId = await snapshotOfWrite({ home, manager: input.manager, path: installed.path, operation: "install", beforeSha256: null, afterSha256: after, ownedValue: null, sourceSha: installed.sha });
@@ -424,7 +446,7 @@ export async function runCoexistenceOperation(input: CoexistenceOperationInput):
     if (input.expectedSha256 !== null) return resultOf(input, { status: "conflict", owner: row.owner, beforeSha256: null, afterSha256: null, reason: "Expected a missing OpenCode plugin path; no write was made." });
     let selected = await managedEngineForOperation(home, targetSha);
     if (!selected.assessment?.compatible || !selected.root) {
-      const installed = await ensureUpstream({ homeDir: home, preferredRoot: selected.root ?? undefined });
+      const installed = await ensureUpstream({ homeDir: home, preferredRoot: selected.root ?? undefined, ...sourceOptions });
       selected = { root: installed.path, assessment: assessEngineCapabilities(await inspectEngineCapabilities(installed.path)) };
     }
     if (!selected.assessment?.compatible || !selected.root) {

@@ -1,6 +1,6 @@
 import { copyFile, cp, link, lstat, mkdir, readFile, readdir, readlink, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { EXTERNAL_OPS, EXTERNAL_OPS_WARNING } from "./constants";
 import { hashPath } from "./hash";
 import { MANIFEST_ROWS, type ManifestRow } from "./manifest";
@@ -71,6 +71,8 @@ async function copyEntry(src: string, dest: string, kind: ManifestRow["kind"]): 
 export async function takeSnapshot(input: {
   homeDir?: string;
   threadStoragePath?: string;
+  additionalPaths?: string[];
+  includeManifest?: boolean;
 }): Promise<SnapshotResult> {
   const home = resolveHome(input.homeDir);
   const ts = new Date().toISOString().replaceAll(":", "").replaceAll(".", "");
@@ -79,9 +81,9 @@ export async function takeSnapshot(input: {
     : join(lanePilotRoot(home), "snapshots", ts);
   await mkdir(snapshotPath, { recursive: true });
   try {
-    const externalBefore = await observeExternalOps(home);
+    const externalBefore = input.includeManifest === false ? {} : await observeExternalOps(home);
     const entries: ManifestEntry[] = [];
-    for (const row of MANIFEST_ROWS) {
+    for (const row of input.includeManifest === false ? [] : MANIFEST_ROWS) {
       if (row.kind === "external") {
         entries.push({
           id: row.id,
@@ -138,6 +140,51 @@ export async function takeSnapshot(input: {
         externalOpsAfter: null,
       });
     }
+    const recordedPaths = new Set(entries.map((entry) => entry.path));
+    for (const path of input.additionalPaths ?? []) {
+      const abs = resolve(path);
+      if (recordedPaths.has(abs)) continue;
+      let info;
+      try {
+        info = await lstat(abs);
+      } catch (error) {
+        if (!isEnoent(error)) throw new SnapshotReadError(abs, error);
+        entries.push({
+          id: `additional-${entries.length}`,
+          path: abs,
+          kind: "file",
+          existedBefore: false,
+          sha256Before: null,
+          sha256After: null,
+          symlinkTarget: null,
+          externalOpsBefore: null,
+          externalOpsAfter: null,
+        });
+        recordedPaths.add(abs);
+        continue;
+      }
+      if (!info.isFile() || info.isSymbolicLink()) {
+        throw new SnapshotReadError(abs, new Error("additional snapshot path is not a regular file"));
+      }
+      try {
+        const hashed = await hashPath(abs);
+        await copyEntry(abs, join(snapshotPath, copyName(abs, home)), "file");
+        entries.push({
+          id: `additional-${entries.length}`,
+          path: abs,
+          kind: "file",
+          existedBefore: true,
+          sha256Before: hashed.sha256,
+          sha256After: null,
+          symlinkTarget: null,
+          externalOpsBefore: null,
+          externalOpsAfter: null,
+        });
+        recordedPaths.add(abs);
+      } catch (error) {
+        throw new SnapshotReadError(abs, error);
+      }
+    }
     const manifest = {
       schemaVersion: 1,
       home,
@@ -160,7 +207,9 @@ export async function finalizeSnapshotAfter(
   homeDir?: string,
 ): Promise<ManifestEntry[]> {
   const home = resolveHome(homeDir);
-  const externalAfter = await observeExternalOps(home);
+  const externalAfter = snapshot.entries.some((entry) => entry.kind === "external")
+    ? await observeExternalOps(home)
+    : {};
   for (const entry of snapshot.entries) {
     if (entry.kind === "external") {
       entry.externalOpsAfter = externalAfter[entry.path] ?? null;

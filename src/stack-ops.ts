@@ -2,12 +2,12 @@ import { execFileSync } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { EXTERNAL_OPS, EXTERNAL_OPS_WARNING, TARGET_SHA } from "./constants";
-import { observeExternalOps } from "./external-ops";
+import { observeExternalOps, type ExternalOpsSnapshot } from "./external-ops";
 import { applyInstalledGuard } from "./guard-apply";
 import { readImportConfig } from "./import-config";
 import { runInstallSh, type InstallPhase, type InstallRunResult } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
-import { inventoryCoexistenceAtHome } from "./coexistence";
+import { inventoryCoexistenceAtHome, runCoexistenceOperationAtHome } from "./coexistence";
 import { agentsDir, resolveHome } from "./paths";
 import { skippedOpsReceipt, writeReceipt, type FileChange, type InstallReceipt } from "./receipt";
 import { hideS8Files, restoreS8Files, s8Hashes } from "./s8";
@@ -45,6 +45,10 @@ function commandVersion(command: string): { present: boolean; version: string | 
   }
 }
 
+function unobservedExternalOps(): ExternalOpsSnapshot {
+  return Object.fromEntries(EXTERNAL_OPS.map((operation) => [operation, null])) as ExternalOpsSnapshot;
+}
+
 export async function readInstallJson(homeDir?: string): Promise<{
   sourceSha: string | null;
   version: string | null;
@@ -78,6 +82,7 @@ export async function detectStack(ctx: HostContext) {
   const compatibleRows = engineRows.filter((row) => row.compatible === true);
   const requiredCapabilities = [...new Set(engineRows.flatMap((row) => row.capabilities))].sort();
   const missingCapabilities = [...new Set(engineRows.flatMap((row) => row.missingCapabilities))].sort();
+  const compatible = compatibleRows.length > 0;
   return {
     hostId: process.env.BB_HOST_ID ?? ctx.requestedHostId,
     laneStack: {
@@ -90,14 +95,14 @@ export async function detectStack(ctx: HostContext) {
     targetSha: TARGET_SHA,
     matchesTarget: install.sourceSha === TARGET_SHA,
     compatibility: {
-      compatible: compatibleRows.length > 0,
-      decision: compatibleRows.length > 0 ? "reuse" as const : "install" as const,
+      compatible,
+      decision: compatible ? "reuse" as const : "install" as const,
       sources: compatibleRows.map((row) => ({ manager: row.manager, path: row.path, version: row.version, sourceSha: row.sourceSha })),
       capabilities: requiredCapabilities,
       missingCapabilities,
       diagnostics: engineRows.flatMap((row) => row.evidence.filter((item) => item.kind === "capability").map((item) => item.detail)),
     },
-    scenario: scenarioOf(install.sourceSha),
+    scenario: compatible ? "S1" as const : scenarioOf(install.sourceSha),
   };
 }
 
@@ -132,7 +137,7 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
   const before = await detectStack(ctx);
   const confirm = ctx.confirmExternalOps === true;
   if (before.compatibility.compatible) {
-    const external = await observeExternalOps(home);
+    const external = unobservedExternalOps();
     return writeReceipt({
       action: "install",
       scenario: before.scenario,
@@ -146,6 +151,146 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
       notes: [
         `Compatible engine reused from ${before.compatibility.sources.map((source) => `${source.manager}:${source.path}`).join(", ")}; version/SHA/dirty state did not trigger writes`,
         "No install.sh, user config, or cache writes were made",
+      ],
+    }, await receiptDirOf(ctx));
+  }
+
+  if (before.laneStack.present) {
+    const inventory = await inventoryCoexistenceAtHome({
+      projectId: ctx.projectId ?? "lane-pilot",
+      hostId: ctx.requestedHostId,
+      targetSha: TARGET_SHA,
+    }, home);
+    const managed = inventory.managers.find((row) => row.manager === "managed-checkout");
+    const external = unobservedExternalOps();
+    if (!managed) {
+      return writeReceipt({
+        action: "install",
+        scenario: before.scenario,
+        status: "failed",
+        filesChanged: [],
+        externalOpsBefore: external,
+        externalOpsAfter: external,
+        ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
+        exitCode: 1,
+        snapshotPath: null,
+        sourceSha: before.laneStack.sourceSha,
+        notes: ["Existing incompatible engine was preserved; managed-checkout inventory path is unavailable, so no installer was run."],
+      }, await receiptDirOf(ctx));
+    }
+
+    let operation;
+    try {
+      operation = await runCoexistenceOperationAtHome({
+        projectId: ctx.projectId ?? "lane-pilot",
+        hostId: ctx.requestedHostId,
+        operation: "install",
+        manager: "managed-checkout",
+        path: managed.path,
+        expectedSha256: managed.sha256,
+        targetSha: TARGET_SHA,
+      }, home, { localFallbackPath: ctx.localFallbackPath, moduleUrl: ctx.moduleUrl });
+    } catch (error) {
+      return writeReceipt({
+        action: "install",
+        scenario: before.scenario,
+        status: "failed",
+        filesChanged: [],
+        externalOpsBefore: external,
+        externalOpsAfter: unobservedExternalOps(),
+        ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
+        exitCode: 1,
+        snapshotPath: null,
+        sourceSha: before.laneStack.sourceSha,
+        notes: ["Legacy install.sh was not run with the ordinary HOME", `Managed engine operation failed before a write: ${error instanceof Error ? error.message : "unknown adapter error"}`],
+      }, await receiptDirOf(ctx));
+    }
+
+    const ok = operation.status === "ok" || operation.status === "skipped";
+    const changed = operation.beforeSha256 !== operation.afterSha256;
+    let guardSnapshot: Awaited<ReturnType<typeof takeSnapshot>> | null = null;
+    let guardFilesChanged: Array<{ path: string; sha256Before: string | null; sha256After: string }> = [];
+    let guardNote = "";
+    if (ok && ctx.pmWorkspacePath) {
+      const guardPath = join(home, ".agents/hooks/guard_shell.py");
+      const payloadPath = join(home, ".agents/hooks/lib_payload.py");
+      const workspaceSettingsPath = join(ctx.pmWorkspacePath, ".claude/settings.json");
+      try {
+        guardSnapshot = await takeSnapshot({
+          homeDir: home,
+          threadStoragePath: ctx.threadStoragePath,
+          additionalPaths: [guardPath, payloadPath, workspaceSettingsPath],
+          includeManifest: false,
+        });
+        const guard = await applyInstalledGuard({
+          homeDir: home,
+          guardSourcePath: ctx.guardSourcePath,
+          moduleUrl: ctx.moduleUrl,
+          pmWorkspacePath: ctx.pmWorkspacePath,
+        });
+        guardFilesChanged = guard.filesChanged;
+        await finalizeSnapshotAfter(guardSnapshot, home);
+        guardNote = `PM guard installed with CAS; config snapshot ${guardSnapshot.snapshotPath}`;
+      } catch (error) {
+        if (guardSnapshot) {
+          await finalizeSnapshotAfter(guardSnapshot, home).catch(() => undefined);
+          await rollbackSnapshot(guardSnapshot.snapshotPath).catch(() => undefined);
+        }
+        let engineRollback = "not needed";
+        if (operation.status === "ok" && operation.snapshotId && operation.afterSha256) {
+          const rolledBack = await runCoexistenceOperationAtHome({
+            projectId: ctx.projectId ?? "lane-pilot",
+            hostId: ctx.requestedHostId,
+            operation: "rollback",
+            manager: "managed-checkout",
+            path: operation.path,
+            expectedSha256: operation.afterSha256,
+            snapshotId: operation.snapshotId,
+            targetSha: TARGET_SHA,
+          }, home).catch((rollbackError) => ({ status: "blocked" as const, reason: rollbackError instanceof Error ? rollbackError.message : "rollback failed" }));
+          engineRollback = `${rolledBack.status}${rolledBack.reason ? `: ${rolledBack.reason}` : ""}`;
+        }
+        return writeReceipt({
+          action: "install",
+          scenario: before.scenario,
+          status: "failed",
+          filesChanged: [],
+          externalOpsBefore: external,
+          externalOpsAfter: unobservedExternalOps(),
+          ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
+          exitCode: 1,
+          snapshotPath: guardSnapshot?.snapshotPath ?? operation.snapshotId,
+          sourceSha: before.laneStack.sourceSha,
+          notes: [
+            "Managed engine install was kept separate from the ordinary HOME installer",
+            `PM guard operation failed: ${error instanceof Error ? error.message : "unknown guard error"}`,
+            `Guard config snapshot rollback attempted; engine rollback ${engineRollback}`,
+          ],
+        }, await receiptDirOf(ctx));
+      }
+    }
+    return writeReceipt({
+      action: "install",
+      scenario: before.scenario,
+      status: ok ? "ok" : "failed",
+      filesChanged: [
+        ...(changed && operation.afterSha256 ? [{ path: operation.path, sha256Before: operation.beforeSha256, sha256After: operation.afterSha256 }] : []),
+        ...guardFilesChanged,
+      ],
+      externalOpsBefore: external,
+      externalOpsAfter: unobservedExternalOps(),
+      ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
+      exitCode: ok ? 0 : 1,
+      snapshotPath: guardSnapshot?.snapshotPath ?? operation.snapshotId,
+      sourceSha: operation.status === "ok" ? TARGET_SHA : before.laneStack.sourceSha,
+      notes: [
+        "Legacy install.sh was not run with the ordinary HOME",
+        `Ownership operation ${operation.status} for ${operation.manager}:${operation.path}; owner ${operation.owner}`,
+        ...operation.evidence.map((item) => item.detail),
+        ...(guardNote ? [guardNote] : []),
+        ...(guardSnapshot && operation.snapshotId ? [`Managed engine ownership snapshot ${operation.snapshotId}`] : []),
+        ...(operation.reason ? [operation.reason] : []),
+        "Ordinary Claude settings, OpenCode config, install marker, and cache were outside this operation's write set",
       ],
     }, await receiptDirOf(ctx));
   }
