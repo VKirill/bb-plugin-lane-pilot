@@ -76,6 +76,7 @@ describe("Lane Pilot UI", () => {
   afterEach(() => {
     setLocaleOverride(null);
     document.documentElement.lang = "en";
+    Object.defineProperty(navigator, "language", { configurable: true, value: "en-US" });
   });
 
   it("opens the selected project from the no-context picker and remembers it", async () => {
@@ -108,8 +109,11 @@ describe("Lane Pilot UI", () => {
   });
 
   it("switches all chrome strings when document lang is ru", async () => {
+    setLocaleOverride("en");
     document.documentElement.lang = "en";
     expect(t("tabSettings")).toBe(en.tabSettings);
+    setLocaleOverride(null);
+    Object.defineProperty(navigator, "language", { configurable: true, value: "ru-RU" });
     document.documentElement.lang = "ru";
     expect(t("tabSettings")).toBe(ru.tabSettings);
     expect(t("confirmBody")).toBe(ru.confirmBody);
@@ -134,6 +138,8 @@ describe("Lane Pilot UI", () => {
   });
 
   it("shows validation separately from CAS and localizes the allowed values", async () => {
+    Object.defineProperty(navigator, "language", { configurable: true, value: "ru-RU" });
+    setLocaleOverride(null);
     document.documentElement.lang = "ru";
     expect(validationMessage("invalid_choice", ["writer.provider", "agy, codex"]))
       .toBe(ru.validationInvalidChoice.replace("{key}", "writer.provider").replace("{allowed}", "agy, codex"));

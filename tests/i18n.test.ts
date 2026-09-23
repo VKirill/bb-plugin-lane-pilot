@@ -22,25 +22,30 @@ function stubBrowserStorage(): void {
 
 describe("i18n dictionaries", () => {
   it("uses the active Russianizer hint, then non-default document and browser locale", () => {
-    expect(localeFromSources("ru-RU", "en-US", "en")).toBe("ru");
+    expect(localeFromSources("ru-RU", "en-US", null)).toBe("en");
+    expect(localeFromSources("ru-RU", null, null)).toBe("ru");
     expect(localeFromSources("en", "ru-RU", null)).toBe("ru");
     expect(localeFromSources(null, "ru-RU", null)).toBe("ru");
     expect(localeFromSources("", "ru-RU", null)).toBe("ru");
     expect(localeFromSources(null, null, "ru")).toBe("ru");
     expect(localeFromSources("en", "en-US", "ru")).toBe("ru");
-    expect(localeFromSources("de", "ru-RU", null)).toBe("en");
-    expect(localeFromSources("ru", "en-US", null)).toBe("ru");
+    expect(localeFromSources("de", "ru-RU", null)).toBe("ru");
+    expect(localeFromSources("ru", "en-US", null)).toBe("en");
     expect(localeFromSources("en", "en-US", "en")).toBe("en");
     expect(localeFromSources(null, null, null)).toBe("en");
   });
-  it("only accepts the Russianizer preference when its actual sidebar action is present", () => {
+  it("treats the Russianizer as enabled by default and honors only an explicit off value", () => {
     stubBrowserStorage();
-    localStorage.setItem("bb-plugin-ru:enabled", "on");
+    Object.defineProperty(navigator, "language", { configurable: true, value: "en-US" });
     expect(detectLocaleHint()).toBe(navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en");
     const marker = document.createElement("li");
     marker.setAttribute("data-footer-item", "plugin:ru/toggle");
     document.body.append(marker);
     expect(detectLocaleHint()).toBe("ru");
+    localStorage.setItem("bb-plugin-ru:enabled", "on");
+    expect(detectLocaleHint()).toBe("ru");
+    localStorage.setItem("bb-plugin-ru:enabled", "off");
+    expect(detectLocaleHint()).toBe("en");
     marker.remove();
     localStorage.removeItem("bb-plugin-ru:enabled");
   });

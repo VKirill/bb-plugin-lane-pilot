@@ -245,12 +245,12 @@ export function setLocaleOverride(next: Locale | null): void {
 }
 
 export function localeFromSources(documentLanguage?: string | null, navigatorLanguage?: string | null, russianizerHint?: string | null): Locale {
-  // The Russianizer is the only signal for BB's translated UI. Its `off`
-  // value is not a language preference; let browser/document language apply.
+  // The Russianizer is the only signal for BB's translated UI. Its action is
+  // enabled by default; only an explicit `off` disables that signal.
   if (russianizerHint?.toLowerCase().startsWith("ru")) return "ru";
+  if (navigatorLanguage?.trim()) return navigatorLanguage.trim().toLowerCase().startsWith("ru") ? "ru" : "en";
   const documentValue = documentLanguage?.trim().toLowerCase();
   if (documentValue && documentValue !== "en") return documentValue.startsWith("ru") ? "ru" : "en";
-  if (navigatorLanguage?.trim()) return navigatorLanguage.trim().toLowerCase().startsWith("ru") ? "ru" : "en";
   return "en";
 }
 
@@ -269,7 +269,7 @@ export function detectLocaleHint(): Locale {
     const marker = globalThis.document?.querySelector('[data-footer-item="plugin:ru/toggle"]');
     if (marker) {
       const value = globalThis.localStorage?.getItem("bb-plugin-ru:enabled");
-      russianizerHint = value === "on" ? "ru" : null;
+      russianizerHint = value === "off" ? null : "ru";
     }
   } catch { /* browser storage can be unavailable */ }
   return localeFromSources(globalThis.document?.documentElement?.lang, globalThis.navigator?.language, russianizerHint);
