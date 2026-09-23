@@ -266,6 +266,30 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
+  it("shows only legal cancel and retry actions in both monitor layouts", async () => {
+    for (const scenario of [
+      { runState:"closed", attemptState:"accepted", cancel:false, retry:false },
+      { runState:"closed", attemptState:"validation_failed", cancel:false, retry:false },
+      { runState:"running", attemptState:"running", cancel:true, retry:false },
+      { runState:"running", attemptState:"validation_failed", cancel:false, retry:true },
+    ]) {
+      const base = screenFixture();
+      const run = base.runs[0]!;
+      run.state = scenario.runState;
+      run.attempts[0]!.state = scenario.attemptState;
+      const slot = await mountPage({ get_screen:() => base });
+      fireEvent.click(slot.getByTestId("tab-monitor"));
+      const mobile = await slot.findByTestId("mobile-attempt-lpattempt_1");
+      const desktop = slot.getByTestId("attempt-lpattempt_1");
+      for (const row of [mobile, desktop]) {
+        const buttons = Array.from(row.querySelectorAll("button")).map((button) => button.textContent);
+        expect(buttons.includes(en.cancel)).toBe(scenario.cancel);
+        expect(buttons.includes(en.retry)).toBe(scenario.retry);
+      }
+      slot.lifecycle.unmount();
+    }
+  });
+
   it("applies saved global locale even when document lang is en", async () => {
     document.documentElement.lang = "en";
     const base = screenFixture();

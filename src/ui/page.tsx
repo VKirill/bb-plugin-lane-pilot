@@ -51,7 +51,7 @@ import {
 } from "../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
-import { ATTEMPT_STATES, RUN_STATES } from "../state-machine";
+import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "../state-machine";
 
 type ScreenPayload = {
   projectId: string;
@@ -219,6 +219,21 @@ function runTone(state: string): "default" | "secondary" | "destructive" | "outl
   if (state === "blocked" || state === "provider_error" || state === "validation_failed") return "destructive";
   if (state === "running" || state === "pending") return "secondary";
   return "outline";
+}
+
+type MonitorRun = ScreenPayload["runs"][number];
+type MonitorAttempt = MonitorRun["attempts"][number];
+
+function canCancelAttempt(run: MonitorRun, attempt: MonitorAttempt): boolean {
+  return (run.state === "pending" || run.state === "running")
+    && ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(attempt.state)
+    && Boolean(attempt.thread_id);
+}
+
+function canRetryAttempt(run: MonitorRun, attempt: MonitorAttempt): boolean {
+  return (run.state === "pending" || run.state === "running")
+    && RETRY_ELIGIBLE.some((state) => state === attempt.state)
+    && run.attempts.filter((item) => item.task_id === attempt.task_id).length < MAIN_ATTEMPT_LIMIT;
 }
 
 export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
@@ -553,10 +568,12 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                       <div className="text-xs text-muted-foreground">{t("attempt")}: {attempt.attempt_no || "—"}</div>
                       <div className="flex flex-wrap gap-2">
                         {index === 0 && run.state !== "closed" && !hasOpenAttempt ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
-                        {attempt.thread_id ? <>
+                        {canCancelAttempt(run, attempt) ?
                           <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId:attempt.id }).then(load)}>{t("cancel")}</Button>
+                          : null}
+                        {canRetryAttempt(run, attempt) ?
                           <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId:attempt.id }).then(load)}>{t("retry")}</Button>
-                        </> : null}
+                          : null}
                       </div>
                     </CardContent>
                   </Card>;
@@ -605,16 +622,16 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                       <TableCell>{attempt.attempt_no || "—"}</TableCell>
                       <TableCell className="space-x-2">
                         {index === 0 && run.state !== "closed" && !hasOpenAttempt ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
-                        {attempt.thread_id ? (
-                          <>
+                        {canCancelAttempt(run, attempt) ?
                             <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId: attempt.id }).then(load)}>
                               {t("cancel")}
                             </Button>
+                          : null}
+                        {canRetryAttempt(run, attempt) ?
                             <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId: attempt.id }).then(load)}>
                               {t("retry")}
                             </Button>
-                          </>
-                        ) : null}
+                          : null}
                       </TableCell>
                     </TableRow>
                     ));

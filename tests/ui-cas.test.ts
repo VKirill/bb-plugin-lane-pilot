@@ -1,8 +1,47 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { openDatabase, savePrototypeConfig } from "../src/database";
 import plugin from "../server";
 
 describe("settings CAS over RPC", () => {
+  it("saves unrelated paths after a native Claude selection while retaining legacy validation and atomicity", async () => {
+    const projectId = "proj_native_paths";
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ providers:{
+      list:async () => [{ id:"claude-code", available:true, capabilities:{ supportsServiceTier:false }, serviceTiers:[] }] as never,
+      models:async () => ({ models:[{ id:"claude-opus-5", model:"claude-opus-5", supportedReasoningEfforts:[{ reasoningEffort:"medium", description:"Medium" }] }] as never }),
+    } } });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, {
+      projectId, hostId:"host-native", pmWorkspacePath:"/tmp/pm-before", writerWorkspacePath:"/tmp/writer-before",
+      pmProviderId:"claude-code", pmModel:"claude-opus-5", writerProviderId:"codex", writerModel:"gpt-test",
+    });
+    await plugin(bb);
+    const native = await harness.behavior.callRpc("save_writer_selection", {
+      projectId, providerId:"claude-code", model:"claude-opus-5", reasoningLevel:"medium", serviceTier:null,
+      expectedVersions:{ "writer.provider":0, "writer.model":0, "writer.reasoning_effort":0, "writer.service_tier":0 },
+    }) as { ok:boolean; versions:Record<string,number> };
+    expect(native.ok).toBe(true);
+    const paths = await harness.behavior.callRpc("save_settings", { projectId, changes:[
+      { key:"pmWorkspacePath", value:"/tmp/pm-after", expectedVersion:1 },
+      { key:"writerWorkspacePath", value:"/tmp/writer-after", expectedVersion:1 },
+    ] }) as { ok:boolean; versions:Record<string,number> };
+    expect(paths).toMatchObject({ ok:true, versions:{ pmWorkspacePath:2, writerWorkspacePath:2 } });
+    const invalid = await harness.behavior.callRpc("save_settings", { projectId, changes:[
+      { key:"pmWorkspacePath", value:"/tmp/partial", expectedVersion:2 },
+      { key:"writer.provider", value:"invalid-provider", expectedVersion:native.versions["writer.provider"] },
+    ] }) as { ok:boolean; validation?:{ code:string; key:string } };
+    expect(invalid).toMatchObject({ ok:false, validation:{ code:"invalid_choice", key:"writer.provider" } });
+    const invalidOther = await harness.behavior.callRpc("save_settings", { projectId, changes:[
+      { key:"pmWorkspacePath", value:"/tmp/partial", expectedVersion:2 },
+      { key:"ui.language", value:"invalid-language", expectedVersion:0 },
+    ] }) as { ok:boolean; validation?:{ code:string; key:string } };
+    expect(invalidOther).toMatchObject({ ok:false, validation:{ code:"invalid_choice", key:"ui.language" } });
+    const screen = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };
+    expect(screen.values).toMatchObject({ pmWorkspacePath:"/tmp/pm-after", writerWorkspacePath:"/tmp/writer-after", "writer.provider":"claude-code" });
+    expect(screen.versions.pmWorkspacePath).toBe(2);
+    await harness.lifecycle.dispose();
+  });
+
   it("rejects a stale version and keeps the stored value", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);

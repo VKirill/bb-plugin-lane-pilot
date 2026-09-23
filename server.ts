@@ -77,6 +77,19 @@ function stringAt(value: unknown, key: string): string | null {
 
 class WriterSelectionError extends Error {}
 
+const NATIVE_WRITER_KEYS = new Set(["writer.provider", "writer.model", "writer.reasoning_effort", "writer.service_tier"]);
+
+function cancelRejection(db: ReturnType<typeof openDatabase>, attempt: NonNullable<ReturnType<typeof getAttempt>>): string | null {
+  const run = getRun(db, attempt.run_id);
+  if (!run || run.closed_at || (run.state !== "pending" && run.state !== "running")) {
+    return `cancel is not legal for ${run?.state ?? "missing"} run`;
+  }
+  if (!["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(attempt.state)) {
+    return `cancel is not legal from ${attempt.state}`;
+  }
+  return null;
+}
+
 async function finishRunSafely(
   bb: BbPluginApi,
   db: ReturnType<typeof openDatabase>,
@@ -1296,7 +1309,9 @@ export default async function plugin(bb: BbPluginApi) {
       }
       return { ok: true, conflict: false, version: result.version, value };
     },
-    save_settings: ({ projectId, changes }) => casUpsertSettings(db, { projectId, changes }),
+    save_settings: ({ projectId, changes }) => casUpsertSettings(db, { projectId, changes }, {
+      nativeWriterSelection: changes.every(({ key }) => !NATIVE_WRITER_KEYS.has(key)),
+    }),
     save_writer_selection: async ({ projectId, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
       const reject = (code:"invalid_choice"|"incompatible_setting", key:string, message:string) => ({
         ok:false, conflict:false, values:{}, versions:{}, validation:{ code, key, params:[key, message] },
@@ -1339,6 +1354,8 @@ export default async function plugin(bb: BbPluginApi) {
     cancel_attempt: async ({ attemptId }) => {
       const attempt = getAttempt(db, attemptId);
       if (!attempt?.thread_id) return { ok: false, state: attempt?.state ?? "missing", reason: "attempt has no writer thread" };
+      const rejection = cancelRejection(db, attempt);
+      if (rejection) return { ok:false, state:attempt.state, reason:rejection };
       transitionAttempt(db, attempt.id, "cancel_requested", { threadId: attempt.thread_id });
       await bb.sdk.threads.stop({ threadId: attempt.thread_id });
       const observed = await bb.sdk.threads.get({ threadId: attempt.thread_id });
@@ -1553,6 +1570,8 @@ export default async function plugin(bb: BbPluginApi) {
         if (command === "cancel" && args.length === 1) {
           const attempt = getAttempt(db, args[0]!);
           if (!attempt?.thread_id) throw new Error("attempt has no writer thread");
+          const rejection = cancelRejection(db, attempt);
+          if (rejection) return { exitCode:1, stdout:JSON.stringify({ ok:false, attemptId:attempt.id, state:attempt.state, reason:rejection }) };
           transitionAttempt(db, attempt.id, "cancel_requested", { threadId:attempt.thread_id });
           await bb.sdk.threads.stop({ threadId:attempt.thread_id });
           const observed = await bb.sdk.threads.get({ threadId:attempt.thread_id });

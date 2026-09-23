@@ -6,6 +6,7 @@ import {
   createAttempt,
   createRun,
   createTask,
+  closeRun,
   getAttempt,
   getRun,
   getReasoningTrace,
@@ -692,6 +693,53 @@ describe("BB writer validation on the server path", () => {
     expect(order[0]).toBe("stop");
     expect(order).toContain("get");
     expect(order).toContain("listRunning");
+    await harness.lifecycle.dispose();
+  });
+
+  it("rejects terminal and closed cancellation before stop without changing acceptance", async () => {
+    let stopCalls = 0;
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ threads:{
+      stop:async () => { stopCalls++; return { ok:true }; },
+    } } });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    createRun(db, "run-terminal-cancel", projectId);
+    createAttempt(db, { id:"attempt-terminal-cancel", runId:"run-terminal-cancel", taskId:"t" });
+    transitionAttempt(db, "attempt-terminal-cancel", "accepted", { threadId:"writer-accepted" });
+    const receipt = { lanePilotRunId:"run-terminal-cancel", status:"accepted", output:"preserve" };
+    saveProjectSetting(db, projectId, "writer.lastResult", receipt);
+    expect(closeRun(db, "run-terminal-cancel", "rpc")).toBe(true);
+    await plugin(bb);
+    const rpc = await harness.behavior.callRpc("cancel_attempt", { attemptId:"attempt-terminal-cancel" }) as { ok:boolean; state:string; reason:string };
+    expect(rpc).toMatchObject({ ok:false, state:"accepted" });
+    expect(rpc.reason).toContain("closed run");
+    const cli = await harness.behavior.runCli(["cancel", "attempt-terminal-cancel"]);
+    expect(cli.exitCode).toBe(1);
+    expect(stopCalls).toBe(0);
+    expect(getAttempt(db, "attempt-terminal-cancel")?.state).toBe("accepted");
+    expect(getRun(db, "run-terminal-cancel")?.state).toBe("closed");
+    const screen = await harness.behavior.callRpc("get_screen", { projectId }) as { writerResultJson:string|null };
+    expect(JSON.parse(screen.writerResultJson!)).toEqual(receipt);
+    await harness.lifecycle.dispose();
+  });
+
+  it("still stops an active attempt through cancel_attempt after observing idle", async () => {
+    const order:string[] = [];
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ threads:{
+      stop:async () => { order.push("stop"); return { ok:true }; },
+      get:async () => { order.push("get"); return { id:"writer-active", status:"idle" }; },
+      listRunning:async () => { order.push("listRunning"); return []; },
+    } } });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    createRun(db, "run-active-cancel", projectId);
+    createAttempt(db, { id:"attempt-active-cancel", runId:"run-active-cancel", taskId:"t" });
+    transitionAttempt(db, "attempt-active-cancel", "running", { threadId:"writer-active" });
+    await plugin(bb);
+    expect(await harness.behavior.callRpc("cancel_attempt", { attemptId:"attempt-active-cancel" }))
+      .toMatchObject({ ok:true, state:"canceled" });
+    expect(order).toEqual(["stop", "get", "listRunning"]);
+    expect(getAttempt(db, "attempt-active-cancel")?.state).toBe("canceled");
     await harness.lifecycle.dispose();
   });
 });
