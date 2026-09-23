@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { UNAPPLIED_REASON, SETTING_CATALOG, unappliedNotValidReason } from "../src/channels";
-import { detectLocale, en, localeFromSources, ru, setLocaleOverride, unappliedReason, type I18nKey } from "../i18n";
+import { en, localeFromRussianizerSetting, localeFromSources, ru, setLocaleOverride, unappliedReason, type I18nKey } from "../i18n";
 
 describe("i18n dictionaries", () => {
   it("uses the BB document language first and browser language as fallback", () => {
+    expect(localeFromRussianizerSetting("on")).toBe("ru");
+    expect(localeFromRussianizerSetting("off")).toBe("en");
+    expect(localeFromRussianizerSetting(null)).toBeNull();
     expect(localeFromSources("ru-RU", "en", "en-US")).toBe("ru");
     expect(localeFromSources(null, "ru-RU", "en-US")).toBe("ru");
     expect(localeFromSources(null, "", "ru-RU")).toBe("ru");

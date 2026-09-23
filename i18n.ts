@@ -230,11 +230,13 @@ export function setLocaleOverride(next: Locale | null): void {
 }
 
 export function bbInterfaceLanguage(): Locale | null {
-  try {
-    const enabled = globalThis.localStorage?.getItem("bb-plugin-ru:enabled");
-    if (enabled === "on") return "ru";
-    if (enabled === "off") return "en";
-  } catch { /* Storage can be unavailable in restricted browser contexts. */ }
+  try { return localeFromRussianizerSetting(globalThis.localStorage?.getItem("bb-plugin-ru:enabled")); }
+  catch { return null; }
+}
+
+export function localeFromRussianizerSetting(enabled: string | null | undefined): Locale | null {
+  if (enabled === "on") return "ru";
+  if (enabled === "off") return "en";
   return null;
 }
 

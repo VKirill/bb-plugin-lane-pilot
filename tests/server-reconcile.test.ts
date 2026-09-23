@@ -10,6 +10,7 @@ import {
   setRunThread,
   transitionAttempt,
 } from "../src/database";
+import { TARGET_SHA } from "../src/constants";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";
@@ -25,6 +26,43 @@ const config = {
 };
 
 describe("production spawn_unknown reconciliation", () => {
+  it("finishes an idle project run through CLI and allows another activation", async () => {
+    const stopped: string[] = [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{ threads:{
+        stop: async ({ threadId }) => { stopped.push(threadId); },
+        get: async () => ({ status:"completed" }) as never,
+        listRunning: async () => [],
+        getPluginMetadata: async () => ({}),
+        spawn: async () => ({ id:"pm-after-finish" }) as never,
+      } },
+      experimental_callHostRpc: (call) => {
+        if (call.method === "detect") return { hostId:"host-test", laneStack:{ present:true,version:"1.38.0",sourceSha:TARGET_SHA },openCode:{present:false,version:null},workspace:{path:"/tmp/pm",present:true},targetSha:TARGET_SHA,matchesTarget:true,scenario:"S1" };
+        if (call.method === "importConfig") return { schemaVersion:1,action:"import-config",scenario:"S7",status:"ok",filesChanged:[],externalOpsBefore:{},externalOpsAfter:{},skippedExternalOps:[],warning:null,exitCode:0,receiptPath:null,snapshotPath:null,sourceSha:null,notes:[],imported:{routingProfile:null,nightShift:null} };
+        if (call.method === "writePmSettings") return { hostId:"host-test",settingsPath:"/tmp/pm/.claude/settings.json",guardPath:"/tmp/guard_shell.py" };
+        throw new Error(`unexpected ${call.method}`);
+      },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    createRun(db, "run-before-finish", projectId);
+    setRunThread(db, "run-before-finish", "pm-before-finish");
+    await plugin(bb);
+
+    const finish = await harness.behavior.runCli(["finish", projectId]);
+    expect(finish.exitCode).toBe(0);
+    expect(JSON.parse(finish.stdout)).toMatchObject({ projectId, closed:true, finishedRunIds:["run-before-finish"] });
+    expect(stopped).toEqual(["pm-before-finish"]);
+    expect((db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id='run-before-finish'").get() as {closed_at:number|null}).closed_at).not.toBeNull();
+
+    const next = await harness.behavior.callRpc("activate_pm", { projectId, sourceThreadId:"source-thread" }) as {threadId:string;runId:string};
+    expect(next).toMatchObject({ threadId:"pm-after-finish", runId:expect.any(String) });
+    expect((db.prepare("SELECT state FROM lane_pilot_run WHERE id=?").get(next.runId) as {state:string}).state).toBe("running");
+    await harness.behavior.runCli(["finish", projectId]);
+    await harness.lifecycle.dispose();
+  });
+
   it("reconciles by metadata after the spawn response is lost and continues with the found thread", async () => {
     let capturedMetadata: Record<string,unknown> | undefined;
     const { bb, harness } = createFakePluginHost({
