@@ -58,6 +58,9 @@ describe("BB writer validation on the server path", () => {
   it("returns dispatch immediately and exposes the persisted receipt through bounded wait", async () => {
     let releaseWait!: (value:{matched:boolean; thread:{status:string}}) => void;
     let snapshots = 0;
+    const taskWorkspace = "/tmp/ag235-writer-fixture";
+    const cwdCalls:string[] = [];
+    const fileRoots:string[] = [];
     const delayed = new Promise<{matched:boolean; thread:{status:string}}>((resolve) => { releaseWait = resolve; });
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
@@ -65,17 +68,24 @@ describe("BB writer validation on the server path", () => {
         getPluginMetadata: async ({ threadId }) => threadId === pmThreadId
           ? { role:"pm", lanePilotRunId:"run-delayed" }
           : { role:"writer" },
-        spawn: async () => ({ id:"writer-delayed" }),
+        spawn: async (input) => {
+          expect(input.environment).toMatchObject({ workspace:{ type:"unmanaged", path:taskWorkspace } });
+          return { id:"writer-delayed" };
+        },
         wait: async () => delayed,
         get: async () => ({ id:"writer-delayed", status:"idle" }),
         output: async () => ({ text:"writer output" }),
         list: async () => [] as never,
       }, files:{
-        read: async ({ path }) => path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
-        write: async () => ({ ok:true }),
+        read: async ({ path, rootPath }) => {
+          fileRoots.push(rootPath ?? "");
+          return path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null };
+        },
+        write: async ({ rootPath }) => { fileRoots.push(rootPath ?? ""); return { ok:true }; },
       } },
       experimental_callHostRpc: (call) => {
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
+        cwdCalls.push(String((call.input as { cwd?:string }).cwd ?? ""));
         const command = String((call.input as { command?:string }).command ?? "");
         return { hostId:"host-test", exitCode:0, stdout:command.includes("porcelain")
           ? JSON.stringify(++snapshots === 1 ? [] : [{ path:"hello.txt", sha256:"written" }]) : "", stderr:"" };
@@ -89,7 +99,7 @@ describe("BB writer validation on the server path", () => {
     const startedAt = Date.now();
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, task:{ ...task, id:"delayed-task", verify:"none", verification:[] } },
+      { confirm:true, task:{ ...task, id:"delayed-task", project_cwd:taskWorkspace, verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     expect(Date.now() - startedAt).toBeLessThan(5_000);
@@ -103,6 +113,8 @@ describe("BB writer validation on the server path", () => {
       "lane_pilot_wait_writer", { runId:"run-delayed", timeoutSec:2 }, { threadId:pmThreadId, projectId },
     )));
     expect(completed).toMatchObject({ state:"accepted", receipt:{ lanePilotRunId:"run-delayed", attemptId:dispatched.attemptId } });
+    expect(cwdCalls).toEqual([taskWorkspace, taskWorkspace]);
+    expect(fileRoots.every((root) => root === taskWorkspace)).toBe(true);
     await harness.lifecycle.dispose();
   });
 

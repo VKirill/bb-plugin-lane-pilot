@@ -386,7 +386,7 @@ export default async function plugin(bb: BbPluginApi) {
     | { ok:true; threadId:string; dirtBefore:import("./src/cli-outcome").DirtSnapshot[] }
     | { ok:false; status:"spawn_rejected"; reason:string; attemptId:string }
   > {
-    const dirt = await workspaceDirt(input.config).catch((cause: unknown) => ({
+    const dirt = await workspaceDirt(input.config, input.task.project_cwd).catch((cause: unknown) => ({
       ok:false as const,
       reason: cause instanceof Error ? cause.message : String(cause),
     }));
@@ -407,7 +407,7 @@ export default async function plugin(bb: BbPluginApi) {
         environment: {
           type:"host",
           hostId:input.config.hostId,
-          workspace:{ type:"unmanaged", path:input.config.writerWorkspacePath },
+          workspace:{ type:"unmanaged", path:input.task.project_cwd },
         },
         visibility:"hidden",
         pluginMetadata:{
@@ -431,11 +431,11 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
-  async function workspaceDirt(config: PrototypeConfig): Promise<{ ok:true; paths:string[]; snapshots:DirtSnapshot[] } | { ok:false; reason:string }> {
+  async function workspaceDirt(config: PrototypeConfig, workspacePath = config.writerWorkspacePath): Promise<{ ok:true; paths:string[]; snapshots:DirtSnapshot[] } | { ok:false; reason:string }> {
     const ran = await host.call("runCommand", {
       requestedHostId: config.hostId,
       command: "python3 - <<'PY'\nimport hashlib, json, os, subprocess\nraw = subprocess.run([\"git\", \"status\", \"--porcelain\", \"-z\", \"-uall\"], check=True, stdout=subprocess.PIPE).stdout\nparts = raw.split(bytes([0]))\npaths = []\ni = 0\nwhile i < len(parts) and parts[i]:\n    item = parts[i]\n    i += 1\n    name = item[3:]\n    if not name:\n        raise ValueError(\"empty git path\")\n    paths.append(name)\n    if item[:2] in (b\"R \", b\"C \", b\" R\", b\" C\"):\n        if i >= len(parts) or not parts[i]:\n            raise ValueError(\"missing rename source\")\n        paths.append(parts[i])\n        i += 1\nrows = []\nfor raw_path in sorted(set(paths)):\n    path = os.fsdecode(raw_path)\n    if os.path.isfile(path):\n        with open(path, \"rb\") as stream:\n            digest = hashlib.sha256(stream.read()).hexdigest()\n    elif os.path.lexists(path):\n        raise ValueError(\"dirty path is not regular: \" + path)\n    else:\n        digest = \"\"\n    rows.append({\"path\": path, \"sha256\": digest})\nprint(json.dumps(rows, ensure_ascii=True))\nPY",
-      cwd: config.writerWorkspacePath,
+      cwd: workspacePath,
       timeoutSec: 30,
     }, { hostId:config.hostId, timeoutMs:30_000 }).catch((cause: unknown) => ({
       hostId: config.hostId,
@@ -490,7 +490,7 @@ export default async function plugin(bb: BbPluginApi) {
     });
     const validation = validateAcceptanceV2(acceptance);
     if (!validation.ok) throw new Error(`upstream acceptance-v2 rejected generated receipt: ${validation.errors.join("; ")}`);
-    const artifactDir = acceptanceArtifactDir(input.config.writerWorkspacePath, input.runId, input.taskId);
+    const artifactDir = acceptanceArtifactDir(input.task.project_cwd, input.runId, input.taskId);
     const internalReceipt = {
       schemaVersion:1, status:"accepted", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
       attemptId:input.attemptId, pmThreadId:input.pmThreadId, writerThreadId:input.writerThreadId,
@@ -502,7 +502,7 @@ export default async function plugin(bb: BbPluginApi) {
       ["lane-pilot-receipt.json", `${JSON.stringify(internalReceipt, null, 2)}\n`],
     ] as const) {
       await bb.sdk.files.write({
-        hostId:input.config.hostId, rootPath:input.config.writerWorkspacePath,
+        hostId:input.config.hostId, rootPath:input.task.project_cwd,
         path:`${artifactDir}/${name}`, content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
       });
     }
@@ -521,7 +521,7 @@ export default async function plugin(bb: BbPluginApi) {
     config:PrototypeConfig; task:TaskV2; writerThreadId:string; attemptId:string; dirtBefore:import("./src/cli-outcome").DirtSnapshot[];
   }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[] }> {
     const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
-    const dirt = await workspaceDirt(input.config);
+    const dirt = await workspaceDirt(input.config, input.task.project_cwd);
     if (!dirt.ok) {
       return { status:"validation_failed", reason:dirt.reason, output:outputText(output), produced:[] };
     }
@@ -538,10 +538,10 @@ export default async function plugin(bb: BbPluginApi) {
     const produced = attemptProduced(dirt.snapshots, input.dirtBefore);
     const contents: Record<string, string | null> = {};
     for (const rel of new Set([...input.task.expected_outputs, ...produced])) {
-      const absolute = rel.startsWith("/") ? rel : `${input.config.writerWorkspacePath}/${rel}`;
+      const absolute = rel.startsWith("/") ? rel : `${input.task.project_cwd}/${rel}`;
       const read = await bb.sdk.files.read({
         hostId:input.config.hostId,
-        rootPath:input.config.writerWorkspacePath,
+        rootPath:input.task.project_cwd,
         path:absolute,
       }).catch(() => null);
       contents[rel] = read ? stringAt(read, "content") : null;
