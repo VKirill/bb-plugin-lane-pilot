@@ -16,7 +16,7 @@ import {
   WRITER_EFFORT_CHOICES_BY_PROVIDER,
   type CatalogRow,
 } from "../ui-catalog";
-import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, detectLocale, type I18nKey, type Locale } from "../../i18n";
+import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, detectLocale, detectLocaleHint, type I18nKey, type Locale, type LocalePreference } from "../../i18n";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import {
   AlertDialog,
@@ -184,11 +184,12 @@ function StatusBadge({ status }: { status: CatalogRow["uiStatus"] }) {
   return <Badge variant="outline">{t("readonlyBadge")}</Badge>;
 }
 
-function LocaleControls({ locale, onChange }: { locale: Locale; onChange: (next: Locale) => void }) {
+function LocaleControls({ preference, onChange }: { preference: LocalePreference; onChange: (next: LocalePreference) => void }) {
   return <div className="flex items-center gap-1" aria-label={t("language")}>
     <span className="mr-1 text-xs text-muted-foreground">{t("language")}</span>
-    <Button size="sm" variant={locale === "en" ? "default" : "outline"} aria-pressed={locale === "en"} onClick={() => onChange("en")}>EN</Button>
-    <Button size="sm" variant={locale === "ru" ? "default" : "outline"} aria-pressed={locale === "ru"} onClick={() => onChange("ru")}>RU</Button>
+    <Button size="sm" variant={preference === "auto" ? "default" : "outline"} aria-pressed={preference === "auto"} onClick={() => onChange("auto")}>{t("automatic")}</Button>
+    <Button size="sm" variant={preference === "en" ? "default" : "outline"} aria-pressed={preference === "en"} onClick={() => onChange("en")}>EN</Button>
+    <Button size="sm" variant={preference === "ru" ? "default" : "outline"} aria-pressed={preference === "ru"} onClick={() => onChange("ru")}>RU</Button>
   </div>;
 }
 
@@ -221,6 +222,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const [resultPatch, setResultPatch] = useState<string | null>(null);
   const [resultSource, setResultSource] = useState<string | null>(null);
   const [locale, setLocale] = useState<Locale>(detectLocale);
+  const [localePreference, setLocalePreference] = useState<LocalePreference>("auto");
 
   useEffect(() => {
     if (projectId) return;
@@ -233,10 +235,11 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
 
   useEffect(() => {
     let current = true;
-    const suggestedLocale = localeFromSources(globalThis.document?.documentElement?.lang, globalThis.navigator?.language, detectLocale());
+    const suggestedLocale = detectLocaleHint();
     void rpc.call("get_preferences", { suggestedLocale }).then((result) => {
       if (!current) return;
-      setLocaleOverride(result.locale);
+      setLocalePreference(result.preference);
+      setLocaleOverride(result.preference === "auto" ? null : result.preference);
       setLocale(result.locale);
     });
     const onLocale = (event: Event) => {
@@ -247,11 +250,14 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     return () => { current = false; globalThis.removeEventListener?.("lane-pilot-locale", onLocale); };
   }, [rpc]);
 
-  const chooseLocale = async (next: Locale) => {
-    setLocaleOverride(next);
-    setLocale(next);
-    globalThis.dispatchEvent?.(new CustomEvent("lane-pilot-locale", { detail: next }));
-    await rpc.call("set_locale", { locale: next });
+  const chooseLocale = async (next: LocalePreference) => {
+    const suggestedLocale = detectLocaleHint();
+    const resolved = next === "auto" ? suggestedLocale : next;
+    setLocalePreference(next);
+    setLocaleOverride(next === "auto" ? null : next);
+    setLocale(resolved);
+    globalThis.dispatchEvent?.(new CustomEvent("lane-pilot-locale", { detail: resolved }));
+    await rpc.call("set_locale", { locale: next, suggestedLocale });
   };
 
   const load = useCallback(async () => {
@@ -295,7 +301,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
         : [{ key: WRITER_EFFORT, value }, { key: WRITER_PROVIDER, value: provider }];
       const saved = await saveSettings(changes);
       if (saved && normalized?.changed) {
-        toast.info(t("writerEffortAdjusted").replace("{from}", String(currentEffort ?? "")).replace("{to}", normalized.effort).replace("{provider}", provider));
+        toast.info(<span data-bb-ru-skip>{t("writerEffortAdjusted").replace("{from}", String(currentEffort ?? "")).replace("{to}", normalized.effort).replace("{provider}", provider)}</span>);
       }
       return saved;
     }
@@ -370,10 +376,10 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
       if (op === "install") await rpc.call("stack_install", { projectId, confirmExternalOps: confirm });
       if (op === "connect") await rpc.call("stack_connect", { projectId, confirmExternalOps: confirm });
       if (op === "rollback") await rpc.call("stack_rollback", { projectId, snapshotPath });
-      toast.success(t("toastOk"));
+      toast.success(<span data-bb-ru-skip>{t("toastOk")}</span>);
       await load();
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : t("toastError"));
+      toast.error(<span data-bb-ru-skip>{cause instanceof Error ? cause.message : t("toastError")}</span>);
     }
   };
 
@@ -392,7 +398,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
 
   if (!projectId) {
     return <div className="space-y-3 p-4" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
-      <div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">{t("selectProject")}</p><LocaleControls locale={locale} onChange={(next) => void chooseLocale(next)} /></div>
+      <div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">{t("selectProject")}</p><LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} /></div>
       {projectListError ? <p role="alert" className="text-sm text-destructive">{t("projectListError")}</p> : null}
       {!projectsLoaded && !projectListError ? <p className="text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
       {projectsLoaded && projects.length === 0 && !projectListError ? <p className="text-sm text-muted-foreground">{t("noProjects")}</p> : null}
@@ -413,7 +419,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   return (
     <div className="h-full overflow-auto p-4 md:p-5" data-locale={locale} data-bb-ru-skip>
       <div className="mx-auto w-full max-w-5xl space-y-6">
-        <div className="flex justify-end"><LocaleControls locale={locale} onChange={(next) => void chooseLocale(next)} /></div>
+        <div className="flex justify-end"><LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} /></div>
         {error ? (
           <Alert variant="destructive">
             <AlertTitle>{t("loadError")}</AlertTitle>
@@ -472,7 +478,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                       { key: WRITER_EFFORT, value: normalized.effort },
                     ]).then((saved) => {
                       if (saved && normalized.changed) {
-                        toast.info(t("writerEffortAdjusted").replace("{from}", String(next.reasoningLevel)).replace("{to}", normalized.effort).replace("{provider}", next.providerId));
+                        toast.info(<span data-bb-ru-skip>{t("writerEffortAdjusted").replace("{from}", String(next.reasoningLevel)).replace("{to}", normalized.effort).replace("{provider}", next.providerId)}</span>);
                       }
                     });
                   }}

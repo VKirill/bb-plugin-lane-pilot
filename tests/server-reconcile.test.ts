@@ -28,12 +28,14 @@ const config = {
 };
 
 describe("production spawn_unknown reconciliation", () => {
-  it("stores one global user locale and gives it priority over later language hints", async () => {
+  it("defaults the global locale preference to auto and honors explicit overrides", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
     await plugin(bb);
-    expect(await harness.behavior.callRpc("get_preferences", { suggestedLocale:"ru" })).toMatchObject({ locale:"ru" });
-    await harness.behavior.callRpc("set_locale", { locale:"en" });
-    expect(await harness.behavior.callRpc("get_preferences", { suggestedLocale:"ru" })).toMatchObject({ locale:"en" });
+    expect(await harness.behavior.callRpc("get_preferences", { suggestedLocale:"ru" })).toMatchObject({ locale:"ru", preference:"auto" });
+    expect(await harness.behavior.callRpc("set_locale", { locale:"en", suggestedLocale:"ru" })).toMatchObject({ locale:"en", preference:"en" });
+    expect(await harness.behavior.callRpc("get_preferences", { suggestedLocale:"ru" })).toMatchObject({ locale:"en", preference:"en" });
+    expect(await harness.behavior.callRpc("set_locale", { locale:"auto", suggestedLocale:"ru" })).toMatchObject({ locale:"ru", preference:"auto" });
+    expect(await harness.behavior.callRpc("get_preferences", { suggestedLocale:"en" })).toMatchObject({ locale:"en", preference:"auto" });
     await harness.lifecycle.dispose();
   });
 

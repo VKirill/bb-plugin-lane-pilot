@@ -17,7 +17,7 @@ function useLiveLocale(): Locale {
     let current = true;
     const suggestedLocale = detectLocale();
     void rpc.call("get_preferences", { suggestedLocale }).then((result) => {
-      if (current) { setLocaleOverride(result.locale); setLocale(result.locale); }
+      if (current) { setLocaleOverride(result.preference === "auto" ? null : result.preference); setLocale(result.locale); }
     });
     const refresh = (event: Event) => {
       const next = (event as CustomEvent<Locale>).detail;

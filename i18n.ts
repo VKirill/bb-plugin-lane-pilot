@@ -11,6 +11,7 @@ const chromeEn = {
   projectListError: "Could not load projects.",
   openProject: "Open project",
   language: "Language",
+  automatic: "Auto",
   english: "English",
   russian: "Russian",
   finishRun: "Finish PM run",
@@ -123,6 +124,7 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   projectListError: "Не удалось загрузить проекты.",
   openProject: "Открыть проект",
   language: "Язык",
+  automatic: "Авто",
   english: "Английский",
   russian: "Русский",
   finishRun: "Завершить PM-запуск",
@@ -230,6 +232,7 @@ export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu 
 
 export type I18nKey = keyof typeof en;
 export type Locale = "en" | "ru";
+export type LocalePreference = "auto" | Locale;
 
 let localeOverride: Locale | null = null;
 type LocaleGlobal = typeof globalThis & { __lanePilotLocaleOverride?: Locale };
@@ -242,14 +245,19 @@ export function setLocaleOverride(next: Locale | null): void {
 }
 
 export function localeFromSources(documentLanguage?: string | null, navigatorLanguage?: string | null, russianizerHint?: string | null): Locale {
-  const value = russianizerHint || (documentLanguage?.toLowerCase().startsWith("ru") ? documentLanguage : null) || navigatorLanguage || documentLanguage || "";
-  return value.toLowerCase().startsWith("ru") ? "ru" : "en";
+  const sources = [documentLanguage, navigatorLanguage, russianizerHint];
+  if (sources.some((value) => value?.toLowerCase().startsWith("ru"))) return "ru";
+  return "en";
 }
 
 export function detectLocale(): Locale {
   const sharedOverride = (globalThis as LocaleGlobal).__lanePilotLocaleOverride;
   if (sharedOverride === "en" || sharedOverride === "ru") return sharedOverride;
   if (localeOverride) return localeOverride;
+  return detectLocaleHint();
+}
+
+export function detectLocaleHint(): Locale {
   let russianizerHint: string | null = null;
   try {
     const value = globalThis.localStorage?.getItem("bb-plugin-ru:enabled");

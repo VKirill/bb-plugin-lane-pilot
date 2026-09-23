@@ -52,8 +52,8 @@ async function mountPage(
   return renderSlot(app.navPanels[0]!, { subPath }, {
     context,
     rpc: {
-      get_preferences: (input: unknown) => ({ locale: (input as {suggestedLocale:"en"|"ru"}).suggestedLocale, lastProjectId: null }),
-      set_locale: (input: unknown) => ({ locale: (input as {locale:"en"|"ru"}).locale }),
+      get_preferences: (input: unknown) => ({ locale: (input as {suggestedLocale:"en"|"ru"}).suggestedLocale, preference:"auto", lastProjectId: null }),
+      set_locale: (input: unknown) => ({ locale: (input as {locale:"auto"|"en"|"ru"; suggestedLocale:"en"|"ru"}).locale === "auto" ? (input as {suggestedLocale:"en"|"ru"}).suggestedLocale : (input as {locale:"en"|"ru"}).locale, preference: (input as {locale:"auto"|"en"|"ru"}).locale }),
       remember_project: () => ({ ok:true }),
       list_projects: () => ({ projects:[{ id:"proj_ui", name:"UI test" }], lastProjectId:"proj_ui" }),
       finish_run: () => ({ projectId:"proj_ui", finishedRunIds:[], closed:true }),
@@ -225,7 +225,7 @@ describe("Lane Pilot UI", () => {
     expect(changesSeen[0]!.map(({key,value}) => [key,value])).toEqual([
       ["writer.provider", "qwen"], ["writer.reasoning_effort", "low"],
     ]);
-    expect(toast.info).toHaveBeenCalledWith(en.writerEffortAdjusted.replace("{from}", "max").replace("{to}", "low").replace("{provider}", "qwen"));
+    expect(toast.info).toHaveBeenCalledWith(expect.objectContaining({ props: expect.objectContaining({ "data-bb-ru-skip": true, children: en.writerEffortAdjusted.replace("{from}", "max").replace("{to}", "low").replace("{provider}", "qwen") }) }));
     slot.lifecycle.unmount();
   });
 
@@ -271,7 +271,7 @@ describe("Lane Pilot UI", () => {
     document.documentElement.lang = "en";
     const base = screenFixture();
     const slot = await mountPage({
-      get_preferences: () => ({ locale:"ru", lastProjectId:null }),
+      get_preferences: () => ({ locale:"ru", preference:"ru", lastProjectId:null }),
       get_screen: () => base,
     });
     await slot.findByText(ru.tabSettings);
@@ -285,7 +285,7 @@ describe("Lane Pilot UI", () => {
     document.documentElement.lang = "en";
     const base = screenFixture();
     const first = await mountPage({
-      get_preferences: () => ({ locale:"ru", lastProjectId:null }),
+      get_preferences: () => ({ locale:"ru", preference:"ru", lastProjectId:null }),
     });
     await first.findByText(ru.tabSettings);
     expect(document.documentElement.lang).toBe("en");

@@ -159,7 +159,7 @@ describe("provider/effort UI against the registered SQLite backend", () => {
       { key: "writer.provider", value: "qwen", expectedVersion: before.versions["writer.provider"]! },
       { key: "writer.reasoning_effort", value: "low", expectedVersion: before.versions["writer.reasoning_effort"]! },
     ]);
-    expect(toast.info).toHaveBeenCalledWith(en.writerEffortAdjusted.replace("{from}", "max").replace("{to}", "low").replace("{provider}", "qwen"));
+    expect(toast.info).toHaveBeenCalledWith(expect.objectContaining({ props: expect.objectContaining({ "data-bb-ru-skip": true, children: en.writerEffortAdjusted.replace("{from}", "max").replace("{to}", "low").replace("{provider}", "qwen") }) }));
 
     await selectRowValue(slot, "writer.reasoning_effort", "medium");
     await waitFor(async () => {
@@ -221,7 +221,19 @@ describe("provider/effort UI against the registered SQLite backend", () => {
     await waitFor(() => expect(labels()).toEqual(["Настройки", "Монитор запусков", "Установка"]));
     fireEvent.click(slot.getByRole("button", { name: "EN" }));
     await waitFor(() => expect(labels()).toEqual(["Settings", "Run Monitor", "Install"]));
+    fireEvent.click(slot.getByRole("button", { name: "Auto" }));
+    await waitFor(() => expect(slot.getByRole("button", { name: "Auto" }).getAttribute("aria-pressed")).toBe("true"));
+  });
 
+  it("excludes the confirmation portal and plugin toast text from DOM translation", async () => {
+    const { harness, slot } = await mountWithBackend("codex", "max");
+    fireEvent.click(slot.getByTestId("tab-install"));
+    fireEvent.click(slot.getByTestId("install-stack"));
+    const dialog = await slot.findByTestId("external-ops-dialog");
+    expect(dialog.hasAttribute("data-bb-ru-skip")).toBe(true);
+    fireEvent.click(slot.getByRole("button", { name: en.confirmCancel }));
+    await waitFor(() => expect(slot.queryByTestId("external-ops-dialog")).toBeNull());
+    expect(toast.success).not.toHaveBeenCalledWith(expect.any(String));
     await finish(harness, slot);
   });
 

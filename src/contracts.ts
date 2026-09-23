@@ -182,11 +182,11 @@ export const hostContract = defineRpcContract({
 export const rpcContract = defineRpcContract({
   get_preferences: {
     input: z.object({ suggestedLocale: z.enum(["en", "ru"]) }).strict(),
-    output: z.object({ locale: z.enum(["en", "ru"]), lastProjectId: z.string().nullable() }).strict(),
+    output: z.object({ locale: z.enum(["en", "ru"]), preference: z.enum(["auto", "en", "ru"]), lastProjectId: z.string().nullable() }).strict(),
   },
   set_locale: {
-    input: z.object({ locale: z.enum(["en", "ru"]) }).strict(),
-    output: z.object({ locale: z.enum(["en", "ru"]) }).strict(),
+    input: z.object({ locale: z.enum(["auto", "en", "ru"]), suggestedLocale: z.enum(["en", "ru"]) }).strict(),
+    output: z.object({ locale: z.enum(["en", "ru"]), preference: z.enum(["auto", "en", "ru"]) }).strict(),
   },
   remember_project: {
     input: z.object({ projectId: z.string().min(1) }).strict(),

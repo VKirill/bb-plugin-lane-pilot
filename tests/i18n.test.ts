@@ -3,11 +3,12 @@ import { UNAPPLIED_REASON, SETTING_CATALOG, unappliedNotValidReason } from "../s
 import { detectLocale, en, localeFromSources, ru, setLocaleOverride, unappliedReason, type I18nKey } from "../i18n";
 
 describe("i18n dictionaries", () => {
-  it("uses the BB language hint, a Russian document locale, then browser and document fallbacks", () => {
-    expect(localeFromSources("ru-RU", "en-US", "en")).toBe("en");
-    expect(localeFromSources("en", "ru-RU", "ru")).toBe("ru");
+  it("uses document and browser locale before the Russianizer hint", () => {
+    expect(localeFromSources("ru-RU", "en-US", "en")).toBe("ru");
+    expect(localeFromSources("en", "ru-RU", null)).toBe("ru");
     expect(localeFromSources(null, "ru-RU", null)).toBe("ru");
     expect(localeFromSources(null, null, "ru")).toBe("ru");
+    expect(localeFromSources("en", "en-US", "ru")).toBe("ru");
     expect(localeFromSources(null, null, null)).toBe("en");
   });
   it("shares an explicit locale override across plugin bundles", () => {

@@ -895,13 +895,15 @@ export default async function plugin(bb: BbPluginApi) {
     get_preferences: async ({ suggestedLocale }) => {
       const storedLocale = await bb.storage.kv.get<string>("preferences:locale");
       const lastProjectId = await bb.storage.kv.get<string>("preferences:lastProjectId");
-      const resolvedLocale: "en" | "ru" = storedLocale === "ru" ? "ru" : storedLocale === "en" ? "en" : suggestedLocale;
-      if (storedLocale !== "en" && storedLocale !== "ru") await bb.storage.kv.set("preferences:locale", resolvedLocale);
-      return { locale: resolvedLocale, lastProjectId: lastProjectId ?? null };
+      const preference: "auto" | "en" | "ru" = storedLocale === "ru" || storedLocale === "en" ? storedLocale : "auto";
+      const resolvedLocale: "en" | "ru" = preference === "auto" ? suggestedLocale : preference;
+      if (storedLocale !== preference) await bb.storage.kv.set("preferences:locale", preference);
+      return { locale: resolvedLocale, preference, lastProjectId: lastProjectId ?? null };
     },
-    set_locale: async ({ locale }) => {
-      await bb.storage.kv.set("preferences:locale", locale);
-      return { locale };
+    set_locale: async ({ locale: preference, suggestedLocale }) => {
+      await bb.storage.kv.set("preferences:locale", preference);
+      const locale = preference === "auto" ? suggestedLocale : preference;
+      return { locale, preference };
     },
     remember_project: async ({ projectId }) => {
       await bb.storage.kv.set("preferences:lastProjectId", projectId);
