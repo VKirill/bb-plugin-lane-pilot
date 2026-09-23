@@ -9,6 +9,9 @@ import { en, setLocaleOverride } from "../i18n";
 import plugin from "../server";
 import { toast } from "sonner";
 
+// This integration file competes with the full parallel suite for the 5s default.
+vi.setConfig({ testTimeout: 15_000 });
+
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
 let pickerValue: { providerId: string; model: string; reasoningLevel: string } | null = null;
