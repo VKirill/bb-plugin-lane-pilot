@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-lane-pilot",
-  "version": "0.0.1-stage0",
+  "version": "0.1.0",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || ^24.0.0 || ^26.0.0",
@@ -9,7 +9,7 @@
   },
   "bb": {
     "name": "Lane Pilot",
-    "description": "Stage 0 prototype: isolated PM activation and native BB writer dispatch.",
+    "description": "Isolated Lane Stack PM in BB and native writer dispatch.",
     "branding": {
       "icon": "Workflow"
     },
