@@ -19,7 +19,7 @@ const task:TaskV2 = {
   verification:[{ command:"test -f note.txt", cwd:config.writerWorkspacePath, timeout_sec:30 }],
 };
 
-async function setup(critiqueOutput:string) {
+async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>, projectSettings:Record<string,unknown>={}) {
   const spawned:Array<Record<string,unknown>> = [];
   let snapshots = 0;
   const { bb, harness } = createFakePluginHost({
@@ -50,6 +50,15 @@ async function setup(critiqueOutput:string) {
       },
     },
     experimental_callHostRpc:(call) => {
+      if (call.method === "runBrowserQa") return browserQaResult ?? {
+        hostId:config.hostId, provider:"jev", runner:"browser-qa-jev", exitCode:0, verdict:"passed",
+        actualModel:"typesafe/jev-1.13", actualReasoningEffort:null, actualBackend:"chrome-qa",
+        reportPath:".agents/qa/lp-qa-test/REPORT.md", reportSha256:"a".repeat(64),
+        reportText:"Total / Passed / Failed / Blocked / Pending: 1 / 1 / 0 / 0 / 0",
+        artifacts:[{path:".agents/qa/lp-qa-test/REPORT.md",sha256:"a".repeat(64),size:80},
+          {path:".agents/qa/lp-qa-test/shots/TC-001-375.png",sha256:"b".repeat(64),size:32}],
+        stdout:"browser-qa-jev: verdict=passed", stderr:"", reason:null,
+      };
       if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
       const command = String((call.input as { command?:string }).command ?? "");
       if (command.includes("porcelain")) {
@@ -63,6 +72,7 @@ async function setup(critiqueOutput:string) {
   const db = openDatabase(bb);
   savePrototypeConfig(db, config);
   saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
+  for (const [key,value] of Object.entries(projectSettings)) saveProjectSetting(db,projectId,key,value);
   createRun(db, "stage-run", projectId, "bb", config.writerWorkspacePath);
   setRunThread(db, "stage-run", pmThreadId);
   await plugin(bb);
@@ -129,6 +139,54 @@ describe("stage → native writer → receipt", () => {
     expect(spawned).toHaveLength(0);
     expect(listStageReceipts(db, "stage-run", task.id).map((row) => [row.stageId,row.state]))
       .toEqual([["acceptance-receipt","skipped"],["plan-critique","blocked"],["verification","skipped"],["writer-agent","skipped"]]);
+    await harness.lifecycle.dispose();
+  });
+
+  it("runs browser QA only after acceptance and persists the report and screenshot evidence", async () => {
+    const { db, harness } = await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const qa = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(qa.state).toBe("passed");
+    expect(qa.result.actualModel).toBe("typesafe/jev-1.13");
+    expect(qa.result.artifacts.map((item:{path:string}) => item.path)).toContain(".agents/qa/lp-qa-test/shots/TC-001-375.png");
+    const receipt = listStageReceipts(db,"stage-run",task.id).find((row) => row.stageId === "browser-qa");
+    expect(receipt?.state).toBe("passed");
+    expect(receipt?.result).toMatchObject({reportPath:".agents/qa/lp-qa-test/REPORT.md", actualBackend:"chrome-qa"});
+    await harness.lifecycle.dispose();
+  });
+
+  it("blocks browser QA when the selected backend did not run", async () => {
+    const mismatched = { hostId:config.hostId, provider:"jev", runner:"browser-qa-jev", exitCode:0, verdict:"passed",
+      actualModel:"typesafe/jev-1.13", actualReasoningEffort:null, actualBackend:"chrome-qa",
+      reportPath:".agents/qa/lp-qa-test/REPORT.md", reportSha256:"a".repeat(64),
+      reportText:"Total / Passed / Failed / Blocked / Pending: 1 / 1 / 0 / 0 / 0", artifacts:[], stdout:"", stderr:"", reason:null };
+    const { db, harness } = await setup('{"decision":"approve","summary":"Checked","findings":[]}',mismatched,{"browser_qa.backend":"headless"});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const qa = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(qa.state).toBe("blocked");
+    expect(qa.reason).toContain("configured_backend=headless, actual_backend=chrome-qa");
+    expect(listStageReceipts(db,"stage-run",task.id).find((row) => row.stageId === "browser-qa")?.state).toBe("blocked");
+    await harness.lifecycle.dispose();
+  });
+
+  it("records a skipped browser QA receipt when the stage is disabled", async () => {
+    const { db, harness } = await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"adoc.122":false});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const qa = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(qa.state).toBe("skipped");
+    expect(listStageReceipts(db,"stage-run",task.id).find((row) => row.stageId === "browser-qa")?.reason).toBe("disabled_by_project_setting");
     await harness.lifecycle.dispose();
   });
 });

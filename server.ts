@@ -81,6 +81,12 @@ function stringAt(value: unknown, key: string): string | null {
   return typeof found === "string" && found.length > 0 ? found : null;
 }
 
+function configuredSetting(settings: Record<string, unknown>, setting: string): unknown {
+  if (Object.hasOwn(settings, setting)) return settings[setting];
+  const row = VISIBLE_CATALOG.find((item) => item.setting === setting && item.section === "browser-qa");
+  return row ? settings[row.storageKey] : undefined;
+}
+
 class WriterSelectionError extends Error {}
 
 const NATIVE_WRITER_KEYS = new Set(["writer.provider", "writer.model", "writer.reasoning_effort", "writer.service_tier"]);
@@ -1245,6 +1251,116 @@ export default async function plugin(bb: BbPluginApi) {
     return receipt;
   }
 
+  async function runBrowserQa(args:{threadId:string;projectId:string;runId:string;taskId:string;url:string;cases:string[];envClass:"local"|"staging"|"preview"|"production"|"unknown";viewports:string;authorized:boolean})
+    : Promise<Record<string,unknown>> {
+    const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
+    if (valueAt(metadata,"role") !== "pm" || stringAt(metadata,"lanePilotRunId") !== args.runId) {
+      throw new Error("runId does not belong to this Lane Pilot PM thread");
+    }
+    const run = getRun(db,args.runId);
+    const config = loadPrototypeConfig(db,args.projectId);
+    const taskRow = getTask(db,args.taskId);
+    if (!run || run.project_id !== args.projectId || run.pm_thread_id !== args.threadId || !config || !taskRow || taskRow.run_id !== args.runId || taskRow.kind !== "bb") {
+      throw new Error("task does not belong to this PM run and project");
+    }
+    const task = taskV2Schema.parse(taskRow.contract);
+    if (task.project_cwd !== run.writer_workspace_path) throw new Error("task workspace no longer matches the immutable run workspace");
+    const acceptance = listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "acceptance-receipt");
+    if (acceptance?.state !== "passed") throw new Error("browser QA requires an accepted writer receipt first");
+    const settings = loadProjectSettings(db,args.projectId);
+    const enabled = configuredSetting(settings,"browser_qa.enabled");
+    const providerValue = configuredSetting(settings,"browser_qa.provider");
+    const provider = providerValue == null || providerValue === "jev" ? "jev"
+      : providerValue === "codex" ? "codex" : providerValue === "claude" ? "claude" : "unsupported";
+    const modelSetting = configuredSetting(settings,"browser_qa.model");
+    const configuredModelValue = typeof modelSetting === "string" ? modelSetting.trim() : "";
+    const configuredModel = configuredModelValue && configuredModelValue !== "provider-specific" ? configuredModelValue : undefined;
+    const reasoningSetting = configuredSetting(settings,"browser_qa.reasoning_effort");
+    const configuredReasoningValue = typeof reasoningSetting === "string" ? reasoningSetting.trim() : "";
+    const configuredReasoning = configuredReasoningValue && configuredReasoningValue !== "provider-specific" ? configuredReasoningValue : undefined;
+    const base = { runId:args.runId, taskId:args.taskId, stageId:"browser-qa" as const,
+      input:JSON.stringify({url:args.url,cases:args.cases,envClass:args.envClass,viewports:args.viewports,authorized:args.authorized}),
+      attempt:countAttempts(db,args.runId,args.taskId), providerId:`browser-qa-${provider}`,
+      model:configuredModel ?? null };
+    const existing = listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa");
+    if (existing) return { runId:args.runId,taskId:args.taskId,state:existing.state,reason:"browser QA stage already has a receipt; create a new task for another proof run",stage:existing };
+    recordStage(db,{...base,state:"pending"});
+    const enabledOff = enabled === false || enabled === 0 || (typeof enabled === "string" && ["false","off","0","no"].includes(enabled.toLowerCase()));
+    if (enabledOff) {
+      recordStage(db,{...base,state:"skipped",reason:"disabled_by_project_setting"});
+      return {runId:args.runId,taskId:args.taskId,state:"skipped",reason:"disabled_by_project_setting",stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+    if (enabled != null && ![true,1,"true","on","1","yes",false,0,"false","off","0","no"].includes(enabled as never)) {
+      const reason = "invalid_browser_qa_enabled_setting";
+      recordStage(db,{...base,state:"blocked",reason});
+      return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+    const approve = configuredSetting(settings,"browser_qa.approve");
+    if (approve === "never") {
+      recordStage(db,{...base,state:"skipped",reason:"browser_qa.approve=never"});
+      return {runId:args.runId,taskId:args.taskId,state:"skipped",reason:"browser_qa.approve=never",stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+    if (approve != null && approve !== "auto") {
+      const reason = `unsupported_browser_qa_approval_setting:${String(approve)}`;
+      recordStage(db,{...base,state:"blocked",reason});
+      return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+    if (provider === "unsupported") {
+      const reason = `unsupported_browser_qa_provider:${String(providerValue)}`;
+      recordStage(db,{...base,state:"blocked",reason});
+      return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+    if (provider === "claude") {
+      recordStage(db,{...base,state:"blocked",reason:"claude browser QA requires the configured chrome-devtools MCP RPC; no schema-verified RPC is available"});
+      return {runId:args.runId,taskId:args.taskId,state:"blocked",reason:"claude browser QA requires the configured chrome-devtools MCP RPC; no schema-verified RPC is available",stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+    if (provider === "jev" && configuredModel && configuredModel !== "typesafe/jev-1.13") {
+      const reason = "jev_runner_model_is_fixed: choose browser_qa.provider=codex to apply a custom model";
+      recordStage(db,{...base,state:"blocked",reason});
+      return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+    if (provider === "jev" && configuredReasoning) {
+      const reason = "jev_runner_does_not_accept_reasoning_effort; clear that setting or select codex";
+      recordStage(db,{...base,state:"blocked",reason});
+      return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+    const model = configuredModel;
+    const reasoning = configuredReasoning as "low"|"medium"|"high"|"xhigh"|"max"|undefined;
+    const backendValue = configuredSetting(settings,"browser_qa.backend");
+    const backend = backendValue == null || backendValue === "chrome-qa" ? "chrome-qa"
+      : backendValue === "live-chrome" || backendValue === "headless" ? backendValue : null;
+    if (!backend) {
+      const reason = `unsupported_browser_qa_backend:${String(backendValue)}`;
+      recordStage(db,{...base,state:"blocked",reason});
+      return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+    const timeoutValue = configuredSetting(settings,"browser_qa.timeout_sec");
+    const timeoutSec = typeof timeoutValue === "number" && Number.isInteger(timeoutValue) ? Math.min(1800,Math.max(30,timeoutValue)) : 900;
+    recordStage(db,{...base,state:"running",providerId:base.providerId,model});
+    try {
+      const result = await host.call("runBrowserQa",{
+        requestedHostId:config.hostId, projectCwd:task.project_cwd, url:args.url,
+        slug:`lp-qa-${args.runId.replace(/[^a-z0-9-]/gi,"").slice(-12)}-${args.taskId.replace(/[^a-z0-9-]/gi,"").slice(-12)}-${Date.now()}`.toLowerCase(),
+        cases:args.cases, envClass:args.envClass, viewports:args.viewports, authorized:args.authorized,
+        provider, ...(model ? {model} : {}), ...(reasoning ? {reasoningEffort:reasoning} : {}), backend, timeoutSec,
+      },{hostId:config.hostId,timeoutMs:(timeoutSec+30)*1000});
+      if (result.hostId !== config.hostId) throw new Error("browser QA result came from a different host");
+      const mismatches = [
+        model && result.actualModel !== model ? `configured_model=${model}, actual_model=${result.actualModel ?? "unknown"}` : null,
+        reasoning && result.actualReasoningEffort !== reasoning ? `configured_effort=${reasoning}, actual_effort=${result.actualReasoningEffort ?? "unknown"}` : null,
+        result.actualBackend !== backend ? `configured_backend=${backend}, actual_backend=${result.actualBackend ?? "unknown"}` : null,
+      ].filter((item):item is string => item !== null);
+      const state = mismatches.length ? "blocked" : result.verdict === "passed" ? "passed" : result.verdict === "failed" ? "failed" : "blocked";
+      const reason = mismatches.length ? `browser_qa_runtime_setting_mismatch:${mismatches.join("; ")}` : result.reason ?? undefined;
+      recordStage(db,{...base,state,providerId:base.providerId,model:result.actualModel ?? model,result,reason});
+      return {runId:args.runId,taskId:args.taskId,state,stage:listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa"),result,reason};
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      recordStage(db,{...base,state:"failed",reason});
+      return {runId:args.runId,taskId:args.taskId,state:"failed",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+  }
+
   async function startCancelProbe(projectId: string, pmThreadId: string): Promise<Record<string,unknown>> {
     const config = loadPrototypeConfig(db, projectId);
     if (!config) throw new Error(`Lane Pilot prototype is not configured for ${projectId}`);
@@ -1737,6 +1853,22 @@ export default async function plugin(bb: BbPluginApi) {
       2,
     ),
   });
+  bb.agents.registerTool({
+    name:"lane_pilot_browser_qa",
+    description:"Run configured live browser QA against an accepted task workspace and return its report and screenshot receipts.",
+    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. Supply concrete browser-ui cases and the exact target URL. Production, unknown, or stateful side-effect cases require authorized=true. A report without a complete all-passed summary is never reported as passed.",
+    parameters:z.object({
+      runId:z.string().min(1), taskId:z.string().min(1), url:z.string().url(),
+      cases:z.array(z.string().min(1).max(2000)).min(1).max(30),
+      envClass:z.enum(["local","staging","preview","production","unknown"]),
+      viewports:z.string().regex(/^\d{2,4}(,\d{2,4}){0,2}$/).default("375,768,1280"),
+      authorized:z.boolean().default(false),
+    }).strict(),
+    execute:async (params,context) => JSON.stringify(await runBrowserQa({
+      threadId:context.threadId, projectId:context.projectId, runId:params.runId, taskId:params.taskId,
+      url:params.url, cases:params.cases, envClass:params.envClass, viewports:params.viewports, authorized:params.authorized,
+    }),null,2),
+  });
 
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;
@@ -1744,7 +1876,7 @@ export default async function plugin(bb: BbPluginApi) {
     if (context.origin.pluginId !== "lane-pilot" || role !== "pm" || typeof runId !== "string") return { tools:[], skills:[] };
     const config = loadPrototypeConfig(db, context.project.id);
     return {
-      tools:["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli"],
+      tools:["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli","lane_pilot_browser_qa"],
       skills:[],
       instructions:config
         ? `Lane Pilot PM ${runId}. Writer=${config.writerProviderId}/${config.writerModel}; writer workspace=${config.writerWorkspacePath}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread. To delegate: supply the complete canonical plan in the separate plan parameter of lane_pilot_dispatch_writer and the task-v2 contract in task; never put wrapper/system instructions into plan. Then immediately note its runId/attemptId; call lane_pilot_wait_writer with that runId (timeoutSec up to 240), repeating while running. Return the final receipt to the user verbatim.`

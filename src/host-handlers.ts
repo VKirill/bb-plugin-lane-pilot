@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contracts";
 import { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
+import { runBrowserQaOnHost } from "./stages/browser-qa";
 import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
 import {
   connectOpencodeStack,
@@ -82,6 +83,10 @@ export const runCli: ExperimentalHostRpcHandlers<typeof hostContract>["runCli"] 
 
 export const runCommand: ExperimentalHostRpcHandlers<typeof hostContract>["runCommand"] = async (input) => (
   runCommandOnHost(input)
+);
+
+export const runBrowserQa: ExperimentalHostRpcHandlers<typeof hostContract>["runBrowserQa"] = async (input) => (
+  runBrowserQaOnHost(input)
 );
 
 const PLAN_EFFORT_QUESTION = {

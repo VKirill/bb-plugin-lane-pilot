@@ -524,7 +524,7 @@ describe("PM tool gating", () => {
       origin:{ pluginId:"other" },
       pluginMetadata:{ role:"pm", lanePilotRunId:"run-x" },
     } as never);
-    expect(pm.tools.map((tool) => tool.name)).toEqual(["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli"]);
+    expect(pm.tools.map((tool) => tool.name)).toEqual(["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli","lane_pilot_browser_qa"]);
     expect(writer.tools).toEqual([]);
     expect(ordinary.tools).toEqual([]);
     await harness.lifecycle.dispose();

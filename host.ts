@@ -11,6 +11,7 @@ import {
   rollback,
   runCli,
   runCommand,
+  runBrowserQa,
   snapshot,
   snapshotDryRun,
   writePmSettings,
@@ -20,6 +21,6 @@ export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     detect, coexistenceInventory, coexistenceOperation, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan,
-    runCli, runCommand, writePmSettings,
+    runCli, runCommand, runBrowserQa, writePmSettings,
   },
 });

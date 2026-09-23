@@ -137,6 +137,7 @@ function stageTitle(stageId: string): string {
     "writer-agent":"stageWriterAgent",
     verification:"stageVerification",
     "acceptance-receipt":"stageAcceptanceReceipt",
+    "browser-qa":"stageBrowserQa",
   };
   const key = labels[stageId];
   return key ? t(key) : stageId;
