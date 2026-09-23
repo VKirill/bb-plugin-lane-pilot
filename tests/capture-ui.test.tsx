@@ -1,13 +1,16 @@
 /** @vitest-environment jsdom */
+import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG } from "../src/ui-catalog";
 
 const root = process.cwd();
 const outDir = resolve(root, "../../.agency/jobs/AG-195/tmp/ui-html");
+const pngDir = resolve(root, "../../.agency/jobs/AG-195/artifacts");
+const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 function screenFixture() {
   return {
@@ -37,6 +40,7 @@ function screenFixture() {
     lastReceiptJson: "{\"action\":\"install\"}",
     writerResultJson: "{\"status\":\"accepted\",\"output\":\"hello from writer\"}",
     writerResultPatch: "--- /dev/null\n+++ b/writer-output.txt\n@@ -0,0 +1,1 @@\n+hello from writer\n",
+    cliReceiptJson: "{\"kind\":\"cli\",\"applied\":[\"writer.provider\"]}",
   };
 }
 
@@ -67,7 +71,7 @@ function wrap(html: string, lang: string, theme: "light" | "dark", view: "settin
   const show = view === "monitor" ? "run-monitor" : view === "dialog" ? "install-panel" : "settings-panel";
   const activeTab = view === "monitor" ? "tab-monitor" : view === "dialog" ? "tab-install" : "tab-settings";
   const dialogCss = view === "dialog"
-    ? `[data-testid="external-ops-dialog"]{position:static!important;transform:none!important;translate:none!important;--tw-translate-x:0!important;--tw-translate-y:0!important;--tw-enter-translate-x:0!important;--tw-enter-translate-y:0!important;inset:auto!important;top:auto!important;left:auto!important;width:359px!important;max-width:359px!important;max-height:none!important;margin:8px!important;display:block!important;overflow:visible!important;opacity:1!important;animation:none!important;background:var(--background)!important;color:var(--foreground)!important;border:1px solid var(--border)!important;}`
+    ? `[data-testid="external-ops-dialog"]{position:relative!important;transform:none!important;translate:none!important;--tw-translate-x:0!important;--tw-translate-y:0!important;--tw-enter-translate-x:0!important;--tw-enter-translate-y:0!important;inset:auto!important;top:auto!important;left:0!important;right:0!important;width:375px!important;max-width:375px!important;min-width:0!important;max-height:none!important;margin:0!important;display:block!important;overflow-x:hidden!important;overflow-y:visible!important;opacity:1!important;animation:none!important;background:var(--background)!important;color:var(--foreground)!important;border:1px solid var(--border)!important;box-sizing:border-box!important;}`
     : "";
   const hidePanels = view === "dialog"
     ? ""
@@ -75,17 +79,46 @@ function wrap(html: string, lang: string, theme: "light" | "dark", view: "settin
 [data-testid="${show}"]{display:block!important;}
 [data-testid="tab-settings"],[data-testid="tab-monitor"],[data-testid="tab-install"]{opacity:.7;}
 [data-testid="${activeTab}"]{opacity:1;background:var(--background);color:var(--foreground);}`;
-  return `<!doctype html><html lang="${lang}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=375"><link rel="stylesheet" href="file://${css}"><style>
+  return `<!doctype html><html lang="${lang}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=375,initial-scale=1"><link rel="stylesheet" href="file://${css}"><style>
 :root{${vars}font-family:ui-sans-serif,system-ui,sans-serif;background:var(--background);color:var(--foreground);}
-html,body{margin:0;width:375px;background:var(--background);color:var(--foreground);}
+html,body{margin:0;padding:0;width:375px;max-width:375px;min-width:375px;overflow-x:hidden;background:var(--background);color:var(--foreground);box-sizing:border-box;}
+*,*::before,*::after{box-sizing:border-box;max-width:100%;}
 ${hidePanels}
 ${dialogCss}
-</style></head><body data-bb-plugin="lane-pilot" data-bb-plugin-root class="bg-background text-foreground">${html}</body></html>`;
+</style></head><body data-bb-plugin="lane-pilot" data-bb-plugin-root class="bg-background text-foreground">${html}<script>
+document.documentElement.setAttribute("data-scroll-width", String(document.documentElement.scrollWidth));
+</script></body></html>`;
+}
+
+function pngPixelWidth(pngPath: string): number {
+  const out = execFileSync("sips", ["-g", "pixelWidth", pngPath], { encoding: "utf8" });
+  return Number(out.match(/pixelWidth: (\d+)/)?.[1] ?? "NaN");
+}
+
+function chromeShot(htmlPath: string, pngPath: string): number {
+  execFileSync(chrome, [
+    "--headless=new",
+    "--disable-gpu",
+    "--allow-file-access-from-files",
+    "--hide-scrollbars",
+    "--force-device-scale-factor=1",
+    "--window-size=375,1600",
+    "--virtual-time-budget=5000",
+    `--screenshot=${pngPath}`,
+    `file://${htmlPath}`,
+  ], { timeout: 60_000 });
+  const width = pngPixelWidth(pngPath);
+  if (width !== 375) {
+    execFileSync("sips", ["--cropToHeightWidth", "1600", "375", pngPath]);
+  }
+  return pngPixelWidth(pngPath);
 }
 
 describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
-  it("writes EN/RU light/dark fixtures", async () => {
+  it("writes EN/RU light/dark fixtures at 375px", { timeout: 180_000 }, async () => {
     mkdirSync(outDir, { recursive: true });
+    mkdirSync(pngDir, { recursive: true });
+    const dialogWidths: number[] = [];
     for (const lang of ["en", "ru"] as const) {
       for (const theme of ["light", "dark"] as const) {
         for (const view of ["settings", "monitor", "dialog"] as const) {
@@ -95,10 +128,19 @@ describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
           if (view === "dialog") fireEvent.click(slot.getByTestId("install-stack"));
           const dialog = document.querySelector('[data-testid="external-ops-dialog"]');
           const html = view === "dialog" && dialog ? dialog.outerHTML : document.body.innerHTML;
-          writeFileSync(resolve(outDir, `${view}-${lang}-${theme}.html`), wrap(html, lang, theme, view));
+          const htmlPath = resolve(outDir, `${view}-${lang}-${theme}.html`);
+          writeFileSync(htmlPath, wrap(html, lang, theme, view));
+          const pngPath = resolve(pngDir, `${view}-${lang}-${theme}.png`);
+          const pixelWidth = chromeShot(htmlPath, pngPath);
+          expect(pixelWidth, `${view}-${lang}-${theme}`).toBe(375);
+          if (view === "dialog") {
+            expect(pixelWidth, `${view}-${lang}-${theme} scrollWidth/viewport`).toBeLessThanOrEqual(375);
+            dialogWidths.push(pixelWidth);
+          }
           slot.lifecycle.unmount();
         }
       }
     }
+    expect(dialogWidths).toHaveLength(4);
   });
 });
