@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_Diff as Diff,
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -80,6 +80,7 @@ type ScreenPayload = {
   lastReceiptJson: string | null;
   writerResultJson: string | null;
   writerResultPatch: string | null;
+  cliReceiptJson: string | null;
 };
 
 const JEV_KEYS = new Set(["jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV"]);
@@ -200,18 +201,17 @@ export function LanePilotPage() {
     const lang = globalThis.document?.documentElement?.lang ?? "";
     return lang.toLowerCase().startsWith("ru") ? "ru" : "en";
   });
+  const bbLocaleRef = useRef<Locale>(locale);
 
   const applyLocale = (values: Record<string, unknown>) => {
     const saved = values[LANGUAGE_KEY];
     if (saved === "ru" || saved === "en") {
       setLocaleOverride(saved);
-      if (globalThis.document) globalThis.document.documentElement.lang = saved;
       setLocale(saved);
       return;
     }
     setLocaleOverride(null);
-    const lang = globalThis.document?.documentElement?.lang ?? "";
-    setLocale(lang.toLowerCase().startsWith("ru") ? "ru" : "en");
+    setLocale(bbLocaleRef.current);
   };
 
   const load = useCallback(async () => {
@@ -415,9 +415,21 @@ export function LanePilotPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.runs.flatMap((run) => (run.attempts.length ? run.attempts : [{
-                    id: `${run.id}-none`, state: run.state, attempt_no: 0, thread_id: null, reason: null, task_id: "",
-                  }]).map((attempt) => (
+                  {data.runs.flatMap((run) => {
+                    if (!run.attempts.length) {
+                      return [(
+                        <TableRow key={run.id} data-testid={`run-${run.id}`}>
+                          <TableCell className="font-mono text-xs">{run.id}</TableCell>
+                          <TableCell>{run.kind}</TableCell>
+                          <TableCell>
+                            <Badge variant={runTone(run.state)}>{stateLabel(run.state)}</Badge>
+                          </TableCell>
+                          <TableCell>—</TableCell>
+                          <TableCell />
+                        </TableRow>
+                      )];
+                    }
+                    return run.attempts.map((attempt) => (
                     <TableRow key={attempt.id} data-testid={`attempt-${attempt.id}`}>
                       <TableCell className="font-mono text-xs">{run.id}</TableCell>
                       <TableCell>{run.kind}</TableCell>
@@ -426,15 +438,20 @@ export function LanePilotPage() {
                       </TableCell>
                       <TableCell>{attempt.attempt_no || "—"}</TableCell>
                       <TableCell className="space-x-2">
-                        <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId: attempt.id }).then(load)}>
-                          {t("cancel")}
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId: attempt.id }).then(load)}>
-                          {t("retry")}
-                        </Button>
+                        {attempt.thread_id ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId: attempt.id }).then(load)}>
+                              {t("cancel")}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId: attempt.id }).then(load)}>
+                              {t("retry")}
+                            </Button>
+                          </>
+                        ) : null}
                       </TableCell>
                     </TableRow>
-                  )))}
+                    ));
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -452,6 +469,13 @@ export function LanePilotPage() {
                 {resultPatch ? <Diff patch={resultPatch} path="writer-output.txt" view="unified" /> : null}
                 {resultSource ? <SourceCode content={resultSource} path="acceptance.json" overflow="scroll" /> : null}
                 {resultSource ? <span className="sr-only">{resultSource}</span> : null}
+              </div>
+            ) : null}
+            {data?.cliReceiptJson ? (
+              <div className="space-y-2" data-testid="cli-receipt">
+                <h2 className="text-sm font-medium">{t("cliReceipt")}</h2>
+                <SourceCode content={data.cliReceiptJson} path="cli-receipt.json" overflow="scroll" />
+                <span className="sr-only">{data.cliReceiptJson}</span>
               </div>
             ) : null}
             <p className="sr-only">{[...RUN_STATES, ...ATTEMPT_STATES].join(" ")}</p>
@@ -482,28 +506,28 @@ export function LanePilotPage() {
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <AlertDialogContent
             data-testid="external-ops-dialog"
-            className="left-4 right-4 top-1/2 w-auto max-w-none translate-x-0 -translate-y-1/2 max-h-[min(80vh,100dvh)] overflow-y-auto overflow-x-hidden p-4"
+            className="!left-4 !right-4 !top-1/2 !w-[min(359px,calc(100vw-2rem))] !max-w-[359px] min-w-0 !translate-x-0 !-translate-y-1/2 max-h-[min(80vh,100dvh)] overflow-y-auto overflow-x-hidden p-4 sm:rounded-lg sm:!max-w-[359px]"
           >
             <AlertDialogHeader>
               <AlertDialogTitle className="text-wrap break-words">{t("confirmTitle")}</AlertDialogTitle>
               <AlertDialogDescription className="max-w-full overflow-x-hidden text-left text-wrap break-words">
                 {t("confirmList")}
-                {pendingOp === "install" ? (
-                  <ul className="mt-2 list-disc pl-4 text-left">
-                    {EXTERNAL_OPS_BY_ACTION.install.map((op) => (
-                      <li key={op} className="break-all">{op}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                {pendingOp === "connect" ? (
-                  <p className="mt-2 break-words">{t("confirmConnectOps")}</p>
-                ) : null}
-                {pendingOp === "rollback" ? (
-                  <p className="mt-2 break-words">{t("confirmRollbackOps")}</p>
-                ) : null}
-                <span className="mt-2 block break-words">{t("confirmBody")}</span>
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {pendingOp === "install" ? (
+              <ul className="mt-2 max-w-full list-disc overflow-x-hidden pl-4 text-left text-sm">
+                {EXTERNAL_OPS_BY_ACTION.install.map((op) => (
+                  <li key={op} className="break-all">{op}</li>
+                ))}
+              </ul>
+            ) : null}
+            {pendingOp === "connect" ? (
+              <p className="mt-2 break-words text-sm text-muted-foreground">{t("confirmConnectOps")}</p>
+            ) : null}
+            {pendingOp === "rollback" ? (
+              <p className="mt-2 break-words text-sm text-muted-foreground">{t("confirmRollbackOps")}</p>
+            ) : null}
+            <p className="mt-2 break-words text-sm text-muted-foreground">{t("confirmBody")}</p>
             <AlertDialogFooter>
               <AlertDialogCancel>{t("confirmCancel")}</AlertDialogCancel>
               <AlertDialogAction

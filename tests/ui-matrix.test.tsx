@@ -33,6 +33,7 @@ function screenFixture() {
     lastReceiptJson: "{\"action\":\"install\"}",
     writerResultJson: "{\"status\":\"accepted\",\"output\":\"hello from writer\"}",
     writerResultPatch: "--- /dev/null\n+++ b/writer-output.txt\n@@ -0,0 +1,1 @@\n+hello from writer\n",
+    cliReceiptJson: null,
   };
 }
 
@@ -110,7 +111,9 @@ describe("Lane Pilot UI", () => {
     expect(dialog.textContent).toContain("npm install -g @rama_nigg/open-cursor");
     expect(dialog.textContent).toContain(en.confirmBody);
     expect(dialog.className).toMatch(/overflow-x-hidden/);
-    expect(dialog.className).toMatch(/left-4/);
+    expect(dialog.className).toMatch(/max-w-\[359px\]/);
+    expect(dialog.className).toMatch(/min-w-0/);
+    expect(dialog.className).toMatch(/!max-w-\[359px\]/);
     slot.lifecycle.unmount();
   });
 
@@ -148,6 +151,41 @@ describe("Lane Pilot UI", () => {
     fireEvent.click(slot.getAllByTestId("tab-monitor").at(-1)!);
     expect(slot.getAllByText(ru.state_running).length).toBeGreaterThan(0);
     expect(slot.getAllByText(new RegExp(ru.unappliedNoChannel)).length).toBeGreaterThan(0);
+    slot.lifecycle.unmount();
+  });
+
+  it("does not leak ui.language into document.lang or another project", async () => {
+    document.documentElement.lang = "en";
+    const base = screenFixture();
+    const first = await mountPage({
+      get_screen: () => ({ ...base, values: { ...base.values, "ui.language": "ru" } }),
+    });
+    await first.findByText(ru.tabSettings);
+    expect(document.documentElement.lang).toBe("en");
+    first.lifecycle.unmount();
+    setLocaleOverride(null);
+    const second = await mountPage({
+      get_screen: () => ({ ...base, projectId: "proj_other", values: { ...base.values } }),
+    });
+    await second.findByText(en.tabSettings);
+    expect(second.queryByText(ru.tabSettings)).toBeNull();
+    second.lifecycle.unmount();
+  });
+
+  it("hides cancel/retry when a run has no attempt", async () => {
+    const base = screenFixture();
+    const slot = await mountPage({
+      get_screen: () => ({
+        ...base,
+        runs: [{ id: "lprun_cli", state: "accepted", kind: "cli", created_at: 1, updated_at: 1, attempts: [] }],
+        cliReceiptJson: "{\"kind\":\"cli\",\"receiptPath\":\"/tmp/cli-receipt.json\"}",
+      }),
+    });
+    await slot.findByTestId("cli-receipt");
+    expect(slot.getByTestId("run-lprun_cli")).toBeTruthy();
+    const monitor = slot.getByTestId("run-monitor");
+    expect(monitor.textContent).not.toContain(en.cancel);
+    expect(monitor.textContent).toContain("cli-receipt.json");
     slot.lifecycle.unmount();
   });
 });
