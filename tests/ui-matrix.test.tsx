@@ -327,6 +327,9 @@ describe("Lane Pilot UI", () => {
     expect(finishButton).toBeTruthy();
     fireEvent.click(finishButton!);
     await waitFor(() => expect(finish).toHaveBeenCalledWith({ projectId:"proj_ui", runId:"lprun_cli" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.objectContaining({
+      props: expect.objectContaining({ "data-bb-ru-skip": true, children: en.runClosed }),
+    })));
     slot.lifecycle.unmount();
   });
 

@@ -388,11 +388,11 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     setFinishing(true);
     try {
       const result = await rpc.call("finish_run", { projectId, runId });
-      if (!result.closed) toast.error(t("finishRunBlocked"));
-      else toast.success(t("runClosed"));
+      if (!result.closed) toast.error(<span data-bb-ru-skip>{t("finishRunBlocked")}</span>);
+      else toast.success(<span data-bb-ru-skip>{t("runClosed")}</span>);
       await load();
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : t("toastError"));
+      toast.error(<span data-bb-ru-skip>{cause instanceof Error ? cause.message : t("toastError")}</span>);
     } finally { setFinishing(false); }
   };
 

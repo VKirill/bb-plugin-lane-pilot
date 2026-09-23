@@ -5,10 +5,11 @@ import { detectLocale, en, localeFromSources, ru, setLocaleOverride, unappliedRe
 describe("i18n dictionaries", () => {
   it("uses document and browser locale before the Russianizer hint", () => {
     expect(localeFromSources("ru-RU", "en-US", "en")).toBe("ru");
-    expect(localeFromSources("en", "ru-RU", null)).toBe("ru");
+    expect(localeFromSources("en", "ru-RU", null)).toBe("en");
     expect(localeFromSources(null, "ru-RU", null)).toBe("ru");
+    expect(localeFromSources("", "ru-RU", null)).toBe("ru");
     expect(localeFromSources(null, null, "ru")).toBe("ru");
-    expect(localeFromSources("en", "en-US", "ru")).toBe("ru");
+    expect(localeFromSources("en", "en-US", "ru")).toBe("en");
     expect(localeFromSources(null, null, null)).toBe("en");
   });
   it("shares an explicit locale override across plugin bundles", () => {

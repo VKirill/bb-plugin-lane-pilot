@@ -245,8 +245,12 @@ export function setLocaleOverride(next: Locale | null): void {
 }
 
 export function localeFromSources(documentLanguage?: string | null, navigatorLanguage?: string | null, russianizerHint?: string | null): Locale {
-  const sources = [documentLanguage, navigatorLanguage, russianizerHint];
-  if (sources.some((value) => value?.toLowerCase().startsWith("ru"))) return "ru";
+  // Each source is authoritative when present. A weaker Russian hint must not
+  // override an explicit non-Russian language from a stronger source.
+  for (const value of [documentLanguage, navigatorLanguage, russianizerHint]) {
+    if (value == null || value.trim() === "") continue;
+    return value.toLowerCase().startsWith("ru") ? "ru" : "en";
+  }
   return "en";
 }
 
