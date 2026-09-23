@@ -207,6 +207,23 @@ describe("provider/effort UI against the registered SQLite backend", () => {
     await finish(harness, slot);
   });
 
+  it("rerenders tab labels when the plugin locale changes in either direction", async () => {
+    const { harness, slot } = await mountWithBackend("codex", "max");
+    const labels = () => [
+      slot.getByTestId("tab-settings").textContent,
+      slot.getByTestId("tab-monitor").textContent,
+      slot.getByTestId("tab-install").textContent,
+    ];
+
+    expect(labels()).toEqual(["Settings", "Run Monitor", "Install"]);
+    fireEvent.click(slot.getByRole("button", { name: "RU" }));
+    await waitFor(() => expect(labels()).toEqual(["Настройки", "Монитор запусков", "Установка"]));
+    fireEvent.click(slot.getByRole("button", { name: "EN" }));
+    await waitFor(() => expect(labels()).toEqual(["Settings", "Run Monitor", "Install"]));
+
+    await finish(harness, slot);
+  });
+
   it("rejects an invalid effort for a fixed provider without changing the UI or SQLite state", async () => {
     const { harness, slot, saveCalls } = await mountWithBackend("qwen", "medium");
     const before = await harness.behavior.callRpc("get_screen", { projectId }) as Screen;
