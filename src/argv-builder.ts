@@ -5,6 +5,7 @@ import {
   type CliBinary,
   type SettingSpec,
 } from "./channels";
+import { invalidChoiceReason } from "./setting-validation";
 
 export type UnappliedSetting = {
   key: string;
@@ -74,6 +75,11 @@ export function buildCliInvocation(input: {
     if (!(spec.key in input.settings)) continue;
     seen.add(spec.key);
     const value = input.settings[spec.key];
+    const invalidChoice = invalidChoiceReason(spec.key, value);
+    if (invalidChoice) {
+      unapplied.push({ key: spec.key, value, channel: "NONE", reason: invalidChoice });
+      continue;
+    }
     if (spec.channel === "NONE") {
       unapplied.push({ key:spec.key, value, channel:"NONE", reason:spec.reason ?? UNAPPLIED_REASON.noChannel });
       continue;

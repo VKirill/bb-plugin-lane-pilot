@@ -67,40 +67,23 @@ async function mount(lang: string) {
   });
 }
 
-function wrap(html: string, lang: string, theme: "light" | "dark", view: "settings" | "monitor" | "dialog") {
+function wrap(html: string, lang: string, theme: "light" | "dark") {
   const css = resolve(root, "dist/app.css");
   const vars = theme === "dark"
     ? `--background:#0a0a0a;--foreground:#fafafa;--card:#0a0a0a;--card-foreground:#fafafa;--popover:#0a0a0a;--popover-foreground:#fafafa;--primary:#fafafa;--primary-foreground:#171717;--secondary:#262626;--secondary-foreground:#fafafa;--muted:#262626;--muted-foreground:#a3a3a3;--accent:#262626;--accent-foreground:#fafafa;--destructive:#7f1d1d;--destructive-foreground:#fafafa;--border:#262626;--input:#262626;--ring:#d4d4d4;--radius:0.5rem;`
     : `--background:#ffffff;--foreground:#0a0a0a;--card:#ffffff;--card-foreground:#0a0a0a;--popover:#ffffff;--popover-foreground:#0a0a0a;--primary:#171717;--primary-foreground:#fafafa;--secondary:#f5f5f5;--secondary-foreground:#171717;--muted:#f5f5f5;--muted-foreground:#737373;--accent:#f5f5f5;--accent-foreground:#171717;--destructive:#fee2e2;--destructive-foreground:#991b1b;--border:#e5e5e5;--input:#e5e5e5;--ring:#a3a3a3;--radius:0.5rem;`;
-  const show = view === "monitor" ? "run-monitor" : view === "dialog" ? "install-panel" : "settings-panel";
-  const activeTab = view === "monitor" ? "tab-monitor" : view === "dialog" ? "tab-install" : "tab-settings";
-  const dialogCss = view === "dialog"
-    ? `[data-radix-alert-dialog-overlay],[data-slot="alert-dialog-overlay"]{display:none!important;}
-[data-testid="external-ops-dialog"]{position:relative!important;transform:none!important;translate:none!important;--tw-translate-x:0!important;--tw-translate-y:0!important;--tw-enter-translate-x:0!important;--tw-enter-translate-y:0!important;inset:auto!important;top:0!important;left:0!important;right:0!important;width:375px!important;max-width:375px!important;min-width:0!important;max-height:none!important;margin:0!important;display:block!important;overflow-x:hidden!important;overflow-y:visible!important;opacity:1!important;animation:none!important;background:var(--background)!important;color:var(--foreground)!important;border:1px solid var(--border)!important;box-sizing:border-box!important;}`
-    : "";
-  const hidePanels = view === "dialog"
-    ? `[data-testid="settings-panel"],[data-testid="run-monitor"]{display:none!important;}
-[data-testid="install-panel"]{display:block!important;}
-[data-testid="tab-settings"],[data-testid="tab-monitor"]{opacity:.7;}
-[data-testid="tab-install"]{opacity:1;}`
-    : `[data-testid="settings-panel"],[data-testid="run-monitor"],[data-testid="install-panel"]{display:none!important;}
-[data-testid="${show}"]{display:block!important;}
-[data-testid="tab-settings"],[data-testid="tab-monitor"],[data-testid="tab-install"]{opacity:.7;}
-[data-testid="${activeTab}"]{opacity:1;background:var(--background);color:var(--foreground);}`;
-  return `<!doctype html><html lang="${lang}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=375,initial-scale=1"><link rel="stylesheet" href="file://${css}"><style>
+  return `<!doctype html><html lang="${lang}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="file://${css}"><style>
 :root{${vars}font-family:ui-sans-serif,system-ui,sans-serif;background:var(--background);color:var(--foreground);}
-html,body{margin:0;padding:0;width:375px;max-width:375px;min-width:375px;overflow-x:hidden;background:var(--background);color:var(--foreground);box-sizing:border-box;}
-*,*::before,*::after{box-sizing:border-box;max-width:100%;}
-${hidePanels}
-${dialogCss}
 </style></head><body data-bb-plugin="lane-pilot" data-bb-plugin-root class="bg-background text-foreground">${html}<script>
-(function () {
-  document.documentElement.style.setProperty("width", "375px", "important");
-  document.documentElement.style.setProperty("max-width", "375px", "important");
-  document.body.style.setProperty("width", "375px", "important");
-  document.body.style.setProperty("max-width", "375px", "important");
+setTimeout(() => {
   document.documentElement.setAttribute("data-document-scroll-width", String(document.documentElement.scrollWidth));
-})();
+  const dialog = document.querySelector('[data-testid="external-ops-dialog"]');
+  if (dialog) {
+    const rect = dialog.getBoundingClientRect();
+    dialog.setAttribute("data-dialog-left", String(rect.left));
+    dialog.setAttribute("data-dialog-right", String(rect.right));
+  }
+}, 700);
 </script></body></html>`;
 }
 
@@ -164,7 +147,7 @@ describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
           }
           const html = document.body.innerHTML;
           const htmlPath = resolve(outDir, `${view}-${lang}-${theme}.html`);
-          writeFileSync(htmlPath, wrap(html, lang, theme, view));
+          writeFileSync(htmlPath, wrap(html, lang, theme));
           const pngPath = resolve(pngDir, `${view}-${lang}-${theme}.png`);
           captures.push({ lang, theme, view, htmlPath, pngPath });
           slot.lifecycle.unmount();
@@ -183,6 +166,8 @@ describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
         expect(dumped).toContain('data-document-scroll-width="');
         const scrollWidth = Number(dumped.match(/data-document-scroll-width="(\d+)"/)?.[1] ?? "NaN");
         expect(scrollWidth, `${view}-${lang}-${theme} document.scrollWidth`).toBeLessThanOrEqual(375);
+        const rightEdge = Number(dumped.match(/data-dialog-right="([\d.]+)"/)?.[1] ?? "NaN");
+        expect(rightEdge, `${view}-${lang}-${theme} dialog right edge`).toBeLessThanOrEqual(375);
         dialogWidths.push(scrollWidth);
       }
     }

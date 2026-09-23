@@ -235,6 +235,7 @@ export const rpcContract = defineRpcContract({
       conflict: z.boolean(),
       version: z.number().int(),
       value: z.unknown(),
+      error: z.string().optional(),
     }).strict(),
   },
   cancel_attempt: {

@@ -101,6 +101,35 @@ describe("UI storage keys feed runtime channels", () => {
     expect(missing.map((row) => `${row.id}:${row.storageKey}`)).toEqual([]);
   });
 
+  it("rejects an invalid choice on save for every editable enum row", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    await plugin(bb);
+    const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
+    expect(editable).toHaveLength(57);
+    for (const row of editable) {
+      const choices = UI_CATALOG.filter((candidate) => candidate.storageKey === row.storageKey && candidate.control === "select")
+        .flatMap((candidate) => candidate.options);
+      if (!choices.length) continue;
+      const result = await harness.behavior.callRpc("save_setting", {
+        projectId: `invalid_${row.id}`,
+        key: row.storageKey,
+        value: "not-an-upstream-choice",
+        expectedVersion: 0,
+      }) as { ok: boolean; conflict: boolean; error?: string };
+      expect(result.ok, row.id).toBe(false);
+      expect(result.conflict, row.id).toBe(false);
+      expect(result.error, row.id).toMatch(/invalid value; allowed:/);
+    }
+    await harness.lifecycle.dispose();
+  });
+
+  it("keeps one control semantic for rows sharing a storage key", () => {
+    const providerRows = UI_CATALOG.filter((row) => row.storageKey === "writer.provider" && row.uiStatus === "editable");
+    expect(providerRows.length).toBeGreaterThan(1);
+    expect(new Set(providerRows.map((row) => row.control))).toEqual(new Set(["select"]));
+    expect(providerRows.every((row) => row.options.length > 0)).toBe(true);
+  });
+
   it("table-drives every editable row and every representative value to argv/env or unapplied", () => {
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
     expect(booleanFlags.map((spec) => spec.key)).toEqual(["writer.fast_mode"]);
@@ -134,6 +163,22 @@ describe("UI storage keys feed runtime channels", () => {
       value: false,
       channel: "NONE",
       reason: UNAPPLIED_REASON.booleanOffUnsupported,
+    }]);
+  });
+
+  it("AG-215: an invalid provider is unapplied and never enters argv", () => {
+    const built = buildCliInvocation({
+      binary: "run-controller",
+      subcommand: "run",
+      settings: { "writer.provider": "not-a-provider" },
+    });
+    expect(built.argv).toEqual(["run"]);
+    expect(built.applied).not.toContain("writer.provider");
+    expect(built.unapplied).toEqual([{
+      key: "writer.provider",
+      value: "not-a-provider",
+      channel: "NONE",
+      reason: expect.stringMatching(/invalid value; allowed: agy, grok, qwen, kimi, codex, cursor, opencode/),
     }]);
   });
 

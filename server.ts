@@ -653,6 +653,17 @@ export default async function plugin(bb: BbPluginApi) {
         taskId: args.taskId ?? (typeof settings["ops.task_id"] === "string" ? settings["ops.task_id"] : undefined),
       }),
     });
+    const invalidSetting = invocation.unapplied.find((row) => row.reason.startsWith("invalid value; allowed:"));
+    if (invalidSetting) {
+      return {
+        status:"blocked",
+        reason:`invalid setting ${invalidSetting.key}: ${invalidSetting.reason}`,
+        applied:invocation.applied,
+        unapplied:invocation.unapplied,
+        argv:invocation.argv,
+        env:invocation.env,
+      };
+    }
     const executed = await host.call("runCli", {
       requestedHostId: config.hostId,
       binary,
@@ -926,6 +937,7 @@ export default async function plugin(bb: BbPluginApi) {
     save_setting: ({ projectId, key, value, expectedVersion }) => {
       const result = casUpsertSetting(db, { projectId, key, value, expectedVersion });
       if (!result.ok) {
+        if ("error" in result) return result;
         return { ok: false, conflict: true, version: result.version, value: result.value };
       }
       return { ok: true, conflict: false, version: result.version, value };

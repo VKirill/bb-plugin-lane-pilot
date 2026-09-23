@@ -820,8 +820,8 @@ def main() -> None:
 
         options = enum_options(inv.get("values") or "")
         default_value = inv.get("default") or ""
+        choices = upstream_writer_choices(storage_key) if decision == "editable" and storage_key not in {"ui.language", "writer.model"} else None
         if decision == "editable" and control_type(inv.get("type") or "", inv.get("values") or "") == "select" and storage_key not in {"ui.language", "writer.model"}:
-            choices = upstream_writer_choices(storage_key)
             if not choices:
                 decision = "gap"
                 ch = "NONE"
@@ -831,6 +831,10 @@ def main() -> None:
                 options = choices
                 if storage_key == "writer.provider" and default_value not in choices:
                     default_value = "kimi" if "kimi" in choices else choices[0]
+        elif choices:
+            options = choices
+            if default_value not in choices:
+                default_value = choices[0]
 
         counts[decision] += 1
         row = {
@@ -846,7 +850,7 @@ def main() -> None:
             "scope": inv.get("scope") or "",
             # Model IDs are validated by the upstream value validator and the
             # native BB ProviderModelPicker; they are free-form strings, not CLI enums.
-            "control": "input" if storage_key == "writer.model" else control_type(inv.get("type") or "", inv.get("values") or ""),
+            "control": "input" if storage_key == "writer.model" else "select" if choices else control_type(inv.get("type") or "", inv.get("values") or ""),
             "options": options,
             "min": lo,
             "max": hi,

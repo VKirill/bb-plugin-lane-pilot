@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig } from "./contracts";
 import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
+import { invalidChoiceReason } from "./setting-validation";
 
 export type LanePilotDatabase = Database.Database;
 
@@ -302,10 +303,19 @@ export function listSettingRows(db: LanePilotDatabase, projectId: string): Array
 export function casUpsertSetting(
   db: LanePilotDatabase,
   args: { projectId:string; key:string; value:unknown; expectedVersion:number },
-): { ok:true; version:number } | { ok:false; conflict:true; version:number; value:unknown } {
+): { ok:true; version:number } | { ok:false; conflict:true; version:number; value:unknown }
+  | { ok:false; conflict:false; version:number; value:unknown; error:string } {
   const current = db.prepare(`SELECT value,version FROM lane_pilot_project_settings
     WHERE project_id=? AND binding_id='' AND key=?`).get(args.projectId, args.key) as
     {value:string; version:number}|undefined;
+  const invalidChoice = invalidChoiceReason(args.key, args.value);
+  if (invalidChoice) {
+    let value: unknown = current?.value ?? null;
+    if (current) {
+      try { value = JSON.parse(current.value); } catch { /* keep stored text */ }
+    }
+    return { ok:false, conflict:false, version:current?.version ?? 0, value, error:invalidChoice };
+  }
   if (args.expectedVersion === 0) {
     if (current) {
       let value: unknown = current.value;

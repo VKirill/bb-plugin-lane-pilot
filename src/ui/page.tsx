@@ -265,6 +265,10 @@ export function LanePilotPage() {
       await load();
       return;
     }
+    if (!result.ok) {
+      setConflict(result.error ?? t("casConflict"));
+      return;
+    }
     setConflict(null);
     const nextValues = { ...data.values, [row.storageKey]: result.value };
     setData({
@@ -539,7 +543,7 @@ export function LanePilotPage() {
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <AlertDialogContent
             data-testid="external-ops-dialog"
-            className="!left-4 !right-4 !top-1/2 !w-[min(359px,calc(100vw-2rem))] !max-w-[359px] min-w-0 !translate-x-0 !-translate-y-1/2 max-h-[min(80vh,100dvh)] overflow-y-auto overflow-x-hidden p-4 sm:rounded-lg sm:!max-w-[359px]"
+            className="box-border !left-4 !right-4 !top-1/2 !w-[min(359px,calc(100vw-2rem))] !max-w-[359px] min-w-0 !translate-x-0 !-translate-y-1/2 max-h-[min(80vh,100dvh)] overflow-y-auto overflow-x-hidden p-4 sm:rounded-lg sm:!max-w-[359px]"
           >
             <AlertDialogHeader>
               <AlertDialogTitle className="text-wrap break-words">{t("confirmTitle")}</AlertDialogTitle>

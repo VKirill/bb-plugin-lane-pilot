@@ -9,6 +9,7 @@ import {
   getRun,
   openDatabase,
   savePrototypeConfig,
+  saveProjectSetting,
   setAttemptDirtBefore,
   setRunThread,
   transitionAttempt,
@@ -54,6 +55,38 @@ const task: TaskV2 = {
 };
 
 describe("BB writer validation on the server path", () => {
+  it("blocks CLI dispatch with a corrupt provider setting before calling the host", async () => {
+    let hostCalls = 0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: { threads: { getPluginMetadata: async () => ({ role: "pm", lanePilotRunId: "run-invalid-provider" }) } },
+      experimental_callHostRpc: () => {
+        hostCalls += 1;
+        throw new Error("invalid provider reached host");
+      },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "writer.provider", "not-a-provider");
+    createRun(db, "run-invalid-provider", projectId, "cli");
+    setRunThread(db, "run-invalid-provider", pmThreadId);
+    await plugin(bb);
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_cli",
+      { confirm: true, binary: "run-controller", subcommand: "run" },
+      { threadId: pmThreadId, projectId },
+    )));
+    expect(result.status).toBe("blocked");
+    expect(result.applied).not.toContain("writer.provider");
+    expect(result.argv).not.toContain("--provider");
+    expect(result.unapplied).toContainEqual(expect.objectContaining({
+      key: "writer.provider",
+      reason: expect.stringMatching(/invalid value; allowed:/),
+    }));
+    expect(hostCalls).toBe(0);
+    await harness.lifecycle.dispose();
+  });
+
   it("writes upstream acceptance-v2 under the run/task artifact directory", async () => {
     const written = new Map<string, string>();
     let snapshots = 0;
