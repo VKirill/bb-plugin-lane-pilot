@@ -84,6 +84,37 @@ exit 0
   }
 }
 
+const INSTALL_ENV_BY_KEY: Record<string, string> = {
+  "install.LANE_INSTALL_LOCAL_MARKETPLACE": "LANE_INSTALL_LOCAL_MARKETPLACE",
+  "install.LANE_INSTALL_CLAUDE_PLUGIN": "LANE_INSTALL_CLAUDE_PLUGIN",
+  "install.CLAUDE_CONFIG_DIR": "CLAUDE_CONFIG_DIR",
+  "install.CODEX_HOME": "CODEX_HOME",
+};
+
+function asEnvText(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "boolean") return value ? "1" : "0";
+  return String(value);
+}
+
+export function applyInstallSettings(
+  env: NodeJS.ProcessEnv,
+  settings: Record<string, unknown> | undefined,
+  confirmExternalOps: boolean,
+): string[] {
+  const applied: string[] = [];
+  if (!settings) return applied;
+  for (const [key, name] of Object.entries(INSTALL_ENV_BY_KEY)) {
+    if (!(key in settings)) continue;
+    const text = asEnvText(settings[key]);
+    if (text === null) continue;
+    if (name === "LANE_INSTALL_CLAUDE_PLUGIN" && !confirmExternalOps) continue;
+    env[name] = text;
+    applied.push(key);
+  }
+  return applied;
+}
+
 export function installEnv(input: {
   homeDir: string;
   confirmExternalOps: boolean;
@@ -92,7 +123,8 @@ export function installEnv(input: {
   pathOverride?: string;
   executorPid?: number;
   stopAfterPhase?: InstallPhase;
-}): { env: NodeJS.ProcessEnv; skippedExternalOps: string[] } {
+  settings?: Record<string, unknown>;
+}): { env: NodeJS.ProcessEnv; skippedExternalOps: string[]; applied: string[] } {
   const skipped = input.confirmExternalOps ? [] : [...EXTERNAL_OPS];
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -115,7 +147,8 @@ export function installEnv(input: {
       env.PATH = rest;
     }
   }
-  return { env, skippedExternalOps: skipped };
+  const applied = applyInstallSettings(env, input.settings, input.confirmExternalOps);
+  return { env, skippedExternalOps: skipped, applied };
 }
 
 export async function runInstallSh(input: {
@@ -125,6 +158,7 @@ export async function runInstallSh(input: {
   timeoutMs?: number;
   stopAfterPhase?: InstallPhase;
   executorPid?: number;
+  settings?: Record<string, unknown>;
 }): Promise<InstallRunResult> {
   const wrapperDir = join(input.homeDir, ".agents/lane-pilot/bin-wrappers");
   const skipLog = join(input.homeDir, ".agents/lane-pilot/skipped-external-ops.log");

@@ -32,6 +32,7 @@ export type HostContext = {
   snapshotPath?: string;
   moduleUrl?: string;
   stopAfterPhase?: InstallPhase;
+  installSettings?: Record<string, unknown>;
 };
 
 function commandVersion(command: string): { present: boolean; version: string | null } {
@@ -145,6 +146,7 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
       confirmExternalOps: confirm,
       stopAfterPhase: ctx.stopAfterPhase,
       executorPid: process.pid,
+      settings: ctx.installSettings,
     });
   } catch (error) {
     await restoreS8Files(stash, home);

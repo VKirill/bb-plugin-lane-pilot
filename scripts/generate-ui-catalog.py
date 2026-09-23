@@ -36,26 +36,59 @@ RUNTIME_KEY_BY_TUPLE: dict[tuple[str, str], str] = {
     ("adoc CLI top-level", "--writer-provider"): "writer.provider",
     ("adoc CLI setup", "--writer-provider"): "writer.provider",
     ("TUI Coder tab", "writer (provider)"): "writer.provider",
+    ("pipeline_stages.py stage: write", "write.provider"): "writer.provider",
+    ("adoc capabilities/profile write", "writer.provider/model/reasoning_effort/service_tier/agent"): "writer.provider",
+    ("lane-ctl CLI (start)", "--provider"): "writer.provider",
+    ("run-controller CLI", "--provider"): "writer.provider",
     ("adoc CLI top-level", "--writer-model"): "writer.model",
     ("pipeline_stages.py stage: write", "write.model"): "writer.model",
     ("TUI Coder tab", "model"): "writer.model",
+    ("lane-ctl CLI (start)", "--model"): "writer.model",
+    ("run-controller CLI", "--model"): "writer.model",
     ("adoc CLI top-level", "--writer-effort / --reasoning-effort"): "writer.reasoning_effort",
     ("pipeline_stages.py stage: write", "write.reasoning_effort"): "writer.reasoning_effort",
     ("TUI Coder tab", "effort"): "writer.reasoning_effort",
+    ("lane-ctl CLI (start)", "--reasoning-effort"): "writer.reasoning_effort",
+    ("run-controller CLI", "--reasoning-effort"): "writer.reasoning_effort",
     ("adoc CLI top-level", "--service-tier"): "writer.service_tier",
+    ("routing_profile.py", "DEFAULT_SERVICE_TIER"): "writer.service_tier",
+    ("lane-ctl CLI (start)", "--service-tier"): "writer.service_tier",
+    ("run-controller CLI", "--service-tier"): "writer.service_tier",
     ("TUI Coder tab", "fast (service_tier)"): "writer.fast_mode",
     ("adoc CLI top-level", "--fast-mode/--no-fast-mode"): "writer.fast_mode",
+    ("lane-ctl CLI (start)", "--fast-mode"): "writer.fast_mode",
+    ("run-controller CLI", "--fast-mode"): "writer.fast_mode",
     ("opencode-lane jev", "LANE_JEV_EFFORT"): "jev.LANE_JEV_EFFORT",
     ("opencode-lane jev", "LANE_OPENCODE_JEV"): "jev.LANE_OPENCODE_JEV",
     ("adoc CLI top-level", "--session-max-tasks"): "ops.max_tasks",
     ("lane-ctl CLI (start)", "--max-tasks"): "ops.max_tasks",
+    ("TUI Work tab", "session_max_tasks"): "ops.max_tasks",
+    ("adoc capabilities/profile write", "workspace.session_max_tasks"): "ops.max_tasks",
+    ("routing_profile.py", "LANE_SESSION_MAX_TASKS"): "ops.max_tasks",
     ("run-controller CLI", "--poll-interval"): "ops.poll_interval",
+    ("run-controller CLI", "--poll-interval (watch)"): "ops.poll_interval",
     ("run-controller CLI", "--heartbeat-interval"): "ops.heartbeat_interval",
     ("run-controller CLI", "--retry-backoff"): "ops.retry_backoff",
     ("run-controller CLI", "--run-dir"): "ops.run_dir",
     ("lane-ctl CLI (start)", "--run-dir"): "ops.run_dir",
     ("run-controller CLI", "--project-cwd"): "ops.project_cwd",
-    ("run-controller internal", "max_tasks (derived, not a flag)"): "ops.max_tasks_controller",
+    ("lane-ctl CLI (start)", "--task-id"): "ops.task_id",
+    ("lane-ctl CLI (start)", "--task-file"): "ops.task_file",
+    ("lane-ctl CLI (start)", "--idle"): "ops.idle",
+    ("lane-ctl CLI (start)", "--max-runtime / --max"): "ops.max_runtime",
+    ("lane-ctl CLI (start)", "--pool-size"): "ops.pool_size",
+    ("lane-ctl env", "LANE_SESSION_POOL_SIZE"): "ops.pool_size",
+    ("lane-ctl CLI (verify)", "--verify-pool-size / --pool-size"): "ops.verify_pool_size",
+    ("lane-ctl env", "LANE_VERIFY_POOL_SIZE"): "ops.verify_pool_size",
+    ("lane-ctl CLI (verify)", "--command-timeout (legacy v1 only)"): "ops.command_timeout",
+    ("run-controller CLI", "--timeout (watch)"): "ops.watch_timeout",
+    ("lane-ctl CLI (other)", "--source (tail)"): "ops.tail_source",
+    ("lane-ctl CLI (other)", "--lines (tail)"): "ops.tail_lines",
+    ("lane-ctl CLI (other)", "--limit (events)"): "ops.events_limit",
+    ("install.sh", "LANE_INSTALL_LOCAL_MARKETPLACE"): "install.LANE_INSTALL_LOCAL_MARKETPLACE",
+    ("install.sh", "LANE_INSTALL_CLAUDE_PLUGIN"): "install.LANE_INSTALL_CLAUDE_PLUGIN",
+    ("install.sh", "CLAUDE_CONFIG_DIR"): "install.CLAUDE_CONFIG_DIR",
+    ("install.sh", "CODEX_HOME"): "install.CODEX_HOME",
     ("pipeline_stages.py stage: plan_critique", "plan_critique.mode"): "plan_critique.mode",
     ("pipeline_stages.py stage: plan_critique", "plan_critique.enabled"): "plan_critique.enabled",
     ("pipeline_stages.py stage: plan_critique", "plan_critique.provider"): "plan_critique.provider",
@@ -63,9 +96,10 @@ RUNTIME_KEY_BY_TUPLE: dict[tuple[str, str], str] = {
     ("pipeline_stages.py stage: night_review", "night_review.model / .reasoning_effort"): "night_review.model",
     ("profiles codex toml", "night-review.config.toml"): "night_review.reasoning_effort",
     ("TUI UI tab", "language"): "ui.language",
+    ("adoc capabilities/profile write", "ui.language"): "ui.language",
 }
 
-SETTING_CATALOG_KEYS = {
+CONSUMER_KEYS = {
     "writer.provider",
     "writer.model",
     "writer.reasoning_effort",
@@ -79,7 +113,25 @@ SETTING_CATALOG_KEYS = {
     "ops.retry_backoff",
     "ops.run_dir",
     "ops.project_cwd",
-    "ops.max_tasks_controller",
+    "ops.task_id",
+    "ops.task_file",
+    "ops.idle",
+    "ops.max_runtime",
+    "ops.pool_size",
+    "ops.verify_pool_size",
+    "ops.command_timeout",
+    "ops.watch_timeout",
+    "ops.tail_source",
+    "ops.tail_lines",
+    "ops.events_limit",
+    "install.LANE_INSTALL_LOCAL_MARKETPLACE",
+    "install.LANE_INSTALL_CLAUDE_PLUGIN",
+    "install.CLAUDE_CONFIG_DIR",
+    "install.CODEX_HOME",
+    "ui.language",
+}
+
+SETTING_CATALOG_KEYS = CONSUMER_KEYS | {
     "plan_critique.mode",
     "plan_critique.enabled",
     "plan_critique.provider",
@@ -87,6 +139,43 @@ SETTING_CATALOG_KEYS = {
     "night_review.model",
     "night_review.reasoning_effort",
 }
+
+EDITABLE_RATIONALE = {
+    "writer.provider": "W-DIRECT --provider on run-controller/lane-ctl start (bin/run-controller:1681, bin/lane-ctl:3403)",
+    "writer.model": "W-DIRECT --model on run-controller/lane-ctl start (bin/run-controller:1686, bin/lane-ctl:3405)",
+    "writer.reasoning_effort": "W-DIRECT --reasoning-effort on run-controller/lane-ctl start (bin/run-controller:1688, bin/lane-ctl:3407)",
+    "writer.service_tier": "W-DIRECT --service-tier on run-controller/lane-ctl start (bin/run-controller:1694, bin/lane-ctl:3413)",
+    "writer.fast_mode": "W-DIRECT --fast-mode on run-controller/lane-ctl start (bin/run-controller:1700, bin/lane-ctl:3419)",
+    "jev.LANE_JEV_EFFORT": "ENV-PASSTHROUGH LANE_JEV_EFFORT into writer subprocess (profiles/opencode/opencode-lane/index.ts:111)",
+    "jev.LANE_OPENCODE_JEV": "ENV-PASSTHROUGH LANE_OPENCODE_JEV into writer subprocess (profiles/opencode/opencode-lane/jev.ts:37)",
+    "ops.max_tasks": "OPS-DIRECT --max-tasks on lane-ctl start (bin/lane-ctl:3449)",
+    "ops.poll_interval": "OPS-DIRECT --poll-interval on run-controller run/start/watch (bin/run-controller:1677)",
+    "ops.heartbeat_interval": "OPS-DIRECT --heartbeat-interval on run-controller run/start (bin/run-controller:1678)",
+    "ops.retry_backoff": "OPS-DIRECT --retry-backoff on run-controller run/start (bin/run-controller:1679)",
+    "ops.run_dir": "OPS-DIRECT --run-dir on run-controller/lane-ctl (bin/run-controller:1672, bin/lane-ctl:3389)",
+    "ops.project_cwd": "OPS-DIRECT --project-cwd on run-controller run/start (bin/run-controller:1673)",
+    "ops.task_id": "OPS-DIRECT --task-id on lane-ctl (bin/lane-ctl:3390)",
+    "ops.task_file": "OPS-DIRECT --task-file on lane-ctl start/verify/accept (bin/lane-ctl:3401)",
+    "ops.idle": "OPS-DIRECT --idle on lane-ctl start (bin/lane-ctl:3424)",
+    "ops.max_runtime": "OPS-DIRECT --max-runtime on lane-ctl start (bin/lane-ctl:3431)",
+    "ops.pool_size": "OPS-DIRECT --pool-size on lane-ctl start (bin/lane-ctl:3440)",
+    "ops.verify_pool_size": "OPS-DIRECT --verify-pool-size on lane-ctl verify (bin/lane-ctl:3510)",
+    "ops.command_timeout": "OPS-DIRECT --command-timeout on lane-ctl verify (bin/lane-ctl:3521)",
+    "ops.watch_timeout": "OPS-DIRECT --timeout on run-controller watch (bin/run-controller:1743)",
+    "ops.tail_source": "OPS-DIRECT --source on lane-ctl tail (bin/lane-ctl:3465)",
+    "ops.tail_lines": "OPS-DIRECT --lines on lane-ctl tail (bin/lane-ctl:3466)",
+    "ops.events_limit": "OPS-DIRECT --limit on lane-ctl events (bin/lane-ctl:3478)",
+    "install.LANE_INSTALL_LOCAL_MARKETPLACE": "INSTALL-ENV LANE_INSTALL_LOCAL_MARKETPLACE read by install.sh (install.sh:216)",
+    "install.LANE_INSTALL_CLAUDE_PLUGIN": "INSTALL-ENV LANE_INSTALL_CLAUDE_PLUGIN read by install.sh (install.sh:354)",
+    "install.CLAUDE_CONFIG_DIR": "INSTALL-ENV CLAUDE_CONFIG_DIR read by install.sh (install.sh:362)",
+    "install.CODEX_HOME": "INSTALL-ENV CODEX_HOME read by install.sh (install.sh:8)",
+    "ui.language": "OWN Lane Pilot UI locale; not an upstream flag",
+}
+
+GAP_NO_CONSUMER = (
+    "Lane Pilot Mode 2 does not invoke this binary/file; no typed run-controller/lane-ctl/"
+    "install.sh/env channel (E1)"
+)
 
 PATH_LINE_RE = re.compile(r"[A-Za-z0-9_./{}*-]+:\d+")
 
@@ -580,6 +669,7 @@ def main() -> None:
         decision = bucket
         rationale = mat["matrix_status"]
         evidence = mat["location"]
+        storage_key = RUNTIME_KEY_BY_TUPLE.get((inv["area"], inv["setting"]), f"adoc.{i:03d}")
         if bucket == "readonly":
             audit = audit_readonly(mat, inv)
             decision = audit["decision"]
@@ -587,9 +677,36 @@ def main() -> None:
             rationale = audit["rationale"]
             evidence = audit["evidence"]
             kind_counts[audit["kind"]] += 1
+            if decision == "editable" and storage_key not in CONSUMER_KEYS:
+                decision = "gap"
+                ch = "NONE"
+                rationale = GAP_NO_CONSUMER
+                kind_counts["a"] -= 1
+                kind_counts["c"] += 1
         elif bucket == "editable":
-            rationale = "typed runtime channel from matrix V1"
-            evidence = mat["location"].split()[0] if mat["location"] else inv["location"]
+            if storage_key in CONSUMER_KEYS:
+                rationale = EDITABLE_RATIONALE.get(storage_key, "typed runtime channel from matrix V1")
+                evidence = path_line_evidence(rationale, inv["location"], inv["setting"])
+                if storage_key.startswith("install."):
+                    ch = "INSTALL-ENV"
+                elif storage_key.startswith("jev."):
+                    ch = "ENV-PASSTHROUGH"
+                elif storage_key.startswith("ops."):
+                    ch = "OPS-DIRECT"
+                elif storage_key == "ui.language":
+                    ch = "OWN"
+                else:
+                    ch = "W-DIRECT"
+            elif inv["setting"].startswith("--apply-project"):
+                decision = "readonly"
+                ch = "NONE"
+                rationale = "Mode 2 forbids agents-doctor --apply; install.sh --apply-project is not used (install.sh:491, E2)"
+                evidence = "install.sh:491"
+            else:
+                decision = "gap"
+                ch = "NONE"
+                rationale = GAP_NO_CONSUMER
+                evidence = path_line_evidence(mat["location"], inv["location"], inv["setting"])
         else:
             rationale = mat["matrix_decision"]
             evidence = inv["location"]
@@ -616,7 +733,7 @@ def main() -> None:
             "rationale": rationale,
             "evidence": path_line_evidence(evidence, inv["location"], inv["setting"]),
             "matrixStatus": bucket,
-            "storageKey": RUNTIME_KEY_BY_TUPLE.get((inv["area"], inv["setting"]), f"adoc.{i:03d}"),
+            "storageKey": storage_key,
         }
         catalog.append(row)
 
@@ -690,8 +807,10 @@ def main() -> None:
         field_en[f"field_{row['id']}"] = row["setting"]
         field_ru[f"field_{row['id']}"] = row["setting"]
         field_en[f"reason_{row['id']}"] = row["rationale"]
-        field_ru[f"reason_{row['id']}"] = {
+        ru_text = {
             "typed runtime channel from matrix V1": "Есть типизированный канал runtime из матрицы V1",
+            "Lane Pilot Mode 2 does not invoke this binary/file; no typed run-controller/lane-ctl/install.sh/env channel (E1)": "Mode 2 не вызывает этот бинарник/файл; нет типизированного канала run-controller/lane-ctl/install.sh/env (E1)",
+            "Mode 2 forbids agents-doctor --apply; install.sh --apply-project is not used (install.sh:491, E2)": "Mode 2 запрещает agents-doctor --apply; install.sh --apply-project не используется (install.sh:491, E2)",
             "typed argv on a binary Lane Pilot invokes": "Найден типизированный argv у бинарника, который вызывает Lane Pilot",
             "env var read by a binary Lane Pilot invokes": "Переменная окружения читается бинарником, который вызывает Lane Pilot",
             "read by a child hook process Lane Pilot does not invoke": "Читает дочерний hook-процесс, который Lane Pilot не вызывает",
@@ -704,7 +823,12 @@ def main() -> None:
             "Claude settings merge runs only during install, not Mode 2 dispatch": "Слияние Claude settings только при установке, не в Mode 2",
             "Mode 2 does not invoke agents-doctor; --apply/setup are forbidden": "Mode 2 не вызывает agents-doctor; --apply/setup запрещены",
             "no typed argv/env/temp-file in upstream v1.38.0; applying it needs an upstream or SDK contract (E1)": "Нет типизированного argv/env/файла в upstream v1.38.0; применение требует контракта upstream или SDK (E1)",
-        }.get(row["rationale"], row["rationale"])
+            "OWN Lane Pilot UI locale; not an upstream flag": "Собственная локаль интерфейса Lane Pilot, не флаг upstream",
+        }.get(row["rationale"])
+        if ru_text is None:
+            key = row["storageKey"]
+            ru_text = f"Типизированный канал {key}" if key in CONSUMER_KEYS else row["rationale"]
+        field_ru[f"reason_{row['id']}"] = ru_text
     for sid, title in SECTIONS_EN.items():
         field_en[f"section_{sid}"] = title
         field_ru[f"section_{sid}"] = SECTIONS_RU[sid]

@@ -237,9 +237,21 @@ export default async function plugin(bb: BbPluginApi) {
     setRunState(db, runId, aggregateRun(states));
   }
 
+  function isRuntimeSettingKey(key: string): boolean {
+    if (key === "ui.language") return false;
+    if (([
+      "hostId", "pmWorkspacePath", "writerWorkspacePath", "pmProviderId",
+      "pmModel", "writerProviderId", "writerModel",
+    ] as const).includes(key as "hostId")) return false;
+    return !key.startsWith("import.")
+      && !key.startsWith("install.last")
+      && !key.startsWith("writer.last")
+      && !key.startsWith("cli.last");
+  }
+
   function cliSettingsFor(projectId: string, config: PrototypeConfig): Record<string, unknown> {
     const stored = loadProjectSettings(db, projectId);
-    return {
+    const settings: Record<string, unknown> = {
       "writer.provider": stored["writer.provider"] ?? config.writerProviderId,
       "writer.model": stored["writer.model"] ?? config.writerModel,
       "writer.reasoning_effort": stored["writer.reasoning_effort"] ?? "medium",
@@ -257,6 +269,11 @@ export default async function plugin(bb: BbPluginApi) {
       "plan_critique.provider": stored["plan_critique.provider"],
       "night_review.model": stored["night_review.model"],
     };
+    for (const [key, value] of Object.entries(stored)) {
+      if (!isRuntimeSettingKey(key)) continue;
+      if (!(key in settings) || settings[key] === undefined) settings[key] = value;
+    }
+    return settings;
   }
 
   async function activate(projectId: string, sourceThreadId: string, kind: "bb"|"cli" = "bb"): Promise<{threadId:string; runId:string}> {
@@ -679,9 +696,19 @@ export default async function plugin(bb: BbPluginApi) {
       expectedSha256: null,
     });
     const mutating = subcommand === "start" || subcommand === "run";
-    if (mutating && !listTaskKinds(db, runId).includes("cli")) {
-      createTask(db, { id:id("lptask"), runId, kind:"cli", contract:{ binary, subcommand, argv:executed.argv, receiptPath } });
+    let taskId: string | null = null;
+    if (mutating) {
+      const existing = db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=? AND kind='cli'")
+        .get(runId) as { id: string } | undefined;
+      taskId = existing?.id ?? id("lptask");
+      if (!existing) {
+        createTask(db, { id: taskId, runId, kind:"cli", contract:{ binary, subcommand, argv:executed.argv, receiptPath } });
+      }
+      const attemptId = id("lpattempt");
+      createAttempt(db, { id: attemptId, runId, taskId });
+      transitionAttempt(db, attemptId, outcome.status, { reason: outcome.reason });
     }
+    saveProjectSetting(db, args.projectId, "cli.lastReceipt", JSON.stringify(receipt));
     setRunState(db, runId, outcome.status);
     return receipt;
   }
@@ -836,14 +863,18 @@ export default async function plugin(bb: BbPluginApi) {
       const routing = values["import.routing_profile"];
       const night = values["import.night_shift"];
       const settings = loadProjectSettings(db, projectId);
-      const mapped: Record<string, unknown> = {};
+      const invocationSettings: Record<string, unknown> = {};
       for (const spec of SETTING_CATALOG) {
-        if (spec.key in settings) mapped[spec.key] = settings[spec.key];
+        if (spec.key in settings) invocationSettings[spec.key] = settings[spec.key];
+      }
+      for (const [key, value] of Object.entries(settings)) {
+        if (!isRuntimeSettingKey(key)) continue;
+        if (!(key in invocationSettings)) invocationSettings[key] = value;
       }
       const unapplied = buildCliInvocation({
         binary: "run-controller",
         subcommand: "run",
-        settings: { ...mapped, ...Object.fromEntries(VISIBLE_CATALOG.filter((row) => row.uiStatus !== "editable").map((row) => [row.storageKey, values[row.storageKey]])) },
+        settings: invocationSettings,
       }).unapplied.map((item) => ({ key: item.key, reason: item.reason }));
       return {
         projectId,
@@ -869,6 +900,7 @@ export default async function plugin(bb: BbPluginApi) {
         lastReceiptJson: asJsonText(values["install.lastReceipt"]),
         writerResultJson: asJsonText(values["writer.lastResult"]),
         writerResultPatch: asJsonText(values["writer.lastPatch"]),
+        cliReceiptJson: asJsonText(values["cli.lastReceipt"]),
       };
     },
     save_setting: ({ projectId, key, value, expectedVersion }) => {
@@ -917,10 +949,16 @@ export default async function plugin(bb: BbPluginApi) {
     stack_install: async ({ projectId, confirmExternalOps }) => {
       const config = loadPrototypeConfig(db, projectId);
       if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
+      const stored = loadProjectSettings(db, projectId);
+      const installSettings: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(stored)) {
+        if (key.startsWith("install.") && !key.startsWith("install.last")) installSettings[key] = value;
+      }
       const receipt = await host.call("install", {
         requestedHostId: config.hostId,
         pmWorkspacePath: config.pmWorkspacePath,
         confirmExternalOps,
+        installSettings,
       }, { hostId: config.hostId, timeoutMs: 600_000 });
       if (receipt.snapshotPath) saveProjectSetting(db, projectId, "install.lastSnapshotPath", receipt.snapshotPath);
       saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));

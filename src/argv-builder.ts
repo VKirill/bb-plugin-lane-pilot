@@ -1,4 +1,10 @@
-import { SETTING_CATALOG, type CliBinary, type SettingSpec } from "./channels";
+import {
+  SETTING_CATALOG,
+  UNAPPLIED_REASON,
+  unappliedNotValidReason,
+  type CliBinary,
+  type SettingSpec,
+} from "./channels";
 
 export type UnappliedSetting = {
   key: string;
@@ -55,11 +61,17 @@ export function buildCliInvocation(input: {
     usedFlags.add(token);
   }
 
+  const seen = new Set<string>();
   for (const spec of SETTING_CATALOG) {
     if (!(spec.key in input.settings)) continue;
+    seen.add(spec.key);
     const value = input.settings[spec.key];
     if (spec.channel === "NONE") {
-      unapplied.push({ key:spec.key, value, channel:"NONE", reason:spec.reason ?? "no proven runtime channel" });
+      unapplied.push({ key:spec.key, value, channel:"NONE", reason:spec.reason ?? UNAPPLIED_REASON.noChannel });
+      continue;
+    }
+    if (spec.channel === "INSTALL-ENV") {
+      unapplied.push({ key:spec.key, value, channel:"NONE", reason: UNAPPLIED_REASON.installNotCli });
       continue;
     }
     if (!appliesTo(spec, input.binary, input.subcommand)) {
@@ -67,7 +79,7 @@ export function buildCliInvocation(input: {
         key:spec.key,
         value,
         channel:"NONE",
-        reason:`${spec.channel} flag ${spec.flag ?? spec.env} is not valid on ${input.binary} ${input.subcommand}`,
+        reason: unappliedNotValidReason(spec, input.binary, input.subcommand),
       });
       continue;
     }
@@ -102,6 +114,11 @@ export function buildCliInvocation(input: {
     argv.push(spec.flag, text);
     usedFlags.add(spec.flag);
     applied.push(spec.key);
+  }
+
+  for (const [key, value] of Object.entries(input.settings)) {
+    if (seen.has(key)) continue;
+    unapplied.push({ key, value, channel:"NONE", reason: UNAPPLIED_REASON.noConsumer });
   }
 
   assertSafeArgv(argv);

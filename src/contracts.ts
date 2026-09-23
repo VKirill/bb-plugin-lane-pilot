@@ -109,7 +109,10 @@ export const hostContract = defineRpcContract({
     output: installReceiptSchema,
   },
   install: {
-    input: hostBaseInput,
+    input: z.object({
+      ...hostBaseFields,
+      installSettings: z.record(z.string(), z.unknown()).optional(),
+    }).strict(),
     output: installReceiptSchema,
   },
   rollback: {
@@ -215,6 +218,7 @@ export const rpcContract = defineRpcContract({
       lastReceiptJson: z.string().nullable(),
       writerResultJson: z.string().nullable(),
       writerResultPatch: z.string().nullable(),
+      cliReceiptJson: z.string().nullable(),
     }).strict(),
   },
   save_setting: {
