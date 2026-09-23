@@ -181,6 +181,14 @@ export default async function plugin(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract:hostContract });
   const activeWriterTasks = new Set<string>();
 
+  async function getThreadBounded(threadId:string, timeoutMs = 2_000): Promise<unknown> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return await Promise.race([
+      bb.sdk.threads.get({ threadId }).catch(() => null),
+      new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); }),
+    ]).finally(() => { if (timer) clearTimeout(timer); });
+  }
+
   async function reconcileAttemptThread(
     projectId: string,
     attempt: NonNullable<ReturnType<typeof getAttempt>>,
@@ -585,11 +593,7 @@ export default async function plugin(bb: BbPluginApi) {
       let completedThread: unknown;
       while (Date.now() < deadline) {
         const pollStarted = Date.now();
-        let pollTimer: ReturnType<typeof setTimeout> | undefined;
-        const currentThread = await Promise.race([
-          bb.sdk.threads.get({ threadId:input.writerThreadId }).catch(() => null),
-          new Promise<null>((resolve) => { pollTimer = setTimeout(() => resolve(null), 2_000); }),
-        ]).finally(() => { if (pollTimer) clearTimeout(pollTimer); });
+        const currentThread = await getThreadBounded(input.writerThreadId);
         const currentStatus = stringAt(currentThread, "status");
         if (currentStatus === "error") {
           transitionAttempt(db, input.attemptId, "provider_error", { reason:"writer thread status error" });
@@ -624,7 +628,7 @@ export default async function plugin(bb: BbPluginApi) {
       transitionAttempt(db, input.attemptId, "accepted");
       return receipt;
     } catch (cause) {
-      const thread = await bb.sdk.threads.get({ threadId:input.writerThreadId }).catch(() => null);
+      const thread = await getThreadBounded(input.writerThreadId);
       if (stringAt(thread, "status") === "error") {
         transitionAttempt(db, input.attemptId, "provider_error", { reason:cause instanceof Error ? cause.message : String(cause) });
         return { status:"provider_error", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
@@ -640,12 +644,11 @@ export default async function plugin(bb: BbPluginApi) {
     const key = `${input.runId}:${input.taskId}`;
     if (activeWriterTasks.has(key)) return;
     activeWriterTasks.add(key);
+    let attemptId = input.firstAttemptId;
+    let writerThreadId = input.writerThreadId;
+    let dirtBefore = input.dirtBefore ?? [];
+    let last: Record<string, unknown> = {};
     void (async () => {
-      let attemptId = input.firstAttemptId;
-      let writerThreadId = input.writerThreadId;
-      let dirtBefore = input.dirtBefore ?? [];
-      let last: Record<string, unknown> = {};
-      try {
       while (countAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT) {
         if (!writerThreadId) {
           const spawned = await spawnWriterAttempt({
@@ -698,23 +701,22 @@ export default async function plugin(bb: BbPluginApi) {
         dirtBefore = [];
       }
       refreshRun(input.runId);
-      } catch (cause: unknown) {
-        const message = cause instanceof Error ? cause.message : String(cause);
-        const reason = `internal_error: ${message}`;
-        bb.log.error(`Lane Pilot writer attempt ${attemptId} failed: ${message}`);
-        const attempt = getAttempt(db, attemptId);
-        if (attempt && ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "provider_error", "timeout", "empty_output", "validation_failed"].includes(attempt.state)) {
-          transitionAttempt(db, attemptId, "blocked", { threadId:writerThreadId, reason });
-        }
-        try {
-          refreshRun(input.runId);
-        } catch (refreshCause) {
-          bb.log.error(`Lane Pilot failed to refresh run ${input.runId} after attempt ${attemptId} error: ${refreshCause instanceof Error ? refreshCause.message : String(refreshCause)}`);
-        }
-      } finally {
-        activeWriterTasks.delete(key);
+    })().catch((cause: unknown) => {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      const reason = `internal_error: ${message}`;
+      bb.log.error(`Lane Pilot writer attempt ${attemptId} failed: ${message}`);
+      const attempt = getAttempt(db, attemptId);
+      if (attempt && ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "provider_error", "timeout", "empty_output", "validation_failed"].includes(attempt.state)) {
+        transitionAttempt(db, attemptId, "blocked", { threadId:writerThreadId, reason });
       }
-    })();
+      try {
+        refreshRun(input.runId);
+      } catch (refreshCause) {
+        bb.log.error(`Lane Pilot failed to refresh run ${input.runId} after attempt ${attemptId} error: ${refreshCause instanceof Error ? refreshCause.message : String(refreshCause)}`);
+      }
+    }).finally(() => {
+      activeWriterTasks.delete(key);
+    });
   }
 
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2}): Promise<Record<string,unknown>> {
@@ -773,7 +775,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
       for (const attempt of latestByTask.values()) {
         if ((attempt.state !== "running" && attempt.state !== "cancel_requested") || !attempt.thread_id) continue;
-        const thread = await bb.sdk.threads.get({ threadId:attempt.thread_id }).catch(() => null);
+        const thread = await getThreadBounded(attempt.thread_id);
         const threadStatus = stringAt(thread, "status");
         if (threadStatus === "error" || (attempt.state === "cancel_requested" && threadStatus === "idle")) {
           const failedState = attempt.state === "cancel_requested" ? "canceled" : "provider_error";
@@ -807,7 +809,7 @@ export default async function plugin(bb: BbPluginApi) {
       const state = states.length && states.every((item) => !["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(item))
         ? (states.includes("accepted") ? "accepted" : states.includes("blocked") ? "blocked" : states.at(-1)!)
         : "running";
-        if (state !== "running") {
+      if (state !== "running") {
         if (state === "provider_error" && [...activeWriterTasks].some((key) => key.startsWith(`${args.runId}:`))) {
           await new Promise((resolve) => setTimeout(resolve, 100));
           continue;

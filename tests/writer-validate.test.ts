@@ -367,6 +367,7 @@ describe("BB writer validation on the server path", () => {
   });
 
   it("marks an unexpected background writer exception terminal and releases the task", async () => {
+    let statusUnavailable = true;
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
       sdk:{ threads:{
@@ -374,7 +375,9 @@ describe("BB writer validation on the server path", () => {
           ? { role:"pm", lanePilotRunId:"run-background-error" }
           : { role:"writer" },
         spawn: async () => ({ id:"writer-background-error" }),
-        get: async () => ({ id:"writer-background-error", status:"idle" }),
+        get: async () => statusUnavailable
+          ? new Promise<never>(() => {})
+          : ({ id:"writer-background-error", status:"idle" }),
         output: async () => { throw new Error("synthetic output read failure"); },
         list: async () => [] as never,
       } },
@@ -395,6 +398,13 @@ describe("BB writer validation on the server path", () => {
       { threadId:pmThreadId, projectId },
     )));
     expect(dispatched.state).toBe("queued");
+    const stillRunning = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer",
+      { runId:dispatched.runId, timeoutSec:1 },
+      { threadId:pmThreadId, projectId },
+    )));
+    expect(stillRunning).toMatchObject({ state:"running", attemptId:dispatched.attemptId });
+    statusUnavailable = false;
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_wait_writer",
       { runId:dispatched.runId, timeoutSec:3 },
