@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { SETTING_CATALOG, CONSUMER_KEYS, specFor, UNAPPLIED_REASON, type SettingSpec } from "../src/channels";
-import { UI_CATALOG, type CatalogRow } from "../src/ui-catalog";
+import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER, type CatalogRow } from "../src/ui-catalog";
 import { buildCliInvocation, isFlagOff, isFlagOn } from "../src/argv-builder";
 import { requiredCliFlags } from "../src/cli-flags";
 import { installEnv } from "../src/install-runner";
@@ -115,10 +115,11 @@ describe("UI storage keys feed runtime channels", () => {
         key: row.storageKey,
         value: "not-an-upstream-choice",
         expectedVersion: 0,
-      }) as { ok: boolean; conflict: boolean; error?: string };
+      }) as { ok: boolean; conflict: boolean; validation?: { code: string; params: string[] } };
       expect(result.ok, row.id).toBe(false);
       expect(result.conflict, row.id).toBe(false);
-      expect(result.error, row.id).toMatch(/invalid value; allowed:/);
+      expect(result.validation?.code, row.id).toBe("invalid_choice");
+      expect(result.validation?.params[0], row.id).toBeTruthy();
     }
     await harness.lifecycle.dispose();
   });
@@ -148,6 +149,54 @@ describe("UI storage keys feed runtime channels", () => {
         assertChannelValue(spec, value);
       }
     }
+  });
+
+  it("validates every upstream provider-effort pair at save and dispatch boundaries", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    await plugin(bb);
+    const providers = Object.keys(WRITER_EFFORT_CHOICES_BY_PROVIDER);
+    const efforts = [...new Set(Object.values(WRITER_EFFORT_CHOICES_BY_PROVIDER).flat())];
+    let checked = 0;
+    for (const provider of providers) {
+      for (const effort of efforts) {
+        const projectId = `pair_${provider}_${effort}`;
+        const providerSave = await harness.behavior.callRpc("save_setting", {
+          projectId, key: "writer.provider", value: provider, expectedVersion: 0,
+        }) as { ok: boolean };
+        expect(providerSave.ok, `${provider}/${effort} provider`).toBe(true);
+        const save = await harness.behavior.callRpc("save_setting", {
+          projectId, key: "writer.reasoning_effort", value: effort, expectedVersion: 0,
+        }) as { ok: boolean; conflict: boolean; validation?: { code: string; key: string; params: string[] } };
+        const allowed = WRITER_EFFORT_CHOICES_BY_PROVIDER[provider]!.includes(effort);
+        expect(save.ok, `${provider}/${effort} save`).toBe(allowed);
+        if (!allowed) {
+          expect(save.conflict, `${provider}/${effort} is validation, not CAS`).toBe(false);
+          expect(save.validation).toEqual({
+            code: "incompatible_setting",
+            key: "writer.reasoning_effort",
+            params: ["writer.reasoning_effort", "writer.provider", provider, WRITER_EFFORT_CHOICES_BY_PROVIDER[provider]!.join(", ")],
+          });
+        }
+        const built = buildCliInvocation({
+          binary: "run-controller", subcommand: "run",
+          settings: { "writer.provider": provider, "writer.reasoning_effort": effort },
+        });
+        if (allowed) {
+          expect(built.applied).toContain("writer.reasoning_effort");
+          expect(built.unapplied.some((item) => item.key === "writer.reasoning_effort")).toBe(false);
+        } else {
+          expect(built.applied).not.toContain("writer.reasoning_effort");
+          expect(built.argv).not.toContain(effort);
+          expect(built.unapplied).toContainEqual(expect.objectContaining({
+            key: "writer.reasoning_effort",
+            reason: expect.stringContaining(`writer.provider=${provider}`),
+          }));
+        }
+        checked += 1;
+      }
+    }
+    expect(checked).toBe(providers.length * efforts.length);
+    await harness.lifecycle.dispose();
   });
 
   it("AG-213 R1: writer.fast_mode=false is unapplied, not silent", () => {

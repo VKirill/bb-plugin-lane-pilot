@@ -87,6 +87,36 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("blocks an incompatible stored provider-effort pair before calling the host", async () => {
+    let hostCalls = 0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: { threads: { getPluginMetadata: async () => ({ role: "pm", lanePilotRunId: "run-invalid-pair" }) } },
+      experimental_callHostRpc: () => { hostCalls += 1; throw new Error("invalid pair reached host"); },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "writer.provider", "qwen");
+    saveProjectSetting(db, projectId, "writer.reasoning_effort", "max");
+    createRun(db, "run-invalid-pair", projectId, "cli");
+    setRunThread(db, "run-invalid-pair", pmThreadId);
+    await plugin(bb);
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_cli",
+      { confirm: true, binary: "run-controller", subcommand: "run" },
+      { threadId: pmThreadId, projectId },
+    )));
+    expect(result.status).toBe("blocked");
+    expect(result.argv).not.toContain("--reasoning-effort");
+    expect(result.applied).not.toContain("writer.reasoning_effort");
+    expect(result.unapplied).toContainEqual(expect.objectContaining({
+      key: "writer.reasoning_effort",
+      reason: expect.stringContaining("writer.provider=qwen"),
+    }));
+    expect(hostCalls).toBe(0);
+    await harness.lifecycle.dispose();
+  });
+
   it("writes upstream acceptance-v2 under the run/task artifact directory", async () => {
     const written = new Map<string, string>();
     let snapshots = 0;

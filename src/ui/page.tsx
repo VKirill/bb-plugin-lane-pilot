@@ -16,7 +16,7 @@ import {
   WRITER_EFFORT_CHOICES_BY_PROVIDER,
   type CatalogRow,
 } from "../ui-catalog";
-import { t, stateLabel, unappliedReason, setLocaleOverride, type I18nKey, type Locale } from "../../i18n";
+import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, type I18nKey, type Locale } from "../../i18n";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import {
   AlertDialog,
@@ -198,7 +198,7 @@ export function LanePilotPage() {
   const [tab, setTab] = useState("settings");
   const [data, setData] = useState<ScreenPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [conflict, setConflict] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<{ kind: "cas" } | { kind: "validation"; code: "invalid_choice" | "incompatible_setting"; params: string[] } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingOp, setPendingOp] = useState<"install" | "connect" | "rollback" | null>(null);
   const [snapshotPath, setSnapshotPath] = useState("");
@@ -252,7 +252,7 @@ export function LanePilotPage() {
   }, []);
 
   const save = async (row: CatalogRow, value: unknown) => {
-    if (!projectId || !data) return;
+    if (!projectId || !data) return false;
     const expectedVersion = data.versions[row.storageKey] ?? 0;
     const result = await rpc.call("save_setting", {
       projectId,
@@ -261,15 +261,16 @@ export function LanePilotPage() {
       expectedVersion,
     });
     if (result.conflict) {
-      setConflict(t("casConflict"));
+      setSaveError({ kind: "cas" });
       await load();
-      return;
+      return false;
     }
     if (!result.ok) {
-      setConflict(result.error ?? t("casConflict"));
-      return;
+      if (result.validation) setSaveError({ kind: "validation", code: result.validation.code, params: result.validation.params });
+      else setSaveError({ kind: "cas" });
+      return false;
     }
-    setConflict(null);
+    setSaveError(null);
     const nextValues = { ...data.values, [row.storageKey]: result.value };
     setData({
       ...data,
@@ -277,6 +278,7 @@ export function LanePilotPage() {
       versions: { ...data.versions, [row.storageKey]: result.version },
     });
     if (row.storageKey === LANGUAGE_KEY) applyLocale(nextValues);
+    return true;
   };
 
   const pickerValue: ExperimentalProviderModelPickerValue = {
@@ -315,9 +317,9 @@ export function LanePilotPage() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-        {conflict ? (
-          <Alert variant="destructive" data-testid="cas-conflict">
-            <AlertTitle>{t("casConflict")}</AlertTitle>
+        {saveError ? (
+          <Alert variant="destructive" data-testid={saveError.kind === "cas" ? "cas-conflict" : "setting-validation-error"}>
+            <AlertTitle>{saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}</AlertTitle>
             <AlertDescription>
               <Button size="sm" variant="outline" onClick={() => void load()}>{t("reload")}</Button>
             </AlertDescription>
@@ -361,9 +363,16 @@ export function LanePilotPage() {
                     const providerRow = VISIBLE_CATALOG.find((row) => row.storageKey === WRITER_PROVIDER);
                     const modelRow = VISIBLE_CATALOG.find((row) => row.storageKey === WRITER_MODEL);
                     const effortRow = VISIBLE_CATALOG.find((row) => row.storageKey === WRITER_EFFORT);
-                    if (providerRow) void save(providerRow, next.providerId);
-                    if (modelRow) void save(modelRow, next.model);
-                    if (effortRow) void save(effortRow, next.reasoningLevel);
+                    const allowedEfforts = WRITER_EFFORT_CHOICES_BY_PROVIDER[next.providerId] ?? [];
+                    const requestedEffort = String(next.reasoningLevel);
+                    const adjustedEffort = allowedEfforts.includes(requestedEffort) ? requestedEffort : allowedEfforts[0];
+                    void (async () => {
+                      if (effortRow && adjustedEffort && adjustedEffort !== String(data?.values[WRITER_EFFORT] ?? "")) {
+                        if (!await save(effortRow, adjustedEffort)) return;
+                      }
+                      if (providerRow && !await save(providerRow, next.providerId)) return;
+                      if (modelRow) await save(modelRow, next.model);
+                    })();
                   }}
                 />
               ) : null}

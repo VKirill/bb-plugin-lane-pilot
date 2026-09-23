@@ -5,7 +5,7 @@ import {
   type CliBinary,
   type SettingSpec,
 } from "./channels";
-import { invalidChoiceReason } from "./setting-validation";
+import { validateSettingsObject, validationErrorText } from "./setting-validation";
 
 export type UnappliedSetting = {
   key: string;
@@ -62,6 +62,8 @@ export function buildCliInvocation(input: {
   const applied: string[] = [];
   const unapplied: UnappliedSetting[] = [];
   const usedFlags = new Set<string>();
+  const validationErrors = validateSettingsObject(input.settings);
+  const validationByKey = new Map(validationErrors.map((error) => [error.key, validationErrorText(error)]));
 
   for (const [flag, value] of Object.entries(input.required ?? {})) {
     const token = flag.startsWith("--") ? flag : `--${flag}`;
@@ -75,9 +77,9 @@ export function buildCliInvocation(input: {
     if (!(spec.key in input.settings)) continue;
     seen.add(spec.key);
     const value = input.settings[spec.key];
-    const invalidChoice = invalidChoiceReason(spec.key, value);
-    if (invalidChoice) {
-      unapplied.push({ key: spec.key, value, channel: "NONE", reason: invalidChoice });
+    const invalidSetting = validationByKey.get(spec.key);
+    if (invalidSetting) {
+      unapplied.push({ key: spec.key, value, channel: "NONE", reason: invalidSetting });
       continue;
     }
     if (spec.channel === "NONE") {

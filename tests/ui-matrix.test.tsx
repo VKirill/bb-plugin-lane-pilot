@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
-import { en, ru, setLocaleOverride, t } from "../i18n";
+import { en, ru, setLocaleOverride, t, validationMessage } from "../i18n";
 import { EXTERNAL_OPS } from "../src/constants";
 
 function screenFixture() {
@@ -103,6 +103,27 @@ describe("Lane Pilot UI", () => {
     const sw = field.querySelector("[role='switch']") as HTMLButtonElement;
     fireEvent.click(sw);
     await slot.findByTestId("cas-conflict");
+    slot.lifecycle.unmount();
+  });
+
+  it("shows validation separately from CAS and localizes the allowed values", async () => {
+    document.documentElement.lang = "ru";
+    expect(validationMessage("invalid_choice", ["writer.provider", "agy, codex"]))
+      .toBe(ru.validationInvalidChoice.replace("{key}", "writer.provider").replace("{allowed}", "agy, codex"));
+    expect(validationMessage("incompatible_setting", ["writer.reasoning_effort", "writer.provider", "qwen", "low, medium, high"]))
+      .toBe(ru.validationIncompatibleSetting.replace("{key}", "writer.reasoning_effort").replace("{otherKey}", "writer.provider").replace("{value}", "qwen").replace("{allowed}", "low, medium, high"));
+    const slot = await mountPage({
+      save_setting: () => ({ ok: false, conflict: false, version: 1, value: false, validation: {
+        code: "invalid_choice", key: "writer.provider", params: ["writer.provider", "agy, grok, qwen"],
+      } }),
+    });
+    await slot.findByText(ru.importSource);
+    const editable = VISIBLE_CATALOG.find((row) => row.uiStatus === "editable" && row.control === "switch");
+    const field = slot.getByTestId(`field-${editable!.id}`);
+    fireEvent.click(field.querySelector("[role='switch']") as HTMLButtonElement);
+    await slot.findByTestId("setting-validation-error");
+    expect(slot.getByText(ru.validationInvalidChoice.replace("{key}", "writer.provider").replace("{allowed}", "agy, grok, qwen"))).toBeTruthy();
+    expect(slot.queryByTestId("cas-conflict")).toBeNull();
     slot.lifecycle.unmount();
   });
 

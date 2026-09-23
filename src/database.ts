@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig } from "./contracts";
 import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
-import { invalidChoiceReason } from "./setting-validation";
+import { validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
 
 export type LanePilotDatabase = Database.Database;
 
@@ -304,17 +304,31 @@ export function casUpsertSetting(
   db: LanePilotDatabase,
   args: { projectId:string; key:string; value:unknown; expectedVersion:number },
 ): { ok:true; version:number } | { ok:false; conflict:true; version:number; value:unknown }
-  | { ok:false; conflict:false; version:number; value:unknown; error:string } {
+  | { ok:false; conflict:false; version:number; value:unknown; validation:SettingValidationError } {
   const current = db.prepare(`SELECT value,version FROM lane_pilot_project_settings
     WHERE project_id=? AND binding_id='' AND key=?`).get(args.projectId, args.key) as
     {value:string; version:number}|undefined;
-  const invalidChoice = invalidChoiceReason(args.key, args.value);
-  if (invalidChoice) {
+  if ((args.expectedVersion === 0 && current) || (args.expectedVersion > 0 && (!current || current.version !== args.expectedVersion))) {
     let value: unknown = current?.value ?? null;
     if (current) {
       try { value = JSON.parse(current.value); } catch { /* keep stored text */ }
     }
-    return { ok:false, conflict:false, version:current?.version ?? 0, value, error:invalidChoice };
+    return { ok:false, conflict:true, version:current?.version ?? 0, value };
+  }
+  const projectRows = db.prepare(`SELECT key,value FROM lane_pilot_project_settings
+    WHERE project_id=? AND binding_id=''`).all(args.projectId) as Array<{key:string; value:string}>;
+  const settings: Record<string, unknown> = {};
+  for (const row of projectRows) {
+    try { settings[row.key] = JSON.parse(row.value); } catch { settings[row.key] = row.value; }
+  }
+  settings[args.key] = args.value;
+  const validation = validateSettingsObject(settings)[0];
+  if (validation) {
+    let value: unknown = current?.value ?? null;
+    if (current) {
+      try { value = JSON.parse(current.value); } catch { /* keep stored text */ }
+    }
+    return { ok:false, conflict:false, version:current?.version ?? 0, value, validation };
   }
   if (args.expectedVersion === 0) {
     if (current) {

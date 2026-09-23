@@ -653,7 +653,7 @@ export default async function plugin(bb: BbPluginApi) {
         taskId: args.taskId ?? (typeof settings["ops.task_id"] === "string" ? settings["ops.task_id"] : undefined),
       }),
     });
-    const invalidSetting = invocation.unapplied.find((row) => row.reason.startsWith("invalid value; allowed:"));
+    const invalidSetting = invocation.unapplied.find((row) => row.reason.startsWith("invalid value;"));
     if (invalidSetting) {
       return {
         status:"blocked",
@@ -937,7 +937,7 @@ export default async function plugin(bb: BbPluginApi) {
     save_setting: ({ projectId, key, value, expectedVersion }) => {
       const result = casUpsertSetting(db, { projectId, key, value, expectedVersion });
       if (!result.ok) {
-        if ("error" in result) return result;
+        if ("validation" in result) return result;
         return { ok: false, conflict: true, version: result.version, value: result.value };
       }
       return { ok: true, conflict: false, version: result.version, value };

@@ -16,6 +16,8 @@ const chromeEn = {
   saving: "Saving…",
   saved: "Saved",
   casConflict: "Not saved: another change updated this setting. Reload and try again.",
+  validationInvalidChoice: "Invalid value for {key}. Allowed values: {allowed}",
+  validationIncompatibleSetting: "Invalid {key} with {otherKey}={value}. Allowed values for {key}: {allowed}",
   reload: "Reload",
   readonlyBadge: "Read only",
   gapBadge: "Gap",
@@ -111,6 +113,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   saving: "Сохранение…",
   saved: "Сохранено",
   casConflict: "Не сохранено: настройка уже изменена. Обновите и повторите.",
+  validationInvalidChoice: "Недопустимое значение для {key}. Допустимые значения: {allowed}",
+  validationIncompatibleSetting: "Недопустимое значение {key} при {otherKey}={value}. Допустимые значения для {key}: {allowed}",
   reload: "Обновить",
   readonlyBadge: "Только чтение",
   gapBadge: "Нет канала",
@@ -211,6 +215,17 @@ export function detectLocale(): Locale {
 
 export function t(key: I18nKey): string {
   return detectLocale() === "ru" ? ru[key] : en[key];
+}
+
+export function validationMessage(code: "invalid_choice" | "incompatible_setting", params: string[]): string {
+  if (code === "invalid_choice") {
+    return t("validationInvalidChoice").replace("{key}", params[0] ?? "setting").replace("{allowed}", params[1] ?? "");
+  }
+  return t("validationIncompatibleSetting")
+    .replace("{key}", params[0] ?? "setting")
+    .replace("{otherKey}", params[1] ?? "setting")
+    .replace("{value}", params[2] ?? "")
+    .replace("{allowed}", params[3] ?? "");
 }
 
 export function stateLabel(state: string): string {
