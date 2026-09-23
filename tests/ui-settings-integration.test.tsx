@@ -215,7 +215,7 @@ describe("provider/effort UI against the registered SQLite backend", () => {
       slot.getByTestId("tab-install").textContent,
     ];
 
-    expect(slot.getByTestId("tab-settings").parentElement?.hasAttribute("data-bb-ru-skip")).toBe(true);
+    expect(slot.getByTestId("tab-settings").closest("[data-locale]")?.hasAttribute("data-bb-ru-skip")).toBe(true);
     expect(labels()).toEqual(["Settings", "Run Monitor", "Install"]);
     fireEvent.click(slot.getByRole("button", { name: "RU" }));
     await waitFor(() => expect(labels()).toEqual(["Настройки", "Монитор запусков", "Установка"]));

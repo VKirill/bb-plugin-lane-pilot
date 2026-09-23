@@ -391,7 +391,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   };
 
   if (!projectId) {
-    return <div className="space-y-3 p-4" data-testid="project-picker" data-locale={locale}>
+    return <div className="space-y-3 p-4" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
       <div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">{t("selectProject")}</p><LocaleControls locale={locale} onChange={(next) => void chooseLocale(next)} /></div>
       {projectListError ? <p role="alert" className="text-sm text-destructive">{t("projectListError")}</p> : null}
       {!projectsLoaded && !projectListError ? <p className="text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
@@ -411,7 +411,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   }
 
   return (
-    <div className="h-full overflow-auto p-4 md:p-5" data-locale={locale}>
+    <div className="h-full overflow-auto p-4 md:p-5" data-locale={locale} data-bb-ru-skip>
       <div className="mx-auto w-full max-w-5xl space-y-6">
         <div className="flex justify-end"><LocaleControls locale={locale} onChange={(next) => void chooseLocale(next)} /></div>
         {error ? (
