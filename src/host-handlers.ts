@@ -3,6 +3,7 @@ import { lstat, readFile, readlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contracts";
+import { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
 import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
 import {
   connectOpencodeStack,
@@ -32,6 +33,24 @@ function ctx(input: {
 }): HostContext {
   return { ...input, moduleUrl: import.meta.url };
 }
+
+export const coexistenceInventory: ExperimentalHostRpcHandlers<typeof hostContract>["coexistenceInventory"] = async (input) => (
+  inventoryCoexistence({ projectId: input.projectId, hostId: input.requestedHostId, targetSha: input.targetSha })
+);
+
+export const coexistenceOperation: ExperimentalHostRpcHandlers<typeof hostContract>["coexistenceOperation"] = async (input) => (
+  runCoexistenceOperation({
+    projectId: input.projectId,
+    hostId: input.requestedHostId,
+    operation: input.operation,
+    manager: input.manager,
+    path: input.path,
+    expectedSha256: input.expectedSha256,
+    snapshotId: input.snapshotId,
+    targetSha: input.targetSha,
+    confirmExternalOps: input.confirmExternalOps,
+  })
+);
 
 export const detect: ExperimentalHostRpcHandlers<typeof hostContract>["detect"] = async (input) => (
   detectStack(ctx(input))

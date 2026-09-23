@@ -3,6 +3,8 @@ import { hostContract } from "./src/contracts";
 import {
   connectOpencode,
   classifyPlan,
+  coexistenceInventory,
+  coexistenceOperation,
   detect,
   importConfig,
   install,
@@ -17,7 +19,7 @@ import {
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
-    detect, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan,
+    detect, coexistenceInventory, coexistenceOperation, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan,
     runCli, runCommand, writePmSettings,
   },
 });

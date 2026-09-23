@@ -16,6 +16,8 @@ import { buildCliInvocation } from "./src/argv-builder";
 import { requiredCliFlags } from "./src/cli-flags";
 import { attemptProduced, classifyCliOutcome, parseDirtSnapshots, type DirtSnapshot } from "./src/cli-outcome";
 import { classifyWriterOutput, type VerifyResult } from "./src/validate-output";
+import { findUnownedChanges, validateOwnershipContract } from "./src/verification/ownership";
+import { parseReadFirstHints, renderReadFirstInstructions } from "./src/stages/read-first";
 import { acceptanceArtifactDir, buildAcceptanceV2, bbWriterReportMarkdown, validateAcceptanceV2 } from "./src/acceptance-v2";
 import {
   claimActivation,
@@ -30,6 +32,7 @@ import {
   getTask,
   getTaskPlan,
   saveTaskPlan,
+  saveStageReceipt,
   setAttemptDirtBefore,
   saveReasoningTrace,
   setReasoningThread,
@@ -43,6 +46,7 @@ import {
   loadPrototypeConfig,
   listSettingRows,
   listRunsWithAttempts,
+  listStageReceipts,
   casUpsertSetting,
   casUpsertSettings,
   openDatabase,
@@ -59,6 +63,8 @@ import { reconcile, type IdempotencyTriple } from "./src/reconcile";
 import { spawnWithSeam } from "./src/spawn-seam";
 import { VISIBLE_CATALOG } from "./src/ui-catalog";
 import { bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "./src/jev-reasoning";
+import { critiquePrompt, parseCritique } from "./src/stages/critique";
+import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
 
 export { rpcContract } from "./src/contracts";
 
@@ -179,6 +185,7 @@ function writerPrompt(task: TaskV2): string {
   return [
     "You are the native BB writer for a bounded Lane Pilot task.",
     "Use the task-v2 contract below. Work only inside owns_paths. Never touch never_touch.",
+    renderReadFirstInstructions(task.read_first),
     task.objective,
     "Run the verification commands, then answer with the changed paths and result.",
     JSON.stringify(task, null, 2),
@@ -187,6 +194,100 @@ function writerPrompt(task: TaskV2): string {
 
 function planDigest(plan:string): { sha256:string; length:number } {
   return { sha256:createHash("sha256").update(plan, "utf8").digest("hex"), length:Buffer.byteLength(plan, "utf8") };
+}
+
+function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:string;taskId:string;stageId:StageId;state:StageState;input:string;attempt?:number;
+  providerId?:string|null;model?:string|null;threadId?:string|null;result?:unknown|null;reason?:string|null}): void {
+  const previous = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === input.stageId);
+  if (previous && !stageTransition(previous.state, input.state)) {
+    throw new Error(`illegal stage transition ${input.stageId}: ${previous.state} -> ${input.state}`);
+  }
+  const result = input.result ?? null;
+  const output = result === null ? null : JSON.stringify(result);
+  saveStageReceipt(db, validateStageReceipt({
+    contractVersion:1, runId:input.runId, taskId:input.taskId, stageId:input.stageId,
+    state:input.state, inputSha256:sha256(input.input), outputSha256:output === null ? null : sha256(output),
+    attempt:input.attempt ?? 0, providerId:input.providerId ?? null, model:input.model ?? null,
+    threadId:input.threadId ?? null, result, reason:input.reason ?? null, updatedAt:Date.now(),
+  }));
+}
+
+async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string})
+  : Promise<{allowed:boolean;reason?:string;critique?:unknown}> {
+  const settings = loadProjectSettings(input.db, input.projectId);
+  const providerId = typeof settings["plan_critique.provider"] === "string" && settings["plan_critique.provider"]
+    ? settings["plan_critique.provider"] as string
+    : typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
+  const modelId = typeof settings["plan_critique.model"] === "string" && settings["plan_critique.model"]
+    ? settings["plan_critique.model"] as string
+    : typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
+  const mode = settings["plan_critique.mode"] === "advisory" ? "advisory" : "gate";
+  const source = `${input.plan}\n\n${JSON.stringify(input.task)}`;
+  const base = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:source };
+  recordStage(input.db, { ...base, state:"pending" });
+  const enabled = settings["plan_critique.enabled"];
+  const disabled = enabled === false || enabled === 0
+    || (typeof enabled === "string" && ["0", "off", "false", "no"].includes(enabled.trim().toLowerCase()));
+  if (disabled) {
+    recordStage(input.db, { ...base, state:"skipped", reason:"disabled_by_project_setting" });
+    return { allowed:true };
+  }
+  recordStage(input.db, { ...base, state:"running", providerId, model:modelId });
+  let threadId:string|null = null;
+  try {
+    const [providers, catalog] = await Promise.all([
+      input.bb.sdk.providers.list({ hostId:input.config.hostId }),
+      input.bb.sdk.providers.models({ providerId, hostId:input.config.hostId }),
+    ]);
+    const provider = providers.find((row) => row.id === providerId && row.available);
+    const model = catalog.models.find((row) => row.id === modelId || row.model === modelId);
+    if (!provider || !model) throw new Error("critique_provider_or_model_unavailable");
+    const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
+    const configuredEffort = typeof settings["plan_critique.reasoning_effort"] === "string"
+      ? settings["plan_critique.reasoning_effort"] as string
+      : typeof settings["writer.reasoning_effort"] === "string" ? settings["writer.reasoning_effort"] as string : "medium";
+    if (!new Set<string>(levels).has(configuredEffort)) throw new Error(`critique_reasoning_effort_unsupported:${configuredEffort}`);
+    const savedTier = settings["plan_critique.service_tier"];
+    const tier = savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings);
+    const serviceTier = provider.capabilities.supportsServiceTier ? bbServiceTier(tier) : null;
+    if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) {
+      throw new Error(`critique_service_tier_unsupported:${serviceTier}`);
+    }
+    const spawned = await input.bb.sdk.threads.spawn({
+      projectId:input.projectId,
+      ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
+      prompt:critiquePrompt({ plan:input.plan, task:input.task }),
+      environment:{ type:"host", hostId:input.config.hostId,
+        workspace:{ type:"unmanaged", path:input.task.project_cwd } },
+      visibility:"hidden",
+      pluginMetadata:{ role:"plan-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
+        stageId:"plan-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null },
+    });
+    threadId = stringAt(spawned, "id");
+    if (!threadId) throw new Error("critique_thread_id_missing");
+    recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId });
+    const waited = await input.bb.sdk.threads.wait({ threadId, status:"idle", timeoutMs:90_000 });
+    if (!waited.matched) throw new Error("critique_thread_timeout");
+    const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+    if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+    const critique = parseCritique(raw);
+    const blocked = critique.decision === "changes_requested" && mode === "gate";
+    const result = { ...critique, mode, rawOutput:raw.slice(0, 12_000) };
+    recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
+      threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+    return blocked ? { allowed:false, reason:"plan_critique_blocked", critique:result } : { allowed:true, critique:result };
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    if (threadId) {
+      const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+      if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
+        await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+      }
+    }
+    recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, threadId, reason,
+      result:{ error:reason } });
+    return { allowed:false, reason:`plan_critique_failed:${reason}` };
+  }
 }
 
 function pmPrompt(runId: string, config: PrototypeConfig): string {
@@ -204,6 +305,15 @@ export default async function plugin(bb: BbPluginApi) {
   const db = openDatabase(bb);
   const host = bb.hosts.experimental_client({ contract:hostContract });
   const activeWriterTasks = new Set<string>();
+
+  async function coexistenceInventory(projectId:string, hostId:string) {
+    return await host.call("coexistenceInventory", { requestedHostId:hostId, projectId, targetSha:TARGET_SHA }, { hostId, timeoutMs:30_000 });
+  }
+
+  async function coexistenceOperation(input:{projectId:string;hostId:string;operation:"install"|"connect"|"update"|"reload"|"disconnect"|"rollback";manager:"agents-marker"|"managed-checkout"|"claude-cache"|"claude-settings"|"opencode-config"|"opencode-plugin";path:string;expectedSha256?:string|null;snapshotId?:string|null;targetSha?:string|null}) {
+    const { hostId, ...operation } = input;
+    return await host.call("coexistenceOperation", { requestedHostId:hostId, ...operation }, { hostId, timeoutMs:600_000 });
+  }
 
   async function getThreadBounded(threadId:string, timeoutMs = 2_000): Promise<unknown> {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -359,7 +469,8 @@ export default async function plugin(bb: BbPluginApi) {
       "ops.retry_backoff": stored["ops.retry_backoff"],
       "ops.run_dir": stored["ops.run_dir"],
       "ops.project_cwd": stored["ops.project_cwd"] ?? config.writerWorkspacePath,
-      "plan_critique.mode": stored["plan_critique.mode"] ?? "advisory",
+      "plan_critique.enabled": stored["plan_critique.enabled"] ?? true,
+      "plan_critique.mode": stored["plan_critique.mode"] ?? "gate",
       "plan_critique.provider": stored["plan_critique.provider"],
       "night_review.model": stored["night_review.model"],
     };
@@ -381,8 +492,19 @@ export default async function plugin(bb: BbPluginApi) {
       requestedHostId: config.hostId,
       workspacePath: config.pmWorkspacePath,
     }, { hostId: config.hostId, timeoutMs: 30_000 });
-    if (!detected.matchesTarget || detected.laneStack.sourceSha !== TARGET_SHA) {
-      throw new Error(`Lane Pilot PM requires detect S1: ~/.agents/install.json.source_sha must be ${TARGET_SHA}`);
+    if (!detected.workspace.present) {
+      throw new Error(`Lane Pilot PM workspace is missing: ${detected.workspace.path}`);
+    }
+    const inventory = await host.call("coexistenceInventory", {
+      requestedHostId:config.hostId, projectId, targetSha:TARGET_SHA,
+    }, { hostId:config.hostId, timeoutMs:30_000 });
+    const compatibleEngine = inventory.managers.find((manager) =>
+      ["agents-marker", "managed-checkout", "claude-cache"].includes(manager.manager) && manager.compatible === true,
+    );
+    if (!compatibleEngine) {
+      const missing = [...new Set(inventory.managers.flatMap((manager) => manager.missingCapabilities))];
+      const detail = missing.length ? `Missing required interfaces: ${missing.join(", ")}.` : "No installed engine exposed a probeable set of required interfaces.";
+      throw new Error(`Lane Pilot PM cannot activate: no compatible engine was found. ${detail} Reference version ${TARGET_SHA} is provenance only; SHA/version mismatch does not decide compatibility.`);
     }
     const imported = await host.call("importConfig", {
       requestedHostId: config.hostId,
@@ -607,7 +729,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   async function persistWriterAcceptance(input: {
     config:PrototypeConfig; task:TaskV2; runId:string; taskId:string; attempt:number;
-    attemptId:string; pmThreadId:string; writerThreadId:string; output:string;
+    attemptId:string; pmThreadId:string; writerThreadId:string; output:string; verification:VerifyResult[];
   }): Promise<Record<string,unknown>> {
     const reportText = bbWriterReportMarkdown(input.task, input.attempt);
     const reasoningTrace = getReasoningTrace(db, input.attemptId);
@@ -622,7 +744,8 @@ export default async function plugin(bb: BbPluginApi) {
     const internalReceipt = {
       schemaVersion:1, status:"accepted", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
       attemptId:input.attemptId, pmThreadId:input.pmThreadId, writerThreadId:input.writerThreadId,
-      ownsPaths:input.task.owns_paths, output:input.output,
+      ownsPaths:input.task.owns_paths, readFirst:parseReadFirstHints(input.task.read_first),
+      output:input.output, verification:input.verification,
       reasoning:reasoningTrace ? [reasoningTrace] : [],
     };
     for (const [name, content] of [
@@ -648,11 +771,11 @@ export default async function plugin(bb: BbPluginApi) {
 
   async function validateWriterResult(input: {
     config:PrototypeConfig; task:TaskV2; writerThreadId:string; attemptId:string; dirtBefore:import("./src/cli-outcome").DirtSnapshot[];
-  }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[] }> {
+  }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[]; verification:VerifyResult[] }> {
     const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
     const dirt = await workspaceDirt(input.config, input.task.project_cwd);
     if (!dirt.ok) {
-      return { status:"validation_failed", reason:dirt.reason, output:outputText(output), produced:[] };
+      return { status:"validation_failed", reason:dirt.reason, output:outputText(output), produced:[], verification:[] };
     }
     const unverifiable = input.dirtBefore
       .filter((before) => !before.sha256 && dirt.snapshots.some((after) => after.path === before.path))
@@ -661,10 +784,15 @@ export default async function plugin(bb: BbPluginApi) {
       return {
         status:"validation_failed",
         reason:`cannot compare pre-existing dirty file content: ${unverifiable.join(", ")}`,
-        output:outputText(output), produced:[],
+        output:outputText(output), produced:[], verification:[],
       };
     }
     const produced = attemptProduced(dirt.snapshots, input.dirtBefore);
+    const unowned = findUnownedChanges(produced, input.task);
+    if (unowned.length) {
+      return { status:"validation_failed", reason:`writer changed paths outside owns_paths or inside never_touch: ${unowned.join(", ")}`,
+        output:outputText(output), produced, verification:[] };
+    }
     const contents: Record<string, string | null> = {};
     for (const rel of new Set([...input.task.expected_outputs, ...produced])) {
       const absolute = rel.startsWith("/") ? rel : `${input.task.project_cwd}/${rel}`;
@@ -685,14 +813,14 @@ export default async function plugin(bb: BbPluginApi) {
           status: contents["hello.txt"] == null && contents["tests/hello.test.txt"] == null ? "empty_output" : "validation_failed",
           reason:"fixture output content mismatch",
           output:outputText(output),
-          produced,
+          produced, verification:verifies,
         };
       }
     }
     if (!classified.ok) {
-      return { status:classified.state, reason:classified.reason, output:outputText(output), produced };
+      return { status:classified.state, reason:classified.reason, output:outputText(output), produced, verification:verifies };
     }
-    return { status:"accepted", output:outputText(output), produced };
+    return { status:"accepted", output:outputText(output), produced, verification:verifies };
   }
 
   async function finishWriterAttempt(input: {
@@ -724,6 +852,11 @@ export default async function plugin(bb: BbPluginApi) {
         await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
         return { status:"timeout", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
+      const currentAttempt = getAttempt(db, input.attemptId);
+      if (currentAttempt?.state === "cancel_requested" || currentAttempt?.state === "canceled") {
+        if (currentAttempt.state === "cancel_requested") transitionAttempt(db, input.attemptId, "canceled", { threadId:input.writerThreadId, reason:"writer stop observed before validation" });
+        return { status:"canceled", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      }
       const checked = await validateWriterResult({
         config:input.config, task:input.task, writerThreadId:input.writerThreadId, attemptId:input.attemptId,
         dirtBefore:input.dirtBefore,
@@ -735,10 +868,10 @@ export default async function plugin(bb: BbPluginApi) {
       const receipt = await persistWriterAcceptance({
         config:input.config, task:input.task, runId:input.runId, taskId:input.taskId,
         attempt:countAttempts(db, input.runId, input.taskId), attemptId:input.attemptId,
-        pmThreadId:input.pmThreadId, writerThreadId:input.writerThreadId, output:checked.output,
+        pmThreadId:input.pmThreadId, writerThreadId:input.writerThreadId, output:checked.output, verification:checked.verification,
       });
       transitionAttempt(db, input.attemptId, "accepted");
-      return receipt;
+      return { ...receipt, verification:checked.verification, produced:checked.produced };
     } catch (cause) {
       const thread = await getThreadBounded(input.writerThreadId);
       if (stringAt(thread, "status") === "error") {
@@ -756,6 +889,8 @@ export default async function plugin(bb: BbPluginApi) {
     const key = `${input.runId}:${input.taskId}`;
     if (activeWriterTasks.has(key)) return;
     activeWriterTasks.add(key);
+    recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"running",
+      input:input.plan, attempt:countAttempts(db, input.runId, input.taskId) });
     let attemptId = input.firstAttemptId;
     let writerThreadId = input.writerThreadId;
     let dirtBefore = input.dirtBefore ?? [];
@@ -812,6 +947,20 @@ export default async function plugin(bb: BbPluginApi) {
         writerThreadId = undefined;
         dirtBefore = [];
       }
+      const accepted = last.status === "accepted";
+      const reason = accepted ? undefined : String(last.reason ?? last.status ?? "writer_failed");
+      for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
+        const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
+        if (current?.state === "pending") {
+          recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:"running", input:input.plan });
+        }
+        const terminal = accepted ? "passed" : last.status === "canceled" ? "canceled" : "failed";
+        recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:terminal,
+          input:input.plan, attempt:countAttempts(db, input.runId, input.taskId), threadId:writerThreadId,
+          result:accepted ? stageId === "verification"
+            ? { produced:last.produced, verification:last.verification }
+            : last : null, reason:accepted ? undefined : reason });
+      }
       refreshRun(input.runId);
     })().catch((cause: unknown) => {
       const message = cause instanceof Error ? cause.message : String(cause);
@@ -820,6 +969,14 @@ export default async function plugin(bb: BbPluginApi) {
       const attempt = getAttempt(db, attemptId);
       if (attempt && ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "provider_error", "timeout", "empty_output", "validation_failed"].includes(attempt.state)) {
         transitionAttempt(db, attemptId, "blocked", { threadId:writerThreadId, reason });
+      }
+      for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
+        const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
+        if (!current || current.state === "passed" || current.state === "failed" || current.state === "skipped") continue;
+        if (current.state === "pending") recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:"running", input:input.plan });
+        recordStage(db, { runId:input.runId, taskId:input.taskId, stageId,
+          state:"failed", input:input.plan,
+          attempt:countAttempts(db, input.runId, input.taskId), threadId:writerThreadId, reason });
       }
       try {
         refreshRun(input.runId);
@@ -861,13 +1018,43 @@ export default async function plugin(bb: BbPluginApi) {
     valid.task.project_cwd = workspacePath;
     createTask(db, { id:taskId, runId, kind:"bb", contract:valid.task });
     saveTaskPlan(db, taskId, canonicalPlan);
+    const rejectPreflight = (reason:string):Record<string,unknown> => {
+      recordStage(db, { runId, taskId, stageId:"plan-critique", state:"blocked", input:canonicalPlan, reason });
+      for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
+        recordStage(db, { runId, taskId, stageId, state:"skipped", input:canonicalPlan,
+          reason:"task preflight failed before stage execution" });
+      }
+      setRunState(db, runId, "blocked");
+      refreshRun(runId);
+      return { runId, taskId, state:"blocked", reason, stages:listStageReceipts(db, runId, taskId) };
+    };
+    try {
+      parseReadFirstHints(valid.task.read_first);
+    } catch (cause) {
+      return rejectPreflight(cause instanceof Error ? cause.message : String(cause));
+    }
+    const ownershipError = validateOwnershipContract(valid.task);
+    if (ownershipError) return rejectPreflight(ownershipError);
+    const critique = await runPlanCritique({ bb, db, projectId:args.projectId, runId, taskId,
+      config:runConfig, task:valid.task, plan:canonicalPlan });
+    if (!critique.allowed) {
+      for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
+        recordStage(db, { runId, taskId, stageId, state:"skipped", input:canonicalPlan,
+          reason:"upstream plan-critique stage did not pass" });
+      }
+      setRunState(db, runId, "blocked");
+      return { runId, taskId, state:"blocked", reason:critique.reason, stages:listStageReceipts(db, runId, taskId) };
+    }
+    for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
+      recordStage(db, { runId, taskId, stageId, state:"pending", input:canonicalPlan });
+    }
     const attemptId = id("lpattempt");
     createAttempt(db, { id:attemptId, runId, taskId });
     startWriterTask({
       projectId:args.projectId, runId, taskId, firstAttemptId:attemptId,
       pmThreadId:args.threadId, config:runConfig, task:valid.task, plan:canonicalPlan,
     });
-    return { runId, attemptId, writerThreadId:null, state:"queued" };
+    return { runId, attemptId, writerThreadId:null, state:"queued", stages:listStageReceipts(db, runId, taskId) };
   }
 
   async function waitWriter(args:{threadId:string; projectId:string; runId:string; timeoutSec:number}): Promise<Record<string, unknown>> {
@@ -937,7 +1124,7 @@ export default async function plugin(bb: BbPluginApi) {
           ? { ...baseReceipt as Record<string, unknown>, reasoning }
           : baseReceipt;
         const reasons = [...latestByTask.values()].map((attempt) => attempt.reason).filter((reason): reason is string => Boolean(reason));
-        return { runId:args.runId, state, receipt, ...(reasons.length ? { reason:reasons.join("; ") } : {}) };
+        return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), ...(reasons.length ? { reason:reasons.join("; ") } : {}) };
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
@@ -947,6 +1134,7 @@ export default async function plugin(bb: BbPluginApi) {
       attemptId:attempts.at(-1)?.id ?? null,
       writerThreadId:attempts.at(-1)?.thread_id ?? null,
       state:"running",
+      stages:listStageReceipts(db, args.runId),
       message:"Писатель ещё работает. Вызови lane_pilot_wait_writer ещё раз с тем же runId.",
     };
   }
@@ -1232,6 +1420,8 @@ export default async function plugin(bb: BbPluginApi) {
           }
         }
       }
+      values["plan_critique.enabled"] ??= true;
+      values["plan_critique.mode"] ??= "gate";
       if (config) {
         values["writer.provider"] ??= settings["writer.provider"] ?? config.writerProviderId;
         values["writer.model"] ??= settings["writer.model"] ?? config.writerModel;
@@ -1256,6 +1446,7 @@ export default async function plugin(bb: BbPluginApi) {
           created_at:run.created_at,
           updated_at:run.updated_at,
           cliReceiptJson: runReceipt,
+          stages:listStageReceipts(db, run.id),
           attempts: run.attempts.map((attempt) => ({
             ...attempt,
             cliReceiptJson: asJsonText(values[cliReceiptAttemptKey(attempt.id)]),
@@ -1375,6 +1566,15 @@ export default async function plugin(bb: BbPluginApi) {
         || status === "active" || status === "running";
       if (stillRunning) return { ok: false, state: "cancel_requested", reason: `writer stop was not independently observed (status=${status ?? "unknown"})` };
       transitionAttempt(db, attempt.id, "canceled", { threadId: attempt.thread_id });
+      const task = getTask(db, attempt.task_id);
+      const plan = getTaskPlan(db, attempt.task_id) ?? (task?.kind === "bb" ? valueAt(task.contract, "objective") : "") as string;
+      for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
+        const current = listStageReceipts(db, attempt.run_id, attempt.task_id).find((row) => row.stageId === stageId);
+        if (current && (current.state === "pending" || current.state === "running")) {
+          recordStage(db, { runId:attempt.run_id, taskId:attempt.task_id, stageId, state:"canceled", input:plan,
+            attempt:attempt.attempt_no, threadId:attempt.thread_id, reason:"writer stop observed" });
+        }
+      }
       return { ok: true, state: "canceled", reason: null };
     },
     retry_attempt: ({ attemptId }) => {
@@ -1396,39 +1596,92 @@ export default async function plugin(bb: BbPluginApi) {
     stack_detect: async ({ projectId }) => {
       const config = loadPrototypeConfig(db, projectId);
       if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
-      return host.call("detect", { requestedHostId: config.hostId, workspacePath: config.writerWorkspacePath }, { hostId: config.hostId });
+      const [stack, coexistence] = await Promise.all([
+        host.call("detect", { requestedHostId: config.hostId, workspacePath: config.writerWorkspacePath }, { hostId: config.hostId }),
+        host.call("coexistenceInventory", { requestedHostId: config.hostId, projectId }, { hostId: config.hostId }),
+      ]);
+      return { ...stack, coexistence };
     },
     stack_install: async ({ projectId, confirmExternalOps }) => {
       const config = loadPrototypeConfig(db, projectId);
       if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
-      const stored = loadProjectSettings(db, projectId);
-      const installSettings: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(stored)) {
-        if (key.startsWith("install.") && !key.startsWith("install.last")) installSettings[key] = value;
-      }
-      const receipt = await host.call("install", {
-        requestedHostId: config.hostId,
-        pmWorkspacePath: config.pmWorkspacePath,
-        confirmExternalOps,
-        installSettings,
-      }, { hostId: config.hostId, timeoutMs: 600_000 });
-      if (receipt.snapshotPath) saveProjectSetting(db, projectId, "install.lastSnapshotPath", receipt.snapshotPath);
+      if (!confirmExternalOps) return { schemaVersion:1, action:"install", status:"blocked", reason:"Explicit installation confirmation is required; no operation was run." };
+      const inventory = await coexistenceInventory(projectId, config.hostId);
+      const manager = inventory.managers.find((row) => row.manager === "managed-checkout");
+      if (!manager) throw new Error("Read-only inventory did not return the managed-checkout manager");
+      const receipt = await coexistenceOperation({
+        projectId, hostId:config.hostId, operation:"install", manager:"managed-checkout", path:manager.path,
+        expectedSha256:manager.sha256, targetSha:inventory.targetSha,
+      });
       saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
       return receipt;
     },
     stack_connect: async ({ projectId, confirmExternalOps }) => {
       const config = loadPrototypeConfig(db, projectId);
       if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
-      const receipt = await host.call("connectOpencode", {
-        requestedHostId: config.hostId,
-        confirmExternalOps,
-      }, { hostId: config.hostId, timeoutMs: 30_000 });
+      if (!confirmExternalOps) return { schemaVersion:1, action:"connect", status:"blocked", reason:"Explicit OpenCode connection confirmation is required; no operation was run." };
+      const initial = await coexistenceInventory(projectId, config.hostId);
+      const plugin = initial.managers.find((row) => row.manager === "opencode-plugin");
+      const configRow = initial.managers.find((row) => row.manager === "opencode-config");
+      if (!plugin || !configRow) throw new Error("Read-only inventory did not return the OpenCode plugin and config managers");
+      const operations = [];
+      const installed = await coexistenceOperation({
+        projectId, hostId:config.hostId, operation:"install", manager:"opencode-plugin", path:plugin.path,
+        expectedSha256:plugin.sha256, targetSha:initial.targetSha,
+      });
+      operations.push(installed);
+      if (!(installed.status === "ok" || installed.status === "skipped")) {
+        const receipt = { schemaVersion:1, action:"connect", status:installed.status, coexistenceOperations:operations };
+        saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
+        return receipt;
+      }
+      const current = await coexistenceInventory(projectId, config.hostId);
+      const currentConfig = current.managers.find((row) => row.manager === "opencode-config" && row.path === configRow.path);
+      if (!currentConfig) throw new Error("OpenCode configuration disappeared after plugin installation; no connection write was attempted");
+      const connected = await coexistenceOperation({
+        projectId, hostId:config.hostId, operation:"connect", manager:"opencode-config", path:currentConfig.path,
+        expectedSha256:currentConfig.sha256, targetSha:current.targetSha,
+      });
+      operations.push(connected);
+      const receipt = { schemaVersion:1, action:"connect", status:connected.status, coexistenceOperations:operations };
       saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
       return receipt;
     },
     stack_rollback: async ({ projectId, snapshotPath }) => {
       const config = loadPrototypeConfig(db, projectId);
       if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
+      const saved = loadProjectSettings(db, projectId)["install.lastReceipt"];
+      let parsed: Record<string, unknown> | null = null;
+      try {
+        const value: unknown = JSON.parse(typeof saved === "string" ? saved : "");
+        if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+      } catch { /* older installation receipt */ }
+      const operations = Array.isArray(parsed?.coexistenceOperations)
+        ? parsed.coexistenceOperations.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+        : parsed && typeof parsed.manager === "string" && typeof parsed.path === "string" && typeof parsed.snapshotId === "string" ? [parsed] : [];
+      if (operations.length) {
+        const rolledBack: unknown[] = [];
+        for (const previous of [...operations].reverse()) {
+          if (typeof previous.manager !== "string" || typeof previous.path !== "string" || typeof previous.snapshotId !== "string") continue;
+          const inventory = await coexistenceInventory(projectId, config.hostId);
+          const row = inventory.managers.find((manager) => manager.manager === previous.manager && manager.path === previous.path);
+          if (!row) {
+            rolledBack.push({ manager:previous.manager, path:previous.path, status:"conflict", reason:"Owned manager/path is no longer in the current inventory; no arbitrary path rollback was attempted." });
+            break;
+          }
+          const receipt = await coexistenceOperation({
+            projectId, hostId:config.hostId, operation:"rollback", manager:previous.manager as "agents-marker"|"managed-checkout"|"claude-cache"|"claude-settings"|"opencode-config"|"opencode-plugin",
+            path:previous.path, expectedSha256:row.sha256, snapshotId:previous.snapshotId, targetSha:inventory.targetSha,
+          });
+          rolledBack.push(receipt);
+          if (!(receipt.status === "ok" || receipt.status === "rolled_back" || receipt.status === "skipped")) break;
+        }
+        const receipt = { schemaVersion:1, action:"rollback", status:rolledBack.every((item) => Boolean(item && typeof item === "object" && "status" in item && ["ok", "rolled_back", "skipped"].includes(String(item.status)))) ? "rolled_back" : "conflict", results:rolledBack };
+        if (receipt.status === "rolled_back") saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
+        else saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify({ ...parsed, lastRollbackAttempt:receipt }));
+        return receipt;
+      }
+      if (!snapshotPath) throw new Error("No Lane Pilot coexistence snapshot is available and no legacy snapshot path was supplied.");
       const receipt = await host.call("rollback", {
         requestedHostId: config.hostId,
         snapshotPath,
@@ -1624,10 +1877,16 @@ export default async function plugin(bb: BbPluginApi) {
           }
           const savedTask = getTask(db, attempt.task_id);
           if (!savedTask) throw new Error(`reconciled task missing: ${attempt.task_id}`);
+          const recoveredTask = taskV2Schema.parse(savedTask.contract);
+          const verification = await runVerification(config, recoveredTask);
+          if (verification.some((item) => item.exitCode !== 0)) {
+            transitionAttempt(db, attempt.id, "validation_failed", { threadId:writerThreadId, reason:"recovered writer verification failed" });
+            throw new Error("reconciled writer verification failed");
+          }
           const receipt = await persistWriterAcceptance({
-            config, task:taskV2Schema.parse(savedTask.contract), runId:attempt.run_id,
+            config, task:recoveredTask, runId:attempt.run_id,
             taskId:attempt.task_id, attempt:attempt.attempt_no, attemptId:attempt.id,
-            pmThreadId:run.pm_thread_id, writerThreadId, output:outputText(output),
+            pmThreadId:run.pm_thread_id, writerThreadId, output:outputText(output), verification,
           });
           transitionAttempt(db, attempt.id, "accepted", { threadId:writerThreadId });
           return { exitCode:0, stdout:JSON.stringify(receipt, null, 2) };

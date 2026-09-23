@@ -97,6 +97,10 @@ export function buildCliInvocation(input: {
       unapplied.push({ key:spec.key, value, channel:"NONE", reason:spec.reason ?? UNAPPLIED_REASON.noChannel });
       continue;
     }
+    if (spec.channel === "OWN") {
+      unapplied.push({ key:spec.key, value, channel:"NONE", reason:spec.reason ?? "consumed by a native Lane Pilot stage; not an upstream CLI argument" });
+      continue;
+    }
     if (spec.channel === "INSTALL-ENV") {
       unapplied.push({ key:spec.key, value, channel:"NONE", reason: UNAPPLIED_REASON.installNotCli });
       continue;

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { casSetting, closeRun, createAttempt, createRun, createTask, importSettingsOnce, migrations, openDatabase } from "../src/database";
+import { casSetting, closeRun, createAttempt, createRun, createTask, importSettingsOnce, listStageReceipts, migrations, openDatabase, saveStageReceipt } from "../src/database";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -56,6 +56,28 @@ describe("section 9 storage.database DDL", () => {
     createAttempt(db, { id:"attempt-open", runId:"run-open", taskId:"task-open" });
     expect(closeRun(db, "run-open", "rpc")).toBe(false);
     expect((db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id='run-open'").get() as {closed_at:number|null}).closed_at).toBeNull();
+    await harness.lifecycle.dispose();
+  });
+
+  it("persists and reads versioned stage receipts with run/task ownership", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "stage-run", "A");
+    createTask(db, { id:"stage-task", runId:"stage-run", kind:"bb", contract:{} });
+    saveStageReceipt(db, {
+      contractVersion:1, runId:"stage-run", taskId:"stage-task", stageId:"plan-critique", state:"passed",
+      inputSha256:"a".repeat(64), outputSha256:"b".repeat(64), attempt:1,
+      providerId:"codex", model:"gpt-6-luna", threadId:"critic-thread",
+      result:{ decision:"approve" }, reason:null, updatedAt:10,
+    });
+    expect(listStageReceipts(db, "stage-run", "stage-task")).toMatchObject([
+      { contractVersion:1, stageId:"plan-critique", state:"passed", result:{ decision:"approve" } },
+    ]);
+    expect(() => saveStageReceipt(db, {
+      contractVersion:1, runId:"stage-run", taskId:"missing-task", stageId:"writer-agent", state:"pending",
+      inputSha256:"a".repeat(64), outputSha256:null, attempt:0,
+      providerId:null, model:null, threadId:null, result:null, reason:null, updatedAt:11,
+    })).toThrow();
     await harness.lifecycle.dispose();
   });
 });

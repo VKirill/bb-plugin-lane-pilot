@@ -1,4 +1,4 @@
-export const CHANNELS = ["W-DIRECT", "OPS-DIRECT", "ENV-PASSTHROUGH", "INSTALL-ENV", "NONE"] as const;
+export const CHANNELS = ["W-DIRECT", "OPS-DIRECT", "ENV-PASSTHROUGH", "INSTALL-ENV", "OWN", "NONE"] as const;
 export type Channel = (typeof CHANNELS)[number];
 export type CliBinary = "run-controller" | "lane-ctl";
 
@@ -65,13 +65,13 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"install.CODEX_HOME", channel:"INSTALL-ENV", env:"CODEX_HOME" },
   {
     key:"plan_critique.mode",
-    channel:"NONE",
-    reason: UNAPPLIED_REASON.planCritiqueMode,
+    channel:"OWN",
+    reason:"Native Lane Pilot stage setting; upstream CLI has no --mode argument",
   },
   {
     key:"plan_critique.enabled",
-    channel:"NONE",
-    reason: UNAPPLIED_REASON.planCritiqueEnabled,
+    channel:"OWN",
+    reason:"Native Lane Pilot stage setting; upstream CLI has no --enabled argument",
   },
   {
     key:"plan_critique.provider",

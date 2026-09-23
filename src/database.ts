@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig } from "./contracts";
+import type { StageId, StageState } from "./stages/contract";
 import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
 import { validateSettingValue, validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
 
@@ -112,6 +113,25 @@ export const migrations = [
   `CREATE TABLE lane_pilot_task_plan (
     task_id TEXT PRIMARY KEY,
     plan TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES lane_pilot_task(id) ON DELETE CASCADE
+  ) WITHOUT ROWID`,
+  `CREATE TABLE lane_pilot_stage_receipt (
+    run_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    stage_id TEXT NOT NULL,
+    contract_version INTEGER NOT NULL CHECK(contract_version = 1),
+    state TEXT NOT NULL CHECK(state IN ('pending','running','passed','failed','blocked','skipped','canceled')),
+    input_sha256 TEXT NOT NULL,
+    output_sha256 TEXT,
+    attempt INTEGER NOT NULL CHECK(attempt BETWEEN 0 AND 2),
+    provider_id TEXT,
+    model TEXT,
+    thread_id TEXT,
+    result_json TEXT,
+    reason TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(run_id, task_id, stage_id),
+    FOREIGN KEY(run_id) REFERENCES lane_pilot_run(id) ON DELETE CASCADE,
     FOREIGN KEY(task_id) REFERENCES lane_pilot_task(id) ON DELETE CASCADE
   ) WITHOUT ROWID`,
 ];
@@ -232,6 +252,41 @@ export function saveTaskPlan(db: LanePilotDatabase, taskId:string, plan:string):
 export function getTaskPlan(db: LanePilotDatabase, taskId:string): string|null {
   const row = db.prepare("SELECT plan FROM lane_pilot_task_plan WHERE task_id=?").get(taskId) as {plan:string}|undefined;
   return row?.plan ?? null;
+}
+
+export type StageReceiptRow = {
+  runId:string; taskId:string; stageId:StageId; contractVersion:1;
+  state:StageState;
+  inputSha256:string; outputSha256:string|null; attempt:number;
+  providerId:string|null; model:string|null; threadId:string|null;
+  result:unknown|null; reason:string|null; updatedAt:number;
+};
+
+export function saveStageReceipt(db: LanePilotDatabase, row:StageReceiptRow): void {
+  const { result, ...fields } = row;
+  db.prepare(`INSERT INTO lane_pilot_stage_receipt
+    (run_id,task_id,stage_id,contract_version,state,input_sha256,output_sha256,attempt,provider_id,model,thread_id,result_json,reason,updated_at)
+    VALUES (@runId,@taskId,@stageId,@contractVersion,@state,@inputSha256,@outputSha256,@attempt,@providerId,@model,@threadId,@resultJson,@reason,@updatedAt)
+    ON CONFLICT(run_id,task_id,stage_id) DO UPDATE SET state=excluded.state,
+      output_sha256=excluded.output_sha256,attempt=excluded.attempt,provider_id=excluded.provider_id,
+      model=excluded.model,thread_id=excluded.thread_id,result_json=excluded.result_json,
+      reason=excluded.reason,updated_at=excluded.updated_at`).run({
+        ...fields, resultJson:result === null ? null : JSON.stringify(result),
+      });
+}
+
+export function listStageReceipts(db:LanePilotDatabase, runId:string, taskId?:string): StageReceiptRow[] {
+  const rows = taskId
+    ? db.prepare("SELECT * FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? ORDER BY stage_id").all(runId, taskId)
+    : db.prepare("SELECT * FROM lane_pilot_stage_receipt WHERE run_id=? ORDER BY task_id,stage_id").all(runId);
+  return (rows as Array<Record<string, unknown>>).map((row) => ({
+    runId:row.run_id as string, taskId:row.task_id as string, stageId:row.stage_id as StageId,
+    contractVersion:row.contract_version as 1, state:row.state as StageState,
+    inputSha256:row.input_sha256 as string, outputSha256:row.output_sha256 as string|null,
+    attempt:row.attempt as number, providerId:row.provider_id as string|null, model:row.model as string|null,
+    threadId:row.thread_id as string|null, result:row.result_json == null ? null : JSON.parse(row.result_json as string),
+    reason:row.reason as string|null, updatedAt:row.updated_at as number,
+  }));
 }
 
 export function listTaskKinds(db: LanePilotDatabase, runId: string): Array<"bb"|"cli"> {

@@ -1,5 +1,6 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { stageReceiptSchema } from "./stages/contract";
 
 export const prototypeConfigSchema = z.object({
   projectId: z.string().min(1),
@@ -79,7 +80,42 @@ export const installReceiptSchema = z.object({
   notes: z.array(z.string()),
 }).strict();
 
+const coexistenceManager = z.enum(["agents-marker", "managed-checkout", "claude-cache", "claude-settings", "opencode-config", "opencode-plugin"]);
+const coexistenceOperation = z.enum(["install", "connect", "update", "reload", "disconnect", "rollback"]);
+const coexistenceEvidence = z.object({
+  kind: z.string(), path: z.string().nullable(), sha256: z.string().nullable(), detail: z.string(),
+}).strict();
+const coexistenceManagerState = z.object({
+  manager: coexistenceManager, path: z.string(), installed: z.boolean(), configured: z.boolean(),
+  loaded: z.boolean().nullable(), compatible: z.boolean().nullable(), modified: z.boolean().nullable(),
+  version: z.string().nullable(), sourceSha: z.string().nullable(), sha256: z.string().nullable(),
+  owner: z.enum(["lane-pilot", "user", "upstream", "unknown"]),
+  decision: z.enum(["reuse", "install", "upgrade", "conflict", "skip", "disconnect-owned"]),
+  capabilities: z.array(z.string()), missingCapabilities: z.array(z.string()), evidence: z.array(coexistenceEvidence),
+}).strict();
+const coexistenceInventory = z.object({
+  schemaVersion: z.literal(1), hostId: z.string(), targetSha: z.string(), managers: z.array(coexistenceManagerState),
+}).strict();
+const coexistenceOperationResult = z.object({
+  schemaVersion: z.literal(1), hostId: z.string(), operation: coexistenceOperation, manager: coexistenceManager,
+  path: z.string(), status: z.enum(["ok", "conflict", "blocked", "failed", "skipped", "rolled_back"]),
+  beforeSha256: z.string().nullable(), afterSha256: z.string().nullable(), snapshotId: z.string().nullable(),
+  owner: z.enum(["lane-pilot", "user", "upstream", "unknown"]), evidence: z.array(coexistenceEvidence), reason: z.string().nullable(),
+}).strict();
+
 export const hostContract = defineRpcContract({
+  coexistenceInventory: {
+    input: z.object({ requestedHostId: z.string().min(1), projectId: z.string().min(1), targetSha: z.string().optional() }).strict(),
+    output: coexistenceInventory,
+  },
+  coexistenceOperation: {
+    input: z.object({
+      requestedHostId: z.string().min(1), projectId: z.string().min(1), operation: coexistenceOperation,
+      manager: coexistenceManager, path: z.string().startsWith("/"), expectedSha256: z.string().nullable().optional(),
+      snapshotId: z.string().nullable().optional(), targetSha: z.string().nullable().optional(), confirmExternalOps: z.literal(false).optional(),
+    }).strict(),
+    output: coexistenceOperationResult,
+  },
   detect: {
     input: z.object({ ...hostBaseFields, workspacePath: z.string().startsWith("/") }).strict(),
     output: z.object({
@@ -233,6 +269,7 @@ export const rpcContract = defineRpcContract({
         created_at: z.number(),
         updated_at: z.number(),
         cliReceiptJson: z.string().nullable(),
+        stages: z.array(stageReceiptSchema).optional(),
         attempts: z.array(z.object({
           id: z.string(),
           state: z.string(),
@@ -360,7 +397,7 @@ export const rpcContract = defineRpcContract({
     output: z.unknown(),
   },
   stack_rollback: {
-    input: z.object({ projectId: z.string().min(1), snapshotPath: z.string().min(1) }).strict(),
+    input: z.object({ projectId: z.string().min(1), snapshotPath: z.string().startsWith("/").optional() }).strict(),
     output: z.unknown(),
   },
 });

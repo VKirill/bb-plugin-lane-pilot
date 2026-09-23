@@ -52,6 +52,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "../state-machine";
+import type { StageReceipt } from "../stages/contract";
 
 type ScreenPayload = {
   projectId: string;
@@ -67,6 +68,7 @@ type ScreenPayload = {
     created_at: number;
     updated_at: number;
     cliReceiptJson: string | null;
+    stages?: StageReceipt[];
     attempts: Array<{
       id: string;
       state: string;
@@ -94,9 +96,26 @@ type StackDetectResult = {
   targetSha: string;
   matchesTarget: boolean;
   scenario: "S1"|"S2"|"S3";
+  coexistence?: {
+    managers: Array<{
+      manager: string; path: string; installed: boolean; configured: boolean; loaded: boolean | null;
+      compatible: boolean | null; modified: boolean | null; version: string | null; sourceSha: string | null;
+      sha256: string | null; owner: string; decision: string; missingCapabilities: string[];
+      evidence: Array<{ kind: string; path: string | null; sha256: string | null; detail: string }>;
+    }>;
+  };
 };
 
 const JEV_KEYS = new Set(["jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV"]);
+const COEXISTENCE_MANAGER_KEYS: Record<string, I18nKey> = {
+  "agents-marker":"coexAgentsMarker", "managed-checkout":"coexManagedCheckout", "claude-cache":"coexClaudeCache",
+  "claude-settings":"coexClaudeSettings", "opencode-config":"coexOpenCodeConfig", "opencode-plugin":"coexOpenCodePlugin",
+};
+const COEXISTENCE_VALUE_KEYS: Record<string, I18nKey> = {
+  "lane-pilot":"coexOwnerLanePilot", user:"coexOwnerUser", upstream:"coexOwnerUpstream", unknown:"coexOwnerUnknown",
+  reuse:"coexDecisionReuse", install:"coexDecisionInstall", upgrade:"coexDecisionUpgrade", conflict:"coexDecisionConflict",
+  skip:"coexDecisionSkip", "disconnect-owned":"coexDecisionDisconnectOwned",
+};
 const WRITER_PROVIDER = "writer.provider";
 const WRITER_MODEL = "writer.model";
 const WRITER_EFFORT = "writer.reasoning_effort";
@@ -110,6 +129,17 @@ function reasonKey(id: string): I18nKey {
 }
 function sectionKey(section: string): I18nKey {
   return `section_${section}` as I18nKey;
+}
+
+function stageTitle(stageId: string): string {
+  const labels: Record<string, I18nKey> = {
+    "plan-critique":"stagePlanCritique",
+    "writer-agent":"stageWriterAgent",
+    verification:"stageVerification",
+    "acceptance-receipt":"stageAcceptanceReceipt",
+  };
+  const key = labels[stageId];
+  return key ? t(key) : stageId;
 }
 
 function diagnosticRows(): CatalogRow[] {
@@ -215,8 +245,8 @@ function LocaleControls({ preference, onChange }: { preference: LocalePreference
 }
 
 function runTone(state: string): "default" | "secondary" | "destructive" | "outline" {
-  if (state === "accepted") return "default";
-  if (state === "blocked" || state === "provider_error" || state === "validation_failed") return "destructive";
+  if (state === "accepted" || state === "passed") return "default";
+  if (state === "failed" || state === "blocked" || state === "provider_error" || state === "validation_failed") return "destructive";
   if (state === "running" || state === "pending") return "secondary";
   return "outline";
 }
@@ -425,7 +455,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
       if (op === "detect") setDetectResult(await rpc.call("stack_detect", { projectId }) as StackDetectResult);
       if (op === "install") await rpc.call("stack_install", { projectId, confirmExternalOps: confirm });
       if (op === "connect") await rpc.call("stack_connect", { projectId, confirmExternalOps: confirm });
-      if (op === "rollback") await rpc.call("stack_rollback", { projectId, snapshotPath });
+      if (op === "rollback") await rpc.call("stack_rollback", { projectId, ...(snapshotPath || data?.lastSnapshotPath ? { snapshotPath:snapshotPath || data?.lastSnapshotPath || undefined } : {}) });
       toast.success(<span data-bb-ru-skip>{t("toastOk")}</span>);
       await load();
     } catch (cause) {
@@ -641,6 +671,25 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
               </div>
               </>
             )}
+            {data?.runs.filter((run) => run.stages?.length).map((run) => (
+              <Card key={`stages-${run.id}`} data-testid={`stage-receipts-${run.id}`}>
+                <CardHeader className="pb-2"><CardTitle className="break-all font-mono text-xs font-medium">{t("stageReceipts")} · {run.id}</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  {run.stages?.map((stage) => (
+                    <div key={`${stage.taskId}-${stage.stageId}`} className="space-y-2 rounded-md border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-sm font-medium">{stageTitle(stage.stageId)}</span>
+                        <Badge variant={runTone(stage.state)}>{stateLabel(stage.state)}</Badge>
+                      </div>
+                      <div className="break-all font-mono text-xs text-muted-foreground">{stage.taskId} · SHA-256 {stage.inputSha256.slice(0, 12)}{stage.outputSha256 ? ` / ${stage.outputSha256.slice(0, 12)}` : ""}</div>
+                      {stage.reason ? <p className="text-xs text-muted-foreground">{t("stageReason")}: {stage.reason}</p> : null}
+                      {stage.result != null ? <SourceCode content={JSON.stringify(stage.result, null, 2)} path={`${stage.stageId}-receipt.json`} overflow="scroll" /> : null}
+                      {stage.result == null && !stage.reason ? <p className="text-xs text-muted-foreground">{t("stageNoEvidence")}</p> : null}
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ))}
             <p className="sr-only">{[...RUN_STATES, ...ATTEMPT_STATES].join(" ")}</p>
           </TabsContent>
 
@@ -746,9 +795,36 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
               <CardHeader className="pb-2"><CardTitle className="text-sm">{t("detectResult")}</CardTitle></CardHeader>
               <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
                 <div><span className="text-muted-foreground">{t("detectScenario")}:</span> {detectResult.scenario}</div>
-                <div><span className="text-muted-foreground">{t("detectTargetMatch")}:</span> {detectResult.matchesTarget ? t("yes") : t("no")}</div>
+                <div><span className="text-muted-foreground">{t("detectTargetMatch")}:</span> {detectResult.matchesTarget ? t("yes") : t("no")} ({t("targetMatchInformational")})</div>
                 <div><span className="text-muted-foreground">{t("detectLaneStack")}:</span> {detectResult.laneStack.present ? detectResult.laneStack.version ?? t("unknown") : t("no")}</div>
                 <div><span className="text-muted-foreground">{t("detectOpenCode")}:</span> {detectResult.openCode.present ? `${t("yes")} (${detectResult.openCode.version ?? t("unknown")})` : t("no")}</div>
+              </CardContent>
+            </Card> : null}
+            {detectResult?.coexistence ? <Card data-testid="coexistence-inventory">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("coexInventory")}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {detectResult.coexistence.managers.map((manager) => (
+                  <div key={`${manager.manager}-${manager.path}`} className="space-y-2 rounded-md border p-3" data-testid={`coex-${manager.manager}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium">{t(COEXISTENCE_MANAGER_KEYS[manager.manager] ?? "coexUnknownManager")}</span>
+                      <Badge variant={manager.compatible === false ? "destructive" : manager.decision === "reuse" ? "default" : "outline"}>{t(COEXISTENCE_VALUE_KEYS[manager.decision] ?? "coexDecisionUnknown")}</Badge>
+                    </div>
+                    <div className="break-all font-mono text-xs">{manager.path}</div>
+                    <div className="grid gap-1 text-xs sm:grid-cols-2">
+                      <span>{t("coexInstalled")}: {manager.installed ? t("yes") : t("no")}</span>
+                      <span>{t("coexConfigured")}: {manager.configured ? t("yes") : t("no")}</span>
+                      <span>{t("coexLoaded")}: {manager.loaded === null ? t("unknown") : manager.loaded ? t("yes") : t("no")}</span>
+                      <span>{t("coexCompatible")}: {manager.compatible === null ? t("unknown") : manager.compatible ? t("yes") : t("no")}</span>
+                      <span>{t("coexModified")}: {manager.modified === null ? t("unknown") : manager.modified ? t("yes") : t("no")}</span>
+                      <span>{t("coexOwner")}: {t(COEXISTENCE_VALUE_KEYS[manager.owner] ?? "coexOwnerUnknown")}</span>
+                      {manager.version ? <span>{t("version")}: {manager.version}</span> : null}
+                    </div>
+                    {manager.missingCapabilities.length ? <p className="text-xs text-destructive">{t("coexMissingCapabilities")}: {manager.missingCapabilities.join(", ")}</p> : null}
+                    <details className="text-xs"><summary className="cursor-pointer">{t("coexEvidence")} ({manager.evidence.length})</summary>
+                      <ul className="mt-2 space-y-1">{manager.evidence.map((evidence, index) => <li key={`${evidence.kind}-${index}`} className="break-words">{evidence.detail}{evidence.sha256 ? ` · SHA-256 ${evidence.sha256.slice(0, 12)}` : ""}</li>)}</ul>
+                    </details>
+                  </div>
+                ))}
               </CardContent>
             </Card> : null}
           </TabsContent>

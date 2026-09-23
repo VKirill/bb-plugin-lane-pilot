@@ -354,6 +354,8 @@ def check_upstream_enum_catalog() -> None:
         options_match = re.search(r'options:(\[.*?\]),min:', line)
         if not key_match or not options_match:
             raise SystemExit(f"cannot inspect editable enum row: {line[:120]}")
+        if 'channel:"OWN"' in line:
+            continue
         key = key_match.group(1)
         try:
             options = json.loads(options_match.group(1))
@@ -853,6 +855,19 @@ def main() -> None:
             if default_value not in choices:
                 default_value = choices[0]
 
+        # These are Lane Pilot native settings, consumed by its stage runner;
+        # they are not forwarded to the upstream CLI.
+        if storage_key == "plan_critique.enabled":
+            decision, ch = "editable", "OWN"
+            rationale = "Native Lane Pilot setting consumed by the plan-critique stage runner"
+            evidence = "server.ts:runPlanCritique"
+            options, default_value = ["true", "false"], "true"
+        elif storage_key == "plan_critique.mode":
+            decision, ch = "editable", "OWN"
+            rationale = "Native Lane Pilot setting selects advisory or gate behavior for plan critique"
+            evidence = "server.ts:runPlanCritique"
+            options, default_value = ["advisory", "gate"], "gate"
+
         counts[decision] += 1
         row = {
             "id": f"s{i:03d}",
@@ -977,6 +992,14 @@ def main() -> None:
             key = row["storageKey"]
             ru_text = f"Типизированный канал {key}" if key in CONSUMER_KEYS else row["rationale"]
         field_ru[f"reason_{row['id']}"] = ru_text
+        if row["storageKey"] == "plan_critique.enabled":
+            field_en[f"field_{row['id']}"] = "Run plan critique before writing"
+            field_ru[f"field_{row['id']}"] = "Запускать критику плана перед записью"
+            field_ru[f"reason_{row['id']}"] = "Собственная настройка Lane Pilot, которую читает исполняемый этап критики плана"
+        elif row["storageKey"] == "plan_critique.mode":
+            field_en[f"field_{row['id']}"] = "Plan critique behavior"
+            field_ru[f"field_{row['id']}"] = "Режим критики плана"
+            field_ru[f"reason_{row['id']}"] = "Собственная настройка Lane Pilot: advisory продолжает запись, gate блокирует её при запрошенных исправлениях"
     for sid, title in SECTIONS_EN.items():
         field_en[f"section_{sid}"] = title
         field_ru[f"section_{sid}"] = SECTIONS_RU[sid]

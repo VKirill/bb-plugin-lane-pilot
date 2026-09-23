@@ -29,6 +29,87 @@ const config = {
 };
 
 describe("production spawn_unknown reconciliation", () => {
+  it("routes confirmed install and OpenCode connect through typed coexistence operations", async () => {
+    const hostCalls: Array<{ method:string; input:Record<string, unknown> }> = [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      experimental_callHostRpc: (call) => {
+        hostCalls.push({ method:call.method, input:call.input as Record<string, unknown> });
+        if (call.method === "coexistenceInventory") return {
+          schemaVersion:1, hostId:"host-test", targetSha:TARGET_SHA,
+          managers:[
+            { manager:"managed-checkout",path:"/home/test/.agents/lane-pilot/engines/dd77",installed:true,configured:false,loaded:null,compatible:true,modified:true,version:"custom",sourceSha:"newer-sha",sha256:"a".repeat(64),owner:"user",decision:"reuse",capabilities:["threads.spawn"],missingCapabilities:[],evidence:[] },
+            { manager:"opencode-config",path:"/home/test/.config/opencode/opencode.json",installed:true,configured:false,loaded:null,compatible:null,modified:null,version:null,sourceSha:null,sha256:"b".repeat(64),owner:"user",decision:"skip",capabilities:[],missingCapabilities:[],evidence:[] },
+            { manager:"opencode-plugin",path:"/home/test/.config/opencode/plugins/opencode-lane.ts",installed:true,configured:false,loaded:null,compatible:true,modified:null,version:null,sourceSha:"newer-sha",sha256:"c".repeat(64),owner:"lane-pilot",decision:"reuse",capabilities:["opencode.module"],missingCapabilities:[],evidence:[] },
+          ],
+        };
+        if (call.method === "coexistenceOperation") {
+          const input = call.input as Record<string, unknown>;
+          return { schemaVersion:1,hostId:"host-test",operation:input.operation,manager:input.manager,path:input.path,status:input.operation === "rollback" ? "rolled_back" : input.manager === "opencode-config" ? "ok" : "skipped",beforeSha256:input.expectedSha256,afterSha256:input.expectedSha256,snapshotId:typeof input.snapshotId === "string" ? input.snapshotId : input.manager === "opencode-config" ? "snapshot-connect-123" : null,owner:"lane-pilot",evidence:[],reason:null };
+        }
+        throw new Error(`unexpected ${call.method}`);
+      },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    await plugin(bb);
+
+    const install = await harness.behavior.callRpc("stack_install", { projectId, confirmExternalOps:true });
+    expect(install).toMatchObject({ operation:"install", manager:"managed-checkout", status:"skipped" });
+    expect(hostCalls.map((call) => call.method)).toEqual(["coexistenceInventory", "coexistenceOperation"]);
+    expect(hostCalls[1]?.input).toMatchObject({ operation:"install", manager:"managed-checkout", expectedSha256:"a".repeat(64) });
+
+    hostCalls.length = 0;
+    const connect = await harness.behavior.callRpc("stack_connect", { projectId, confirmExternalOps:true });
+    expect(connect).toMatchObject({ action:"connect", status:"ok", coexistenceOperations:[
+      { manager:"opencode-plugin",operation:"install",status:"skipped" },
+      { manager:"opencode-config",operation:"connect",status:"ok",snapshotId:"snapshot-connect-123" },
+    ] });
+    expect(hostCalls.map((call) => call.method)).toEqual([
+      "coexistenceInventory", "coexistenceOperation", "coexistenceInventory", "coexistenceOperation",
+    ]);
+    expect(hostCalls.at(-1)?.input).toMatchObject({ operation:"connect", manager:"opencode-config", expectedSha256:"b".repeat(64) });
+
+    hostCalls.length = 0;
+    const rollback = await harness.behavior.callRpc("stack_rollback", { projectId });
+    expect(rollback).toMatchObject({ action:"rollback", status:"rolled_back", results:[
+      { operation:"rollback", manager:"opencode-config", snapshotId:"snapshot-connect-123", status:"rolled_back" },
+    ] });
+    expect(hostCalls.map((call) => call.method)).toEqual(["coexistenceInventory", "coexistenceOperation"]);
+    expect(hostCalls.at(-1)?.input).toMatchObject({ operation:"rollback", manager:"opencode-config", snapshotId:"snapshot-connect-123", expectedSha256:"b".repeat(64) });
+    await harness.lifecycle.dispose();
+  });
+
+  it("reports exact missing capability and refuses activation without an install fallback", async () => {
+    const calls:string[] = [];
+    let spawned = 0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{ threads:{
+        getPluginMetadata:async () => ({ role:"user" }),
+        spawn:async () => { spawned += 1; return { id:"unexpected-pm" } as never; },
+      } },
+      experimental_callHostRpc:(call) => {
+        calls.push(call.method);
+        if (call.method === "detect") return { hostId:"host-test",laneStack:{present:true,version:"newer",sourceSha:"custom"},openCode:{present:true,version:"1.2"},workspace:{path:"/tmp/pm",present:true},targetSha:TARGET_SHA,matchesTarget:false,scenario:"S2" };
+        if (call.method === "coexistenceInventory") return { schemaVersion:1,hostId:"host-test",targetSha:TARGET_SHA,managers:[{
+          manager:"agents-marker",path:"/home/test/.agents/install.json",installed:true,configured:true,loaded:null,compatible:false,modified:null,
+          version:"custom",sourceSha:"custom",sha256:"a".repeat(64),owner:"user",decision:"conflict",capabilities:[],missingCapabilities:["threads.spawn"],
+          evidence:[{kind:"capability",path:"/home/test/.agents/install.json",sha256:null,detail:"Required interface threads.spawn is missing from capability set."}],
+        }] };
+        throw new Error(`unexpected ${call.method}`);
+      },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    await plugin(bb);
+    await expect(harness.behavior.callRpc("activate_pm", { projectId, sourceThreadId:"source-thread" }))
+      .rejects.toThrow(/threads\.spawn/);
+    expect(calls).toEqual(["detect", "coexistenceInventory"]);
+    expect(spawned).toBe(0);
+    await harness.lifecycle.dispose();
+  });
+
   it("defaults the global locale preference to auto and honors explicit overrides", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
     await plugin(bb);
@@ -52,7 +133,12 @@ describe("production spawn_unknown reconciliation", () => {
         spawn: async () => ({ id:"pm-after-finish" }) as never,
       } },
       experimental_callHostRpc: (call) => {
-        if (call.method === "detect") return { hostId:"host-test", laneStack:{ present:true,version:"1.38.0",sourceSha:TARGET_SHA },openCode:{present:false,version:null},workspace:{path:"/tmp/pm",present:true},targetSha:TARGET_SHA,matchesTarget:true,scenario:"S1" };
+        if (call.method === "detect") return { hostId:"host-test", laneStack:{ present:true,version:"1.39.0",sourceSha:"custom-newer-sha" },openCode:{present:false,version:null},workspace:{path:"/tmp/pm",present:true},targetSha:TARGET_SHA,matchesTarget:false,scenario:"S2" };
+        if (call.method === "coexistenceInventory") return { schemaVersion:1,hostId:"host-test",targetSha:TARGET_SHA,managers:[{
+          manager:"agents-marker",path:"/home/test/.agents/install.json",installed:true,configured:true,loaded:null,
+          compatible:true,modified:null,version:"custom",sourceSha:"custom-newer-sha",sha256:"a".repeat(64),
+          owner:"user",decision:"reuse",capabilities:["threads.spawn"],missingCapabilities:[],evidence:[{kind:"capability",path:"/home/test/.agents/install.json",sha256:null,detail:"threads.spawn is available"}],
+        }] };
         if (call.method === "importConfig") return { schemaVersion:1,action:"import-config",scenario:"S7",status:"ok",filesChanged:[],externalOpsBefore:{},externalOpsAfter:{},skippedExternalOps:[],warning:null,exitCode:0,receiptPath:null,snapshotPath:null,sourceSha:null,notes:[],imported:{routingProfile:null,nightShift:null} };
         if (call.method === "writePmSettings") return { hostId:"host-test",settingsPath:"/tmp/pm/.claude/settings.json",guardPath:"/tmp/guard_shell.py" };
         throw new Error(`unexpected ${call.method}`);
@@ -156,6 +242,7 @@ describe("production spawn_unknown reconciliation", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "plan_critique.enabled", false);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-live", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-live", pmThreadId);

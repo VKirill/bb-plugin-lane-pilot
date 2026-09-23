@@ -28,6 +28,12 @@ function representativeValues(row: CatalogRow, spec: SettingSpec): unknown[] {
 
 function assertChannelValue(spec: SettingSpec, value: unknown): void {
   const label = `${spec.key}=${JSON.stringify(value)}`;
+  if (spec.channel === "OWN") {
+    const cli = buildCliInvocation({ binary: "run-controller", subcommand: "run", settings: { [spec.key]: value } });
+    expect(cli.applied, label).not.toContain(spec.key);
+    expect(cli.unapplied.find((row) => row.key === spec.key)?.reason, label).toMatch(/native Lane Pilot stage/i);
+    return;
+  }
   if (spec.channel === "INSTALL-ENV") {
     const result = installEnv({
       homeDir: "/tmp/home",
@@ -105,7 +111,7 @@ describe("UI storage keys feed runtime channels", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(54);
+    expect(editable).toHaveLength(56);
     for (const row of editable) {
       const choices = UI_CATALOG.filter((candidate) => candidate.storageKey === row.storageKey && candidate.control === "select")
         .flatMap((candidate) => candidate.options);
@@ -135,7 +141,7 @@ describe("UI storage keys feed runtime channels", () => {
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
     expect(booleanFlags.map((spec) => spec.key)).toEqual([]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(54);
+    expect(editable).toHaveLength(56);
     expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
     for (const row of editable) {
       if (row.storageKey === "ui.language") {

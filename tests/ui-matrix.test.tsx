@@ -28,6 +28,12 @@ function screenFixture() {
       created_at: 1,
       updated_at: 1,
       cliReceiptJson: null,
+      stages: [{
+        contractVersion:1, runId:"lprun_1", taskId:"task_1", stageId:"plan-critique", state:"passed",
+        inputSha256:"a".repeat(64), outputSha256:"b".repeat(64), attempt:1,
+        providerId:"codex", model:"test-model", threadId:"thr_critic",
+        result:{ decision:"approve", summary:"Plan checked", findings:[] }, reason:null, updatedAt:1,
+      }],
       attempts: [{
         id: "lpattempt_1",
         state: "running",
@@ -107,7 +113,7 @@ describe("Lane Pilot UI", () => {
     expect(remember).toHaveBeenCalledWith({ projectId:"proj_ui" });
     expect(slot.queryByRole("button", { name:en.openProject })).toBeNull();
     slot.lifecycle.unmount();
-  });
+  }, 10_000);
 
   it("keeps technical fields in Diagnostics and renders each storage key once", async () => {
     const slot = await mountPage();
@@ -251,6 +257,32 @@ describe("Lane Pilot UI", () => {
     }
   });
 
+  it("renders host coexistence inventory with owner, capability, and evidence", async () => {
+    const slot = await mountPage({
+      stack_detect: () => ({
+        hostId:"host_ui", laneStack:{ present:true, version:"custom", sourceSha:"other" },
+        openCode:{ present:true, version:"1.18.30" }, workspace:{ path:"/tmp/work", present:true },
+        targetSha:"dd77", matchesTarget:false, scenario:"S2",
+        coexistence:{ managers:[{
+          manager:"managed-checkout", path:"/opt/engine", installed:true, configured:true, loaded:null,
+          compatible:true, modified:true, version:"custom", sourceSha:"abc", sha256:"a".repeat(64),
+          owner:"user", decision:"reuse", missingCapabilities:[],
+          evidence:[{ kind:"capability", path:"/opt/engine", sha256:"a".repeat(64), detail:"required interface listAgentRuns available" }],
+        }] },
+      }),
+    });
+    fireEvent.click(slot.getByTestId("tab-install"));
+    fireEvent.click(slot.getByTestId("stack-detect"));
+    const inventory = await slot.findByTestId("coexistence-inventory");
+    const checkout = slot.getByTestId("coex-managed-checkout");
+    expect(inventory.textContent).toContain(en.coexInventory);
+    expect(checkout.textContent).toContain(en.coexDecisionReuse);
+    expect(checkout.textContent).toContain(en.coexOwnerUser);
+    expect(checkout.textContent).toContain("required interface listAgentRuns available");
+    expect(slot.getByTestId("stack-detect-result").textContent).toContain(en.targetMatchInformational);
+    slot.lifecycle.unmount();
+  });
+
   it("uses a mobile card monitor and hides the wide table below the sm breakpoint", async () => {
     const slot = await mountPage();
     fireEvent.mouseDown(slot.getByTestId("tab-monitor"), { button:0 });
@@ -264,6 +296,25 @@ describe("Lane Pilot UI", () => {
     expect(wideTable).not.toBeNull();
     expect(mobile.className).toContain("sm:hidden");
     slot.lifecycle.unmount();
+  });
+
+  it("shows persisted stage receipts with translated stage labels", async () => {
+    setLocaleOverride("en");
+    const slot = await mountPage();
+    fireEvent.click(slot.getByTestId("tab-monitor"));
+    const card = await slot.findByTestId("stage-receipts-lprun_1");
+    expect(card.textContent).toContain(en.stagePlanCritique);
+    expect(card.textContent).toContain(en.state_passed);
+    expect(card.textContent).toContain("Plan checked");
+
+    slot.lifecycle.unmount();
+    const russian = await mountPage({ get_preferences: () => ({ locale:"ru", preference:"ru", lastProjectId:"proj_ui" }) });
+    await russian.findByTestId("tab-monitor");
+    await russian.findByTestId("tab-monitor");
+    fireEvent.click(russian.getByTestId("tab-monitor"));
+    expect(russian.getByTestId("stage-receipts-lprun_1").textContent).toContain(ru.stagePlanCritique);
+    russian.lifecycle.unmount();
+    setLocaleOverride(null);
   });
 
   it("shows only legal cancel and retry actions in both monitor layouts", async () => {

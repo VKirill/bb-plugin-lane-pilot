@@ -15,9 +15,9 @@ language: ru
 
 | Решение | Число |
 |---|---:|
-| editable | 54 |
+| editable | 56 |
 | read-only | 53 |
-| gap | 94 |
+| gap | 92 |
 | excluded | 154 |
 | **сумма** | **355** |
 
@@ -98,8 +98,8 @@ language: ru
 | 70 | pipeline_stages.py globals | SPECIALIST_WHEN | bin/pipeline_stages.py:50 | internal | N/A | excluded | Исключено — enum backing (`bin/pipeline_stages.py:50`) |
 | 71 | pipeline_stages.py globals | _NOISE_PATH_PREFIXES | bin/pipeline_stages.py:68 | internal | N/A | excluded | Исключено — no config hook today, could plausibly be user-wanted (`bin/pipeline_stages.py:68`) |
 | 72 | pipeline_stages.py globals | OPENCODE_STOCK_AGENTS | bin/pipeline_stages.py:160-171 | internal | N/A | excluded | Исключено — if agent field matches, silently replaced by role default (`bin/pipeline_stages.py:160`) |
-| 73 | pipeline_stages.py stage: plan_critique | plan_critique.enabled | bin/pipeline_stages.py:217,399 | user | NONE | gap | no typed argv/env/temp-file in upstream v1.38.0; applying it needs an upstream or SDK contract (E1) (`bin/pipeline_stages.py:217`) |
-| 74 | pipeline_stages.py stage: plan_critique | plan_critique.mode | bin/pipeline_stages.py:218,395-397 | user | NONE | gap | no typed argv/env/temp-file in upstream v1.38.0; applying it needs an upstream or SDK contract (E1) (`bin/pipeline_stages.py:218`) |
+| 73 | pipeline_stages.py stage: plan_critique | plan_critique.enabled | bin/pipeline_stages.py:217,399 | user | OWN | editable | Native Lane Pilot setting consumed by the plan-critique stage runner (`bin/pipeline_stages.py:217`) |
+| 74 | pipeline_stages.py stage: plan_critique | plan_critique.mode | bin/pipeline_stages.py:218,395-397 | user | OWN | editable | Native Lane Pilot setting selects advisory or gate behavior for plan critique (`bin/pipeline_stages.py:218`) |
 | 75 | pipeline_stages.py stage: plan_critique | plan_critique.provider | bin/pipeline_stages.py:219,388-394 | user | NONE | gap | no typed argv/env/temp-file in upstream v1.38.0; applying it needs an upstream or SDK contract (E1) (`bin/pipeline_stages.py:219`) |
 | 76 | pipeline_stages.py stage: plan_critique | plan_critique.model | bin/pipeline_stages.py:220,402-406 | user | NONE | gap | no typed argv/env/temp-file in upstream v1.38.0; applying it needs an upstream or SDK contract (E1) (`bin/pipeline_stages.py:220`) |
 | 77 | pipeline_stages.py stage: plan_critique | plan_critique.reasoning_effort | bin/pipeline_stages.py:221,407-411 | user | NONE | gap | no typed argv/env/temp-file in upstream v1.38.0; applying it needs an upstream or SDK contract (E1) (`bin/pipeline_stages.py:221`) |

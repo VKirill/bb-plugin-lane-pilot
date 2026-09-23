@@ -58,6 +58,11 @@ const task: TaskV2 = {
   ],
 };
 
+function saveLegacyWriterConfig(db: ReturnType<typeof openDatabase>): void {
+  savePrototypeConfig(db, config);
+  saveProjectSetting(db, projectId, "plan_critique.enabled", false);
+}
+
 const listLiveWriterProviders = async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:true }, serviceTiers:[
   { id:"default", label:"Default" }, { id:"fast", label:"Fast" },
 ] }] as never;
@@ -116,7 +121,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "writer.service_tier", "fast");
     createRun(db, "run-delayed", projectId, "bb", taskWorkspace);
     savePrototypeConfig(db, { ...config, writerWorkspacePath:"/tmp/changed-after-run-start" });
@@ -197,7 +202,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "writer.reasoning_effort", "high");
     createRun(db, "run-classifier-rpc-failure", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-classifier-rpc-failure", pmThreadId);
@@ -230,7 +235,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     saveProjectSetting(db, projectId, "writer.provider", "not-a-provider");
     createRun(db, "run-invalid-provider", projectId, "cli");
@@ -260,7 +265,7 @@ describe("BB writer validation on the server path", () => {
       experimental_callHostRpc: () => { hostCalls += 1; throw new Error("invalid pair reached host"); },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     saveProjectSetting(db, projectId, "writer.provider", "qwen");
     saveProjectSetting(db, projectId, "writer.reasoning_effort", "max");
@@ -323,7 +328,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-accepted", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-accepted", pmThreadId);
@@ -384,7 +389,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-v", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-v", pmThreadId);
@@ -440,7 +445,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-v", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-v", pmThreadId);
@@ -482,7 +487,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-background-error", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-background-error", pmThreadId);
@@ -545,7 +550,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-resume", projectId, "bb", config.writerWorkspacePath);
     savePrototypeConfig(db, { ...config, writerWorkspacePath:"/tmp/changed-after-resume-run-start" });
@@ -591,7 +596,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-cli", projectId, "cli");
     setRunThread(db, "run-cli", pmThreadId);
@@ -640,7 +645,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-dirt", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-dirt", pmThreadId);
@@ -681,7 +686,7 @@ describe("BB writer validation on the server path", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-cancel", projectId);
     createAttempt(db, { id:"attempt-cancel", runId:"run-cancel", taskId:"t" });
@@ -702,7 +707,7 @@ describe("BB writer validation on the server path", () => {
       stop:async () => { stopCalls++; return { ok:true }; },
     } } });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     createRun(db, "run-terminal-cancel", projectId);
     createAttempt(db, { id:"attempt-terminal-cancel", runId:"run-terminal-cancel", taskId:"t" });
     transitionAttempt(db, "attempt-terminal-cancel", "accepted", { threadId:"writer-accepted" });
@@ -731,7 +736,7 @@ describe("BB writer validation on the server path", () => {
       listRunning:async () => { order.push("listRunning"); return []; },
     } } });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     createRun(db, "run-active-cancel", projectId);
     createAttempt(db, { id:"attempt-active-cancel", runId:"run-active-cancel", taskId:"t" });
     transitionAttempt(db, "attempt-active-cancel", "running", { threadId:"writer-active" });
@@ -773,7 +778,7 @@ describe("CLI receipts per run", () => {
       },
     });
     const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
+    saveLegacyWriterConfig(db);
     createRun(db, "run-a", projectId, "cli");
     setRunThread(db, "run-a", "pm-a");
     createRun(db, "run-b", projectId, "cli");
