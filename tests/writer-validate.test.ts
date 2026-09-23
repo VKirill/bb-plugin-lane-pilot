@@ -312,7 +312,7 @@ describe("BB writer validation on the server path", () => {
   it("observes a writer error during wait, retries once and returns blocked", async () => {
     const threadStates = new Map<string, string>();
     let spawnCount = 0;
-    let waitCount = 0;
+    let statusPollCount = 0;
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
       sdk:{
@@ -325,12 +325,11 @@ describe("BB writer validation on the server path", () => {
             threadStates.set(id, "active");
             return { id };
           },
-          wait: async ({ threadId }) => {
-            waitCount += 1;
+          get: async ({ threadId }) => {
+            statusPollCount += 1;
             threadStates.set(threadId, "error");
-            return { matched:false, thread:{ id:threadId, status:"active" } };
+            return { id:threadId, status:threadStates.get(threadId) ?? "error" };
           },
-          get: async ({ threadId }) => ({ id:threadId, status:threadStates.get(threadId) ?? "error" }),
           output: async () => ({ text:"ok" }),
           list: async () => [] as never,
         },
@@ -361,9 +360,53 @@ describe("BB writer validation on the server path", () => {
     )));
     expect(result.state).toBe("blocked");
     expect(spawnCount).toBe(2);
-    expect(waitCount).toBe(2);
+    expect(statusPollCount).toBeGreaterThanOrEqual(2);
     expect(listAttemptsForTask(db, dispatched.runId, "error-retry").map((attempt) => attempt.state)).toEqual(["provider_error", "blocked"]);
     expect(getRun(db, dispatched.runId)?.state).toBe("blocked");
+    await harness.lifecycle.dispose();
+  });
+
+  it("marks an unexpected background writer exception terminal and releases the task", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{ threads:{
+        getPluginMetadata: async ({ threadId }) => threadId === pmThreadId
+          ? { role:"pm", lanePilotRunId:"run-background-error" }
+          : { role:"writer" },
+        spawn: async () => ({ id:"writer-background-error" }),
+        get: async () => ({ id:"writer-background-error", status:"idle" }),
+        output: async () => { throw new Error("synthetic output read failure"); },
+        list: async () => [] as never,
+      } },
+      experimental_callHostRpc: (call) => {
+        if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
+        return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
+      },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    createRun(db, "run-background-error", projectId, "bb", config.writerWorkspacePath);
+    setRunThread(db, "run-background-error", pmThreadId);
+    await plugin(bb);
+
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, task:{ ...task, id:"background-error-task", verify:"none", verification:[] } },
+      { threadId:pmThreadId, projectId },
+    )));
+    expect(dispatched.state).toBe("queued");
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer",
+      { runId:dispatched.runId, timeoutSec:3 },
+      { threadId:pmThreadId, projectId },
+    )));
+    expect(result).toMatchObject({ state:"blocked", reason:expect.stringContaining("internal_error: synthetic output read failure") });
+    expect(getAttempt(db, dispatched.attemptId)).toMatchObject({ state:"blocked" });
+    expect((db.prepare("SELECT reason FROM lane_pilot_attempt WHERE id=?").get(dispatched.attemptId) as {reason:string}).reason)
+      .toContain("internal_error: synthetic output read failure");
+    expect(getRun(db, dispatched.runId)?.state).toBe("blocked");
+    expect((db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')")
+      .get(dispatched.runId) as {count:number}).count).toBe(0);
     await harness.lifecycle.dispose();
   });
 
