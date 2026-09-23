@@ -1,86 +1,125 @@
+import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { TARGET_SHA, UPSTREAM_REPO } from "./constants";
-import { defaultLocalFallback, resolveHome, upstreamDir } from "./paths";
+import { defaultLocalFallback, managedEngineDir, resolveHome } from "./paths";
+import { assessEngineCapabilities, inspectEngineCapabilities } from "./upstream-adapter/capabilities";
 
 export type UpstreamReady = {
   path: string;
   sha: string;
   source: "clone" | "local-copy" | "reuse";
   clean: boolean;
+  compatible: true;
+  adaptedCapabilities: string[];
 };
 
 function git(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 }).trim();
 }
 
 function gitOk(cwd: string, args: string[]): boolean {
   try {
-    execFileSync("git", args, { cwd, encoding: "utf8", stdio: "pipe" });
+    execFileSync("git", args, { cwd, encoding: "utf8", stdio: "ignore", timeout: 4000 });
     return true;
   } catch {
     return false;
   }
 }
 
-function dirtyAllowed(cwd: string): boolean {
-  const short = execFileSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8" });
-  if (short.trim() === "") return true;
-  return short.split("\n").every((line) => {
-    const path = line.slice(3).trim();
-    return path === ".git/hooks/post-commit" || path === ".git/hooks/post-merge"
-      || path.endsWith("hooks/post-commit") || path.endsWith("hooks/post-merge");
+async function isDirectory(path: string): Promise<boolean> {
+  try { return (await stat(path)).isDirectory(); } catch { return false; }
+}
+
+async function inspectReusable(path: string): Promise<UpstreamReady | null> {
+  if (!await isDirectory(path) || !gitOk(path, ["rev-parse", "--git-dir"])) return null;
+  if (!await isDirectory(join(path, "profiles/opencode/opencode-lane"))) return null;
+  const assessment = assessEngineCapabilities(await inspectEngineCapabilities(path));
+  if (!assessment.compatible) return null;
+  const sha = git(path, ["rev-parse", "HEAD"]);
+  const dirty = git(path, ["status", "--porcelain"]) !== "";
+  return {
+    path,
+    sha,
+    source: "reuse",
+    clean: !dirty,
+    compatible: true,
+    adaptedCapabilities: assessment.adaptedCapabilities,
+  };
+}
+
+function clone(source: string, destination: string): void {
+  execFileSync("git", ["clone", "--no-checkout", source, destination], {
+    encoding: "utf8",
+    timeout: 120_000,
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  git(destination, ["checkout", "--detach", TARGET_SHA]);
+  const sha = git(destination, ["rev-parse", "HEAD"]);
+  if (sha !== TARGET_SHA) throw new Error(`managed source SHA ${sha} does not match reference ${TARGET_SHA}`);
 }
 
 export async function ensureUpstream(input: {
   homeDir?: string;
   localFallbackPath?: string;
   moduleUrl?: string;
+  preferredRoot?: string;
 }): Promise<UpstreamReady> {
   const home = resolveHome(input.homeDir);
-  const dest = upstreamDir(TARGET_SHA, home);
   const fallback = input.localFallbackPath
     ?? (input.moduleUrl ? defaultLocalFallback(input.moduleUrl) : "");
-
-  if (await stat(dest).then(() => true, () => false) && gitOk(dest, ["rev-parse", "HEAD"])) {
-    const sha = git(dest, ["rev-parse", "HEAD"]);
-    if (sha === TARGET_SHA && dirtyAllowed(dest)) {
-      return { path: dest, sha, source: "reuse", clean: git(dest, ["status", "--porcelain"]) === "" };
-    }
-    await rm(dest, { recursive: true, force: true });
+  const candidates = [input.preferredRoot, fallback].filter((path): path is string => Boolean(path));
+  for (const candidate of candidates) {
+    const reusable = await inspectReusable(candidate);
+    if (reusable) return reusable;
   }
 
-  await mkdir(dest, { recursive: true });
+  const preferred = managedEngineDir(TARGET_SHA, home);
+  const existing = await inspectReusable(preferred);
+  if (existing) return existing;
+
+  const parent = dirname(preferred);
+  await mkdir(parent, { recursive: true });
+  const destination = await isDirectory(preferred)
+    ? managedEngineDir(`${TARGET_SHA}-managed-${randomUUID().slice(0, 8)}`, home)
+    : preferred;
+  const staging = await mkdtemp(join(parent, `.lane-engine-${TARGET_SHA.slice(0, 8)}-`));
+  let source: UpstreamReady["source"] = "clone";
   try {
-    execFileSync("git", ["clone", "--no-checkout", UPSTREAM_REPO, dest], {
-      encoding: "utf8",
-      timeout: 120_000,
-      stdio: "pipe",
-    });
-    git(dest, ["checkout", TARGET_SHA]);
-    const sha = git(dest, ["rev-parse", "HEAD"]);
-    if (sha !== TARGET_SHA) throw new Error(`cloned sha ${sha} != ${TARGET_SHA}`);
-    if (!dirtyAllowed(dest)) throw new Error("cloned upstream is dirty");
-    return { path: dest, sha, source: "clone", clean: true };
-  } catch (cloneError) {
-    await rm(dest, { recursive: true, force: true });
-    if (!fallback) throw cloneError;
-    if (!await stat(fallback).then(() => true, () => false)) {
-      throw new Error(`upstream clone failed and fallback missing: ${fallback}`);
+    let sourceUrl = UPSTREAM_REPO;
+    if (fallback && await isDirectory(fallback) && gitOk(fallback, ["rev-parse", "--git-dir"])) {
+      const fallbackSha = git(fallback, ["rev-parse", "HEAD"]);
+      if (fallbackSha === TARGET_SHA) {
+        sourceUrl = fallback;
+        source = "local-copy";
+      }
     }
-    const sourceSha = git(fallback, ["rev-parse", "HEAD"]);
-    if (sourceSha !== TARGET_SHA) {
-      throw new Error(`fallback sha ${sourceSha} != ${TARGET_SHA}`);
+    clone(sourceUrl, staging);
+    const assessment = assessEngineCapabilities(await inspectEngineCapabilities(staging));
+    if (!assessment.compatible) {
+      throw new Error(`reference engine is missing required interfaces: ${assessment.diagnostics.map((item) => item.capability).join(", ")}`);
     }
-    if (git(fallback, ["status", "--porcelain"]) !== "") {
-      throw new Error("fallback upstream is dirty; refusing to copy");
+    try {
+      await rename(staging, destination);
+    } catch (error) {
+      const concurrent = await inspectReusable(destination);
+      if (concurrent) {
+        await rm(staging, { recursive: true, force: true });
+        return concurrent;
+      }
+      throw new Error(`managed destination is occupied and was preserved: ${destination}; ${error instanceof Error ? error.message : String(error)}`);
     }
-    await mkdir(dest, { recursive: true });
-    await cp(fallback, dest, { recursive: true, dereference: false });
-    const sha = git(dest, ["rev-parse", "HEAD"]);
-    if (sha !== TARGET_SHA) throw new Error(`copied sha ${sha} != ${TARGET_SHA}`);
-    if (!dirtyAllowed(dest)) throw new Error("copied upstream is dirty");
-    return { path: dest, sha, source: "local-copy", clean: true };
+    return {
+      path: destination,
+      sha: TARGET_SHA,
+      source,
+      clean: git(destination, ["status", "--porcelain"]) === "",
+      compatible: true,
+      adaptedCapabilities: assessment.adaptedCapabilities,
+    };
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true });
+    throw error;
   }
 }

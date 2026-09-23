@@ -1,4 +1,5 @@
-import { cp, lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, cp, link, lstat, mkdir, readFile, readdir, readlink, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname, join, relative } from "node:path";
 import { EXTERNAL_OPS, EXTERNAL_OPS_WARNING } from "./constants";
 import { hashPath } from "./hash";
@@ -183,6 +184,7 @@ export async function finalizeSnapshotAfter(
 export async function rollbackSnapshot(snapshotPath: string): Promise<{
   restored: string[];
   removed: string[];
+  conflicts: Array<{ path: string; expectedSha256: string | null; actualSha256: string | null; reason: string }>;
 }> {
   const manifestPath = join(snapshotPath, "manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
@@ -191,20 +193,100 @@ export async function rollbackSnapshot(snapshotPath: string): Promise<{
   };
   const restored: string[] = [];
   const removed: string[] = [];
+  const conflicts: Array<{ path: string; expectedSha256: string | null; actualSha256: string | null; reason: string }> = [];
+  const currentSha = async (path: string): Promise<string | null> => {
+    try { return (await hashPath(path)).sha256; }
+    catch (error) {
+      if (isEnoent(error)) return null;
+      throw error;
+    }
+  };
+  const restoreNoReplace = async (source: string, destination: string): Promise<void> => {
+    const info = await lstat(source);
+    await mkdir(dirname(destination), { recursive: true });
+    if (info.isSymbolicLink()) {
+      await symlink(await readlink(source), destination);
+      return;
+    }
+    if (info.isDirectory()) {
+      await mkdir(destination, { mode: info.mode & 0o777 });
+      const entries = await readdir(source, { withFileTypes: true });
+      for (const child of entries) await restoreNoReplace(join(source, child.name), join(destination, child.name));
+      return;
+    }
+    if (!info.isFile()) throw new Error(`unsupported snapshot entry type at ${source}`);
+    const temporary = `${destination}.lane-pilot-restore-${randomUUID()}`;
+    try {
+      await copyFile(source, temporary);
+      await link(temporary, destination);
+    } finally {
+      await rm(temporary, { force: true });
+    }
+  };
+  const preserveQuarantine = async (quarantine: string, original: string): Promise<void> => {
+    try {
+      if (await currentSha(original) !== null) return;
+      await restoreNoReplace(quarantine, original);
+    } catch {
+      // Keep the only remaining copy in quarantine if the original path was recreated.
+    }
+  };
   for (const entry of manifest.entries) {
     if (entry.kind === "external") continue;
+    const actual = await currentSha(entry.path);
+    if (actual === entry.sha256Before) continue;
+    if (entry.sha256After === null || actual !== entry.sha256After) {
+      conflicts.push({
+        path: entry.path,
+        expectedSha256: entry.sha256After,
+        actualSha256: actual,
+        reason: entry.sha256After === null
+          ? "Snapshot has no post-operation hash; changed path was preserved."
+          : "Path changed after the snapshot operation; concurrent content was preserved.",
+      });
+      continue;
+    }
+
+    const quarantine = `${entry.path}.lane-pilot-rollback-${randomUUID()}`;
+    try {
+      await rename(entry.path, quarantine);
+    } catch (error) {
+      conflicts.push({ path: entry.path, expectedSha256: entry.sha256After, actualSha256: await currentSha(entry.path), reason: `Could not claim path for CAS rollback: ${error instanceof Error ? error.message : String(error)}` });
+      continue;
+    }
+    const quarantinedSha = await currentSha(quarantine);
+    if (quarantinedSha !== entry.sha256After) {
+      await preserveQuarantine(quarantine, entry.path);
+      conflicts.push({ path: entry.path, expectedSha256: entry.sha256After, actualSha256: quarantinedSha, reason: "Path changed while rollback claimed it; quarantined content was preserved." });
+      continue;
+    }
+
     if (entry.existedBefore) {
       const copy = join(snapshotPath, copyName(entry.path, manifest.home));
-      await rm(entry.path, { recursive: true, force: true });
-      await mkdir(dirname(entry.path), { recursive: true });
-      await copyEntry(copy, entry.path, entry.kind);
-      restored.push(entry.path);
+      try {
+        await restoreNoReplace(copy, entry.path);
+        const restoredSha = await currentSha(entry.path);
+        if (restoredSha !== entry.sha256Before) {
+          conflicts.push({ path: entry.path, expectedSha256: entry.sha256Before, actualSha256: restoredSha, reason: "A concurrent write raced snapshot restoration; the quarantined post-operation copy was retained." });
+          continue;
+        }
+        restored.push(entry.path);
+      } catch (error) {
+        await preserveQuarantine(quarantine, entry.path);
+        conflicts.push({ path: entry.path, expectedSha256: entry.sha256Before, actualSha256: await currentSha(entry.path), reason: `Snapshot restoration did not replace an existing path: ${error instanceof Error ? error.message : String(error)}` });
+        continue;
+      }
     } else {
-      await rm(entry.path, { recursive: true, force: true });
       removed.push(entry.path);
     }
+
+    if (await currentSha(quarantine) === entry.sha256After) {
+      await rm(quarantine, { recursive: true, force: true });
+    } else {
+      conflicts.push({ path: entry.path, expectedSha256: entry.sha256After, actualSha256: await currentSha(quarantine), reason: "Quarantined content changed during rollback and was retained." });
+    }
   }
-  return { restored, removed };
+  return { restored, removed, conflicts };
 }
 
 export async function verifyRollback(snapshotPath: string): Promise<{
@@ -221,8 +303,9 @@ export async function verifyRollback(snapshotPath: string): Promise<{
       let actual: string | null = null;
       try {
         actual = (await hashPath(entry.path)).sha256;
-      } catch {
-        actual = null;
+      } catch (error) {
+        if (isEnoent(error)) actual = null;
+        else actual = "unreadable";
       }
       if (actual !== entry.sha256Before) {
         mismatches.push({ path: entry.path, expected: entry.sha256Before, actual });
@@ -231,8 +314,8 @@ export async function verifyRollback(snapshotPath: string): Promise<{
       try {
         await lstat(entry.path);
         mismatches.push({ path: entry.path, expected: null, actual: "exists" });
-      } catch {
-        /* absent as required */
+      } catch (error) {
+        if (!isEnoent(error)) mismatches.push({ path: entry.path, expected: null, actual: "unreadable" });
       }
     }
   }

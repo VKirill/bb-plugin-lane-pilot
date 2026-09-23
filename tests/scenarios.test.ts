@@ -121,7 +121,7 @@ describe("S1–S8 isolated HOME", () => {
     expect(first.exitCode).toBe(0);
     const text = readFileSync(join(home, ".config/opencode/opencode.jsonc"), "utf8");
     expect(text).toContain("./plugins/opencode-lane.ts");
-    expect(text).not.toContain("./plugins/lane-context.ts");
+    expect(text).toContain("./plugins/lane-context.ts");
     expect(text).toContain("keep");
     const second = await connectOpencodeStack(ctx);
     expect(second.filesChanged[0]?.sha256After).toBe(first.filesChanged[0]?.sha256After);

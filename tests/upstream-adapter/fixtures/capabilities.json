@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "version": "dd77",
+    "sourceSha": "dd77b26792eca15e8bde03fd26754922ea7ab4f0",
+    "capabilities": [
+      "opencode.plugin.default_export",
+      "opencode.hook.event",
+      "opencode.hook.chat_message",
+      "opencode.hook.chat_params",
+      "opencode.hook.tool_execute_after",
+      "opencode.hook.messages_transform",
+      "opencode.telemetry.session_compacted",
+      "opencode.sticky.contract_recovery",
+      "opencode.sticky.dumped_tool_recovery",
+      "opencode.native_tool_route",
+      "execution_packet.line_windows"
+    ]
+  },
+  "sources": [
+    {
+      "label": "v1.38.0",
+      "version": "1.38.0",
+      "sourceSha": "747a9ff9b2fa4ffdcf5c65c8d07eff2b9386a821",
+      "capabilities": [
+        "opencode.plugin.default_export",
+        "opencode.hook.chat_message",
+        "opencode.hook.chat_params",
+        "opencode.hook.tool_execute_after",
+        "opencode.hook.messages_transform",
+        "opencode.sticky.contract_recovery"
+      ]
+    },
+    {
+      "label": "v1.39.0",
+      "version": "1.39.0",
+      "sourceSha": "3822dbcf0f48d75f43b07ec574e49899a5c54163",
+      "capabilities": [
+        "opencode.plugin.default_export",
+        "opencode.hook.event",
+        "opencode.hook.chat_message",
+        "opencode.hook.chat_params",
+        "opencode.hook.tool_execute_after",
+        "opencode.hook.messages_transform",
+        "opencode.telemetry.session_compacted",
+        "opencode.sticky.contract_recovery"
+      ]
+    },
+    {
+      "label": "custom-compatible",
+      "version": "custom",
+      "sourceSha": "user-owned-custom-sha",
+      "modified": true,
+      "capabilities": [
+        "opencode.plugin.default_export",
+        "opencode.hook.event",
+        "opencode.hook.chat_message",
+        "opencode.hook.chat_params",
+        "opencode.hook.tool_execute_after",
+        "opencode.hook.messages_transform",
+        "opencode.telemetry.session_compacted",
+        "opencode.sticky.contract_recovery",
+        "opencode.sticky.dumped_tool_recovery",
+        "opencode.native_tool_route",
+        "execution_packet.line_windows",
+        "custom.user_hook"
+      ]
+    },
+    {
+      "label": "incompatible-tool-hook",
+      "version": "newer",
+      "sourceSha": "different-sha",
+      "capabilities": [
+        "opencode.plugin.default_export",
+        "opencode.hook.event",
+        "opencode.hook.chat_message",
+        "opencode.hook.chat_params",
+        "opencode.hook.messages_transform",
+        "opencode.telemetry.session_compacted",
+        "opencode.sticky.contract_recovery",
+        "opencode.sticky.dumped_tool_recovery",
+        "opencode.native_tool_route",
+        "execution_packet.line_windows"
+      ]
+    }
+  ]
+}

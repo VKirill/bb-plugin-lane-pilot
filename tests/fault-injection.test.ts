@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -57,8 +57,11 @@ describe("fault-injection §11 five SIGKILL points on production installStack", 
         expect(readFileSync(join(home, ".lane-pilot-npm-skipped"), "utf8")).toContain("не применимо без подтверждения");
       }
       expect(snapshotGlobalOpenCursor()).toEqual(globalBefore);
-      await rollbackSnapshot(snap.snapshotPath);
-      const verified = await verifyRollback(snap.snapshotPath);
+      const snapshotsRoot = join(home, ".agents/lane-pilot/snapshots");
+      const operationSnapshot = join(snapshotsRoot, readdirSync(snapshotsRoot).sort().at(-1)!);
+      expect(operationSnapshot).not.toBe(snap.snapshotPath);
+      await rollbackSnapshot(operationSnapshot);
+      const verified = await verifyRollback(operationSnapshot);
       expect(verified.ok, JSON.stringify(verified.mismatches, null, 2)).toBe(true);
       expect(await sha256FileOrNull(join(home, ".claude/settings.json"))).toBe(settingsBefore);
       expect(await sha256FileOrNull(join(home, ".agents/keep.txt"))).toBe(keepBefore);

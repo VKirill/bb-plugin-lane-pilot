@@ -7,6 +7,7 @@ import { applyInstalledGuard } from "./guard-apply";
 import { readImportConfig } from "./import-config";
 import { runInstallSh, type InstallPhase, type InstallRunResult } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
+import { inventoryCoexistenceAtHome } from "./coexistence";
 import { agentsDir, resolveHome } from "./paths";
 import { skippedOpsReceipt, writeReceipt, type FileChange, type InstallReceipt } from "./receipt";
 import { hideS8Files, restoreS8Files, s8Hashes } from "./s8";
@@ -15,6 +16,7 @@ import {
   rollbackSnapshot,
   takeSnapshot,
   verifyRollback,
+  type ManifestEntry,
 } from "./snapshot";
 import { ensureUpstream } from "./upstream";
 
@@ -67,6 +69,15 @@ export async function detectStack(ctx: HostContext) {
   const home = resolveHome(ctx.homeDir);
   const install = await readInstallJson(home);
   const workspacePath = ctx.workspacePath ?? home;
+  const inventory = await inventoryCoexistenceAtHome({
+    projectId: ctx.projectId ?? "lane-pilot",
+    hostId: ctx.requestedHostId,
+    targetSha: TARGET_SHA,
+  }, home);
+  const engineRows = inventory.managers.filter((row) => ["agents-marker", "managed-checkout", "claude-cache"].includes(row.manager));
+  const compatibleRows = engineRows.filter((row) => row.compatible === true);
+  const requiredCapabilities = [...new Set(engineRows.flatMap((row) => row.capabilities))].sort();
+  const missingCapabilities = [...new Set(engineRows.flatMap((row) => row.missingCapabilities))].sort();
   return {
     hostId: process.env.BB_HOST_ID ?? ctx.requestedHostId,
     laneStack: {
@@ -78,6 +89,14 @@ export async function detectStack(ctx: HostContext) {
     workspace: { path: workspacePath, present: await stat(workspacePath).then(() => true, () => false) },
     targetSha: TARGET_SHA,
     matchesTarget: install.sourceSha === TARGET_SHA,
+    compatibility: {
+      compatible: compatibleRows.length > 0,
+      decision: compatibleRows.length > 0 ? "reuse" as const : "install" as const,
+      sources: compatibleRows.map((row) => ({ manager: row.manager, path: row.path, version: row.version, sourceSha: row.sourceSha })),
+      capabilities: requiredCapabilities,
+      missingCapabilities,
+      diagnostics: engineRows.flatMap((row) => row.evidence.filter((item) => item.kind === "capability").map((item) => item.detail)),
+    },
     scenario: scenarioOf(install.sourceSha),
   };
 }
@@ -112,19 +131,22 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
   const home = resolveHome(ctx.homeDir);
   const before = await detectStack(ctx);
   const confirm = ctx.confirmExternalOps === true;
-  if (before.scenario === "S1") {
+  if (before.compatibility.compatible) {
     const external = await observeExternalOps(home);
     return writeReceipt({
       action: "install",
-      scenario: "S1",
+      scenario: before.scenario,
       filesChanged: [],
       externalOpsBefore: external,
       externalOpsAfter: external,
       ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
       exitCode: 0,
       snapshotPath: null,
-      sourceSha: TARGET_SHA,
-      notes: ["S1: target SHA already installed; reuse without install.sh"],
+      sourceSha: before.laneStack.sourceSha,
+      notes: [
+        `Compatible engine reused from ${before.compatibility.sources.map((source) => `${source.manager}:${source.path}`).join(", ")}; version/SHA/dirty state did not trigger writes`,
+        "No install.sh, user config, or cache writes were made",
+      ],
     }, await receiptDirOf(ctx));
   }
 
@@ -147,6 +169,7 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
       stopAfterPhase: ctx.stopAfterPhase,
       executorPid: process.pid,
       settings: ctx.installSettings,
+      snapshotManifestPath: snap.manifestPath,
     });
   } catch (error) {
     await restoreS8Files(stash, home);
@@ -272,22 +295,24 @@ async function writeFailedInstallReceipt(input: {
 }): Promise<InstallReceipt> {
   const rollback = await rollbackSnapshot(input.snap.snapshotPath);
   const verified = await verifyRollback(input.snap.snapshotPath);
+  const snapshotManifest = JSON.parse(await readFile(input.snap.manifestPath, "utf8")) as { entries?: ManifestEntry[] };
+  const entries = snapshotManifest.entries ?? input.snap.entries;
   const after = await readInstallJson(input.home);
   return writeReceipt({
     action: "install",
     scenario: input.scenario,
     status: verified.ok ? "rolled_back" : "failed",
-    filesChanged: input.snap.entries
+    filesChanged: entries
       .filter((entry) => entry.kind !== "external")
       .map((entry) => ({
         path: entry.path,
         sha256Before: entry.sha256Before,
         sha256After: entry.sha256After,
       })),
-    externalOpsBefore: Object.fromEntries(input.snap.entries
+    externalOpsBefore: Object.fromEntries(entries
       .filter((entry) => entry.kind === "external")
       .map((entry) => [entry.path, entry.externalOpsBefore])),
-    externalOpsAfter: Object.fromEntries(input.snap.entries
+    externalOpsAfter: Object.fromEntries(entries
       .filter((entry) => entry.kind === "external")
       .map((entry) => [entry.path, entry.externalOpsAfter])),
     skippedExternalOps: input.installResult?.skippedExternalOps ?? (input.confirm ? [] : [...EXTERNAL_OPS]),
@@ -298,6 +323,7 @@ async function writeFailedInstallReceipt(input: {
     notes: [
       ...input.notes.filter(Boolean),
       `rollback restored ${rollback.restored.length} removed ${rollback.removed.length}`,
+      `rollback CAS conflicts ${rollback.conflicts.length}${rollback.conflicts.length ? ` ${JSON.stringify(rollback.conflicts)}` : ""}`,
       verified.ok ? "rollback verified" : `rollback verify failed ${JSON.stringify(verified.mismatches)}`,
       "guard/connect/finalize skipped after failed install",
     ],
@@ -327,6 +353,7 @@ export async function rollbackStack(ctx: HostContext): Promise<InstallReceipt> {
     notes: [
       `restored ${result.restored.length}`,
       `removed ${result.removed.length}`,
+      `CAS conflicts ${result.conflicts.length}${result.conflicts.length ? ` ${JSON.stringify(result.conflicts)}` : ""}`,
       verified.ok ? "sha verify ok" : `sha mismatches ${JSON.stringify(verified.mismatches)}`,
     ],
   }, await receiptDirOf(ctx));
@@ -387,7 +414,7 @@ export async function connectOpencodeStack(ctx: HostContext): Promise<InstallRec
     externalOpsBefore: {},
     externalOpsAfter: {},
     ...skippedOpsReceipt([]),
-    exitCode: first.skipped && first.reason?.startsWith("opencode --version") ? 1 : 0,
+    exitCode: first.conflict || (first.skipped && first.reason?.startsWith("opencode --version")) ? 1 : 0,
     snapshotPath: null,
     sourceSha: (await readInstallJson(home)).sourceSha,
     notes: [

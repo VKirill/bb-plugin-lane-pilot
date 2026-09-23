@@ -1,4 +1,4 @@
-export const TARGET_SHA = "747a9ff9b2fa4ffdcf5c65c8d07eff2b9386a821";
+export const TARGET_SHA = "dd77b26792eca15e8bde03fd26754922ea7ab4f0";
 export const UPSTREAM_REPO = "https://github.com/VKirill/claude-lane-stack";
 export const OPENCODE_PLUGIN = "./plugins/opencode-lane.ts";
 export const OPENCODE_OLD_PLUGIN = "./plugins/lane-context.ts";

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { EXTERNAL_OPS } from "./constants";
 
@@ -26,6 +27,69 @@ function checkpoint(phase: InstallPhase): string {
 printf '%s\\n' '${phase}' > "$HOME/.lane-pilot-phase"
 if [[ "\${LANE_INSTALL_CLAUDE_PLUGIN:-1}" == "0" && "${phase}" == "npm" ]]; then
   printf '%s\\n' 'не применимо без подтверждения' > "$HOME/.lane-pilot-npm-skipped"
+fi
+if [[ -n "\${LANE_PILOT_SNAPSHOT_MANIFEST:-}" ]]; then
+python3 - "\${LANE_PILOT_SNAPSHOT_MANIFEST}" <<'PY'
+import hashlib, json, os, stat, sys, tempfile
+
+manifest_path = sys.argv[1]
+with open(manifest_path, "r", encoding="utf-8") as stream:
+    manifest = json.load(stream)
+
+def file_sha(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+def tree_sha(root):
+    digest = hashlib.sha256()
+    def walk(directory, relative):
+        for name in sorted(os.listdir(directory), key=os.fsencode):
+            absolute = os.path.join(directory, name)
+            rel = os.path.join(relative, name) if relative else name
+            info = os.lstat(absolute)
+            if stat.S_ISLNK(info.st_mode):
+                digest.update(("L:" + rel + "->" + os.readlink(absolute) + "\\n").encode())
+            elif stat.S_ISDIR(info.st_mode):
+                digest.update(("D:" + rel + "\\n").encode())
+                walk(absolute, rel)
+            elif stat.S_ISREG(info.st_mode):
+                digest.update(("F:" + rel + ":" + file_sha(absolute) + "\\n").encode())
+    walk(root, "")
+    return digest.hexdigest()
+
+for entry in manifest["entries"]:
+    if entry["kind"] == "external":
+        continue
+    path = entry["path"]
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        entry["sha256After"] = None
+        continue
+    if stat.S_ISLNK(info.st_mode):
+        entry["sha256After"] = hashlib.sha256(os.readlink(path).encode()).hexdigest()
+    elif stat.S_ISREG(info.st_mode):
+        entry["sha256After"] = file_sha(path)
+    elif stat.S_ISDIR(info.st_mode):
+        entry["sha256After"] = tree_sha(path)
+    else:
+        entry["sha256After"] = None
+
+folder = os.path.dirname(manifest_path)
+fd, temporary = tempfile.mkstemp(prefix=".manifest-checkpoint-", dir=folder)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(manifest, stream, indent=2)
+        stream.write("\\n")
+    os.replace(temporary, manifest_path)
+except BaseException:
+    try: os.unlink(temporary)
+    except FileNotFoundError: pass
+    raise
+PY
 fi
 if [[ "\${LANE_PILOT_STOP_AFTER:-}" == "${phase}" ]]; then
   kill -9 "\${LANE_PILOT_EXECUTOR_PID:-}" "$$" 2>/dev/null || true
@@ -159,6 +223,7 @@ export async function runInstallSh(input: {
   stopAfterPhase?: InstallPhase;
   executorPid?: number;
   settings?: Record<string, unknown>;
+  snapshotManifestPath?: string;
 }): Promise<InstallRunResult> {
   const wrapperDir = join(input.homeDir, ".agents/lane-pilot/bin-wrappers");
   const skipLog = join(input.homeDir, ".agents/lane-pilot/skipped-external-ops.log");
@@ -168,11 +233,8 @@ export async function runInstallSh(input: {
     await mkdir(npmPrefix, { recursive: true });
     await writeSkipWrappers(wrapperDir, skipLog);
   }
-  let script = join(input.stackRoot, "install.sh");
-  if (input.stopAfterPhase) {
-    script = join(input.homeDir, ".agents/lane-pilot/instrumented-install.sh");
-    await instrumentInstallSh(input.stackRoot, script);
-  }
+  const script = join(input.homeDir, `.agents/lane-pilot/instrumented-install-${randomUUID()}.sh`);
+  await instrumentInstallSh(input.stackRoot, script);
   const { env, skippedExternalOps } = installEnv({
     ...input,
     wrapperDir: input.confirmExternalOps ? undefined : wrapperDir,
@@ -180,6 +242,7 @@ export async function runInstallSh(input: {
     pathOverride: input.confirmExternalOps ? undefined : process.env.LANE_PILOT_SAFE_PATH,
     executorPid: input.executorPid ?? process.pid,
   });
+  if (input.snapshotManifestPath) env.LANE_PILOT_SNAPSHOT_MANIFEST = input.snapshotManifestPath;
   return new Promise((resolve, reject) => {
     const child = spawn("bash", [script], {
       cwd: input.stackRoot,
@@ -190,15 +253,24 @@ export async function runInstallSh(input: {
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-    child.on("error", reject);
+    child.on("error", async (error) => {
+      await rm(script, { force: true }).catch(() => undefined);
+      reject(error);
+    });
     child.on("close", (code, signal) => {
-      resolve({
-        exitCode: code ?? (signal ? 1 : 0),
-        stdout,
-        stderr,
-        skippedExternalOps,
-        signal,
-      });
+      void rm(script, { force: true }).then(() => resolve({
+          exitCode: code ?? (signal ? 1 : 0),
+          stdout,
+          stderr,
+          skippedExternalOps,
+          signal,
+        }), () => resolve({
+          exitCode: code ?? (signal ? 1 : 0),
+          stdout,
+          stderr,
+          skippedExternalOps,
+          signal,
+        }));
     });
   });
 }

@@ -1,0 +1,305 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { TARGET_SHA } from "../../src/constants";
+import { hashPath } from "../../src/hash";
+import { inventoryCoexistenceAtHome, runCoexistenceOperation } from "../../src/coexistence";
+import { newSnapshotId, saveSnapshot } from "../../src/coexistence/ownership";
+import { managedEngineDir } from "../../src/paths";
+import { finalizeSnapshotAfter, rollbackSnapshot, takeSnapshot, verifyRollback } from "../../src/snapshot";
+import { detectStack, installStack } from "../../src/stack-ops";
+
+const homes: string[] = [];
+const originalHome = process.env.HOME;
+const hostId = process.env.BB_HOST_ID ?? "host_test";
+
+async function makeHome(): Promise<string> {
+  const home = await mkdtemp(join(tmpdir(), "lane-pilot-coexistence-"));
+  homes.push(home);
+  process.env.HOME = home;
+  return home;
+}
+
+async function seedCompatibleEngine(root: string, missing: string[] = []): Promise<void> {
+  const write = async (path: string, text: string) => {
+    const full = join(root, path);
+    await mkdir(join(full, ".."), { recursive: true });
+    await writeFile(full, text);
+  };
+  const files: Array<[string, string, string]> = [
+    ["opencode.plugin.default_export", "profiles/opencode/opencode-lane.ts", "export { default } from './opencode-lane/index.js';\n"],
+    ["opencode.hook.event", "profiles/opencode/opencode-lane/index.ts", "event: async () => {}\n"],
+    ["opencode.hook.chat_message", "profiles/opencode/opencode-lane/index.ts", "\"chat.message\": {}\n"],
+    ["opencode.hook.chat_params", "profiles/opencode/opencode-lane/index.ts", "\"chat.params\": {}\n"],
+    ["opencode.hook.tool_execute_after", "profiles/opencode/opencode-lane/index.ts", "\"tool.execute.after\": {}\n"],
+    ["opencode.hook.messages_transform", "profiles/opencode/opencode-lane/index.ts", "experimental.chat.messages.transform\n"],
+    ["opencode.telemetry.session_compacted", "profiles/opencode/opencode-lane/telemetry.ts", "session.compacted\n"],
+    ["opencode.sticky.contract_recovery", "profiles/opencode/opencode-lane/sticky.ts", "ensureStickyMessages\n"],
+    ["opencode.sticky.dumped_tool_recovery", "profiles/opencode/opencode-lane/sticky.ts", "dumpedToolNote\n"],
+    ["opencode.native_tool_route", "bin/lane-session", "CURSOR_ACP_FORWARD_TOOL_CALLS=false\n"],
+    ["execution_packet.line_windows", "bin/execution_packet.py", "_WINDOW_RE = None\n"],
+  ];
+  const combined = new Map<string, string>();
+  for (const [capability, path, content] of files) {
+    if (missing.includes(capability)) continue;
+    combined.set(path, `${combined.get(path) ?? ""}${content}`);
+  }
+  for (const [path, content] of combined) await write(path, content);
+  await write("package.json", '{"version":"99.0.0-custom"}\n');
+}
+
+async function inventory(home: string) {
+  return inventoryCoexistenceAtHome({ projectId: "proj_test", hostId, targetSha: TARGET_SHA }, home);
+}
+
+async function treeHash(path: string): Promise<string | null> {
+  try { return (await hashPath(path)).sha256; } catch { return null; }
+}
+
+afterEach(async () => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
+  for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true });
+});
+
+describe("typed coexistence operations", () => {
+  it("reuses a newer compatible custom source with zero engine, config, or cache writes", async () => {
+    const home = await makeHome();
+    const custom = join(home, ".claude/plugins/cache/claude-lane-stack/lane-stack/99.0.0-custom");
+    await seedCompatibleEngine(custom);
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents/install.json"), `${JSON.stringify({ source_sha: "custom-main-sha", source_repo: custom, version: "99.0.0-custom" })}\n`);
+    await mkdir(join(home, ".config/opencode"), { recursive: true });
+    const configPath = join(home, ".config/opencode/opencode.jsonc");
+    await writeFile(configPath, '{\n  "model": "user/model",\n  "plugin": ["./plugins/other.ts"]\n}\n');
+    const before = {
+      custom: await treeHash(custom),
+      config: await treeHash(configPath),
+      cache: await treeHash(join(home, ".claude/plugins/cache")),
+      managed: await treeHash(managedEngineDir(TARGET_SHA, home)),
+    };
+    const detected = await detectStack({ requestedHostId: hostId, homeDir: home });
+    expect(detected.compatibility).toMatchObject({ compatible: true, decision: "reuse" });
+    const stackInstall = await installStack({ requestedHostId: hostId, homeDir: home });
+    expect(stackInstall.exitCode).toBe(0);
+    expect(stackInstall.filesChanged).toEqual([]);
+    const result = await inventory(home);
+    const cache = result.managers.find((row) => row.manager === "claude-cache");
+    expect(cache?.compatible).toBe(true);
+    expect(cache?.decision).toBe("reuse");
+    expect(cache?.sourceSha).not.toBe(TARGET_SHA);
+    const managedPath = managedEngineDir(TARGET_SHA, home);
+    const operation = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "install", manager: "managed-checkout",
+      path: managedPath, expectedSha256: null, targetSha: TARGET_SHA,
+    });
+    expect(operation.status).toBe("skipped");
+    expect(operation.reason).toContain("Compatible engine reused");
+    expect({
+      custom: await treeHash(custom),
+      config: await treeHash(configPath),
+      cache: await treeHash(join(home, ".claude/plugins/cache")),
+      managed: await treeHash(managedPath),
+    }).toEqual(before);
+  });
+
+  it("preserves compatible custom state and reports an exact missing interface for incompatible engines", async () => {
+    const home = await makeHome();
+    const custom = join(home, ".agents/custom-lane-stack");
+    await seedCompatibleEngine(custom, ["opencode.hook.tool_execute_after"]);
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents/install.json"), `${JSON.stringify({ source_sha: "custom-dirty-sha", source_repo: custom, version: "custom" })}\n`);
+    const before = await treeHash(custom);
+    const result = await inventory(home);
+    const marker = result.managers.find((row) => row.manager === "agents-marker");
+    expect(marker?.compatible).toBe(false);
+    expect(marker?.missingCapabilities).toEqual(["opencode.hook.tool_execute_after"]);
+    expect(marker?.evidence.some((item) => item.kind === "capability" && item.detail.includes("OpenCode tool evidence, budget, and winnow result handling"))).toBe(true);
+    expect(await treeHash(custom)).toBe(before);
+  });
+
+  it("returns conflict without writing when the expected config hash is stale", async () => {
+    const home = await makeHome();
+    const configPath = join(home, ".config/opencode/opencode.json");
+    await mkdir(join(home, ".config/opencode"), { recursive: true });
+    await writeFile(configPath, '{"plugin": ["./plugins/other.ts"]}\n');
+    const before = await readFile(configPath, "utf8");
+    const operation = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "connect", manager: "opencode-config",
+      path: configPath, expectedSha256: "0".repeat(64), targetSha: TARGET_SHA,
+    });
+    expect(operation.status).toBe("conflict");
+    expect(operation.beforeSha256).not.toBe("0".repeat(64));
+    expect(operation.afterSha256).toBe(operation.beforeSha256);
+    expect(await readFile(configPath, "utf8")).toBe(before);
+  });
+
+  it("inventories and rolls back an alternate managed engine path", async () => {
+    const home = await makeHome();
+    const variant = managedEngineDir(`${TARGET_SHA}-managed-existing`, home);
+    await seedCompatibleEngine(variant);
+    const afterSha = (await hashPath(variant)).sha256;
+    if (!afterSha) throw new Error("fixture tree should have a SHA-256");
+    const snapshotId = newSnapshotId();
+    await saveSnapshot(home, {
+      snapshotId,
+      manager: "managed-checkout",
+      path: variant,
+      operation: "install",
+      owner: "lane-pilot",
+      beforeSha256: null,
+      afterSha256: afterSha,
+      ownedValue: null,
+      sourceSha: TARGET_SHA,
+    });
+    const rows = await inventory(home);
+    expect(rows.managers.some((row) => row.manager === "managed-checkout" && row.path === variant && row.compatible)).toBe(true);
+    const rollback = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "rollback", manager: "managed-checkout",
+      path: variant, expectedSha256: afterSha, snapshotId, targetSha: TARGET_SHA,
+    });
+    expect(rollback.status).toBe("rolled_back");
+    expect(await treeHash(variant)).toBeNull();
+  });
+
+  it("refuses whole-snapshot rollback over late Claude settings and managed-tree edits", async () => {
+    const home = await makeHome();
+    const settingsPath = join(home, ".claude/settings.json");
+    await mkdir(join(home, ".claude"), { recursive: true });
+    await writeFile(settingsPath, '{"theme":"before"}\n');
+    const snapshot = await takeSnapshot({ homeDir: home });
+    await writeFile(settingsPath, '{"theme":"installed"}\n');
+    const binPath = join(home, ".agents/bin");
+    await mkdir(binPath, { recursive: true });
+    const toolPath = join(binPath, "lane-tool");
+    await writeFile(toolPath, "installed\n");
+    await finalizeSnapshotAfter(snapshot, home);
+    await writeFile(settingsPath, '{"theme":"late-user-edit"}\n');
+    await writeFile(toolPath, "late-user-tool-edit\n");
+
+    const rollback = await rollbackSnapshot(snapshot.snapshotPath);
+    expect(rollback.conflicts.map((item) => item.path)).toContain(settingsPath);
+    expect(rollback.conflicts.map((item) => item.path)).toContain(binPath);
+    expect(await readFile(settingsPath, "utf8")).toContain("late-user-edit");
+    expect(await readFile(toolPath, "utf8")).toBe("late-user-tool-edit\n");
+    expect((await verifyRollback(snapshot.snapshotPath)).ok).toBe(false);
+  });
+
+  it("CAS-creates a minimal OpenCode config when explicit connect finds no config", async () => {
+    const home = await makeHome();
+    const engine = join(home, ".agents/custom-lane-stack");
+    await seedCompatibleEngine(engine);
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents/install.json"), `${JSON.stringify({ source_sha: "custom-main-sha", source_repo: engine, version: "99.0.0-custom" })}\n`);
+    const pluginPath = join(home, ".config/opencode/plugins/opencode-lane.ts");
+    const install = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "install", manager: "opencode-plugin",
+      path: pluginPath, expectedSha256: null, targetSha: TARGET_SHA,
+    });
+    expect(install.status).toBe("ok");
+    const initial = await inventory(home);
+    const config = initial.managers.find((row) => row.manager === "opencode-config");
+    expect(config?.sha256).toBeNull();
+    const connect = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "connect", manager: "opencode-config",
+      path: config!.path, expectedSha256: null, targetSha: TARGET_SHA,
+    });
+    expect(connect.status).toBe("ok");
+    expect(connect.beforeSha256).toBeNull();
+    expect(connect.afterSha256).toBeTruthy();
+    const created = await readFile(config!.path, "utf8");
+    expect(created).toContain("./plugins/opencode-lane.ts");
+    expect(created).not.toContain("model");
+    const connected = await inventory(home);
+    const connectedConfig = connected.managers.find((row) => row.manager === "opencode-config");
+    const rollback = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "rollback", manager: "opencode-config",
+      path: config!.path, expectedSha256: connectedConfig?.sha256 ?? null,
+      snapshotId: connect.snapshotId, targetSha: TARGET_SHA,
+    });
+    expect(rollback.status).toBe("rolled_back");
+    expect(await treeHash(config!.path)).toBeNull();
+  });
+
+  it("installs and disconnects only the owned OpenCode entry while preserving late user edits", async () => {
+    const home = await makeHome();
+    const engine = join(home, ".agents/custom-lane-stack");
+    await seedCompatibleEngine(engine);
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents/install.json"), `${JSON.stringify({ source_sha: "custom-main-sha", source_repo: engine, version: "99.0.0-custom" })}\n`);
+    await mkdir(join(home, ".config/opencode"), { recursive: true });
+    const configPath = join(home, ".config/opencode/opencode.jsonc");
+    await writeFile(configPath, '{\n  // user comment\n  "model": "user/model",\n  "plugin": ["./plugins/other.ts"]\n}\n');
+    const pluginPath = join(home, ".config/opencode/plugins/opencode-lane.ts");
+    const install = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "install", manager: "opencode-plugin",
+      path: pluginPath, expectedSha256: null, targetSha: TARGET_SHA,
+    });
+    expect(install.status).toBe("ok");
+    expect(install.snapshotId).toBeTruthy();
+
+    let current = await inventory(home);
+    const configState = current.managers.find((row) => row.manager === "opencode-config");
+    const connect = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "connect", manager: "opencode-config",
+      path: configPath, expectedSha256: configState?.sha256 ?? null, targetSha: TARGET_SHA,
+    });
+    expect(connect.status).toBe("ok");
+    expect(connect.snapshotId).toBeTruthy();
+    const connectedText = await readFile(configPath, "utf8");
+    const lateEdit = connectedText.trimEnd().replace(/\}\s*$/, `,\n  // concurrent user edit\n  "theme": "dark"\n}\n`);
+    await writeFile(configPath, lateEdit);
+
+    current = await inventory(home);
+    const latest = current.managers.find((row) => row.manager === "opencode-config");
+    const disconnect = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "disconnect", manager: "opencode-config",
+      path: configPath, expectedSha256: latest?.sha256 ?? null, targetSha: TARGET_SHA,
+    });
+    expect(disconnect.status).toBe("ok");
+    const finalConfig = await readFile(configPath, "utf8");
+    expect(finalConfig).toContain("user comment");
+    expect(finalConfig).toContain("./plugins/other.ts");
+    expect(finalConfig).toContain("concurrent user edit");
+    expect(finalConfig).toContain('"theme": "dark"');
+    expect(finalConfig).not.toContain("./plugins/opencode-lane.ts");
+  });
+
+  it("preserves ambiguous duplicate OpenCode entries added after connect", async () => {
+    const home = await makeHome();
+    const engine = join(home, ".agents/custom-lane-stack");
+    await seedCompatibleEngine(engine);
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents/install.json"), `${JSON.stringify({ source_sha: "custom-main-sha", source_repo: engine, version: "99.0.0-custom" })}\n`);
+    await mkdir(join(home, ".config/opencode"), { recursive: true });
+    const configPath = join(home, ".config/opencode/opencode.jsonc");
+    await writeFile(configPath, '{\n  "plugin": ["./plugins/other.ts"]\n}\n');
+    const pluginPath = join(home, ".config/opencode/plugins/opencode-lane.ts");
+    const install = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "install", manager: "opencode-plugin",
+      path: pluginPath, expectedSha256: null, targetSha: TARGET_SHA,
+    });
+    expect(install.status).toBe("ok");
+    const initial = await inventory(home);
+    const configRow = initial.managers.find((row) => row.manager === "opencode-config");
+    const connect = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "connect", manager: "opencode-config",
+      path: configPath, expectedSha256: configRow?.sha256 ?? null, targetSha: TARGET_SHA,
+    });
+    expect(connect.status).toBe("ok");
+    const connected = await readFile(configPath, "utf8");
+    const duplicate = connected.replace('"./plugins/opencode-lane.ts"', '"./plugins/opencode-lane.ts", "./plugins/opencode-lane.ts"');
+    await writeFile(configPath, duplicate);
+
+    const latest = await inventory(home);
+    const latestRow = latest.managers.find((row) => row.manager === "opencode-config");
+    const disconnect = await runCoexistenceOperation({
+      projectId: "proj_test", hostId, operation: "disconnect", manager: "opencode-config",
+      path: configPath, expectedSha256: latestRow?.sha256 ?? null, targetSha: TARGET_SHA,
+    });
+    expect(disconnect.status).toBe("blocked");
+    expect(disconnect.reason).toContain("multiple matching plugin entries make ownership ambiguous");
+    expect(await readFile(configPath, "utf8")).toBe(duplicate);
+  });
+});

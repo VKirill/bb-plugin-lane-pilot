@@ -25,6 +25,10 @@ export function upstreamDir(sha: string, homeDir?: string): string {
   return join(lanePilotRoot(homeDir), "upstream", sha);
 }
 
+export function managedEngineDir(sha: string, homeDir?: string): string {
+  return join(lanePilotRoot(homeDir), "engines", sha);
+}
+
 export function pluginRootFromModule(moduleUrl: string): string {
   const here = fileURLToPath(new URL(".", moduleUrl));
   if (here.endsWith("/src/") || here.endsWith("/src")) return join(here, "..");

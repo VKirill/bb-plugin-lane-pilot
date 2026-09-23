@@ -1,12 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { sha256Buffer } from "./hash";
-import { patchOpenCodePlugin } from "./jsonc";
+import { compareAndSwapText, readTextState } from "./coexistence/cas";
+import { ensureOpenCodePluginEntry } from "./jsonc";
 import { resolveHome } from "./paths";
 
 export type ConnectOpencodeResult = {
   skipped: boolean;
+  conflict: boolean;
   reason: string | null;
   files: Array<{
     path: string;
@@ -17,9 +18,6 @@ export type ConnectOpencodeResult = {
   }>;
   version: string | null;
 };
-
-const LIMITATION =
-  "if the removed plugin[] item is last and a comment precedes it, the comment may visually move after the inserted opencode-lane.ts line; text is preserved";
 
 function opencodeVersion(): string | null {
   try {
@@ -41,16 +39,18 @@ export async function connectOpencode(homeDir?: string): Promise<ConnectOpencode
     try {
       await readFile(path);
       existing.push(path);
+      break;
     } catch {
       /* absent */
     }
   }
   if (existing.length === 0) {
-    return { skipped: true, reason: "S6: OpenCode config is absent", files: [], version };
+    return { skipped: true, conflict: false, reason: "S6: OpenCode config is absent", files: [], version };
   }
   if (!version) {
     return {
       skipped: true,
+      conflict: false,
       reason: "opencode --version failed; S5 refused to patch",
       files: [],
       version: null,
@@ -58,21 +58,28 @@ export async function connectOpencode(homeDir?: string): Promise<ConnectOpencode
   }
   const files: ConnectOpencodeResult["files"] = [];
   for (const path of existing) {
-    const before = await readFile(path, "utf8");
-    const shaBefore = sha256Buffer(before);
-    const patched = patchOpenCodePlugin(before);
+    const state = await readTextState(path);
+    if (state.text === null) {
+      return { skipped: true, conflict: true, reason: `CAS conflict: ${path} is not a regular readable config file`, files, version };
+    }
+    const patched = ensureOpenCodePluginEntry(state.text);
     if (!patched.ok) {
       throw new Error(`OpenCode JSONC refused for ${path}: ${patched.message}`);
     }
-    if (patched.changed) await writeFile(path, patched.text);
-    const after = patched.text;
+    const write = await compareAndSwapText(path, state.sha256, patched.text);
+    if (write.status === "conflict") {
+      return { skipped: true, conflict: true, reason: write.reason, files, version };
+    }
+    if (write.status !== "ok") {
+      return { skipped: true, conflict: true, reason: write.reason ?? `CAS write failed for ${path}`, files, version };
+    }
     files.push({
       path,
-      sha256Before: shaBefore,
-      sha256After: sha256Buffer(after),
-      changed: patched.changed,
-      limitation: LIMITATION,
+      sha256Before: write.beforeSha256,
+      sha256After: write.afterSha256,
+      changed: write.changed,
+      limitation: null,
     });
   }
-  return { skipped: false, reason: null, files, version };
+  return { skipped: false, conflict: false, reason: null, files, version };
 }

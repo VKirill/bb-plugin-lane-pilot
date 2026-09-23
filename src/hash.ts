@@ -21,7 +21,7 @@ export async function sha256Tree(root: string): Promise<string> {
   const hash = createHash("sha256");
   async function walk(dir: string, rel: string): Promise<void> {
     const entries = (await readdir(dir, { withFileTypes: true }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
     for (const entry of entries) {
       const abs = join(dir, entry.name);
       const next = rel ? `${rel}/${entry.name}` : entry.name;
