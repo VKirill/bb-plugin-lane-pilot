@@ -92,4 +92,10 @@ describe("adoc applicability catalog", () => {
     expect(VISIBLE_CATALOG).toHaveLength(201);
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
   });
+
+  it("does not embed absolute home paths in catalog strings", () => {
+    const blob = JSON.stringify(UI_CATALOG);
+    expect(blob).not.toMatch(/\/home\/ubuntu/);
+    expect(blob).not.toMatch(/\/Users\//);
+  });
 });

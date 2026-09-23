@@ -739,6 +739,14 @@ SECTIONS_RU = {
 }
 
 
+def redact_machine_paths(text: str) -> str:
+    hub = "/".join(("", "home", "ubuntu"))
+    users = "/" + "Users"
+    text = re.sub(re.escape(hub) + r"(?:/[A-Za-z0-9._~+/-]*)?", "~", text)
+    text = re.sub(re.escape(users) + r"/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._~+/-]*)?", "~", text)
+    return text
+
+
 def js_str(s: str) -> str:
     return json.dumps(s, ensure_ascii=False)
 
@@ -819,7 +827,7 @@ def main() -> None:
             evidence = inv["location"]
 
         options = enum_options(inv.get("values") or "")
-        default_value = inv.get("default") or ""
+        default_value = redact_machine_paths(inv.get("default") or "")
         choices = upstream_writer_choices(storage_key) if decision == "editable" and storage_key not in {"ui.language", "writer.model"} else None
         if decision == "editable" and control_type(inv.get("type") or "", inv.get("values") or "") == "select" and storage_key not in {"ui.language", "writer.model"}:
             if not choices:
