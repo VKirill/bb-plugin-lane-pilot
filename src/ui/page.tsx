@@ -430,8 +430,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
         ) : null}
 
         <Tabs value={tab} onValueChange={setTab}>
-          {/* BB's Russianizer can mutate tab text outside React; remount the tab labels on locale changes. */}
-          <TabsList key={locale}>
+          {/* Keep the plugin's own EN/RU labels out of BB's DOM-based Russianizer. */}
+          <TabsList data-bb-ru-skip>
             <TabsTrigger value="settings" data-testid="tab-settings">{t("tabSettings")}</TabsTrigger>
             <TabsTrigger value="monitor" data-testid="tab-monitor">{t("tabMonitor")}</TabsTrigger>
             <TabsTrigger value="install" data-testid="tab-install">{t("tabInstall")}</TabsTrigger>
