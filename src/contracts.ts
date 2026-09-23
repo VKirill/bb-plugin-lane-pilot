@@ -242,6 +242,35 @@ export const rpcContract = defineRpcContract({
       }).strict().optional(),
     }).strict(),
   },
+  save_settings: {
+    input: z.object({
+      projectId: z.string().min(1),
+      changes: z.array(z.object({
+        key: z.string().min(1),
+        value: z.unknown(),
+        expectedVersion: z.number().int().min(0),
+      }).strict()).min(1).superRefine((changes, context) => {
+        const seen = new Set<string>();
+        for (const change of changes) {
+          if (seen.has(change.key)) {
+            context.addIssue({ code: "custom", message: `duplicate setting key: ${change.key}` });
+          }
+          seen.add(change.key);
+        }
+      }),
+    }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      conflict: z.boolean(),
+      values: z.record(z.string(), z.unknown()),
+      versions: z.record(z.string(), z.number().int()),
+      validation: z.object({
+        code: z.enum(["invalid_choice", "incompatible_setting"]),
+        key: z.string(),
+        params: z.array(z.string()),
+      }).strict().optional(),
+    }).strict(),
+  },
   cancel_attempt: {
     input: z.object({ attemptId: z.string().min(1) }).strict(),
     output: z.object({ ok: z.boolean(), state: z.string(), reason: z.string().nullable() }).strict(),

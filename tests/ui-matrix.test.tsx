@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
-import { fireEvent } from "@testing-library/react";
+import { fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
 import { en, ru, setLocaleOverride, t, validationMessage } from "../i18n";
@@ -47,6 +47,7 @@ async function mountPage(rpc: Record<string, (input: never) => unknown> = {}) {
     rpc: {
       get_screen: () => screenFixture(),
       save_setting: () => ({ ok: true, conflict: false, version: 2, value: true }),
+      save_settings: () => ({ ok:true, conflict:false, values:{}, versions:{} }),
       cancel_attempt: () => ({ ok: true, state: "canceled", reason: null }),
       retry_attempt: () => ({ ok: true, state: "queued", attemptId: "lpattempt_2", reason: null }),
       resume_runs: () => ({ resumed: [], skipped: [], finished: [] }),
@@ -124,6 +125,59 @@ describe("Lane Pilot UI", () => {
     await slot.findByTestId("setting-validation-error");
     expect(slot.getByText(ru.validationInvalidChoice.replace("{key}", "writer.provider").replace("{allowed}", "agy, grok, qwen"))).toBeTruthy();
     expect(slot.queryByTestId("cas-conflict")).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("saves provider and effort rows atomically and advances UI values and versions from each server response", async () => {
+    const calls: Array<{ changes:Array<{ key:string; value:unknown; expectedVersion:number }> }> = [];
+    const values: Record<string, unknown> = { "writer.provider":"qwen", "writer.reasoning_effort":"medium" };
+    const versions: Record<string, number> = { "writer.provider":5, "writer.reasoning_effort":8 };
+    const slot = await mountPage({
+      get_screen: () => ({ ...screenFixture(), values:{ ...screenFixture().values, ...values }, versions:{ ...screenFixture().versions, ...versions } }),
+      save_settings: (input) => {
+        const request = input as { changes:Array<{ key:string; value:unknown; expectedVersion:number }> };
+        calls.push(request);
+        for (const change of request.changes) {
+          if ((versions[change.key] ?? 0) !== change.expectedVersion) {
+            return { ok:false, conflict:true, values:{ ...values }, versions:{ ...versions } };
+          }
+        }
+        const savedValues: Record<string, unknown> = {};
+        const savedVersions: Record<string, number> = {};
+        for (const change of request.changes) {
+          values[change.key] = change.value;
+          versions[change.key] = (versions[change.key] ?? 0) + 1;
+          savedValues[change.key] = values[change.key];
+          savedVersions[change.key] = versions[change.key]!;
+        }
+        return { ok:true, conflict:false, values:savedValues, versions:savedVersions };
+      },
+    });
+
+    const provider = VISIBLE_CATALOG.find((row) => row.storageKey === "writer.provider" && row.uiStatus === "editable")!;
+    const providerField = slot.getByTestId(`field-${provider.id}`);
+    fireEvent.click(providerField.querySelector("[role='combobox']") as HTMLButtonElement);
+    fireEvent.click(await slot.findByText("codex"));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.changes.map((change) => [change.key, change.expectedVersion])).toEqual([
+      ["writer.provider", 5], ["writer.reasoning_effort", 8],
+    ]);
+    expect(values).toMatchObject({ "writer.provider":"codex", "writer.reasoning_effort":"medium" });
+    expect(versions).toMatchObject({ "writer.provider":6, "writer.reasoning_effort":9 });
+
+    const effort = VISIBLE_CATALOG.find((row) => row.storageKey === "writer.reasoning_effort" && row.uiStatus === "editable")!;
+    const effortField = slot.getByTestId(`field-${effort.id}`);
+    fireEvent.click(effortField.querySelector("[role='combobox']") as HTMLButtonElement);
+    fireEvent.click(await slot.findByText("max"));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.changes.map((change) => [change.key, change.expectedVersion])).toEqual([
+      ["writer.reasoning_effort", 9], ["writer.provider", 6],
+    ]);
+    expect(values).toMatchObject({ "writer.provider":"codex", "writer.reasoning_effort":"max" });
+    expect(versions).toMatchObject({ "writer.provider":7, "writer.reasoning_effort":10 });
+    expect((effortField.querySelector("[role='combobox']") as HTMLButtonElement).textContent).toContain("max");
     slot.lifecycle.unmount();
   });
 

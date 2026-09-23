@@ -37,6 +37,7 @@ import {
   listSettingRows,
   listRunsWithAttempts,
   casUpsertSetting,
+  casUpsertSettings,
   openDatabase,
   savePrototypeConfig,
   saveProjectSetting,
@@ -942,6 +943,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
       return { ok: true, conflict: false, version: result.version, value };
     },
+    save_settings: ({ projectId, changes }) => casUpsertSettings(db, { projectId, changes }),
     cancel_attempt: async ({ attemptId }) => {
       const attempt = getAttempt(db, attemptId);
       if (!attempt?.thread_id) return { ok: false, state: attempt?.state ?? "missing", reason: "attempt has no writer thread" };

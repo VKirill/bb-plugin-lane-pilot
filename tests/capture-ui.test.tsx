@@ -56,6 +56,7 @@ async function mount(lang: string) {
     rpc: {
       get_screen: () => screenFixture(),
       save_setting: () => ({ ok: true, conflict: false, version: 2, value: true }),
+      save_settings: () => ({ ok:true, conflict:false, values:{}, versions:{} }),
       cancel_attempt: () => ({ ok: true, state: "canceled", reason: null }),
       retry_attempt: () => ({ ok: true, state: "queued", attemptId: "lpattempt_2", reason: null }),
       resume_runs: () => ({ resumed: [], skipped: [], finished: [] }),

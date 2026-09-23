@@ -352,6 +352,76 @@ export function casUpsertSetting(
   return { ok:true, version:next.version };
 }
 
+export type SettingChange = { key:string; value:unknown; expectedVersion:number };
+export type SaveSettingsResult = {
+  ok:boolean;
+  conflict:boolean;
+  values:Record<string, unknown>;
+  versions:Record<string, number>;
+  validation?:SettingValidationError;
+};
+
+/** Compare, validate and persist a dependent setting group as one SQLite transaction. */
+export function casUpsertSettings(
+  db: LanePilotDatabase,
+  args: { projectId:string; changes:SettingChange[] },
+): SaveSettingsResult {
+  const save = db.transaction((): SaveSettingsResult => {
+    const keys = args.changes.map((change) => change.key);
+    if (new Set(keys).size !== keys.length) {
+      throw new Error("save_settings changes must contain unique keys");
+    }
+    const rows = db.prepare(`SELECT key,value,version FROM lane_pilot_project_settings
+      WHERE project_id=? AND binding_id=''`).all(args.projectId) as Array<{
+        key:string; value:string; version:number;
+      }>;
+    const settings: Record<string, unknown> = {};
+    const stored = new Map<string, { value:unknown; version:number }>();
+    for (const row of rows) {
+      let value: unknown = row.value;
+      try { value = JSON.parse(row.value); } catch { /* keep stored text */ }
+      settings[row.key] = value;
+      stored.set(row.key, { value, version:row.version });
+    }
+    const snapshot = () => {
+      const values: Record<string, unknown> = {};
+      const versions: Record<string, number> = {};
+      for (const key of keys) {
+        values[key] = stored.get(key)?.value ?? null;
+        versions[key] = stored.get(key)?.version ?? 0;
+      }
+      return { values, versions };
+    };
+    if (args.changes.some((change) => (stored.get(change.key)?.version ?? 0) !== change.expectedVersion)) {
+      return { ok:false, conflict:true, ...snapshot() };
+    }
+    for (const change of args.changes) settings[change.key] = change.value;
+    const validation = validateSettingsObject(settings)[0];
+    if (validation) return { ok:false, conflict:false, ...snapshot(), validation };
+
+    const now = Date.now();
+    const insert = db.prepare(`INSERT INTO lane_pilot_project_settings
+      (project_id,binding_id,key,value,version,updated_at) VALUES (?, '', ?, ?, 1, ?)`);
+    const update = db.prepare(`UPDATE lane_pilot_project_settings SET value=?, version=version+1, updated_at=?
+      WHERE project_id=? AND binding_id='' AND key=? AND version=?`);
+    const values: Record<string, unknown> = {};
+    const versions: Record<string, number> = {};
+    for (const change of args.changes) {
+      if (change.expectedVersion === 0) {
+        insert.run(args.projectId, change.key, JSON.stringify(change.value), now);
+        versions[change.key] = 1;
+      } else {
+        const result = update.run(JSON.stringify(change.value), now, args.projectId, change.key, change.expectedVersion);
+        if (result.changes !== 1) throw new Error(`save_settings CAS changed during transaction: ${change.key}`);
+        versions[change.key] = change.expectedVersion + 1;
+      }
+      values[change.key] = change.value;
+    }
+    return { ok:true, conflict:false, values, versions };
+  });
+  return save.immediate();
+}
+
 export function listRunsWithAttempts(db: LanePilotDatabase, projectId: string): Array<{
   id:string; state:string; kind:string; created_at:number; updated_at:number;
   attempts: Array<{

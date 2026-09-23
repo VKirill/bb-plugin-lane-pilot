@@ -253,6 +253,13 @@ export function LanePilotPage() {
 
   const save = async (row: CatalogRow, value: unknown) => {
     if (!projectId || !data) return false;
+    if (row.storageKey === WRITER_PROVIDER || row.storageKey === WRITER_EFFORT) {
+      const otherKey = row.storageKey === WRITER_PROVIDER ? WRITER_EFFORT : WRITER_PROVIDER;
+      return saveSettings([
+        { key: row.storageKey, value },
+        { key: otherKey, value: data.values[otherKey] },
+      ]);
+    }
     const expectedVersion = data.versions[row.storageKey] ?? 0;
     const result = await rpc.call("save_setting", {
       projectId,
@@ -272,12 +279,43 @@ export function LanePilotPage() {
     }
     setSaveError(null);
     const nextValues = { ...data.values, [row.storageKey]: result.value };
-    setData({
-      ...data,
-      values: nextValues,
-      versions: { ...data.versions, [row.storageKey]: result.version },
-    });
+    setData((current) => current ? {
+      ...current,
+      values: { ...current.values, [row.storageKey]: result.value },
+      versions: { ...current.versions, [row.storageKey]: result.version },
+    } : current);
     if (row.storageKey === LANGUAGE_KEY) applyLocale(nextValues);
+    return true;
+  };
+
+  const saveSettings = async (changes: Array<{ key:string; value:unknown }>) => {
+    if (!projectId || !data) return false;
+    const result = await rpc.call("save_settings", {
+      projectId,
+      changes: changes.map(({ key, value }) => ({
+        key,
+        value,
+        expectedVersion: data.versions[key] ?? 0,
+      })),
+    });
+    if (result.conflict) {
+      setSaveError({ kind: "cas" });
+      await load();
+      return false;
+    }
+    if (!result.ok) {
+      if (result.validation) setSaveError({ kind: "validation", code: result.validation.code, params: result.validation.params });
+      else setSaveError({ kind: "cas" });
+      return false;
+    }
+    setSaveError(null);
+    setData((current) => current ? {
+      ...current,
+      values: { ...current.values, ...result.values },
+      versions: { ...current.versions, ...result.versions },
+    } : current);
+    const nextValues = { ...data.values, ...result.values };
+    if (changes.some(({ key }) => key === LANGUAGE_KEY)) applyLocale(nextValues);
     return true;
   };
 
@@ -360,19 +398,15 @@ export function LanePilotPage() {
                   }}
                   routing={routing}
                   onChange={(next) => {
-                    const providerRow = VISIBLE_CATALOG.find((row) => row.storageKey === WRITER_PROVIDER);
-                    const modelRow = VISIBLE_CATALOG.find((row) => row.storageKey === WRITER_MODEL);
-                    const effortRow = VISIBLE_CATALOG.find((row) => row.storageKey === WRITER_EFFORT);
                     const allowedEfforts = WRITER_EFFORT_CHOICES_BY_PROVIDER[next.providerId] ?? [];
                     const requestedEffort = String(next.reasoningLevel);
                     const adjustedEffort = allowedEfforts.includes(requestedEffort) ? requestedEffort : allowedEfforts[0];
-                    void (async () => {
-                      if (effortRow && adjustedEffort && adjustedEffort !== String(data?.values[WRITER_EFFORT] ?? "")) {
-                        if (!await save(effortRow, adjustedEffort)) return;
-                      }
-                      if (providerRow && !await save(providerRow, next.providerId)) return;
-                      if (modelRow) await save(modelRow, next.model);
-                    })();
+                    if (!adjustedEffort) return;
+                    void saveSettings([
+                      { key: WRITER_PROVIDER, value: next.providerId },
+                      { key: WRITER_MODEL, value: next.model },
+                      { key: WRITER_EFFORT, value: adjustedEffort },
+                    ]);
                   }}
                 />
               ) : null}
