@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import ast
+import sys
 import re
 from collections import Counter
 from pathlib import Path
@@ -271,6 +273,111 @@ def enum_options(values: str) -> list[str]:
             continue
         out.append(p)
     return out[:24]
+
+
+def upstream_writer_choices(storage_key: str) -> list[str] | None:
+    """Read UI enum choices from the pinned upstream source, never inventory prose."""
+    controller = read_upstream("bin/run-controller") or ""
+    lane_ctl = read_upstream("bin/lane-ctl") or ""
+    if storage_key == "writer.provider":
+        match = re.search(r"^PRIMARY_MODELS\s*=\s*(\{.*?^\})", controller, re.M | re.S)
+        if not match:
+            return None
+        try:
+            return list(ast.literal_eval(match.group(1)).keys())
+        except (SyntaxError, ValueError):
+            return None
+    if storage_key == "writer.reasoning_effort":
+        match = re.search(r"^REASONING_EFFORTS\s*=\s*(\([^\n]+\))", controller, re.M)
+        if not match:
+            return None
+        try:
+            return list(ast.literal_eval(match.group(1)))
+        except (SyntaxError, ValueError):
+            return None
+    if storage_key == "writer.service_tier":
+        return ["standard", "fast"] if 'choices=("standard", "fast")' in controller else None
+    if storage_key == "ops.tail_source":
+        match = re.search(r"^TAIL_SOURCES\s*=\s*(\{.*?^\})", lane_ctl, re.M | re.S)
+        if not match:
+            return None
+        try:
+            return list(ast.literal_eval(match.group(1)).keys())
+        except (SyntaxError, ValueError):
+            return None
+    return None
+
+
+def upstream_effort_pairs() -> dict[str, str] | None:
+    controller = read_upstream("bin/run-controller") or ""
+    match = re.search(r"^PRIMARY_EFFORTS\s*=\s*(\{.*?^\})", controller, re.M | re.S)
+    if not match:
+        return None
+    try:
+        pairs = ast.literal_eval(match.group(1))
+    except (SyntaxError, ValueError):
+        return None
+    choices = upstream_writer_choices("writer.reasoning_effort") or []
+    if not isinstance(pairs, dict) or any(v not in choices for v in pairs.values()):
+        return None
+    return pairs
+
+
+def upstream_provider_effort_choices() -> dict[str, list[str]] | None:
+    tui = read_upstream("bin/agents_doctor_tui.py") or ""
+    match = re.search(r"^WRITER_EFFORTS:\s*dict\[str,\s*list\[str\]\]\s*=\s*(\{.*?^\})", tui, re.M | re.S)
+    if not match:
+        return None
+    try:
+        mapping = ast.literal_eval(match.group(1))
+    except (SyntaxError, ValueError):
+        return None
+    providers = upstream_writer_choices("writer.provider") or []
+    generic = upstream_writer_choices("writer.reasoning_effort") or []
+    result = {provider: mapping[provider] for provider in providers if provider in mapping}
+    if set(result) != set(providers) or any(not values or not set(values).issubset(generic) for values in result.values()):
+        return None
+    return result
+
+
+def check_upstream_enum_catalog() -> None:
+    source = (ROOT / "src/ui-catalog.ts").read_text()
+    checked = 0
+    for line in source.splitlines():
+        if 'uiStatus:"editable"' not in line or 'control:"select"' not in line:
+            continue
+        key_match = re.search(r'storageKey:"([^"]+)"', line)
+        options_match = re.search(r'options:(\[.*?\]),min:', line)
+        if not key_match or not options_match:
+            raise SystemExit(f"cannot inspect editable enum row: {line[:120]}")
+        key = key_match.group(1)
+        try:
+            options = json.loads(options_match.group(1))
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"invalid options for {key}: {exc}") from exc
+        if key == "ui.language":
+            expected = ["en", "ru"]
+        else:
+            expected = upstream_writer_choices(key)
+            if expected is None:
+                raise SystemExit(f"editable enum {key} has no choices extracted from pinned upstream")
+        if options != expected:
+            raise SystemExit(f"{key}: UI options {options!r} differ from upstream choices {expected!r}")
+        if any(value in {"auto", "WRITER_CHOICES", "WRITE_STAGE_PROVIDERS", "WRITER_EFFORTS[writer]", "doctor.available_writers"} for value in options):
+            raise SystemExit(f"placeholder choice found for {key}: {options!r}")
+        checked += 1
+    pairs = upstream_effort_pairs()
+    providers = upstream_writer_choices("writer.provider")
+    provider_efforts = upstream_provider_effort_choices()
+    if not pairs or not providers or not set(pairs).issubset(providers) or not provider_efforts:
+        raise SystemExit("cannot extract valid provider-to-effort pairs from upstream PRIMARY_EFFORTS")
+    table_match = re.search(r"export const WRITER_EFFORT_CHOICES_BY_PROVIDER(?::[^=]+)? = (\{.*?\});", source)
+    if not table_match:
+        raise SystemExit("generated provider-to-effort UI choices table is missing")
+    generated_table = json.loads(table_match.group(1))
+    if generated_table != provider_efforts:
+        raise SystemExit(f"provider-to-effort UI choices differ from upstream TUI choices: {generated_table!r} != {provider_efforts!r}")
+    print(f"editable_enum_rows={checked}; provider_choices={len(providers)}; effort_choices={len(upstream_writer_choices('writer.reasoning_effort') or [])}; provider_effort_pairs={len(provider_efforts)}")
 
 
 def locations(location: str) -> list[tuple[str, str]]:
@@ -711,6 +818,20 @@ def main() -> None:
             rationale = mat["matrix_decision"]
             evidence = inv["location"]
 
+        options = enum_options(inv.get("values") or "")
+        default_value = inv.get("default") or ""
+        if decision == "editable" and control_type(inv.get("type") or "", inv.get("values") or "") == "select" and storage_key not in {"ui.language", "writer.model"}:
+            choices = upstream_writer_choices(storage_key)
+            if not choices:
+                decision = "gap"
+                ch = "NONE"
+                rationale = "enum choices are not extractable from the pinned upstream consumer; typed choices contract required (E1)"
+                evidence = inv["location"]
+            else:
+                options = choices
+                if storage_key == "writer.provider" and default_value not in choices:
+                    default_value = "kimi" if "kimi" in choices else choices[0]
+
         counts[decision] += 1
         row = {
             "id": f"s{i:03d}",
@@ -721,10 +842,12 @@ def main() -> None:
             "category": inv["category"],
             "invType": inv.get("type") or "str",
             "values": inv.get("values") or "",
-            "default": inv.get("default") or "",
+            "default": default_value,
             "scope": inv.get("scope") or "",
-            "control": control_type(inv.get("type") or "", inv.get("values") or ""),
-            "options": enum_options(inv.get("values") or ""),
+            # Model IDs are validated by the upstream value validator and the
+            # native BB ProviderModelPicker; they are free-form strings, not CLI enums.
+            "control": "input" if storage_key == "writer.model" else control_type(inv.get("type") or "", inv.get("values") or ""),
+            "options": options,
             "min": lo,
             "max": hi,
             "section": sid if decision != "excluded" else "excluded",
@@ -787,6 +910,10 @@ def main() -> None:
             + "},"
         )
     lines.append("];")
+    provider_efforts = upstream_provider_effort_choices()
+    if provider_efforts is None:
+        raise SystemExit("cannot extract provider-dependent writer effort choices from pinned upstream")
+    lines.append("export const WRITER_EFFORT_CHOICES_BY_PROVIDER: Record<string, string[]> = " + json.dumps(provider_efforts) + ";")
     lines.append("")
     lines.append("export const VISIBLE_CATALOG = UI_CATALOG.filter((row) => row.uiStatus === \"editable\" || row.uiStatus === \"readonly\" || row.uiStatus === \"gap\");")
     lines.append("export const EDITABLE_IDS = VISIBLE_CATALOG.filter((row) => row.uiStatus === \"editable\").map((row) => row.id);")
@@ -914,4 +1041,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--check-upstream-enums"]:
+        check_upstream_enum_catalog()
+    else:
+        main()

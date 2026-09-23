@@ -1,26 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { SETTING_CATALOG, CONSUMER_KEYS, specFor, UNAPPLIED_REASON, type SettingSpec } from "../src/channels";
-import { UI_CATALOG } from "../src/ui-catalog";
+import { UI_CATALOG, type CatalogRow } from "../src/ui-catalog";
 import { buildCliInvocation, isFlagOff, isFlagOn } from "../src/argv-builder";
 import { requiredCliFlags } from "../src/cli-flags";
 import { installEnv } from "../src/install-runner";
 import plugin from "../server";
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 
-function representativeValues(spec: SettingSpec): unknown[] {
+function representativeValues(row: CatalogRow, spec: SettingSpec): unknown[] {
   if (spec.booleanFlag || spec.key.startsWith("jev.")) return [true, false];
   if (spec.key === "install.LANE_INSTALL_LOCAL_MARKETPLACE" || spec.key === "install.LANE_INSTALL_CLAUDE_PLUGIN") {
     return [true, false];
   }
-  if (spec.key === "writer.provider") return ["kimi", "qwen", "agy", "grok", "codex", "cursor", "opencode"];
-  if (spec.key === "writer.service_tier") return ["standard", "fast"];
-  if (spec.key === "writer.reasoning_effort") return ["low", "medium", "high", "xhigh", "max"];
-  if (spec.key === "ops.tail_source") return ["supervisor", "executor", "provider", "report", "verification"];
+  if (row.control === "select") return row.options;
   if (spec.key === "install.CODEX_HOME") return ["/tmp/codex"];
   if (spec.key === "install.CLAUDE_CONFIG_DIR") return ["/tmp/claude"];
-  const row = UI_CATALOG.find((item) => item.storageKey === spec.key && item.uiStatus === "editable");
-  if (row?.min != null && row.max != null) return [row.min, row.max];
-  if (row?.control === "path" || spec.key.includes("dir") || spec.key.includes("cwd") || spec.key.includes("file")) {
+  const catalogRow = UI_CATALOG.find((item) => item.storageKey === spec.key && item.uiStatus === "editable");
+  if (catalogRow?.min != null && catalogRow.max != null) return [catalogRow.min, catalogRow.max];
+  if (catalogRow?.control === "path" || spec.key.includes("dir") || spec.key.includes("cwd") || spec.key.includes("file")) {
     return ["/tmp/lane-pilot"];
   }
   if (row?.options.length && row.options[0] && row.options[0] !== "bool") return row.options;
@@ -86,6 +85,11 @@ function requiredFor(spec: SettingSpec): { binary: "run-controller" | "lane-ctl"
 }
 
 describe("UI storage keys feed runtime channels", () => {
+  it("derives every editable enum from pinned upstream argparse choices", () => {
+    const script = resolve(process.cwd(), "scripts/generate-ui-catalog.py");
+    const result = execFileSync("python3", [script, "--check-upstream-enums"], { encoding: "utf8" });
+    expect(result).toMatch(/editable_enum_rows=\d+; provider_choices=7; effort_choices=5; provider_effort_pairs=7/);
+  });
   it("intersects SETTING_CATALOG with generated storageKey values", () => {
     const stored = new Set(UI_CATALOG.map((row) => row.storageKey));
     const catalog = SETTING_CATALOG.map((spec) => spec.key);
@@ -98,17 +102,20 @@ describe("UI storage keys feed runtime channels", () => {
   });
 
   it("table-drives every editable row and every representative value to argv/env or unapplied", () => {
-    const seen = new Set<string>();
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
     expect(booleanFlags.map((spec) => spec.key)).toEqual(["writer.fast_mode"]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
+    expect(editable).toHaveLength(57);
+    expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
     for (const row of editable) {
-      if (row.storageKey === "ui.language" || seen.has(row.storageKey)) continue;
-      seen.add(row.storageKey);
+      if (row.storageKey === "ui.language") {
+        expect(row.options).toEqual(["en", "ru"]);
+        continue;
+      }
       const spec = specFor(row.storageKey);
       expect(spec, row.storageKey).toBeTruthy();
       if (!spec || spec.channel === "NONE") throw new Error(`${row.storageKey} is editable without a consumer`);
-      for (const value of representativeValues(spec)) {
+      for (const value of representativeValues(row, spec)) {
         assertChannelValue(spec, value);
       }
     }

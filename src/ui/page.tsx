@@ -13,6 +13,7 @@ import type { rpcContract } from "../contracts";
 import {
   SECTION_ORDER,
   VISIBLE_CATALOG,
+  WRITER_EFFORT_CHOICES_BY_PROVIDER,
   type CatalogRow,
 } from "../ui-catalog";
 import { t, stateLabel, unappliedReason, setLocaleOverride, type I18nKey, type Locale } from "../../i18n";
@@ -113,11 +114,13 @@ function FieldControl({
   row,
   value,
   disabled,
+  options: optionOverride,
   onChange,
 }: {
   row: CatalogRow;
   value: unknown;
   disabled: boolean;
+  options?: string[];
   onChange: (next: unknown) => void;
 }) {
   const control = JEV_KEYS.has(row.storageKey) ? "switch" : row.control;
@@ -134,7 +137,8 @@ function FieldControl({
     );
   }
   if (control === "select") {
-    const options = row.options.length > 0 ? row.options : ["auto"];
+    const options = optionOverride ?? row.options;
+    if (options.length === 0) return <Input disabled value={String(value ?? "")} aria-label={label} />;
     const current = String(value ?? options[0] ?? "");
     return (
       <Select value={current} onValueChange={onChange} disabled={disabled}>
@@ -391,6 +395,7 @@ export function LanePilotPage() {
                           row={row}
                           value={value}
                           disabled={disabled}
+                          options={row.storageKey === WRITER_EFFORT ? WRITER_EFFORT_CHOICES_BY_PROVIDER[String(data?.values[WRITER_PROVIDER] ?? "")] : undefined}
                           onChange={(next) => { if (!disabled) void save(row, next); }}
                         />
                       </div>

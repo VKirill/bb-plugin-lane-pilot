@@ -99,12 +99,7 @@ ${dialogCss}
   document.documentElement.style.setProperty("max-width", "375px", "important");
   document.body.style.setProperty("width", "375px", "important");
   document.body.style.setProperty("max-width", "375px", "important");
-  const widths = [document.body.scrollWidth];
-  for (const el of document.querySelectorAll('[data-testid="external-ops-dialog"],[data-testid="install-panel"]')) {
-    widths.push(el.scrollWidth);
-    widths.push(Math.ceil(el.getBoundingClientRect().width));
-  }
-  document.documentElement.setAttribute("data-scroll-width", String(Math.max(...widths)));
+  document.documentElement.setAttribute("data-document-scroll-width", String(document.documentElement.scrollWidth));
 })();
 </script></body></html>`;
 }
@@ -149,6 +144,7 @@ describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
     mkdirSync(outDir, { recursive: true });
     mkdirSync(pngDir, { recursive: true });
     const dialogWidths: number[] = [];
+    const captures: Array<{ lang: "en" | "ru"; theme: "light" | "dark"; view: "settings" | "monitor" | "dialog"; htmlPath: string; pngPath: string }> = [];
     for (const lang of ["en", "ru"] as const) {
       for (const theme of ["light", "dark"] as const) {
         for (const view of ["settings", "monitor", "dialog"] as const) {
@@ -170,20 +166,24 @@ describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
           const htmlPath = resolve(outDir, `${view}-${lang}-${theme}.html`);
           writeFileSync(htmlPath, wrap(html, lang, theme, view));
           const pngPath = resolve(pngDir, `${view}-${lang}-${theme}.png`);
-          const pixelWidth = chromeShot(htmlPath, pngPath);
-          expect(pixelWidth, `${view}-${lang}-${theme}`).toBe(375);
-          if (view === "dialog") {
-            const dumped = chromeDump(htmlPath);
-            expect(dumped, `${view}-${lang}-${theme} dump title`).toContain(lang === "ru" ? ru.confirmTitle : en.confirmTitle);
-            for (const op of EXTERNAL_OPS) {
-              expect(dumped, `${view}-${lang}-${theme} dump ${op}`).toContain(op);
-            }
-            const scrollWidth = Number(dumped.match(/data-scroll-width="(\d+)"/)?.[1] ?? "NaN");
-            expect(scrollWidth, `${view}-${lang}-${theme} document.scrollWidth`).toBeLessThanOrEqual(375);
-            dialogWidths.push(scrollWidth);
-          }
+          captures.push({ lang, theme, view, htmlPath, pngPath });
           slot.lifecycle.unmount();
         }
+      }
+    }
+    for (const { lang, theme, view, htmlPath, pngPath } of captures) {
+      const pixelWidth = chromeShot(htmlPath, pngPath);
+      expect(pixelWidth, `${view}-${lang}-${theme}`).toBe(375);
+      if (view === "dialog") {
+        const dumped = chromeDump(htmlPath);
+        expect(dumped, `${view}-${lang}-${theme} dump title`).toContain(lang === "ru" ? ru.confirmTitle : en.confirmTitle);
+        for (const op of EXTERNAL_OPS) {
+          expect(dumped, `${view}-${lang}-${theme} dump ${op}`).toContain(op);
+        }
+        expect(dumped).toContain('data-document-scroll-width="');
+        const scrollWidth = Number(dumped.match(/data-document-scroll-width="(\d+)"/)?.[1] ?? "NaN");
+        expect(scrollWidth, `${view}-${lang}-${theme} document.scrollWidth`).toBeLessThanOrEqual(375);
+        dialogWidths.push(scrollWidth);
       }
     }
     expect(dialogWidths).toHaveLength(4);
