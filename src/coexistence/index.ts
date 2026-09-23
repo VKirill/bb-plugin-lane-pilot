@@ -11,7 +11,7 @@ import { createOpenCodePluginShim, isManagedOpenCodePlugin } from "../upstream-a
 import { ensureUpstream } from "../upstream";
 import { ensureOpenCodePluginEntry, removeOpenCodePluginEntry } from "../jsonc";
 import { compareAndSwapText, readTextState } from "./cas";
-import { addOwnershipEntry, newSnapshotId, readOwnershipLedger, readSnapshot, removeOwnershipEntry, saveSnapshot } from "./ownership";
+import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readOwnershipLedgerStrict, readSnapshot, removeOwnershipEntry, removeOwnershipEntryIfMatches, removeSnapshotIfMatches, restoreOwnershipLedgerWrite, saveSnapshot, snapshotPath } from "./ownership";
 import type {
   CoexistenceEvidence,
   CoexistenceInventory,
@@ -323,6 +323,48 @@ async function removeOwnedPath(path: string, expectedSha256: string | null): Pro
   }
 }
 
+async function removeCreatedManagedPath(path: string, expectedSha256: string): Promise<{
+  status: "removed" | "conflict" | "failed";
+  residualPaths: string[];
+  reason: string;
+}> {
+  const current = await anyPathHash(path);
+  if (current !== expectedSha256) {
+    return {
+      status: "conflict",
+      residualPaths: current ? [path] : [],
+      reason: `Rollback conflict: managed path hash changed from ${expectedSha256} to ${current ?? "missing"}; the path was preserved.`,
+    };
+  }
+  const quarantine = join(dirname(path), `.lane-pilot-rollback-${randomUUID()}`);
+  try { await rename(path, quarantine); }
+  catch (error) {
+    const after = await anyPathHash(path);
+    return {
+      status: "failed",
+      residualPaths: after ? [path] : [],
+      reason: `Rollback could not move the created managed path safely: ${error instanceof Error ? error.message : String(error)}.`,
+    };
+  }
+  const movedHash = await anyPathHash(quarantine);
+  if (movedHash !== expectedSha256) {
+    return {
+      status: "conflict",
+      residualPaths: [quarantine],
+      reason: `Rollback conflict: managed path changed during compensation (${movedHash ?? "unreadable"}); moved contents were preserved at the quarantine path.`,
+    };
+  }
+  try { await rm(quarantine, { recursive: true, force: false }); }
+  catch (error) {
+    return {
+      status: "failed",
+      residualPaths: await anyPathHash(quarantine) ? [quarantine] : [],
+      reason: `Rollback could not remove the unchanged created path at ${quarantine}: ${error instanceof Error ? error.message : String(error)}.`,
+    };
+  }
+  return { status: "removed", residualPaths: [], reason: "The unchanged path created by this install was removed." };
+}
+
 async function managedEngineForOperation(home: string, targetSha: string): Promise<{ root: string | null; assessment: ReturnType<typeof assessEngineCapabilities> | null }> {
   const marker = await readMarker(home);
   const root = await findEngineRoot(home, marker, targetSha);
@@ -382,7 +424,12 @@ export async function runCoexistenceOperation(input: CoexistenceOperationInput):
 export async function runCoexistenceOperationAtHome(
   input: CoexistenceOperationInput,
   homeDir: string,
-  sourceOptions: { localFallbackPath?: string; moduleUrl?: string } = {},
+  sourceOptions: {
+    localFallbackPath?: string;
+    moduleUrl?: string;
+    faultAt?: "after-rename" | "after-snapshot" | "after-ledger-commit" | "rollback-conflict";
+    beforeCompensation?: (managedPath: string) => Promise<void>;
+  } = {},
 ): Promise<CoexistenceOperationResult> {
   assertInput(input.projectId, input.hostId);
   const home = resolveHome(homeDir);
@@ -416,25 +463,180 @@ export async function runCoexistenceOperationAtHome(
 
   if (input.operation === "install" && input.manager === "managed-checkout") {
     const selected = await managedEngineForOperation(home, targetSha);
-    if (selected.assessment?.compatible) {
-      return resultOf(input, { status: "skipped", owner: row.owner, beforeSha256: currentHash, afterSha256: currentHash, evidence: [{ kind: "reuse", path: selected.root, sha256: await anyPathHash(selected.root!), detail: "Installed engine satisfies required interfaces; no engine/config/cache writes were made." }], reason: "Compatible engine reused." });
+    const managedRoots = await managedEngineCandidates(home, targetSha);
+    const selectedIsManaged = selected.root !== null && managedRoots.includes(selected.root);
+    if (selected.assessment?.compatible && selected.root && !selectedIsManaged) {
+      return resultOf(input, { status: "skipped", owner: row.owner, beforeSha256: currentHash, afterSha256: currentHash, evidence: [{ kind: "reuse", path: selected.root, sha256: await anyPathHash(selected.root), detail: "Installed engine satisfies required interfaces; no engine/config/cache writes were made." }], reason: "Compatible engine reused." });
     }
-    const installed = await ensureUpstream({ homeDir: home, preferredRoot: selected.root ?? undefined, ...sourceOptions });
-    if (installed.source === "reuse") {
+    let ledger;
+    try { ledger = await readOwnershipLedgerStrict(home); }
+    catch (error) {
       return resultOf(input, {
-        status: "skipped",
-        owner: "upstream",
-        path: installed.path,
+        status: "failed",
+        owner: "lane-pilot",
         beforeSha256: currentHash,
         afterSha256: currentHash,
-        evidence: [{ kind: "reuse", path: installed.path, sha256: await anyPathHash(installed.path), detail: `Compatible source reused read-only (${installed.sha}); no managed, user config, Claude cache, or marker writes were made.` }],
-        reason: "A compatible external engine source was reused without copying or modifying it.",
+        reason: `Ownership metadata preflight failed; no managed engine or snapshot write was started: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
-    const after = await anyPathHash(installed.path);
-    if (!after) return resultOf(input, { status: "failed", owner: "lane-pilot", beforeSha256: currentHash, reason: "Managed engine installation completed without a readable path hash." });
-    const snapshotId = await snapshotOfWrite({ home, manager: input.manager, path: installed.path, operation: "install", beforeSha256: null, afterSha256: after, ownedValue: null, sourceSha: installed.sha });
-    return resultOf(input, { status: "ok", owner: "lane-pilot", path: installed.path, beforeSha256: null, afterSha256: after, snapshotId, evidence: [{ kind: "installed", path: installed.path, sha256: after, detail: `Immutable managed engine ${installed.sha} installed; adapted capabilities: ${installed.adaptedCapabilities.join(", ") || "none"}.` }], reason: null });
+    let needsFreshManaged = false;
+    if (selected.assessment?.compatible && selected.root) {
+      const owned = ledger.entries.find((entry) => entry.manager === "managed-checkout" && entry.path === selected.root);
+      const snapshot = owned ? await readSnapshot(home, owned.snapshotId) : null;
+      const snapshotMatches = Boolean(owned && snapshot && snapshot.manager === "managed-checkout"
+        && snapshot.path === selected.root && snapshot.operation === "install"
+        && snapshot.afterSha256 === owned.afterSha256 && snapshot.owner === "lane-pilot");
+      if (owned && snapshotMatches) {
+        return resultOf(input, { status: "skipped", owner: "lane-pilot", path: selected.root, beforeSha256: currentHash, afterSha256: currentHash, evidence: [{ kind: "reuse", path: selected.root, sha256: await anyPathHash(selected.root), detail: "Compatible managed engine has matching ownership and snapshot metadata; no engine/config/cache writes were made." }], reason: "Compatible owned engine reused." });
+      }
+      needsFreshManaged = true;
+    }
+
+    const snapshotId = newSnapshotId();
+    if (await exists(snapshotPath(home, snapshotId))) {
+      return resultOf(input, { status: "failed", owner: "lane-pilot", beforeSha256: currentHash, afterSha256: currentHash, reason: "Snapshot identifier collision during metadata preflight; no managed engine write was started." });
+    }
+    let installed: Awaited<ReturnType<typeof ensureUpstream>> | null = null;
+    let after: string | null = null;
+    let ledgerWrite: Awaited<ReturnType<typeof addOwnershipEntry>> | null = null;
+    try {
+      installed = await ensureUpstream({
+        homeDir: home,
+        preferredRoot: needsFreshManaged ? undefined : selected.root ?? undefined,
+        forceFreshManaged: needsFreshManaged,
+        localFallbackPath: sourceOptions.localFallbackPath,
+        moduleUrl: sourceOptions.moduleUrl,
+      });
+      if (installed.source === "reuse") {
+        return resultOf(input, {
+          status: "skipped",
+          owner: "upstream",
+          path: installed.path,
+          beforeSha256: currentHash,
+          afterSha256: currentHash,
+          evidence: [{ kind: "reuse", path: installed.path, sha256: await anyPathHash(installed.path), detail: `Compatible source reused read-only (${installed.sha}); no managed, user config, Claude cache, or marker writes were made.` }],
+          reason: "A compatible external engine source was reused without copying or modifying it.",
+        });
+      }
+      after = await anyPathHash(installed.path);
+      if (!after) throw new Error("Managed engine installation completed without a readable path hash.");
+
+      const commitLedger = await readOwnershipLedgerStrict(home);
+      if (commitLedger.entries.some((entry) => entry.manager === input.manager && entry.path === installed!.path)) {
+        throw new Error("Managed destination already has an ownership entry; the existing entry was preserved.");
+      }
+      const snapshot = {
+        snapshotId,
+        manager: input.manager,
+        path: installed.path,
+        operation: "install" as const,
+        owner: "lane-pilot" as const,
+        beforeSha256: null,
+        afterSha256: after,
+        ownedValue: null,
+        sourceSha: installed.sha,
+      };
+      if (sourceOptions.faultAt === "after-rename" || sourceOptions.faultAt === "rollback-conflict") {
+        throw new Error("Injected failure after managed engine rename.");
+      }
+      await saveSnapshot(home, snapshot);
+      if (sourceOptions.faultAt === "after-snapshot") throw new Error("Injected failure after snapshot write.");
+      ledgerWrite = await addOwnershipEntry(home, {
+        manager: input.manager,
+        path: installed.path,
+        ownedValue: null,
+        owner: "lane-pilot",
+        afterSha256: after,
+        snapshotId,
+        sourceSha: installed.sha,
+      });
+      if (sourceOptions.faultAt === "after-ledger-commit") throw new Error("Injected failure after ownership ledger commit.");
+      return resultOf(input, { status: "ok", owner: "lane-pilot", path: installed.path, beforeSha256: null, afterSha256: after, snapshotId, evidence: [{ kind: "installed", path: installed.path, sha256: after, detail: `Immutable managed engine ${installed.sha} installed; adapted capabilities: ${installed.adaptedCapabilities.join(", ") || "none"}.` }], reason: null });
+    } catch (error) {
+      if (installed && installed.source !== "reuse" && sourceOptions.faultAt === "rollback-conflict") {
+        await sourceOptions.beforeCompensation?.(installed.path).catch(() => undefined);
+      }
+      const residuals: CoexistenceEvidence[] = [];
+      let metadataConflict = false;
+      if (installed && after) {
+        try {
+          if (ledgerWrite) {
+            const restoration = await restoreOwnershipLedgerWrite(home, ledgerWrite);
+            if (restoration.status === "conflict") {
+              metadataConflict = true;
+              for (const path of restoration.residualPaths) {
+                residuals.push({ kind: "rollback-residual", path, sha256: await anyPathHash(path), detail: restoration.reason });
+              }
+            }
+          } else {
+            const ledgerRemoval = await removeOwnershipEntryIfMatches(home, {
+              manager: input.manager,
+              path: installed.path,
+              snapshotId,
+              afterSha256: after,
+            });
+            if (ledgerRemoval === "conflict") {
+              metadataConflict = true;
+              residuals.push({ kind: "rollback-residual", path: ownershipLedgerPath(home), sha256: await anyPathHash(ownershipLedgerPath(home)), detail: "Rollback conflict: a different ownership entry now references this managed path; ledger was preserved." });
+            }
+          }
+        } catch (cleanupError) {
+          metadataConflict = true;
+          residuals.push({ kind: "rollback-residual", path: ownershipLedgerPath(home), sha256: await anyPathHash(ownershipLedgerPath(home)), detail: `Rollback conflict: ownership ledger could not be safely compensated (${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}).` });
+        }
+        if (!metadataConflict) {
+          try {
+            const snapshotRemoval = await removeSnapshotIfMatches(home, {
+              snapshotId,
+              manager: input.manager,
+              path: installed.path,
+              operation: "install",
+              afterSha256: after,
+            });
+            if (snapshotRemoval === "conflict") {
+              metadataConflict = true;
+              residuals.push({ kind: "rollback-residual", path: snapshotPath(home, snapshotId), sha256: await anyPathHash(snapshotPath(home, snapshotId)), detail: "Rollback conflict: snapshot no longer matches this install transaction and was preserved." });
+            }
+          } catch (cleanupError) {
+            metadataConflict = true;
+            residuals.push({ kind: "rollback-residual", path: snapshotPath(home, snapshotId), sha256: await anyPathHash(snapshotPath(home, snapshotId)), detail: `Rollback conflict: snapshot could not be safely removed (${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}).` });
+          }
+        }
+      }
+
+      const snapshotFile = snapshotPath(home, snapshotId);
+      if (metadataConflict && await exists(snapshotFile)
+        && !residuals.some((item) => item.path === snapshotFile)) {
+        residuals.push({ kind: "rollback-residual", path: snapshotFile, sha256: await anyPathHash(snapshotFile), detail: "Rollback left this transaction snapshot in place because ownership metadata could not be safely compensated." });
+      }
+
+      if (installed && installed.source !== "reuse" && after && !metadataConflict) {
+        const removal = await removeCreatedManagedPath(installed.path, after);
+        if (removal.status !== "removed") {
+          for (const path of removal.residualPaths) {
+            residuals.push({ kind: "rollback-residual", path, sha256: await anyPathHash(path), detail: removal.reason });
+          }
+        }
+      }
+      const engineAfter = installed?.source !== "reuse" && installed ? await anyPathHash(installed.path) : currentHash;
+      if (installed?.source !== "reuse" && installed && engineAfter && !residuals.some((item) => item.path === installed!.path)) {
+        residuals.push({ kind: "rollback-residual", path: installed.path, sha256: engineAfter, detail: "Rollback conflict: a path appeared at the managed destination during compensation and was preserved." });
+      }
+      const snapshotResidual = residuals.some((item) => item.path === snapshotPath(home, snapshotId));
+      const summary = residuals.length
+        ? `Managed install failed; rollback left ${residuals.length} reported residual path(s) and preserved them. ${residuals.map((item) => item.detail).join(" ")} Retry will choose a fresh owned engine path.`
+        : "Managed install failed; engine and metadata compensation completed. Retry is safe.";
+      return resultOf(input, {
+        status: "failed",
+        owner: "lane-pilot",
+        path: installed?.source !== "reuse" && installed ? installed.path : input.path,
+        beforeSha256: installed?.source !== "reuse" && installed ? null : currentHash,
+        afterSha256: engineAfter,
+        snapshotId: snapshotResidual ? snapshotId : null,
+        evidence: residuals,
+        reason: `${summary} Cause: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   }
 
   if (input.operation === "install" && input.manager === "opencode-plugin") {

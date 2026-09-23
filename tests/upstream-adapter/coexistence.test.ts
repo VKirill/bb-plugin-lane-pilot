@@ -1,12 +1,13 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { TARGET_SHA } from "../../src/constants";
 import { hashPath } from "../../src/hash";
-import { inventoryCoexistenceAtHome, runCoexistenceOperation } from "../../src/coexistence";
-import { newSnapshotId, saveSnapshot } from "../../src/coexistence/ownership";
+import { inventoryCoexistenceAtHome, runCoexistenceOperation, runCoexistenceOperationAtHome } from "../../src/coexistence";
+import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readSnapshot, saveSnapshot } from "../../src/coexistence/ownership";
 import { managedEngineDir } from "../../src/paths";
 import { finalizeSnapshotAfter, rollbackSnapshot, takeSnapshot, verifyRollback } from "../../src/snapshot";
 import { detectStack, installStack } from "../../src/stack-ops";
@@ -447,4 +448,149 @@ describe("typed coexistence operations", () => {
     expect(repeated.filesChanged).toEqual([]);
     expect(await treeHash(pmSettings)).toBe(settingsAfterFirst);
   });
+});
+
+const exactDd77Fixture = [
+  join(process.cwd(), "../../.agency/jobs/AG-252/tmp/upstream-ref"),
+  join(process.cwd(), "../upstream-ref"),
+].find(existsSync);
+
+async function incompatibleFallback(home: string): Promise<string> {
+  if (!exactDd77Fixture) throw new Error("Exact dd77 test fixture is unavailable.");
+  const fallback = join(home, "dirty-source");
+  execFileSync("git", ["clone", "--local", "--quiet", exactDd77Fixture, fallback]);
+  const hookPath = join(fallback, "profiles/opencode/opencode-lane/index.ts");
+  const hook = await readFile(hookPath, "utf8");
+  await writeFile(hookPath, hook.replace('"tool.execute.after"', '"tool.execute.missing"'));
+  return fallback;
+}
+
+async function managedInstall(
+  home: string,
+  fallback: string,
+  faultAt?: "after-rename" | "after-snapshot" | "after-ledger-commit" | "rollback-conflict",
+  beforeCompensation?: (managedPath: string) => Promise<void>,
+) {
+  const row = (await inventory(home)).managers.find((item) => item.manager === "managed-checkout");
+  if (!row) throw new Error("managed checkout inventory row is missing");
+  return runCoexistenceOperationAtHome({
+    projectId: "proj_test",
+    hostId,
+    operation: "install",
+    manager: "managed-checkout",
+    path: row.path,
+    expectedSha256: row.sha256,
+    targetSha: TARGET_SHA,
+  }, home, { localFallbackPath: fallback, faultAt, beforeCompensation });
+}
+
+describe("managed install transaction failure integrity", () => {
+  it.each(["after-rename", "after-snapshot", "after-ledger-commit"] as const)("compensates and safely retries after %s", async (faultAt) => {
+    const home = await makeHome();
+    const fallback = await incompatibleFallback(home);
+    const claude = join(home, ".claude/settings.json");
+    const openCode = join(home, ".config/opencode/opencode.json");
+    await mkdir(join(home, ".claude"), { recursive: true });
+    await mkdir(join(home, ".config/opencode"), { recursive: true });
+    await writeFile(claude, '{"env":{"KEEP":"yes"}}\n');
+    await writeFile(openCode, '{"model":"user/model"}\n');
+    const ordinaryBefore = { claude: await treeHash(claude), openCode: await treeHash(openCode) };
+    let preexistingSnapshotIds: string[] = [];
+    if (faultAt === "after-ledger-commit") {
+      const existingSnapshotId = newSnapshotId();
+      const configHash = await treeHash(openCode);
+      if (!configHash) throw new Error("OpenCode fixture should have a hash");
+      await saveSnapshot(home, {
+        snapshotId: existingSnapshotId,
+        manager: "opencode-config",
+        path: openCode,
+        operation: "connect",
+        owner: "lane-pilot",
+        beforeSha256: null,
+        afterSha256: configHash,
+        ownedValue: "./plugins/other.ts",
+        sourceSha: TARGET_SHA,
+      });
+      await addOwnershipEntry(home, {
+        manager: "opencode-config",
+        path: openCode,
+        ownedValue: "./plugins/other.ts",
+        owner: "lane-pilot",
+        afterSha256: configHash,
+        snapshotId: existingSnapshotId,
+        sourceSha: TARGET_SHA,
+      });
+      preexistingSnapshotIds = await readdir(join(home, ".agents/lane-pilot/coexistence/snapshots"));
+    }
+    const ledgerBefore = await treeHash(ownershipLedgerPath(home));
+
+    const failed = await managedInstall(home, fallback, faultAt);
+    expect(failed.status, failed.reason ?? "").toBe("failed");
+    expect(failed.reason).toContain("compensation completed");
+    expect(failed.evidence).toEqual([]);
+    expect((await readOwnershipLedger(home)).entries.filter((entry) => entry.manager === "managed-checkout")).toEqual([]);
+    const snapshots = await readdir(join(home, ".agents/lane-pilot/coexistence/snapshots")).catch(() => []);
+    expect(snapshots).toEqual(preexistingSnapshotIds);
+    expect(await treeHash(ownershipLedgerPath(home))).toBe(ledgerBefore);
+    const engines = await readdir(join(home, ".agents/lane-pilot/engines")).catch(() => []);
+    expect(engines.filter((name) => name.startsWith(TARGET_SHA))).toEqual([]);
+    expect({ claude: await treeHash(claude), openCode: await treeHash(openCode) }).toEqual(ordinaryBefore);
+
+    const retry = await managedInstall(home, fallback);
+    expect(retry.status, retry.reason ?? "").toBe("ok");
+    expect(retry.path).toContain("/.agents/lane-pilot/engines/");
+    expect(retry.snapshotId).toBeTruthy();
+    const entry = (await readOwnershipLedger(home)).entries.find((item) => item.path === retry.path);
+    expect(entry?.snapshotId).toBe(retry.snapshotId);
+    expect(await readSnapshot(home, retry.snapshotId!)).toMatchObject({ path: retry.path, afterSha256: retry.afterSha256 });
+    expect({ claude: await treeHash(claude), openCode: await treeHash(openCode) }).toEqual(ordinaryBefore);
+  }, 180_000);
+
+  it("fails closed on malformed ownership metadata before rename and reports no false writes", async () => {
+    const home = await makeHome();
+    const fallback = await incompatibleFallback(home);
+    const ledger = ownershipLedgerPath(home);
+    await mkdir(join(home, ".agents/lane-pilot/coexistence"), { recursive: true });
+    await writeFile(ledger, "{invalid\n");
+    const claude = join(home, ".claude/settings.json");
+    const openCode = join(home, ".config/opencode/opencode.json");
+    await mkdir(join(home, ".claude"), { recursive: true });
+    await mkdir(join(home, ".config/opencode"), { recursive: true });
+    await writeFile(claude, '{"env":{"KEEP":"yes"}}\n');
+    await writeFile(openCode, '{"model":"user/model"}\n');
+    const ordinaryBefore = { claude: await treeHash(claude), openCode: await treeHash(openCode) };
+
+    const receipt = await installStack({ requestedHostId: hostId, homeDir: home, localFallbackPath: fallback });
+    expect(receipt.status).toBe("failed");
+    expect(receipt.filesChanged).toEqual([]);
+    expect(receipt.notes.join("\n")).toContain("Ownership metadata preflight failed");
+    expect(receipt.notes.join("\n")).not.toContain("failed before a write");
+    expect(await treeHash(managedEngineDir(TARGET_SHA, home))).toBeNull();
+    expect(await readdir(join(home, ".agents/lane-pilot/coexistence/snapshots")).catch(() => [])).toEqual([]);
+    expect(await readFile(ledger, "utf8")).toBe("{invalid\n");
+    expect({ claude: await treeHash(claude), openCode: await treeHash(openCode) }).toEqual(ordinaryBefore);
+  }, 180_000);
+
+  it("preserves a changed rollback path and retries at a fresh managed destination", async () => {
+    const home = await makeHome();
+    const fallback = await incompatibleFallback(home);
+    const failed = await managedInstall(home, fallback, "rollback-conflict", async (path) => {
+      await writeFile(join(path, ".late-user-edit"), "preserve this concurrent edit\n", { flag: "wx" });
+    });
+    expect(failed.status).toBe("failed");
+    expect(failed.reason).toContain("residual path(s)");
+    expect(failed.reason).toContain("Rollback conflict");
+    const orphan = failed.path;
+    expect(await readFile(join(orphan, ".late-user-edit"), "utf8")).toBe("preserve this concurrent edit\n");
+    const orphanBeforeRetry = await treeHash(orphan);
+    expect(failed.evidence.some((item) => item.kind === "rollback-residual" && item.path === orphan && item.sha256 === orphanBeforeRetry)).toBe(true);
+    expect((await readOwnershipLedger(home)).entries.filter((entry) => entry.path === orphan)).toEqual([]);
+    expect(await readdir(join(home, ".agents/lane-pilot/coexistence/snapshots")).catch(() => [])).toEqual([]);
+
+    const retry = await managedInstall(home, fallback);
+    expect(retry.status, retry.reason ?? "").toBe("ok");
+    expect(retry.path).not.toBe(orphan);
+    expect(await treeHash(orphan)).toBe(orphanBeforeRetry);
+    expect((await readOwnershipLedger(home)).entries.some((entry) => entry.path === retry.path && entry.snapshotId === retry.snapshotId)).toBe(true);
+  }, 180_000);
 });

@@ -1,51 +1,75 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { sha256FileOrNull } from "../src/hash";
-import { INSTALL_PHASES } from "../src/install-runner";
+import { afterEach, describe, expect, it } from "vitest";
+import { TARGET_SHA } from "../src/constants";
+import { hashPath } from "../src/hash";
+import { ownershipLedgerPath } from "../src/coexistence/ownership";
 import { installStack } from "../src/stack-ops";
-import { snapshotGlobalOpenCursor } from "./npm-isolation";
 
-const FALLBACK = join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack");
+const homes: string[] = [];
+const UPSTREAM_FIXTURE = [
+  join(process.cwd(), "../../.agency/jobs/AG-252/tmp/upstream-ref"),
+  join(process.cwd(), "../upstream-ref"),
+].find(existsSync);
 const GUARD = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
-function seed(home: string): void {
-  mkdirSync(join(home, ".agents"), { recursive: true });
-  mkdirSync(join(home, ".claude"), { recursive: true });
-  writeFileSync(join(home, ".claude/settings.json"), `${JSON.stringify({ env: { KEEP: "1" } }, null, 2)}\n`);
-  writeFileSync(join(home, ".agents/keep.txt"), "before\n");
+
+async function makeHome(): Promise<string> {
+  const home = await mkdtemp(join(tmpdir(), "lane-pilot-fault-integrity-"));
+  homes.push(home);
+  return home;
 }
 
-describe("owned installStack bypasses legacy installer checkpoints", () => {
-  for (const phase of INSTALL_PHASES) {
-    it(`does not enter the legacy ${phase} checkpoint`, async () => {
-      const home = mkdtempSync(join(tmpdir(), `lane-pilot-fault-${phase}-`));
-      seed(home);
-      const settingsBefore = await sha256FileOrNull(join(home, ".claude/settings.json"));
-      const keepBefore = await sha256FileOrNull(join(home, ".agents/keep.txt"));
-      const globalBefore = snapshotGlobalOpenCursor();
-      try {
-        const receipt = await installStack({
-          requestedHostId: "host_test",
-          homeDir: home,
-          workspacePath: home,
-          localFallbackPath: FALLBACK,
-          guardSourcePath: GUARD,
-          confirmExternalOps: false,
-          stopAfterPhase: phase,
-        });
+async function makeIncompatibleFallback(home: string): Promise<string> {
+  if (!UPSTREAM_FIXTURE) throw new Error("Exact dd77 test fixture is unavailable.");
+  const fallback = join(home, "dirty-source");
+  execFileSync("git", ["clone", "--local", "--quiet", UPSTREAM_FIXTURE, fallback]);
+  const hook = join(fallback, "profiles/opencode/opencode-lane/index.ts");
+  const contents = await readFile(hook, "utf8");
+  await writeFile(hook, contents.replace('"tool.execute.after"', '"tool.execute.missing"'));
+  return fallback;
+}
 
-        expect(receipt.status, receipt.notes.join("\n")).toBe("ok");
-        expect(receipt.exitCode, receipt.notes.join("\n")).toBe(0);
-        expect(receipt.notes.join("\n")).toMatch(/install\.sh/i);
-        expect(existsSync(join(home, ".lane-pilot-phase"))).toBe(false);
-        expect(existsSync(join(home, ".lane-pilot-npm-skipped"))).toBe(false);
-        expect(snapshotGlobalOpenCursor()).toEqual(globalBefore);
-        expect(await sha256FileOrNull(join(home, ".claude/settings.json"))).toBe(settingsBefore);
-        expect(await sha256FileOrNull(join(home, ".agents/keep.txt"))).toBe(keepBefore);
-      } finally {
-        rmSync(home, { recursive: true, force: true });
-      }
-    }, 180_000);
-  }
+async function treeHash(path: string): Promise<string | null> {
+  try { return (await hashPath(path)).sha256; } catch { return null; }
+}
+
+afterEach(async () => {
+  for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true });
+});
+
+describe("managed install metadata preflight", () => {
+  it("rejects malformed ownership before rename and reports the unchanged write set", async () => {
+    const home = await makeHome();
+    const fallback = await makeIncompatibleFallback(home);
+    const ledger = ownershipLedgerPath(home);
+    await mkdir(join(home, ".agents/lane-pilot/coexistence"), { recursive: true });
+    await writeFile(ledger, "{invalid\n");
+    const claude = join(home, ".claude/settings.json");
+    const openCode = join(home, ".config/opencode/opencode.json");
+    await mkdir(join(home, ".claude"), { recursive: true });
+    await mkdir(join(home, ".config/opencode"), { recursive: true });
+    await writeFile(claude, '{"env":{"KEEP":"yes"}}\n');
+    await writeFile(openCode, '{"model":"user/model"}\n');
+    const ordinaryBefore = { claude: await treeHash(claude), openCode: await treeHash(openCode) };
+
+    const receipt = await installStack({
+      requestedHostId: "host_test",
+      homeDir: home,
+      localFallbackPath: fallback,
+      guardSourcePath: GUARD,
+    });
+
+    expect(receipt.status).toBe("failed");
+    expect(receipt.exitCode).toBe(1);
+    expect(receipt.filesChanged).toEqual([]);
+    expect(receipt.notes.join("\n")).toContain("Ownership metadata preflight failed");
+    expect(receipt.notes.join("\n")).not.toContain("failed before a write");
+    expect(await treeHash(join(home, ".agents/lane-pilot/engines", TARGET_SHA))).toBeNull();
+    expect(await readdir(join(home, ".agents/lane-pilot/coexistence/snapshots")).catch(() => [])).toEqual([]);
+    expect(await readFile(ledger, "utf8")).toBe("{invalid\n");
+    expect({ claude: await treeHash(claude), openCode: await treeHash(openCode) }).toEqual(ordinaryBefore);
+  }, 180_000);
 });

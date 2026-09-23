@@ -313,6 +313,10 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
 
   const ok = operation.status === "ok" || operation.status === "skipped";
   const changed = operation.beforeSha256 !== operation.afterSha256;
+  const rollbackResidualChanges = operation.evidence
+    .filter((item) => item.kind === "rollback-residual" && item.path
+      && !(changed && item.path === operation.path))
+    .map((item) => ({ path: item.path!, sha256Before: null, sha256After: item.sha256 }));
   let pmGuard: Awaited<ReturnType<typeof configureOwnedPmGuard>> = { snapshotPath: null, filesChanged: [], note: null };
   if (ok) {
     try {
@@ -358,6 +362,7 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
     status: ok ? "ok" : "failed",
     filesChanged: [
       ...(changed && operation.afterSha256 ? [{ path: operation.path, sha256Before: operation.beforeSha256, sha256After: operation.afterSha256 }] : []),
+      ...rollbackResidualChanges,
       ...pmGuard.filesChanged,
     ],
     externalOpsBefore: external,

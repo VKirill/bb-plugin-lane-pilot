@@ -65,6 +65,7 @@ export async function ensureUpstream(input: {
   localFallbackPath?: string;
   moduleUrl?: string;
   preferredRoot?: string;
+  forceFreshManaged?: boolean;
 }): Promise<UpstreamReady> {
   const home = resolveHome(input.homeDir);
   const fallback = input.localFallbackPath
@@ -76,12 +77,12 @@ export async function ensureUpstream(input: {
   }
 
   const preferred = managedEngineDir(TARGET_SHA, home);
-  const existing = await inspectReusable(preferred);
+  const existing = input.forceFreshManaged ? null : await inspectReusable(preferred);
   if (existing) return existing;
 
   const parent = dirname(preferred);
   await mkdir(parent, { recursive: true });
-  const destination = await isDirectory(preferred)
+  const destination = input.forceFreshManaged || await isDirectory(preferred)
     ? managedEngineDir(`${TARGET_SHA}-managed-${randomUUID().slice(0, 8)}`, home)
     : preferred;
   const staging = await mkdtemp(join(parent, `.lane-engine-${TARGET_SHA.slice(0, 8)}-`));
@@ -100,6 +101,7 @@ export async function ensureUpstream(input: {
     if (!assessment.compatible) {
       throw new Error(`reference engine is missing required interfaces: ${assessment.diagnostics.map((item) => item.capability).join(", ")}`);
     }
+    const clean = git(staging, ["status", "--porcelain"]) === "";
     try {
       await rename(staging, destination);
     } catch (error) {
@@ -114,7 +116,7 @@ export async function ensureUpstream(input: {
       path: destination,
       sha: TARGET_SHA,
       source,
-      clean: git(destination, ["status", "--porcelain"]) === "",
+      clean,
       compatible: true,
       adaptedCapabilities: assessment.adaptedCapabilities,
     };
