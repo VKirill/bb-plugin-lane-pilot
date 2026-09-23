@@ -42,6 +42,12 @@ export function browserQaVerdict(text:string, exitCode:number):BrowserQaResult["
   return "passed";
 }
 
+function hasPotentialSideEffect(cases:string[]):boolean {
+  const english = /\b(submit|purchase|pay|delete|send|grant permission|revoke permission|create|update|save|publish|upload|download|change|confirm)\b/i;
+  const russian = /удал|отправ|созда|оплат|куп|сохран|публику|подтверд|выда|отоз|измен|обнов|загруз|скача/i;
+  return cases.some((item) => english.test(item) || russian.test(item));
+}
+
 async function collectArtifacts(root:string, dir:string, limit=100):Promise<Array<{path:string; sha256:string; size:number}>> {
   const rootReal = await realpath(root);
   const results:Array<{path:string; sha256:string; size:number}> = [];
@@ -69,7 +75,7 @@ export async function runBrowserQaOnHost(raw:BrowserQaInput):Promise<BrowserQaRe
   const input = browserQaInputSchema.parse(raw);
   const target = new URL(input.url);
   if (!["http:","https:"].includes(target.protocol) || target.username || target.password) throw new Error("browser_qa_url_must_be_http_without_userinfo");
-  const sideEffectCase = input.cases.some((item) => /\b(submit|purchase|pay|delete|send|grant permission|revoke permission)\b/i.test(item));
+  const sideEffectCase = hasPotentialSideEffect(input.cases);
   if ((input.envClass === "production" || input.envClass === "unknown" || sideEffectCase) && !input.authorized) {
     throw new Error("browser_qa_requires_explicit_authorization_for_target_or_side_effect");
   }
