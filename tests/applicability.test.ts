@@ -89,7 +89,7 @@ describe("adoc applicability catalog", () => {
   });
 
   it("keeps all former UI-visible fields on screen", () => {
-    expect(VISIBLE_CATALOG).toHaveLength(201);
+    expect(VISIBLE_CATALOG).toHaveLength(200);
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
   });
 

@@ -54,6 +54,55 @@ export const migrations = [
   `ALTER TABLE lane_pilot_attempt ADD COLUMN attempt_no INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE lane_pilot_attempt ADD COLUMN dirt_before_json TEXT NOT NULL DEFAULT '[]'`,
   `ALTER TABLE lane_pilot_run ADD COLUMN closed_at INTEGER`,
+  `CREATE TABLE lane_pilot_run_next (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    pm_thread_id TEXT,
+    state TEXT NOT NULL CHECK(state IN ('pending','running','accepted','blocked','closed')),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'bb',
+    closed_at INTEGER,
+    closed_by TEXT
+  )`,
+  `INSERT INTO lane_pilot_run_next (id,project_id,pm_thread_id,state,created_at,updated_at,kind,closed_at,closed_by)
+    SELECT id,project_id,pm_thread_id,
+      CASE WHEN closed_at IS NULL THEN state ELSE 'closed' END,
+      created_at,updated_at,kind,closed_at,
+      CASE WHEN closed_at IS NULL THEN NULL ELSE 'legacy' END
+    FROM lane_pilot_run`,
+  `CREATE TABLE lane_pilot_task_next (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('bb','cli')),
+    contract_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(run_id) REFERENCES lane_pilot_run_next(id)
+  )`,
+  `INSERT INTO lane_pilot_task_next (id,run_id,kind,contract_json,created_at)
+    SELECT id,run_id,kind,contract_json,created_at FROM lane_pilot_task`,
+  `CREATE TABLE lane_pilot_attempt_next (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    thread_id TEXT,
+    state TEXT NOT NULL,
+    reason TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    attempt_no INTEGER NOT NULL DEFAULT 1,
+    dirt_before_json TEXT NOT NULL DEFAULT '[]',
+    UNIQUE(run_id,task_id,id),
+    FOREIGN KEY(run_id) REFERENCES lane_pilot_run_next(id)
+  )`,
+  `INSERT INTO lane_pilot_attempt_next (id,run_id,task_id,thread_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json)
+    SELECT id,run_id,task_id,thread_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json FROM lane_pilot_attempt`,
+  `DROP TABLE lane_pilot_attempt`,
+  `DROP TABLE lane_pilot_task`,
+  `DROP TABLE lane_pilot_run`,
+  `ALTER TABLE lane_pilot_run_next RENAME TO lane_pilot_run`,
+  `ALTER TABLE lane_pilot_task_next RENAME TO lane_pilot_task`,
+  `ALTER TABLE lane_pilot_attempt_next RENAME TO lane_pilot_attempt`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -133,7 +182,7 @@ export function setRunState(db: LanePilotDatabase, runId: string, state: string)
   db.prepare("UPDATE lane_pilot_run SET state=?, updated_at=? WHERE id=?").run(state, Date.now(), runId);
 }
 
-export function closeRun(db: LanePilotDatabase, runId: string): boolean {
+export function closeRun(db: LanePilotDatabase, runId: string, closedBy: "rpc" | "cli"): boolean {
   return db.transaction(() => {
     const run = db.prepare("SELECT state,closed_at FROM lane_pilot_run WHERE id=?").get(runId) as
       {state:string;closed_at:number|null}|undefined;
@@ -141,8 +190,9 @@ export function closeRun(db: LanePilotDatabase, runId: string): boolean {
     if (run.closed_at) return true;
     const open = db.prepare("SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') LIMIT 1").get(runId);
     if (open) return false;
-    db.prepare("UPDATE lane_pilot_run SET closed_at=?,updated_at=? WHERE id=? AND closed_at IS NULL")
-      .run(Date.now(), Date.now(), runId);
+    const now = Date.now();
+    db.prepare("UPDATE lane_pilot_run SET state='closed',closed_at=?,closed_by=?,updated_at=? WHERE id=? AND closed_at IS NULL")
+      .run(now, closedBy, now, runId);
     return true;
   }).immediate();
 }
@@ -264,8 +314,9 @@ export function getActivation(db: LanePilotDatabase, projectId: string): {
     {pm_thread_id:string; run_id:string}|undefined;
 }
 
-export function releaseActivation(db: LanePilotDatabase, projectId: string): void {
-  db.prepare("DELETE FROM lane_pilot_activation WHERE project_id=?").run(projectId);
+export function releaseActivation(db: LanePilotDatabase, projectId: string, runId?: string): void {
+  if (runId) db.prepare("DELETE FROM lane_pilot_activation WHERE project_id=? AND run_id=?").run(projectId, runId);
+  else db.prepare("DELETE FROM lane_pilot_activation WHERE project_id=?").run(projectId);
 }
 
 export function transitionAttempt(

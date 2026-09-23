@@ -78,6 +78,9 @@ Matrix applicability (355 rows, including 88 read-only): [docs/adoc-applicabilit
 - Raw Claude `agent_type` is not available; PM isolation uses project-scope settings plus plugin metadata.
 - `MultiEdit` / `NotebookEdit` are not in the observed Claude runtime; Write/Edit/Bash guards still apply.
 - External ops (`npm install -g @rama_nigg/open-cursor`, `open-cursor install`, Claude marketplace plugin install/uninstall) run only after explicit UI confirmation. Rollback records before/after; it does not promise a perfect restore of those ops.
+- Plugin SDK 0.4.104 does not expose BB's selected UI language. Lane Pilot stores its own global EN/RU preference in plugin KV; first use seeds it from the Russianizer setting when available, otherwise from a Russian document language, the browser language, and finally the document language. This accommodates BB setups whose shell `lang` stays `en` while the browser locale is Russian. The user's Lane Pilot choice takes precedence. The old per-project `ui.language` control is removed from the Lane Pilot panel.
+- BB owns the navigation panel's native “View details” menu entry. SDK 0.4.104 has no label/localization override for that host menu, so Lane Pilot cannot translate it.
+- A closed PM run retains its history and stores `state=closed`, `closed_at`, and `closed_by` (`rpc` or `cli`). Finishing requires no open writer attempts and a confirmed idle/error PM thread; live finish does not delete threads.
 
 Does not call Agency RPC. Uses public Plugin SDK only.
 
@@ -91,7 +94,7 @@ npm run build
 
 Also: `bb plugin types --check .`
 
-CLI overview: `bb lane-pilot` (`activate`, `state`, `dispatch-bb`, `dispatch-cli`, `host-detect`, `resume`, …).
+CLI overview: `bb lane-pilot` (`activate`, `state`, `finish <project-id> [run-id]`, `dispatch-bb`, `dispatch-cli`, `host-detect`, `resume`, …).
 
 ## License
 

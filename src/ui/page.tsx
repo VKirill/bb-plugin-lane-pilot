@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   experimental_Diff as Diff,
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -16,7 +16,7 @@ import {
   WRITER_EFFORT_CHOICES_BY_PROVIDER,
   type CatalogRow,
 } from "../ui-catalog";
-import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, bbInterfaceLanguage, type I18nKey, type Locale } from "../../i18n";
+import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, detectLocale, type I18nKey, type Locale } from "../../i18n";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import {
   AlertDialog,
@@ -92,7 +92,6 @@ const JEV_KEYS = new Set(["jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV"]);
 const WRITER_PROVIDER = "writer.provider";
 const WRITER_MODEL = "writer.model";
 const WRITER_EFFORT = "writer.reasoning_effort";
-const LANGUAGE_KEY = "ui.language";
 
 function fieldKey(id: string): I18nKey {
   return `field_${id}` as I18nKey;
@@ -185,6 +184,14 @@ function StatusBadge({ status }: { status: CatalogRow["uiStatus"] }) {
   return <Badge variant="outline">{t("readonlyBadge")}</Badge>;
 }
 
+function LocaleControls({ locale, onChange }: { locale: Locale; onChange: (next: Locale) => void }) {
+  return <div className="flex items-center gap-1" aria-label={t("language")}>
+    <span className="mr-1 text-xs text-muted-foreground">{t("language")}</span>
+    <Button size="sm" variant={locale === "en" ? "default" : "outline"} aria-pressed={locale === "en"} onClick={() => onChange("en")}>EN</Button>
+    <Button size="sm" variant={locale === "ru" ? "default" : "outline"} aria-pressed={locale === "ru"} onClick={() => onChange("ru")}>RU</Button>
+  </div>;
+}
+
 function runTone(state: string): "default" | "secondary" | "destructive" | "outline" {
   if (state === "accepted") return "default";
   if (state === "blocked" || state === "provider_error" || state === "validation_failed") return "destructive";
@@ -196,7 +203,9 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const { projectId: routeProjectId } = useBbContext();
   const [projectChoice, setProjectChoice] = useState("");
-  const projectId = routeProjectId ?? (subPath || projectChoice || null);
+  const [openedProjectId, setOpenedProjectId] = useState<string | null>(null);
+  const [openingProject, setOpeningProject] = useState(false);
+  const projectId = routeProjectId ?? (subPath || openedProjectId || null);
   const [projects, setProjects] = useState<Array<{ id:string; name:string }>>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectListError, setProjectListError] = useState(false);
@@ -211,51 +220,38 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const [snapshotPath, setSnapshotPath] = useState("");
   const [resultPatch, setResultPatch] = useState<string | null>(null);
   const [resultSource, setResultSource] = useState<string | null>(null);
-  const [locale, setLocale] = useState<Locale>(() => {
-    return localeFromSources(bbInterfaceLanguage(), globalThis.document?.documentElement?.lang, globalThis.navigator?.language);
-  });
-  const bbLocaleRef = useRef<Locale>(locale);
+  const [locale, setLocale] = useState<Locale>(detectLocale);
 
   useEffect(() => {
     if (projectId) return;
     let current = true;
     void rpc.call("list_projects", {}).then((result) => {
-      if (current) { setProjects(result.projects); setProjectsLoaded(true); }
+      if (current) { setProjects(result.projects); setProjectsLoaded(true); if (result.lastProjectId) setProjectChoice(result.lastProjectId); }
     }).catch(() => { if (current) setProjectListError(true); });
     return () => { current = false; };
   }, [projectId, rpc]);
 
   useEffect(() => {
-    const refresh = () => {
-      const next = localeFromSources(bbInterfaceLanguage(), globalThis.document?.documentElement?.lang, globalThis.navigator?.language);
-      bbLocaleRef.current = next;
-      if (data?.values[LANGUAGE_KEY] !== "ru" && data?.values[LANGUAGE_KEY] !== "en") {
-        setLocaleOverride(null);
-        setLocale(next);
-      }
+    let current = true;
+    const suggestedLocale = localeFromSources(globalThis.document?.documentElement?.lang, globalThis.navigator?.language, detectLocale());
+    void rpc.call("get_preferences", { suggestedLocale }).then((result) => {
+      if (!current) return;
+      setLocaleOverride(result.locale);
+      setLocale(result.locale);
+    });
+    const onLocale = (event: Event) => {
+      const next = (event as CustomEvent<Locale>).detail;
+      if (next === "en" || next === "ru") { setLocaleOverride(next); setLocale(next); }
     };
-    const observer = typeof MutationObserver === "undefined" || !globalThis.document ? null : new MutationObserver(refresh);
-    observer?.observe(document.documentElement, { attributes:true, attributeFilter:["lang"] });
-    globalThis.addEventListener?.("languagechange", refresh);
-    const poll = globalThis.setInterval?.(refresh, 300);
-    return () => { observer?.disconnect(); globalThis.removeEventListener?.("languagechange", refresh); if (poll) globalThis.clearInterval(poll); };
-  }, [data?.values]);
+    globalThis.addEventListener?.("lane-pilot-locale", onLocale);
+    return () => { current = false; globalThis.removeEventListener?.("lane-pilot-locale", onLocale); };
+  }, [rpc]);
 
-  const applyLocale = (values: Record<string, unknown>) => {
-    const bbLanguage = bbInterfaceLanguage();
-    if (bbLanguage) {
-      setLocaleOverride(null);
-      setLocale(bbLanguage);
-      return;
-    }
-    const saved = values[LANGUAGE_KEY];
-    if (saved === "ru" || saved === "en") {
-      setLocaleOverride(saved);
-      setLocale(saved);
-      return;
-    }
-    setLocaleOverride(null);
-    setLocale(bbLocaleRef.current);
+  const chooseLocale = async (next: Locale) => {
+    setLocaleOverride(next);
+    setLocale(next);
+    globalThis.dispatchEvent?.(new CustomEvent("lane-pilot-locale", { detail: next }));
+    await rpc.call("set_locale", { locale: next });
   };
 
   const load = useCallback(async () => {
@@ -265,7 +261,6 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     try {
       const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
       setData(next);
-      applyLocale(next.values);
       if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
       setResultSource(next.writerResultJson);
       setResultPatch(next.writerResultPatch);
@@ -322,13 +317,11 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
       return false;
     }
     setSaveError(null);
-    const nextValues = { ...data.values, [row.storageKey]: result.value };
     setData((current) => current ? {
       ...current,
       values: { ...current.values, [row.storageKey]: result.value },
       versions: { ...current.versions, [row.storageKey]: result.version },
     } : current);
-    if (row.storageKey === LANGUAGE_KEY) applyLocale(nextValues);
     return true;
   };
 
@@ -358,8 +351,6 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
       values: { ...current.values, ...result.values },
       versions: { ...current.versions, ...result.versions },
     } : current);
-    const nextValues = { ...data.values, ...result.values };
-    if (changes.some(({ key }) => key === LANGUAGE_KEY)) applyLocale(nextValues);
     return true;
   };
 
@@ -386,11 +377,11 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     }
   };
 
-  const finishRuns = async () => {
+  const finishRuns = async (runId: string) => {
     if (!projectId || finishing) return;
     setFinishing(true);
     try {
-      const result = await rpc.call("finish_run", { projectId });
+      const result = await rpc.call("finish_run", { projectId, runId });
       if (!result.closed) toast.error(t("finishRunBlocked"));
       else toast.success(t("runClosed"));
       await load();
@@ -400,8 +391,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   };
 
   if (!projectId) {
-    return <div className="space-y-3 p-4" data-testid="project-picker">
-      <p className="text-sm text-muted-foreground">{t("selectProject")}</p>
+    return <div className="space-y-3 p-4" data-testid="project-picker" data-locale={locale}>
+      <div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">{t("selectProject")}</p><LocaleControls locale={locale} onChange={(next) => void chooseLocale(next)} /></div>
       {projectListError ? <p role="alert" className="text-sm text-destructive">{t("projectListError")}</p> : null}
       {!projectsLoaded && !projectListError ? <p className="text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
       {projectsLoaded && projects.length === 0 && !projectListError ? <p className="text-sm text-muted-foreground">{t("noProjects")}</p> : null}
@@ -410,12 +401,19 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
         <option value="">{t("selectProject")}</option>
         {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
       </select>
+      <Button size="sm" onClick={() => {
+        if (!projectChoice || openingProject) return;
+        setOpeningProject(true);
+        void rpc.call("remember_project", { projectId: projectChoice }).then(() => setOpenedProjectId(projectChoice))
+          .catch(() => setProjectListError(true)).finally(() => setOpeningProject(false));
+      }} disabled={!projectChoice || openingProject}>{openingProject ? t("loadingProjects") : t("openProject")}</Button>
     </div>;
   }
 
   return (
     <div className="h-full overflow-auto p-4 md:p-5" data-locale={locale}>
       <div className="mx-auto w-full max-w-5xl space-y-6">
+        <div className="flex justify-end"><LocaleControls locale={locale} onChange={(next) => void chooseLocale(next)} /></div>
         {error ? (
           <Alert variant="destructive">
             <AlertTitle>{t("loadError")}</AlertTitle>
@@ -527,9 +525,6 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
               <Button size="sm" variant="outline" onClick={() => projectId && void rpc.call("resume_runs", { projectId }).then(load)}>
                 {t("resume")}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => void finishRuns()} disabled={finishing}>
-                {finishing ? t("finishRunBusy") : t("finishRun")}
-              </Button>
             </div>
             {!data?.runs.length ? (
               <p className="text-sm text-muted-foreground">{t("emptyRuns")}</p>
@@ -555,19 +550,24 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                             <Badge variant={runTone(run.state)}>{stateLabel(run.state)}</Badge>
                           </TableCell>
                           <TableCell>—</TableCell>
-                          <TableCell>{run.cliReceiptJson ? t("openReceipt") : null}</TableCell>
+                          <TableCell className="space-x-2">
+                            {run.state !== "closed" ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
+                            {run.cliReceiptJson ? t("openReceipt") : null}
+                          </TableCell>
                         </TableRow>
                       )];
                     }
-                    return run.attempts.map((attempt) => (
+                    const hasOpenAttempt = run.attempts.some((attempt) => ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(attempt.state));
+                    return run.attempts.map((attempt, index) => (
                     <TableRow key={attempt.id} data-testid={`attempt-${attempt.id}`}>
                       <TableCell className="font-mono text-xs">{run.id}</TableCell>
                       <TableCell>{run.kind}</TableCell>
                       <TableCell>
-                        <Badge variant={runTone(attempt.state)}>{stateLabel(attempt.state)}</Badge>
+                        <Badge variant={runTone(run.state === "closed" ? run.state : attempt.state)}>{stateLabel(run.state === "closed" ? run.state : attempt.state)}</Badge>
                       </TableCell>
                       <TableCell>{attempt.attempt_no || "—"}</TableCell>
                       <TableCell className="space-x-2">
+                        {index === 0 && run.state !== "closed" && !hasOpenAttempt ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
                         {attempt.thread_id ? (
                           <>
                             <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId: attempt.id }).then(load)}>

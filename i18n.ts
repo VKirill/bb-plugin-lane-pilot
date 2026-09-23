@@ -9,6 +9,10 @@ const chromeEn = {
   loadingProjects: "Loading projects…",
   noProjects: "No projects are available.",
   projectListError: "Could not load projects.",
+  openProject: "Open project",
+  language: "Language",
+  english: "English",
+  russian: "Russian",
   finishRun: "Finish PM run",
   finishRunBusy: "Finishing…",
   finishRunBlocked: "A writer attempt is still running. Stop or finish it first.",
@@ -117,6 +121,10 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   loadingProjects: "Загружаю проекты…",
   noProjects: "Нет доступных проектов.",
   projectListError: "Не удалось загрузить проекты.",
+  openProject: "Открыть проект",
+  language: "Язык",
+  english: "Английский",
+  russian: "Русский",
   finishRun: "Завершить PM-запуск",
   finishRunBusy: "Завершение…",
   finishRunBlocked: "Запуск писателя ещё выполняется. Сначала остановите или завершите его.",
@@ -229,25 +237,19 @@ export function setLocaleOverride(next: Locale | null): void {
   localeOverride = next;
 }
 
-export function bbInterfaceLanguage(): Locale | null {
-  try { return localeFromRussianizerSetting(globalThis.localStorage?.getItem("bb-plugin-ru:enabled")); }
-  catch { return null; }
-}
-
-export function localeFromRussianizerSetting(enabled: string | null | undefined): Locale | null {
-  if (enabled === "on") return "ru";
-  if (enabled === "off") return "en";
-  return null;
-}
-
-export function localeFromSources(bbUiLanguage?: string | null, documentLanguage?: string | null, navigatorLanguage?: string | null): Locale {
-  const value = bbUiLanguage || documentLanguage || navigatorLanguage || "";
+export function localeFromSources(documentLanguage?: string | null, navigatorLanguage?: string | null, russianizerHint?: string | null): Locale {
+  const value = russianizerHint || (documentLanguage?.toLowerCase().startsWith("ru") ? documentLanguage : null) || navigatorLanguage || documentLanguage || "";
   return value.toLowerCase().startsWith("ru") ? "ru" : "en";
 }
 
 export function detectLocale(): Locale {
   if (localeOverride) return localeOverride;
-  return localeFromSources(bbInterfaceLanguage(), globalThis.document?.documentElement?.lang, globalThis.navigator?.language);
+  let russianizerHint: string | null = null;
+  try {
+    const value = globalThis.localStorage?.getItem("bb-plugin-ru:enabled");
+    russianizerHint = value === "on" ? "ru" : value === "off" ? "en" : null;
+  } catch { /* browser storage can be unavailable */ }
+  return localeFromSources(globalThis.document?.documentElement?.lang, globalThis.navigator?.language, russianizerHint);
 }
 
 export function t(key: I18nKey): string {

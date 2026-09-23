@@ -61,6 +61,9 @@ async function mountWithBackend(provider: string, effort: string) {
   const slot = renderSlot(app.navPanels[0]!, { subPath: "" }, {
     context: { projectId, threadId: null },
     rpc: {
+      get_preferences: (input) => harness.behavior.callRpc("get_preferences", input) as Promise<unknown>,
+      set_locale: (input) => harness.behavior.callRpc("set_locale", input) as Promise<unknown>,
+      remember_project: (input) => harness.behavior.callRpc("remember_project", input) as Promise<unknown>,
       get_screen: (input) => harness.behavior.callRpc("get_screen", input) as Promise<unknown>,
       save_settings: (input) => {
         const changes = (input as { changes: Change[] }).changes;

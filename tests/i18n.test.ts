@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { UNAPPLIED_REASON, SETTING_CATALOG, unappliedNotValidReason } from "../src/channels";
-import { en, localeFromRussianizerSetting, localeFromSources, ru, setLocaleOverride, unappliedReason, type I18nKey } from "../i18n";
+import { en, localeFromSources, ru, setLocaleOverride, unappliedReason, type I18nKey } from "../i18n";
 
 describe("i18n dictionaries", () => {
-  it("uses the BB document language first and browser language as fallback", () => {
-    expect(localeFromRussianizerSetting("on")).toBe("ru");
-    expect(localeFromRussianizerSetting("off")).toBe("en");
-    expect(localeFromRussianizerSetting(null)).toBeNull();
-    expect(localeFromSources("ru-RU", "en", "en-US")).toBe("ru");
-    expect(localeFromSources(null, "ru-RU", "en-US")).toBe("ru");
-    expect(localeFromSources(null, "", "ru-RU")).toBe("ru");
-    expect(localeFromSources(null, "", "en-US")).toBe("en");
+  it("uses the BB language hint, a Russian document locale, then browser and document fallbacks", () => {
+    expect(localeFromSources("ru-RU", "en-US", "en")).toBe("en");
+    expect(localeFromSources("en", "ru-RU", "ru")).toBe("ru");
+    expect(localeFromSources(null, "ru-RU", null)).toBe("ru");
+    expect(localeFromSources(null, null, "ru")).toBe("ru");
+    expect(localeFromSources(null, null, null)).toBe("en");
   });
   it("has the same keys in English and Russian with no empty strings", () => {
     setLocaleOverride(null);

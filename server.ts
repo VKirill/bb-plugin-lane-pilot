@@ -69,6 +69,42 @@ function stringAt(value: unknown, key: string): string | null {
   return typeof found === "string" && found.length > 0 ? found : null;
 }
 
+async function finishRunSafely(
+  bb: BbPluginApi,
+  db: ReturnType<typeof openDatabase>,
+  projectId: string,
+  runId: string,
+  closedBy: "rpc" | "cli",
+): Promise<void> {
+  const run = getRun(db, runId);
+  if (!run || run.project_id !== projectId) throw new Error("run does not belong to this project");
+  if (run.closed_at) {
+    releaseActivation(db, projectId, runId);
+    return;
+  }
+  if (listOpenAttempts(db).some((attempt) => attempt.run_id === runId)) {
+    throw new Error("running attempts remain; cancel them before finishing the run");
+  }
+  if (run.pm_thread_id) {
+    const threads = bb.sdk.threads as typeof bb.sdk.threads & {
+      listRunning?: (query?: Record<string, unknown>) => Promise<Array<{ id: string }>>;
+    };
+    if (typeof threads.listRunning !== "function") throw new Error("cannot verify PM status: threads.listRunning is unavailable");
+    await threads.stop({ threadId: run.pm_thread_id });
+    const info = await threads.get({ threadId: run.pm_thread_id });
+    const status = stringAt(info, "status");
+    if (status !== "idle" && status !== "error") {
+      throw new Error(`cannot finish PM run: PM thread status is ${status ?? "unknown"}`);
+    }
+    const running = await threads.listRunning({});
+    if (running.some((thread) => thread.id === run.pm_thread_id)) {
+      throw new Error("cannot finish PM run: PM thread is still listed as running");
+    }
+  }
+  if (!closeRun(db, runId, closedBy)) throw new Error("running attempts remain; cancel them before finishing the run");
+  releaseActivation(db, projectId, runId);
+}
+
 function outputText(value: unknown): string {
   for (const key of ["text", "output", "lastAssistantText", "content"]) {
     const found = valueAt(value, key);
@@ -856,32 +892,31 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   bb.rpc.register(rpcContract, {
+    get_preferences: async ({ suggestedLocale }) => {
+      const storedLocale = await bb.storage.kv.get<string>("preferences:locale");
+      const lastProjectId = await bb.storage.kv.get<string>("preferences:lastProjectId");
+      const resolvedLocale: "en" | "ru" = storedLocale === "ru" ? "ru" : storedLocale === "en" ? "en" : suggestedLocale;
+      if (storedLocale !== "en" && storedLocale !== "ru") await bb.storage.kv.set("preferences:locale", resolvedLocale);
+      return { locale: resolvedLocale, lastProjectId: lastProjectId ?? null };
+    },
+    set_locale: async ({ locale }) => {
+      await bb.storage.kv.set("preferences:locale", locale);
+      return { locale };
+    },
+    remember_project: async ({ projectId }) => {
+      await bb.storage.kv.set("preferences:lastProjectId", projectId);
+      return { ok: true as const };
+    },
     list_projects: async () => {
       const projects = await bb.sdk.projects.list({ includePersonal: true });
-      return { projects: projects.map(({ id, name }) => ({ id, name })) };
+      return {
+        projects: projects.map(({ id, name }) => ({ id, name })),
+        lastProjectId: await bb.storage.kv.get<string>("preferences:lastProjectId") ?? null,
+      };
     },
-    finish_run: async ({ projectId }) => {
-      const runs = listRunsWithAttempts(db, projectId).filter((run) => !run.closed_at);
-      const finishedRunIds: string[] = [];
-      for (const run of runs) {
-        const open = listOpenAttempts(db).filter((attempt) => attempt.run_id === run.id);
-        if (open.length) return { projectId, finishedRunIds, closed: false };
-        const thread = run.pm_thread_id;
-        if (thread) {
-          await bb.sdk.threads.stop({ threadId: thread }).catch(() => undefined);
-          const info = await bb.sdk.threads.get({ threadId: thread }).catch(() => null);
-          const status = stringAt(info, "status");
-          const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{ id: string }>> }).listRunning;
-          const running = listRunning ? await listRunning({}) : [];
-          if (running.some((item) => item.id === thread) || status === "active" || status === "running") {
-            throw new Error(`PM thread is still running (${status ?? "unknown"})`);
-          }
-        }
-        if (!closeRun(db, run.id)) return { projectId, finishedRunIds, closed: false };
-        finishedRunIds.push(run.id);
-      }
-      releaseActivation(db, projectId);
-      return { projectId, finishedRunIds, closed: true };
+    finish_run: async ({ projectId, runId }) => {
+      await finishRunSafely(bb, db, projectId, runId, "rpc");
+      return { projectId, finishedRunIds: [runId], closed: true };
     },
     activate_pm: ({ projectId, sourceThreadId }) => {
       if (!sourceThreadId) throw new Error("Open an ordinary thread before enabling Lane Pilot");
@@ -1133,8 +1168,8 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"configure", summary:"Save prototype project settings", usage:"bb lane-pilot configure '<json>'" },
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
-      { name:"finish", summary:"Close runs with no live attempts and release project activation", usage:"bb lane-pilot finish <project-id>" },
-      { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id>" },
+      { name:"finish", summary:"Close a PM run after observing it idle and release activation", usage:"bb lane-pilot finish <project-id> [run-id]" },
+      { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id> [run-id]" },
       { name:"cancel", summary:"Stop a writer and persist canceled after observing idle", usage:"bb lane-pilot cancel <attempt-id>" },
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
@@ -1166,29 +1201,19 @@ export default async function plugin(bb: BbPluginApi) {
         if (command === "state" && args.length === 1) {
           return { exitCode:0, stdout:JSON.stringify(inspectState(db, args[0]!), null, 2) };
         }
-        if ((command === "finish" || command === "deactivate") && args.length === 1) {
+        if ((command === "finish" || command === "deactivate") && (args.length === 1 || args.length === 2)) {
           const projectId = args[0]!;
           const runs = listRunsWithAttempts(db, projectId).filter((run) => !run.closed_at);
-          const finishedRunIds: string[] = [];
-          for (const run of runs) {
-            if (listOpenAttempts(db).some((attempt) => attempt.run_id === run.id)) {
-              return { exitCode:1, stdout:JSON.stringify({ projectId, finishedRunIds, closed:false, reason:"running attempts remain" }) };
-            }
-            if (run.pm_thread_id) {
-              await bb.sdk.threads.stop({ threadId:run.pm_thread_id }).catch(() => undefined);
-              const info = await bb.sdk.threads.get({ threadId:run.pm_thread_id }).catch(() => null);
-              const status = stringAt(info, "status");
-              const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{id:string}>> }).listRunning;
-              const running = listRunning ? await listRunning({}) : [];
-              if (running.some((thread) => thread.id === run.pm_thread_id) || status === "active" || status === "running") {
-                throw new Error(`PM thread is still running (${status ?? "unknown"})`);
-              }
-            }
-            if (!closeRun(db, run.id)) return { exitCode:1, stdout:JSON.stringify({ projectId, finishedRunIds, closed:false }) };
-            finishedRunIds.push(run.id);
+          const activation = getActivation(db, projectId);
+          const runId = args[1] ?? (activation?.run_id && runs.some((run) => run.id === activation.run_id)
+            ? activation.run_id
+            : runs.length === 1 ? runs[0]!.id : null);
+          if (!runId) {
+            if (!runs.length) return { exitCode:0, stdout:JSON.stringify({ projectId, finishedRunIds:[], closed:true }) };
+            throw new Error("specify a run id when the project has multiple open runs");
           }
-          releaseActivation(db, projectId);
-          return { exitCode:0, stdout:JSON.stringify({ projectId, finishedRunIds, closed:true }) };
+          await finishRunSafely(bb, db, projectId, runId, "cli");
+          return { exitCode:0, stdout:JSON.stringify({ projectId, finishedRunIds:[runId], closed:true }) };
         }
         if (command === "cancel" && args.length === 1) {
           const attempt = getAttempt(db, args[0]!);

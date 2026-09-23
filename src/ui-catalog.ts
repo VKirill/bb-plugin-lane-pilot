@@ -385,7 +385,7 @@ export const UI_CATALOG: CatalogRow[] = [
 ];
 export const WRITER_EFFORT_CHOICES_BY_PROVIDER: Record<string, string[]> = {"agy": ["low", "medium", "high"], "grok": ["low", "medium", "high"], "qwen": ["low", "medium", "high"], "kimi": ["low", "medium", "high"], "codex": ["low", "medium", "high", "xhigh", "max"], "cursor": ["low", "medium", "high"], "opencode": ["low", "medium", "high"]};
 
-export const VISIBLE_CATALOG = UI_CATALOG.filter((row) => row.uiStatus === "editable" || row.uiStatus === "readonly" || row.uiStatus === "gap");
+export const VISIBLE_CATALOG = UI_CATALOG.filter((row) => row.id !== "s183" && (row.uiStatus === "editable" || row.uiStatus === "readonly" || row.uiStatus === "gap"));
 export const EDITABLE_IDS = VISIBLE_CATALOG.filter((row) => row.uiStatus === "editable").map((row) => row.id);
 export const READONLY_IDS = VISIBLE_CATALOG.filter((row) => row.uiStatus === "readonly").map((row) => row.id);
 export const GAP_IDS = VISIBLE_CATALOG.filter((row) => row.uiStatus === "gap").map((row) => row.id);

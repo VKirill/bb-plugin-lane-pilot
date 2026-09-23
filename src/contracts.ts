@@ -180,12 +180,24 @@ export const hostContract = defineRpcContract({
 });
 
 export const rpcContract = defineRpcContract({
+  get_preferences: {
+    input: z.object({ suggestedLocale: z.enum(["en", "ru"]) }).strict(),
+    output: z.object({ locale: z.enum(["en", "ru"]), lastProjectId: z.string().nullable() }).strict(),
+  },
+  set_locale: {
+    input: z.object({ locale: z.enum(["en", "ru"]) }).strict(),
+    output: z.object({ locale: z.enum(["en", "ru"]) }).strict(),
+  },
+  remember_project: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
   list_projects: {
     input: z.object({}).strict(),
-    output: z.object({ projects: z.array(z.object({ id: z.string(), name: z.string() }).strict()) }).strict(),
+    output: z.object({ projects: z.array(z.object({ id: z.string(), name: z.string() }).strict()), lastProjectId: z.string().nullable() }).strict(),
   },
   finish_run: {
-    input: z.object({ projectId: z.string().min(1) }).strict(),
+    input: z.object({ projectId: z.string().min(1), runId: z.string().min(1) }).strict(),
     output: z.object({ projectId: z.string(), finishedRunIds: z.array(z.string()), closed: z.boolean() }).strict(),
   },
   activate_pm: {

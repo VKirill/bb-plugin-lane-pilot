@@ -16,7 +16,7 @@ export const ATTEMPT_STATES = [
 
 export type AttemptState = (typeof ATTEMPT_STATES)[number];
 
-export const RUN_STATES = ["pending", "running", "accepted", "blocked"] as const;
+export const RUN_STATES = ["pending", "running", "accepted", "blocked", "closed"] as const;
 export type RunState = (typeof RUN_STATES)[number];
 
 export type TransitionEvent =

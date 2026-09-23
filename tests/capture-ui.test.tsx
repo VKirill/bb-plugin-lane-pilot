@@ -54,6 +54,10 @@ async function mount(lang: string) {
   return renderSlot(app.navPanels[0]!, { subPath: "" }, {
     context: { projectId: "proj_ui", threadId: null },
     rpc: {
+      get_preferences: (input: unknown) => ({ locale: (input as {suggestedLocale:"en"|"ru"}).suggestedLocale, lastProjectId: null }),
+      set_locale: (input: unknown) => ({ locale: (input as {locale:"en"|"ru"}).locale }),
+      remember_project: () => ({ ok:true }),
+      list_projects: () => ({ projects:[], lastProjectId:null }),
       get_screen: () => screenFixture(),
       save_setting: () => ({ ok: true, conflict: false, version: 2, value: true }),
       save_settings: () => ({ ok:true, conflict:false, values:{}, versions:{} }),

@@ -4,6 +4,8 @@ import plugin from "../server";
 import {
   createAttempt,
   createRun,
+  createTask,
+  claimActivation,
   getAttempt,
   openDatabase,
   savePrototypeConfig,
@@ -26,13 +28,22 @@ const config = {
 };
 
 describe("production spawn_unknown reconciliation", () => {
+  it("stores one global user locale and gives it priority over later language hints", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
+    await plugin(bb);
+    expect(await harness.behavior.callRpc("get_preferences", { suggestedLocale:"ru" })).toMatchObject({ locale:"ru" });
+    await harness.behavior.callRpc("set_locale", { locale:"en" });
+    expect(await harness.behavior.callRpc("get_preferences", { suggestedLocale:"ru" })).toMatchObject({ locale:"en" });
+    await harness.lifecycle.dispose();
+  });
+
   it("finishes an idle project run through CLI and allows another activation", async () => {
     const stopped: string[] = [];
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
       sdk:{ threads:{
         stop: async ({ threadId }) => { stopped.push(threadId); },
-        get: async () => ({ status:"completed" }) as never,
+        get: async () => ({ status:"idle" }) as never,
         listRunning: async () => [],
         getPluginMetadata: async () => ({}),
         spawn: async () => ({ id:"pm-after-finish" }) as never,
@@ -54,13 +65,61 @@ describe("production spawn_unknown reconciliation", () => {
     expect(finish.exitCode).toBe(0);
     expect(JSON.parse(finish.stdout)).toMatchObject({ projectId, closed:true, finishedRunIds:["run-before-finish"] });
     expect(stopped).toEqual(["pm-before-finish"]);
-    expect((db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id='run-before-finish'").get() as {closed_at:number|null}).closed_at).not.toBeNull();
+    expect(db.prepare("SELECT state,closed_at,closed_by FROM lane_pilot_run WHERE id='run-before-finish'").get()).toMatchObject({ state:"closed", closed_by:"cli" });
 
     const next = await harness.behavior.callRpc("activate_pm", { projectId, sourceThreadId:"source-thread" }) as {threadId:string;runId:string};
     expect(next).toMatchObject({ threadId:"pm-after-finish", runId:expect.any(String) });
     expect((db.prepare("SELECT state FROM lane_pilot_run WHERE id=?").get(next.runId) as {state:string}).state).toBe("running");
     await harness.behavior.runCli(["finish", projectId]);
     await harness.lifecycle.dispose();
+  });
+
+  it("rejects RPC and CLI finish while a writer attempt is open and keeps activation claimed", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ threads:{
+      stop: async () => undefined,
+      get: async () => ({ status:"idle" }) as never,
+      listRunning: async () => [],
+    } } });
+    const db = openDatabase(bb);
+    createRun(db, "run-open-attempt", projectId);
+    setRunThread(db, "run-open-attempt", pmThreadId);
+    createTask(db, { id:"task-open-attempt", runId:"run-open-attempt", kind:"bb", contract:{} });
+    createAttempt(db, { id:"attempt-open", runId:"run-open-attempt", taskId:"task-open-attempt" });
+    claimActivation(db, { projectId, pmThreadId, runId:"run-open-attempt" });
+    await plugin(bb);
+
+    await expect(harness.behavior.callRpc("finish_run", { projectId, runId:"run-open-attempt" }))
+      .rejects.toThrow(/running attempts remain/);
+    const cli = await harness.behavior.runCli(["finish", projectId, "run-open-attempt"]);
+    expect(cli.exitCode).toBe(1);
+    expect(cli.stderr).toMatch(/running attempts remain/);
+    expect((db.prepare("SELECT state,closed_at FROM lane_pilot_run WHERE id='run-open-attempt'").get() as {state:string;closed_at:number|null}))
+      .toEqual({ state:"running", closed_at:null });
+    expect(db.prepare("SELECT run_id FROM lane_pilot_activation WHERE project_id=?").get(projectId)).toEqual({ run_id:"run-open-attempt" });
+    await harness.lifecycle.dispose();
+  });
+
+  it("fails closed when PM stop, status observation, or running-list observation fails", async () => {
+    const faults: Array<{ name:string; threads: Record<string, unknown> }> = [
+      { name:"stop rejected", threads:{ stop:async () => { throw new Error("stop unavailable"); }, get:async () => ({ status:"idle" }), listRunning:async () => [] } },
+      { name:"get rejected", threads:{ stop:async () => undefined, get:async () => { throw new Error("get unavailable"); }, listRunning:async () => [] } },
+      { name:"listRunning unavailable", threads:{ stop:async () => undefined, get:async () => ({ status:"idle" }), listRunning:undefined } },
+    ];
+    for (const fault of faults) {
+      const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ threads:fault.threads as never } });
+      const db = openDatabase(bb);
+      const runId = `run-${fault.name}`;
+      createRun(db, runId, projectId);
+      setRunThread(db, runId, pmThreadId);
+      claimActivation(db, { projectId, pmThreadId, runId });
+      await plugin(bb);
+      const cli = await harness.behavior.runCli(["finish", projectId, runId]);
+      expect(cli.exitCode, fault.name).toBe(1);
+      expect((db.prepare("SELECT state,closed_at FROM lane_pilot_run WHERE id=?").get(runId) as {state:string;closed_at:number|null}))
+        .toMatchObject({ state:"running", closed_at:null });
+      expect(db.prepare("SELECT run_id FROM lane_pilot_activation WHERE project_id=?").get(projectId)).toEqual({ run_id:runId });
+      await harness.lifecycle.dispose();
+    }
   });
 
   it("reconciles by metadata after the spawn response is lost and continues with the found thread", async () => {

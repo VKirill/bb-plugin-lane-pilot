@@ -43,11 +43,20 @@ function screenFixture() {
   };
 }
 
-async function mountPage(rpc: Record<string, (input: never) => unknown> = {}) {
+async function mountPage(
+  rpc: Record<string, (input: unknown) => unknown> = {},
+  context: { projectId: string | null; threadId: string | null } = { projectId:"proj_ui", threadId:null },
+  subPath = "",
+) {
   const app = await loadPluginApp(() => import("../app"));
-  return renderSlot(app.navPanels[0]!, { subPath: "" }, {
-    context: { projectId: "proj_ui", threadId: null },
+  return renderSlot(app.navPanels[0]!, { subPath }, {
+    context,
     rpc: {
+      get_preferences: (input: unknown) => ({ locale: (input as {suggestedLocale:"en"|"ru"}).suggestedLocale, lastProjectId: null }),
+      set_locale: (input: unknown) => ({ locale: (input as {locale:"en"|"ru"}).locale }),
+      remember_project: () => ({ ok:true }),
+      list_projects: () => ({ projects:[{ id:"proj_ui", name:"UI test" }], lastProjectId:"proj_ui" }),
+      finish_run: () => ({ projectId:"proj_ui", finishedRunIds:[], closed:true }),
       get_screen: () => screenFixture(),
       save_setting: () => ({ ok: true, conflict: false, version: 2, value: true }),
       save_settings: () => ({ ok:true, conflict:false, values:{}, versions:{} }),
@@ -67,6 +76,20 @@ describe("Lane Pilot UI", () => {
   afterEach(() => {
     setLocaleOverride(null);
     document.documentElement.lang = "en";
+  });
+
+  it("opens the selected project from the no-context picker and remembers it", async () => {
+    const remember = vi.fn(() => ({ ok:true }));
+    const slot = await mountPage({
+      list_projects: () => ({ projects:[{ id:"proj_ui", name:"UI test" }], lastProjectId:"proj_ui" }),
+      remember_project: remember,
+    }, { projectId:null, threadId:null });
+    const select = await slot.findByLabelText(en.selectProject) as HTMLSelectElement;
+    expect(select.value).toBe("proj_ui");
+    fireEvent.click(slot.getByRole("button", { name:en.openProject }));
+    await slot.findByText(en.importSource);
+    expect(remember).toHaveBeenCalledWith({ projectId:"proj_ui" });
+    slot.lifecycle.unmount();
   });
 
   it("renders every editable and read-only catalog field", async () => {
@@ -244,11 +267,12 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
-  it("applies saved ui.language even when document lang is en", async () => {
+  it("applies saved global locale even when document lang is en", async () => {
     document.documentElement.lang = "en";
     const base = screenFixture();
     const slot = await mountPage({
-      get_screen: () => ({ ...base, values: { ...base.values, "ui.language": "ru" } }),
+      get_preferences: () => ({ locale:"ru", lastProjectId:null }),
+      get_screen: () => base,
     });
     await slot.findByText(ru.tabSettings);
     fireEvent.click(slot.getAllByTestId("tab-monitor").at(-1)!);
@@ -257,11 +281,11 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
-  it("does not leak ui.language into document.lang or another project", async () => {
+  it("does not leak the locale into document.lang", async () => {
     document.documentElement.lang = "en";
     const base = screenFixture();
     const first = await mountPage({
-      get_screen: () => ({ ...base, values: { ...base.values, "ui.language": "ru" } }),
+      get_preferences: () => ({ locale:"ru", lastProjectId:null }),
     });
     await first.findByText(ru.tabSettings);
     expect(document.documentElement.lang).toBe("en");
@@ -277,7 +301,9 @@ describe("Lane Pilot UI", () => {
 
   it("hides cancel/retry when a run has no attempt", async () => {
     const base = screenFixture();
+    const finish = vi.fn(() => ({ projectId:"proj_ui", finishedRunIds:["lprun_cli"], closed:true }));
     const slot = await mountPage({
+      finish_run: finish,
       get_screen: () => ({
         ...base,
         runs: [{
@@ -297,6 +323,10 @@ describe("Lane Pilot UI", () => {
     const monitor = slot.getByTestId("run-monitor");
     expect(monitor.textContent).not.toContain(en.cancel);
     expect(monitor.textContent).toContain("cli-receipt.json");
+    const finishButton = Array.from(monitor.querySelectorAll("button")).find((button) => button.textContent === en.finishRun);
+    expect(finishButton).toBeTruthy();
+    fireEvent.click(finishButton!);
+    await waitFor(() => expect(finish).toHaveBeenCalledWith({ projectId:"proj_ui", runId:"lprun_cli" }));
     slot.lifecycle.unmount();
   });
 
