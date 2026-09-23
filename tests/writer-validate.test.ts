@@ -55,6 +55,57 @@ const task: TaskV2 = {
 };
 
 describe("BB writer validation on the server path", () => {
+  it("returns dispatch immediately and exposes the persisted receipt through bounded wait", async () => {
+    let releaseWait!: (value:{matched:boolean; thread:{status:string}}) => void;
+    let snapshots = 0;
+    const delayed = new Promise<{matched:boolean; thread:{status:string}}>((resolve) => { releaseWait = resolve; });
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{ threads:{
+        getPluginMetadata: async ({ threadId }) => threadId === pmThreadId
+          ? { role:"pm", lanePilotRunId:"run-delayed" }
+          : { role:"writer" },
+        spawn: async () => ({ id:"writer-delayed" }),
+        wait: async () => delayed,
+        get: async () => ({ id:"writer-delayed", status:"idle" }),
+        output: async () => ({ text:"writer output" }),
+        list: async () => [] as never,
+      }, files:{
+        read: async ({ path }) => path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
+        write: async () => ({ ok:true }),
+      } },
+      experimental_callHostRpc: (call) => {
+        if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
+        const command = String((call.input as { command?:string }).command ?? "");
+        return { hostId:"host-test", exitCode:0, stdout:command.includes("porcelain")
+          ? JSON.stringify(++snapshots === 1 ? [] : [{ path:"hello.txt", sha256:"written" }]) : "", stderr:"" };
+      },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    createRun(db, "run-delayed", projectId);
+    setRunThread(db, "run-delayed", pmThreadId);
+    await plugin(bb);
+    const startedAt = Date.now();
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, task:{ ...task, id:"delayed-task", verify:"none", verification:[] } },
+      { threadId:pmThreadId, projectId },
+    )));
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(dispatched).toMatchObject({ runId:"run-delayed", state:"queued", attemptId:expect.any(String), writerThreadId:null });
+    const stillRunning = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:"run-delayed", timeoutSec:1 }, { threadId:pmThreadId, projectId },
+    )));
+    releaseWait({ matched:true, thread:{ status:"idle" } });
+    expect(stillRunning).toMatchObject({ state:"running", attemptId:dispatched.attemptId, writerThreadId:"writer-delayed" });
+    const completed = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:"run-delayed", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+    )));
+    expect(completed).toMatchObject({ state:"accepted", receipt:{ lanePilotRunId:"run-delayed", attemptId:dispatched.attemptId } });
+    await harness.lifecycle.dispose();
+  });
+
   it("blocks CLI dispatch with a corrupt provider setting before calling the host", async () => {
     let hostCalls = 0;
     const { bb, harness } = createFakePluginHost({
@@ -160,11 +211,16 @@ describe("BB writer validation on the server path", () => {
     createRun(db, "run-accepted", projectId);
     setRunThread(db, "run-accepted", pmThreadId);
     await plugin(bb);
-    await harness.behavior.callAgentTool(
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
       { confirm:true, task:{ ...task, id:"accepted-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
-    );
+    )));
+    expect(dispatched).toMatchObject({ runId:"run-accepted", state:"queued", attemptId:expect.any(String), writerThreadId:null });
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:"run-accepted", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+    )));
+    expect(result.state).toBe("accepted");
 
     const acceptancePath = "/tmp/writer/.agents/runs/run-accepted/artifacts/accepted-task/acceptance.json";
     const acceptance = JSON.parse(written.get(acceptancePath) ?? "null") as unknown;
@@ -214,14 +270,16 @@ describe("BB writer validation on the server path", () => {
     createRun(db, "run-v", projectId);
     setRunThread(db, "run-v", pmThreadId);
     await plugin(bb);
-    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
       { confirm:true, task },
       { threadId:pmThreadId, projectId },
     )));
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
+    )));
     expect(ran.filter((command) => command === "true" || command === "false")).toEqual(["true", "false", "true", "false"]);
-    expect(result.status).toBe("blocked");
-    expect(String(result.reason)).toMatch(/false|retry limit|boom/);
+    expect(result.state).toBe("blocked");
     await harness.lifecycle.dispose();
   });
 
@@ -263,14 +321,17 @@ describe("BB writer validation on the server path", () => {
     createRun(db, "run-v", projectId);
     setRunThread(db, "run-v", pmThreadId);
     await plugin(bb);
-    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
       { confirm:true, task:{ ...task, id:"timeout1", verification:[{ command:"true", cwd:config.writerWorkspacePath }] } },
       { threadId:pmThreadId, projectId },
     )));
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
+    )));
     expect(order[0]).toBe("state:timeout");
     expect(order[1]).toBe("stop");
-    expect(result.status === "timeout" || result.status === "blocked").toBe(true);
+    expect(result.state === "timeout" || result.state === "blocked").toBe(true);
     await harness.lifecycle.dispose();
   });
 
@@ -396,16 +457,17 @@ describe("BB writer validation on the server path", () => {
     createRun(db, "run-dirt", projectId);
     setRunThread(db, "run-dirt", pmThreadId);
     await plugin(bb);
-    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
       { confirm:true, task:{ ...task, id:"dirt-fail", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
+    )));
     expect(spawnCalled).toBe(0);
-    expect(result.status).toBe("blocked");
-    expect(String(result.reason)).toMatch(/git status failed|retry limit|cannot read writer-workspace/);
-    expect(getAttempt(db, String(result.attemptId ?? ""))?.state === "blocked"
-      || String(result.reason).includes("retry limit")).toBe(true);
+    expect(result.state).toBe("blocked");
+    expect(getAttempt(db, dispatched.attemptId)?.state).toBe("spawn_rejected");
     await harness.lifecycle.dispose();
   });
 

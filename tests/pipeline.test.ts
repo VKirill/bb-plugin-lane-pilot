@@ -480,7 +480,7 @@ describe("CLI run outcome", () => {
 });
 
 describe("PM tool gating", () => {
-  it("exposes writer/cli tools only for origin.pluginId=lane-pilot and role=pm", async () => {
+  it("exposes writer, wait and cli tools only for origin.pluginId=lane-pilot and role=pm", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
@@ -504,7 +504,7 @@ describe("PM tool gating", () => {
       origin:{ pluginId:"other" },
       pluginMetadata:{ role:"pm", lanePilotRunId:"run-x" },
     } as never);
-    expect(pm.tools.map((tool) => tool.name)).toEqual(["lane_pilot_dispatch_writer","lane_pilot_dispatch_cli"]);
+    expect(pm.tools.map((tool) => tool.name)).toEqual(["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli"]);
     expect(writer.tools).toEqual([]);
     expect(ordinary.tools).toEqual([]);
     await harness.lifecycle.dispose();

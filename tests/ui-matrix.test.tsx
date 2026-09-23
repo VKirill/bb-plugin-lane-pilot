@@ -63,7 +63,11 @@ async function mountPage(
       cancel_attempt: () => ({ ok: true, state: "canceled", reason: null }),
       retry_attempt: () => ({ ok: true, state: "queued", attemptId: "lpattempt_2", reason: null }),
       resume_runs: () => ({ resumed: [], skipped: [], finished: [] }),
-      stack_detect: () => ({ scenario: "S1" }),
+      stack_detect: () => ({
+        hostId:"host_ui", laneStack:{ present:true, version:"1.38.0", sourceSha:"abc123" },
+        openCode:{ present:true, version:"1.18.30" }, workspace:{ path:"/tmp/lane-pilot-ui", present:true },
+        targetSha:"abc123", matchesTarget:true, scenario:"S1",
+      }),
       stack_install: () => ({ status: "ok" }),
       stack_connect: () => ({ status: "ok" }),
       stack_rollback: () => ({ status: "ok" }),
@@ -270,6 +274,41 @@ describe("Lane Pilot UI", () => {
     const install = await slot.findByTestId("install-receipt");
     expect(install.textContent).toContain("\"action\":\"install\"");
     expect(install.textContent).not.toContain("hello from writer");
+    slot.lifecycle.unmount();
+  });
+
+  it("shows stack detection details in English and Russian", async () => {
+    for (const locale of ["en", "ru"] as const) {
+      const slot = await mountPage({
+        get_preferences: () => ({ locale, preference:locale, lastProjectId:null }),
+      });
+      fireEvent.mouseDown(slot.getByTestId("tab-install"), { button:0 });
+      fireEvent.click(slot.getByTestId("tab-install"));
+      await waitFor(() => expect(slot.getByTestId("install-panel").hidden).toBe(false));
+      fireEvent.click(slot.getByText(locale === "ru" ? ru.detect : en.detect));
+      const result = await slot.findByTestId("stack-detect-result");
+      expect(result.textContent).toContain(locale === "ru" ? ru.detectScenario : en.detectScenario);
+      expect(result.textContent).toContain("S1");
+      expect(result.textContent).toContain("1.38.0");
+      expect(result.textContent).toContain("1.18.30");
+      expect(result.textContent).toContain("/tmp/lane-pilot-ui");
+      expect(result.textContent).toContain("/tmp/snapshot");
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("uses a mobile card monitor and hides the wide table below the sm breakpoint", async () => {
+    const slot = await mountPage();
+    fireEvent.mouseDown(slot.getByTestId("tab-monitor"), { button:0 });
+    fireEvent.click(slot.getByTestId("tab-monitor"));
+    await waitFor(() => expect(slot.getByTestId("run-monitor").hidden).toBe(false));
+    const mobile = await slot.findByTestId("run-monitor-mobile");
+    expect(mobile.querySelector('[data-testid="mobile-attempt-lpattempt_1"]')).not.toBeNull();
+    const monitor = slot.getByTestId("run-monitor");
+    const wideWrapper = Array.from(monitor.querySelectorAll("div")).find((element) => element.classList.contains("hidden") && element.classList.contains("sm:block"));
+    const wideTable = wideWrapper?.querySelector("table");
+    expect(wideTable).not.toBeNull();
+    expect(mobile.className).toContain("sm:hidden");
     slot.lifecycle.unmount();
   });
 

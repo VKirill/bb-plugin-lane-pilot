@@ -88,6 +88,16 @@ type ScreenPayload = {
   cliReceiptJson: string | null;
 };
 
+type StackDetectResult = {
+  hostId: string;
+  laneStack: { present:boolean; version:string|null; sourceSha:string|null };
+  openCode: { present:boolean; version:string|null };
+  workspace: { path:string; present:boolean };
+  targetSha: string;
+  matchesTarget: boolean;
+  scenario: "S1"|"S2"|"S3";
+};
+
 const JEV_KEYS = new Set(["jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV"]);
 const WRITER_PROVIDER = "writer.provider";
 const WRITER_MODEL = "writer.model";
@@ -219,6 +229,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingOp, setPendingOp] = useState<"install" | "connect" | "rollback" | null>(null);
   const [snapshotPath, setSnapshotPath] = useState("");
+  const [detectResult, setDetectResult] = useState<StackDetectResult | null>(null);
   const [resultPatch, setResultPatch] = useState<string | null>(null);
   const [resultSource, setResultSource] = useState<string | null>(null);
   const [locale, setLocale] = useState<Locale>(detectLocale);
@@ -381,7 +392,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const runStack = async (op: "detect" | "install" | "connect" | "rollback", confirm = false) => {
     if (!projectId) return;
     try {
-      if (op === "detect") await rpc.call("stack_detect", { projectId });
+      if (op === "detect") setDetectResult(await rpc.call("stack_detect", { projectId }) as StackDetectResult);
       if (op === "install") await rpc.call("stack_install", { projectId, confirmExternalOps: confirm });
       if (op === "connect") await rpc.call("stack_connect", { projectId, confirmExternalOps: confirm });
       if (op === "rollback") await rpc.call("stack_rollback", { projectId, snapshotPath });
@@ -545,6 +556,33 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
             {!data?.runs.length ? (
               <p className="text-sm text-muted-foreground">{t("emptyRuns")}</p>
             ) : (
+              <>
+              <div className="space-y-3 sm:hidden" data-testid="run-monitor-mobile">
+                {data.runs.flatMap((run) => run.attempts.length ? run.attempts.map((attempt, index) => {
+                  const hasOpenAttempt = run.attempts.some((item) => ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(item.state));
+                  return <Card key={attempt.id} data-testid={`mobile-attempt-${attempt.id}`}>
+                    <CardContent className="space-y-2 p-3">
+                      <div className="break-all font-mono text-xs">{t("runId")}: {run.id}</div>
+                      <div className="flex flex-wrap items-center gap-2 text-sm"><span>{t("kind")}: {run.kind}</span><Badge variant={runTone(run.state === "closed" ? run.state : attempt.state)}>{stateLabel(run.state === "closed" ? run.state : attempt.state)}</Badge></div>
+                      <div className="text-xs text-muted-foreground">{t("attempt")}: {attempt.attempt_no || "—"}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {index === 0 && run.state !== "closed" && !hasOpenAttempt ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
+                        {attempt.thread_id ? <>
+                          <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId:attempt.id }).then(load)}>{t("cancel")}</Button>
+                          <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId:attempt.id }).then(load)}>{t("retry")}</Button>
+                        </> : null}
+                        {(attempt.cliReceiptJson ?? run.cliReceiptJson) ? <span className="text-xs">{t("openReceipt")}</span> : null}
+                      </div>
+                    </CardContent>
+                  </Card>;
+                }) : [<Card key={run.id} data-testid={`mobile-run-${run.id}`}><CardContent className="space-y-2 p-3">
+                  <div className="break-all font-mono text-xs">{t("runId")}: {run.id}</div>
+                  <div className="flex flex-wrap items-center gap-2 text-sm"><span>{t("kind")}: {run.kind}</span><Badge variant={runTone(run.state)}>{stateLabel(run.state)}</Badge></div>
+                  {run.state !== "closed" ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
+                  {run.cliReceiptJson ? <span className="text-xs">{t("openReceipt")}</span> : null}
+                </CardContent></Card>])}
+              </div>
+              <div className="hidden sm:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -601,6 +639,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                   })}
                 </TableBody>
               </Table>
+              </div>
+              </>
             )}
             <div data-testid="cli-receipt" className="space-y-3">
               {data?.runs.flatMap((run) => {
@@ -652,11 +692,22 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
           <TabsContent value="install" forceMount={true} className="space-y-3" hidden={tab !== "install"} data-testid="install-panel">
             {!data?.hostId ? <p className="text-sm text-muted-foreground">{t("hostMissing")}</p> : null}
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => void runStack("detect")}>{t("detect")}</Button>
+              <Button size="sm" data-testid="stack-detect" onClick={() => void runStack("detect")}>{t("detect")}</Button>
               <Button size="sm" data-testid="install-stack" onClick={() => { setPendingOp("install"); setConfirmOpen(true); }}>{t("install")}</Button>
               <Button size="sm" variant="outline" onClick={() => { setPendingOp("connect"); setConfirmOpen(true); }}>{t("connectOpencode")}</Button>
               <Button size="sm" variant="destructive" onClick={() => { setPendingOp("rollback"); setConfirmOpen(true); }}>{t("rollback")}</Button>
             </div>
+            {detectResult ? <Card data-testid="stack-detect-result">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("detectResult")}</CardTitle></CardHeader>
+              <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
+                <div><span className="text-muted-foreground">{t("detectScenario")}:</span> {detectResult.scenario}</div>
+                <div><span className="text-muted-foreground">{t("detectTargetMatch")}:</span> {detectResult.matchesTarget ? t("yes") : t("no")}</div>
+                <div><span className="text-muted-foreground">{t("detectLaneStack")}:</span> {detectResult.laneStack.present ? detectResult.laneStack.version ?? t("unknown") : t("no")}</div>
+                <div><span className="text-muted-foreground">{t("detectOpenCode")}:</span> {detectResult.openCode.present ? `${t("yes")} (${detectResult.openCode.version ?? t("unknown")})` : t("no")}</div>
+                <div className="break-all"><span className="text-muted-foreground">{t("detectWorkspace")}:</span> {detectResult.workspace.path}</div>
+                <div className="break-all"><span className="text-muted-foreground">{t("snapshotPath")}:</span> {snapshotPath || t("detectNoSnapshot")}</div>
+              </CardContent>
+            </Card> : null}
             <div className="space-y-1">
               <Label>{t("snapshotPath")}</Label>
               <Input value={snapshotPath} onChange={(event) => setSnapshotPath(event.target.value)} />

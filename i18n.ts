@@ -112,6 +112,16 @@ const chromeEn = {
   state_accepted: "accepted",
   state_blocked: "blocked",
   state_closed: "closed",
+  detectResult: "Detection result",
+  detectScenario: "Scenario",
+  detectTargetMatch: "Matches target",
+  detectLaneStack: "Lane Stack",
+  detectOpenCode: "OpenCode",
+  detectWorkspace: "Workspace",
+  detectNoSnapshot: "No snapshot created by detection",
+  yes: "Yes",
+  no: "No",
+  unknown: "unknown",
 };
 
 const chromeRu: { [K in keyof typeof chromeEn]: string } = {
@@ -225,6 +235,16 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   state_accepted: "принято",
   state_blocked: "заблокировано",
   state_closed: "закрыт",
+  detectResult: "Результат обнаружения",
+  detectScenario: "Сценарий",
+  detectTargetMatch: "Совпадает с целевой версией",
+  detectLaneStack: "Lane Stack",
+  detectOpenCode: "OpenCode",
+  detectWorkspace: "Рабочая папка",
+  detectNoSnapshot: "Обнаружение не создаёт снимок",
+  yes: "Да",
+  no: "Нет",
+  unknown: "неизвестно",
 };
 
 export const en = { ...chromeEn, ...fieldEn };

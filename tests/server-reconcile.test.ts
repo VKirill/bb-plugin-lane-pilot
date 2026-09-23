@@ -155,11 +155,17 @@ describe("production spawn_unknown reconciliation", () => {
     setRunThread(db, "run-live", pmThreadId);
     await plugin(bb);
 
-    await expect(harness.behavior.callAgentTool(
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
       { confirm:true },
       { threadId:pmThreadId, projectId },
-    )).rejects.toThrow("wait sentinel after reconcile");
+    )));
+    const waiting = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer",
+      { runId:dispatched.runId, timeoutSec:1 },
+      { threadId:pmThreadId, projectId },
+    )));
+    expect(waiting.state).toBe("running");
 
     const row = db.prepare("SELECT thread_id,state FROM lane_pilot_attempt WHERE run_id='run-live'").get() as
       {thread_id:string|null; state:string};

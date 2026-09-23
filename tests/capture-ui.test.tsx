@@ -10,8 +10,8 @@ import { en, ru } from "../i18n";
 import { EXTERNAL_OPS } from "../src/constants";
 
 const root = process.cwd();
-const outDir = resolve(root, "../../.agency/jobs/AG-195/tmp/ui-html");
-const pngDir = resolve(root, "../../.agency/jobs/AG-195/artifacts");
+const outDir = resolve(root, "../../.agency/jobs/AG-235/tmp/ui-html");
+const pngDir = resolve(root, "../../.agency/jobs/AG-235/artifacts/ui-captures");
 const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 function screenFixture() {
@@ -50,8 +50,9 @@ function screenFixture() {
 
 async function mount(lang: string) {
   document.documentElement.lang = lang;
+  Object.defineProperty(navigator, "language", { configurable:true, value:lang === "ru" ? "ru-RU" : "en-US" });
   const app = await loadPluginApp(() => import("../app"));
-  return renderSlot(app.navPanels[0]!, { subPath: "" }, {
+  const slot = renderSlot(app.navPanels[0]!, { subPath: "" }, {
     context: { projectId: "proj_ui", threadId: null },
     rpc: {
       get_preferences: (input: unknown) => ({ locale: (input as {suggestedLocale:"en"|"ru"}).suggestedLocale, preference:"auto", lastProjectId: null }),
@@ -64,12 +65,18 @@ async function mount(lang: string) {
       cancel_attempt: () => ({ ok: true, state: "canceled", reason: null }),
       retry_attempt: () => ({ ok: true, state: "queued", attemptId: "lpattempt_2", reason: null }),
       resume_runs: () => ({ resumed: [], skipped: [], finished: [] }),
-      stack_detect: () => ({ scenario: "S1" }),
+      stack_detect: () => ({
+        hostId:"host_ui", laneStack:{ present:true, version:"1.38.0", sourceSha:"abc123" },
+        openCode:{ present:true, version:"1.18.30" }, workspace:{ path:"/tmp/lane-pilot-ui", present:true },
+        targetSha:"abc123", matchesTarget:true, scenario:"S1",
+      }),
       stack_install: () => ({ status: "ok" }),
       stack_connect: () => ({ status: "ok" }),
       stack_rollback: () => ({ status: "ok" }),
     },
   });
+  await slot.findByText(lang === "ru" ? ru.tabSettings : en.tabSettings);
+  return slot;
 }
 
 function wrap(html: string, lang: string, theme: "light" | "dark") {
@@ -100,6 +107,7 @@ function pngPixelWidth(pngPath: string): number {
 function chromeShot(htmlPath: string, pngPath: string): number {
   execFileSync(chrome, [
     "--headless=new",
+    `--user-data-dir=${resolve(outDir, "chrome-profile")}`,
     "--disable-gpu",
     "--allow-file-access-from-files",
     "--hide-scrollbars",
@@ -115,6 +123,7 @@ function chromeShot(htmlPath: string, pngPath: string): number {
 function chromeDump(htmlPath: string): string {
   return execFileSync(chrome, [
     "--headless=new",
+    `--user-data-dir=${resolve(outDir, "chrome-profile")}`,
     "--disable-gpu",
     "--allow-file-access-from-files",
     "--hide-scrollbars",
@@ -132,17 +141,26 @@ describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
     mkdirSync(outDir, { recursive: true });
     mkdirSync(pngDir, { recursive: true });
     const dialogWidths: number[] = [];
-    const captures: Array<{ lang: "en" | "ru"; theme: "light" | "dark"; view: "settings" | "monitor" | "dialog"; htmlPath: string; pngPath: string }> = [];
+    const captures: Array<{ lang: "en" | "ru"; theme: "light" | "dark"; view: "settings" | "monitor" | "install" | "detect" | "dialog"; htmlPath: string; pngPath: string }> = [];
     for (const lang of ["en", "ru"] as const) {
       for (const theme of ["light", "dark"] as const) {
-        for (const view of ["settings", "monitor", "dialog"] as const) {
+        for (const view of ["settings", "monitor", "install", "detect", "dialog"] as const) {
           const slot = await mount(lang);
           await slot.findByText(/\/tmp\/routing\.profile\.yaml/);
-          if (view === "monitor") fireEvent.click(slot.getByTestId("tab-monitor"));
+          if (view === "monitor") {
+            fireEvent.mouseDown(slot.getByTestId("tab-monitor"), { button:0 });
+            fireEvent.click(slot.getByTestId("tab-monitor"));
+          }
+          if (view === "install" || view === "detect") {
+            fireEvent.mouseDown(slot.getByTestId("tab-install"), { button:0 });
+            fireEvent.click(slot.getByTestId("tab-install"));
+          }
+          if (view === "detect") fireEvent.click(slot.getAllByTestId("stack-detect").at(-1)!);
           if (view === "dialog") {
             fireEvent.click(slot.getByTestId("tab-install"));
             fireEvent.click(slot.getByTestId("install-stack"));
           }
+          if (view === "detect") expect((await slot.findByTestId("stack-detect-result")).textContent).toContain(lang === "ru" ? ru.detectScenario : en.detectScenario);
           const dialog = document.querySelector('[data-testid="external-ops-dialog"]');
           if (view === "dialog") {
             expect(dialog?.textContent, `${view}-${lang}-${theme} title`).toContain(lang === "ru" ? ru.confirmTitle : en.confirmTitle);
@@ -162,18 +180,22 @@ describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
     for (const { lang, theme, view, htmlPath, pngPath } of captures) {
       const pixelWidth = chromeShot(htmlPath, pngPath);
       expect(pixelWidth, `${view}-${lang}-${theme}`).toBe(375);
-      if (view === "dialog") {
+      if (view === "dialog" || view === "monitor" || view === "detect") {
         const dumped = chromeDump(htmlPath);
-        expect(dumped, `${view}-${lang}-${theme} dump title`).toContain(lang === "ru" ? ru.confirmTitle : en.confirmTitle);
-        for (const op of EXTERNAL_OPS) {
-          expect(dumped, `${view}-${lang}-${theme} dump ${op}`).toContain(op);
+        if (view === "dialog") {
+          expect(dumped, `${view}-${lang}-${theme} dump title`).toContain(lang === "ru" ? ru.confirmTitle : en.confirmTitle);
+          for (const op of EXTERNAL_OPS) expect(dumped, `${view}-${lang}-${theme} dump ${op}`).toContain(op);
         }
         expect(dumped).toContain('data-document-scroll-width="');
         const scrollWidth = Number(dumped.match(/data-document-scroll-width="(\d+)"/)?.[1] ?? "NaN");
         expect(scrollWidth, `${view}-${lang}-${theme} document.scrollWidth`).toBeLessThanOrEqual(375);
-        const rightEdge = Number(dumped.match(/data-dialog-right="([\d.]+)"/)?.[1] ?? "NaN");
-        expect(rightEdge, `${view}-${lang}-${theme} dialog right edge`).toBeLessThanOrEqual(375);
-        dialogWidths.push(scrollWidth);
+        if (view === "monitor") expect(dumped).toContain('data-testid="run-monitor-mobile"');
+        if (view === "detect") expect(dumped).toContain(lang === "ru" ? ru.detectScenario : en.detectScenario);
+        if (view === "dialog") {
+          const rightEdge = Number(dumped.match(/data-dialog-right="([\d.]+)"/)?.[1] ?? "NaN");
+          expect(rightEdge, `${view}-${lang}-${theme} dialog right edge`).toBeLessThanOrEqual(375);
+          dialogWidths.push(scrollWidth);
+        }
       }
     }
     expect(dialogWidths).toHaveLength(4);
