@@ -1302,6 +1302,15 @@ export default async function plugin(bb: BbPluginApi) {
       };
     },
     save_setting: ({ projectId, key, value, expectedVersion }) => {
+      if (!NATIVE_WRITER_KEYS.has(key)) {
+        const result = casUpsertSettings(db, { projectId, changes:[{ key, value, expectedVersion }] }, { nativeWriterSelection:true });
+        const current = { version:result.versions[key] ?? 0, value:result.values[key] ?? null };
+        if (!result.ok) {
+          if (result.validation) return { ok:false, conflict:false, ...current, validation:result.validation };
+          return { ok:false, conflict:true, ...current };
+        }
+        return { ok:true, conflict:false, version:current.version, value };
+      }
       const result = casUpsertSetting(db, { projectId, key, value, expectedVersion });
       if (!result.ok) {
         if ("validation" in result) return result;

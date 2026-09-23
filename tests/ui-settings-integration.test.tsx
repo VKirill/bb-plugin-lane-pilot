@@ -38,7 +38,7 @@ function installPickerTestDriver() {
   };
 }
 
-const providers = ["codex", "qwen"].map((id) => ({
+const providers = ["codex", "qwen", "claude-code"].map((id) => ({
   id,
   displayName:id,
   available:true,
@@ -64,13 +64,18 @@ const qwenModel = {
   model:"qwen-test",
   supportedReasoningEfforts:["low", "medium", "high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })),
 };
+const claudeModel = {
+  id:"claude-opus-5",
+  model:"claude-opus-5",
+  supportedReasoningEfforts:[{ reasoningEffort:"medium", description:"Medium" }],
+};
 
 async function mountWithBackend() {
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
     sdk:{ providers:{
       list:async () => providers,
-      models:async (input) => ({ models:[input?.providerId === "codex" ? codexModel : qwenModel] as never }),
+      models:async (input) => ({ models:[input?.providerId === "codex" ? codexModel : input?.providerId === "claude-code" ? claudeModel : qwenModel] as never }),
     } },
   });
   const db = openDatabase(bb);
@@ -89,6 +94,7 @@ async function mountWithBackend() {
   await plugin(bb);
 
   const saveCalls: Array<{ providerId:string; model:string; reasoningLevel:string; serviceTier:"default"|"fast"|null; expectedVersions:Record<string,number> }> = [];
+  const singleSaveCalls: Array<{ key:string; value:unknown; expectedVersion:number }> = [];
   installPickerTestDriver();
   const appModule = await import("../app");
   const app = await loadPluginApp(appModule);
@@ -105,14 +111,17 @@ async function mountWithBackend() {
         saveCalls.push(input as typeof saveCalls[number]);
         return harness.behavior.callRpc("save_writer_selection", input) as Promise<unknown>;
       },
-      save_setting:(input) => harness.behavior.callRpc("save_setting", input) as Promise<unknown>,
+      save_setting:(input) => {
+        singleSaveCalls.push(input as typeof singleSaveCalls[number]);
+        return harness.behavior.callRpc("save_setting", input) as Promise<unknown>;
+      },
     },
   });
   await waitFor(() => {
     expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("codex");
     expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-effort")).toBe("medium");
   });
-  return { harness, slot, saveCalls };
+  return { harness, slot, saveCalls, singleSaveCalls };
 }
 
 async function choosePickerValue(next: PickerValue) {
@@ -168,6 +177,30 @@ describe("native writer settings against the registered SQLite backend", () => {
     expect(persisted.versions["writer.model"]).toBe((before.versions["writer.model"] ?? 0) + 1);
     expect(persisted.versions["writer.reasoning_effort"]).toBe(before.versions["writer.reasoning_effort"] + 1);
     expect(persisted.versions["writer.service_tier"]).toBe(before.versions["writer.service_tier"] + 1);
+    await finish(harness, slot);
+  });
+
+  it("saves the real Jev switch after native Claude selection through the single-setting RPC", async () => {
+    const { harness, slot, singleSaveCalls } = await mountWithBackend();
+    await choosePickerValue({ providerId:"claude-code", model:"claude-opus-5", reasoningLevel:"medium", serviceTier:undefined });
+    await waitFor(async () => {
+      const current = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown> };
+      expect(current.values["writer.provider"]).toBe("claude-code");
+    });
+    const before = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };
+    const key = "jev.LANE_JEV_EFFORT";
+    const expectedValue = String(before.values[key]) === "1" ? "0" : "1";
+    fireEvent.click(slot.getByTestId("jev-settings").querySelector("[role='switch']") as HTMLButtonElement);
+    await waitFor(() => expect(singleSaveCalls).toContainEqual(expect.objectContaining({ key, value:expectedValue, expectedVersion:before.versions[key] ?? 0 })));
+    await waitFor(async () => {
+      const current = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };
+      expect(current.values[key]).toBe(expectedValue);
+      expect(current.versions[key]).toBe((before.versions[key] ?? 0) + 1);
+      expect(current.values["writer.provider"]).toBe("claude-code");
+    });
+    await waitFor(() => expect(slot.getByTestId("jev-settings").querySelector("[role='switch']")?.getAttribute("data-state"))
+      .toBe(expectedValue === "1" ? "checked" : "unchecked"));
+    expect(slot.queryByTestId("setting-validation-error")).toBeNull();
     await finish(harness, slot);
   });
 

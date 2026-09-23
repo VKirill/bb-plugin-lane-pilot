@@ -4,7 +4,7 @@
 
 - Render Diagnostics CLI preview as scrollable JSON after a live SourceCode renderer failure on the hub.
 - Keep the missing-credential Jev test independent of a permanently installed host credential file.
-- Allow unrelated CAS settings saves after a native writer selection, while preserving validation of legacy writer groups and other enumerated settings.
+- Allow unrelated CAS settings saves through both single and batch RPCs after a native writer selection, while preserving validation of legacy writer groups and other enumerated settings.
 - Reject cancellation of terminal or closed attempts before stopping a thread; show only legal Monitor actions in mobile and desktop layouts.
 
 ## 0.1.0 — 2026-09-23

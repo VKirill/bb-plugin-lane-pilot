@@ -21,6 +21,19 @@ describe("settings CAS over RPC", () => {
       expectedVersions:{ "writer.provider":0, "writer.model":0, "writer.reasoning_effort":0, "writer.service_tier":0 },
     }) as { ok:boolean; versions:Record<string,number> };
     expect(native.ok).toBe(true);
+    const one = await harness.behavior.callRpc("save_setting", {
+      projectId, key:"jev.LANE_JEV_EFFORT", value:"1", expectedVersion:0,
+    }) as { ok:boolean; version:number };
+    expect(one).toMatchObject({ ok:true, version:1 });
+    expect(await harness.behavior.callRpc("save_setting", {
+      projectId, key:"jev.LANE_JEV_EFFORT", value:"0", expectedVersion:0,
+    })).toMatchObject({ ok:false, conflict:true, version:1, value:"1" });
+    expect(await harness.behavior.callRpc("save_setting", {
+      projectId, key:"ui.language", value:"invalid-language", expectedVersion:0,
+    })).toMatchObject({ ok:false, conflict:false, validation:{ code:"invalid_choice", key:"ui.language" } });
+    expect(await harness.behavior.callRpc("save_setting", {
+      projectId, key:"writer.provider", value:"invalid-provider", expectedVersion:native.versions["writer.provider"],
+    })).toMatchObject({ ok:false, conflict:false, validation:{ code:"invalid_choice", key:"writer.provider" } });
     const paths = await harness.behavior.callRpc("save_settings", { projectId, changes:[
       { key:"pmWorkspacePath", value:"/tmp/pm-after", expectedVersion:1 },
       { key:"writerWorkspacePath", value:"/tmp/writer-after", expectedVersion:1 },
