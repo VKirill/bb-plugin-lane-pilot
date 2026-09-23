@@ -105,7 +105,7 @@ describe("UI storage keys feed runtime channels", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(57);
+    expect(editable).toHaveLength(54);
     for (const row of editable) {
       const choices = UI_CATALOG.filter((candidate) => candidate.storageKey === row.storageKey && candidate.control === "select")
         .flatMap((candidate) => candidate.options);
@@ -133,9 +133,9 @@ describe("UI storage keys feed runtime channels", () => {
 
   it("table-drives every editable row and every representative value to argv/env or unapplied", () => {
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
-    expect(booleanFlags.map((spec) => spec.key)).toEqual(["writer.fast_mode"]);
+    expect(booleanFlags.map((spec) => spec.key)).toEqual([]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(57);
+    expect(editable).toHaveLength(54);
     expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
     for (const row of editable) {
       if (row.storageKey === "ui.language") {
@@ -199,19 +199,19 @@ describe("UI storage keys feed runtime channels", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("AG-213 R1: writer.fast_mode=false is unapplied, not silent", () => {
+  it("migrates writer.fast_mode=false to standard service tier and keeps the legacy key diagnostic", () => {
     const built = buildCliInvocation({
       binary: "run-controller",
       subcommand: "run",
       settings: { "writer.fast_mode": false },
     });
-    expect(built.argv).toEqual(["run"]);
-    expect(built.applied).toEqual([]);
+    expect(built.argv).toEqual(["run", "--service-tier", "standard"]);
+    expect(built.applied).toEqual(["writer.service_tier"]);
     expect(built.unapplied).toEqual([{
       key: "writer.fast_mode",
       value: false,
       channel: "NONE",
-      reason: UNAPPLIED_REASON.booleanOffUnsupported,
+      reason: UNAPPLIED_REASON.legacyFastModeMigrated,
     }]);
   });
 

@@ -88,8 +88,19 @@ describe("adoc applicability catalog", () => {
     expect(SETTING_CATALOG.map((spec) => spec.key).filter((key) => !stored.has(key))).toEqual([]);
   });
 
+  it("keeps legacy fast-mode rows diagnostic and aliases the TUI field to service tier", () => {
+    const legacy = UI_CATALOG.filter((row) => ["s024", "s303", "s315"].includes(row.id));
+    expect(legacy).toHaveLength(3);
+    expect(legacy.every((row) => row.storageKey === "writer.fast_mode" && row.uiStatus === "readonly" && row.channel === "NONE")).toBe(true);
+    expect(UI_CATALOG.find((row) => row.id === "s142")).toMatchObject({
+      storageKey: "writer.service_tier",
+      uiStatus: "editable",
+      channel: "W-DIRECT",
+    });
+  });
+
   it("keeps all former UI-visible fields on screen", () => {
-    expect(VISIBLE_CATALOG).toHaveLength(200);
+    expect(VISIBLE_CATALOG).toHaveLength(201);
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
   });
 

@@ -13,7 +13,6 @@ import type { rpcContract } from "../contracts";
 import {
   SECTION_ORDER,
   VISIBLE_CATALOG,
-  WRITER_EFFORT_CHOICES_BY_PROVIDER,
   type CatalogRow,
 } from "../ui-catalog";
 import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, detectLocale, detectLocaleHint, subscribeToLocaleHintChanges, type I18nKey, type Locale, type LocalePreference } from "../../i18n";
@@ -51,10 +50,8 @@ import {
   TableRow,
 } from "../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
-import { specFor } from "../channels";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, RUN_STATES } from "../state-machine";
-import { normalizeWriterEffort } from "../setting-validation";
 
 type ScreenPayload = {
   projectId: string;
@@ -81,6 +78,7 @@ type ScreenPayload = {
     }>;
   }>;
   unapplied: Array<{ key: string; reason: string }>;
+  cliPreview: { argv:string[]; env:Record<string, string>; applied:string[]; unapplied:Array<{ key:string; reason:string }> };
   lastSnapshotPath: string | null;
   lastReceiptJson: string | null;
   writerResultJson: string | null;
@@ -102,6 +100,7 @@ const JEV_KEYS = new Set(["jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV"]);
 const WRITER_PROVIDER = "writer.provider";
 const WRITER_MODEL = "writer.model";
 const WRITER_EFFORT = "writer.reasoning_effort";
+const WRITER_SERVICE_TIER = "writer.service_tier";
 
 function fieldKey(id: string): I18nKey {
   return `field_${id}` as I18nKey;
@@ -111,6 +110,18 @@ function reasonKey(id: string): I18nKey {
 }
 function sectionKey(section: string): I18nKey {
   return `section_${section}` as I18nKey;
+}
+
+function diagnosticRows(): CatalogRow[] {
+  const rank: Record<CatalogRow["uiStatus"], number> = { editable: 3, readonly: 2, gap: 1, excluded: 0 };
+  const byKey = new Map<string, CatalogRow>();
+  for (const row of VISIBLE_CATALOG) {
+    if (row.section === "night-review" || row.section === "jev" || JEV_KEYS.has(row.storageKey)) continue;
+    if ([WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER].includes(row.storageKey)) continue;
+    const current = byKey.get(row.storageKey);
+    if (!current || rank[row.uiStatus] > rank[current.uiStatus]) byKey.set(row.storageKey, row);
+  }
+  return [...byKey.values()];
 }
 
 function asBoolean(value: unknown, fallback: boolean): boolean {
@@ -213,10 +224,8 @@ function runTone(state: string): "default" | "secondary" | "destructive" | "outl
 export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const { projectId: routeProjectId } = useBbContext();
-  const [projectChoice, setProjectChoice] = useState("");
-  const [openedProjectId, setOpenedProjectId] = useState<string | null>(null);
-  const [openingProject, setOpeningProject] = useState(false);
-  const projectId = routeProjectId ?? (subPath || openedProjectId || null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const projectId = selectedProjectId ?? routeProjectId ?? (subPath || null);
   const [projects, setProjects] = useState<Array<{ id:string; name:string }>>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectListError, setProjectListError] = useState(false);
@@ -236,13 +245,19 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const [localePreference, setLocalePreference] = useState<LocalePreference>("auto");
 
   useEffect(() => {
-    if (projectId) return;
     let current = true;
     void rpc.call("list_projects", {}).then((result) => {
-      if (current) { setProjects(result.projects); setProjectsLoaded(true); if (result.lastProjectId) setProjectChoice(result.lastProjectId); }
+      if (current) {
+        setProjects(result.projects);
+        setProjectsLoaded(true);
+        if (!routeProjectId && !subPath) {
+          const preferred = result.lastProjectId ?? result.projects[0]?.id ?? null;
+          if (preferred) setSelectedProjectId((current) => current ?? preferred);
+        }
+      }
     }).catch(() => { if (current) setProjectListError(true); });
     return () => { current = false; };
-  }, [projectId, rpc]);
+  }, [routeProjectId, subPath, rpc]);
 
   useEffect(() => {
     let current = true;
@@ -297,34 +312,26 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
 
   useEffect(() => { void load(); }, [load]);
 
-  const grouped = useMemo(() => {
+  const diagnosticsGrouped = useMemo(() => {
     const map = new Map<string, CatalogRow[]>();
     for (const section of SECTION_ORDER) map.set(section, []);
-    for (const row of VISIBLE_CATALOG) {
-      const section = JEV_KEYS.has(row.storageKey) ? "jev" : row.section;
-      const list = map.get(section) ?? [];
+    for (const row of diagnosticRows()) {
+      const list = map.get(row.section) ?? [];
       list.push(row);
-      map.set(section, list);
+      map.set(row.section, list);
     }
     return SECTION_ORDER.filter((section) => (map.get(section) ?? []).length > 0)
       .map((section) => ({ section, rows: map.get(section) ?? [] }));
   }, []);
 
+  const chooseProject = (next: string) => {
+    setSelectedProjectId(next);
+    setProjectListError(false);
+    void rpc.call("remember_project", { projectId: next }).catch(() => setProjectListError(true));
+  };
+
   const save = async (row: CatalogRow, value: unknown) => {
     if (!projectId || !data) return false;
-    if (row.storageKey === WRITER_PROVIDER || row.storageKey === WRITER_EFFORT) {
-      const provider = String(row.storageKey === WRITER_PROVIDER ? value : data.values[WRITER_PROVIDER] ?? "");
-      const currentEffort = row.storageKey === WRITER_PROVIDER ? data.values[WRITER_EFFORT] : value;
-      const normalized = row.storageKey === WRITER_PROVIDER ? normalizeWriterEffort(provider, currentEffort) : null;
-      const changes = row.storageKey === WRITER_PROVIDER
-        ? [{ key: WRITER_PROVIDER, value: provider }, { key: WRITER_EFFORT, value: normalized!.effort }]
-        : [{ key: WRITER_EFFORT, value }, { key: WRITER_PROVIDER, value: provider }];
-      const saved = await saveSettings(changes);
-      if (saved && normalized?.changed) {
-        toast.info(<span data-bb-ru-skip>{t("writerEffortAdjusted").replace("{from}", String(currentEffort ?? "")).replace("{to}", normalized.effort).replace("{provider}", provider)}</span>);
-      }
-      return saved;
-    }
     const expectedVersion = data.versions[row.storageKey] ?? 0;
     const result = await rpc.call("save_setting", {
       projectId,
@@ -351,15 +358,20 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     return true;
   };
 
-  const saveSettings = async (changes: Array<{ key:string; value:unknown }>) => {
+  const saveWriterSelection = async (selection: ExperimentalProviderModelPickerValue) => {
     if (!projectId || !data) return false;
-    const result = await rpc.call("save_settings", {
+    const result = await rpc.call("save_writer_selection", {
       projectId,
-      changes: changes.map(({ key, value }) => ({
-        key,
-        value,
-        expectedVersion: data.versions[key] ?? 0,
-      })),
+      providerId: selection.providerId,
+      model: selection.model,
+      reasoningLevel: selection.reasoningLevel,
+      serviceTier: selection.serviceTier ?? null,
+      expectedVersions: {
+        "writer.provider": data.versions[WRITER_PROVIDER] ?? 0,
+        "writer.model": data.versions[WRITER_MODEL] ?? 0,
+        "writer.reasoning_effort": data.versions[WRITER_EFFORT] ?? 0,
+        "writer.service_tier": data.versions[WRITER_SERVICE_TIER] ?? 0,
+      },
     });
     if (result.conflict) {
       setSaveError({ kind: "cas" });
@@ -384,6 +396,9 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     providerId: String(data?.values[WRITER_PROVIDER] ?? ""),
     model: String(data?.values[WRITER_MODEL] ?? ""),
     reasoningLevel: (String(data?.values[WRITER_EFFORT] ?? "none") || "none") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider) => provider.id === String(data?.values[WRITER_PROVIDER] ?? ""))?.serviceTiers?.length
+      ? { serviceTier: data?.values[WRITER_SERVICE_TIER] === "fast" ? "fast" : "default" }
+      : {}),
   };
 
   const hostId = data?.hostId;
@@ -416,30 +431,43 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     } finally { setFinishing(false); }
   };
 
-  if (!projectId) {
-    return <div className="space-y-3 p-4" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
-      <div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">{t("selectProject")}</p><LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} /></div>
-      {projectListError ? <p role="alert" className="text-sm text-destructive">{t("projectListError")}</p> : null}
-      {!projectsLoaded && !projectListError ? <p className="text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
-      {projectsLoaded && projects.length === 0 && !projectListError ? <p className="text-sm text-muted-foreground">{t("noProjects")}</p> : null}
-      <select aria-label={t("selectProject")} value={projectChoice} onChange={(event) => setProjectChoice(event.target.value)}
-        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground">
-        <option value="">{t("selectProject")}</option>
-        {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-      </select>
-      <Button size="sm" onClick={() => {
-        if (!projectChoice || openingProject) return;
-        setOpeningProject(true);
-        void rpc.call("remember_project", { projectId: projectChoice }).then(() => setOpenedProjectId(projectChoice))
-          .catch(() => setProjectListError(true)).finally(() => setOpeningProject(false));
-      }} disabled={!projectChoice || openingProject}>{openingProject ? t("loadingProjects") : t("openProject")}</Button>
-    </div>;
-  }
+  const jevRows = useMemo(() => {
+    const seen = new Set<string>();
+    return VISIBLE_CATALOG.filter((row) => JEV_KEYS.has(row.storageKey) && !seen.has(row.storageKey) && Boolean(seen.add(row.storageKey)));
+  }, []);
+  const selectedProjectName = projects.find((item) => item.id === projectId)?.name ?? projectId;
 
   return (
-    <div className="h-full overflow-auto p-4 md:p-5" data-locale={locale} data-bb-ru-skip>
-      <div className="mx-auto w-full max-w-5xl space-y-6">
-        <div className="flex justify-end"><LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} /></div>
+    <div className="h-full overflow-auto p-3 md:p-5" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 md:flex-row md:items-start md:gap-6">
+        <aside className="w-full shrink-0 space-y-3 md:sticky md:top-0 md:w-56" data-testid="project-rail">
+          <div>
+            <h1 className="text-sm font-semibold">{t("projects")}</h1>
+            <p className="mt-1 text-xs text-muted-foreground">{t("projectRailHint")}</p>
+          </div>
+          {projectListError ? <p role="alert" className="text-xs text-destructive">{t("projectListError")}</p> : null}
+          {!projectsLoaded && !projectListError ? <p className="text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
+          {projectsLoaded && projects.length === 0 && !projectListError ? <p className="text-sm text-muted-foreground">{t("noProjects")}</p> : null}
+          {projects.length ? <nav aria-label={t("projects")} className="grid max-h-44 gap-1 overflow-y-auto rounded-md border border-border p-1 md:max-h-[calc(100vh-13rem)]">
+            {projects.map((project) => <Button
+              key={project.id}
+              type="button"
+              size="sm"
+              variant={project.id === projectId ? "secondary" : "ghost"}
+              aria-current={project.id === projectId ? "page" : undefined}
+              data-testid={`project-item-${project.id}`}
+              className="justify-start truncate"
+              onClick={() => chooseProject(project.id)}
+            >{project.name}</Button>)}
+          </nav> : null}
+          <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
+        </aside>
+
+        <main className="min-w-0 flex-1 space-y-5" data-testid="project-settings">
+        {!projectId ? <Card data-testid="project-settings-empty"><CardContent className="p-5 text-sm text-muted-foreground">{t("noProjectSelected")}</CardContent></Card> : <>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div><p className="text-xs text-muted-foreground">{t("selectedProject")}</p><h1 className="break-words text-lg font-semibold">{selectedProjectName}</h1></div>
+        </div>
         {error ? (
           <Alert variant="destructive">
             <AlertTitle>{t("loadError")}</AlertTitle>
@@ -461,26 +489,14 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
             <TabsTrigger value="settings" data-testid="tab-settings">{t("tabSettings")}</TabsTrigger>
             <TabsTrigger value="monitor" data-testid="tab-monitor">{t("tabMonitor")}</TabsTrigger>
             <TabsTrigger value="install" data-testid="tab-install">{t("tabInstall")}</TabsTrigger>
+            <TabsTrigger value="diagnostics" data-testid="tab-diagnostics">{t("tabDiagnostics")}</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="settings" forceMount={true} className="space-y-6" hidden={tab !== "settings"} data-testid="settings-panel">
-            <p className="text-xs text-muted-foreground">{t("projectIsolation")}</p>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">{t("importSource")}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-xs text-muted-foreground">
-                {data?.importSource.completed ? (
-                  <>
-                    <p>{t("importRouting")}: {data.importSource.routingPath ?? "—"}</p>
-                    <p>{t("importNight")}: {data.importSource.nightPath ?? "—"}</p>
-                  </>
-                ) : <p>{t("importNone")}</p>}
-              </CardContent>
-            </Card>
-
-            <section className="space-y-2" data-testid="writer-picker">
-              <h2 className="text-sm font-medium">{t("writerPicker")}</h2>
+          <TabsContent value="settings" forceMount={true} className="space-y-5" hidden={tab !== "settings"} data-testid="settings-panel">
+            <Card data-testid="writer-picker">
+              <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">{t("writerPicker")}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
               {pickerValue.providerId || (providers.providers?.length ?? 0) > 0 ? (
                 <ProviderModelPicker
                   value={pickerValue.providerId ? pickerValue : {
@@ -490,61 +506,31 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                   }}
                   routing={routing}
                   onChange={(next) => {
-                    const normalized = normalizeWriterEffort(next.providerId, next.reasoningLevel);
-                    if (!normalized.effort) return;
-                    void saveSettings([
-                      { key: WRITER_PROVIDER, value: next.providerId },
-                      { key: WRITER_MODEL, value: next.model },
-                      { key: WRITER_EFFORT, value: normalized.effort },
-                    ]).then((saved) => {
-                      if (saved && normalized.changed) {
-                        toast.info(<span data-bb-ru-skip>{t("writerEffortAdjusted").replace("{from}", String(next.reasoningLevel)).replace("{to}", normalized.effort).replace("{provider}", next.providerId)}</span>);
-                      }
-                    });
+                    void saveWriterSelection(next);
                   }}
                 />
-              ) : null}
+              ) : <p className="text-sm text-muted-foreground">{providers.status === "loading" ? t("writerCatalogLoading") : t("writerCatalogUnavailable")}</p>}
+              </CardContent>
+            </Card>
+
+            <section className="space-y-3" data-testid="jev-settings">
+              <h2 className="text-sm font-medium">{t("jevSettings")}</h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {jevRows.map((row) => {
+                  const label = t(row.storageKey === "jev.LANE_JEV_EFFORT" ? "jevEffort" : "jevOpencode");
+                  return <div key={row.storageKey} className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+                    <Label className="text-sm" htmlFor={row.id}>{label}</Label>
+                    <Switch id={row.id} checked={asBoolean(data?.values[row.storageKey], true)} aria-label={label}
+                      onCheckedChange={(next) => void save(row, next ? "1" : "0")} />
+                  </div>;
+                })}
+              </div>
             </section>
 
-            {grouped.map(({ section, rows }) => (
-              <section key={section} className="space-y-3">
-                <h2 className="text-sm font-medium">{t(sectionKey(section))}</h2>
-                <div className="space-y-3">
-                  {rows.map((row) => {
-                    const disabled = row.uiStatus !== "editable";
-                    const value = data?.values[row.storageKey];
-                    return (
-                      <div
-                        key={row.id}
-                        data-testid={`field-${row.id}`}
-                        data-ui-status={row.uiStatus}
-                        className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center"
-                      >
-                        <div className="space-y-1">
-                          <Label htmlFor={row.id} className="text-sm">{t(fieldKey(row.id))}</Label>
-                          <p className="text-xs text-muted-foreground">{row.area}</p>
-                          <div className="flex flex-wrap gap-2">
-                            <StatusBadge status={row.uiStatus} />
-                            {disabled ? <span className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</span> : null}
-                            {specFor(row.storageKey)?.positiveOnly ? (
-                              <span className="text-xs text-muted-foreground" data-testid={`channel-limitation-${row.id}`}>{t("channelOffLimitation")}</span>
-                            ) : null}
-                            <span className="text-xs text-muted-foreground">{t("casVersion")} {data?.versions[row.storageKey] ?? 0}</span>
-                          </div>
-                        </div>
-                        <FieldControl
-                          row={row}
-                          value={value}
-                          disabled={disabled}
-                          options={row.storageKey === WRITER_EFFORT ? WRITER_EFFORT_CHOICES_BY_PROVIDER[String(data?.values[WRITER_PROVIDER] ?? "")] : undefined}
-                          onChange={(next) => { if (!disabled) void save(row, next); }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
+            <Card data-testid="night-review-unsupported">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t(sectionKey("night-review"))}</CardTitle></CardHeader>
+              <CardContent className="text-sm text-muted-foreground">{t("nightReviewUnavailable")}</CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="monitor" forceMount={true} className="space-y-4" data-testid="run-monitor" hidden={tab !== "monitor"}>
@@ -571,7 +557,6 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                           <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId:attempt.id }).then(load)}>{t("cancel")}</Button>
                           <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId:attempt.id }).then(load)}>{t("retry")}</Button>
                         </> : null}
-                        {(attempt.cliReceiptJson ?? run.cliReceiptJson) ? <span className="text-xs">{t("openReceipt")}</span> : null}
                       </div>
                     </CardContent>
                   </Card>;
@@ -579,7 +564,6 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                   <div className="break-all font-mono text-xs">{t("runId")}: {run.id}</div>
                   <div className="flex flex-wrap items-center gap-2 text-sm"><span>{t("kind")}: {run.kind}</span><Badge variant={runTone(run.state)}>{stateLabel(run.state)}</Badge></div>
                   {run.state !== "closed" ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
-                  {run.cliReceiptJson ? <span className="text-xs">{t("openReceipt")}</span> : null}
                 </CardContent></Card>])}
               </div>
               <div className="hidden sm:block">
@@ -606,7 +590,6 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                           <TableCell>—</TableCell>
                           <TableCell className="space-x-2">
                             {run.state !== "closed" ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
-                            {run.cliReceiptJson ? t("openReceipt") : null}
                           </TableCell>
                         </TableRow>
                       )];
@@ -632,7 +615,6 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                             </Button>
                           </>
                         ) : null}
-                        {(attempt.cliReceiptJson ?? run.cliReceiptJson) ? t("openReceipt") : null}
                       </TableCell>
                     </TableRow>
                     ));
@@ -642,51 +624,97 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
               </div>
               </>
             )}
-            <div data-testid="cli-receipt" className="space-y-3">
+            <p className="sr-only">{[...RUN_STATES, ...ATTEMPT_STATES].join(" ")}</p>
+          </TabsContent>
+
+          <TabsContent value="diagnostics" forceMount={true} className="space-y-5" hidden={tab !== "diagnostics"} data-testid="diagnostics-panel">
+            <p className="text-sm text-muted-foreground">{t("diagnosticsIntro")}</p>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("importDetails")}</CardTitle></CardHeader>
+              <CardContent className="space-y-1 text-xs text-muted-foreground" data-testid="import-diagnostics">
+                {data?.importSource.completed ? <>
+                  <p>{t("importRouting")}: {data.importSource.routingPath ?? "—"}</p>
+                  <p>{t("importNight")}: {data.importSource.nightPath ?? "—"}</p>
+                </> : <p>{t("importNone")}</p>}
+                <p>{t("detectWorkspace")}: {data?.workspacePath ?? "—"}</p>
+                <p>{t("snapshotPath")}: {snapshotPath || data?.lastSnapshotPath || "—"}</p>
+              </CardContent>
+            </Card>
+
+            <section className="space-y-2" data-testid="cli-preview">
+              <h2 className="text-sm font-medium">{t("cliPreview")}</h2>
+              {data?.cliPreview ? <SourceCode content={JSON.stringify(data.cliPreview, null, 2)} path="cli-preview.json" overflow="scroll" />
+                : <p className="text-xs text-muted-foreground">{t("noDiagnosticData")}</p>}
+            </section>
+
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("snapshotPath")}</CardTitle></CardHeader>
+              <CardContent className="space-y-2">
+                <Label htmlFor="snapshot-path">{t("snapshotPath")}</Label>
+                <Input id="snapshot-path" value={snapshotPath} onChange={(event) => setSnapshotPath(event.target.value)} />
+              </CardContent>
+            </Card>
+
+            <section className="space-y-2">
+              <h2 className="text-sm font-medium">{t("unapplied")}</h2>
+              {data?.unapplied.length ? <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                {data.unapplied.map((item) => <li key={item.key}>{item.key}: {unappliedReason(item.reason)}</li>)}
+              </ul> : <p className="text-xs text-muted-foreground">{t("noUnapplied")}</p>}
+            </section>
+
+            {diagnosticsGrouped.map(({ section, rows }) => <section key={section} className="space-y-3">
+              <h2 className="text-sm font-medium">{t(sectionKey(section))}</h2>
+              <div className="space-y-2">
+                {rows.map((row) => {
+                  const disabled = row.uiStatus !== "editable";
+                  const value = data?.values[row.storageKey];
+                  return <div key={row.storageKey} data-testid={`field-${row.id}`} data-storage-key={row.storageKey}
+                    data-ui-status={row.uiStatus} className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
+                    <div className="space-y-1">
+                      <Label className="text-sm">{row.storageKey === "writer.fast_mode" ? t("legacyFastMode") : t(fieldKey(row.id))}</Label>
+                      {row.storageKey === "writer.fast_mode" ? <p className="text-xs text-muted-foreground">{t("legacyFastModeExplanation")}</p> : <>
+                        <p className="text-xs text-muted-foreground">{row.area} · {row.location}</p>
+                        {disabled ? <p className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</p> : null}
+                      </>}
+                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <StatusBadge status={row.uiStatus} />
+                        <span>{t("casVersion")} {data?.versions[row.storageKey] ?? 0}</span>
+                      </div>
+                    </div>
+                    {row.storageKey === "writer.fast_mode" ? <code className="text-xs">{String(value ?? "unset")}</code> : <FieldControl
+                      row={row} value={value} disabled={disabled} onChange={(next) => { if (!disabled) void save(row, next); }} />}
+                  </div>;
+                })}
+              </div>
+            </section>)}
+
+            <section className="space-y-3" data-testid="cli-receipt">
+              <h2 className="text-sm font-medium">{t("cliReceipt")}</h2>
               {data?.runs.flatMap((run) => {
                 const seen = new Set<string>();
-                const items: Array<{ id: string; json: string }> = [];
-                for (const attempt of run.attempts) {
-                  if (!attempt.cliReceiptJson || seen.has(attempt.cliReceiptJson)) continue;
-                  seen.add(attempt.cliReceiptJson);
-                  items.push({ id: attempt.id, json: attempt.cliReceiptJson });
+                const items: Array<{ id:string; json:string }> = [];
+                for (const attempt of run.attempts) if (attempt.cliReceiptJson && !seen.has(attempt.cliReceiptJson)) {
+                  seen.add(attempt.cliReceiptJson); items.push({ id:attempt.id, json:attempt.cliReceiptJson });
                 }
-                if (run.cliReceiptJson && !seen.has(run.cliReceiptJson)) {
-                  items.push({ id: run.id, json: run.cliReceiptJson });
-                }
-                return items.map((item) => (
-                  <div key={item.id} className="space-y-2" data-testid={`cli-receipt-${item.id}`}>
-                    <h2 className="text-sm font-medium">{t("cliReceipt")} {item.id}</h2>
-                    <SourceCode content={item.json} path={`cli-receipt-${item.id}.json`} overflow="scroll" />
-                    <span className="sr-only">{item.json}</span>
-                  </div>
-                ));
+                if (run.cliReceiptJson && !seen.has(run.cliReceiptJson)) items.push({ id:run.id, json:run.cliReceiptJson });
+                return items.map((item) => <div key={item.id} data-testid={`cli-receipt-${item.id}`}>
+                  <h3 className="mb-2 text-xs font-medium">{t("cliReceipt")} {item.id}</h3>
+                  <SourceCode content={item.json} path={`cli-receipt-${item.id}.json`} overflow="scroll" />
+                </div>);
               })}
-            </div>
-            <div>
-              <h2 className="text-sm font-medium">{t("unapplied")}</h2>
-              {data?.unapplied.length ? (
-                <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground">
-                  {data.unapplied.map((item) => <li key={item.key}>{item.key}: {unappliedReason(item.reason)}</li>)}
-                </ul>
-              ) : <p className="text-xs text-muted-foreground">{t("noUnapplied")}</p>}
-            </div>
-            {(resultPatch || resultSource) ? (
-              <div className="space-y-2" data-testid="writer-result">
-                <h2 className="text-sm font-medium">{t("result")}</h2>
-                {resultPatch ? <Diff patch={resultPatch} path="writer-output.txt" view="unified" /> : null}
-                {resultSource ? <SourceCode content={resultSource} path="acceptance.json" overflow="scroll" /> : null}
-                {resultSource ? <span className="sr-only">{resultSource}</span> : null}
-              </div>
-            ) : null}
-            {data?.cliReceiptJson && !data.runs.some((run) => run.cliReceiptJson || run.attempts.some((attempt) => attempt.cliReceiptJson)) ? (
-              <div className="space-y-2">
-                <h2 className="text-sm font-medium">{t("cliReceipt")}</h2>
-                <SourceCode content={data.cliReceiptJson} path="cli-receipt.json" overflow="scroll" />
-                <span className="sr-only">{data.cliReceiptJson}</span>
-              </div>
-            ) : null}
-            <p className="sr-only">{[...RUN_STATES, ...ATTEMPT_STATES].join(" ")}</p>
+              {data?.cliReceiptJson && !data.runs.some((run) => run.cliReceiptJson || run.attempts.some((attempt) => attempt.cliReceiptJson))
+                ? <SourceCode content={data.cliReceiptJson} path="cli-receipt.json" overflow="scroll" /> : null}
+            </section>
+
+            {(resultPatch || resultSource) ? <section className="space-y-2" data-testid="writer-result">
+              <h2 className="text-sm font-medium">{t("result")}</h2>
+              {resultPatch ? <Diff patch={resultPatch} path="writer-output.txt" view="unified" /> : null}
+              {resultSource ? <SourceCode content={resultSource} path="acceptance.json" overflow="scroll" /> : null}
+            </section> : null}
+            {data?.lastReceiptJson ? <section className="space-y-2" data-testid="install-receipt">
+              <h2 className="text-sm font-medium">{t("installReceipt")}</h2>
+              <SourceCode content={data.lastReceiptJson} path="install-receipt.json" overflow="scroll" />
+            </section> : null}
           </TabsContent>
 
           <TabsContent value="install" forceMount={true} className="space-y-3" hidden={tab !== "install"} data-testid="install-panel">
@@ -704,21 +732,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                 <div><span className="text-muted-foreground">{t("detectTargetMatch")}:</span> {detectResult.matchesTarget ? t("yes") : t("no")}</div>
                 <div><span className="text-muted-foreground">{t("detectLaneStack")}:</span> {detectResult.laneStack.present ? detectResult.laneStack.version ?? t("unknown") : t("no")}</div>
                 <div><span className="text-muted-foreground">{t("detectOpenCode")}:</span> {detectResult.openCode.present ? `${t("yes")} (${detectResult.openCode.version ?? t("unknown")})` : t("no")}</div>
-                <div className="break-all"><span className="text-muted-foreground">{t("detectWorkspace")}:</span> {detectResult.workspace.path}</div>
-                <div className="break-all"><span className="text-muted-foreground">{t("snapshotPath")}:</span> {snapshotPath || t("detectNoSnapshot")}</div>
               </CardContent>
             </Card> : null}
-            <div className="space-y-1">
-              <Label>{t("snapshotPath")}</Label>
-              <Input value={snapshotPath} onChange={(event) => setSnapshotPath(event.target.value)} />
-            </div>
-            {data?.lastReceiptJson ? (
-              <div className="space-y-2" data-testid="install-receipt">
-                <h2 className="text-sm font-medium">{t("installReceipt")}</h2>
-                <SourceCode content={data.lastReceiptJson} path="install-receipt.json" overflow="scroll" />
-                <span className="sr-only">{data.lastReceiptJson}</span>
-              </div>
-            ) : null}
           </TabsContent>
         </Tabs>
 
@@ -761,6 +776,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        </>}
+        </main>
       </div>
     </div>
   );

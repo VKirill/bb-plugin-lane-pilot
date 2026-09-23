@@ -15,8 +15,8 @@ language: ru
 
 | Решение | Число |
 |---|---:|
-| editable | 57 |
-| read-only | 50 |
+| editable | 54 |
+| read-only | 53 |
 | gap | 94 |
 | excluded | 154 |
 | **сумма** | **355** |
@@ -49,7 +49,7 @@ language: ru
 | 21 | adoc CLI top-level | --writer-agent | bin/agents-doctor:1340-1344 | user | NONE | gap | Lane Pilot Mode 2 does not invoke this binary/file; no typed run-controller/lane-ctl/install.sh/env channel (E1) (`bin/agents-doctor:1340`) |
 | 22 | adoc CLI top-level | --writer-effort / --reasoning-effort | bin/agents-doctor:1345-1351 | user | W-DIRECT | editable | W-DIRECT --reasoning-effort on run-controller/lane-ctl start (bin/run-controller:1688, bin/lane-ctl:3407) (`bin/run-controller:1688`) |
 | 23 | adoc CLI top-level | --service-tier | bin/agents-doctor:1352-1357 | user | W-DIRECT | editable | W-DIRECT --service-tier on run-controller/lane-ctl start (bin/run-controller:1694, bin/lane-ctl:3413) (`bin/run-controller:1694`) |
-| 24 | adoc CLI top-level | --fast-mode/--no-fast-mode | bin/agents-doctor:1358-1363 | user | W-DIRECT | editable | W-DIRECT --fast-mode applies true only; false has no off flag (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200) (`bin/run-controller:1703`) |
+| 24 | adoc CLI top-level | --fast-mode/--no-fast-mode | bin/agents-doctor:1358-1363 | user | NONE | readonly | Legacy fast-mode values migrate to writer.service_tier: true selects fast and false selects standard; shown in Diagnostics only (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200) (`bin/run-controller:1703`) |
 | 25 | adoc CLI setup | repo (positional) | bin/agents-doctor:1105 | user | N/A | excluded | Исключено — параметр режима запуска adoc CLI, не персистентная настройка; Lane Pilot вызывает adoc программно (`--json`, без `--apply` в Mode 2 — см. D2), пользователь этот флаг не видит (`bin/agents-doctor:1105`) |
 | 26 | adoc CLI setup | --writer-provider | bin/agents-doctor:1106-1111 | user | W-DIRECT | editable | W-DIRECT --provider on run-controller/lane-ctl start (bin/run-controller:1681, bin/lane-ctl:3403) (`bin/run-controller:1681`) |
 | 27 | adoc CLI setup | --night-review | bin/agents-doctor:1112-1117 | user | NONE | gap | Lane Pilot Mode 2 does not invoke this binary/file; no typed run-controller/lane-ctl/install.sh/env channel (E1) (`bin/agents-doctor:1112`) |
@@ -167,7 +167,7 @@ language: ru
 | 139 | TUI Coder tab | model | bin/agents_doctor_tui.py:644-651,2661-2686 | user | W-DIRECT | editable | W-DIRECT --model on run-controller/lane-ctl start (bin/run-controller:1686, bin/lane-ctl:3405) (`bin/run-controller:1686`) |
 | 140 | TUI Coder tab | agent (OpenCode write agent) | bin/agents_doctor_tui.py:1359-1360 | user | NONE | gap | Lane Pilot Mode 2 does not invoke this binary/file; no typed run-controller/lane-ctl/install.sh/env channel (E1) (`bin/agents_doctor_tui.py:1359`) |
 | 141 | TUI Coder tab | effort | bin/agents_doctor_tui.py:931-943,1361-1362 | user | W-DIRECT | editable | W-DIRECT --reasoning-effort on run-controller/lane-ctl start (bin/run-controller:1688, bin/lane-ctl:3407) (`bin/run-controller:1688`) |
-| 142 | TUI Coder tab | fast (service_tier) | bin/agents_doctor_tui.py:574-575,2637-2644,2673-2679 | user | W-DIRECT | editable | W-DIRECT --fast-mode applies true only; false has no off flag (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200) (`bin/run-controller:1703`) |
+| 142 | TUI Coder tab | fast (service_tier) | bin/agents_doctor_tui.py:574-575,2637-2644,2673-2679 | user | W-DIRECT | editable | W-DIRECT --service-tier on run-controller/lane-ctl start (bin/run-controller:1694, bin/lane-ctl:3413) (`bin/run-controller:1694`) |
 | 143 | TUI Stages tab (common) | stage.enabled | bin/agents_doctor_tui.py:97,99,100,102,103,118,1816-1826 | user | NONE | readonly | TUI-only control; Lane Pilot does not launch agents-doctor TUI (`bin/agents_doctor_tui.py:97`) |
 | 144 | TUI Stages tab (common) | stage.mode (plan_critique) | bin/agents_doctor_tui.py:97,1827-1837 | user | NONE | readonly | TUI-only control; Lane Pilot does not launch agents-doctor TUI (`bin/agents_doctor_tui.py:97`) |
 | 145 | TUI Stages tab (common) | stage.provider (plan_critique) | bin/agents_doctor_tui.py:1652-1653 | user | NONE | readonly | TUI-only control; Lane Pilot does not launch agents-doctor TUI (`bin/agents_doctor_tui.py:1652`) |
@@ -328,7 +328,7 @@ language: ru
 | 300 | run-controller CLI | --model | bin/run-controller:1686 | user | W-DIRECT | editable | W-DIRECT --model on run-controller/lane-ctl start (bin/run-controller:1686, bin/lane-ctl:3405) (`bin/run-controller:1686`) |
 | 301 | run-controller CLI | --reasoning-effort | bin/run-controller:1687-1692 | user | W-DIRECT | editable | W-DIRECT --reasoning-effort on run-controller/lane-ctl start (bin/run-controller:1688, bin/lane-ctl:3407) (`bin/run-controller:1688`) |
 | 302 | run-controller CLI | --service-tier | bin/run-controller:1693-1698 | user | W-DIRECT | editable | W-DIRECT --service-tier on run-controller/lane-ctl start (bin/run-controller:1694, bin/lane-ctl:3413) (`bin/run-controller:1694`) |
-| 303 | run-controller CLI | --fast-mode | bin/run-controller:1699-1703 | user | W-DIRECT | editable | W-DIRECT --fast-mode applies true only; false has no off flag (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200) (`bin/run-controller:1703`) |
+| 303 | run-controller CLI | --fast-mode | bin/run-controller:1699-1703 | user | NONE | readonly | Legacy fast-mode values migrate to writer.service_tier: true selects fast and false selects standard; shown in Diagnostics only (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200) (`bin/run-controller:1703`) |
 | 304 | run-controller CLI | --json (status) | bin/run-controller:1740 | unclear | N/A | excluded | Исключено из V1 — looks like a bug - watch's equivalent --json flag on same subparser group is NOT required (`bin/run-controller:1740`) |
 | 305 | run-controller CLI | --timeout (watch) | bin/run-controller:1743 | user | OPS-DIRECT | editable | OPS-DIRECT --timeout on run-controller watch (bin/run-controller:1743) (`bin/run-controller:1743`) |
 | 306 | run-controller CLI | --poll-interval (watch) | bin/run-controller:1744 | user | OPS-DIRECT | editable | OPS-DIRECT --poll-interval on run-controller run/start/watch (bin/run-controller:1677) (`bin/run-controller:1677`) |
@@ -340,7 +340,7 @@ language: ru
 | 312 | lane-ctl CLI (start) | --model | bin/lane-ctl:3405 | user | W-DIRECT | editable | W-DIRECT --model on run-controller/lane-ctl start (bin/run-controller:1686, bin/lane-ctl:3405) (`bin/run-controller:1686`) |
 | 313 | lane-ctl CLI (start) | --reasoning-effort | bin/lane-ctl:3406-3411 | user | W-DIRECT | editable | W-DIRECT --reasoning-effort on run-controller/lane-ctl start (bin/run-controller:1688, bin/lane-ctl:3407) (`bin/run-controller:1688`) |
 | 314 | lane-ctl CLI (start) | --service-tier | bin/lane-ctl:3412-3417 | user | W-DIRECT | editable | W-DIRECT --service-tier on run-controller/lane-ctl start (bin/run-controller:1694, bin/lane-ctl:3413) (`bin/run-controller:1694`) |
-| 315 | lane-ctl CLI (start) | --fast-mode | bin/lane-ctl:3418-3422 | user | W-DIRECT | editable | W-DIRECT --fast-mode applies true only; false has no off flag (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200) (`bin/run-controller:1703`) |
+| 315 | lane-ctl CLI (start) | --fast-mode | bin/lane-ctl:3418-3422 | user | NONE | readonly | Legacy fast-mode values migrate to writer.service_tier: true selects fast and false selects standard; shown in Diagnostics only (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200) (`bin/run-controller:1703`) |
 | 316 | lane-ctl CLI (start) | --idle | bin/lane-ctl:3423-3429 | user | OPS-DIRECT | editable | OPS-DIRECT --idle on lane-ctl start (bin/lane-ctl:3424) (`bin/lane-ctl:3424`) |
 | 317 | lane-ctl CLI (start) | --max-runtime / --max | bin/lane-ctl:3430-3438 | user | OPS-DIRECT | editable | OPS-DIRECT --max-runtime on lane-ctl start (bin/lane-ctl:3431) (`bin/lane-ctl:3431`) |
 | 318 | lane-ctl CLI (start) | --pool-size | bin/lane-ctl:3439-3447 | user | OPS-DIRECT | editable | OPS-DIRECT --pool-size on lane-ctl start (bin/lane-ctl:3440) (`bin/lane-ctl:3440`) |

@@ -142,6 +142,10 @@ describe("production spawn_unknown reconciliation", () => {
           wait: async () => { throw new Error("wait sentinel after reconcile"); },
           get: async () => ({ id:"writer-existing", status:"active" }) as never,
         },
+        providers:{
+          list:async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:false }, serviceTiers:[] }] as never,
+          models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }),
+        },
       },
       experimental_callHostRpc: (call) => {
         if (call.method === "runCommand") {

@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig } from "./contracts";
 import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
-import { validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
+import { validateSettingValue, validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
 
 export type LanePilotDatabase = Database.Database;
 
@@ -381,6 +381,8 @@ export type ReasoningTrace = {
   fallbackReason:string|null;
   providerId:string;
   model:string;
+  serviceTier:"default"|"fast"|null;
+  requestedServiceTier:"default"|"fast";
   runId:string;
   attemptId:string;
   threadId:string|null;
@@ -485,6 +487,7 @@ export type SaveSettingsResult = {
 export function casUpsertSettings(
   db: LanePilotDatabase,
   args: { projectId:string; changes:SettingChange[] },
+  options: { nativeWriterSelection?:boolean } = {},
 ): SaveSettingsResult {
   const save = db.transaction((): SaveSettingsResult => {
     const keys = args.changes.map((change) => change.key);
@@ -516,7 +519,10 @@ export function casUpsertSettings(
       return { ok:false, conflict:true, ...snapshot() };
     }
     for (const change of args.changes) settings[change.key] = change.value;
-    const validation = validateSettingsObject(settings)[0];
+    const nativeWriterKeys = new Set(["writer.provider", "writer.model", "writer.reasoning_effort", "writer.service_tier"]);
+    const validation = (options.nativeWriterSelection
+      ? Object.entries(settings).flatMap(([key, value]) => nativeWriterKeys.has(key) ? [] : [validateSettingValue(key, value)]).filter((item) => item != null)
+      : validateSettingsObject(settings))[0];
     if (validation) return { ok:false, conflict:false, ...snapshot(), validation };
 
     const now = Date.now();

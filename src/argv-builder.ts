@@ -43,6 +43,16 @@ export function isFlagOff(value: unknown): boolean {
   return value === false || value === "0" || value === "false" || value === "off" || value === "no";
 }
 
+function canonicalWriterSettings(settings: Record<string, unknown>): Record<string, unknown> {
+  const canonical = { ...settings };
+  const tier = canonical["writer.service_tier"];
+  const legacy = canonical["writer.fast_mode"];
+  if ((tier === undefined || tier === null || tier === "") && (isFlagOn(legacy) || isFlagOff(legacy))) {
+    canonical["writer.service_tier"] = isFlagOn(legacy) ? "fast" : "standard";
+  }
+  return canonical;
+}
+
 export function assertSafeArgv(argv: string[]): void {
   for (const token of argv) {
     if (FORBIDDEN_TOKENS.some((forbidden) => token === forbidden || token.startsWith(`${forbidden}=`))) {
@@ -57,12 +67,13 @@ export function buildCliInvocation(input: {
   settings: Record<string, unknown>;
   required?: Record<string, string>;
 }): CliInvocation {
+  const settings = canonicalWriterSettings(input.settings);
   const argv = [input.subcommand];
   const env: Record<string, string> = {};
   const applied: string[] = [];
   const unapplied: UnappliedSetting[] = [];
   const usedFlags = new Set<string>();
-  const validationErrors = validateSettingsObject(input.settings);
+  const validationErrors = validateSettingsObject(settings);
   const validationByKey = new Map(validationErrors.map((error) => [error.key, validationErrorText(error)]));
 
   for (const [flag, value] of Object.entries(input.required ?? {})) {
@@ -74,9 +85,9 @@ export function buildCliInvocation(input: {
 
   const seen = new Set<string>();
   for (const spec of SETTING_CATALOG) {
-    if (!(spec.key in input.settings)) continue;
+    if (!(spec.key in settings)) continue;
     seen.add(spec.key);
-    const value = input.settings[spec.key];
+    const value = settings[spec.key];
     const invalidSetting = validationByKey.get(spec.key);
     if (invalidSetting) {
       unapplied.push({ key: spec.key, value, channel: "NONE", reason: invalidSetting });
@@ -147,7 +158,7 @@ export function buildCliInvocation(input: {
     applied.push(spec.key);
   }
 
-  for (const [key, value] of Object.entries(input.settings)) {
+  for (const [key, value] of Object.entries(settings)) {
     if (seen.has(key)) continue;
     unapplied.push({ key, value, channel:"NONE", reason: UNAPPLIED_REASON.noConsumer });
   }

@@ -121,11 +121,21 @@ describe("argv-builder channels", () => {
     expect(built.argv).toEqual([
       "run", "--run-dir", "/tmp/run", "--project-cwd", "/tmp/proj",
       "--provider", "opencode", "--model", "kimi", "--reasoning-effort", "medium",
-      "--service-tier", "standard", "--fast-mode", "--poll-interval", "2",
+      "--service-tier", "standard", "--poll-interval", "2",
     ]);
+    expect(built.argv.filter((token) => token === "--provider")).toHaveLength(1);
     expect(built.env).toEqual({ LANE_JEV_EFFORT:"1", LANE_OPENCODE_JEV:"0" });
-    expect(built.unapplied.map((row) => row.key).sort()).toEqual(["plan_critique.mode","plan_critique.provider"]);
-    expect(built.unapplied[0]?.reason).toMatch(/no --mode/);
+    expect(built.unapplied.map((row) => row.key).sort()).toEqual(["plan_critique.mode","plan_critique.provider","writer.fast_mode"]);
+    expect(built.unapplied.find((item) => item.key === "plan_critique.mode")?.reason).toMatch(/no --mode/);
+  });
+  it.each([[false, "standard"], [true, "fast"]] as const)("migrates legacy fast_mode=%s through one service-tier flag", (legacy, expectedTier) => {
+    const built = buildCliInvocation({
+      binary:"run-controller", subcommand:"run", settings:{ "writer.fast_mode":legacy },
+    });
+    expect(built.argv).toEqual(["run", "--service-tier", expectedTier]);
+    expect(built.argv.filter((token) => token === "--service-tier")).toHaveLength(1);
+    expect(built.argv).not.toContain("--fast-mode");
+    expect(built.unapplied).toContainEqual(expect.objectContaining({ key:"writer.fast_mode" }));
   });
   it("does not put --max-tasks on run-controller unless that key is controller-scoped", () => {
     const built = buildCliInvocation({
@@ -135,6 +145,16 @@ describe("argv-builder channels", () => {
       required:{ "--run-dir":"/tmp/run" },
     });
     expect(built.argv).not.toContain("--max-tasks");
+  });
+  it("emits a writer provider flag only once when it is already required", () => {
+    const built = buildCliInvocation({
+      binary:"run-controller",
+      subcommand:"run",
+      settings:{ "writer.provider":"codex" },
+      required:{ "--run-dir":"/tmp/run", "--project-cwd":"/tmp/proj", "--provider":"codex" },
+    });
+    expect(built.argv.filter((arg) => arg === "--provider")).toHaveLength(1);
+    expect(built.argv.filter((arg) => arg === "codex")).toHaveLength(1);
   });
   it("does not put W-DIRECT or OPS poll flags on run-controller status", () => {
     const built = buildCliInvocation({

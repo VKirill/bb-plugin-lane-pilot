@@ -58,8 +58,7 @@ import { validateTaskV2 } from "./src/task-v2";
 import { reconcile, type IdempotencyTriple } from "./src/reconcile";
 import { spawnWithSeam } from "./src/spawn-seam";
 import { VISIBLE_CATALOG } from "./src/ui-catalog";
-import { SETTING_CATALOG } from "./src/channels";
-import { resolveJevReasoning, writerExecutionSelection } from "./src/jev-reasoning";
+import { bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "./src/jev-reasoning";
 
 export { rpcContract } from "./src/contracts";
 
@@ -75,6 +74,8 @@ function stringAt(value: unknown, key: string): string | null {
   const found = valueAt(value, key);
   return typeof found === "string" && found.length > 0 ? found : null;
 }
+
+class WriterSelectionError extends Error {}
 
 async function finishRunSafely(
   bb: BbPluginApi,
@@ -335,7 +336,7 @@ export default async function plugin(bb: BbPluginApi) {
       "writer.provider": stored["writer.provider"] ?? config.writerProviderId,
       "writer.model": stored["writer.model"] ?? config.writerModel,
       "writer.reasoning_effort": stored["writer.reasoning_effort"] ?? "medium",
-      "writer.service_tier": stored["writer.service_tier"],
+      "writer.service_tier": writerServiceTier(stored),
       "writer.fast_mode": stored["writer.fast_mode"],
       "jev.LANE_JEV_EFFORT": stored["jev.LANE_JEV_EFFORT"] ?? true,
       "jev.LANE_OPENCODE_JEV": stored["jev.LANE_OPENCODE_JEV"] ?? true,
@@ -428,6 +429,30 @@ export default async function plugin(bb: BbPluginApi) {
     transitionAttempt(db, input.attemptId, "spawn_requested");
     try {
       const settings = loadProjectSettings(db, input.projectId);
+      const writerProviderId = typeof settings["writer.provider"] === "string"
+        ? settings["writer.provider"] as string : input.config.writerProviderId;
+      const writerModel = typeof settings["writer.model"] === "string" && settings["writer.model"]
+        ? settings["writer.model"] as string : input.config.writerModel;
+      const requestedServiceTier = bbServiceTier(writerServiceTier(settings));
+      let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
+      let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
+      try {
+        [providers, catalog] = await Promise.all([
+          bb.sdk.providers.list({ hostId:input.config.hostId }),
+          bb.sdk.providers.models({ providerId:writerProviderId, hostId:input.config.hostId }),
+        ]);
+      } catch {
+        throw new WriterSelectionError("writer_live_catalog_unavailable");
+      }
+      const provider = providers.find((row) => row.id === writerProviderId);
+      if (!provider?.available) throw new WriterSelectionError(`writer_provider_unavailable:${writerProviderId}`);
+      const model = catalog.models.find((row) => row.id === writerModel || row.model === writerModel);
+      if (!model) throw new WriterSelectionError(`writer_model_unavailable:${writerProviderId}/${writerModel}`);
+      const tierIds = new Set(provider.serviceTiers?.map((tier) => tier.id) ?? []);
+      if (requestedServiceTier === "fast" && !tierIds.has("fast")) {
+        throw new WriterSelectionError(`writer_service_tier_unavailable:${writerProviderId}/fast`);
+      }
+      const effectiveServiceTier = tierIds.has(requestedServiceTier) ? requestedServiceTier : null;
       const manual = typeof settings["writer.reasoning_effort"] === "string"
         ? settings["writer.reasoning_effort"] as string : "medium";
       const digest = planDigest(input.plan);
@@ -455,19 +480,14 @@ export default async function plugin(bb: BbPluginApi) {
         || (noSentProof ? !allowedWithoutSentProof : !validSentProof)) {
         throw new Error("Jev full-plan transport proof mismatch");
       }
-      let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>|null = null;
-      try { catalog = await bb.sdk.providers.models({ providerId:input.config.writerProviderId, hostId:input.config.hostId }); }
-      catch { /* explicit manual fallback below when the live catalog is unavailable */ }
-      const model = catalog?.models.find((row) => row.id === input.config.writerModel || row.model === input.config.writerModel);
-      const supported = new Set<string>(model?.supportedReasoningEfforts.map((item) => item.reasoningEffort) ?? []);
+      const supported = new Set<string>(model.supportedReasoningEfforts.map((item) => item.reasoningEffort));
       const jevDecision = jev.status === "ok" ? jev.effort : null;
       const choice = resolveJevReasoning({
         status:jev.status, jevDecision, manualLevel:manual,
-        supportedLevels:model ? supported : null,
+        supportedLevels:supported,
       });
       const fallbackReason = [choice.fallbackReason,
         jev.status !== "ok" && jev.reason ? `${jev.reason}` : null,
-        catalog && !model ? "selected_model_missing_from_live_catalog" : null,
         choice.manualSupported === false ? `manual_fallback_unsupported:${manual}` : null,
       ].filter(Boolean).join(";") || null;
       const requested = choice.requested;
@@ -476,14 +496,16 @@ export default async function plugin(bb: BbPluginApi) {
         planSha256:digest.sha256, sentPlanSha256:jev.sentPlanSha256, sourceLength:digest.length, sentLength:jev.sentLength,
         jevStatus:jev.status, jevDecision, requestedReasoningLevel:requested,
         effectiveReasoningLevel:effective, fallbackReason,
-        providerId:input.config.writerProviderId, model:input.config.writerModel,
+        providerId:writerProviderId, model:writerModel, serviceTier:effectiveServiceTier,
+        requestedServiceTier,
         runId:input.runId, attemptId:input.attemptId, threadId:null,
       } as const;
       saveReasoningTrace(db, trace);
+      bb.log.info(`Lane Pilot writer reasoning trace ${JSON.stringify(trace)}`);
       if (choice.manualSupported === false) {
-        throw new Error(`manual_writer_reasoning_effort_unsupported:${effective}; supported=${[...supported].join(",")}`);
+        throw new WriterSelectionError(`manual_writer_reasoning_effort_unsupported:${effective}; supported=${[...supported].join(",")}`);
       }
-      const execution = writerExecutionSelection(input.config.writerProviderId, input.config.writerModel, effective);
+      const execution = writerExecutionSelection(writerProviderId, writerModel, effective, effectiveServiceTier);
       const spawned = await spawnWithSeam(() => bb.sdk.threads.spawn({
         projectId: input.projectId,
         ...execution,
@@ -506,8 +528,15 @@ export default async function plugin(bb: BbPluginApi) {
       if (!writerThreadId) throw new Error("threads.spawn returned no writer thread id");
       transitionAttempt(db, input.attemptId, "running", { threadId:writerThreadId });
       setReasoningThread(db, input.attemptId, writerThreadId);
+      const spawnedTrace = getReasoningTrace(db, input.attemptId);
+      if (spawnedTrace) bb.log.info(`Lane Pilot writer execution ${JSON.stringify({ attemptId:input.attemptId, threadId:writerThreadId, providerId:spawnedTrace.providerId, model:spawnedTrace.model, reasoningLevel:spawnedTrace.effectiveReasoningLevel, serviceTier:spawnedTrace.serviceTier })}`);
       return { ok:true, threadId:writerThreadId, dirtBefore };
     } catch (cause) {
+      if (cause instanceof WriterSelectionError) {
+        const reason = cause.message;
+        transitionAttempt(db, input.attemptId, "spawn_rejected", { reason });
+        return { ok:false, status:"spawn_rejected", reason, attemptId:input.attemptId };
+      }
       transitionAttempt(db, input.attemptId, "spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });
       const attempt = getAttempt(db, input.attemptId);
       if (!attempt) throw new Error(`persisted attempt disappeared after spawn_unknown: ${input.attemptId}`);
@@ -568,9 +597,11 @@ export default async function plugin(bb: BbPluginApi) {
     attemptId:string; pmThreadId:string; writerThreadId:string; output:string;
   }): Promise<Record<string,unknown>> {
     const reportText = bbWriterReportMarkdown(input.task, input.attempt);
+    const reasoningTrace = getReasoningTrace(db, input.attemptId);
     const acceptance = buildAcceptanceV2({
-      task:input.task, attempt:input.attempt, providerId:input.config.writerProviderId,
-      model:input.config.writerModel, reportText,
+      task:input.task, attempt:input.attempt,
+      providerId:reasoningTrace?.providerId ?? input.config.writerProviderId,
+      model:reasoningTrace?.model ?? input.config.writerModel, reportText,
     });
     const validation = validateAcceptanceV2(acceptance);
     if (!validation.ok) throw new Error(`upstream acceptance-v2 rejected generated receipt: ${validation.errors.join("; ")}`);
@@ -579,6 +610,7 @@ export default async function plugin(bb: BbPluginApi) {
       schemaVersion:1, status:"accepted", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
       attemptId:input.attemptId, pmThreadId:input.pmThreadId, writerThreadId:input.writerThreadId,
       ownsPaths:input.task.owns_paths, output:input.output,
+      reasoning:reasoningTrace ? [reasoningTrace] : [],
     };
     for (const [name, content] of [
       ["report.md", reportText],
@@ -1172,6 +1204,7 @@ export default async function plugin(bb: BbPluginApi) {
     },
     get_screen: ({ projectId }) => {
       const config = loadPrototypeConfig(db, projectId);
+      const settings = loadProjectSettings(db, projectId);
       const rows = listSettingRows(db, projectId);
       const values: Record<string, unknown> = {};
       const versions: Record<string, number> = {};
@@ -1186,23 +1219,21 @@ export default async function plugin(bb: BbPluginApi) {
           }
         }
       }
+      if (config) {
+        values["writer.provider"] ??= settings["writer.provider"] ?? config.writerProviderId;
+        values["writer.model"] ??= settings["writer.model"] ?? config.writerModel;
+      }
+      values["writer.reasoning_effort"] ??= settings["writer.reasoning_effort"] ?? "medium";
+      values["writer.service_tier"] ??= writerServiceTier(settings);
       const completed = values["import.completed"];
       const routing = values["import.routing_profile"];
       const night = values["import.night_shift"];
-      const settings = loadProjectSettings(db, projectId);
-      const invocationSettings: Record<string, unknown> = {};
-      for (const spec of SETTING_CATALOG) {
-        if (spec.key in settings) invocationSettings[spec.key] = settings[spec.key];
-      }
-      for (const [key, value] of Object.entries(settings)) {
-        if (!isRuntimeSettingKey(key)) continue;
-        if (!(key in invocationSettings)) invocationSettings[key] = value;
-      }
-      const unapplied = buildCliInvocation({
+      const invocation = buildCliInvocation({
         binary: "run-controller",
         subcommand: "run",
-        settings: invocationSettings,
-      }).unapplied.map((item) => ({ key: item.key, reason: item.reason }));
+        settings: config ? cliSettingsFor(projectId, config) : settings,
+      });
+      const unapplied = invocation.unapplied.map((item) => ({ key: item.key, reason: item.reason }));
       const listed = listRunsWithAttempts(db, projectId).map((run) => {
         const runReceipt = asJsonText(values[cliReceiptRunKey(run.id)]);
         return {
@@ -1244,6 +1275,12 @@ export default async function plugin(bb: BbPluginApi) {
         },
         runs: listed,
         unapplied,
+        cliPreview: {
+          argv: invocation.argv,
+          env: invocation.env,
+          applied: invocation.applied,
+          unapplied,
+        },
         lastSnapshotPath: typeof values["install.lastSnapshotPath"] === "string" ? values["install.lastSnapshotPath"] as string : null,
         lastReceiptJson: asJsonText(values["install.lastReceipt"]),
         writerResultJson: asJsonText(values["writer.lastResult"]),
@@ -1260,6 +1297,45 @@ export default async function plugin(bb: BbPluginApi) {
       return { ok: true, conflict: false, version: result.version, value };
     },
     save_settings: ({ projectId, changes }) => casUpsertSettings(db, { projectId, changes }),
+    save_writer_selection: async ({ projectId, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
+      const reject = (code:"invalid_choice"|"incompatible_setting", key:string, message:string) => ({
+        ok:false, conflict:false, values:{}, versions:{}, validation:{ code, key, params:[key, message] },
+      });
+      const config = loadPrototypeConfig(db, projectId);
+      if (!config) return reject("invalid_choice", "writer.provider", "project has no configured writer host");
+      let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
+      let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
+      try {
+        [providers, catalog] = await Promise.all([
+          bb.sdk.providers.list({ hostId:config.hostId }),
+          bb.sdk.providers.models({ providerId, hostId:config.hostId }),
+        ]);
+      } catch {
+        return reject("invalid_choice", "writer.provider", "the live provider catalog for this host is unavailable");
+      }
+      const provider = providers.find((item) => item.id === providerId && item.available);
+      if (!provider) return reject("invalid_choice", "writer.provider", `provider ${providerId} is unavailable on this host`);
+      const selectedModel = catalog.models.find((item) => item.id === modelId || item.model === modelId);
+      if (!selectedModel) return reject("invalid_choice", "writer.model", `model ${modelId} is not in the live catalog for ${providerId}`);
+      const supportedEfforts = selectedModel.supportedReasoningEfforts.map((item) => item.reasoningEffort);
+      if (!supportedEfforts.includes(reasoningLevel)) {
+        return reject("incompatible_setting", "writer.reasoning_effort", `model supports: ${supportedEfforts.join(", ")}`);
+      }
+      const supportedTiers = provider.serviceTiers?.map((tier) => tier.id) ?? [];
+      const selectedTier = serviceTier ?? (provider.capabilities.supportsServiceTier && supportedTiers.includes("default") ? "default" : null);
+      if (selectedTier && !supportedTiers.includes(selectedTier)) {
+        return reject("invalid_choice", "writer.service_tier", `provider supports: ${supportedTiers.join(", ") || "no service tiers"}`);
+      }
+      return casUpsertSettings(db, {
+        projectId,
+        changes:[
+          { key:"writer.provider", value:providerId, expectedVersion:expectedVersions["writer.provider"] },
+          { key:"writer.model", value:modelId, expectedVersion:expectedVersions["writer.model"] },
+          { key:"writer.reasoning_effort", value:reasoningLevel, expectedVersion:expectedVersions["writer.reasoning_effort"] },
+          { key:"writer.service_tier", value:selectedTier === "fast" ? "fast" : "standard", expectedVersion:expectedVersions["writer.service_tier"] },
+        ],
+      }, { nativeWriterSelection:true });
+    },
     cancel_attempt: async ({ attemptId }) => {
       const attempt = getAttempt(db, attemptId);
       if (!attempt?.thread_id) return { ok: false, state: attempt?.state ?? "missing", reason: "attempt has no writer thread" };

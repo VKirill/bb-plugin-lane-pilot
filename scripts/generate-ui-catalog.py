@@ -56,7 +56,7 @@ RUNTIME_KEY_BY_TUPLE: dict[tuple[str, str], str] = {
     ("routing_profile.py", "DEFAULT_SERVICE_TIER"): "writer.service_tier",
     ("lane-ctl CLI (start)", "--service-tier"): "writer.service_tier",
     ("run-controller CLI", "--service-tier"): "writer.service_tier",
-    ("TUI Coder tab", "fast (service_tier)"): "writer.fast_mode",
+    ("TUI Coder tab", "fast (service_tier)"): "writer.service_tier",
     ("adoc CLI top-level", "--fast-mode/--no-fast-mode"): "writer.fast_mode",
     ("lane-ctl CLI (start)", "--fast-mode"): "writer.fast_mode",
     ("run-controller CLI", "--fast-mode"): "writer.fast_mode",
@@ -106,7 +106,6 @@ CONSUMER_KEYS = {
     "writer.model",
     "writer.reasoning_effort",
     "writer.service_tier",
-    "writer.fast_mode",
     "jev.LANE_JEV_EFFORT",
     "jev.LANE_OPENCODE_JEV",
     "ops.max_tasks",
@@ -133,7 +132,9 @@ CONSUMER_KEYS = {
     "ui.language",
 }
 
-SETTING_CATALOG_KEYS = CONSUMER_KEYS | {
+LEGACY_READONLY_KEYS = {"writer.fast_mode"}
+
+SETTING_CATALOG_KEYS = CONSUMER_KEYS | LEGACY_READONLY_KEYS | {
     "plan_critique.mode",
     "plan_critique.enabled",
     "plan_critique.provider",
@@ -147,7 +148,6 @@ EDITABLE_RATIONALE = {
     "writer.model": "W-DIRECT --model on run-controller/lane-ctl start (bin/run-controller:1686, bin/lane-ctl:3405)",
     "writer.reasoning_effort": "W-DIRECT --reasoning-effort on run-controller/lane-ctl start (bin/run-controller:1688, bin/lane-ctl:3407)",
     "writer.service_tier": "W-DIRECT --service-tier on run-controller/lane-ctl start (bin/run-controller:1694, bin/lane-ctl:3413)",
-    "writer.fast_mode": "W-DIRECT --fast-mode applies true only; false has no off flag (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200)",
     "jev.LANE_JEV_EFFORT": "ENV-PASSTHROUGH LANE_JEV_EFFORT into writer subprocess (profiles/opencode/opencode-lane/index.ts:111)",
     "jev.LANE_OPENCODE_JEV": "ENV-PASSTHROUGH LANE_OPENCODE_JEV into writer subprocess (profiles/opencode/opencode-lane/jev.ts:37)",
     "ops.max_tasks": "OPS-DIRECT --max-tasks on lane-ctl start (bin/lane-ctl:3449)",
@@ -172,6 +172,10 @@ EDITABLE_RATIONALE = {
     "install.CLAUDE_CONFIG_DIR": "INSTALL-ENV CLAUDE_CONFIG_DIR read by install.sh (install.sh:362)",
     "install.CODEX_HOME": "INSTALL-ENV CODEX_HOME read by install.sh (install.sh:8)",
     "ui.language": "OWN Lane Pilot UI locale; not an upstream flag",
+}
+
+LEGACY_READONLY_RATIONALE = {
+    "writer.fast_mode": "Legacy fast-mode values migrate to writer.service_tier: true selects fast and false selects standard; shown in Diagnostics only (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200)",
 }
 
 GAP_NO_CONSUMER = (
@@ -785,7 +789,12 @@ def main() -> None:
         rationale = mat["matrix_status"]
         evidence = mat["location"]
         storage_key = RUNTIME_KEY_BY_TUPLE.get((inv["area"], inv["setting"]), f"adoc.{i:03d}")
-        if bucket == "readonly":
+        if storage_key in LEGACY_READONLY_KEYS:
+            decision = "readonly"
+            ch = "NONE"
+            rationale = LEGACY_READONLY_RATIONALE[storage_key]
+            evidence = path_line_evidence(rationale, inv["location"], inv["setting"])
+        elif bucket == "readonly":
             audit = audit_readonly(mat, inv)
             decision = audit["decision"]
             ch = audit["channel"] if audit["decision"] == "editable" else "NONE"

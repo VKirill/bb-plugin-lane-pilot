@@ -24,11 +24,34 @@ export function resolveJevReasoning(input:{
   return { requested, effective, fallbackReason, manualSupported };
 }
 
-export function writerExecutionSelection(providerId:string, model:string, reasoningLevel:string) {
+export type WriterServiceTier = "standard" | "fast";
+export type BbServiceTier = "default" | "fast";
+
+export function writerServiceTier(settings: Readonly<Record<string, unknown>>): WriterServiceTier {
+  const explicit = settings["writer.service_tier"];
+  if (explicit === "standard" || explicit === "fast") return explicit;
+  const legacy = settings["writer.fast_mode"];
+  if (legacy === true || legacy === 1 || (typeof legacy === "string" && ["1", "true", "on"].includes(legacy.trim().toLowerCase()))) {
+    return "fast";
+  }
+  return "standard";
+}
+
+export function bbServiceTier(tier: WriterServiceTier): BbServiceTier {
+  return tier === "fast" ? "fast" : "default";
+}
+
+export function writerExecutionSelection(providerId:string, model:string, reasoningLevel:string, serviceTier:BbServiceTier|null) {
   return {
     providerId,
     model,
     reasoningLevel:reasoningLevel as "none"|"low"|"medium"|"high"|"xhigh"|"ultracode"|"max"|"ultra",
-    executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const, reasoningLevel:"explicit" as const },
+    ...(serviceTier ? { serviceTier } : {}),
+    executionInputSources:{
+      providerId:"explicit" as const,
+      model:"explicit" as const,
+      reasoningLevel:"explicit" as const,
+      ...(serviceTier ? { serviceTier:"explicit" as const } : {}),
+    },
   };
 }

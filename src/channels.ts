@@ -27,6 +27,7 @@ export const UNAPPLIED_REASON = {
   nightReviewModel: "night-shift has --provider but no --model",
   nightReviewEffort: "night-shift has no --reasoning-effort",
   booleanOffUnsupported: "upstream argparse is store_true; false has no off flag (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200)",
+  legacyFastModeMigrated: "legacy writer.fast_mode is diagnostic only; its value migrates to writer.service_tier",
 } as const;
 
 export function unappliedNotValidReason(spec: SettingSpec, binary: CliBinary, subcommand: string): string {
@@ -38,7 +39,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"writer.model", channel:"W-DIRECT", flag:"--model", subcommands:["run","start"] },
   { key:"writer.reasoning_effort", channel:"W-DIRECT", flag:"--reasoning-effort", subcommands:["run","start"] },
   { key:"writer.service_tier", channel:"W-DIRECT", flag:"--service-tier", subcommands:["run","start"] },
-  { key:"writer.fast_mode", channel:"W-DIRECT", flag:"--fast-mode", booleanFlag:true, positiveOnly:true, subcommands:["run","start"] },
+  { key:"writer.fast_mode", channel:"NONE", reason:UNAPPLIED_REASON.legacyFastModeMigrated },
   { key:"jev.LANE_JEV_EFFORT", channel:"ENV-PASSTHROUGH", env:"LANE_JEV_EFFORT" },
   { key:"jev.LANE_OPENCODE_JEV", channel:"ENV-PASSTHROUGH", env:"LANE_OPENCODE_JEV" },
   { key:"ops.max_tasks", channel:"OPS-DIRECT", flag:"--max-tasks", binaries:["lane-ctl"], subcommands:["start"] },

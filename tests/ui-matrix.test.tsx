@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
 import { en, ru, setLocaleOverride, t, validationMessage } from "../i18n";
@@ -10,11 +10,15 @@ import { toast } from "sonner";
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
 function screenFixture() {
+  const values = Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, row.defaultValue]));
+  values["writer.provider"] = "codex";
+  values["writer.model"] = "test-model";
+  values["writer.reasoning_effort"] = "medium";
   return {
     projectId: "proj_ui",
     hostId: "host_ui",
     workspacePath: "/tmp/lane-pilot-ui",
-    values: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, row.defaultValue])),
+    values,
     versions: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, 1])),
     importSource: { completed: true, at: 1, routingPath: "/tmp/routing.profile.yaml", nightPath: "/tmp/night-shift.yaml" },
     runs: [{
@@ -51,6 +55,12 @@ async function mountPage(
   const app = await loadPluginApp(() => import("../app"));
   return renderSlot(app.navPanels[0]!, { subPath }, {
     context,
+    providers:{ status:"ready", providers:[{
+      id:"codex", displayName:"Codex", available:true,
+      capabilities:{ modelCatalogScope:"host", permissionModes:[], supportsFork:false, supportsNativeUserQuestion:false,
+        supportsServiceTier:true, supportsSessionRewind:false, supportsThreadArchive:false, supportsThreadRename:false },
+      serviceTiers:[{ id:"default", label:"Default" }, { id:"fast", label:"Fast" }],
+    }] as never },
     rpc: {
       get_preferences: (input: unknown) => ({ locale: (input as {suggestedLocale:"en"|"ru"}).suggestedLocale, preference:"auto", lastProjectId: null }),
       set_locale: (input: unknown) => ({ locale: (input as {locale:"auto"|"en"|"ru"; suggestedLocale:"en"|"ru"}).locale === "auto" ? (input as {suggestedLocale:"en"|"ru"}).suggestedLocale : (input as {locale:"en"|"ru"}).locale, preference: (input as {locale:"auto"|"en"|"ru"}).locale }),
@@ -78,37 +88,39 @@ async function mountPage(
 
 describe("Lane Pilot UI", () => {
   afterEach(() => {
+    cleanup();
     setLocaleOverride(null);
     document.documentElement.lang = "en";
     Object.defineProperty(navigator, "language", { configurable: true, value: "en-US" });
   });
 
-  it("opens the selected project from the no-context picker and remembers it", async () => {
+  it("shows the selected project's settings immediately and remembers the rail selection", async () => {
     const remember = vi.fn(() => ({ ok:true }));
     const slot = await mountPage({
       list_projects: () => ({ projects:[{ id:"proj_ui", name:"UI test" }], lastProjectId:"proj_ui" }),
       remember_project: remember,
     }, { projectId:null, threadId:null });
-    const select = await slot.findByLabelText(en.selectProject) as HTMLSelectElement;
-    expect(select.value).toBe("proj_ui");
-    fireEvent.click(slot.getByRole("button", { name:en.openProject }));
-    await slot.findByText(en.importSource);
+    const project = await slot.findByTestId("project-item-proj_ui");
+    fireEvent.click(project);
+    await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
     expect(remember).toHaveBeenCalledWith({ projectId:"proj_ui" });
+    expect(slot.queryByRole("button", { name:en.openProject })).toBeNull();
     slot.lifecycle.unmount();
   });
 
-  it("renders every editable and read-only catalog field", async () => {
+  it("keeps technical fields in Diagnostics and renders each storage key once", async () => {
     const slot = await mountPage();
-    for (const row of VISIBLE_CATALOG) {
-      const node = slot.getByTestId(`field-${row.id}`);
-      expect(node.getAttribute("data-ui-status")).toBe(row.uiStatus);
-    }
+    expect(slot.queryByTestId("field-s004")).toBeNull();
+    expect(slot.getByTestId("settings-panel").textContent).not.toContain("CAS version");
+    expect(slot.getByTestId("settings-panel").textContent).not.toContain("--writer-provider");
+    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    const fields = Array.from(slot.container.querySelectorAll<HTMLElement>("[data-storage-key]"));
+    const keys = fields.map((node) => node.getAttribute("data-storage-key"));
+    expect(keys.length).toBeGreaterThan(0);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toContain("writer.fast_mode");
+    expect(slot.getByTestId("field-s024").textContent).toContain(en.legacyFastModeExplanation);
     expect(EDITABLE_IDS.length + DISABLED_IDS.length).toBe(VISIBLE_CATALOG.length);
-    for (const id of DISABLED_IDS) {
-      const field = slot.getByTestId(`field-${id}`);
-      expect(field.querySelector("[aria-disabled='true'], [disabled], [data-disabled], button[disabled], input[disabled]")).not.toBeNull();
-      expect(field.textContent).toMatch(/Read only|Gap|Только чтение|Нет канала/);
-    }
     slot.lifecycle.unmount();
   });
 
@@ -131,11 +143,8 @@ describe("Lane Pilot UI", () => {
     const slot = await mountPage({
       save_setting: () => ({ ok: false, conflict: true, version: 3, value: "other" }),
     });
-    await slot.findByText(en.importSource);
-    const editable = VISIBLE_CATALOG.find((row) => row.uiStatus === "editable" && row.control === "switch");
-    expect(editable).toBeTruthy();
-    const field = slot.getByTestId(`field-${editable!.id}`);
-    const sw = field.querySelector("[role='switch']") as HTMLButtonElement;
+    await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    const sw = slot.container.querySelector("[data-testid='settings-panel'] [data-testid='jev-settings'] [role='switch']") as HTMLButtonElement;
     fireEvent.click(sw);
     await slot.findByTestId("cas-conflict");
     slot.lifecycle.unmount();
@@ -154,88 +163,22 @@ describe("Lane Pilot UI", () => {
         code: "invalid_choice", key: "writer.provider", params: ["writer.provider", "agy, grok, qwen"],
       } }),
     });
-    await slot.findByText(ru.importSource);
-    const editable = VISIBLE_CATALOG.find((row) => row.uiStatus === "editable" && row.control === "switch");
-    const field = slot.getByTestId(`field-${editable!.id}`);
-    fireEvent.click(field.querySelector("[role='switch']") as HTMLButtonElement);
+    await slot.findByTestId("writer-picker");
+    fireEvent.click(slot.container.querySelector("[data-testid='settings-panel'] [data-testid='jev-settings'] [role='switch']") as HTMLButtonElement);
     await slot.findByTestId("setting-validation-error");
     expect(slot.getByText(ru.validationInvalidChoice.replace("{key}", "writer.provider").replace("{allowed}", "agy, grok, qwen"))).toBeTruthy();
     expect(slot.queryByTestId("cas-conflict")).toBeNull();
     slot.lifecycle.unmount();
   });
 
-  it("saves provider and effort rows atomically and advances UI values and versions from each server response", async () => {
-    const calls: Array<{ changes:Array<{ key:string; value:unknown; expectedVersion:number }> }> = [];
-    const values: Record<string, unknown> = { "writer.provider":"qwen", "writer.reasoning_effort":"medium" };
-    const versions: Record<string, number> = { "writer.provider":5, "writer.reasoning_effort":8 };
-    const slot = await mountPage({
-      get_screen: () => ({ ...screenFixture(), values:{ ...screenFixture().values, ...values }, versions:{ ...screenFixture().versions, ...versions } }),
-      save_settings: (input) => {
-        const request = input as { changes:Array<{ key:string; value:unknown; expectedVersion:number }> };
-        calls.push(request);
-        for (const change of request.changes) {
-          if ((versions[change.key] ?? 0) !== change.expectedVersion) {
-            return { ok:false, conflict:true, values:{ ...values }, versions:{ ...versions } };
-          }
-        }
-        const savedValues: Record<string, unknown> = {};
-        const savedVersions: Record<string, number> = {};
-        for (const change of request.changes) {
-          values[change.key] = change.value;
-          versions[change.key] = (versions[change.key] ?? 0) + 1;
-          savedValues[change.key] = values[change.key];
-          savedVersions[change.key] = versions[change.key]!;
-        }
-        return { ok:true, conflict:false, values:savedValues, versions:savedVersions };
-      },
-    });
-
-    const provider = VISIBLE_CATALOG.find((row) => row.storageKey === "writer.provider" && row.uiStatus === "editable")!;
-    const providerField = slot.getByTestId(`field-${provider.id}`);
-    fireEvent.click(providerField.querySelector("[role='combobox']") as HTMLButtonElement);
-    fireEvent.click(await slot.findByText("codex"));
-    await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.changes.map((change) => [change.key, change.expectedVersion])).toEqual([
-      ["writer.provider", 5], ["writer.reasoning_effort", 8],
-    ]);
-    expect(values).toMatchObject({ "writer.provider":"codex", "writer.reasoning_effort":"medium" });
-    expect(versions).toMatchObject({ "writer.provider":6, "writer.reasoning_effort":9 });
-
-    const effort = VISIBLE_CATALOG.find((row) => row.storageKey === "writer.reasoning_effort" && row.uiStatus === "editable")!;
-    const effortField = slot.getByTestId(`field-${effort.id}`);
-    fireEvent.click(effortField.querySelector("[role='combobox']") as HTMLButtonElement);
-    fireEvent.click(await slot.findByText("max"));
-    await waitFor(() => expect(calls).toHaveLength(2));
-    expect(calls).toHaveLength(2);
-    expect(calls[1]!.changes.map((change) => [change.key, change.expectedVersion])).toEqual([
-      ["writer.reasoning_effort", 9], ["writer.provider", 6],
-    ]);
-    expect(values).toMatchObject({ "writer.provider":"codex", "writer.reasoning_effort":"max" });
-    expect(versions).toMatchObject({ "writer.provider":7, "writer.reasoning_effort":10 });
-    expect((effortField.querySelector("[role='combobox']") as HTMLButtonElement).textContent).toContain("max");
-    slot.lifecycle.unmount();
-  });
-
-  it("adjusts an incompatible effort from the catalog provider row and announces the change", async () => {
-    const changesSeen: Array<Array<{ key:string; value:unknown; expectedVersion:number }>> = [];
-    const slot = await mountPage({
-      get_screen: () => ({ ...screenFixture(), values:{ ...screenFixture().values, "writer.provider":"codex", "writer.reasoning_effort":"max" } }),
-      save_settings: (input) => {
-        const changes = (input as { changes:Array<{ key:string; value:unknown; expectedVersion:number }> }).changes;
-        changesSeen.push(changes);
-        return { ok:true, conflict:false, values:Object.fromEntries(changes.map(({key,value}) => [key,value])), versions:Object.fromEntries(changes.map(({key,expectedVersion}) => [key,expectedVersion + 1])) };
-      },
-    });
-    const provider = VISIBLE_CATALOG.find((row) => row.storageKey === "writer.provider" && row.uiStatus === "editable")!;
-    const field = slot.getByTestId(`field-${provider.id}`);
-    fireEvent.click(field.querySelector("[role='combobox']") as HTMLButtonElement);
-    fireEvent.click(await slot.findByText("qwen"));
-    await waitFor(() => expect(changesSeen).toHaveLength(1));
-    expect(changesSeen[0]!.map(({key,value}) => [key,value])).toEqual([
-      ["writer.provider", "qwen"], ["writer.reasoning_effort", "low"],
-    ]);
-    expect(toast.info).toHaveBeenCalledWith(expect.objectContaining({ props: expect.objectContaining({ "data-bb-ru-skip": true, children: en.writerEffortAdjusted.replace("{from}", "max").replace("{to}", "low").replace("{provider}", "qwen") }) }));
+  it("keeps the writer selection in one native catalog picker", async () => {
+    const slot = await mountPage();
+    await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    const settings = slot.container.querySelector("[data-testid='settings-panel']")!;
+    expect(settings?.querySelector("[data-testid='writer-picker'] [data-testid='bb-provider-model-picker']")).not.toBeNull();
+    expect(settings.querySelector("[data-testid='field-s004']")).toBeNull();
+    expect(settings.querySelector("[data-testid='field-s022']")).toBeNull();
+    expect(settings.querySelector("[data-testid='field-s023']")).toBeNull();
     slot.lifecycle.unmount();
   });
 
@@ -263,14 +206,17 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
-  it("shows writer result on the monitor and install receipt on the install tab", async () => {
+  it("shows writer output and installation receipts only in Diagnostics", async () => {
     const slot = await mountPage();
-    await slot.findByText(en.importSource);
+    fireEvent.click(slot.getByTestId("tab-monitor"));
+    expect(slot.queryByTestId("writer-result")).toBeNull();
+    fireEvent.click(slot.getByTestId("tab-diagnostics"));
     const writer = await slot.findByTestId("writer-result");
     expect(writer.textContent).toContain("hello from writer");
-    const monitor = slot.getByTestId("run-monitor");
-    expect(monitor.textContent).not.toContain("\"action\":\"install\"");
+    expect(slot.getByTestId("diagnostics-panel").textContent).toContain("\"action\":\"install\"");
     fireEvent.click(slot.getByTestId("tab-install"));
+    expect(slot.container.querySelector("[data-testid='diagnostics-panel']")?.hasAttribute("hidden")).toBe(true);
+    fireEvent.click(slot.getByTestId("tab-diagnostics"));
     const install = await slot.findByTestId("install-receipt");
     expect(install.textContent).toContain("\"action\":\"install\"");
     expect(install.textContent).not.toContain("hello from writer");
@@ -291,8 +237,11 @@ describe("Lane Pilot UI", () => {
       expect(result.textContent).toContain("S1");
       expect(result.textContent).toContain("1.38.0");
       expect(result.textContent).toContain("1.18.30");
-      expect(result.textContent).toContain("/tmp/lane-pilot-ui");
-      expect(result.textContent).toContain("/tmp/snapshot");
+      expect(result.textContent).not.toContain("/tmp/lane-pilot-ui");
+      expect(result.textContent).not.toContain("/tmp/snapshot");
+      fireEvent.click(slot.getByTestId("tab-diagnostics"));
+      expect(slot.getByTestId("import-diagnostics").textContent).toContain("/tmp/lane-pilot-ui");
+      expect(slot.getByTestId("import-diagnostics").textContent).toContain("/tmp/snapshot");
       slot.lifecycle.unmount();
     }
   });
@@ -322,6 +271,7 @@ describe("Lane Pilot UI", () => {
     await slot.findByText(ru.tabSettings);
     fireEvent.click(slot.getAllByTestId("tab-monitor").at(-1)!);
     expect(slot.getAllByText(ru.state_running).length).toBeGreaterThan(0);
+    fireEvent.click(slot.getByTestId("tab-diagnostics"));
     expect(slot.getAllByText(new RegExp(ru.unappliedNoChannel)).length).toBeGreaterThan(0);
     slot.lifecycle.unmount();
   });
@@ -365,9 +315,12 @@ describe("Lane Pilot UI", () => {
     });
     await slot.findByTestId("cli-receipt-lprun_cli");
     expect(slot.getByTestId("run-lprun_cli")).toBeTruthy();
+    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    expect(slot.getByTestId("diagnostics-panel").textContent).toContain("cli-receipt.json");
+    fireEvent.click(slot.getByTestId("tab-monitor"));
     const monitor = slot.getByTestId("run-monitor");
     expect(monitor.textContent).not.toContain(en.cancel);
-    expect(monitor.textContent).toContain("cli-receipt.json");
+    expect(monitor.textContent).not.toContain("cli-receipt.json");
     const finishButton = Array.from(monitor.querySelectorAll("button")).find((button) => button.textContent === en.finishRun);
     expect(finishButton).toBeTruthy();
     fireEvent.click(finishButton!);
@@ -378,7 +331,7 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
-  it("opens a distinct CLI receipt for each run", async () => {
+  it("opens each CLI receipt only in Diagnostics", async () => {
     const base = screenFixture();
     const slot = await mountPage({
       get_screen: () => ({
@@ -421,17 +374,20 @@ describe("Lane Pilot UI", () => {
         ],
       }),
     });
-    await slot.findByTestId("cli-receipt-lpattempt_a");
     fireEvent.click(slot.getByTestId("tab-monitor"));
-    expect(slot.getByTestId("cli-receipt-lpattempt_a").textContent).toContain("first");
-    expect(slot.getByTestId("cli-receipt-lpattempt_b").textContent).toContain("second");
+    expect(slot.queryByTestId("cli-receipt-lpattempt_a")).toBeNull();
+    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    expect((await slot.findByTestId("cli-receipt-lpattempt_a")).textContent).toContain("first");
+    expect((await slot.findByTestId("cli-receipt-lpattempt_b")).textContent).toContain("second");
     slot.lifecycle.unmount();
   });
 
-  it("shows the off-value limitation on writer.fast_mode fields", async () => {
+  it("shows the legacy fast-mode mapping in Diagnostics instead of a separate switch", async () => {
     const slot = await mountPage();
-    const limitation = await slot.findByTestId("channel-limitation-s024");
-    expect(limitation.textContent).toBe(en.channelOffLimitation);
+    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    const migration = await slot.findByTestId("field-s024");
+    expect(migration.textContent).toContain(en.legacyFastModeExplanation);
+    expect(migration.querySelector("[role='switch']")).toBeNull();
     slot.lifecycle.unmount();
   });
 

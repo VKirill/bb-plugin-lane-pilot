@@ -9,7 +9,7 @@ Based on [VKirill/claude-lane-stack](https://github.com/VKirill/claude-lane-stac
 Назначение: isolated PM + writer dispatch for Lane Stack on BB.
 Владелец работы: AG-196 / AG-177.
 Статус: active.
-Проверено: 2026-09-23; public repo, GitNexus on HEAD, hub 0.1.0, rollback to 0.0.1-stage0 and back.
+Проверено: 2026-09-23; source UI and native writer selection are covered by local integration tests; hub remains on 0.1.9 pending the shared QA window.
 
 | Field | Value |
 |---|---|
@@ -25,6 +25,16 @@ Based on [VKirill/claude-lane-stack](https://github.com/VKirill/claude-lane-stac
 
 1. **Terminal (Mode 1).** `claude` / `adoc` on the machine stay as installed Lane Stack. Lane Pilot does not patch global Claude settings for this mode.
 2. **BB PM (Mode 2).** Explicit activation spawns a **new** PM thread. Settings come from the plugin store. Writers are hidden BB threads (or CLI writers on the project host). Ordinary chats are not PM sessions.
+
+## Project settings and native writers
+
+The settings panel keeps the project list on the left and the selected project's settings on the right. Provider, model, supported reasoning level, and service tier are saved as one compare-and-swap selection from BB's host-routed native writer catalog. For example, the catalog entry `gpt-6-luna` with service tier `fast` is stored as one writer choice; fast does not change the reasoning level. The two Jev routing controls are regular settings. Night review is shown as unavailable because Lane Pilot does not run it.
+
+Technical fields, including argv/environment previews, unapplied settings, storage versions, import paths, and receipts are grouped under Diagnostics. The old `writer.fast_mode` value is diagnostic only and migrates to `writer.service_tier` only when no explicit tier has been saved.
+
+Панель настроек показывает список проектов слева и настройки выбранного проекта справа. Провайдер, модель, доступный уровень reasoning и service tier сохраняются атомарно из каталога BB для host проекта. Например, выбор `gpt-6-luna` с tier `fast` не меняет reasoning. Два переключателя Jev управляют маршрутизацией. Ночное ревью помечено как недоступное: Lane Pilot его не запускает.
+
+Технические сведения — argv/env, неприменённые настройки, версии хранения, пути импорта и квитанции — находятся во вкладке Diagnostics. Старый `writer.fast_mode` виден только там и переносится в `writer.service_tier`, если явный tier ещё не сохранён.
 
 ## Requirements
 

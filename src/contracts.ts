@@ -244,6 +244,12 @@ export const rpcContract = defineRpcContract({
         }).strict()),
       }).strict()),
       unapplied: z.array(z.object({ key: z.string(), reason: z.string() }).strict()),
+      cliPreview: z.object({
+        argv: z.array(z.string()),
+        env: z.record(z.string(), z.string()),
+        applied: z.array(z.string()),
+        unapplied: z.array(z.object({ key:z.string(), reason:z.string() }).strict()),
+      }).strict(),
       lastSnapshotPath: z.string().nullable(),
       lastReceiptJson: z.string().nullable(),
       writerResultJson: z.string().nullable(),
@@ -286,6 +292,32 @@ export const rpcContract = defineRpcContract({
           seen.add(change.key);
         }
       }),
+    }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      conflict: z.boolean(),
+      values: z.record(z.string(), z.unknown()),
+      versions: z.record(z.string(), z.number().int()),
+      validation: z.object({
+        code: z.enum(["invalid_choice", "incompatible_setting"]),
+        key: z.string(),
+        params: z.array(z.string()),
+      }).strict().optional(),
+    }).strict(),
+  },
+  save_writer_selection: {
+    input: z.object({
+      projectId: z.string().min(1),
+      providerId: z.string().min(1),
+      model: z.string().min(1),
+      reasoningLevel: z.enum(["none", "low", "medium", "high", "xhigh", "ultracode", "max", "ultra"]),
+      serviceTier: z.enum(["default", "fast"]).nullable(),
+      expectedVersions: z.object({
+        "writer.provider": z.number().int().min(0),
+        "writer.model": z.number().int().min(0),
+        "writer.reasoning_effort": z.number().int().min(0),
+        "writer.service_tier": z.number().int().min(0),
+      }).strict(),
     }).strict(),
     output: z.object({
       ok: z.boolean(),

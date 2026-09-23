@@ -57,6 +57,14 @@ const task: TaskV2 = {
   ],
 };
 
+const listLiveWriterProviders = async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:true }, serviceTiers:[
+  { id:"default", label:"Default" }, { id:"fast", label:"Fast" },
+] }] as never;
+const listLiveWriterModels = async () => ({ models:[{
+  id:"codex-test", model:"codex-test",
+  supportedReasoningEfforts:["medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })),
+}] as never });
+
 describe("BB writer validation on the server path", () => {
   it("returns dispatch immediately and exposes the persisted receipt through bounded wait", async () => {
     let releaseWait!: (value:{matched:boolean; thread:{status:string}}) => void;
@@ -83,6 +91,7 @@ describe("BB writer validation on the server path", () => {
         output: async () => ({ text:"writer output" }),
         list: async () => [] as never,
       }, providers:{
+        list:listLiveWriterProviders,
         models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium","high","xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }),
       }, files:{
         read: async ({ path, rootPath }) => {
@@ -107,6 +116,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "writer.service_tier", "fast");
     createRun(db, "run-delayed", projectId, "bb", taskWorkspace);
     savePrototypeConfig(db, { ...config, writerWorkspacePath:"/tmp/changed-after-run-start" });
     setRunThread(db, "run-delayed", pmThreadId);
@@ -139,12 +149,13 @@ describe("BB writer validation on the server path", () => {
       "lane_pilot_wait_writer", { runId:"run-delayed", timeoutSec:2 }, { threadId:pmThreadId, projectId },
     )));
     expect(completed).toMatchObject({ state:"accepted", receipt:{ lanePilotRunId:"run-delayed", attemptId:dispatched.attemptId } });
-    expect(spawnedInput).toMatchObject({ providerId:"codex", model:"codex-test", reasoningLevel:"xhigh", executionInputSources:{ reasoningLevel:"explicit" } });
+    expect(spawnedInput).toMatchObject({ providerId:"codex", model:"codex-test", reasoningLevel:"xhigh", serviceTier:"fast", executionInputSources:{ reasoningLevel:"explicit", serviceTier:"explicit" } });
     const fullPlan = "Canonical delayed writer plan. Keep all Unicode 🧭 and newline. CRITICAL_TAIL";
     expect(completed.receipt.reasoning[0]).toMatchObject({
       planSha256:createHash("sha256").update(fullPlan, "utf8").digest("hex"),
       sourceLength:Buffer.byteLength(fullPlan), sentLength:Buffer.byteLength(fullPlan),
       jevDecision:"xhigh", requestedReasoningLevel:"xhigh", effectiveReasoningLevel:"xhigh", threadId:"writer-delayed",
+      serviceTier:"fast", requestedServiceTier:"fast",
     });
     expect(cwdCalls).toEqual([taskWorkspace, taskWorkspace]);
     expect(fileRoots.every((root) => root === taskWorkspace)).toBe(true);
@@ -167,7 +178,7 @@ describe("BB writer validation on the server path", () => {
           output:async () => ({ text:"created hello.txt" }),
           list:async () => [] as never,
         },
-        providers:{ models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium","high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }) },
+        providers:{ list:listLiveWriterProviders, models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium","high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }) },
         files:{
           read:async ({ path }) => path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
           write:async () => ({ ok:true }),
@@ -287,6 +298,7 @@ describe("BB writer validation on the server path", () => {
           output: async () => ({ text:"writer output" }),
           list: async () => [] as never,
         },
+        providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
         files:{
           read: async ({ path }) => path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
           write: async ({ path, content }) => {
@@ -350,6 +362,7 @@ describe("BB writer validation on the server path", () => {
           output: async () => ({ text:"ok" }),
           list: async () => [] as never,
         },
+        providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
         files:{
           read: async ({ path }) => path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
           write: async () => ({ ok:true }),
@@ -412,6 +425,7 @@ describe("BB writer validation on the server path", () => {
           output: async () => ({ text:"ok" }),
           list: async () => [] as never,
         },
+        providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
         files:{
           read: async () => ({ content:null }),
           write: async () => ({ ok:true }),
@@ -460,7 +474,7 @@ describe("BB writer validation on the server path", () => {
           : ({ id:"writer-background-error", status:"idle" }),
         output: async () => { throw new Error("synthetic output read failure"); },
         list: async () => [] as never,
-      } },
+      }, providers:{ list:listLiveWriterProviders, models:listLiveWriterModels } },
       experimental_callHostRpc: (call) => {
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyPlan } from "../src/host-handlers";
-import { resolveJevReasoning, writerExecutionSelection } from "../src/jev-reasoning";
+import { bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../src/jev-reasoning";
 
 const priorFetch = globalThis.fetch;
 const priorEnv = { typesafe:process.env.TYPESAFE_API_KEY, jev:process.env.JEV_API_KEY };
@@ -16,11 +16,20 @@ afterEach(() => {
 
 describe("Lane Pilot Jev complete-plan adapter", () => {
   it.each(["medium", "high", "xhigh"] as const)("forwards supported %s unchanged to explicit BB execution selection", (level) => {
-    const selected = writerExecutionSelection("codex", "gpt-test", level);
+    const selected = writerExecutionSelection("codex", "gpt-test", level, "fast");
     const decision = resolveJevReasoning({ status:"ok", jevDecision:level, manualLevel:"medium", supportedLevels:new Set(["medium","high","xhigh"]) });
     expect(decision).toMatchObject({ requested:level, effective:level, fallbackReason:null });
-    expect(selected).toMatchObject({ providerId:"codex", model:"gpt-test", reasoningLevel:level,
-      executionInputSources:{ providerId:"explicit", model:"explicit", reasoningLevel:"explicit" } });
+    expect(selected).toMatchObject({ providerId:"codex", model:"gpt-test", reasoningLevel:level, serviceTier:"fast",
+      executionInputSources:{ providerId:"explicit", model:"explicit", reasoningLevel:"explicit", serviceTier:"explicit" } });
+  });
+
+  it("migrates legacy fast mode into service tier without changing reasoning", () => {
+    expect(writerServiceTier({ "writer.fast_mode":true })).toBe("fast");
+    expect(writerServiceTier({ "writer.fast_mode":false })).toBe("standard");
+    expect(writerServiceTier({ "writer.fast_mode":true, "writer.service_tier":"standard" })).toBe("standard");
+    expect(bbServiceTier("standard")).toBe("default");
+    expect(bbServiceTier("fast")).toBe("fast");
+    expect(writerExecutionSelection("codex", "gpt-6-luna", "medium", "fast").reasoningLevel).toBe("medium");
   });
 
   it("uses the selected manual effort for unsupported decisions, timeout, and disabled Jev", () => {
