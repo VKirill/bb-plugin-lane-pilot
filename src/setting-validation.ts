@@ -44,6 +44,16 @@ export function validateSettingsObject(settings: Record<string, unknown>): Setti
   return errors;
 }
 
+/** Keep the provider/effort group valid when its leading key changes. */
+export function normalizeWriterEffort(provider: string, currentEffort: unknown): { effort: string; changed: boolean } {
+  const allowed = WRITER_EFFORT_CHOICES_BY_PROVIDER[provider] ?? [];
+  if (typeof currentEffort === "string" && allowed.includes(currentEffort)) {
+    return { effort: currentEffort, changed: false };
+  }
+  const effort = allowed[0];
+  return effort ? { effort, changed: effort !== currentEffort } : { effort: String(currentEffort ?? ""), changed: false };
+}
+
 export function validationErrorText(error: SettingValidationError): string {
   return error.code === "invalid_choice"
     ? `invalid value; allowed: ${error.params[1] ?? ""}`

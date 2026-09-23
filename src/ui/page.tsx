@@ -54,6 +54,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/ta
 import { specFor } from "../channels";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, RUN_STATES } from "../state-machine";
+import { normalizeWriterEffort } from "../setting-validation";
 
 type ScreenPayload = {
   projectId: string;
@@ -254,11 +255,17 @@ export function LanePilotPage() {
   const save = async (row: CatalogRow, value: unknown) => {
     if (!projectId || !data) return false;
     if (row.storageKey === WRITER_PROVIDER || row.storageKey === WRITER_EFFORT) {
-      const otherKey = row.storageKey === WRITER_PROVIDER ? WRITER_EFFORT : WRITER_PROVIDER;
-      return saveSettings([
-        { key: row.storageKey, value },
-        { key: otherKey, value: data.values[otherKey] },
-      ]);
+      const provider = String(row.storageKey === WRITER_PROVIDER ? value : data.values[WRITER_PROVIDER] ?? "");
+      const currentEffort = row.storageKey === WRITER_PROVIDER ? data.values[WRITER_EFFORT] : value;
+      const normalized = row.storageKey === WRITER_PROVIDER ? normalizeWriterEffort(provider, currentEffort) : null;
+      const changes = row.storageKey === WRITER_PROVIDER
+        ? [{ key: WRITER_PROVIDER, value: provider }, { key: WRITER_EFFORT, value: normalized!.effort }]
+        : [{ key: WRITER_EFFORT, value }, { key: WRITER_PROVIDER, value: provider }];
+      const saved = await saveSettings(changes);
+      if (saved && normalized?.changed) {
+        toast.info(t("writerEffortAdjusted").replace("{from}", String(currentEffort ?? "")).replace("{to}", normalized.effort).replace("{provider}", provider));
+      }
+      return saved;
     }
     const expectedVersion = data.versions[row.storageKey] ?? 0;
     const result = await rpc.call("save_setting", {
@@ -398,15 +405,17 @@ export function LanePilotPage() {
                   }}
                   routing={routing}
                   onChange={(next) => {
-                    const allowedEfforts = WRITER_EFFORT_CHOICES_BY_PROVIDER[next.providerId] ?? [];
-                    const requestedEffort = String(next.reasoningLevel);
-                    const adjustedEffort = allowedEfforts.includes(requestedEffort) ? requestedEffort : allowedEfforts[0];
-                    if (!adjustedEffort) return;
+                    const normalized = normalizeWriterEffort(next.providerId, next.reasoningLevel);
+                    if (!normalized.effort) return;
                     void saveSettings([
                       { key: WRITER_PROVIDER, value: next.providerId },
                       { key: WRITER_MODEL, value: next.model },
-                      { key: WRITER_EFFORT, value: adjustedEffort },
-                    ]);
+                      { key: WRITER_EFFORT, value: normalized.effort },
+                    ]).then((saved) => {
+                      if (saved && normalized.changed) {
+                        toast.info(t("writerEffortAdjusted").replace("{from}", String(next.reasoningLevel)).replace("{to}", normalized.effort).replace("{provider}", next.providerId));
+                      }
+                    });
                   }}
                 />
               ) : null}

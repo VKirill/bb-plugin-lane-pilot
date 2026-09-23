@@ -1,10 +1,13 @@
 /** @vitest-environment jsdom */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
 import { en, ru, setLocaleOverride, t, validationMessage } from "../i18n";
 import { EXTERNAL_OPS } from "../src/constants";
+import { toast } from "sonner";
+
+vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
 function screenFixture() {
   return {
@@ -178,6 +181,28 @@ describe("Lane Pilot UI", () => {
     expect(values).toMatchObject({ "writer.provider":"codex", "writer.reasoning_effort":"max" });
     expect(versions).toMatchObject({ "writer.provider":7, "writer.reasoning_effort":10 });
     expect((effortField.querySelector("[role='combobox']") as HTMLButtonElement).textContent).toContain("max");
+    slot.lifecycle.unmount();
+  });
+
+  it("adjusts an incompatible effort from the catalog provider row and announces the change", async () => {
+    const changesSeen: Array<Array<{ key:string; value:unknown; expectedVersion:number }>> = [];
+    const slot = await mountPage({
+      get_screen: () => ({ ...screenFixture(), values:{ ...screenFixture().values, "writer.provider":"codex", "writer.reasoning_effort":"max" } }),
+      save_settings: (input) => {
+        const changes = (input as { changes:Array<{ key:string; value:unknown; expectedVersion:number }> }).changes;
+        changesSeen.push(changes);
+        return { ok:true, conflict:false, values:Object.fromEntries(changes.map(({key,value}) => [key,value])), versions:Object.fromEntries(changes.map(({key,expectedVersion}) => [key,expectedVersion + 1])) };
+      },
+    });
+    const provider = VISIBLE_CATALOG.find((row) => row.storageKey === "writer.provider" && row.uiStatus === "editable")!;
+    const field = slot.getByTestId(`field-${provider.id}`);
+    fireEvent.click(field.querySelector("[role='combobox']") as HTMLButtonElement);
+    fireEvent.click(await slot.findByText("qwen"));
+    await waitFor(() => expect(changesSeen).toHaveLength(1));
+    expect(changesSeen[0]!.map(({key,value}) => [key,value])).toEqual([
+      ["writer.provider", "qwen"], ["writer.reasoning_effort", "low"],
+    ]);
+    expect(toast.info).toHaveBeenCalledWith(en.writerEffortAdjusted.replace("{from}", "max").replace("{to}", "low").replace("{provider}", "qwen"));
     slot.lifecycle.unmount();
   });
 
