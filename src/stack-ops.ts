@@ -1,24 +1,22 @@
 import { execFileSync } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { EXTERNAL_OPS, EXTERNAL_OPS_WARNING, TARGET_SHA } from "./constants";
+import { EXTERNAL_OPS, TARGET_SHA } from "./constants";
 import { observeExternalOps, type ExternalOpsSnapshot } from "./external-ops";
-import { applyInstalledGuard } from "./guard-apply";
+import { applyInstalledGuard, isOwnedPmGuardApplied, ownedPmGuardPath } from "./guard-apply";
 import { readImportConfig } from "./import-config";
-import { runInstallSh, type InstallPhase, type InstallRunResult } from "./install-runner";
+import type { InstallPhase } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
 import { inventoryCoexistenceAtHome, runCoexistenceOperationAtHome } from "./coexistence";
-import { agentsDir, resolveHome } from "./paths";
+import { agentsDir, defaultLocalFallback, resolveHome } from "./paths";
 import { skippedOpsReceipt, writeReceipt, type FileChange, type InstallReceipt } from "./receipt";
-import { hideS8Files, restoreS8Files, s8Hashes } from "./s8";
 import {
   finalizeSnapshotAfter,
   rollbackSnapshot,
   takeSnapshot,
   verifyRollback,
-  type ManifestEntry,
 } from "./snapshot";
-import { ensureUpstream } from "./upstream";
+import { assessEngineCapabilities, inspectEngineCapabilities } from "./upstream-adapter/capabilities";
 
 export type HostContext = {
   requestedHostId: string;
@@ -43,6 +41,16 @@ function commandVersion(command: string): { present: boolean; version: string | 
   } catch {
     return { present: false, version: null };
   }
+}
+
+function gitHead(root: string): string | null {
+  try {
+    return execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+      timeout: 4000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim() || null;
+  } catch { return null; }
 }
 
 function unobservedExternalOps(): ExternalOpsSnapshot {
@@ -80,9 +88,33 @@ export async function detectStack(ctx: HostContext) {
   }, home);
   const engineRows = inventory.managers.filter((row) => ["agents-marker", "managed-checkout", "claude-cache"].includes(row.manager));
   const compatibleRows = engineRows.filter((row) => row.compatible === true);
-  const requiredCapabilities = [...new Set(engineRows.flatMap((row) => row.capabilities))].sort();
-  const missingCapabilities = [...new Set(engineRows.flatMap((row) => row.missingCapabilities))].sort();
-  const compatible = compatibleRows.length > 0;
+  const fallbackRoot = ctx.localFallbackPath ?? (ctx.moduleUrl ? defaultLocalFallback(ctx.moduleUrl) : null);
+  let fallbackAssessment: ReturnType<typeof assessEngineCapabilities> | null = null;
+  if (fallbackRoot) {
+    try {
+      await stat(fallbackRoot);
+      fallbackAssessment = assessEngineCapabilities(await inspectEngineCapabilities(fallbackRoot));
+    } catch { /* an unavailable fallback is not an installed source */ }
+  }
+  const fallbackCompatible = fallbackAssessment?.compatible === true;
+  const requiredCapabilities = [...new Set([
+    ...engineRows.flatMap((row) => row.capabilities),
+    ...(fallbackAssessment?.capabilities ?? []),
+  ])].sort();
+  const missingCapabilities = [...new Set([
+    ...engineRows.flatMap((row) => row.missingCapabilities),
+    ...(fallbackAssessment?.missingCapabilities ?? []),
+  ])].sort();
+  const compatible = compatibleRows.length > 0 || fallbackCompatible;
+  const sources: Array<{ manager: string; path: string; version: string | null; sourceSha: string | null }> = compatibleRows.map((row) => ({
+    manager: row.manager,
+    path: row.path,
+    version: row.version,
+    sourceSha: row.sourceSha,
+  }));
+  if (fallbackCompatible && fallbackRoot && !sources.some((source) => source.path === fallbackRoot)) {
+    sources.push({ manager: "local-fallback", path: fallbackRoot, version: null, sourceSha: gitHead(fallbackRoot) });
+  }
   return {
     hostId: process.env.BB_HOST_ID ?? ctx.requestedHostId,
     laneStack: {
@@ -97,10 +129,13 @@ export async function detectStack(ctx: HostContext) {
     compatibility: {
       compatible,
       decision: compatible ? "reuse" as const : "install" as const,
-      sources: compatibleRows.map((row) => ({ manager: row.manager, path: row.path, version: row.version, sourceSha: row.sourceSha })),
+      sources,
       capabilities: requiredCapabilities,
       missingCapabilities,
-      diagnostics: engineRows.flatMap((row) => row.evidence.filter((item) => item.kind === "capability").map((item) => item.detail)),
+      diagnostics: [
+        ...engineRows.flatMap((row) => row.evidence.filter((item) => item.kind === "capability").map((item) => item.detail)),
+        ...(fallbackAssessment?.diagnostics.map((item) => item.message) ?? []),
+      ],
     },
     scenario: compatible ? "S1" as const : scenarioOf(install.sourceSha),
   };
@@ -132,38 +167,58 @@ export async function snapshotStack(ctx: HostContext): Promise<InstallReceipt> {
   }, await receiptDirOf(ctx));
 }
 
+async function configureOwnedPmGuard(ctx: HostContext, home: string): Promise<{
+  snapshotPath: string | null;
+  filesChanged: FileChange[];
+  note: string | null;
+}> {
+  if (!ctx.pmWorkspacePath) return { snapshotPath: null, filesChanged: [], note: null };
+  if (await isOwnedPmGuardApplied({
+    homeDir: home,
+    guardSourcePath: ctx.guardSourcePath,
+    moduleUrl: ctx.moduleUrl,
+    pmWorkspacePath: ctx.pmWorkspacePath,
+  })) return { snapshotPath: null, filesChanged: [], note: "PM guard already active in the Lane Pilot-owned namespace" };
+
+  const guardPath = ownedPmGuardPath(home);
+  const payloadPath = join(home, ".agents/lane-pilot/pm/lib_payload.py");
+  const settingsPath = join(ctx.pmWorkspacePath, ".claude/settings.json");
+  const snapshot = await takeSnapshot({
+    homeDir: home,
+    threadStoragePath: ctx.threadStoragePath,
+    additionalPaths: [guardPath, payloadPath, settingsPath],
+    includeManifest: false,
+  });
+  try {
+    const applied = await applyInstalledGuard({
+      homeDir: home,
+      guardSourcePath: ctx.guardSourcePath,
+      moduleUrl: ctx.moduleUrl,
+      pmWorkspacePath: ctx.pmWorkspacePath,
+    });
+    await finalizeSnapshotAfter(snapshot, home);
+    return {
+      snapshotPath: snapshot.snapshotPath,
+      filesChanged: applied.filesChanged,
+      note: `PM guard installed in its Lane Pilot-owned namespace and added to ${applied.settingsPath} with CAS`,
+    };
+  } catch (error) {
+    await finalizeSnapshotAfter(snapshot, home).catch(() => undefined);
+    await rollbackSnapshot(snapshot.snapshotPath).catch(() => undefined);
+    throw error;
+  }
+}
+
 export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
   const home = resolveHome(ctx.homeDir);
   const before = await detectStack(ctx);
   const confirm = ctx.confirmExternalOps === true;
+  const external = unobservedExternalOps();
   if (before.compatibility.compatible) {
-    const external = unobservedExternalOps();
-    return writeReceipt({
-      action: "install",
-      scenario: before.scenario,
-      filesChanged: [],
-      externalOpsBefore: external,
-      externalOpsAfter: external,
-      ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
-      exitCode: 0,
-      snapshotPath: null,
-      sourceSha: before.laneStack.sourceSha,
-      notes: [
-        `Compatible engine reused from ${before.compatibility.sources.map((source) => `${source.manager}:${source.path}`).join(", ")}; version/SHA/dirty state did not trigger writes`,
-        "No install.sh, user config, or cache writes were made",
-      ],
-    }, await receiptDirOf(ctx));
-  }
-
-  if (before.laneStack.present) {
-    const inventory = await inventoryCoexistenceAtHome({
-      projectId: ctx.projectId ?? "lane-pilot",
-      hostId: ctx.requestedHostId,
-      targetSha: TARGET_SHA,
-    }, home);
-    const managed = inventory.managers.find((row) => row.manager === "managed-checkout");
-    const external = unobservedExternalOps();
-    if (!managed) {
+    let pmGuard: Awaited<ReturnType<typeof configureOwnedPmGuard>>;
+    try {
+      pmGuard = await configureOwnedPmGuard(ctx, home);
+    } catch (error) {
       return writeReceipt({
         action: "install",
         scenario: before.scenario,
@@ -175,22 +230,108 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
         exitCode: 1,
         snapshotPath: null,
         sourceSha: before.laneStack.sourceSha,
-        notes: ["Existing incompatible engine was preserved; managed-checkout inventory path is unavailable, so no installer was run."],
+        notes: [
+          "Compatible engine was preserved",
+          `PM guard operation failed: ${error instanceof Error ? error.message : "unknown guard error"}`,
+          "PM workspace updates use an additive CAS patch; user settings are preserved on conflict",
+        ],
       }, await receiptDirOf(ctx));
     }
+    return writeReceipt({
+      action: "install",
+      scenario: before.scenario,
+      filesChanged: pmGuard.filesChanged,
+      externalOpsBefore: external,
+      externalOpsAfter: external,
+      ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
+      exitCode: 0,
+      snapshotPath: pmGuard.snapshotPath,
+      sourceSha: before.compatibility.sources.find((source) => source.path === ctx.localFallbackPath)?.sourceSha
+        ?? before.compatibility.sources.find((source) => source.sourceSha)?.sourceSha
+        ?? before.laneStack.sourceSha,
+      notes: [
+        `Compatible engine reused from ${before.compatibility.sources.map((source) => `${source.manager}:${source.path}`).join(", ")}; version/SHA/dirty state did not trigger writes`,
+        "No install.sh, engine, ordinary user config, or cache writes were made",
+        ...(pmGuard.note ? [pmGuard.note] : []),
+      ],
+    }, await receiptDirOf(ctx));
+  }
 
-    let operation;
+  // Marker contents do not grant permission to run an upstream installer against HOME.
+  // Missing, malformed, and incompatible markers all use this same owned managed path.
+  const inventory = await inventoryCoexistenceAtHome({
+    projectId: ctx.projectId ?? "lane-pilot",
+    hostId: ctx.requestedHostId,
+    targetSha: TARGET_SHA,
+  }, home);
+  const managed = inventory.managers.find((row) => row.manager === "managed-checkout");
+  if (!managed) {
+    return writeReceipt({
+      action: "install",
+      scenario: before.scenario,
+      status: "failed",
+      filesChanged: [],
+      externalOpsBefore: external,
+      externalOpsAfter: external,
+      ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
+      exitCode: 1,
+      snapshotPath: null,
+      sourceSha: before.laneStack.sourceSha,
+      notes: ["Managed-checkout inventory path is unavailable; no installer was run with the ordinary HOME."],
+    }, await receiptDirOf(ctx));
+  }
+
+  let operation;
+  try {
+    operation = await runCoexistenceOperationAtHome({
+      projectId: ctx.projectId ?? "lane-pilot",
+      hostId: ctx.requestedHostId,
+      operation: "install",
+      manager: "managed-checkout",
+      path: managed.path,
+      expectedSha256: managed.sha256,
+      targetSha: TARGET_SHA,
+    }, home, { localFallbackPath: ctx.localFallbackPath, moduleUrl: ctx.moduleUrl });
+  } catch (error) {
+    return writeReceipt({
+      action: "install",
+      scenario: before.scenario,
+      status: "failed",
+      filesChanged: [],
+      externalOpsBefore: external,
+      externalOpsAfter: unobservedExternalOps(),
+      ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
+      exitCode: 1,
+      snapshotPath: null,
+      sourceSha: before.laneStack.sourceSha,
+      notes: [
+        "Legacy install.sh was not run with the ordinary HOME",
+        `Managed engine operation failed before a write: ${error instanceof Error ? error.message : "unknown adapter error"}`,
+      ],
+    }, await receiptDirOf(ctx));
+  }
+
+  const ok = operation.status === "ok" || operation.status === "skipped";
+  const changed = operation.beforeSha256 !== operation.afterSha256;
+  let pmGuard: Awaited<ReturnType<typeof configureOwnedPmGuard>> = { snapshotPath: null, filesChanged: [], note: null };
+  if (ok) {
     try {
-      operation = await runCoexistenceOperationAtHome({
-        projectId: ctx.projectId ?? "lane-pilot",
-        hostId: ctx.requestedHostId,
-        operation: "install",
-        manager: "managed-checkout",
-        path: managed.path,
-        expectedSha256: managed.sha256,
-        targetSha: TARGET_SHA,
-      }, home, { localFallbackPath: ctx.localFallbackPath, moduleUrl: ctx.moduleUrl });
+      pmGuard = await configureOwnedPmGuard(ctx, home);
     } catch (error) {
+      let engineRollback = "not needed";
+      if (operation.status === "ok" && operation.snapshotId && operation.afterSha256) {
+        const rolledBack = await runCoexistenceOperationAtHome({
+          projectId: ctx.projectId ?? "lane-pilot",
+          hostId: ctx.requestedHostId,
+          operation: "rollback",
+          manager: "managed-checkout",
+          path: operation.path,
+          expectedSha256: operation.afterSha256,
+          snapshotId: operation.snapshotId,
+          targetSha: TARGET_SHA,
+        }, home).catch((rollbackError) => ({ status: "blocked" as const, reason: rollbackError instanceof Error ? rollbackError.message : "rollback failed" }));
+        engineRollback = `${rolledBack.status}${rolledBack.reason ? `: ${rolledBack.reason}` : ""}`;
+      }
       return writeReceipt({
         action: "install",
         scenario: before.scenario,
@@ -200,279 +341,41 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
         externalOpsAfter: unobservedExternalOps(),
         ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
         exitCode: 1,
-        snapshotPath: null,
+        snapshotPath: operation.snapshotId,
         sourceSha: before.laneStack.sourceSha,
-        notes: ["Legacy install.sh was not run with the ordinary HOME", `Managed engine operation failed before a write: ${error instanceof Error ? error.message : "unknown adapter error"}`],
+        notes: [
+          "Managed engine install was kept separate from the ordinary HOME installer",
+          `PM guard operation failed: ${error instanceof Error ? error.message : "unknown guard error"}`,
+          `Guard config snapshot rollback attempted; engine rollback ${engineRollback}`,
+        ],
       }, await receiptDirOf(ctx));
     }
-
-    const ok = operation.status === "ok" || operation.status === "skipped";
-    const changed = operation.beforeSha256 !== operation.afterSha256;
-    let guardSnapshot: Awaited<ReturnType<typeof takeSnapshot>> | null = null;
-    let guardFilesChanged: Array<{ path: string; sha256Before: string | null; sha256After: string }> = [];
-    let guardNote = "";
-    if (ok && ctx.pmWorkspacePath) {
-      const guardPath = join(home, ".agents/hooks/guard_shell.py");
-      const payloadPath = join(home, ".agents/hooks/lib_payload.py");
-      const workspaceSettingsPath = join(ctx.pmWorkspacePath, ".claude/settings.json");
-      try {
-        guardSnapshot = await takeSnapshot({
-          homeDir: home,
-          threadStoragePath: ctx.threadStoragePath,
-          additionalPaths: [guardPath, payloadPath, workspaceSettingsPath],
-          includeManifest: false,
-        });
-        const guard = await applyInstalledGuard({
-          homeDir: home,
-          guardSourcePath: ctx.guardSourcePath,
-          moduleUrl: ctx.moduleUrl,
-          pmWorkspacePath: ctx.pmWorkspacePath,
-        });
-        guardFilesChanged = guard.filesChanged;
-        await finalizeSnapshotAfter(guardSnapshot, home);
-        guardNote = `PM guard installed with CAS; config snapshot ${guardSnapshot.snapshotPath}`;
-      } catch (error) {
-        if (guardSnapshot) {
-          await finalizeSnapshotAfter(guardSnapshot, home).catch(() => undefined);
-          await rollbackSnapshot(guardSnapshot.snapshotPath).catch(() => undefined);
-        }
-        let engineRollback = "not needed";
-        if (operation.status === "ok" && operation.snapshotId && operation.afterSha256) {
-          const rolledBack = await runCoexistenceOperationAtHome({
-            projectId: ctx.projectId ?? "lane-pilot",
-            hostId: ctx.requestedHostId,
-            operation: "rollback",
-            manager: "managed-checkout",
-            path: operation.path,
-            expectedSha256: operation.afterSha256,
-            snapshotId: operation.snapshotId,
-            targetSha: TARGET_SHA,
-          }, home).catch((rollbackError) => ({ status: "blocked" as const, reason: rollbackError instanceof Error ? rollbackError.message : "rollback failed" }));
-          engineRollback = `${rolledBack.status}${rolledBack.reason ? `: ${rolledBack.reason}` : ""}`;
-        }
-        return writeReceipt({
-          action: "install",
-          scenario: before.scenario,
-          status: "failed",
-          filesChanged: [],
-          externalOpsBefore: external,
-          externalOpsAfter: unobservedExternalOps(),
-          ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
-          exitCode: 1,
-          snapshotPath: guardSnapshot?.snapshotPath ?? operation.snapshotId,
-          sourceSha: before.laneStack.sourceSha,
-          notes: [
-            "Managed engine install was kept separate from the ordinary HOME installer",
-            `PM guard operation failed: ${error instanceof Error ? error.message : "unknown guard error"}`,
-            `Guard config snapshot rollback attempted; engine rollback ${engineRollback}`,
-          ],
-        }, await receiptDirOf(ctx));
-      }
-    }
-    return writeReceipt({
-      action: "install",
-      scenario: before.scenario,
-      status: ok ? "ok" : "failed",
-      filesChanged: [
-        ...(changed && operation.afterSha256 ? [{ path: operation.path, sha256Before: operation.beforeSha256, sha256After: operation.afterSha256 }] : []),
-        ...guardFilesChanged,
-      ],
-      externalOpsBefore: external,
-      externalOpsAfter: unobservedExternalOps(),
-      ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
-      exitCode: ok ? 0 : 1,
-      snapshotPath: guardSnapshot?.snapshotPath ?? operation.snapshotId,
-      sourceSha: operation.status === "ok" ? TARGET_SHA : before.laneStack.sourceSha,
-      notes: [
-        "Legacy install.sh was not run with the ordinary HOME",
-        `Ownership operation ${operation.status} for ${operation.manager}:${operation.path}; owner ${operation.owner}`,
-        ...operation.evidence.map((item) => item.detail),
-        ...(guardNote ? [guardNote] : []),
-        ...(guardSnapshot && operation.snapshotId ? [`Managed engine ownership snapshot ${operation.snapshotId}`] : []),
-        ...(operation.reason ? [operation.reason] : []),
-        "Ordinary Claude settings, OpenCode config, install marker, and cache were outside this operation's write set",
-      ],
-    }, await receiptDirOf(ctx));
   }
 
-  const upstream = await ensureUpstream({
-    homeDir: home,
-    localFallbackPath: ctx.localFallbackPath,
-    moduleUrl: ctx.moduleUrl,
-  });
-  const snap = await takeSnapshot({ homeDir: home, threadStoragePath: ctx.threadStoragePath });
-  const s8Before = await s8Hashes(home);
-  const stash = await hideS8Files(home);
-  const receiptDir = await receiptDirOf(ctx);
-
-  let installResult: InstallRunResult | undefined;
-  try {
-    installResult = await runInstallSh({
-      stackRoot: upstream.path,
-      homeDir: home,
-      confirmExternalOps: confirm,
-      stopAfterPhase: ctx.stopAfterPhase,
-      executorPid: process.pid,
-      settings: ctx.installSettings,
-      snapshotManifestPath: snap.manifestPath,
-    });
-  } catch (error) {
-    await restoreS8Files(stash, home);
-    return writeFailedInstallReceipt({
-      home,
-      scenario: before.scenario,
-      snap,
-      confirm,
-      installResult,
-      receiptDir,
-      notes: [
-        `upstream ${upstream.source} ${upstream.path}`,
-        error instanceof Error ? `install exception ${error.message}` : "install exception",
-        "install.sh did not finish",
-      ],
-    });
-  }
-  await restoreS8Files(stash, home);
-
-  if (installResult.exitCode !== 0 || installResult.signal) {
-    return writeFailedInstallReceipt({
-      home,
-      scenario: before.scenario,
-      snap,
-      confirm,
-      installResult,
-      receiptDir,
-      notes: [
-        `upstream ${upstream.source} ${upstream.path}`,
-        `install.sh exit ${installResult.exitCode}`,
-        installResult.signal ? `install.sh signal ${installResult.signal}` : "",
-        installResult.stderr.slice(0, 2000),
-      ],
-    });
-  }
-
-  try {
-    await applyInstalledGuard({
-      homeDir: home,
-      guardSourcePath: ctx.guardSourcePath,
-      moduleUrl: ctx.moduleUrl,
-      pmWorkspacePath: ctx.pmWorkspacePath,
-    });
-    const connected = await connectOpencode(home);
-    await finalizeSnapshotAfter(snap, home);
-    const s8After = await s8Hashes(home);
-    const s8Notes = Object.keys(s8Before).map((path) => (
-      s8Before[path] === s8After[path]
-        ? `S8 unchanged ${path}`
-        : `S8 MISMATCH ${path}`
-    ));
-
-    const filesChanged: FileChange[] = [];
-    for (const entry of snap.entries) {
-      if (entry.kind === "external") continue;
-      filesChanged.push({
-        path: entry.path,
-        sha256Before: entry.sha256Before,
-        sha256After: entry.sha256After,
-      });
-    }
-    for (const file of connected.files) {
-      filesChanged.push({
-        path: file.path,
-        sha256Before: file.sha256Before,
-        sha256After: file.sha256After,
-      });
-    }
-
-    const after = await readInstallJson(home);
-    const notes = [
-      `upstream ${upstream.source} ${upstream.path}`,
-      `install.sh exit ${installResult.exitCode}`,
-      connected.skipped ? `S5/S6 ${connected.reason}` : `S5 patched ${connected.files.map((file) => file.path).join(",")}`,
-      connected.files[0]?.limitation ? `§12 ${connected.files[0].limitation}` : "",
-      ...s8Notes,
-      confirm ? "external ops confirmed" : "external ops skipped; LANE_INSTALL_CLAUDE_PLUGIN=0",
-    ].filter(Boolean);
-
-    return writeReceipt({
-      action: "install",
-      scenario: before.scenario,
-      status: "ok",
-      filesChanged,
-      externalOpsBefore: Object.fromEntries(snap.entries
-        .filter((entry) => entry.kind === "external")
-        .map((entry) => [entry.path, entry.externalOpsBefore])),
-      externalOpsAfter: Object.fromEntries(snap.entries
-        .filter((entry) => entry.kind === "external")
-        .map((entry) => [entry.path, entry.externalOpsAfter])),
-      skippedExternalOps: installResult.skippedExternalOps,
-      warning: installResult.skippedExternalOps.length > 0 ? EXTERNAL_OPS_WARNING : null,
-      exitCode: installResult.exitCode,
-      snapshotPath: snap.snapshotPath,
-      sourceSha: after.sourceSha,
-      notes: [...notes, installResult.stderr.slice(0, 2000)],
-    }, receiptDir);
-  } catch (error) {
-    return writeFailedInstallReceipt({
-      home,
-      scenario: before.scenario,
-      snap,
-      confirm,
-      installResult,
-      receiptDir,
-      notes: [
-        `upstream ${upstream.source} ${upstream.path}`,
-        error instanceof Error ? `install exception ${error.message}` : "install exception",
-        `install.sh exit ${installResult.exitCode}`,
-      ],
-    });
-  }
-}
-
-async function writeFailedInstallReceipt(input: {
-  home: string;
-  scenario: "S1" | "S2" | "S3";
-  snap: Awaited<ReturnType<typeof takeSnapshot>>;
-  confirm: boolean;
-  installResult?: InstallRunResult;
-  receiptDir: string | null;
-  notes: string[];
-}): Promise<InstallReceipt> {
-  const rollback = await rollbackSnapshot(input.snap.snapshotPath);
-  const verified = await verifyRollback(input.snap.snapshotPath);
-  const snapshotManifest = JSON.parse(await readFile(input.snap.manifestPath, "utf8")) as { entries?: ManifestEntry[] };
-  const entries = snapshotManifest.entries ?? input.snap.entries;
-  const after = await readInstallJson(input.home);
   return writeReceipt({
     action: "install",
-    scenario: input.scenario,
-    status: verified.ok ? "rolled_back" : "failed",
-    filesChanged: entries
-      .filter((entry) => entry.kind !== "external")
-      .map((entry) => ({
-        path: entry.path,
-        sha256Before: entry.sha256Before,
-        sha256After: entry.sha256After,
-      })),
-    externalOpsBefore: Object.fromEntries(entries
-      .filter((entry) => entry.kind === "external")
-      .map((entry) => [entry.path, entry.externalOpsBefore])),
-    externalOpsAfter: Object.fromEntries(entries
-      .filter((entry) => entry.kind === "external")
-      .map((entry) => [entry.path, entry.externalOpsAfter])),
-    skippedExternalOps: input.installResult?.skippedExternalOps ?? (input.confirm ? [] : [...EXTERNAL_OPS]),
-    warning: EXTERNAL_OPS_WARNING,
-    exitCode: input.installResult?.exitCode ?? 1,
-    snapshotPath: input.snap.snapshotPath,
-    sourceSha: after.sourceSha,
-    notes: [
-      ...input.notes.filter(Boolean),
-      `rollback restored ${rollback.restored.length} removed ${rollback.removed.length}`,
-      `rollback CAS conflicts ${rollback.conflicts.length}${rollback.conflicts.length ? ` ${JSON.stringify(rollback.conflicts)}` : ""}`,
-      verified.ok ? "rollback verified" : `rollback verify failed ${JSON.stringify(verified.mismatches)}`,
-      "guard/connect/finalize skipped after failed install",
+    scenario: before.scenario,
+    status: ok ? "ok" : "failed",
+    filesChanged: [
+      ...(changed && operation.afterSha256 ? [{ path: operation.path, sha256Before: operation.beforeSha256, sha256After: operation.afterSha256 }] : []),
+      ...pmGuard.filesChanged,
     ],
-  }, input.receiptDir);
+    externalOpsBefore: external,
+    externalOpsAfter: unobservedExternalOps(),
+    ...skippedOpsReceipt(confirm ? [] : [...EXTERNAL_OPS]),
+    exitCode: ok ? 0 : 1,
+    snapshotPath: pmGuard.snapshotPath ?? operation.snapshotId,
+    sourceSha: operation.status === "ok" ? TARGET_SHA : before.laneStack.sourceSha,
+    notes: [
+      "Legacy install.sh was not run with the ordinary HOME",
+      `Ownership operation ${operation.status} for ${operation.manager}:${operation.path}; owner ${operation.owner}`,
+      ...operation.evidence.map((item) => item.detail),
+      ...(pmGuard.note ? [pmGuard.note] : []),
+      ...(pmGuard.snapshotPath && operation.snapshotId ? [`Managed engine ownership snapshot ${operation.snapshotId}`] : []),
+      ...(operation.reason ? [operation.reason] : []),
+      "Ordinary Claude settings, OpenCode config, install marker, and cache were outside this operation's write set; only the explicitly supplied PM workspace receives an additive hook entry",
+    ],
+  }, await receiptDirOf(ctx));
 }
 
 export async function rollbackStack(ctx: HostContext): Promise<InstallReceipt> {

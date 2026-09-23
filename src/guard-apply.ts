@@ -1,10 +1,17 @@
-import { randomUUID } from "node:crypto";
-import { cp, lstat, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { applyEdits, findNodeAtLocation, modify, parse, parseTree, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { defaultGuardSource } from "./paths";
 import { hashPath } from "./hash";
+import { compareAndSwapText, readTextState } from "./coexistence/cas";
 
 export type GuardAppliedFile = { path: string; sha256Before: string | null; sha256After: string };
+
+const GUARD_RELATIVE_PATH = ".agents/lane-pilot/pm/guard_shell.py";
+
+export function ownedPmGuardPath(homeDir: string): string {
+  return join(homeDir, GUARD_RELATIVE_PATH);
+}
 
 async function hashOrNull(path: string): Promise<string | null> {
   try { return (await hashPath(path)).sha256; }
@@ -23,7 +30,7 @@ async function copyOwnedFile(source: string, destination: string): Promise<Guard
   if (existing !== null) {
     const destinationInfo = await lstat(destination);
     if (!destinationInfo.isFile() || destinationInfo.isSymbolicLink() || existing !== sourceHash) {
-      throw new Error(`owned guard target has diverged and was preserved: ${destination}`);
+      throw new Error(`Lane Pilot-owned guard target has diverged and was preserved: ${destination}`);
     }
     return null;
   }
@@ -38,33 +45,58 @@ async function copyOwnedFile(source: string, destination: string): Promise<Guard
   return { path: destination, sha256Before: null, sha256After: sourceHash };
 }
 
-async function replaceSettingCas(path: string, from: RegExp, replacement: string): Promise<GuardAppliedFile | null> {
-  let raw: string;
-  try {
-    const info = await lstat(path);
-    if (!info.isFile() || info.isSymbolicLink()) throw new Error(`Claude workspace settings are not a regular file: ${path}`);
-    raw = await readFile(path, "utf8");
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return null;
-    throw error;
-  }
-  const next = raw.replace(from, () => replacement);
-  if (next === raw) return null;
+function commandFor(path: string): string {
+  return `python3 '${path.replaceAll("'", "'\\''")}'`;
+}
 
-  const previousHash = (await hashPath(path)).sha256;
-  if (!previousHash) throw new Error(`Claude workspace settings could not be hashed: ${path}`);
-  const settings = await stat(path);
-  const temporary = `${path}.lane-pilot-${randomUUID()}.tmp`;
-  try {
-    await writeFile(temporary, next, { mode: settings.mode & 0o777 });
-    if (await readFile(path, "utf8") !== raw) throw new Error(`Claude workspace settings changed during guard update; CAS conflict: ${path}`);
-    await rename(temporary, path);
-  } finally {
-    await rm(temporary, { force: true });
-  }
-  const afterHash = (await hashPath(path)).sha256;
-  if (!afterHash) throw new Error(`Claude workspace settings could not be hashed after guard update: ${path}`);
-  return { path, sha256Before: previousHash, sha256After: afterHash };
+function existingPreToolUseCommand(parsed: unknown, command: string): boolean {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const hooks = (parsed as Record<string, unknown>).hooks;
+  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) return false;
+  const entries = (hooks as Record<string, unknown>).PreToolUse;
+  if (!Array.isArray(entries)) return false;
+  return entries.some((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+    const nested = (entry as Record<string, unknown>).hooks;
+    return Array.isArray(nested) && nested.some((item) =>
+      item && typeof item === "object" && !Array.isArray(item)
+      && (item as Record<string, unknown>).command === command,
+    );
+  });
+}
+
+function addPreToolUseGuard(raw: string, command: string): string {
+  const errors: ParseError[] = [];
+  const tree = parseTree(raw, errors, { allowTrailingComma: true, disallowComments: false });
+  if (!tree || errors.length > 0 || tree.type !== "object") throw new Error("Claude workspace settings are not valid JSONC object; preserving them");
+  const hooksNode = findNodeAtLocation(tree, ["hooks"]);
+  if (hooksNode && hooksNode.type !== "object") throw new Error("Claude workspace hooks are not an object; preserving settings");
+  const preToolUseNode = findNodeAtLocation(tree, ["hooks", "PreToolUse"]);
+  if (preToolUseNode && preToolUseNode.type !== "array") throw new Error("Claude PreToolUse hooks are not an array; preserving settings");
+  const parsed = parse(raw, [], { allowTrailingComma: true, disallowComments: false });
+  if (existingPreToolUseCommand(parsed, command)) return raw;
+
+  const entry = { matcher: "*", hooks: [{ type: "command", command }] };
+  const edits = preToolUseNode
+    ? modify(raw, ["hooks", "PreToolUse", -1], entry, {
+      isArrayInsertion: true,
+      formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" },
+    })
+    : modify(raw, ["hooks", "PreToolUse"], [entry], {
+      formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" },
+    });
+  return applyEdits(raw, edits);
+}
+
+async function addGuardToWorkspaceSettings(path: string, guardPath: string): Promise<GuardAppliedFile | null> {
+  const before = await readTextState(path);
+  const raw = before.text ?? "{}\n";
+  const next = addPreToolUseGuard(raw, commandFor(guardPath));
+  if (next === raw) return null;
+  const write = await compareAndSwapText(path, before.sha256, next);
+  if (write.status !== "ok") throw new Error(write.reason ?? `Claude workspace settings CAS ${write.status}: ${path}`);
+  if (!write.changed || !write.afterSha256) return null;
+  return { path, sha256Before: write.beforeSha256, sha256After: write.afterSha256 };
 }
 
 export async function applyInstalledGuard(input: {
@@ -76,7 +108,7 @@ export async function applyInstalledGuard(input: {
   const source = input.guardSourcePath
     ?? (input.moduleUrl ? defaultGuardSource(input.moduleUrl) : "");
   if (!source) throw new Error("guard source path is required");
-  const guardPath = join(input.homeDir, ".agents/hooks/guard_shell.py");
+  const guardPath = ownedPmGuardPath(input.homeDir);
   const filesChanged: GuardAppliedFile[] = [];
   const guardChange = await copyOwnedFile(source, guardPath);
   if (guardChange) filesChanged.push(guardChange);
@@ -93,13 +125,28 @@ export async function applyInstalledGuard(input: {
   let settingsPath: string | null = null;
   if (input.pmWorkspacePath) {
     settingsPath = join(input.pmWorkspacePath, ".claude/settings.json");
-    const previousHash = await hashOrNull(settingsPath);
-    const settingsChange = await replaceSettingCas(
-      settingsPath,
-      /\/[^\s"]+\/lane-stack\/hooks\/guard_shell\.py/g,
-      guardPath,
-    );
-    if (settingsChange) filesChanged.push({ ...settingsChange, sha256Before: previousHash });
+    const settingsChange = await addGuardToWorkspaceSettings(settingsPath, guardPath);
+    if (settingsChange) filesChanged.push(settingsChange);
   }
   return { guardPath, settingsPath, filesChanged };
+}
+
+export async function isOwnedPmGuardApplied(input: {
+  homeDir: string;
+  guardSourcePath?: string;
+  moduleUrl?: string;
+  pmWorkspacePath: string;
+}): Promise<boolean> {
+  const source = input.guardSourcePath
+    ?? (input.moduleUrl ? defaultGuardSource(input.moduleUrl) : "");
+  if (!source) return false;
+  const guardPath = ownedPmGuardPath(input.homeDir);
+  const [sourceHash, installedHash] = await Promise.all([hashOrNull(source), hashOrNull(guardPath)]);
+  if (!sourceHash || installedHash !== sourceHash) return false;
+  const settingsPath = join(input.pmWorkspacePath, ".claude/settings.json");
+  const settings = await readTextState(settingsPath);
+  if (!settings.text) return false;
+  const errors: ParseError[] = [];
+  const parsed = parse(settings.text, errors, { allowTrailingComma: true, disallowComments: false });
+  return errors.length === 0 && existingPreToolUseCommand(parsed, commandFor(guardPath));
 }

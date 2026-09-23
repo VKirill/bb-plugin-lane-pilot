@@ -1,18 +1,14 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { sha256FileOrNull } from "../src/hash";
-import { INSTALL_PHASES, isolatedNpmPrefix } from "../src/install-runner";
-import { rollbackSnapshot, takeSnapshot, verifyRollback } from "../src/snapshot";
-import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
+import { INSTALL_PHASES } from "../src/install-runner";
+import { installStack } from "../src/stack-ops";
+import { snapshotGlobalOpenCursor } from "./npm-isolation";
 
 const FALLBACK = join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack");
 const GUARD = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
-const TSX_CLI = join(process.cwd(), "node_modules/tsx/dist/cli.mjs");
-const FAULT_SCRIPT = join(process.cwd(), "scripts/fault-install-stack.ts");
-
 function seed(home: string): void {
   mkdirSync(join(home, ".agents"), { recursive: true });
   mkdirSync(join(home, ".claude"), { recursive: true });
@@ -20,52 +16,36 @@ function seed(home: string): void {
   writeFileSync(join(home, ".agents/keep.txt"), "before\n");
 }
 
-describe("fault-injection §11 five SIGKILL points on production installStack", () => {
+describe("owned installStack bypasses legacy installer checkpoints", () => {
   for (const phase of INSTALL_PHASES) {
-    it(`restores after SIGKILL of installStack at ${phase}`, async () => {
+    it(`does not enter the legacy ${phase} checkpoint`, async () => {
       const home = mkdtempSync(join(tmpdir(), `lane-pilot-fault-${phase}-`));
-      const toolsDir = join(home, "safe-tools");
       seed(home);
-      linkSafeTools(toolsDir);
       const settingsBefore = await sha256FileOrNull(join(home, ".claude/settings.json"));
       const keepBefore = await sha256FileOrNull(join(home, ".agents/keep.txt"));
       const globalBefore = snapshotGlobalOpenCursor();
-      const snap = await takeSnapshot({ homeDir: home });
-      expect(existsSync(TSX_CLI), "pinned local tsx is required; do not use npx").toBe(true);
-      const child = spawnSync(process.execPath, ["--import", "tsx", FAULT_SCRIPT], {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          HOME: home,
-          npm_config_prefix: isolatedNpmPrefix(home),
-          NPM_CONFIG_PREFIX: isolatedNpmPrefix(home),
-          LANE_PILOT_SAFE_PATH: isolatedTestPath([toolsDir]),
-          LANE_PILOT_FALLBACK: FALLBACK,
-          LANE_PILOT_GUARD: GUARD,
-          LANE_PILOT_STOP_AFTER: phase,
-        },
-        encoding: "utf8",
-      });
-      const sigkill = child.signal === "SIGKILL" || child.status === 137;
-      if (!sigkill) {
-        throw new Error(
-          `expected SIGKILL at ${phase}, got signal=${child.signal} status=${child.status}\nstdout:\n${child.stdout}\nstderr:\n${child.stderr}`,
-        );
+      try {
+        const receipt = await installStack({
+          requestedHostId: "host_test",
+          homeDir: home,
+          workspacePath: home,
+          localFallbackPath: FALLBACK,
+          guardSourcePath: GUARD,
+          confirmExternalOps: false,
+          stopAfterPhase: phase,
+        });
+
+        expect(receipt.status, receipt.notes.join("\n")).toBe("ok");
+        expect(receipt.exitCode, receipt.notes.join("\n")).toBe(0);
+        expect(receipt.notes.join("\n")).toMatch(/install\.sh/i);
+        expect(existsSync(join(home, ".lane-pilot-phase"))).toBe(false);
+        expect(existsSync(join(home, ".lane-pilot-npm-skipped"))).toBe(false);
+        expect(snapshotGlobalOpenCursor()).toEqual(globalBefore);
+        expect(await sha256FileOrNull(join(home, ".claude/settings.json"))).toBe(settingsBefore);
+        expect(await sha256FileOrNull(join(home, ".agents/keep.txt"))).toBe(keepBefore);
+      } finally {
+        rmSync(home, { recursive: true, force: true });
       }
-      expect(readFileSync(join(home, ".lane-pilot-phase"), "utf8").trim()).toBe(phase);
-      if (phase === "npm") {
-        expect(readFileSync(join(home, ".lane-pilot-npm-skipped"), "utf8")).toContain("не применимо без подтверждения");
-      }
-      expect(snapshotGlobalOpenCursor()).toEqual(globalBefore);
-      const snapshotsRoot = join(home, ".agents/lane-pilot/snapshots");
-      const operationSnapshot = join(snapshotsRoot, readdirSync(snapshotsRoot).sort().at(-1)!);
-      expect(operationSnapshot).not.toBe(snap.snapshotPath);
-      await rollbackSnapshot(operationSnapshot);
-      const verified = await verifyRollback(operationSnapshot);
-      expect(verified.ok, JSON.stringify(verified.mismatches, null, 2)).toBe(true);
-      expect(await sha256FileOrNull(join(home, ".claude/settings.json"))).toBe(settingsBefore);
-      expect(await sha256FileOrNull(join(home, ".agents/keep.txt"))).toBe(keepBefore);
-      rmSync(home, { recursive: true, force: true });
     }, 180_000);
   }
 });

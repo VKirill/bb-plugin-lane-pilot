@@ -10,7 +10,7 @@ const FALLBACK = join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-s
 const GUARD = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 
 describe("install failure rollback and snapshot integrity", () => {
-  it("D3 rolls back provable paths and preserves a directory changed after its last checkpoint", async () => {
+  it("D3 reuses a compatible source without invoking the ordinary-home installer", async () => {
     const home = mkdtempSync(join(tmpdir(), "lane-pilot-d3-"));
     const toolsDir = join(home, "safe-tools");
     const oldSettings = '{"env":{"KEEP":"1"}}\n';
@@ -33,15 +33,15 @@ describe("install failure rollback and snapshot integrity", () => {
         guardSourcePath: GUARD,
         moduleUrl: import.meta.url,
       });
-      expect(receipt.exitCode).toBe(73);
-      expect(receipt.status, receipt.notes.join("\n")).toBe("failed");
-      expect(receipt.notes.join("\n")).toContain("rollback CAS conflicts 1");
-      expect(receipt.notes.join("\n")).toContain("guard/connect/finalize skipped");
+      expect(receipt.exitCode, receipt.notes.join("\n")).toBe(0);
+      expect(receipt.status, receipt.notes.join("\n")).toBe("ok");
+      expect(receipt.notes.join("\n").toLowerCase()).toContain("install.sh was not run with the ordinary home");
+      expect(receipt.filesChanged.every((file) => file.path.includes("/.agents/lane-pilot/engines/"))).toBe(true);
       expect(existsSync(join(home, ".agents/install.json"))).toBe(false);
       expect(readFileSync(join(home, ".claude/settings.json"), "utf8")).toBe(oldSettings);
-      expect(existsSync(join(home, ".agents/bin"))).toBe(true);
+      expect(existsSync(join(home, ".agents/bin"))).toBe(false);
       expect(existsSync(join(home, ".agents/hooks"))).toBe(false);
-      expect(existsSync(join(home, ".agents/hooks/guard_shell.py"))).toBe(false);
+      expect(existsSync(join(home, ".agents/lane-pilot/pm/guard_shell.py"))).toBe(false);
     } finally {
       delete process.env.LANE_PILOT_SAFE_PATH;
       rmSync(home, { recursive: true, force: true });
