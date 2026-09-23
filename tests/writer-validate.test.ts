@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import plugin from "../server";
@@ -63,6 +64,7 @@ describe("BB writer validation on the server path", () => {
     const taskWorkspace = config.writerWorkspacePath;
     const cwdCalls:string[] = [];
     const fileRoots:string[] = [];
+    let spawnedInput:Record<string, unknown>|null = null;
     const delayed = new Promise<{matched:boolean; thread:{status:string}}>((resolve) => { releaseWait = resolve; });
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
@@ -71,6 +73,7 @@ describe("BB writer validation on the server path", () => {
           ? { role:"pm", lanePilotRunId:"run-delayed" }
           : { role:"writer" },
         spawn: async (input) => {
+          spawnedInput = input as unknown as Record<string, unknown>;
           expect(input.environment).toMatchObject({ workspace:{ type:"unmanaged", path:taskWorkspace } });
           return { id:"writer-delayed" };
         },
@@ -78,6 +81,8 @@ describe("BB writer validation on the server path", () => {
         get: async () => ({ id:"writer-delayed", status:writerIdle ? "idle" : "active" }),
         output: async () => ({ text:"writer output" }),
         list: async () => [] as never,
+      }, providers:{
+        models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium","high","xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }),
       }, files:{
         read: async ({ path, rootPath }) => {
           fileRoots.push(rootPath ?? "");
@@ -86,6 +91,12 @@ describe("BB writer validation on the server path", () => {
         write: async ({ rootPath }) => { fileRoots.push(rootPath ?? ""); return { ok:true }; },
       } },
       experimental_callHostRpc: (call) => {
+        if (call.method === "classifyPlan") {
+          const plan = (call.input as { plan:string }).plan;
+          return { hostId:"host-test", status:"ok", effort:"xhigh", reason:null,
+            planSha256:createHash("sha256").update(plan, "utf8").digest("hex"), sentPlanSha256:createHash("sha256").update(plan, "utf8").digest("hex"),
+            sourceLength:Buffer.byteLength(plan), sentLength:Buffer.byteLength(plan) };
+        }
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         cwdCalls.push(String((call.input as { cwd?:string }).cwd ?? ""));
         const command = String((call.input as { command?:string }).command ?? "");
@@ -102,7 +113,7 @@ describe("BB writer validation on the server path", () => {
     const beforeRejected = db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE run_id='run-delayed'").get() as {count:number};
     const rejected = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, task:{ ...task, id:"wrong-workspace", project_cwd:"/tmp/ag235-writer-fixture" } },
+      { confirm:true, plan:"Canonical plan for workspace rejection", task:{ ...task, id:"wrong-workspace", project_cwd:"/tmp/ag235-writer-fixture" } },
       { threadId:pmThreadId, projectId },
     )));
     expect(rejected).toMatchObject({ state:"rejected", unapplied:[{ key:"task.project_cwd" }] });
@@ -112,7 +123,7 @@ describe("BB writer validation on the server path", () => {
     const startedAt = Date.now();
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, task:{ ...task, id:"delayed-task", verify:"none", verification:[] } },
+      { confirm:true, plan:"Canonical delayed writer plan. Keep all Unicode 🧭 and newline. CRITICAL_TAIL", task:{ ...task, id:"delayed-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     expect(Date.now() - startedAt).toBeLessThan(5_000);
@@ -127,6 +138,13 @@ describe("BB writer validation on the server path", () => {
       "lane_pilot_wait_writer", { runId:"run-delayed", timeoutSec:2 }, { threadId:pmThreadId, projectId },
     )));
     expect(completed).toMatchObject({ state:"accepted", receipt:{ lanePilotRunId:"run-delayed", attemptId:dispatched.attemptId } });
+    expect(spawnedInput).toMatchObject({ providerId:"codex", model:"codex-test", reasoningLevel:"xhigh", executionInputSources:{ reasoningLevel:"explicit" } });
+    const fullPlan = "Canonical delayed writer plan. Keep all Unicode 🧭 and newline. CRITICAL_TAIL";
+    expect(completed.receipt.reasoning[0]).toMatchObject({
+      planSha256:createHash("sha256").update(fullPlan, "utf8").digest("hex"),
+      sourceLength:Buffer.byteLength(fullPlan), sentLength:Buffer.byteLength(fullPlan),
+      jevDecision:"xhigh", requestedReasoningLevel:"xhigh", effectiveReasoningLevel:"xhigh", threadId:"writer-delayed",
+    });
     expect(cwdCalls).toEqual([taskWorkspace, taskWorkspace]);
     expect(fileRoots.every((root) => root === taskWorkspace)).toBe(true);
     await harness.lifecycle.dispose();
@@ -144,6 +162,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     saveProjectSetting(db, projectId, "writer.provider", "not-a-provider");
     createRun(db, "run-invalid-provider", projectId, "cli");
     setRunThread(db, "run-invalid-provider", pmThreadId);
@@ -173,6 +192,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     saveProjectSetting(db, projectId, "writer.provider", "qwen");
     saveProjectSetting(db, projectId, "writer.reasoning_effort", "max");
     createRun(db, "run-invalid-pair", projectId, "cli");
@@ -234,12 +254,13 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-accepted", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-accepted", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, task:{ ...task, id:"accepted-task", verify:"none", verification:[] } },
+      { confirm:true, plan:"Canonical accepted writer plan", task:{ ...task, id:"accepted-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     expect(dispatched).toMatchObject({ runId:"run-accepted", state:"queued", attemptId:expect.any(String), writerThreadId:null });
@@ -293,12 +314,13 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-v", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-v", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, task },
+      { confirm:true, plan:"Canonical verification plan", task },
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -347,12 +369,13 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-v", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-v", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, task:{ ...task, id:"error-retry", verify:"none", verification:[] } },
+      { confirm:true, plan:"Canonical retry plan", task:{ ...task, id:"error-retry", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -388,13 +411,14 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-background-error", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-background-error", pmThreadId);
     await plugin(bb);
 
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, task:{ ...task, id:"background-error-task", verify:"none", verification:[] } },
+      { confirm:true, plan:"Canonical background error plan", task:{ ...task, id:"background-error-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     expect(dispatched.state).toBe("queued");
@@ -450,6 +474,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-resume", projectId, "bb", config.writerWorkspacePath);
     savePrototypeConfig(db, { ...config, writerWorkspacePath:"/tmp/changed-after-resume-run-start" });
     setRunThread(db, "run-resume", pmThreadId);
@@ -495,6 +520,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-cli", projectId, "cli");
     setRunThread(db, "run-cli", pmThreadId);
     await plugin(bb);
@@ -543,12 +569,13 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-dirt", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-dirt", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, task:{ ...task, id:"dirt-fail", verify:"none", verification:[] } },
+      { confirm:true, plan:"Canonical dirty workspace plan", task:{ ...task, id:"dirt-fail", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -583,6 +610,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-cancel", projectId);
     createAttempt(db, { id:"attempt-cancel", runId:"run-cancel", taskId:"t" });
     transitionAttempt(db, "attempt-cancel", "running", { threadId:"writer-cancel" });

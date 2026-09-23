@@ -104,6 +104,16 @@ export const migrations = [
   `ALTER TABLE lane_pilot_task_next RENAME TO lane_pilot_task`,
   `ALTER TABLE lane_pilot_attempt_next RENAME TO lane_pilot_attempt`,
   `ALTER TABLE lane_pilot_run ADD COLUMN writer_workspace_path TEXT`,
+  `CREATE TABLE lane_pilot_attempt_reasoning (
+    attempt_id TEXT PRIMARY KEY,
+    trace_json TEXT NOT NULL,
+    FOREIGN KEY(attempt_id) REFERENCES lane_pilot_attempt(id) ON DELETE CASCADE
+  ) WITHOUT ROWID`,
+  `CREATE TABLE lane_pilot_task_plan (
+    task_id TEXT PRIMARY KEY,
+    plan TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES lane_pilot_task(id) ON DELETE CASCADE
+  ) WITHOUT ROWID`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -212,6 +222,16 @@ export function getTask(db: LanePilotDatabase, taskId: string): {
   const row = db.prepare("SELECT id,run_id,kind,contract_json FROM lane_pilot_task WHERE id=?").get(taskId) as
     {id:string; run_id:string; kind:"bb"|"cli"; contract_json:string}|undefined;
   return row ? { id:row.id, run_id:row.run_id, kind:row.kind, contract:JSON.parse(row.contract_json) } : undefined;
+}
+
+export function saveTaskPlan(db: LanePilotDatabase, taskId:string, plan:string): void {
+  db.prepare(`INSERT INTO lane_pilot_task_plan(task_id,plan) VALUES(?,?)
+    ON CONFLICT(task_id) DO UPDATE SET plan=excluded.plan`).run(taskId, plan);
+}
+
+export function getTaskPlan(db: LanePilotDatabase, taskId:string): string|null {
+  const row = db.prepare("SELECT plan FROM lane_pilot_task_plan WHERE task_id=?").get(taskId) as {plan:string}|undefined;
+  return row?.plan ?? null;
 }
 
 export function listTaskKinds(db: LanePilotDatabase, runId: string): Array<"bb"|"cli"> {
@@ -347,6 +367,39 @@ export function getAttempt(db: LanePilotDatabase, attemptId: string): {
   if (!row) return undefined;
   const dirt_before = parseDirtSnapshots(row.dirt_before_json ?? "[]");
   return { id:row.id, run_id:row.run_id, task_id:row.task_id, thread_id:row.thread_id, state:row.state, attempt_no:row.attempt_no, dirt_before };
+}
+
+export type ReasoningTrace = {
+  planSha256:string;
+  sentPlanSha256:string|null;
+  sourceLength:number;
+  sentLength:number|null;
+  jevStatus:"ok"|"disabled"|"timeout"|"error";
+  jevDecision:string|null;
+  requestedReasoningLevel:string;
+  effectiveReasoningLevel:string;
+  fallbackReason:string|null;
+  providerId:string;
+  model:string;
+  runId:string;
+  attemptId:string;
+  threadId:string|null;
+};
+
+export function saveReasoningTrace(db: LanePilotDatabase, trace: ReasoningTrace): void {
+  db.prepare(`INSERT INTO lane_pilot_attempt_reasoning(attempt_id,trace_json) VALUES(?,?)
+    ON CONFLICT(attempt_id) DO UPDATE SET trace_json=excluded.trace_json`).run(trace.attemptId, JSON.stringify(trace));
+}
+
+export function setReasoningThread(db: LanePilotDatabase, attemptId:string, threadId:string): void {
+  const trace = getReasoningTrace(db, attemptId);
+  if (trace) saveReasoningTrace(db, { ...trace, threadId });
+}
+
+export function getReasoningTrace(db: LanePilotDatabase, attemptId: string): ReasoningTrace|null {
+  const row = db.prepare("SELECT trace_json FROM lane_pilot_attempt_reasoning WHERE attempt_id=?").get(attemptId) as {trace_json:string}|undefined;
+  if (!row) return null;
+  try { return JSON.parse(row.trace_json) as ReasoningTrace; } catch { return null; }
 }
 
 export function setAttemptDirtBefore(db: LanePilotDatabase, attemptId: string, files: DirtSnapshot[] | string[]): void {

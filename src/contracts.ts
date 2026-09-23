@@ -166,6 +166,14 @@ export const hostContract = defineRpcContract({
       stderr: z.string(),
     }).strict(),
   },
+  classifyPlan: {
+    input: z.object({ requestedHostId:z.string().min(1), plan:z.string().min(1) }).strict(),
+    output: z.object({
+      hostId:z.string(), status:z.enum(["ok","disabled","timeout","error"]),
+      effort:z.string().nullable(), reason:z.string().nullable(), planSha256:z.string(), sentPlanSha256:z.string().nullable(),
+      sourceLength:z.number().int().nonnegative(), sentLength:z.number().int().nonnegative().nullable(),
+    }).strict(),
+  },
   writePmSettings: {
     input: z.object({
       requestedHostId: z.string().min(1),

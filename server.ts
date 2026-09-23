@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -28,7 +28,12 @@ import {
   getAttempt,
   getRun,
   getTask,
+  getTaskPlan,
+  saveTaskPlan,
   setAttemptDirtBefore,
+  saveReasoningTrace,
+  setReasoningThread,
+  getReasoningTrace,
   importSettingsOnce,
   inspectState,
   listOpenAttempts,
@@ -54,6 +59,7 @@ import { reconcile, type IdempotencyTriple } from "./src/reconcile";
 import { spawnWithSeam } from "./src/spawn-seam";
 import { VISIBLE_CATALOG } from "./src/ui-catalog";
 import { SETTING_CATALOG } from "./src/channels";
+import { resolveJevReasoning, writerExecutionSelection } from "./src/jev-reasoning";
 
 export { rpcContract } from "./src/contracts";
 
@@ -163,6 +169,10 @@ function writerPrompt(task: TaskV2): string {
     "Run the verification commands, then answer with the changed paths and result.",
     JSON.stringify(task, null, 2),
   ].join("\n\n");
+}
+
+function planDigest(plan:string): { sha256:string; length:number } {
+  return { sha256:createHash("sha256").update(plan, "utf8").digest("hex"), length:Buffer.byteLength(plan, "utf8") };
 }
 
 function pmPrompt(runId: string, config: PrototypeConfig): string {
@@ -285,6 +295,7 @@ export default async function plugin(bb: BbPluginApi) {
               dirtBefore:current.dirt_before,
               config:{ ...config, writerWorkspacePath:run.writer_workspace_path },
               task:{ ...parsed.data, project_cwd:run.writer_workspace_path },
+              plan:getTaskPlan(db, current.task_id) ?? parsed.data.objective,
             });
           }
         }
@@ -398,7 +409,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   async function spawnWriterAttempt(input: {
     projectId:string; runId:string; taskId:string; attemptId:string;
-    config:PrototypeConfig; task:TaskV2; pmThreadId:string;
+    config:PrototypeConfig; task:TaskV2; plan:string; pmThreadId:string;
   }): Promise<
     | { ok:true; threadId:string; dirtBefore:import("./src/cli-outcome").DirtSnapshot[] }
     | { ok:false; status:"spawn_rejected"; reason:string; attemptId:string }
@@ -416,10 +427,54 @@ export default async function plugin(bb: BbPluginApi) {
     setAttemptDirtBefore(db, input.attemptId, dirtBefore);
     transitionAttempt(db, input.attemptId, "spawn_requested");
     try {
+      const settings = loadProjectSettings(db, input.projectId);
+      const manual = typeof settings["writer.reasoning_effort"] === "string"
+        ? settings["writer.reasoning_effort"] as string : "medium";
+      const digest = planDigest(input.plan);
+      const flag = settings["jev.LANE_JEV_EFFORT"];
+      const disabled = flag === false || flag === 0
+        || (typeof flag === "string" && ["0", "off", "false", "no"].includes(flag.trim().toLowerCase()));
+      const enabled = !disabled;
+      const jev = enabled
+        ? await host.call("classifyPlan", { requestedHostId:input.config.hostId, plan:input.plan }, { hostId:input.config.hostId, timeoutMs:35_000 })
+        : { hostId:input.config.hostId, status:"disabled" as const, effort:null, reason:"jev_disabled_by_project_setting", planSha256:digest.sha256, sentPlanSha256:null, sourceLength:digest.length, sentLength:null };
+      if (jev.planSha256 !== digest.sha256 || jev.sourceLength !== digest.length
+        || (jev.status === "disabled" ? jev.sentPlanSha256 !== null || jev.sentLength !== null
+          : jev.sentPlanSha256 !== digest.sha256 || jev.sentLength !== digest.length)) {
+        throw new Error("Jev full-plan transport proof mismatch");
+      }
+      let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>|null = null;
+      try { catalog = await bb.sdk.providers.models({ providerId:input.config.writerProviderId, hostId:input.config.hostId }); }
+      catch { /* explicit manual fallback below when the live catalog is unavailable */ }
+      const model = catalog?.models.find((row) => row.id === input.config.writerModel || row.model === input.config.writerModel);
+      const supported = new Set<string>(model?.supportedReasoningEfforts.map((item) => item.reasoningEffort) ?? []);
+      const jevDecision = jev.status === "ok" ? jev.effort : null;
+      const choice = resolveJevReasoning({
+        status:jev.status, jevDecision, manualLevel:manual,
+        supportedLevels:model ? supported : null,
+      });
+      const fallbackReason = [choice.fallbackReason,
+        jev.status !== "ok" && jev.reason ? `${jev.reason}` : null,
+        catalog && !model ? "selected_model_missing_from_live_catalog" : null,
+        choice.manualSupported === false ? `manual_fallback_unsupported:${manual}` : null,
+      ].filter(Boolean).join(";") || null;
+      const requested = choice.requested;
+      const effective = choice.effective;
+      const trace = {
+        planSha256:digest.sha256, sentPlanSha256:jev.sentPlanSha256, sourceLength:digest.length, sentLength:jev.sentLength,
+        jevStatus:jev.status, jevDecision, requestedReasoningLevel:requested,
+        effectiveReasoningLevel:effective, fallbackReason,
+        providerId:input.config.writerProviderId, model:input.config.writerModel,
+        runId:input.runId, attemptId:input.attemptId, threadId:null,
+      } as const;
+      saveReasoningTrace(db, trace);
+      if (choice.manualSupported === false) {
+        throw new Error(`manual_writer_reasoning_effort_unsupported:${effective}; supported=${[...supported].join(",")}`);
+      }
+      const execution = writerExecutionSelection(input.config.writerProviderId, input.config.writerModel, effective);
       const spawned = await spawnWithSeam(() => bb.sdk.threads.spawn({
         projectId: input.projectId,
-        providerId: input.config.writerProviderId,
-        model: input.config.writerModel,
+        ...execution,
         prompt: writerPrompt(input.task),
         environment: {
           type:"host",
@@ -434,11 +489,11 @@ export default async function plugin(bb: BbPluginApi) {
           attemptId:input.attemptId,
           parentPmThreadId:input.pmThreadId,
         },
-        executionInputSources:{ providerId:"explicit", model:"explicit" },
       }));
       const writerThreadId = stringAt(spawned, "id") ?? "";
       if (!writerThreadId) throw new Error("threads.spawn returned no writer thread id");
       transitionAttempt(db, input.attemptId, "running", { threadId:writerThreadId });
+      setReasoningThread(db, input.attemptId, writerThreadId);
       return { ok:true, threadId:writerThreadId, dirtBefore };
     } catch (cause) {
       transitionAttempt(db, input.attemptId, "spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });
@@ -639,7 +694,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   function startWriterTask(input:{
     projectId:string; runId:string; taskId:string; firstAttemptId:string; pmThreadId:string;
-    config:PrototypeConfig; task:TaskV2; writerThreadId?:string; dirtBefore?:DirtSnapshot[];
+    config:PrototypeConfig; task:TaskV2; plan:string; writerThreadId?:string; dirtBefore?:DirtSnapshot[];
   }): void {
     const key = `${input.runId}:${input.taskId}`;
     if (activeWriterTasks.has(key)) return;
@@ -653,7 +708,7 @@ export default async function plugin(bb: BbPluginApi) {
         if (!writerThreadId) {
           const spawned = await spawnWriterAttempt({
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
-            config:input.config, task:input.task, pmThreadId:input.pmThreadId,
+            config:input.config, task:input.task, plan:input.plan, pmThreadId:input.pmThreadId,
           });
           if (!spawned.ok) {
             last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
@@ -719,7 +774,7 @@ export default async function plugin(bb: BbPluginApi) {
     });
   }
 
-  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2}): Promise<Record<string,unknown>> {
+  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
@@ -738,6 +793,8 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const taskId = args.task?.id ?? id("lptask");
     const prepared = args.task ?? buildTask(runConfig, taskId);
+    const canonicalPlan = args.plan ?? prepared.objective;
+    if (canonicalPlan.trim().length === 0) throw new Error("canonical plan must be non-empty");
     const valid = validateTaskV2(prepared);
     if (!valid.ok) throw new Error(`task-v2 invalid: ${valid.errors.join("; ")}`);
     if (resolve(valid.task.project_cwd) !== resolve(workspacePath)) {
@@ -746,11 +803,12 @@ export default async function plugin(bb: BbPluginApi) {
     }
     valid.task.project_cwd = workspacePath;
     createTask(db, { id:taskId, runId, kind:"bb", contract:valid.task });
+    saveTaskPlan(db, taskId, canonicalPlan);
     const attemptId = id("lpattempt");
     createAttempt(db, { id:attemptId, runId, taskId });
     startWriterTask({
       projectId:args.projectId, runId, taskId, firstAttemptId:attemptId,
-      pmThreadId:args.threadId, config:runConfig, task:valid.task,
+      pmThreadId:args.threadId, config:runConfig, task:valid.task, plan:canonicalPlan,
     });
     return { runId, attemptId, writerThreadId:null, state:"queued" };
   }
@@ -802,6 +860,7 @@ export default async function plugin(bb: BbPluginApi) {
             writerThreadId:attempt.thread_id ?? undefined,
             config:{ ...config, writerWorkspacePath:currentRun.writer_workspace_path },
             task:{ ...parsed.data, project_cwd:currentRun.writer_workspace_path },
+            plan:getTaskPlan(db, attempt.task_id) ?? parsed.data.objective,
           });
         }
       }
@@ -815,7 +874,11 @@ export default async function plugin(bb: BbPluginApi) {
           continue;
         }
         const settings = loadProjectSettings(db, args.projectId);
-        const receipt = valueAt(settings["writer.lastResult"], "lanePilotRunId") === args.runId ? settings["writer.lastResult"] : null;
+        const baseReceipt = valueAt(settings["writer.lastResult"], "lanePilotRunId") === args.runId ? settings["writer.lastResult"] : null;
+        const reasoning = [...latestByTask.values()].map((attempt) => getReasoningTrace(db, attempt.id)).filter(Boolean);
+        const receipt = baseReceipt && typeof baseReceipt === "object"
+          ? { ...baseReceipt as Record<string, unknown>, reasoning }
+          : baseReceipt;
         const reasons = [...latestByTask.values()].map((attempt) => attempt.reason).filter((reason): reason is string => Boolean(reason));
         return { runId:args.runId, state, receipt, ...(reasons.length ? { reason:reasons.join("; ") } : {}) };
       }
@@ -1265,9 +1328,9 @@ export default async function plugin(bb: BbPluginApi) {
     name:"lane_pilot_dispatch_writer",
     description:"Start a task-v2 contract with the configured native BB writer and return run/attempt identity immediately.",
     instructions:"Use only from a Lane Pilot PM thread. Returns before writer completion. Then call lane_pilot_wait_writer with the returned runId; if it reports still running, call it again. Persists identity before spawn, retries at most twice, never falls back to Codex.",
-    parameters:z.object({ confirm:z.literal(true), task:taskV2Schema.optional() }).strict(),
+    parameters:z.object({ confirm:z.literal(true), plan:z.string().min(1), task:taskV2Schema.optional() }).strict(),
     execute: async (params, context) => JSON.stringify(
-      await dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task }),
+      await dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task, plan:params.plan }),
       null,
       2,
     ),
@@ -1317,7 +1380,7 @@ export default async function plugin(bb: BbPluginApi) {
       tools:["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli"],
       skills:[],
       instructions:config
-        ? `Lane Pilot PM ${runId}. Writer=${config.writerProviderId}/${config.writerModel}; writer workspace=${config.writerWorkspacePath}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread. To delegate: call lane_pilot_dispatch_writer and immediately note its runId/attemptId; then call lane_pilot_wait_writer with that runId (timeoutSec up to 240). If state is running, call wait again. Return the final receipt to the user verbatim.`
+        ? `Lane Pilot PM ${runId}. Writer=${config.writerProviderId}/${config.writerModel}; writer workspace=${config.writerWorkspacePath}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread. To delegate: supply the complete canonical plan in the separate plan parameter of lane_pilot_dispatch_writer and the task-v2 contract in task; never put wrapper/system instructions into plan. Then immediately note its runId/attemptId; call lane_pilot_wait_writer with that runId (timeoutSec up to 240), repeating while running. Return the final receipt to the user verbatim.`
         : `Lane Pilot PM ${runId}, but project configuration is missing.`,
     };
   });

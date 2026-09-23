@@ -8,6 +8,7 @@ import {
   claimActivation,
   getAttempt,
   openDatabase,
+  saveProjectSetting,
   savePrototypeConfig,
   setRunThread,
   transitionAttempt,
@@ -151,13 +152,14 @@ describe("production spawn_unknown reconciliation", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-live", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-live", pmThreadId);
     await plugin(bb);
 
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true },
+      { confirm:true, plan:"Canonical live reconciliation plan" },
       { threadId:pmThreadId, projectId },
     )));
     const waiting = JSON.parse(String(await harness.behavior.callAgentTool(
