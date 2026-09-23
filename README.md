@@ -58,6 +58,8 @@ bb plugin install git:https://github.com/VKirill/bb-plugin-lane-pilot.git@<previ
 
 `bb lane-pilot host-detect <host-id> <workspace-path>` runs on the enrolled project host (`bb.host`), not inside the PM model session.
 
+For BB PM delegation, set task-v2 `project_cwd` to exactly the project's configured writer workspace. The value is captured when the PM run starts; changing the project setting does not change an active run. `lane_pilot_dispatch_writer` returns immediately, then `lane_pilot_wait_writer` returns the receipt or indicates that another bounded wait is needed.
+
 ## Install scenarios S1–S8
 
 | # | Situation | Lane Pilot |

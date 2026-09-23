@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
@@ -263,11 +264,13 @@ export default async function plugin(bb: BbPluginApi) {
           const stored = getTask(db, current.task_id);
           const config = loadPrototypeConfig(db, row.project_id);
           const parsed = stored?.kind === "bb" ? taskV2Schema.safeParse(stored.contract) : null;
-          if (run && config && parsed?.success) {
+          if (run?.writer_workspace_path && config && parsed?.success) {
             startWriterTask({
               projectId:row.project_id, runId:current.run_id, taskId:current.task_id,
               firstAttemptId:current.id, pmThreadId:run.pm_thread_id ?? "", writerThreadId,
-              dirtBefore:current.dirt_before, config, task:parsed.data,
+              dirtBefore:current.dirt_before,
+              config:{ ...config, writerWorkspacePath:run.writer_workspace_path },
+              task:{ ...parsed.data, project_cwd:run.writer_workspace_path },
             });
           }
         }
@@ -351,7 +354,7 @@ export default async function plugin(bb: BbPluginApi) {
     const existing = getActivation(db, projectId);
     if (existing) refreshRun(existing.run_id);
     const runId = id("lprun");
-    createRun(db, runId, projectId, kind);
+    createRun(db, runId, projectId, kind, config.writerWorkspacePath);
     claimActivation(db, { projectId, pmThreadId:`pending:${sourceThreadId}`, runId });
     await host.call("writePmSettings", {
       requestedHostId: config.hostId,
@@ -684,19 +687,31 @@ export default async function plugin(bb: BbPluginApi) {
     if (!runId) throw new Error("PM thread has no lanePilotRunId");
     const config = loadPrototypeConfig(db, args.projectId);
     if (!config) throw new Error(`Lane Pilot prototype is not configured for ${args.projectId}`);
+    const run = getRun(db, runId);
+    const workspacePath = run?.writer_workspace_path;
+    if (!run || !workspacePath) {
+      const reason = "run has no persisted writerWorkspacePath; reactivate Lane Pilot to create a run with a workspace snapshot";
+      return { runId, state:"rejected", reason, unapplied:[{ key:"task.project_cwd", reason }] };
+    }
+    const runConfig = { ...config, writerWorkspacePath:workspacePath };
     if (listTaskKinds(db, runId).includes("cli")) {
       throw new Error("V1: BB writer cannot join a CLI run-controller run");
     }
     const taskId = args.task?.id ?? id("lptask");
-    const prepared = args.task ?? buildTask(config, taskId);
+    const prepared = args.task ?? buildTask(runConfig, taskId);
     const valid = validateTaskV2(prepared);
     if (!valid.ok) throw new Error(`task-v2 invalid: ${valid.errors.join("; ")}`);
+    if (resolve(valid.task.project_cwd) !== resolve(workspacePath)) {
+      const reason = `task.project_cwd must equal the configured writerWorkspacePath (${workspacePath})`;
+      return { runId, state:"rejected", reason, unapplied:[{ key:"task.project_cwd", reason }] };
+    }
+    valid.task.project_cwd = workspacePath;
     createTask(db, { id:taskId, runId, kind:"bb", contract:valid.task });
     const attemptId = id("lpattempt");
     createAttempt(db, { id:attemptId, runId, taskId });
     startWriterTask({
       projectId:args.projectId, runId, taskId, firstAttemptId:attemptId,
-      pmThreadId:args.threadId, config, task:valid.task,
+      pmThreadId:args.threadId, config:runConfig, task:valid.task,
     });
     return { runId, attemptId, writerThreadId:null, state:"queued" };
   }
@@ -1219,7 +1234,7 @@ export default async function plugin(bb: BbPluginApi) {
       tools:["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli"],
       skills:[],
       instructions:config
-        ? `Lane Pilot PM ${runId}. Writer=${config.writerProviderId}/${config.writerModel}; writer workspace=${config.writerWorkspacePath}. The writer tool is available only in this PM thread. To delegate: call lane_pilot_dispatch_writer and immediately note its runId/attemptId; then call lane_pilot_wait_writer with that runId (timeoutSec up to 240). If state is running, call wait again. Return the final receipt to the user verbatim.`
+        ? `Lane Pilot PM ${runId}. Writer=${config.writerProviderId}/${config.writerModel}; writer workspace=${config.writerWorkspacePath}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread. To delegate: call lane_pilot_dispatch_writer and immediately note its runId/attemptId; then call lane_pilot_wait_writer with that runId (timeoutSec up to 240). If state is running, call wait again. Return the final receipt to the user verbatim.`
         : `Lane Pilot PM ${runId}, but project configuration is missing.`,
     };
   });

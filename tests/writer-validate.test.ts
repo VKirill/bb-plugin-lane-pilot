@@ -58,7 +58,7 @@ describe("BB writer validation on the server path", () => {
   it("returns dispatch immediately and exposes the persisted receipt through bounded wait", async () => {
     let releaseWait!: (value:{matched:boolean; thread:{status:string}}) => void;
     let snapshots = 0;
-    const taskWorkspace = "/tmp/ag235-writer-fixture";
+    const taskWorkspace = config.writerWorkspacePath;
     const cwdCalls:string[] = [];
     const fileRoots:string[] = [];
     const delayed = new Promise<{matched:boolean; thread:{status:string}}>((resolve) => { releaseWait = resolve; });
@@ -93,13 +93,24 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
-    createRun(db, "run-delayed", projectId);
+    createRun(db, "run-delayed", projectId, "bb", taskWorkspace);
+    savePrototypeConfig(db, { ...config, writerWorkspacePath:"/tmp/changed-after-run-start" });
     setRunThread(db, "run-delayed", pmThreadId);
     await plugin(bb);
+    const beforeRejected = db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE run_id='run-delayed'").get() as {count:number};
+    const rejected = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, task:{ ...task, id:"wrong-workspace", project_cwd:"/tmp/ag235-writer-fixture" } },
+      { threadId:pmThreadId, projectId },
+    )));
+    expect(rejected).toMatchObject({ state:"rejected", unapplied:[{ key:"task.project_cwd" }] });
+    expect(String(rejected.reason)).toContain("must equal the configured writerWorkspacePath");
+    expect((db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE run_id='run-delayed'").get() as {count:number}).count).toBe(beforeRejected.count);
+    expect((db.prepare("SELECT COUNT(*) count FROM lane_pilot_task WHERE run_id='run-delayed'").get() as {count:number}).count).toBe(0);
     const startedAt = Date.now();
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, task:{ ...task, id:"delayed-task", project_cwd:taskWorkspace, verify:"none", verification:[] } },
+      { confirm:true, task:{ ...task, id:"delayed-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     expect(Date.now() - startedAt).toBeLessThan(5_000);
@@ -220,7 +231,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
-    createRun(db, "run-accepted", projectId);
+    createRun(db, "run-accepted", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-accepted", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -279,7 +290,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
-    createRun(db, "run-v", projectId);
+    createRun(db, "run-v", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-v", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -330,7 +341,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
-    createRun(db, "run-v", projectId);
+    createRun(db, "run-v", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-v", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -375,7 +386,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
-    createRun(db, "run-resume", projectId);
+    createRun(db, "run-resume", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-resume", pmThreadId);
     createTask(db, { id:"resume-task", runId:"run-resume", kind:"bb", contract:resumeTask });
     createAttempt(db, { id:"attempt-resume", runId:"run-resume", taskId:"resume-task" });
@@ -466,7 +477,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
-    createRun(db, "run-dirt", projectId);
+    createRun(db, "run-dirt", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-dirt", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(

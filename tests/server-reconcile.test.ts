@@ -151,7 +151,7 @@ describe("production spawn_unknown reconciliation", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
-    createRun(db, "run-live", projectId);
+    createRun(db, "run-live", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-live", pmThreadId);
     await plugin(bb);
 

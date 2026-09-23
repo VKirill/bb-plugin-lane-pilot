@@ -103,6 +103,7 @@ export const migrations = [
   `ALTER TABLE lane_pilot_run_next RENAME TO lane_pilot_run`,
   `ALTER TABLE lane_pilot_task_next RENAME TO lane_pilot_task`,
   `ALTER TABLE lane_pilot_attempt_next RENAME TO lane_pilot_attempt`,
+  `ALTER TABLE lane_pilot_run ADD COLUMN writer_workspace_path TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -172,10 +173,10 @@ export function casSetting(
   return result.changes === 1;
 }
 
-export function createRun(db: LanePilotDatabase, id: string, projectId: string, kind: "bb"|"cli" = "bb"): void {
+export function createRun(db: LanePilotDatabase, id: string, projectId: string, kind: "bb"|"cli" = "bb", writerWorkspacePath: string | null = null): void {
   const now = Date.now();
-  db.prepare("INSERT INTO lane_pilot_run(id,project_id,state,kind,created_at,updated_at) VALUES (?,?,\'pending\',?,?,?)")
-    .run(id, projectId, kind, now, now);
+  db.prepare("INSERT INTO lane_pilot_run(id,project_id,state,kind,created_at,updated_at,writer_workspace_path) VALUES (?,?,\'pending\',?,?,?,?)")
+    .run(id, projectId, kind, now, now, writerWorkspacePath);
 }
 
 export function setRunState(db: LanePilotDatabase, runId: string, state: string): void {
@@ -508,8 +509,8 @@ export function listRunsWithAttempts(db: LanePilotDatabase, projectId: string): 
 }
 
 export function getRun(db: LanePilotDatabase, runId: string): {
-  id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null;
+  id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null; writer_workspace_path:string|null;
 }|undefined {
-  return db.prepare("SELECT id,project_id,pm_thread_id,state,kind,closed_at FROM lane_pilot_run WHERE id=?").get(runId) as
-    {id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null}|undefined;
+  return db.prepare("SELECT id,project_id,pm_thread_id,state,kind,closed_at,writer_workspace_path FROM lane_pilot_run WHERE id=?").get(runId) as
+    {id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null; writer_workspace_path:string|null}|undefined;
 }
