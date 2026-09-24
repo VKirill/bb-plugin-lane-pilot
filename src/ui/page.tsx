@@ -120,6 +120,22 @@ const WRITER_PROVIDER = "writer.provider";
 const WRITER_MODEL = "writer.model";
 const WRITER_EFFORT = "writer.reasoning_effort";
 const WRITER_SERVICE_TIER = "writer.service_tier";
+const MEMORY_PROVIDER = "memory.provider";
+const MEMORY_MODEL = "memory.model";
+const MEMORY_EFFORT = "memory.reasoning_effort";
+const MEMORY_SERVICE_TIER = "memory.service_tier";
+const NIGHT_PROVIDER = "night_review.provider";
+const NIGHT_MODEL = "night_review.model";
+const NIGHT_EFFORT = "night_review.reasoning_effort";
+const NIGHT_SERVICE_TIER = "night_review.service_tier";
+const DOCS_PROVIDER = "docs.provider";
+const DOCS_MODEL = "docs.model";
+const DOCS_EFFORT = "docs.reasoning_effort";
+const DOCS_SERVICE_TIER = "docs.service_tier";
+const ONBOARDING_PROVIDER = "onboarding.provider";
+const ONBOARDING_MODEL = "onboarding.model";
+const ONBOARDING_EFFORT = "onboarding.reasoning_effort";
+const ONBOARDING_SERVICE_TIER = "onboarding.service_tier";
 
 function fieldKey(id: string): I18nKey {
   return `field_${id}` as I18nKey;
@@ -138,6 +154,10 @@ function stageTitle(stageId: string): string {
     verification:"stageVerification",
     "acceptance-receipt":"stageAcceptanceReceipt",
     "browser-qa":"stageBrowserQa",
+    "night-review":"stageNightReview",
+    "workspace-status":"stageWorkspaceStatus",
+    "opencode-telemetry":"stageOpenCodeTelemetry",
+    "pm-read":"stagePmRead",
   };
   const key = labels[stageId];
   return key ? t(key) : stageId;
@@ -147,8 +167,10 @@ function diagnosticRows(): CatalogRow[] {
   const rank: Record<CatalogRow["uiStatus"], number> = { editable: 3, readonly: 2, gap: 1, excluded: 0 };
   const byKey = new Map<string, CatalogRow>();
   for (const row of VISIBLE_CATALOG) {
-    if (row.section === "night-review" || row.section === "jev" || JEV_KEYS.has(row.storageKey)) continue;
+    if (row.section === "jev" || JEV_KEYS.has(row.storageKey)) continue;
     if ([WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER].includes(row.storageKey)) continue;
+    if (row.storageKey === MEMORY_PROVIDER) continue;
+    if (["night_review.enabled",NIGHT_PROVIDER,NIGHT_MODEL,NIGHT_EFFORT,NIGHT_SERVICE_TIER].includes(row.storageKey)) continue;
     const current = byKey.get(row.storageKey);
     if (!current || rank[row.uiStatus] > rank[current.uiStatus]) byKey.set(row.storageKey, row);
   }
@@ -258,7 +280,7 @@ type MonitorAttempt = MonitorRun["attempts"][number];
 function canCancelAttempt(run: MonitorRun, attempt: MonitorAttempt): boolean {
   return (run.state === "pending" || run.state === "running")
     && ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(attempt.state)
-    && Boolean(attempt.thread_id);
+    && (attempt.state === "queued" || Boolean(attempt.thread_id));
 }
 
 function canRetryAttempt(run: MonitorRun, attempt: MonitorAttempt): boolean {
@@ -276,6 +298,10 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectListError, setProjectListError] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [memoryPickerOpen, setMemoryPickerOpen] = useState(false);
+  const [nightPickerOpen, setNightPickerOpen] = useState(false);
+  const [docsPickerOpen, setDocsPickerOpen] = useState(false);
+  const [onboardingPickerOpen, setOnboardingPickerOpen] = useState(false);
   const providers = useProviders();
   const [tab, setTab] = useState("settings");
   const [data, setData] = useState<ScreenPayload | null>(null);
@@ -438,6 +464,68 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     return true;
   };
 
+  const saveMemorySelection = async (selection: ExperimentalProviderModelPickerValue) => {
+    if (!projectId || !data) return false;
+    const result = await rpc.call("save_memory_selection", {
+      projectId, providerId:selection.providerId, model:selection.model,
+      reasoningLevel:selection.reasoningLevel, serviceTier:selection.serviceTier ?? null,
+      expectedVersions:{
+        "memory.provider":data.versions[MEMORY_PROVIDER] ?? 0,
+        "memory.model":data.versions[MEMORY_MODEL] ?? 0,
+        "memory.reasoning_effort":data.versions[MEMORY_EFFORT] ?? 0,
+        "memory.service_tier":data.versions[MEMORY_SERVICE_TIER] ?? 0,
+      },
+    });
+    if (result.conflict) { setSaveError({kind:"cas"}); await load(); return false; }
+    if (!result.ok) {
+      if (result.validation) setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});
+      else setSaveError({kind:"cas"});
+      return false;
+    }
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
+
+  const saveNightReviewSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
+    if(!projectId||!data)return false;
+    const result=await rpc.call("save_night_review_selection",{
+      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
+      expectedVersions:{[NIGHT_PROVIDER]:data.versions[NIGHT_PROVIDER]??0,[NIGHT_MODEL]:data.versions[NIGHT_MODEL]??0,[NIGHT_EFFORT]:data.versions[NIGHT_EFFORT]??0,[NIGHT_SERVICE_TIER]:data.versions[NIGHT_SERVICE_TIER]??0},
+    });
+    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
+    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
+
+  const saveDocsSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
+    if(!projectId||!data)return false;
+    const result=await rpc.call("save_docs_selection",{
+      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
+      expectedVersions:{[DOCS_PROVIDER]:data.versions[DOCS_PROVIDER]??0,[DOCS_MODEL]:data.versions[DOCS_MODEL]??0,[DOCS_EFFORT]:data.versions[DOCS_EFFORT]??0,[DOCS_SERVICE_TIER]:data.versions[DOCS_SERVICE_TIER]??0},
+    });
+    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
+    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
+
+  const saveOnboardingSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
+    if(!projectId||!data)return false;
+    const result=await rpc.call("save_onboarding_selection",{
+      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
+      expectedVersions:{[ONBOARDING_PROVIDER]:data.versions[ONBOARDING_PROVIDER]??0,[ONBOARDING_MODEL]:data.versions[ONBOARDING_MODEL]??0,[ONBOARDING_EFFORT]:data.versions[ONBOARDING_EFFORT]??0,[ONBOARDING_SERVICE_TIER]:data.versions[ONBOARDING_SERVICE_TIER]??0},
+    });
+    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
+    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
+
   const pickerValue: ExperimentalProviderModelPickerValue = {
     providerId: String(data?.values[WRITER_PROVIDER] ?? ""),
     model: String(data?.values[WRITER_MODEL] ?? ""),
@@ -445,6 +533,36 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     ...(providers.providers?.find((provider) => provider.id === String(data?.values[WRITER_PROVIDER] ?? ""))?.serviceTiers?.length
       ? { serviceTier: data?.values[WRITER_SERVICE_TIER] === "fast" ? "fast" : "default" }
       : {}),
+  };
+
+  const memoryProviderId=String(data?.values[MEMORY_PROVIDER] ?? data?.values[WRITER_PROVIDER] ?? "");
+  const memoryPickerValue:ExperimentalProviderModelPickerValue={
+    providerId:memoryProviderId,
+    model:String(data?.values[MEMORY_MODEL] ?? data?.values[WRITER_MODEL] ?? ""),
+    reasoningLevel:(String(data?.values[MEMORY_EFFORT] ?? data?.values[WRITER_EFFORT] ?? "none")||"none") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider)=>provider.id===memoryProviderId)?.serviceTiers?.length
+      ? {serviceTier:data?.values[MEMORY_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
+  };
+  const nightProviderId=String(data?.values[NIGHT_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
+  const nightPickerValue:ExperimentalProviderModelPickerValue={
+    providerId:nightProviderId,
+    model:String(data?.values[NIGHT_MODEL]??data?.values[WRITER_MODEL]??""),
+    reasoningLevel:(String(data?.values[NIGHT_EFFORT]??"high")||"high") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider)=>provider.id===nightProviderId)?.serviceTiers?.length?{serviceTier:data?.values[NIGHT_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
+  };
+  const docsProviderId=String(data?.values[DOCS_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
+  const docsPickerValue:ExperimentalProviderModelPickerValue={
+    providerId:docsProviderId,
+    model:String(data?.values[DOCS_MODEL]??data?.values[WRITER_MODEL]??""),
+    reasoningLevel:(String(data?.values[DOCS_EFFORT]??data?.values[WRITER_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider)=>provider.id===docsProviderId)?.serviceTiers?.length?{serviceTier:data?.values[DOCS_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
+  };
+  const onboardingProviderId=String(data?.values[ONBOARDING_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
+  const onboardingPickerValue:ExperimentalProviderModelPickerValue={
+    providerId:onboardingProviderId,
+    model:String(data?.values[ONBOARDING_MODEL]??data?.values[WRITER_MODEL]??""),
+    reasoningLevel:(String(data?.values[ONBOARDING_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider)=>provider.id===onboardingProviderId)?.serviceTiers?.length?{serviceTier:data?.values[ONBOARDING_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
   };
 
   const hostId = data?.hostId;
@@ -559,6 +677,19 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
               </CardContent>
             </Card>
 
+            <Card data-testid="memory-picker">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("memoryPicker")}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
+                <p className="break-all text-xs text-muted-foreground">{memoryPickerValue.providerId}/{memoryPickerValue.model} · {memoryPickerValue.reasoningLevel} · {memoryPickerValue.serviceTier ?? "standard"}</p>
+                <Button size="sm" variant="outline" onClick={()=>setMemoryPickerOpen((open)=>!open)}>{memoryPickerOpen?t("closeMemoryPicker"):t("configureMemoryPicker")}</Button>
+                {memoryPickerOpen ? (memoryPickerValue.providerId || (providers.providers?.length ?? 0)>0
+                  ? <ProviderModelPicker value={memoryPickerValue.providerId?memoryPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}}
+                      routing={routing} onChange={(next)=>{void saveMemorySelection(next);}} />
+                  : <p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>) : null}
+              </CardContent>
+            </Card>
+
             <section className="space-y-3" data-testid="jev-settings">
               <h2 className="text-sm font-medium">{t("jevSettings")}</h2>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -573,9 +704,47 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
               </div>
             </section>
 
-            <Card data-testid="night-review-unsupported">
+          <Card data-testid="night-review-settings">
               <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t(sectionKey("night-review"))}</CardTitle></CardHeader>
-              <CardContent className="text-sm text-muted-foreground">{t("nightReviewUnavailable")}</CardContent>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+                  <Label className="text-sm" htmlFor="night-review-enabled">{t("nightReviewEnabled")}</Label>
+                  <Switch id="night-review-enabled" checked={asBoolean(data?.values["night_review.enabled"],false)} aria-label={t("nightReviewEnabled")}
+                    onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void save(row,next);}} />
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+                  <Label className="text-sm" htmlFor="night-review-auto-merge">{t("nightReviewAutoMerge")}</Label>
+                  <Switch id="night-review-auto-merge" checked={asBoolean(data?.values["night_review.auto_merge"],false)} aria-label={t("nightReviewAutoMerge")}
+                    onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.auto_merge");if(row)void save(row,next);}} />
+                </div>
+                <p className="break-all text-xs text-muted-foreground">{nightPickerValue.providerId}/{nightPickerValue.model} · {nightPickerValue.reasoningLevel} · {nightPickerValue.serviceTier??"standard"}</p>
+                <Button size="sm" variant="outline" onClick={()=>setNightPickerOpen((open)=>!open)}>{nightPickerOpen?t("closeNightPicker"):t("configureNightPicker")}</Button>
+                {nightPickerOpen?(nightPickerValue.providerId||(providers.providers?.length??0)>0
+                  ?<ProviderModelPicker value={nightPickerValue.providerId?nightPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveNightReviewSelection(next);}} />
+                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
+              </CardContent>
+          </Card>
+            <Card data-testid="docs-picker">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("docsPicker")}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
+                <p className="break-all text-xs text-muted-foreground">{docsPickerValue.providerId}/{docsPickerValue.model} · {docsPickerValue.reasoningLevel} · {docsPickerValue.serviceTier??"standard"}</p>
+                <Button size="sm" variant="outline" onClick={()=>setDocsPickerOpen((open)=>!open)}>{docsPickerOpen?t("closeDocsPicker"):t("configureDocsPicker")}</Button>
+                {docsPickerOpen?(docsPickerValue.providerId||(providers.providers?.length??0)>0
+                  ?<ProviderModelPicker value={docsPickerValue.providerId?docsPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveDocsSelection(next);}} />
+                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
+              </CardContent>
+            </Card>
+            <Card data-testid="onboarding-picker">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("onboardingPicker")}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">{t("onboardingPickerHelp")}</p>
+                <p className="break-all text-xs text-muted-foreground">{onboardingPickerValue.providerId}/{onboardingPickerValue.model} · {onboardingPickerValue.reasoningLevel} · {onboardingPickerValue.serviceTier??"standard"}</p>
+                <Button size="sm" variant="outline" onClick={()=>setOnboardingPickerOpen((open)=>!open)}>{onboardingPickerOpen?t("closeOnboardingPicker"):t("configureOnboardingPicker")}</Button>
+                {onboardingPickerOpen?(onboardingPickerValue.providerId||(providers.providers?.length??0)>0
+                  ?<ProviderModelPicker value={onboardingPickerValue.providerId?onboardingPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveOnboardingSelection(next);}} />
+                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
+              </CardContent>
             </Card>
           </TabsContent>
 
@@ -814,7 +983,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                     <div className="grid gap-1 text-xs sm:grid-cols-2">
                       <span>{t("coexInstalled")}: {manager.installed ? t("yes") : t("no")}</span>
                       <span>{t("coexConfigured")}: {manager.configured ? t("yes") : t("no")}</span>
-                      <span>{t("coexLoaded")}: {manager.loaded === null ? t("unknown") : manager.loaded ? t("yes") : t("no")}</span>
+                      <span>{t("coexLoaded")}: {manager.loaded === null ? t("coexRuntimeUnverified") : manager.loaded ? t("yes") : t("no")}</span>
                       <span>{t("coexCompatible")}: {manager.compatible === null ? t("unknown") : manager.compatible ? t("yes") : t("no")}</span>
                       <span>{t("coexModified")}: {manager.modified === null ? t("unknown") : manager.modified ? t("yes") : t("no")}</span>
                       <span>{t("coexOwner")}: {t(COEXISTENCE_VALUE_KEYS[manager.owner] ?? "coexOwnerUnknown")}</span>

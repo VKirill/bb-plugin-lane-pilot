@@ -34,9 +34,14 @@ function redact(text:string):string {
 }
 
 export function browserQaVerdict(text:string, exitCode:number):BrowserQaResult["verdict"] {
-  const summary = text.match(/Total\s*\/\s*Passed\s*\/\s*Failed\s*\/\s*Blocked\s*\/\s*Pending\s*:\s*(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)/i);
+  const summary = text.match(/Total\s*\/\s*Passed\s*\/\s*Failed\s*\/\s*Blocked(?:\s*\/\s*Pending)?\s*:\s*(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)(?:\s*\/\s*(\d+))?/i);
   if (!summary) return "blocked";
-  const [, total, passed, failed, blocked, pending] = summary.map(Number);
+  const total = Number(summary[1]);
+  const passed = Number(summary[2]);
+  const failed = Number(summary[3]);
+  const blocked = Number(summary[4]);
+  const pending = summary[5] == null ? total - passed - failed - blocked : Number(summary[5]);
+  if (pending < 0 || passed + failed + blocked + pending !== total) return "blocked";
   if (failed > 0 || exitCode !== 0) return "failed";
   if (blocked > 0 || pending > 0 || total === 0 || passed !== total) return "blocked";
   return "passed";

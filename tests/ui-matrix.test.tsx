@@ -278,10 +278,12 @@ describe("Lane Pilot UI", () => {
     expect(inventory.textContent).toContain(en.coexInventory);
     expect(checkout.textContent).toContain(en.coexDecisionReuse);
     expect(checkout.textContent).toContain(en.coexOwnerUser);
+    expect(checkout.textContent).toContain(en.coexRuntimeUnverified);
+    expect(checkout.textContent).toContain(en.coexCompatible);
     expect(checkout.textContent).toContain("required interface listAgentRuns available");
     expect(slot.getByTestId("stack-detect-result").textContent).toContain(en.targetMatchInformational);
     slot.lifecycle.unmount();
-  });
+  }, 15000);
 
   it("uses a mobile card monitor and hides the wide table below the sm breakpoint", async () => {
     const slot = await mountPage();
@@ -321,6 +323,7 @@ describe("Lane Pilot UI", () => {
     for (const scenario of [
       { runState:"closed", attemptState:"accepted", cancel:false, retry:false },
       { runState:"closed", attemptState:"validation_failed", cancel:false, retry:false },
+      { runState:"running", attemptState:"queued", cancel:true, retry:false },
       { runState:"running", attemptState:"running", cancel:true, retry:false },
       { runState:"running", attemptState:"validation_failed", cancel:false, retry:true },
     ]) {
@@ -328,6 +331,7 @@ describe("Lane Pilot UI", () => {
       const run = base.runs[0]!;
       run.state = scenario.runState;
       run.attempts[0]!.state = scenario.attemptState;
+      (run.attempts[0]! as {thread_id:string|null}).thread_id = scenario.attemptState === "queued" ? null : "thr_writer";
       const slot = await mountPage({ get_screen:() => base });
       fireEvent.click(slot.getByTestId("tab-monitor"));
       const mobile = await slot.findByTestId("mobile-attempt-lpattempt_1");

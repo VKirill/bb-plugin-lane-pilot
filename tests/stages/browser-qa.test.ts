@@ -20,6 +20,8 @@ describe("browser QA host stage contract", () => {
 
   it("passes only a complete all-passed report and fails closed for every other summary", () => {
     expect(browserQaVerdict("Total / Passed / Failed / Blocked / Pending: 2 / 2 / 0 / 0 / 0", 0)).toBe("passed");
+    expect(browserQaVerdict("Total / Passed / Failed / Blocked: 1 / 1 / 0 / 0", 0)).toBe("passed");
+    expect(browserQaVerdict("Total / Passed / Failed / Blocked: 2 / 1 / 0 / 0", 0)).toBe("blocked");
     expect(browserQaVerdict("Total / Passed / Failed / Blocked / Pending: 2 / 1 / 1 / 0 / 0", 0)).toBe("failed");
     expect(browserQaVerdict("Total / Passed / Failed / Blocked / Pending: 2 / 1 / 0 / 1 / 0", 0)).toBe("blocked");
     expect(browserQaVerdict("report without a parseable summary", 0)).toBe("blocked");

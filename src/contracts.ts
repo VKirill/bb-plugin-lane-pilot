@@ -104,6 +104,30 @@ const coexistenceOperationResult = z.object({
 }).strict();
 
 export const hostContract = defineRpcContract({
+  gitOwnershipBase: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), baseRef:z.string().min(1).max(240).optional() }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","invalid-ref","failed"]), branch:z.string().nullable(), headSha:z.string().nullable(), baseRef:z.string().nullable(), baseSha:z.string().nullable(), compareCommitted:z.boolean(), reason:z.string().nullable() }).strict(),
+  },
+  gitOwnershipChanges: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), baseSha:z.string().regex(/^[a-f0-9]{40,64}$/).nullable(), compareCommitted:z.boolean() }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), headSha:z.string().nullable(), paths:z.array(z.string()), reason:z.string().nullable() }).strict(),
+  },
+  readOpenCodeTelemetry: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), relativePath:z.string().min(1) }).strict(),
+    output: z.object({ hostId:z.string(), relativePath:z.string(), size:z.number().int().nonnegative().max(262144), sha256:z.string().regex(/^[a-f0-9]{64}$/), content:z.string().max(262144) }).strict(),
+  },
+  listDocsPages: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/") }).strict(),
+    output: z.object({hostId:z.string(), pages:z.array(z.object({path:z.string(),modifiedAt:z.number().int().nonnegative(),sha256:z.string().regex(/^[a-f0-9]{64}$/),content:z.string()}).strict())}).strict(),
+  },
+  applyOnboardingPages: {
+    input: z.object({
+      requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), confirmed:z.literal(true),
+      previewSha256:z.string().regex(/^[a-f0-9]{64}$/),
+      edits:z.array(z.object({path:z.string().min(1).max(240),expectedSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),content:z.string().max(8_000)}).strict()).min(1).max(8),
+    }).strict(),
+    output:z.object({hostId:z.string(),previewSha256:z.string().regex(/^[a-f0-9]{64}$/),status:z.enum(["applied","conflict","blocked"]),writes:z.array(z.object({path:z.string(),beforeSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),afterSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),status:z.enum(["applied","conflict","blocked"]),reason:z.string().nullable()}).strict()),reason:z.string().nullable()}).strict(),
+  },
   coexistenceInventory: {
     input: z.object({ requestedHostId: z.string().min(1), projectId: z.string().min(1), targetSha: z.string().optional() }).strict(),
     output: coexistenceInventory,
@@ -202,6 +226,17 @@ export const hostContract = defineRpcContract({
       stderr: z.string(),
     }).strict(),
   },
+  runSandboxedCommand: {
+    input:z.object({
+      requestedHostId:z.string().min(1),workspacePath:z.string().startsWith("/"),cwd:z.string().startsWith("/"),
+      backend:z.enum(["auto","macos-seatbelt","linux-bubblewrap"]).optional(),
+      command:z.string().min(1).max(32_000),timeoutSec:z.number().int().min(1).max(7200).optional(),
+    }).strict(),
+    output:z.object({
+      hostId:z.string(),backend:z.enum(["macos-seatbelt","linux-bubblewrap"]),workspacePath:z.string(),cwd:z.string(),
+      exitCode:z.number().int(),policySha256:z.string().regex(/^[a-f0-9]{64}$/),stdout:z.string(),stderr:z.string(),
+    }).strict(),
+  },
   runBrowserQa: {
     input: z.object({
       requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), url:z.string().url(),
@@ -226,6 +261,14 @@ export const hostContract = defineRpcContract({
       effort:z.string().nullable(), reason:z.string().nullable(), planSha256:z.string(), sentPlanSha256:z.string().nullable(),
       sourceLength:z.number().int().nonnegative(), sentLength:z.number().int().nonnegative().nullable(),
     }).strict(),
+  },
+  inspectCritiqueCoverage: {
+    input:z.object({requestedHostId:z.string().min(1),workspacePath:z.string().startsWith("/"),plan:z.string().max(100_000),
+      tasks:z.array(z.object({id:z.string().max(128),lane:z.string().max(64),ownsPaths:z.array(z.string()).max(128),hasVerification:z.boolean(),
+        verification:z.array(z.object({command:z.string().max(4096),timeoutSec:z.number().int().nonnegative().max(7200).optional()}).strict()).max(32)}).strict()).max(64)}).strict(),
+    output:z.object({hostId:z.string(),status:z.enum(["complete","truncated"]),pathCount:z.number().int().nonnegative(),
+      findings:z.array(z.object({code:z.enum(["plan_path_unowned","owns_gap","coverage_scan_truncated","owns_overlap","verify_missing","verify_heavy","owns_empty","plan_missing","no_tasks","caller_unowned","task_placeholder"]),path:z.string(),
+        severity:z.enum(["error","warning","info"]),finding:z.string()}).strict()).max(10)}).strict(),
   },
   writePmSettings: {
     input: z.object({
@@ -384,6 +427,55 @@ export const rpcContract = defineRpcContract({
         params: z.array(z.string()),
       }).strict().optional(),
     }).strict(),
+  },
+  save_memory_selection: {
+    input: z.object({
+      projectId: z.string().min(1),
+      providerId: z.string().min(1),
+      model: z.string().min(1),
+      reasoningLevel: z.enum(["none", "low", "medium", "high", "xhigh", "ultracode", "max", "ultra"]),
+      serviceTier: z.enum(["default", "fast"]).nullable(),
+      expectedVersions: z.object({
+        "memory.provider": z.number().int().min(0),
+        "memory.model": z.number().int().min(0),
+        "memory.reasoning_effort": z.number().int().min(0),
+        "memory.service_tier": z.number().int().min(0),
+      }).strict(),
+    }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      conflict: z.boolean(),
+      values: z.record(z.string(), z.unknown()),
+      versions: z.record(z.string(), z.number().int()),
+      validation: z.object({code:z.enum(["invalid_choice","incompatible_setting"]),key:z.string(),params:z.array(z.string())}).strict().optional(),
+    }).strict(),
+  },
+  save_night_review_selection: {
+    input:z.object({
+      projectId:z.string().min(1),providerId:z.string().min(1),model:z.string().min(1),
+      reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]),
+      serviceTier:z.enum(["default","fast"]).nullable(),
+      expectedVersions:z.object({"night_review.provider":z.number().int().min(0),"night_review.model":z.number().int().min(0),"night_review.reasoning_effort":z.number().int().min(0),"night_review.service_tier":z.number().int().min(0)}).strict(),
+    }).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:z.object({code:z.enum(["invalid_choice","incompatible_setting"]),key:z.string(),params:z.array(z.string())}).strict().optional()}).strict(),
+  },
+  save_docs_selection: {
+    input:z.object({
+      projectId:z.string().min(1),providerId:z.string().min(1),model:z.string().min(1),
+      reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]),
+      serviceTier:z.enum(["default","fast"]).nullable(),
+      expectedVersions:z.object({"docs.provider":z.number().int().min(0),"docs.model":z.number().int().min(0),"docs.reasoning_effort":z.number().int().min(0),"docs.service_tier":z.number().int().min(0)}).strict(),
+    }).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:z.object({code:z.enum(["invalid_choice","incompatible_setting"]),key:z.string(),params:z.array(z.string())}).strict().optional()}).strict(),
+  },
+  save_onboarding_selection: {
+    input:z.object({
+      projectId:z.string().min(1),providerId:z.string().min(1),model:z.string().min(1),
+      reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]),
+      serviceTier:z.enum(["default","fast"]).nullable(),
+      expectedVersions:z.object({"onboarding.provider":z.number().int().min(0),"onboarding.model":z.number().int().min(0),"onboarding.reasoning_effort":z.number().int().min(0),"onboarding.service_tier":z.number().int().min(0)}).strict(),
+    }).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:z.object({code:z.enum(["invalid_choice","incompatible_setting"]),key:z.string(),params:z.array(z.string())}).strict().optional()}).strict(),
   },
   cancel_attempt: {
     input: z.object({ attemptId: z.string().min(1) }).strict(),

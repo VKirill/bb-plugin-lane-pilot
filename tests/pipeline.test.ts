@@ -19,6 +19,7 @@ import {
   listTaskKinds,
   openDatabase,
   savePrototypeConfig,
+  saveStageReceipt,
   setRunThread,
   transitionAttempt,
 } from "../src/database";
@@ -145,6 +146,15 @@ describe("argv-builder channels", () => {
       required:{ "--run-dir":"/tmp/run" },
     });
     expect(built.argv).not.toContain("--max-tasks");
+  });
+  it("applies the configured session task cap to lane-ctl start only",()=>{
+    const built=buildCliInvocation({
+      binary:"lane-ctl",subcommand:"start",settings:{"ops.max_tasks":3},
+      required:requiredCliFlags({binary:"lane-ctl",subcommand:"start",runDir:"/tmp/run",projectCwd:"/tmp/proj",taskFile:"/tmp/run/tasks/001.yaml"}),
+    });
+    expect(built.argv).toEqual(["start","--run-dir","/tmp/run","--project-cwd","/tmp/proj","--task-file","/tmp/run/tasks/001.yaml","--max-tasks","3"]);
+    expect(built.applied).toContain("ops.max_tasks");
+    expect(built.unapplied).toEqual([]);
   });
   it("emits a writer provider flag only once when it is already required", () => {
     const built = buildCliInvocation({
@@ -524,9 +534,17 @@ describe("PM tool gating", () => {
       origin:{ pluginId:"other" },
       pluginMetadata:{ role:"pm", lanePilotRunId:"run-x" },
     } as never);
-    expect(pm.tools.map((tool) => tool.name)).toEqual(["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli","lane_pilot_browser_qa"]);
+    expect(pm.tools.map((tool) => tool.name)).toEqual(["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli","lane_pilot_browser_qa","lane_pilot_ingest_opencode_telemetry","lane_pilot_docs_maintain","lane_pilot_onboarding_preview","lane_pilot_onboarding_apply","lane_pilot_memory_maintain","lane_pilot_night_review","lane_pilot_night_fix","lane_pilot_workspace_status","lane_pilot_memory_context","lane_pilot_gate_report","lane_pilot_gate_triage"]);
     expect(writer.tools).toEqual([]);
     expect(ordinary.tools).toEqual([]);
+    createRun(db,"gate-report-run",config.projectId);
+    createTask(db,{id:"gate-report-task",runId:"gate-report-run",kind:"bb",contract:{}});
+    saveStageReceipt(db,{contractVersion:1,runId:"gate-report-run",taskId:"gate-report-task",stageId:"plan-critique",state:"blocked",
+      inputSha256:"a".repeat(64),outputSha256:null,attempt:0,providerId:"critic",model:"critic-model",threadId:"critic-thread",
+      result:{detail:"not copied into the report"},reason:"changes_requested",updatedAt:Date.now()});
+    const report=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_gate_report",{days:7},{threadId:"thr-x",projectId:config.projectId})));
+    expect(report).toMatchObject({schemaVersion:1,projectId:config.projectId,totalEvents:1,recentBlockers:[{stageId:"plan-critique",state:"blocked"}]});
+    expect(JSON.stringify(report)).not.toContain("not copied into the report");
     await harness.lifecycle.dispose();
   });
 });

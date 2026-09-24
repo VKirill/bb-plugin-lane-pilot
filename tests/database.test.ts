@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { casSetting, closeRun, createAttempt, createRun, createTask, importSettingsOnce, listStageReceipts, migrations, openDatabase, saveStageReceipt } from "../src/database";
+import { appendGateEvaluation, casSetting, claimDailySchedule, closeRun, createAttempt, createRun, createTask, getAttempt, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -19,6 +19,9 @@ describe("section 9 storage.database DDL", () => {
     expect((db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE id='old-attempt'").get() as {count:number}).count).toBe(1);
     createRun(db, "new-run", "A");
     createTask(db, { id:"new-task", runId:"new-run", kind:"bb", contract:{} });
+    expect(saveTaskGitBase(db,"new-task",{baseRef:"main",baseSha:"a".repeat(40),initialHeadSha:"b".repeat(40),branch:"feature",compareCommitted:true})).toBe(true);
+    expect(saveTaskGitBase(db,"new-task",{baseRef:null,baseSha:null,initialHeadSha:"b".repeat(40),branch:"main",compareCommitted:false})).toBe(false);
+    expect(getTaskGitBase(db,"new-task")).toMatchObject({base_ref:"main",base_sha:"a".repeat(40),initial_head_sha:"b".repeat(40),branch:"feature",compare_committed:true});
     createAttempt(db, { id:"new-attempt", runId:"new-run", taskId:"new-task" });
     expect(db.pragma("foreign_key_check")).toEqual([]);
     db.prepare("UPDATE lane_pilot_run SET state='closed' WHERE id='old-run'").run();
@@ -73,11 +76,120 @@ describe("section 9 storage.database DDL", () => {
     expect(listStageReceipts(db, "stage-run", "stage-task")).toMatchObject([
       { contractVersion:1, stageId:"plan-critique", state:"passed", result:{ decision:"approve" } },
     ]);
+    expect(listStageEvents(db,{projectId:"A",since:0})).toMatchObject([
+      {runId:"stage-run",taskId:"stage-task",stageId:"plan-critique",state:"passed",inputSha256:"a".repeat(64)},
+    ]);
+    saveStageReceipt(db, {
+      contractVersion:1, runId:"stage-run", taskId:"stage-task", stageId:"plan-critique", state:"passed",
+      inputSha256:"a".repeat(64), outputSha256:"b".repeat(64), attempt:1,
+      providerId:"codex", model:"gpt-6-luna", threadId:"critic-thread",
+      result:{ decision:"approve", detail:"sensitive data stays out of event history" }, reason:null, updatedAt:11,
+    });
+    expect(listStageEvents(db,{projectId:"A",since:0})).toHaveLength(1);
+    saveStageReceipt(db, {
+      contractVersion:1, runId:"stage-run", taskId:"stage-task", stageId:"plan-critique", state:"failed",
+      inputSha256:"a".repeat(64), outputSha256:null, attempt:1,
+      providerId:"codex", model:"gpt-6-luna", threadId:"critic-thread",
+      result:{ detail:"must not be copied" }, reason:"provider_error", updatedAt:12,
+    });
+    expect(listStageEvents(db,{projectId:"A",since:0})).toHaveLength(2);
+    expect(JSON.stringify(listStageEvents(db,{projectId:"A",since:0}))).not.toContain("must not be copied");
+    expect(()=>db.prepare("UPDATE lane_pilot_stage_event SET state='passed' WHERE id=1").run()).toThrow("append-only");
+    expect(()=>db.prepare("DELETE FROM lane_pilot_stage_event WHERE id=1").run()).toThrow("append-only");
     expect(() => saveStageReceipt(db, {
       contractVersion:1, runId:"stage-run", taskId:"missing-task", stageId:"writer-agent", state:"pending",
       inputSha256:"a".repeat(64), outputSha256:null, attempt:0,
       providerId:null, model:null, threadId:null, result:null, reason:null, updatedAt:11,
     })).toThrow();
+    await harness.lifecycle.dispose();
+  });
+
+  it("rolls back the latest receipt if the append-only event write fails", async () => {
+    const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot"});
+    const db=openDatabase(bb);
+    createRun(db,"event-fault-run","A");
+    createTask(db,{id:"event-fault-task",runId:"event-fault-run",kind:"bb",contract:{}});
+    db.exec("CREATE TEMP TRIGGER fail_stage_event BEFORE INSERT ON lane_pilot_stage_event BEGIN SELECT RAISE(ABORT, 'injected event failure'); END");
+    expect(()=>saveStageReceipt(db,{contractVersion:1,runId:"event-fault-run",taskId:"event-fault-task",stageId:"plan-critique",state:"passed",
+      inputSha256:"a".repeat(64),outputSha256:"b".repeat(64),attempt:1,providerId:null,model:null,threadId:null,result:null,reason:null,updatedAt:1,
+    })).toThrow("injected event failure");
+    expect(listStageReceipts(db,"event-fault-run","event-fault-task")).toEqual([]);
+    expect(listStageEvents(db,{projectId:"A",since:0})).toEqual([]);
+    await harness.lifecycle.dispose();
+  });
+
+  it("stores categorized gate evaluations as project-scoped append-only evidence",async()=>{
+    const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot"}),db=openDatabase(bb);
+    createRun(db,"gate-event-run","A");createTask(db,{id:"gate-event-task",runId:"gate-event-run",kind:"bb",contract:{}});
+    appendGateEvaluation(db,{projectId:"A",runId:"gate-event-run",taskId:"gate-event-task",gate:"owns-paths",status:"rejected",
+      inputSha256:"a".repeat(64),outputSha256:"b".repeat(64),attempt:1,occurredAt:10});
+    expect(listGateEvents(db,{projectId:"A",since:0,gate:"owns-paths"})).toMatchObject([{gate:"owns-paths",status:"rejected",inputSha256:"a".repeat(64)}]);
+    expect(listGateEvents(db,{projectId:"B",since:0})).toEqual([]);
+    expect(()=>db.prepare("UPDATE lane_pilot_gate_event SET status='passed' WHERE id=1").run()).toThrow("append-only");
+    expect(()=>db.prepare("DELETE FROM lane_pilot_gate_event WHERE id=1").run()).toThrow("append-only");
+    expect(()=>appendGateEvaluation(db,{projectId:"A",runId:"gate-event-run",taskId:"gate-event-task",gate:"unknown" as never,status:"passed",
+      inputSha256:"a".repeat(64),outputSha256:null,attempt:1,occurredAt:11})).toThrow(/CHECK/);
+    await harness.lifecycle.dispose();
+  });
+
+  it("claims one scheduled docs run per project and local date with project isolation", async () => {
+    const {bb,harness} = createFakePluginHost({pluginId:"lane-pilot"});
+    const db = openDatabase(bb);
+    expect(claimDailySchedule(db,"project-a","docs-maintenance","2026-09-23")).toBe(true);
+    expect(claimDailySchedule(db,"project-a","docs-maintenance","2026-09-23")).toBe(false);
+    expect(claimDailySchedule(db,"project-a","docs-maintenance","2026-09-24")).toBe(true);
+    expect(claimDailySchedule(db,"project-b","docs-maintenance","2026-09-23")).toBe(true);
+    expect(() => claimDailySchedule(db,"project-a","../docs","2026-09-25")).toThrow("schedule name");
+    expect(() => claimDailySchedule(db,"project-a","docs-maintenance","2026-02-31")).toThrow("schedule date");
+    await harness.lifecycle.dispose();
+  });
+
+  it("binds a managed workspace exactly once before run dispatch", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "worktree-run", "A", "bb", null);
+    expect(setRunWorkspace(db, "worktree-run", "/tmp/lane-managed-worktree", "env-managed")).toBe(true);
+    expect(setRunWorkspace(db, "worktree-run", "/tmp/other", "env-other")).toBe(false);
+    expect(getRun(db, "worktree-run")).toMatchObject({
+      writer_workspace_path:"/tmp/lane-managed-worktree", writer_environment_id:"env-managed", state:"pending",
+    });
+    setRunThread(db, "worktree-run", "pm-worktree");
+    expect(setRunWorkspace(db, "worktree-run", "/tmp/late", "env-late")).toBe(false);
+    await harness.lifecycle.dispose();
+  });
+
+  it("stores the run gate as an immutable run-scoped snapshot", async () => {
+    const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot"});
+    const db=openDatabase(bb);
+    createRun(db,"run-gated","A","bb","/repo","pre-merge");
+    createRun(db,"run-default","A","bb","/repo");
+    expect(getRun(db,"run-gated")).toMatchObject({run_gate:"pre-merge"});
+    expect(getRun(db,"run-default")).toMatchObject({run_gate:"none"});
+    expect(()=>db.prepare("UPDATE lane_pilot_run SET run_gate='invalid' WHERE id='run-gated'").run()).toThrow(/CHECK/);
+    await harness.lifecycle.dispose();
+  });
+
+  it("persists the validated run-v2 pool profile as a run snapshot",async()=>{
+    const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot"});
+    const db=openDatabase(bb);
+    createRun(db,"run-pools","A","bb","/repo","none",{schemaVersion:1,pools:{provider:6,verification:4}});
+    expect(JSON.parse(getRun(db,"run-pools")!.run_policy_json)).toEqual({schemaVersion:1,pools:{provider:6,verification:4}});
+    await harness.lifecycle.dispose();
+  });
+
+  it("binds an immutable workspace and routing decision to a queued attempt with CAS", async () => {
+    const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot"});
+    const db=openDatabase(bb);
+    createRun(db,"attempt-workspace-run","A","bb","/repo");
+    createTask(db,{id:"attempt-workspace-task",runId:"attempt-workspace-run",kind:"bb",contract:{}});
+    createAttempt(db,{id:"attempt-workspace-1",runId:"attempt-workspace-run",taskId:"attempt-workspace-task"});
+    const decision={mode:"auto",risk:"high",score:8,multiWrite:true,isolated:true,reason:"risk_threshold"};
+    expect(setAttemptWorkspace(db,"attempt-workspace-1",{path:"/worktrees/task-1",environmentId:"env-task-1",decision})).toBe(true);
+    expect(getAttempt(db,"attempt-workspace-1")).toMatchObject({workspace_path:"/worktrees/task-1",environment_id:"env-task-1",workspace_decision:decision});
+    expect(setAttemptWorkspace(db,"attempt-workspace-1",{path:"/worktrees/stale",environmentId:"env-stale",decision})).toBe(false);
+    expect(()=>setAttemptWorkspace(db,"attempt-workspace-1",{path:"relative/path",environmentId:null,decision})).toThrow("must be absolute");
+    transitionAttempt(db,"attempt-workspace-1","running");
+    expect(setAttemptWorkspace(db,"attempt-workspace-1",{path:"/worktrees/late",environmentId:null,decision})).toBe(false);
     await harness.lifecycle.dispose();
   });
 });

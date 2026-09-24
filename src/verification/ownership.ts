@@ -7,6 +7,12 @@ export type OwnershipTask = {
   verification:Array<{ cwd:string }>;
 };
 
+export type RunOwnershipTask = OwnershipTask & { id:string };
+
+export type RunOwnershipScope =
+  | { ok:true; task:OwnershipTask; taskIds:string[] }
+  | { ok:false; reason:string };
+
 function safeRelative(value:string):string|null {
   if (!value || value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) return null;
   const normalized = posix.normalize(value);
@@ -40,6 +46,45 @@ export function validateOwnershipContract(task:OwnershipTask):string|null {
     }
   }
   return null;
+}
+
+/** Build the fail-closed ownership union used when sibling tasks share one run workspace. */
+export function resolveRunOwnershipScope(
+  tasks:RunOwnershipTask[],
+  requestedTaskId:string,
+  projectCwd:string,
+):RunOwnershipScope {
+  if (!tasks.length) return { ok:false, reason:"run scope has no tasks" };
+  const ids = new Set<string>();
+  const owns = new Set<string>();
+  const never = new Set<string>();
+  let requestedFound = false;
+  for (const task of tasks) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(task.id)) {
+      return { ok:false, reason:`run scope has invalid task id: ${task.id}` };
+    }
+    if (ids.has(task.id)) return { ok:false, reason:`run scope has duplicate task id: ${task.id}` };
+    ids.add(task.id);
+    if (task.project_cwd !== projectCwd) {
+      return { ok:false, reason:`run task ${task.id} project_cwd does not match workspace` };
+    }
+    const contractError = validateOwnershipContract(task);
+    if (contractError) return { ok:false, reason:`run task ${task.id}: ${contractError}` };
+    if (task.id === requestedTaskId) requestedFound = true;
+    task.owns_paths.forEach((pattern) => owns.add(pattern));
+    task.never_touch.forEach((pattern) => never.add(pattern));
+  }
+  if (!requestedFound) return { ok:false, reason:"requested task is not part of the run task set" };
+  return {
+    ok:true,
+    task:{
+      project_cwd:projectCwd,
+      owns_paths:[...owns].sort(),
+      never_touch:[...never].sort(),
+      verification:tasks.find((task) => task.id === requestedTaskId)?.verification ?? [],
+    },
+    taskIds:[...ids].sort(),
+  };
 }
 
 export function findUnownedChanges(changedPaths:string[], task:OwnershipTask):string[] {

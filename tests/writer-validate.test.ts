@@ -11,6 +11,7 @@ import {
   getRun,
   getReasoningTrace,
   listAttemptsForTask,
+  listStageReceipts,
   openDatabase,
   savePrototypeConfig,
   saveProjectSetting,
@@ -33,6 +34,12 @@ const config = {
   writerProviderId:"codex",
   writerModel:"codex-test",
 };
+
+function noGitOwnershipBase(method:string) {
+  return method==="gitOwnershipBase"
+    ? {hostId:"host-test",status:"not-git" as const,branch:null,headSha:null,baseRef:null,baseSha:null,compareCommitted:false,reason:"synthetic fixture is not a git worktree"}
+    : null;
+}
 
 const task: TaskV2 = {
   schema_version:2,
@@ -102,11 +109,13 @@ describe("BB writer validation on the server path", () => {
       }, files:{
         read: async ({ path, rootPath }) => {
           fileRoots.push(rootPath ?? "");
-          return path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null };
+          return path.endsWith("README.md") ? { content:"task read-first fixture\n" }
+            : path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null };
         },
         write: async ({ rootPath }) => { fileRoots.push(rootPath ?? ""); return { ok:true }; },
       } },
       experimental_callHostRpc: (call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method === "classifyPlan") {
           const plan = (call.input as { plan:string }).plan;
           return { hostId:"host-test", status:"ok", effort:"xhigh", reason:null,
@@ -186,11 +195,13 @@ describe("BB writer validation on the server path", () => {
         },
         providers:{ list:listLiveWriterProviders, models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium","high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }) },
         files:{
-          read:async ({ path }) => path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
+          read:async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" }
+            : path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
           write:async () => ({ ok:true }),
         },
       },
       experimental_callHostRpc:(call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method === "classifyPlan") throw new Error("RPC transport failed");
         if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
@@ -220,6 +231,57 @@ describe("BB writer validation on the server path", () => {
     expect(spawnedInput).toMatchObject({ providerId:"codex", model:"codex-test", reasoningLevel:"high", executionInputSources:{ reasoningLevel:"explicit" } });
     expect(getReasoningTrace(db, dispatched.attemptId)).toMatchObject({
       jevStatus:"error", jevDecision:null, effectiveReasoningLevel:"high", fallbackReason:"jev_error;host_classify_rpc_failed", sentPlanSha256:null, sentLength:null,
+    });
+    await harness.lifecycle.dispose();
+  });
+
+  it("escalates a retry from the first effort and stores the applied choice in its receipt", async () => {
+    let snapshots=0;
+    const spawned:Array<Record<string,unknown>>=[];
+    let threadNo=0;
+    const {bb,harness}=createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{threads:{
+        getPluginMetadata:async ({threadId})=>threadId===pmThreadId?{role:"pm",lanePilotRunId:"run-effort-retry"}:{role:"writer"},
+        spawn:async (input)=>{spawned.push(input as unknown as Record<string,unknown>);return {id:`writer-retry-${++threadNo}`};},
+        wait:async ()=>({matched:true,thread:{status:threadNo===1?"error":"idle"}}),
+        get:async ({threadId})=>({id:threadId,status:threadId==="writer-retry-1"?"error":"idle"}),
+        output:async ()=>({text:"created hello.txt"}),list:async ()=>[] as never,
+      },providers:{list:listLiveWriterProviders,models:listLiveWriterModels},files:{
+        read:async ({path})=>path.endsWith("README.md")?{content:"retry fixture\n"}:path.endsWith("hello.txt")?{content:"hello\n"}:{content:null},
+        write:async ()=>({ok:true}),
+      }},
+      experimental_callHostRpc:(call)=>{
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if(call.method==="classifyPlan"){
+          const plan=(call.input as {plan:string}).plan;
+          const sha=createHash("sha256").update(plan,"utf8").digest("hex");
+          return {hostId:"host-test",status:"ok",effort:"medium",reason:null,planSha256:sha,sentPlanSha256:sha,
+            sourceLength:Buffer.byteLength(plan),sentLength:Buffer.byteLength(plan)};
+        }
+        if(call.method!=="runCommand") throw new Error(`unexpected ${call.method}`);
+        const command=String((call.input as {command?:string}).command??"");
+        return {hostId:"host-test",exitCode:0,stdout:command.includes("porcelain")
+          ?JSON.stringify(++snapshots<=2?[]:[{path:"hello.txt",sha256:"created"}]):"",stderr:""};
+      },
+    });
+    const db=openDatabase(bb);
+    saveLegacyWriterConfig(db);
+    createRun(db,"run-effort-retry",projectId,"bb",config.writerWorkspacePath);
+    setRunThread(db,"run-effort-retry",pmThreadId);
+    await plugin(bb);
+    const dispatched=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
+      {confirm:true,plan:"Retry effort escalation fixture",task:{...task,id:"effort-retry-task",verify:"none",verification:[]}},
+      {threadId:pmThreadId,projectId}))) as {runId:string;attemptId:string};
+    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",
+      {runId:dispatched.runId,timeoutSec:3},{threadId:pmThreadId,projectId})));
+    const attempts=listAttemptsForTask(db,dispatched.runId,"effort-retry-task");
+    expect(result.state).toBe("accepted");
+    expect(attempts.map(row=>row.state)).toEqual(["provider_error","accepted"]);
+    expect(spawned.map(row=>row.reasoningLevel)).toEqual(["medium","high"]);
+    expect(getReasoningTrace(db,attempts[1]!.id)).toMatchObject({
+      requestedReasoningLevel:"medium",effectiveReasoningLevel:"high",fallbackReason:"retry_effort_escalated:medium->high",
+      retryEffort:{enabled:true,retryIndex:1,before:"medium",after:"high",changed:true},
     });
     await harness.lifecycle.dispose();
   });
@@ -306,7 +368,8 @@ describe("BB writer validation on the server path", () => {
         },
         providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
         files:{
-          read: async ({ path }) => path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
+          read: async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" }
+            : path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
           write: async ({ path, content }) => {
             written.set(String(path), String(content));
             return { ok:true };
@@ -314,6 +377,7 @@ describe("BB writer validation on the server path", () => {
         },
       },
       experimental_callHostRpc: (call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         if (command.includes("porcelain")) {
@@ -355,6 +419,8 @@ describe("BB writer validation on the server path", () => {
   it("runs every verification command and fails on the second", async () => {
     const ran: string[] = [];
     let snapshots = 0;
+    let activeVerifications=0;
+    let maxActiveVerifications=0;
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
       sdk:{
@@ -370,11 +436,23 @@ describe("BB writer validation on the server path", () => {
         },
         providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
         files:{
-          read: async ({ path }) => path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
+          read: async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" }
+            : path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
           write: async () => ({ ok:true }),
         },
       },
-      experimental_callHostRpc: (call) => {
+      experimental_callHostRpc: async (call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if (call.method === "runSandboxedCommand") {
+          const command = String((call.input as { command?:string }).command ?? "");
+          ran.push(command);
+          activeVerifications++;
+          maxActiveVerifications=Math.max(maxActiveVerifications,activeVerifications);
+          await new Promise(resolve=>setTimeout(resolve,20));
+          activeVerifications--;
+          return {hostId:"host-test",backend:"macos-seatbelt",workspacePath:task.project_cwd,cwd:task.project_cwd,
+            exitCode:command === "false" ? 1 : 0,policySha256:"d".repeat(64),stdout:"",stderr:command === "false" ? "boom" : ""};
+        }
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         ran.push(command);
@@ -391,6 +469,7 @@ describe("BB writer validation on the server path", () => {
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
+    saveProjectSetting(db, projectId, "ops.verify_pool_size", 2);
     createRun(db, "run-v", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-v", pmThreadId);
     await plugin(bb);
@@ -403,11 +482,13 @@ describe("BB writer validation on the server path", () => {
       "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
     )));
     expect(ran.filter((command) => command === "true" || command === "false")).toEqual(["true", "false", "true", "false"]);
+    expect(maxActiveVerifications).toBe(2);
+    expect(JSON.parse(getRun(db,"run-v")!.run_policy_json)).toMatchObject({pools:{verification:2}});
     expect(result.state).toBe("blocked");
     await harness.lifecycle.dispose();
   });
 
-  it("observes a writer error during wait, retries once and returns blocked", async () => {
+  it("observes writer errors, tries one unavailable emergency selection and returns blocked", async () => {
     const threadStates = new Map<string, string>();
     let spawnCount = 0;
     let statusPollCount = 0;
@@ -433,11 +514,12 @@ describe("BB writer validation on the server path", () => {
         },
         providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
         files:{
-          read: async () => ({ content:null }),
+          read: async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" } : { content:null },
           write: async () => ({ ok:true }),
         },
       },
       experimental_callHostRpc: (call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method === "runCommand") {
           return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
         }
@@ -461,7 +543,10 @@ describe("BB writer validation on the server path", () => {
     expect(result.state).toBe("blocked");
     expect(spawnCount).toBe(2);
     expect(statusPollCount).toBeGreaterThanOrEqual(2);
-    expect(listAttemptsForTask(db, dispatched.runId, "error-retry").map((attempt) => attempt.state)).toEqual(["provider_error", "blocked"]);
+    expect(listAttemptsForTask(db, dispatched.runId, "error-retry").map((attempt) => attempt.state)).toEqual(["provider_error", "blocked", "blocked"]);
+    expect(listStageReceipts(db,dispatched.runId,"error-retry").find((row)=>row.stageId==="writer-agent")?.result).toMatchObject({
+      emergencyFallback:{state:"failed",reason:"writer_provider_unavailable:claude-code"},
+    });
     expect(getRun(db, dispatched.runId)?.state).toBe("blocked");
     await harness.lifecycle.dispose();
   });
@@ -480,8 +565,10 @@ describe("BB writer validation on the server path", () => {
           : ({ id:"writer-background-error", status:"idle" }),
         output: async () => { throw new Error("synthetic output read failure"); },
         list: async () => [] as never,
-      }, providers:{ list:listLiveWriterProviders, models:listLiveWriterModels } },
+      }, providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
+      files:{ read:async ({path})=>path.endsWith("README.md")?{content:"task read-first fixture\n"}:{content:null} } },
       experimental_callHostRpc: (call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
       },
@@ -537,11 +624,13 @@ describe("BB writer validation on the server path", () => {
           list: async () => [{ id:"writer-orphan" }] as never,
         },
         files:{
-          read: async ({ path }) => path.endsWith("hello.txt") ? { content:"stale\n" } : { content:null },
+          read: async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" }
+            : path.endsWith("hello.txt") ? { content:"stale\n" } : { content:null },
           write: async () => ({ ok:true }),
         },
       },
       experimental_callHostRpc: (call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method === "runCommand") {
           snapshotCwds.push(String((call.input as { cwd?:string }).cwd ?? ""));
           return { hostId:"host-test", exitCode:0, stdout:JSON.stringify([{ path:"hello.txt", sha256:"unchanged" }]), stderr:"" };
@@ -623,7 +712,9 @@ describe("BB writer validation on the server path", () => {
           getPluginMetadata: async ({ threadId }) => threadId === pmThreadId
             ? { role:"pm", lanePilotRunId:"run-dirt" }
             : { role:"writer" },
-          spawn: async () => {
+          spawn: async (args) => {
+            const metadata=args.pluginMetadata as Record<string,unknown>;
+            if(metadata.role==="workspace-provisioner") return {id:"workspace-holder",environmentId:"dirt-fail-env"};
             spawnCalled += 1;
             return { id:"writer-should-not-exist" };
           },
@@ -632,12 +723,14 @@ describe("BB writer validation on the server path", () => {
           output: async () => ({ text:"ok" }),
           list: async () => [] as never,
         },
+        environments:{get:async ({environmentId})=>({id:environmentId,hostId:config.hostId,path:config.writerWorkspacePath,status:"ready",managed:true,workspaceProvisionType:"managed-worktree"}) as never},
         files:{
-          read: async () => ({ content:"hello\n" }),
+          read: async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" } : { content:"hello\n" },
           write: async () => ({ ok:true }),
         },
       },
       experimental_callHostRpc: (call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method === "runCommand") {
           return { hostId:"host-test", exitCode:1, stdout:"", stderr:"git status failed" };
         }
@@ -660,7 +753,7 @@ describe("BB writer validation on the server path", () => {
     )));
     expect(spawnCalled).toBe(0);
     expect(result.state).toBe("blocked");
-    expect(getAttempt(db, dispatched.attemptId)?.state).toBe("spawn_rejected");
+    expect(getAttempt(db, dispatched.attemptId)?.state).toBe("blocked");
     await harness.lifecycle.dispose();
   });
 
@@ -745,6 +838,22 @@ describe("BB writer validation on the server path", () => {
       .toMatchObject({ ok:true, state:"canceled" });
     expect(order).toEqual(["stop", "get", "listRunning"]);
     expect(getAttempt(db, "attempt-active-cancel")?.state).toBe("canceled");
+    await harness.lifecycle.dispose();
+  });
+
+  it("cancels a queued attempt through CLI without requiring or stopping a provider thread", async () => {
+    let stopCalls=0;
+    const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot",sdk:{threads:{stop:async()=>{stopCalls++;return {ok:true};}}}});
+    const db=openDatabase(bb);
+    saveLegacyWriterConfig(db);
+    await plugin(bb);
+    createRun(db,"run-queued-cancel",projectId);
+    createAttempt(db,{id:"attempt-queued-cancel",runId:"run-queued-cancel",taskId:"queued-task"});
+    const result=await harness.behavior.runCli(["cancel","attempt-queued-cancel"]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ok:true,state:"canceled",attemptId:"attempt-queued-cancel",reason:null});
+    expect(getAttempt(db,"attempt-queued-cancel")?.state).toBe("canceled");
+    expect(stopCalls).toBe(0);
     await harness.lifecycle.dispose();
   });
 });

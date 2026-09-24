@@ -35,11 +35,90 @@ TUI_ONLY_FILES = {"bin/agents_doctor_tui.py"}
 # Canonical runtime keys from src/channels.ts SETTING_CATALOG.
 # Aliased UI rows share a key so save_setting feeds cliSettingsFor / argv-builder.
 RUNTIME_KEY_BY_TUPLE: dict[tuple[str, str], str] = {
+    # The old CLI options were excluded because their upstream parser was
+    # incomplete; Lane Pilot now exposes equivalent typed stage settings.
+    ("adoc CLI top-level", "--plan-critique-provider"): "plan_critique.provider",
+    ("adoc CLI top-level", "--browser-qa-effort"): "browser_qa.reasoning_effort",
+    ("adoc CLI top-level", "--writer-agent"): "writer.agent",
+    ("pipeline_stages.py stage: plan_critique", "plan_critique.agent"): "plan_critique.agent",
+    ("pipeline_stages.py stage: write", "write.agent"): "writer.agent",
+    ("pipeline_stages.py stage: specialist", "specialist.agent"): "specialist.agent",
+    ("pipeline_stages.py stage: memory", "memory.agent"): "memory.agent",
+    ("pipeline_stages.py stage: docs", "docs.agent"): "docs.agent",
+    ("pipeline_stages.py stage: onboard", "onboard.provider"): "onboarding.provider",
+    ("pipeline_stages.py stage: onboard", "onboard.depth"): "onboarding.depth",
+    ("TUI Coder tab", "agent (OpenCode write agent)"): "writer.agent",
+    ("adoc CLI top-level", "--night-review"): "night_review.enabled",
+    ("adoc CLI top-level", "--max-fix-tasks"): "night_review.max_fix_tasks",
+    ("adoc CLI top-level", "--auto-merge/--no-auto-merge"): "night_review.auto_merge",
+    ("adoc CLI top-level", "--browser-qa"): "browser_qa.enabled",
+    ("adoc CLI top-level", "--browser-qa-provider"): "browser_qa.provider",
+    ("adoc CLI top-level", "--browser-qa-model"): "browser_qa.model",
+    ("adoc CLI top-level", "--browser-qa-backend"): "browser_qa.backend",
+    ("adoc CLI setup", "--night-review"): "night_review.enabled",
+    ("adoc CLI setup", "--max-fix-tasks"): "night_review.max_fix_tasks",
+    ("adoc CLI setup", "--auto-merge/--no-auto-merge"): "night_review.auto_merge",
+    ("adoc capabilities/profile write", "night-shift.yaml enabled"): "night_review.enabled",
+    ("adoc capabilities/profile write", "night-shift.yaml provider"): "night_review.provider",
+    ("adoc capabilities/profile write", "night-shift.yaml auto_merge"): "night_review.auto_merge",
+    ("routing_profile.py", "DEFAULT_WORKSPACE_MODE"): "adoc.040",
+    ("routing_profile.py", "DEFAULT_WORKTREE_MIN_SCORE"): "adoc.041",
+    ("routing_profile.py", "DEFAULT_SESSION_MAX_TASKS"): "ops.max_tasks",
+    ("adoc capabilities/profile write", "workspace.worktree_min_score"): "adoc.041",
+    ("adoc capabilities/profile write", "workspace.worktree_on_multi_write"): "adoc.042",
+    ("TUI Night tab", "night_review (enabled)"): "night_review.enabled",
+    ("TUI Night tab", "night_provider"): "night_review.provider",
+    ("pipeline_stages.py stage: plan_critique", "plan_critique.provider"): "plan_critique.provider",
+    ("pipeline_stages.py stage: plan_critique", "plan_critique.model"): "plan_critique.model",
+    ("pipeline_stages.py stage: plan_critique", "plan_critique.reasoning_effort"): "plan_critique.reasoning_effort",
+    ("pipeline_stages.py stage: plan_critique", "plan_critique.service_tier"): "plan_critique.service_tier",
+    ("pipeline_stages.py stage: browser_qa", "browser_qa.enabled"): "browser_qa.enabled",
+    ("pipeline_stages.py stage: browser_qa", "browser_qa.provider"): "browser_qa.provider",
+    ("pipeline_stages.py stage: browser_qa", "browser_qa.model"): "browser_qa.model",
+    ("pipeline_stages.py stage: browser_qa", "browser_qa.reasoning_effort"): "browser_qa.reasoning_effort",
+    ("pipeline_stages.py stage: browser_qa", "browser_qa.backend"): "browser_qa.backend",
+    ("pipeline_stages.py stage: browser_qa", "browser_qa.approve"): "browser_qa.approve",
+    ("pipeline_stages.py stage: browser_qa", "browser_qa.service_tier"): "adoc.126",
+    ("TUI Stages tab (browser_qa)", "browser_qa.backend"): "browser_qa.backend",
+    ("TUI Stages tab (browser_qa)", "browser_qa.approve"): "browser_qa.approve",
+    ("pipeline_stages.py stage: specialist", "specialist.enabled"): "specialist.enabled",
+    ("pipeline_stages.py stage: specialist", "specialist.when"): "specialist.when",
+    ("pipeline_stages.py stage: specialist", "specialist.provider"): "specialist.provider",
+    ("pipeline_stages.py stage: specialist", "specialist.model"): "specialist.model",
+    ("pipeline_stages.py stage: specialist", "specialist.reasoning_effort"): "specialist.reasoning_effort",
+    ("pipeline_stages.py stage: night_review", "night_review.enabled"): "night_review.enabled",
+    ("pipeline_stages.py stage: night_review", "night_review.provider"): "night_review.provider",
+    ("pipeline_stages.py stage: night_review", "night_review.agent"): "night_review.agent",
+    ("gate scripts", "gate-triage --auto-merge"): "night_review.auto_merge",
+    ("gate scripts", "gate-triage --repair-provider"): "night_review.provider",
+    ("TUI Night tab", "auto_merge"): "night_review.auto_merge",
+    ("pipeline_stages.py stage: docs", "docs.enabled"): "docs.enabled",
+    ("pipeline_stages.py stage: docs", "docs.maintain"): "docs.maintain",
+    ("pipeline_stages.py stage: docs", "docs.page_cap"): "docs.page_cap",
+    ("pipeline_stages.py stage: docs", "docs.since"): "docs.since",
+    ("pipeline_stages.py stage: docs", "docs.hour"): "docs.hour",
+    ("pipeline_stages.py stage: memory", "memory.enabled"): "memory.enabled",
+    ("pipeline_stages.py stage: memory", "memory.provider/.model/.reasoning_effort/.service_tier"): "memory.provider",
+    ("pipeline_stages.py stage: memory", "memory.maintain"): "memory.maintain",
+    ("pipeline_stages.py stage: memory", "memory.inject"): "memory.inject",
+    ("pipeline_stages.py stage: memory", "memory.audience"): "memory.audience",
+    ("pipeline_stages.py stage: memory", "memory.personal_bot"): "memory.personal_bot",
+    ("pipeline_stages.py stage: memory", "memory.search_engine"): "memory.search_engine",
+    ("pipeline_stages.py stage: memory", "memory.core_budget"): "memory.core_budget",
+    ("pipeline_stages.py stage: memory", "memory.note_budget"): "memory.note_budget",
+    ("pipeline_stages.py stage: memory", "memory.index_budget"): "memory.index_budget",
+    ("pipeline_stages.py stage: memory", "memory.context_budget"): "memory.context_budget",
     ("adoc CLI top-level", "--writer-provider"): "writer.provider",
     ("adoc CLI setup", "--writer-provider"): "writer.provider",
     ("TUI Coder tab", "writer (provider)"): "writer.provider",
     ("pipeline_stages.py stage: write", "write.provider"): "writer.provider",
     ("adoc capabilities/profile write", "writer.provider/model/reasoning_effort/service_tier/agent"): "writer.provider",
+    ("hooks pm_read", "pm_read.enabled"): "pm_read.enabled",
+    ("hooks pm_read", "pm_read.min_lines"): "pm_read.min_lines",
+    ("hooks pm_read", "pm_read.provider"): "pm_read.provider",
+    ("hooks pm_read", "pm_read.model"): "pm_read.model",
+    ("hooks pm_read", "pm_read.reasoning_effort / effort"): "pm_read.reasoning_effort",
+    ("hooks pm_read", "pm_read.service_tier"): "pm_read.service_tier",
     ("lane-ctl CLI (start)", "--provider"): "writer.provider",
     ("run-controller CLI", "--provider"): "writer.provider",
     ("adoc CLI top-level", "--writer-model"): "writer.model",
@@ -62,6 +141,8 @@ RUNTIME_KEY_BY_TUPLE: dict[tuple[str, str], str] = {
     ("run-controller CLI", "--fast-mode"): "writer.fast_mode",
     ("opencode-lane jev", "LANE_JEV_EFFORT"): "jev.LANE_JEV_EFFORT",
     ("opencode-lane jev", "LANE_OPENCODE_JEV"): "jev.LANE_OPENCODE_JEV",
+    ("retry gate", "LANE_JEV_EFFORT"): "jev.LANE_JEV_EFFORT",
+    ("run.yaml (schema)", "gate"): "run.gate",
     ("adoc CLI top-level", "--session-max-tasks"): "ops.max_tasks",
     ("lane-ctl CLI (start)", "--max-tasks"): "ops.max_tasks",
     ("TUI Work tab", "session_max_tasks"): "ops.max_tasks",
@@ -82,6 +163,8 @@ RUNTIME_KEY_BY_TUPLE: dict[tuple[str, str], str] = {
     ("lane-ctl env", "LANE_SESSION_POOL_SIZE"): "ops.pool_size",
     ("lane-ctl CLI (verify)", "--verify-pool-size / --pool-size"): "ops.verify_pool_size",
     ("lane-ctl env", "LANE_VERIFY_POOL_SIZE"): "ops.verify_pool_size",
+    ("run.yaml (schema)", "pools.provider"): "ops.pool_size",
+    ("run.yaml (schema)", "pools.verification"): "ops.verify_pool_size",
     ("lane-ctl CLI (verify)", "--command-timeout (legacy v1 only)"): "ops.command_timeout",
     ("run-controller CLI", "--timeout (watch)"): "ops.watch_timeout",
     ("lane-ctl CLI (other)", "--source (tail)"): "ops.tail_source",
@@ -93,15 +176,51 @@ RUNTIME_KEY_BY_TUPLE: dict[tuple[str, str], str] = {
     ("install.sh", "CODEX_HOME"): "install.CODEX_HOME",
     ("pipeline_stages.py stage: plan_critique", "plan_critique.mode"): "plan_critique.mode",
     ("pipeline_stages.py stage: plan_critique", "plan_critique.enabled"): "plan_critique.enabled",
+    ("pipeline_stages.py stage: plan_critique", "plan_critique.min_score"): "plan_critique.min_score",
+    ("pipeline_stages.py stage: plan_critique", "plan_critique.min_write_tasks"): "plan_critique.min_write_tasks",
+    ("pipeline_stages.py stage: plan_critique", "plan_critique.on_high_risk"): "plan_critique.on_high_risk",
     ("pipeline_stages.py stage: plan_critique", "plan_critique.provider"): "plan_critique.provider",
     ("pipeline_stages.py stage: plan_critique", "plan_critique.model"): "plan_critique.model",
     ("pipeline_stages.py stage: night_review", "night_review.model / .reasoning_effort"): "night_review.model",
-    ("profiles codex toml", "night-review.config.toml"): "night_review.reasoning_effort",
+    ("adoc capabilities/profile write", "night-shift.yaml max_fix_tasks"): "night_review.max_fix_tasks",
+    ("TUI Night tab", "max_fix_tasks"): "night_review.max_fix_tasks",
     ("TUI UI tab", "language"): "ui.language",
     ("adoc capabilities/profile write", "ui.language"): "ui.language",
 }
 
 CONSUMER_KEYS = {
+    "plan_critique.provider",
+    "plan_critique.model",
+    "plan_critique.min_score",
+    "plan_critique.min_write_tasks",
+    "plan_critique.on_high_risk",
+    "plan_critique.reasoning_effort",
+    "plan_critique.service_tier",
+    "plan_critique.agent",
+    "writer.agent",
+    "pm_read.enabled",
+    "pm_read.min_lines",
+    "pm_read.provider",
+    "pm_read.model",
+    "pm_read.reasoning_effort",
+    "pm_read.service_tier",
+    "adoc.041",
+    "adoc.042",
+    "specialist.agent",
+    "memory.agent",
+    "docs.agent",
+    "onboarding.provider",
+    "onboarding.model",
+    "onboarding.reasoning_effort",
+    "onboarding.service_tier",
+    "onboarding.agent",
+    "onboarding.depth",
+    "browser_qa.enabled",
+    "browser_qa.provider",
+    "browser_qa.model",
+    "browser_qa.reasoning_effort",
+    "browser_qa.backend",
+    "browser_qa.approve",
     "writer.provider",
     "writer.model",
     "writer.reasoning_effort",
@@ -125,14 +244,35 @@ CONSUMER_KEYS = {
     "ops.tail_source",
     "ops.tail_lines",
     "ops.events_limit",
+    "run.gate",
     "install.LANE_INSTALL_LOCAL_MARKETPLACE",
     "install.LANE_INSTALL_CLAUDE_PLUGIN",
     "install.CLAUDE_CONFIG_DIR",
     "install.CODEX_HOME",
     "ui.language",
+    "docs.enabled",
+    "docs.maintain",
+    "docs.page_cap",
+    "docs.since",
+    "docs.hour",
+    "docs.provider",
+    "docs.model",
+    "docs.reasoning_effort",
+    "docs.service_tier",
+    "memory.enabled",
+    "memory.provider",
+    "memory.maintain",
+    "memory.inject",
+    "memory.audience",
+    "memory.personal_bot",
+    "memory.search_engine",
+    "memory.core_budget",
+    "memory.note_budget",
+    "memory.index_budget",
+    "memory.context_budget",
 }
 
-LEGACY_READONLY_KEYS = {"writer.fast_mode"}
+LEGACY_READONLY_KEYS = {"writer.fast_mode", "adoc.098", "adoc.099", "adoc.100", "adoc.102", "adoc.117", "adoc.276", "adoc.277", "adoc.278", "adoc.279", "adoc.281", "adoc.282"}
 
 SETTING_CATALOG_KEYS = CONSUMER_KEYS | LEGACY_READONLY_KEYS | {
     "plan_critique.mode",
@@ -140,7 +280,24 @@ SETTING_CATALOG_KEYS = CONSUMER_KEYS | LEGACY_READONLY_KEYS | {
     "plan_critique.provider",
     "plan_critique.model",
     "night_review.model",
-    "night_review.reasoning_effort",
+    "night_review.enabled",
+    "night_review.max_fix_tasks",
+    "night_review.auto_merge",
+    "night_review.provider",
+    "night_review.agent",
+    "specialist.enabled",
+    "specialist.when",
+    "specialist.provider",
+    "specialist.model",
+    "specialist.reasoning_effort",
+    "adoc.040",
+    "adoc.041",
+    "adoc.042",
+    "docs.enabled",
+    "docs.maintain",
+    "docs.page_cap",
+    "docs.since",
+    "docs.hour",
 }
 
 EDITABLE_RATIONALE = {
@@ -148,7 +305,7 @@ EDITABLE_RATIONALE = {
     "writer.model": "W-DIRECT --model on run-controller/lane-ctl start (bin/run-controller:1686, bin/lane-ctl:3405)",
     "writer.reasoning_effort": "W-DIRECT --reasoning-effort on run-controller/lane-ctl start (bin/run-controller:1688, bin/lane-ctl:3407)",
     "writer.service_tier": "W-DIRECT --service-tier on run-controller/lane-ctl start (bin/run-controller:1694, bin/lane-ctl:3413)",
-    "jev.LANE_JEV_EFFORT": "ENV-PASSTHROUGH LANE_JEV_EFFORT into writer subprocess (profiles/opencode/opencode-lane/index.ts:111)",
+    "jev.LANE_JEV_EFFORT": "ENV-PASSTHROUGH LANE_JEV_EFFORT; controls pre-dispatch classification and retry effort escalation (profiles/opencode/opencode-lane/index.ts:111; server.ts:824)",
     "jev.LANE_OPENCODE_JEV": "ENV-PASSTHROUGH LANE_OPENCODE_JEV into writer subprocess (profiles/opencode/opencode-lane/jev.ts:37)",
     "ops.max_tasks": "OPS-DIRECT --max-tasks on lane-ctl start (bin/lane-ctl:3449)",
     "ops.poll_interval": "OPS-DIRECT --poll-interval on run-controller run/start/watch (bin/run-controller:1677)",
@@ -176,6 +333,17 @@ EDITABLE_RATIONALE = {
 
 LEGACY_READONLY_RATIONALE = {
     "writer.fast_mode": "Legacy fast-mode values migrate to writer.service_tier: true selects fast and false selects standard; shown in Diagnostics only (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200)",
+    "adoc.098": "The native onboarding preview exposes this provider/model-stage behavior as the independently editable onboarding.model control; this legacy upstream key is diagnostic only (server.ts:1846)",
+    "adoc.099": "The native onboarding preview exposes this effort-stage behavior as the independently editable onboarding.reasoning_effort control; this legacy upstream key is diagnostic only (server.ts:1906)",
+    "adoc.100": "The native onboarding preview exposes this tier-stage behavior as the independently editable onboarding.service_tier control; this legacy upstream key is diagnostic only (server.ts:1909)",
+    "adoc.102": "The native onboarding preview exposes this role-stage behavior as the independently editable onboarding.agent control; this legacy upstream key is diagnostic only (server.ts:1884)",
+    "adoc.117": "The grouped upstream docs provider/model/effort/tier controls are independently editable as native docs.* settings s355-s358; this aggregate legacy key is diagnostic only (server.ts:1810)",
+    "adoc.276": "The native writer stage receives a typed task-v2 object rather than a filesystem task_file positional argument; required task fields are validated before dispatch (src/task-v2.ts:33)",
+    "adoc.277": "The native task project_cwd is resolved into the immutable attempt workspace before execution and verification (server.ts:911)",
+    "adoc.278": "Writer dispatch accepts an optional invocation-time baseRef, freezes its resolved commit per task, and applies the committed merge-base path diff through the same run ownership gate; no project setting or task-v2 field is added (server.ts:1441; src/verification/git-ownership.ts)",
+    "adoc.279": "Every writer attempt compares an initial workspace snapshot with post-run changes and validates ownership; the legacy opt-out flag is not exposed (server.ts:1085)",
+    "adoc.281": "The attempt baseline is stored as path/hash snapshots in the Lane Pilot database rather than a caller-selected JSON file path (src/database.ts:574)",
+    "adoc.282": "The writer stage records the baseline before dispatch and uses it for the ownership gate; no external write-dirt-baseline path is exposed (server.ts:910)",
 }
 
 GAP_NO_CONSUMER = (
@@ -631,6 +799,17 @@ def audit_readonly(row: dict, inv: dict) -> dict:
             "kind": "b",
         }
 
+    # Lane Pilot's own sandbox control applies the host policy directly; it does not
+    # write or inherit the upstream global environment variable.
+    if setting == "LANE_SANDBOX_BACKEND":
+        return {
+            "decision": "readonly",
+            "channel": "NONE",
+            "rationale": "Mapped to the native project sandbox.backend selector; Lane Pilot applies a verified host adapter without writing the upstream global variable",
+            "evidence": "src/verification/sandbox.ts:22",
+            "kind": "b",
+        }
+
     # (a) typed channel on a binary Lane Pilot actually invokes
     if argparse_hits and invoked:
         return {
@@ -819,7 +998,7 @@ def main() -> None:
                     ch = "ENV-PASSTHROUGH"
                 elif storage_key.startswith("ops."):
                     ch = "OPS-DIRECT"
-                elif storage_key == "ui.language":
+                elif storage_key == "ui.language" or storage_key.endswith(".agent"):
                     ch = "OWN"
                 else:
                     ch = "W-DIRECT"
@@ -836,6 +1015,65 @@ def main() -> None:
         else:
             rationale = mat["matrix_decision"]
             evidence = inv["location"]
+
+        if (inv["area"], inv["setting"]) in {
+            ("routing_profile.py", "DEFAULT_WORKTREE_MIN_SCORE"),
+            ("routing_profile.py", "DEFAULT_SESSION_MAX_TASKS"),
+        }:
+            if storage_key == "adoc.041":
+                decision = "editable"
+                ch = "OWN"
+                rationale = "Native Lane Pilot workspace router consumes the project risk threshold from CAS settings"
+                evidence = "server.ts:758-761"
+            else:
+                decision = "editable"
+                ch = "OPS-DIRECT"
+                rationale = "Native CLI run settings carry this project-scoped task cap to lane-ctl --max-tasks"
+                evidence = "server.ts:641; src/channels.ts:52"
+
+        if (inv["area"], inv["setting"]) == ("retry gate", "LANE_JEV_EFFORT"):
+            decision = "readonly"
+            ch = "NONE"
+            rationale = "Native writer retry escalation uses the same project LANE_JEV_EFFORT switch already editable at row 200; this alias is diagnostic, not a second UI control"
+            evidence = "server.ts:825"
+
+        native_gate_adapters = {
+            156: ("The native Lane Pilot critique controls at rows 78-80 execute the hidden upstream settings through a versioned task-risk policy; the upstream TUI is not invoked", "server.ts:332; src/stages/critique.ts:18"),
+            272: ("BB stage and gate telemetry is stored in an append-only project ledger and exposed through lane_pilot_gate_report; the legacy global file-path/off switch is intentionally not written or honored", "src/database.ts:155; server.ts:3154; src/stages/gate-report.ts:58"),
+            280: ("The writer ownership gate loads all validated task contracts in the run and evaluates attempt changes against the union of owns_paths while preserving the union of never_touch", "server.ts:1116; src/verification/ownership.ts:52; tests/verification/ownership.test.ts"),
+            283: ("Native PM gate-report tool accepts this invocation-time 1-365 day window; it reads the append-only project stage-event ledger", "server.ts:3041; src/stages/gate-report.ts:8"),
+            284: ("Native PM gate-report exposes the exact upstream owns-paths, validate, accept, and verification categories over a project-scoped append-only gate-evaluation ledger", "server.ts:3050; src/database.ts:178; src/stages/gate-report.ts:8"),
+            285: ("Lane Pilot replaces arbitrary --log path selection with its project-scoped append-only stage-event ledger; no user path is read or written", "src/database.ts:154; src/stages/gate-report.ts:44"),
+            286: ("Native gate-triage tool accepts this invocation-time 1-365 day window and persists its model analysis as a stage receipt", "server.ts:3049; src/stages/gate-triage.ts:1"),
+            287: ("Native gate-triage accepts a BB model ID and validates it against the live host provider/model catalog", "server.ts:3049; server.ts:2114"),
+            288: ("Native gate-triage accepts reasoning effort and rejects levels the selected BB model does not support", "server.ts:3049; server.ts:2119"),
+            289: ("The BB adapter spawns a native provider thread instead of invoking an arbitrary Codex executable path", "server.ts:2114; server.ts:2122"),
+            290: ("Gate-triage repair uses the configured night_review BB provider/model/effort/tier; the native night-fix stage validates that selection against the live host catalog", "server.ts:2293; server.ts:2313; server.ts:2321"),
+            291: ("Gate-triage auto-merge uses the existing night_review.auto_merge control; actual merges remain behind the managed-worktree, approved-PR, passing-checks, and mergeability gates in runNightFix", "server.ts:2325; server.ts:2347; src/stages/night-fix.ts:39"),
+            292: ("Gate triage is read-only by construction; it has no repair or merge action, so dry-run/no-repair is always enforced", "src/stages/gate-triage.ts:13; server.ts:3052"),
+            293: ("GATE_TRIAGE_CODEX_BIN is intentionally not consumed; Lane Pilot uses the BB provider/model API and never launches this executable", "server.ts:2114; server.ts:2122"),
+            331: ("Run-v2 provider pool is a read-only run snapshot of the native ops.pool_size control; writer dispatch acquires a bounded per-run provider slot", "server.ts:1277; src/stages/run-policy.ts:10"),
+            332: ("Run-v2 verification pool is a read-only run snapshot of ops.verify_pool_size; sandbox verification executes with that bounded concurrency", "server.ts:1025; src/stages/run-policy.ts:10"),
+            334: ("Run-v2 score is derived from validated TaskV2 risk by the versioned task-risk adapter and is persisted in the stage/acceptance receipt", "server.ts:1174; src/stages/run-policy.ts:29"),
+            335: ("Run-v2 risk is derived from validated TaskV2 risk; critical is represented as high while the source risk remains in the plugin receipt; upstream schemas stay unchanged", "server.ts:1174; src/stages/run-policy.ts:29"),
+            336: ("The aggregate run workspace fields map to project settings adoc.040/.041/.042 plus per-attempt resolved workspace decision persisted with CAS", "server.ts:788; server.ts:887; server.ts:910; src/workspace/routing.ts:27"),
+        }
+        if i in native_gate_adapters:
+            decision, ch = "readonly", "NONE"
+            rationale, evidence = native_gate_adapters[i]
+
+        # These upstream inventory rows are aggregate/legacy aliases.  Their
+        # behavior is implemented by Lane Pilot's native controls below; keep
+        # the source row visible as read-only instead of claiming it is outside
+        # the executable catalog.
+        if i == 45:  # adoc capabilities/profile write: pm_read.*
+            decision, ch = "readonly", "NONE"
+            rationale = "Aggregate upstream pm_read.* row; Lane Pilot exposes and executes the individual project settings at rows 258-263 through the native PM-read stage"
+            evidence = "server.ts:300-315; src/stages/pm-read.ts"
+        elif i == 65:  # routing_profile.py: LANE_SANDBOX_BACKEND
+            decision, ch = "readonly", "NONE"
+            rationale = "Legacy global backend alias; Lane Pilot executes the project-scoped verified sandbox.backend selector at row 365 and does not write the upstream global environment variable"
+            evidence = "src/verification/sandbox.ts:22; server.ts:299"
 
         options = enum_options(inv.get("values") or "")
         default_value = redact_machine_paths(inv.get("default") or "")
@@ -857,7 +1095,46 @@ def main() -> None:
 
         # These are Lane Pilot native settings, consumed by its stage runner;
         # they are not forwarded to the upstream CLI.
-        if storage_key == "plan_critique.enabled":
+        if storage_key in {"plan_critique.provider", "plan_critique.model", "plan_critique.reasoning_effort", "plan_critique.service_tier", "plan_critique.agent", "plan_critique.min_score", "plan_critique.min_write_tasks", "plan_critique.on_high_risk"}:
+            decision, ch = "editable", "OWN"
+            rationale = "Native Lane Pilot plan-critique stage consumes this project setting and validates provider/model/effort/tier against the live BB catalog"
+            evidence = "server.ts:runPlanCritique"
+            if storage_key == "plan_critique.provider":
+                options, default_value = [], ""
+            elif storage_key == "plan_critique.model":
+                options, default_value = [], ""
+            elif storage_key == "plan_critique.reasoning_effort":
+                options, default_value = [], "medium"
+            elif storage_key == "plan_critique.service_tier":
+                options, default_value = ["standard", "fast"], "standard"
+            elif storage_key == "plan_critique.min_score":
+                rationale = "Native Lane Pilot critique policy applies the pinned score threshold to the versioned task-risk adapter"
+                options, default_value = [">=0"], "7"
+            elif storage_key == "plan_critique.min_write_tasks":
+                rationale = "Native Lane Pilot critique policy counts non-review TaskV2 lanes in the run before dispatch"
+                options, default_value = [">=1"], "3"
+            elif storage_key == "plan_critique.on_high_risk":
+                rationale = "Native Lane Pilot critique policy runs for high or critical TaskV2 risk when enabled"
+                options, default_value = ["true", "false"], "true"
+            else:
+                options, default_value = [], "plan-critic"
+        elif storage_key.startswith("browser_qa."):
+            decision, ch = "editable", "OWN"
+            rationale = "Native Browser QA stage consumes this setting and records the selected backend and runner verdict in its receipt"
+            evidence = "server.ts:runBrowserQa"
+            if storage_key == "browser_qa.enabled":
+                options, default_value = ["true", "false"], "false"
+            elif storage_key == "browser_qa.provider":
+                options, default_value = ["jev", "codex"], "jev"
+            elif storage_key == "browser_qa.model":
+                options, default_value = [], ""
+            elif storage_key == "browser_qa.reasoning_effort":
+                options, default_value = [], "medium"
+            elif storage_key == "browser_qa.backend":
+                options, default_value = ["chrome-qa", "headless", "live-chrome"], "chrome-qa"
+            elif storage_key == "browser_qa.approve":
+                options, default_value = ["auto", "never"], "auto"
+        elif storage_key == "plan_critique.enabled":
             decision, ch = "editable", "OWN"
             rationale = "Native Lane Pilot setting consumed by the plan-critique stage runner"
             evidence = "server.ts:runPlanCritique"
@@ -867,6 +1144,172 @@ def main() -> None:
             rationale = "Native Lane Pilot setting selects advisory or gate behavior for plan critique"
             evidence = "server.ts:runPlanCritique"
             options, default_value = ["advisory", "gate"], "gate"
+        elif storage_key == "run.gate":
+            decision, ch = "editable", "OWN"
+            rationale = "Native Lane Pilot snapshots this run policy at activation and blocks before automated stage or writer dispatch when operator review is required"
+            evidence = "server.ts:719; server.ts:1428; src/database.ts:312"
+            options, default_value = ["none", "pre-merge"], "none"
+        elif storage_key.startswith("specialist."):
+            decision, ch = "editable", "OWN"
+            rationale = "Native Lane Pilot specialist-review stage setting; provider and model selections are checked against the BB provider catalog before dispatch"
+            evidence = "server.ts:297"
+            if storage_key == "specialist.enabled":
+                options, default_value = ["true", "false"], "false"
+            elif storage_key == "specialist.when":
+                options, default_value = ["high_risk", "always"], "high_risk"
+            elif storage_key == "specialist.provider":
+                options, default_value = ["agy", "grok", "qwen", "kimi", "codex", "cursor", "opencode"], "codex"
+            elif storage_key == "specialist.model":
+                default_value = ""
+            elif storage_key == "specialist.reasoning_effort":
+                default_value = "high"
+            elif storage_key == "specialist.agent":
+                default_value = "specialist-reviewer"
+        elif storage_key.startswith("night_review."):
+            decision, ch = "editable", "OWN"
+            rationale = "Native Lane Pilot night-review stage setting; selection is validated against the live BB provider catalog before dispatch"
+            evidence = "server.ts:runNightReview"
+            if storage_key == "night_review.enabled":
+                options, default_value = ["true", "false"], "false"
+            elif storage_key == "night_review.provider":
+                rationale = "Native Lane Pilot stage uses the BB ProviderModelPicker to configure night-review provider/model/reasoning/tier"
+                evidence = "server.ts:save_night_review_selection,runNightReview"
+                options, default_value = [], ""
+            elif storage_key in {"night_review.model", "night_review.reasoning_effort", "night_review.service_tier"}:
+                rationale = "Native Lane Pilot stage uses the BB ProviderModelPicker to configure night-review provider/model/reasoning/tier"
+                evidence = "server.ts:save_night_review_selection,runNightReview"
+            elif storage_key == "night_review.agent":
+                default_value = "lane-reviewer"
+            elif storage_key == "night_review.max_fix_tasks":
+                options, default_value = ["clamp 1-10"], "5"
+        elif storage_key == "adoc.040":
+            decision, ch = "editable", "OWN"
+            rationale = "Native workspace routing: in_place uses the configured path; worktree provisions a managed BB worktree; auto selects managed isolation"
+            evidence = "server.ts:596"
+            options, default_value = ["in_place", "worktree", "auto"], "auto"
+        elif storage_key in {"adoc.041", "adoc.042"}:
+            decision, ch = "editable", "OWN"
+            rationale = "Native task-level workspace router applies this setting before writer spawn and persists the decision with attempt CAS"
+            evidence = "server.ts:spawnWriterAttempt"
+            if storage_key == "adoc.041":
+                options, default_value = ["0-10"], "4"
+            else:
+                options, default_value = ["true", "false"], "true"
+        elif storage_key.startswith("docs."):
+            decision, ch = "editable", "OWN"
+            rationale = "Native Lane Pilot docs-maintenance stage consumes this project setting; inputs are limited to docs/ and apps/ Markdown with hash-CAS writes"
+            evidence = "server.ts:runDocsMaintenance"
+            if storage_key in {"docs.enabled", "docs.maintain"}:
+                options, default_value = ["true", "false"], "false" if storage_key == "docs.enabled" else "true"
+            elif storage_key == "docs.since":
+                options, default_value = ["yesterday", "24 hours ago", "7 days ago"], "yesterday"
+            elif storage_key == "docs.page_cap":
+                options, default_value = [], "0"
+            elif storage_key == "docs.hour":
+                options, default_value = [], "5"
+            elif storage_key == "docs.agent":
+                default_value = "docs-maintainer"
+        elif storage_key.startswith("memory."):
+            decision, ch = "editable", "OWN"
+            rationale = "Native Lane Pilot memory stage consumes this isolated project setting; durable records stay in the plugin database and are never written to user .agents files"
+            evidence = "server.ts:runMemoryMaintenance,spawnWriterAttempt"
+            if storage_key == "memory.provider":
+                rationale = "Native Lane Pilot stage uses the BB ProviderModelPicker to configure its memory provider/model/reasoning/tier"
+                evidence = "server.ts:save_memory_selection,runMemoryMaintenance"
+            elif storage_key in {"memory.enabled","memory.maintain","memory.inject"}:
+                options, default_value = ["true", "false"], {"memory.enabled":"false","memory.maintain":"true","memory.inject":"true"}[storage_key]
+            elif storage_key == "memory.audience":
+                options, default_value = ["owner","subagent","export"], "subagent"
+            elif storage_key == "memory.personal_bot":
+                rationale = "Native Lane Pilot memory retrieval and maintenance use this per-project bot partition; blank selects shared project memory without reading user bot files"
+                evidence = "server.ts:runMemoryMaintenance,runMemoryContext,spawnWriterAttempt"
+                options, default_value = ["", "claude", "codex", "grok", "qwen", "kimi", "agy", "cursor"], ""
+            elif storage_key == "memory.search_engine":
+                options, default_value = ["auto","fts5","bm25"], "auto"
+            elif storage_key == "memory.core_budget":
+                options, default_value = [], "3072"
+            elif storage_key == "memory.note_budget":
+                options, default_value = [], "8000"
+            elif storage_key == "memory.index_budget":
+                options, default_value = [], "65536"
+            elif storage_key == "memory.context_budget":
+                options, default_value = [], "2500"
+            elif storage_key == "memory.agent":
+                default_value = "memory-maintainer"
+        elif storage_key == "writer.agent":
+            decision, ch = "editable", "OWN"
+            rationale = "Native Lane Pilot writer stage consumes this bounded role label in the BB prompt"
+            evidence = "server.ts:writerPrompt"
+            default_value = "lane-writer"
+        elif storage_key.startswith("pm_read."):
+            decision, ch = "editable", "OWN"
+            rationale = "Native Lane Pilot PM-read stage consumes this per-project setting before critique and writing"
+            evidence = "server.ts:runPmRead"
+            if storage_key == "pm_read.enabled":
+                options, default_value = ["true", "false"], "false"
+            elif storage_key == "pm_read.min_lines":
+                options, default_value = ["clamp 50-5000"], "350"
+            elif storage_key in {"pm_read.provider", "pm_read.model"}:
+                default_value = ""
+            elif storage_key == "pm_read.reasoning_effort":
+                options, default_value = ["low", "medium", "high", "xhigh", "max"], "low"
+            elif storage_key == "pm_read.service_tier":
+                options, default_value = ["standard", "fast"], "standard"
+
+        # Keep the upstream gate-triage auto-merge row as a diagnostic alias;
+        # the sole editable control is night_review.auto_merge, consumed by runNightFix.
+        if (inv["area"], inv["setting"]) == ("gate scripts", "gate-triage --auto-merge"):
+            decision, ch = "readonly", "NONE"
+            rationale = "Gate-triage auto-merge uses the existing night_review.auto_merge control; actual merges remain behind the managed-worktree, approved-PR, passing-checks, and mergeability gates in runNightFix"
+            evidence = "server.ts:2325; server.ts:2347; src/stages/night-fix.ts:39"
+        if (inv["area"], inv["setting"]) == ("gate scripts", "gate-triage --repair-provider"):
+            decision, ch = "readonly", "NONE"
+            rationale = "Gate-triage repair uses the configured night_review BB provider/model/effort/tier; the native night-fix stage validates that selection against the live host catalog"
+            evidence = "server.ts:2293; server.ts:2313; server.ts:2321"
+        if i == 14:  # legacy adoc CLI plan-critique provider flag
+            decision, ch = "readonly", "NONE"
+            rationale = "Legacy plan-critique provider flag maps to the native project control at row 75; the BB stage validates the chosen provider/model against the live host catalog"
+            evidence = "server.ts:335; server.ts:733"
+        elif i == 18:  # legacy adoc CLI browser-QA effort flag
+            decision, ch = "readonly", "NONE"
+            rationale = "Legacy browser-QA effort flag maps to the native typed project control at row 125; the stage validates configured effort against the selected provider/model"
+            evidence = "server.ts:1869; src/stages/browser-qa.ts:127"
+        elif i == 97:  # upstream onboard provider is equivalent to the native preview selection
+            decision, ch = "readonly", "NONE"
+            rationale = "Upstream onboarding provider maps to the sole native onboarding.provider control at row 359; the BB preview validates provider/model against the live host catalog"
+            evidence = "server.ts:2084-2114; server.ts:2946-2960"
+        elif i == 101:  # upstream onboarding depth shares the native preview's fast/deep scope
+            decision, ch = "readonly", "NONE"
+            rationale = "Upstream onboarding depth maps to the sole native onboarding.depth control at row 364; fast/deep scopes the bounded BB onboarding preview"
+            evidence = "server.ts:2084; src/stages/onboarding.ts:18-23"
+        elif i == 304:  # run-controller status receipt format is machine-only and mandatory
+            decision, ch = "excluded", "N/A"
+            rationale = "Required machine-readable output for run-controller status (--json is argparse-required); Lane Pilot consumes structured receipts and has no user-selectable status format"
+            evidence = "bin/run-controller:1738-1742; server.ts:1739"
+        elif i == 44:  # upstream project-profile UI language is not the plugin locale
+            decision, ch = "excluded", "N/A"
+            rationale = "Upstream ui.language is written into the project capabilities/routing profile for agents-doctor TUI; Lane Pilot locale is a plugin-wide BB preference with BB document-language auto-detection, so mapping the project field would change its scope"
+            evidence = "bin/agents-doctor:709-711; bin/agents_doctor_tui.py:17,3314; server.ts:704"
+        elif i == 71:  # fixed gate-triage heuristic, not an input setting
+            decision, ch = "excluded", "N/A"
+            rationale = "Fixed internal path normalizer, not a user setting. The native critique stage implements bounded PLAN/SPEC path ownership, sibling/text references, direct GitNexus caller impact, and TaskV2 structural checks; stale index and scan-budget exhaustion are reported as truncated partial coverage. This helper itself has no independent user control"
+            evidence = "bin/pipeline_stages.py:68,883-885,925,942; src/stages/gate-triage.ts:18-23"
+        elif i == 126:  # service tier in the upstream CLI is writer-only
+            decision, ch = "excluded", "N/A"
+            rationale = "The upstream CLI exposes one top-level --service-tier for writer dispatch; Browser QA has no stage-specific tier argument or consumer, and Lane Pilot's typed browser runner does not accept a tier"
+            evidence = "bin/agents-doctor:1484-1498; bin/pipeline_stages.py:641; src/stages/browser-qa.ts:127"
+        elif i == 251:  # installer flags do not exist in the pinned source
+            decision, ch = "excluded", "N/A"
+            rationale = "The pinned dd77 installer has no DRY_RUN or FORCE environment contract; Lane Pilot installation is driven by explicit typed operations with ownership, snapshot and hash-CAS checks"
+            evidence = "install.sh:1-EOF (no DRY_RUN/FORCE references); src/coexistence/contracts.ts:operation"
+        elif i == 235:  # OpenCode command argument hint is fixed markdown metadata
+            decision, ch = "excluded", "N/A"
+            rationale = "Static OpenCode slash-command argument-hint metadata, not a Lane Pilot setting; the command body delegates help/diagnosis/code-scope behavior to an external upstream skill and no native Lane Pilot operation consumes this hint"
+            evidence = "profiles/opencode/commands/opencode-lane.md:3-16; server.ts:3110-3125"
+        elif i == 330:  # lane-ctl constant is unused; lane-session has a separate consumer
+            decision, ch = "excluded", "N/A"
+            rationale = "The bin/lane-ctl DEFAULT_MAX_TASKS constant has only its declaration; lane-ctl --max-tasks defaults to None and resolves the routing profile. A separate lane-session DEFAULT_MAX_TASKS is consumed from LANE_SESSION_MAX_TASKS and is already represented by editable row s064"
+            evidence = "bin/lane-ctl:58,3448-3455; bin/lane-session:4371-4383; server.ts:641"
 
         counts[decision] += 1
         row = {
@@ -882,8 +1325,8 @@ def main() -> None:
             "scope": inv.get("scope") or "",
             # Model IDs are validated by the upstream value validator and the
             # native BB ProviderModelPicker; they are free-form strings, not CLI enums.
-            "control": "input" if storage_key == "writer.model" else "select" if choices else control_type(inv.get("type") or "", inv.get("values") or ""),
-            "options": options,
+            "control": "input" if storage_key.endswith(".agent") or storage_key in {"writer.model", "specialist.model", "specialist.reasoning_effort", "docs.page_cap", "docs.hour", "memory.provider", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget"} else "select" if choices or storage_key.startswith("specialist.") or storage_key == "adoc.040" or storage_key in {"docs.enabled", "docs.maintain", "docs.since", "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.personal_bot", "memory.search_engine", "night_review.enabled"} else control_type(inv.get("type") or "", inv.get("values") or ""),
+            "options": [] if storage_key.endswith(".agent") else options,
             "min": lo,
             "max": hi,
             "section": sid if decision != "excluded" else "excluded",
@@ -895,6 +1338,60 @@ def main() -> None:
             "storageKey": storage_key,
         }
         catalog.append(row)
+
+    # Four executable BB-native docs-stage settings supplement the grouped upstream row.
+    docs_selection_rows = [
+        ("docs.provider", "BB provider ID", "server.ts:1778"),
+        ("docs.model", "BB model ID", "server.ts:1779"),
+        ("docs.reasoning_effort", "Model-supported reasoning level", "server.ts:1780"),
+        ("docs.service_tier", "Provider-supported service tier", "server.ts:1781"),
+    ]
+    for offset, (key, label, evidence) in enumerate(docs_selection_rows):
+        catalog.append({
+            "id": f"s{355 + offset:03d}", "index": 355 + offset,
+            "area": "Lane Pilot native docs stage", "setting": key, "location": evidence,
+            "category": "user", "invType": "native BB provider selection", "values": label,
+            "default": "inherit writer selection", "scope": "project", "control": "input",
+            "options": [], "min": None, "max": None, "section": "docs", "channel": "OWN",
+            "uiStatus": "editable", "rationale": "Native docs stage selection is validated against the live BB provider/model catalog and consumed by manual and scheduled maintenance",
+            "evidence": evidence, "matrixStatus": "readonly", "storageKey": key,
+        })
+        counts["editable"] += 1
+
+    onboarding_rows = [
+        ("onboarding.provider", "BB provider ID", "server.ts:1845", "input", []),
+        ("onboarding.model", "BB model ID", "server.ts:1846", "input", []),
+        ("onboarding.reasoning_effort", "Model-supported reasoning level", "server.ts:1847", "input", []),
+        ("onboarding.service_tier", "Provider-supported service tier", "server.ts:1848", "input", []),
+        ("onboarding.agent", "Project onboarder role name", "server.ts:1849", "input", []),
+        ("onboarding.depth", "Preview depth", "server.ts:1850", "select", ["fast", "deep"]),
+    ]
+    for offset, (key, label, evidence, control, options) in enumerate(onboarding_rows):
+        catalog.append({
+            "id": f"s{359 + offset:03d}", "index": 359 + offset,
+            "area": "Lane Pilot native onboarding stage", "setting": key, "location": evidence,
+            "category": "user", "invType": "native BB provider selection" if key.startswith("onboarding.") and key != "onboarding.agent" and key != "onboarding.depth" else "str" if key == "onboarding.agent" else "enum",
+            "values": label, "default": "inherit writer selection" if key.startswith("onboarding.") and key not in {"onboarding.agent", "onboarding.depth"} else "project-onboarder" if key == "onboarding.agent" else "fast",
+            "scope": "project", "control": control, "options": options, "min": None, "max": None,
+            "section": "onboard", "channel": "OWN", "uiStatus": "editable",
+            "rationale": "Native onboarding preview uses live BB provider/model capabilities, bounded role/depth controls, exact preview hashes, explicit confirmation, and host compare-and-swap for writes",
+            "evidence": evidence, "matrixStatus": "readonly", "storageKey": key,
+        })
+        counts["editable"] += 1
+
+    catalog.append({
+        "id": "s365", "index": 365,
+        "area": "Lane Pilot host verification sandbox", "setting": "sandbox.backend",
+        "location": "src/verification/sandbox.ts:22",
+        "category": "user", "invType": "verified host backend selector",
+        "values": "auto, macos-seatbelt, linux-bubblewrap", "default": "auto", "scope": "project",
+        "control": "select", "options": ["auto", "macos-seatbelt", "linux-bubblewrap"], "min": None, "max": None,
+        "section": "stages", "channel": "OWN", "uiStatus": "editable",
+        "rationale": "Native verification stage selects Seatbelt on macOS or bubblewrap on Linux; absent backend and unprotectable workspace guard paths fail closed",
+        "evidence": "src/verification/sandbox.ts:22; server.ts:998",
+        "matrixStatus": "readonly", "storageKey": "sandbox.backend",
+    })
+    counts["editable"] += 1
 
     # Write TypeScript catalog
     ts_path = ROOT / "src/ui-catalog.ts"
@@ -986,7 +1483,12 @@ def main() -> None:
             "Claude settings merge runs only during install, not Mode 2 dispatch": "Слияние Claude settings только при установке, не в Mode 2",
             "Mode 2 does not invoke agents-doctor; --apply/setup are forbidden": "Mode 2 не вызывает agents-doctor; --apply/setup запрещены",
             "no typed argv/env/temp-file in upstream v1.38.0; applying it needs an upstream or SDK contract (E1)": "Нет типизированного argv/env/файла в upstream v1.38.0; применение требует контракта upstream или SDK (E1)",
+            "Mapped to the native project sandbox.backend selector; Lane Pilot applies a verified host adapter without writing the upstream global variable": "Соответствует нативной настройке проекта sandbox.backend; Lane Pilot использует проверенную изоляцию хоста, не записывая глобальную переменную upstream",
+            "Gate-triage auto-merge uses the existing night_review.auto_merge control; actual merges remain behind the managed-worktree, approved-PR, passing-checks, and mergeability gates in runNightFix": "Авто-слияние gate-triage использует общую настройку night_review.auto_merge; runNightFix дополнительно требует managed worktree, одобренный PR, успешные проверки и разрешимость слияния",
+            "BB stage and gate telemetry is stored in an append-only project ledger and exposed through lane_pilot_gate_report; the legacy global file-path/off switch is intentionally not written or honored": "Телеметрия этапов и gate записывается в добавляемый журнал проекта BB и доступна через lane_pilot_gate_report; старый глобальный путь файла и переключатель off намеренно не записываются и не применяются",
+            "Gate-triage repair uses the configured night_review BB provider/model/effort/tier; the native night-fix stage validates that selection against the live host catalog": "Исправление gate-triage использует общую настройку night_review для BB-провайдера, модели, effort и tier; native night-fix проверяет выбор по актуальному каталогу хоста",
             "OWN Lane Pilot UI locale; not an upstream flag": "Собственная локаль интерфейса Lane Pilot, не флаг upstream",
+            "Native Lane Pilot snapshots this run policy at activation and blocks before automated stage or writer dispatch when operator review is required": "Lane Pilot сохраняет политику в записи запуска и останавливает автоматические этапы до старта writer, если требуется решение оператора",
         }.get(row["rationale"])
         if ru_text is None:
             key = row["storageKey"]
@@ -1000,6 +1502,69 @@ def main() -> None:
             field_en[f"field_{row['id']}"] = "Plan critique behavior"
             field_ru[f"field_{row['id']}"] = "Режим критики плана"
             field_ru[f"reason_{row['id']}"] = "Собственная настройка Lane Pilot: advisory продолжает запись, gate блокирует её при запрошенных исправлениях"
+        elif row["storageKey"] == "plan_critique.min_score":
+            field_en[f"field_{row['id']}"] = "Minimum critique score"
+            field_ru[f"field_{row['id']}"] = "Минимальный балл для критики"
+            field_en[f"reason_{row['id']}"] = "Run critique when the task-risk score reaches this threshold; risk scores use the documented task-risk-v1 adapter"
+            field_ru[f"reason_{row['id']}"] = "Запускать критику при достижении порога; оценка риска использует документированный адаптер task-risk-v1"
+        elif row["storageKey"] == "plan_critique.min_write_tasks":
+            field_en[f"field_{row['id']}"] = "Minimum write tasks"
+            field_ru[f"field_{row['id']}"] = "Минимум задач записи"
+            field_en[f"reason_{row['id']}"] = "Run critique when the persisted run contains this many non-review TaskV2 lanes"
+            field_ru[f"reason_{row['id']}"] = "Запускать критику, когда в сохранённом запуске столько задач TaskV2 вне этапов проверки и ревью"
+        elif row["storageKey"] == "plan_critique.on_high_risk":
+            field_en[f"field_{row['id']}"] = "Critique high-risk tasks"
+            field_ru[f"field_{row['id']}"] = "Критиковать задачи высокого риска"
+            field_en[f"reason_{row['id']}"] = "When enabled, run critique for high or critical TaskV2 risk even below the score and task-count thresholds"
+            field_ru[f"reason_{row['id']}"] = "При включении критика запускается для высокого и критического риска даже ниже порогов балла и числа задач"
+        elif row["storageKey"] == "sandbox.backend":
+            field_en[f"field_{row['id']}"] = "Host sandbox backend"
+            field_ru[f"field_{row['id']}"] = "Изолированное исполнение на хосте"
+            field_en[f"reason_{row['id']}"] = "Select auto, macOS Seatbelt, or Linux bubblewrap; missing backend or protected workspace paths fail closed"
+            field_ru[f"reason_{row['id']}"] = "Выберите auto, macOS Seatbelt или Linux bubblewrap; при отсутствии backend или защищаемых путей запуск блокируется"
+        elif row["index"] in {283,285,286,287,288,289,292,293,336}:
+            labels={283:("gate-report lookback days","Период отчёта gate-report, дни"),285:("gate-report event source","Источник событий gate-report"),286:("gate-triage lookback days","Период анализа gate-triage, дни"),287:("gate-triage BB model","Модель BB для gate-triage"),288:("gate-triage reasoning effort","Уровень рассуждений gate-triage"),289:("Codex binary path","Путь к бинарнику Codex"),292:("Read-only / dry-run policy","Политика только чтения / dry-run"),293:("GATE_TRIAGE_CODEX_BIN","GATE_TRIAGE_CODEX_BIN"),336:("Run workspace settings and effective decision","Настройки рабочей копии запуска и применённое решение")}
+            field_en[f"field_{row['id']}"]=labels[row["index"]][0]
+            field_ru[f"field_{row['id']}"]=labels[row["index"]][1]
+            russian_reasons={
+                283:"Штатный инструмент PM принимает период от 1 до 365 дней и читает append-only журнал стадий проекта",
+                285:"Путь к произвольному файлу заменён проектным append-only журналом; сторонние пути не читаются и не записываются",
+                286:"Штатный инструмент gate-triage принимает период анализа от 1 до 365 дней и сохраняет результат как stage receipt",
+                287:"Инструмент принимает ID модели BB и сверяет его с доступным каталогом моделей на хосте",
+                288:"Инструмент принимает уровень рассуждений и отклоняет уровни, не поддерживаемые выбранной моделью BB",
+                289:"BB адаптер запускает штатный поток провайдера вместо произвольного бинарника Codex",
+                292:"Gate triage всегда работает только для чтения и не имеет действий исправления или слияния",
+                293:"Переменная GATE_TRIAGE_CODEX_BIN не используется: Lane Pilot вызывает API провайдера BB",
+                336:"Поля рабочей копии сопоставлены настройкам проекта и фактическому решению на попытку, которое записывается через CAS",
+            }
+            field_ru[f"reason_{row['id']}"]=russian_reasons[row["index"]]
+        elif row["storageKey"] == "adoc.040":
+            field_en[f"field_{row['id']}"] = "Workspace isolation"
+            field_ru[f"field_{row['id']}"] = "Изоляция рабочей копии"
+            field_ru[f"reason_{row['id']}"] = "Настройка Lane Pilot: in_place использует выбранный путь, worktree создаёт управляемую BB рабочую копию, auto выбирает изоляцию"
+        elif row["storageKey"] == "run.gate":
+            field_en[f"field_{row['id']}"] = "Run gate"
+            field_ru[f"field_{row['id']}"] = "Ограничение запуска"
+            field_ru[f"reason_{row['id']}"] = "Политика фиксируется при запуске; pre-merge блокирует автоматические этапы и writer до решения оператора"
+        elif row["storageKey"] == "adoc.041":
+            field_en[f"field_{row['id']}"] = "Worktree risk threshold"
+            field_ru[f"field_{row['id']}"] = "Порог риска для worktree"
+            field_ru[f"reason_{row['id']}"] = "Порог управляет созданием task-level managed worktree до запуска писателя"
+        elif row["storageKey"] == "adoc.042":
+            field_en[f"field_{row['id']}"] = "Isolate multi-output tasks"
+            field_ru[f"field_{row['id']}"] = "Изолировать задачи с несколькими файлами"
+            field_ru[f"reason_{row['id']}"] = "Включает managed worktree для задач, создающих несколько ожидаемых файлов"
+        elif row["storageKey"].startswith("pm_read."):
+            names = {
+                "pm_read.enabled": ("Run PM read before critique", "Запускать чтение PM перед критикой"),
+                "pm_read.min_lines": ("Minimum read_first lines", "Минимум строк read_first"),
+                "pm_read.provider": ("PM read provider ID", "ID провайдера PM read"),
+                "pm_read.model": ("PM read model ID", "ID модели PM read"),
+                "pm_read.reasoning_effort": ("PM read reasoning effort", "Уровень рассуждения PM read"),
+                "pm_read.service_tier": ("PM read service tier", "Тариф PM read"),
+            }
+            field_en[f"field_{row['id']}"], field_ru[f"field_{row['id']}"] = names[row["storageKey"]]
+            field_ru[f"reason_{row['id']}"] = "Настройка Lane Pilot для исполняемой стадии чтения PM; значения хранятся отдельно для проекта"
     for sid, title in SECTIONS_EN.items():
         field_en[f"section_{sid}"] = title
         field_ru[f"section_{sid}"] = SECTIONS_RU[sid]

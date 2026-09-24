@@ -10,6 +10,9 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 
 function representativeValues(row: CatalogRow, spec: SettingSpec): unknown[] {
+  if (spec.channel === "OWN" && spec.key.endsWith(".agent")) return ["lane-test-agent"];
+  if (spec.key === "plan_critique.min_score") return [0, 10];
+  if (spec.key === "plan_critique.min_write_tasks") return [1, 3];
   if (spec.booleanFlag || spec.key.startsWith("jev.")) return [true, false];
   if (spec.key === "install.LANE_INSTALL_LOCAL_MARKETPLACE" || spec.key === "install.LANE_INSTALL_CLAUDE_PLUGIN") {
     return [true, false];
@@ -31,7 +34,7 @@ function assertChannelValue(spec: SettingSpec, value: unknown): void {
   if (spec.channel === "OWN") {
     const cli = buildCliInvocation({ binary: "run-controller", subcommand: "run", settings: { [spec.key]: value } });
     expect(cli.applied, label).not.toContain(spec.key);
-    expect(cli.unapplied.find((row) => row.key === spec.key)?.reason, label).toMatch(/native Lane Pilot stage/i);
+    expect(cli.unapplied.find((row) => row.key === spec.key)?.reason, label).toMatch(/native Lane Pilot/i);
     return;
   }
   if (spec.channel === "INSTALL-ENV") {
@@ -103,7 +106,8 @@ describe("UI storage keys feed runtime channels", () => {
   });
 
   it("gives every editable row a consumer key", () => {
-    const missing = UI_CATALOG.filter((row) => row.uiStatus === "editable" && !CONSUMER_KEYS.has(row.storageKey) && row.storageKey !== "ui.language");
+    const missing = UI_CATALOG.filter((row) => row.uiStatus === "editable" && !CONSUMER_KEYS.has(row.storageKey)
+      && !SETTING_CATALOG.some((spec) => spec.key === row.storageKey && spec.channel === "OWN") && row.storageKey !== "ui.language");
     expect(missing.map((row) => `${row.id}:${row.storageKey}`)).toEqual([]);
   });
 
@@ -111,10 +115,17 @@ describe("UI storage keys feed runtime channels", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(56);
+    expect(editable).toHaveLength(145);
+    const atomicPickerKeys = new Set([
+      "memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier",
+      "night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier",
+      "docs.provider", "docs.model", "docs.reasoning_effort", "docs.service_tier",
+      "onboarding.provider", "onboarding.model", "onboarding.reasoning_effort", "onboarding.service_tier",
+    ]);
     for (const row of editable) {
       const choices = UI_CATALOG.filter((candidate) => candidate.storageKey === row.storageKey && candidate.control === "select")
         .flatMap((candidate) => candidate.options);
+      if (choices.includes("_probe_opencode_agents")) continue;
       if (!choices.length) continue;
       const result = await harness.behavior.callRpc("save_setting", {
         projectId: `invalid_${row.id}`,
@@ -124,7 +135,12 @@ describe("UI storage keys feed runtime channels", () => {
       }) as { ok: boolean; conflict: boolean; validation?: { code: string; params: string[] } };
       expect(result.ok, row.id).toBe(false);
       expect(result.conflict, row.id).toBe(false);
-      expect(result.validation?.code, row.id).toBe("invalid_choice");
+      if (atomicPickerKeys.has(row.storageKey)) {
+        expect(result.validation?.code, row.id).toBe("incompatible_setting");
+        expect(result.validation?.params[1], row.id).toContain("atomic");
+      } else {
+        expect(result.validation?.code, row.id).toBe("invalid_choice");
+      }
       expect(result.validation?.params[0], row.id).toBeTruthy();
     }
     await harness.lifecycle.dispose();
@@ -141,7 +157,7 @@ describe("UI storage keys feed runtime channels", () => {
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
     expect(booleanFlags.map((spec) => spec.key)).toEqual([]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(56);
+    expect(editable).toHaveLength(145);
     expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
     for (const row of editable) {
       if (row.storageKey === "ui.language") {

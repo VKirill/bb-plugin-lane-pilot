@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.12 — 2026-09-24 (predeploy candidate; not installed)
+
+- Add native plan critique, run policy, workspace routing, writer/verification receipts, cancellation and restart reconciliation.
+- Add night review/fix, specialist/onboarding, project-scoped memory, living docs, controlled Browser QA and fail-closed sandbox stages with native EN/RU settings.
+- Expand the source-backed catalog to 366 rows (355 original tuples plus 11 native controls); keep inventory classification distinct from installed acceptance.
+- Integrate the reviewed Lane Stack coexistence and guarded install/rollback adapters. Hub delivery and installed acceptance remain pending exact combined review.
+
 ## 0.1.11 — 2026-09-23
 
 - Render Diagnostics CLI preview as scrollable JSON after a live SourceCode renderer failure on the hub.

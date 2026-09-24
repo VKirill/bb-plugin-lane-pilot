@@ -8,6 +8,8 @@ export type SettingValidationError = {
 
 /** Choices generated from the pinned upstream consumers and shared by every row for a storage key. */
 export function allowedSettingChoices(key: string): string[] | null {
+  // Agent role labels are bounded at execution time and can be host-specific.
+  if (key.endsWith(".agent")) return null;
   const choices = new Set<string>();
   for (const row of UI_CATALOG) {
     if (row.storageKey !== key || row.uiStatus !== "editable" || row.control !== "select") continue;
@@ -17,6 +19,15 @@ export function allowedSettingChoices(key: string): string[] | null {
 }
 
 export function validateSettingValue(key: string, value: unknown): SettingValidationError | null {
+  const minimum = key === "plan_critique.min_score" ? 0
+    : key === "plan_critique.min_write_tasks" ? 1 : null;
+  if (minimum !== null && value !== undefined && value !== null && value !== "") {
+    const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
+    if (typeof parsed !== "number" || !Number.isSafeInteger(parsed) || parsed < minimum) {
+      return { code:"invalid_choice", key, params:[key, `integer >= ${minimum}`] };
+    }
+    return null;
+  }
   const allowed = allowedSettingChoices(key);
   if (!allowed || value === undefined || value === null || value === "") return null;
   if (typeof value === "string" && allowed.includes(value)) return null;

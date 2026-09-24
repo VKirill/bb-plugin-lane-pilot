@@ -146,6 +146,7 @@ describe("production spawn_unknown reconciliation", () => {
     });
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
+    saveProjectSetting(db, projectId, "adoc.040", "in_place");
     createRun(db, "run-before-finish", projectId);
     setRunThread(db, "run-before-finish", "pm-before-finish");
     await plugin(bb);
@@ -213,6 +214,7 @@ describe("production spawn_unknown reconciliation", () => {
 
   it("reconciles by metadata after the spawn response is lost and continues with the found thread", async () => {
     let capturedMetadata: Record<string,unknown> | undefined;
+    let capturedWriterEnvironment: unknown;
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
       sdk:{
@@ -221,19 +223,26 @@ describe("production spawn_unknown reconciliation", () => {
             ? { role:"pm", lanePilotRunId:"run-live" }
             : capturedMetadata ?? {},
           spawn: async (args) => {
+            const metadata=args.pluginMetadata as Record<string,unknown>;
+            if(metadata.role==="workspace-provisioner") return {id:"workspace-holder",environmentId:"reconcile-env"};
+            capturedWriterEnvironment=args.environment;
             capturedMetadata = args.pluginMetadata as Record<string,unknown>;
             throw Object.assign(new Error("synthetic response timeout"), { code:"ETIMEDOUT" });
           },
           list: async () => [{ id:"writer-existing" }] as never,
           wait: async () => { throw new Error("wait sentinel after reconcile"); },
-          get: async () => ({ id:"writer-existing", status:"active" }) as never,
+          get: async ({threadId}) => ({ id:threadId, status:threadId==="workspace-holder"?"idle":"active" }) as never,
+          stop: async () => ({ok:true}) as never,
         },
+        environments:{get:async ({environmentId})=>({id:environmentId,hostId:"host-test",path:environmentId==="reconcile-env"?"/tmp/reconciled-attempt-worktree":config.writerWorkspacePath,status:"ready",managed:true,workspaceProvisionType:"managed-worktree"}) as never},
         providers:{
           list:async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:false }, serviceTiers:[] }] as never,
           models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }),
         },
+        files:{ read:async ({path})=>path.endsWith("README.md")?{content:"reconciliation task fixture\n"}:{content:null} },
       },
       experimental_callHostRpc: (call) => {
+        if(call.method==="gitOwnershipBase") return {hostId:"host-test",status:"not-git",branch:null,headSha:null,baseRef:null,baseSha:null,compareCommitted:false,reason:"synthetic fixture is not a git worktree"};
         if (call.method === "runCommand") {
           return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
         }
@@ -263,6 +272,9 @@ describe("production spawn_unknown reconciliation", () => {
     const row = db.prepare("SELECT thread_id,state FROM lane_pilot_attempt WHERE run_id='run-live'").get() as
       {thread_id:string|null; state:string};
     expect(row).toEqual({ thread_id:"writer-existing", state:"running" });
+    expect(db.prepare("SELECT workspace_path,environment_id FROM lane_pilot_attempt WHERE run_id='run-live'").get())
+      .toEqual({workspace_path:"/tmp/reconciled-attempt-worktree",environment_id:"reconcile-env"});
+    expect(capturedWriterEnvironment).toEqual({type:"reuse",environmentId:"reconcile-env"});
     expect(capturedMetadata).toMatchObject({
       role:"writer",
       lanePilotRunId:"run-live",
@@ -296,6 +308,41 @@ describe("production spawn_unknown reconciliation", () => {
     const result = await harness.behavior.runCli(["recover", triple.attemptId]);
     expect(result).toMatchObject({ exitCode:1, stderr:"writer is not idle: active" });
     expect(getAttempt(db, triple.attemptId)).toMatchObject({ thread_id:"writer-found", state:"running" });
+    await harness.lifecycle.dispose();
+  });
+
+  it("keeps spawn_unknown fail-closed on transient inventory failure and reconciles without respawn later", async () => {
+    const triple = { lanePilotRunId:"run-transient-reconcile", lanePilotTaskId:"task-transient-reconcile", attemptId:"attempt-transient-reconcile" };
+    let inventoryAvailable=false;
+    let writerSpawns=0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{threads:{
+        list:async () => {
+          if(!inventoryAvailable)throw new Error("thread inventory temporarily unavailable");
+          return [{id:"writer-found-after-retry"}] as never;
+        },
+        getPluginMetadata:async () => triple,
+        get:async ({threadId})=>({id:threadId,status:"active"}) as never,
+        spawn:async () => {writerSpawns+=1;return {id:"unexpected-respawn"} as never;},
+      }},
+    });
+    const db=openDatabase(bb);
+    savePrototypeConfig(db,config);
+    createRun(db,triple.lanePilotRunId,projectId);
+    setRunThread(db,triple.lanePilotRunId,pmThreadId);
+    createTask(db,{id:triple.lanePilotTaskId,runId:triple.lanePilotRunId,kind:"bb",contract:{}});
+    createAttempt(db,{id:triple.attemptId,runId:triple.lanePilotRunId,taskId:triple.lanePilotTaskId});
+    transitionAttempt(db,triple.attemptId,"spawn_unknown",{reason:"provider response was lost"});
+    await plugin(bb);
+
+    expect(getAttempt(db,triple.attemptId)).toMatchObject({state:"spawn_unknown",thread_id:null});
+    expect(writerSpawns).toBe(0);
+    inventoryAvailable=true;
+    const resumed=await harness.behavior.callRpc("resume_runs",{projectId});
+    expect(resumed).toMatchObject({resumed:[triple.attemptId],skipped:[],finished:[]});
+    expect(getAttempt(db,triple.attemptId)).toMatchObject({state:"running",thread_id:"writer-found-after-retry"});
+    expect(writerSpawns).toBe(0);
     await harness.lifecycle.dispose();
   });
 });

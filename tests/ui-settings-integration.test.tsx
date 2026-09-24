@@ -94,6 +94,10 @@ async function mountWithBackend() {
   await plugin(bb);
 
   const saveCalls: Array<{ providerId:string; model:string; reasoningLevel:string; serviceTier:"default"|"fast"|null; expectedVersions:Record<string,number> }> = [];
+  const memorySaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
+  const nightSaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
+  const docsSaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
+  const onboardingSaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
   const singleSaveCalls: Array<{ key:string; value:unknown; expectedVersion:number }> = [];
   installPickerTestDriver();
   const appModule = await import("../app");
@@ -111,6 +115,22 @@ async function mountWithBackend() {
         saveCalls.push(input as typeof saveCalls[number]);
         return harness.behavior.callRpc("save_writer_selection", input) as Promise<unknown>;
       },
+      save_memory_selection:(input) => {
+        memorySaveCalls.push(input as typeof memorySaveCalls[number]);
+        return harness.behavior.callRpc("save_memory_selection", input) as Promise<unknown>;
+      },
+      save_night_review_selection:(input)=>{
+        nightSaveCalls.push(input as typeof nightSaveCalls[number]);
+        return harness.behavior.callRpc("save_night_review_selection",input) as Promise<unknown>;
+      },
+      save_docs_selection:(input)=>{
+        docsSaveCalls.push(input as typeof docsSaveCalls[number]);
+        return harness.behavior.callRpc("save_docs_selection",input) as Promise<unknown>;
+      },
+      save_onboarding_selection:(input)=>{
+        onboardingSaveCalls.push(input as typeof onboardingSaveCalls[number]);
+        return harness.behavior.callRpc("save_onboarding_selection",input) as Promise<unknown>;
+      },
       save_setting:(input) => {
         singleSaveCalls.push(input as typeof singleSaveCalls[number]);
         return harness.behavior.callRpc("save_setting", input) as Promise<unknown>;
@@ -121,7 +141,7 @@ async function mountWithBackend() {
     expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("codex");
     expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-effort")).toBe("medium");
   });
-  return { harness, slot, saveCalls, singleSaveCalls };
+  return { harness, slot, saveCalls, memorySaveCalls, nightSaveCalls, docsSaveCalls, onboardingSaveCalls, singleSaveCalls };
 }
 
 async function choosePickerValue(next: PickerValue) {
@@ -178,6 +198,39 @@ describe("native writer settings against the registered SQLite backend", () => {
     expect(persisted.versions["writer.reasoning_effort"]).toBe(before.versions["writer.reasoning_effort"] + 1);
     expect(persisted.versions["writer.service_tier"]).toBe(before.versions["writer.service_tier"] + 1);
     await finish(harness, slot);
+  });
+
+  it("persists task workspace threshold and multi-output switch independently with CAS",async()=>{
+    const {harness,slot,singleSaveCalls}=await mountWithBackend();
+    const before=await harness.behavior.callRpc("get_screen",{projectId}) as {values:Record<string,unknown>;versions:Record<string,number>};
+    const threshold=await harness.behavior.callRpc("save_setting",{projectId,key:"adoc.041",value:7,expectedVersion:before.versions["adoc.041"]??0}) as {ok:boolean;value:unknown;version:number};
+    const multiWrite=await harness.behavior.callRpc("save_setting",{projectId,key:"adoc.042",value:false,expectedVersion:before.versions["adoc.042"]??0}) as {ok:boolean;value:unknown;version:number};
+    expect(threshold).toMatchObject({ok:true,value:7,version:(before.versions["adoc.041"]??0)+1});
+    expect(multiWrite).toMatchObject({ok:true,value:false,version:(before.versions["adoc.042"]??0)+1});
+    const persisted=await harness.behavior.callRpc("get_screen",{projectId}) as {values:Record<string,unknown>;versions:Record<string,number>};
+    expect(persisted.values).toMatchObject({"adoc.041":7,"adoc.042":false});
+    expect(singleSaveCalls).toHaveLength(0);
+    await finish(harness,slot);
+  });
+
+  it("uses a separate live native picker and atomic CAS for memory maintenance", async () => {
+    const {harness,slot,memorySaveCalls}=await mountWithBackend();
+    const before=await harness.behavior.callRpc("get_screen",{projectId}) as {versions:Record<string,number>};
+    fireEvent.click(slot.getByText(en.configureMemoryPicker));
+    await waitFor(()=>expect(slot.getByTestId("memory-picker").querySelectorAll("[data-testid='bb-provider-model-picker']")).toHaveLength(1));
+    await choosePickerValue({providerId:"qwen",model:"qwen-test",reasoningLevel:"high",serviceTier:"default"});
+    await waitFor(()=>expect(memorySaveCalls).toHaveLength(1));
+    await waitFor(async()=>{
+      const current=await harness.behavior.callRpc("get_screen",{projectId}) as {values:Record<string,unknown>};
+      expect(current.values).toMatchObject({"memory.provider":"qwen","memory.model":"qwen-test","memory.reasoning_effort":"high","memory.service_tier":"standard"});
+    });
+    expect(memorySaveCalls[0].expectedVersions).toEqual({
+      "memory.provider":before.versions["memory.provider"]??0,
+      "memory.model":before.versions["memory.model"]??0,
+      "memory.reasoning_effort":before.versions["memory.reasoning_effort"]??0,
+      "memory.service_tier":before.versions["memory.service_tier"]??0,
+    });
+    await finish(harness,slot);
   });
 
   it("saves the real Jev switch after native Claude selection through the single-setting RPC", async () => {
@@ -240,13 +293,52 @@ describe("native writer settings against the registered SQLite backend", () => {
     const { harness, slot } = await mountWithBackend();
     expect(slot.getByTestId(`project-item-${projectId}`)).toBeTruthy();
     expect(slot.getByTestId("writer-picker")).toBeTruthy();
+    expect(slot.getByTestId("memory-picker")).toBeTruthy();
     expect(slot.getByTestId("jev-settings").querySelectorAll("[role='switch']")).toHaveLength(2);
-    expect(slot.getByTestId("night-review-unsupported").textContent).toContain(en.nightReviewUnavailable);
+    expect(slot.getByTestId("night-review-settings").textContent).toContain(en.nightReviewEnabled);
+    expect(slot.getByLabelText(en.nightReviewEnabled)).toBeTruthy();
     expect(slot.getByTestId("settings-panel").textContent).not.toContain("--writer-provider");
     expect(slot.getByTestId("diagnostics-panel").hasAttribute("hidden")).toBe(true);
     fireEvent.click(slot.getByTestId("tab-diagnostics"));
     expect(slot.getByTestId("field-s024").textContent).toContain(en.legacyFastModeExplanation);
     expect(slot.getByTestId("cli-preview")).toBeTruthy();
     await finish(harness, slot);
+  });
+
+  it("saves night-review model selection as one provider-catalog-validated CAS tuple",async()=>{
+    const {harness,slot,nightSaveCalls}=await mountWithBackend();
+    fireEvent.click(slot.getByText(en.configureNightPicker));
+    await waitFor(()=>expect(slot.getAllByTestId("bb-provider-model-picker")).toHaveLength(2));
+    const picker=slot.getAllByTestId("bb-provider-model-picker").at(-1)!;
+    expect(picker.getAttribute("data-provider")).toBe("codex");
+    pickerOnChange?.({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"});
+    await waitFor(()=>expect(nightSaveCalls).toHaveLength(1));
+    expect(nightSaveCalls[0]).toMatchObject({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",expectedVersions:{"night_review.provider":0,"night_review.model":0,"night_review.reasoning_effort":0,"night_review.service_tier":0}});
+    await finish(harness,slot);
+  });
+
+  it("saves docs-maintenance model selection as a native catalog-validated CAS tuple",async()=>{
+    const {harness,slot,docsSaveCalls}=await mountWithBackend();
+    const before=await harness.behavior.callRpc("get_screen",{projectId}) as {versions:Record<string,number>};
+    fireEvent.click(slot.getByText(en.configureDocsPicker));
+    await waitFor(()=>expect(slot.getByTestId("docs-picker").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy());
+    const picker=slot.getByTestId("docs-picker").querySelector("[data-testid='bb-provider-model-picker']");
+    expect(picker?.getAttribute("data-provider")).toBe("codex");
+    pickerOnChange?.({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"});
+    await waitFor(()=>expect(docsSaveCalls).toHaveLength(1));
+    expect(docsSaveCalls[0]).toMatchObject({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",expectedVersions:{"docs.provider":before.versions["docs.provider"]??0,"docs.model":before.versions["docs.model"]??0,"docs.reasoning_effort":before.versions["docs.reasoning_effort"]??0,"docs.service_tier":before.versions["docs.service_tier"]??0}});
+    await finish(harness,slot);
+  });
+  it("saves onboarding model selection as a native catalog-validated CAS tuple",async()=>{
+    const {harness,slot,onboardingSaveCalls}=await mountWithBackend();
+    const before=await harness.behavior.callRpc("get_screen",{projectId}) as {versions:Record<string,number>};
+    fireEvent.click(slot.getByText(en.configureOnboardingPicker));
+    await waitFor(()=>expect(slot.getByTestId("onboarding-picker").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy());
+    const picker=slot.getByTestId("onboarding-picker").querySelector("[data-testid='bb-provider-model-picker']");
+    expect(picker?.getAttribute("data-provider")).toBe("codex");
+    pickerOnChange?.({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"});
+    await waitFor(()=>expect(onboardingSaveCalls).toHaveLength(1));
+    expect(onboardingSaveCalls[0]).toMatchObject({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",expectedVersions:{"onboarding.provider":before.versions["onboarding.provider"]??0,"onboarding.model":before.versions["onboarding.model"]??0,"onboarding.reasoning_effort":before.versions["onboarding.reasoning_effort"]??0,"onboarding.service_tier":before.versions["onboarding.service_tier"]??0}});
+    await finish(harness,slot);
   });
 });

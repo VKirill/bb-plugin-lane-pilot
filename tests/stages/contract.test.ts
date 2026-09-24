@@ -25,6 +25,7 @@ describe("versioned stage contract", () => {
     };
     expect(validateStageReceipt(input).contractVersion).toBe(1);
     expect(() => validateStageReceipt({ ...input, contractVersion:2 })).toThrow();
+    expect(critiquePrompt({ plan:"plan", task:{ id:"task_1" },agent:"security-critic" })).toContain("You are security-critic");
     expect(critiquePrompt({ plan:"plan", task:{ id:"task_1" } })).toContain("CANONICAL PLAN");
   });
 });

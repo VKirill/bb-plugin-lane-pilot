@@ -4,6 +4,23 @@ import { openDatabase, savePrototypeConfig } from "../src/database";
 import plugin from "../server";
 
 describe("settings CAS over RPC", () => {
+  it("exposes docs execution settings as editable and registers the hourly SDK schedule", async () => {
+    const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot"});
+    await plugin(bb);
+    const schedule=harness.inspection.registrations.schedules.find((item)=>item.name==="docs-maintenance-hourly");
+    expect(schedule?.cron).toBe("0 * * * *");
+    await harness.runSchedule("docs-maintenance-hourly");
+    const saved=[] as Array<[string,unknown]>;
+    for(const [key,value] of [["docs.enabled","true"],["docs.maintain","false"],["docs.page_cap",12],["docs.since","7 days ago"],["docs.hour",7]] as Array<[string,unknown]>) {
+      const result=await harness.behavior.callRpc("save_setting",{projectId:"proj_docs",key,value,expectedVersion:0}) as {ok:boolean};
+      expect(result.ok,key).toBe(true);
+      saved.push([key,value]);
+    }
+    const screen=await harness.behavior.callRpc("get_screen",{projectId:"proj_docs"}) as {values:Record<string,unknown>};
+    expect(screen.values).toMatchObject(Object.fromEntries(saved));
+    await harness.lifecycle.dispose();
+  });
+
   it("saves unrelated paths after a native Claude selection while retaining legacy validation and atomicity", async () => {
     const projectId = "proj_native_paths";
     const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ providers:{
@@ -34,6 +51,9 @@ describe("settings CAS over RPC", () => {
     expect(await harness.behavior.callRpc("save_setting", {
       projectId, key:"writer.provider", value:"invalid-provider", expectedVersion:native.versions["writer.provider"],
     })).toMatchObject({ ok:false, conflict:false, validation:{ code:"invalid_choice", key:"writer.provider" } });
+    expect(await harness.behavior.callRpc("save_setting", {
+      projectId, key:"writer.agent", value:"custom-opencode-agent", expectedVersion:0,
+    })).toMatchObject({ ok:true, conflict:false, version:1 });
     const paths = await harness.behavior.callRpc("save_settings", { projectId, changes:[
       { key:"pmWorkspacePath", value:"/tmp/pm-after", expectedVersion:1 },
       { key:"writerWorkspacePath", value:"/tmp/writer-after", expectedVersion:1 },
@@ -50,7 +70,7 @@ describe("settings CAS over RPC", () => {
     ] }) as { ok:boolean; validation?:{ code:string; key:string } };
     expect(invalidOther).toMatchObject({ ok:false, validation:{ code:"invalid_choice", key:"ui.language" } });
     const screen = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };
-    expect(screen.values).toMatchObject({ pmWorkspacePath:"/tmp/pm-after", writerWorkspacePath:"/tmp/writer-after", "writer.provider":"claude-code" });
+    expect(screen.values).toMatchObject({ pmWorkspacePath:"/tmp/pm-after", writerWorkspacePath:"/tmp/writer-after", "writer.provider":"claude-code", "writer.agent":"custom-opencode-agent" });
     expect(screen.versions.pmWorkspacePath).toBe(2);
     await harness.lifecycle.dispose();
   });

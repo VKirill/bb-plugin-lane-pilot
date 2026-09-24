@@ -28,11 +28,11 @@ Based on [VKirill/claude-lane-stack](https://github.com/VKirill/claude-lane-stac
 
 ## Project settings and native writers
 
-The settings panel keeps the project list on the left and the selected project's settings on the right. Provider, model, supported reasoning level, and service tier are saved as one compare-and-swap selection from BB's host-routed native writer catalog. For example, the catalog entry `gpt-6-luna` with service tier `fast` is stored as one writer choice; fast does not change the reasoning level. The two Jev routing controls are regular settings. Night review is shown as unavailable because Lane Pilot does not run it.
+The settings panel keeps the project list on the left and the selected project's settings on the right. Provider, model, supported reasoning level, and service tier are saved as one compare-and-swap selection from BB's host-routed native writer catalog. For example, the catalog entry `gpt-6-luna` with service tier `fast` is stored as one writer choice; fast does not change the reasoning level. The two Jev routing controls are regular settings. Memory maintenance runs only after an accepted writer receipt; its corpus is isolated per project in plugin SQLite, with audience and token budgets enforced before injection. Owner/export records are available to the PM through its context tool; only `subagent` records can enter future writer prompts.
 
 Technical fields, including argv/environment previews, unapplied settings, storage versions, import paths, and receipts are grouped under Diagnostics. The old `writer.fast_mode` value is diagnostic only and migrates to `writer.service_tier` only when no explicit tier has been saved.
 
-Панель настроек показывает список проектов слева и настройки выбранного проекта справа. Провайдер, модель, доступный уровень reasoning и service tier сохраняются атомарно из каталога BB для host проекта. Например, выбор `gpt-6-luna` с tier `fast` не меняет reasoning. Два переключателя Jev управляют маршрутизацией. Ночное ревью помечено как недоступное: Lane Pilot его не запускает.
+Панель настроек показывает список проектов слева и настройки выбранного проекта справа. Провайдер, модель, доступный уровень reasoning и service tier сохраняются атомарно из каталога BB для host проекта. Например, выбор `gpt-6-luna` с tier `fast` не меняет reasoning. Два переключателя Jev управляют маршрутизацией. Обслуживание памяти запускается после принятой квитанции писателя; её корпус хранится в SQLite плагина отдельно для каждого проекта, а аудитория и лимиты токенов проверяются до инъекции. Записи owner/export доступны PM только через инструмент контекста; в промпты писателей могут попадать только записи `subagent`.
 
 Технические сведения — argv/env, неприменённые настройки, версии хранения, пути импорта и квитанции — находятся во вкладке Diagnostics. Старый `writer.fast_mode` виден только там и переносится в `writer.service_tier`, если явный tier ещё не сохранён.
 
@@ -83,7 +83,7 @@ For BB PM delegation, set task-v2 `project_cwd` to exactly the project's configu
 | S7 | Existing YAML | One-shot import into plugin storage; YAML is not written back |
 | S8 | BB run | Never writes routing/night-shift/capabilities; never `adoc --apply` / `agents-doctor --apply` |
 
-Matrix applicability (355 rows, including 88 read-only): [docs/adoc-applicability.md](docs/adoc-applicability.md).
+Matrix applicability: 366 rows — the 355 original upstream tuples plus 11 native Lane Pilot additions. Current classification is 145 editable, 91 read-only adapters, 0 unresolved gaps, and 130 evidence-based exclusions; the row-level reasons and source links are in [docs/adoc-applicability.md](docs/adoc-applicability.md). This inventory records coverage decisions, not installed runtime acceptance.
 
 ## Known limits
 
