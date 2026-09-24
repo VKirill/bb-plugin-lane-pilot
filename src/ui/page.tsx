@@ -408,6 +408,9 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const dataRef = useRef<ScreenPayload | null>(null);
   const draftsRef = useRef<Record<string, unknown>>({});
   const saveTailRef = useRef<Record<string, Promise<unknown>>>({});
+  const writerDraftRef = useRef<ExperimentalProviderModelPickerValue | null>(null);
+  const [writerDraft, setWriterDraft] = useState<ExperimentalProviderModelPickerValue | null>(null);
+  const writerSaveTail = useRef(Promise.resolve());
 
   useEffect(() => {
     let current = true;
@@ -469,6 +472,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     setData(null);
     draftsRef.current = {};
     setDrafts({});
+    writerDraftRef.current = null;
+    setWriterDraft(null);
     try {
       const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
       setData(next);
@@ -598,8 +603,9 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : data?.values[key]
   );
 
-  const saveWriterSelection = async (selection: ExperimentalProviderModelPickerValue) => {
-    if (!projectId || !data) return false;
+  const persistWriterSelection = async (selection: ExperimentalProviderModelPickerValue) => {
+    const snapshot = dataRef.current;
+    if (!projectId || !snapshot) return false;
     const result = await rpc.call("save_writer_selection", {
       projectId,
       providerId: selection.providerId,
@@ -607,15 +613,26 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
       reasoningLevel: selection.reasoningLevel,
       serviceTier: selection.serviceTier ?? null,
       expectedVersions: {
-        "writer.provider": data.versions[WRITER_PROVIDER] ?? 0,
-        "writer.model": data.versions[WRITER_MODEL] ?? 0,
-        "writer.reasoning_effort": data.versions[WRITER_EFFORT] ?? 0,
-        "writer.service_tier": data.versions[WRITER_SERVICE_TIER] ?? 0,
+        "writer.provider": snapshot.versions[WRITER_PROVIDER] ?? 0,
+        "writer.model": snapshot.versions[WRITER_MODEL] ?? 0,
+        "writer.reasoning_effort": snapshot.versions[WRITER_EFFORT] ?? 0,
+        "writer.service_tier": snapshot.versions[WRITER_SERVICE_TIER] ?? 0,
       },
     });
+    const applyScreen = (values: Record<string, unknown>, versions: Record<string, number>) => {
+      const current = dataRef.current;
+      if (!current) return;
+      const next = {
+        ...current,
+        values: { ...current.values, ...values },
+        versions: { ...current.versions, ...versions },
+      };
+      dataRef.current = next;
+      setData(next);
+    };
     if (result.conflict) {
       setSaveError({ kind: "cas" });
-      await load();
+      applyScreen(result.values, result.versions);
       return false;
     }
     if (!result.ok) {
@@ -624,12 +641,25 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
       return false;
     }
     setSaveError(null);
-    setData((current) => current ? {
-      ...current,
-      values: { ...current.values, ...result.values },
-      versions: { ...current.versions, ...result.versions },
-    } : current);
+    applyScreen(result.values, result.versions);
     return true;
+  };
+
+  const saveWriterSelection = (selection: ExperimentalProviderModelPickerValue) => {
+    writerDraftRef.current = selection;
+    setWriterDraft(selection);
+    writerSaveTail.current = writerSaveTail.current
+      .catch(() => undefined)
+      .then(async () => {
+        const latest = writerDraftRef.current;
+        if (!latest) return;
+        const ok = await persistWriterSelection(latest);
+        if (ok && writerDraftRef.current === latest) {
+          writerDraftRef.current = null;
+          setWriterDraft(null);
+        }
+      })
+      .then(() => undefined, () => undefined);
   };
 
   const saveMemorySelection = async (selection: ExperimentalProviderModelPickerValue) => {
@@ -694,7 +724,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     return true;
   };
 
-  const pickerValue: ExperimentalProviderModelPickerValue = {
+  const savedPickerValue: ExperimentalProviderModelPickerValue = {
     providerId: String(data?.values[WRITER_PROVIDER] ?? ""),
     model: String(data?.values[WRITER_MODEL] ?? ""),
     reasoningLevel: (String(data?.values[WRITER_EFFORT] ?? "none") || "none") as ExperimentalProviderModelPickerValue["reasoningLevel"],
@@ -702,6 +732,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
       ? { serviceTier: data?.values[WRITER_SERVICE_TIER] === "fast" ? "fast" : "default" }
       : {}),
   };
+  const pickerValue = writerDraft ?? savedPickerValue;
 
   const memoryProviderId=String(data?.values[MEMORY_PROVIDER] ?? data?.values[WRITER_PROVIDER] ?? "");
   const memoryPickerValue:ExperimentalProviderModelPickerValue={

@@ -98,6 +98,7 @@ import { acceptedOnboardingEvidence, onboardingPreviewSha256, onboardingPrompt, 
 import { readGateReport } from "./src/stages/gate-report";
 import { gateTriagePrompt, parseGateTriageResult } from "./src/stages/gate-triage";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded, parseRunPolicy, RunWriterPool, shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "./src/stages/run-policy";
+import { compatibleReasoningLevel, compatibleServiceTier } from "./src/picker-compat";
 
 export { rpcContract } from "./src/contracts";
 
@@ -3526,12 +3527,19 @@ export default async function plugin(bb: BbPluginApi) {
       const selectedModel = catalog.models.find((item) => item.id === modelId || item.model === modelId);
       if (!selectedModel) return reject("invalid_choice", "writer.model", `model ${modelId} is not in the live catalog for ${providerId}`);
       const supportedEfforts = selectedModel.supportedReasoningEfforts.map((item) => item.reasoningEffort);
-      if (!supportedEfforts.includes(reasoningLevel)) {
-        return reject("incompatible_setting", "writer.reasoning_effort", `model supports: ${supportedEfforts.join(", ")}`);
+      const catalogDefault = typeof selectedModel.defaultReasoningEffort === "string"
+        ? selectedModel.defaultReasoningEffort
+        : undefined;
+      const selectedEffort = compatibleReasoningLevel(reasoningLevel, supportedEfforts, catalogDefault);
+      if (!selectedEffort) {
+        const reason = catalogDefault && !supportedEfforts.includes(catalogDefault)
+          ? `malformed_catalog_defaultReasoningEffort:${catalogDefault}`
+          : `model supports: ${supportedEfforts.join(", ") || "none"}`;
+        return reject("incompatible_setting", "writer.reasoning_effort", reason);
       }
       const supportedTiers = provider.serviceTiers?.map((tier) => tier.id) ?? [];
-      const selectedTier = serviceTier ?? (provider.capabilities.supportsServiceTier && supportedTiers.includes("default") ? "default" : null);
-      if (selectedTier && !supportedTiers.includes(selectedTier)) {
+      const selectedTier = compatibleServiceTier(serviceTier, supportedTiers);
+      if (serviceTier && supportedTiers.length > 0 && !selectedTier) {
         return reject("invalid_choice", "writer.service_tier", `provider supports: ${supportedTiers.join(", ") || "no service tiers"}`);
       }
       return casUpsertSettings(db, {
@@ -3539,7 +3547,7 @@ export default async function plugin(bb: BbPluginApi) {
         changes:[
           { key:"writer.provider", value:providerId, expectedVersion:expectedVersions["writer.provider"] },
           { key:"writer.model", value:modelId, expectedVersion:expectedVersions["writer.model"] },
-          { key:"writer.reasoning_effort", value:reasoningLevel, expectedVersion:expectedVersions["writer.reasoning_effort"] },
+          { key:"writer.reasoning_effort", value:selectedEffort, expectedVersion:expectedVersions["writer.reasoning_effort"] },
           { key:"writer.service_tier", value:selectedTier === "fast" ? "fast" : "standard", expectedVersion:expectedVersions["writer.service_tier"] },
         ],
       }, { nativeWriterSelection:true });

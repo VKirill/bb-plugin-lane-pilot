@@ -38,7 +38,7 @@ function installPickerTestDriver() {
   };
 }
 
-const providers = ["codex", "qwen", "claude-code"].map((id) => ({
+const providers = ["codex", "qwen", "claude-code", "acp-cursor"].map((id) => ({
   id,
   displayName:id,
   available:true,
@@ -52,30 +52,47 @@ const providers = ["codex", "qwen", "claude-code"].map((id) => ({
     supportsThreadArchive:false,
     supportsThreadRename:false,
   },
-  serviceTiers:id === "codex" ? [{ id:"default", label:"Default" }, { id:"fast", label:"Fast" }] : [{ id:"default", label:"Default" }],
+  serviceTiers:id === "codex"
+    ? [{ id:"default", label:"Default" }, { id:"fast", label:"Fast" }]
+    : id === "acp-cursor" ? [] : [{ id:"default", label:"Default" }],
 })) as never;
 const codexModel = {
   id:"gpt-6-luna",
   model:"gpt-6-luna",
+  defaultReasoningEffort:"medium",
   supportedReasoningEfforts:["low", "medium", "high", "xhigh", "max"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })),
 };
 const qwenModel = {
   id:"qwen-test",
   model:"qwen-test",
+  defaultReasoningEffort:"medium",
   supportedReasoningEfforts:["low", "medium", "high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })),
 };
 const claudeModel = {
   id:"claude-opus-5",
   model:"claude-opus-5",
+  defaultReasoningEffort:"medium",
   supportedReasoningEfforts:[{ reasoningEffort:"medium", description:"Medium" }],
 };
+const cursorModel = {
+  id:"claude-opus-5",
+  model:"claude-opus-5",
+  defaultReasoningEffort:"medium",
+  supportedReasoningEfforts:[{ reasoningEffort:"medium", description:"Medium" }],
+};
+const cursorGrokModel = {
+  id:"grok-4.6",
+  model:"grok-4.6",
+  defaultReasoningEffort:"xhigh",
+  supportedReasoningEfforts:["high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })),
+};
 
-async function mountWithBackend() {
+async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:string;model:string;reasoningLevel:string})=>Promise<void> }) {
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
     sdk:{ providers:{
       list:async () => providers,
-      models:async (input) => ({ models:[input?.providerId === "codex" ? codexModel : input?.providerId === "claude-code" ? claudeModel : qwenModel] as never }),
+      models:async (input) => ({ models:(input?.providerId === "codex" ? [codexModel] : input?.providerId === "claude-code" ? [claudeModel] : input?.providerId === "acp-cursor" ? [cursorModel, cursorGrokModel] : [qwenModel]) as never }),
     } },
   });
   const db = openDatabase(bb);
@@ -111,8 +128,9 @@ async function mountWithBackend() {
       remember_project:(input) => harness.behavior.callRpc("remember_project", input) as Promise<unknown>,
       list_projects:() => ({ projects:[{ id:projectId, name:"Settings fixture" }], lastProjectId:projectId }),
       get_screen:(input) => harness.behavior.callRpc("get_screen", input) as Promise<unknown>,
-      save_writer_selection:(input) => {
+      save_writer_selection:async (input) => {
         saveCalls.push(input as typeof saveCalls[number]);
+        if (options?.delayWriterSave) await options.delayWriterSave(input as {providerId:string;model:string;reasoningLevel:string});
         return harness.behavior.callRpc("save_writer_selection", input) as Promise<unknown>;
       },
       save_memory_selection:(input) => {
@@ -266,17 +284,25 @@ describe("native writer settings against the registered SQLite backend", () => {
       "writer.reasoning_effort":before.versions["writer.reasoning_effort"],
       "writer.service_tier":before.versions["writer.service_tier"],
     };
-    const unsupportedTier = await harness.behavior.callRpc("save_writer_selection", {
+    const remappedTier = await harness.behavior.callRpc("save_writer_selection", {
       projectId, providerId:"qwen", model:"qwen-test", reasoningLevel:"medium", serviceTier:"fast", expectedVersions,
+    }) as { ok:boolean; conflict:boolean; values:Record<string,unknown>; versions:Record<string,number> };
+    expect(remappedTier).toMatchObject({ ok:true, conflict:false, values:{ "writer.provider":"qwen", "writer.model":"qwen-test", "writer.service_tier":"standard" } });
+    const unknownModel = await harness.behavior.callRpc("save_writer_selection", {
+      projectId, providerId:"qwen", model:"missing-model", reasoningLevel:"medium", serviceTier:"default",
+      expectedVersions: remappedTier.versions,
     }) as { ok:boolean; conflict:boolean; validation?:{ code:string } };
-    expect(unsupportedTier).toMatchObject({ ok:false, conflict:false, validation:{ code:"invalid_choice" } });
-    const unsupportedReasoning = await harness.behavior.callRpc("save_writer_selection", {
-      projectId, providerId:"qwen", model:"qwen-test", reasoningLevel:"max", serviceTier:"default", expectedVersions,
-    }) as { ok:boolean; conflict:boolean; validation?:{ code:string } };
-    expect(unsupportedReasoning).toMatchObject({ ok:false, conflict:false, validation:{ code:"incompatible_setting" } });
+    expect(unknownModel).toMatchObject({ ok:false, conflict:false, validation:{ code:"invalid_choice" } });
 
+    const screen = await harness.behavior.callRpc("get_screen", { projectId }) as { versions:Record<string,number> };
     const valid = await harness.behavior.callRpc("save_writer_selection", {
-      projectId, providerId:"codex", model:"gpt-6-luna", reasoningLevel:"xhigh", serviceTier:"fast", expectedVersions,
+      projectId, providerId:"codex", model:"gpt-6-luna", reasoningLevel:"xhigh", serviceTier:"fast",
+      expectedVersions:{
+        "writer.provider":screen.versions["writer.provider"] ?? 0,
+        "writer.model":screen.versions["writer.model"] ?? 0,
+        "writer.reasoning_effort":screen.versions["writer.reasoning_effort"],
+        "writer.service_tier":screen.versions["writer.service_tier"],
+      },
     }) as { ok:boolean; conflict:boolean; versions:Record<string,number> };
     expect(valid.ok).toBe(true);
     const stale = await harness.behavior.callRpc("save_writer_selection", {
@@ -340,5 +366,104 @@ describe("native writer settings against the registered SQLite backend", () => {
     await waitFor(()=>expect(onboardingSaveCalls).toHaveLength(1));
     expect(onboardingSaveCalls[0]).toMatchObject({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",expectedVersions:{"onboarding.provider":before.versions["onboarding.provider"]??0,"onboarding.model":before.versions["onboarding.model"]??0,"onboarding.reasoning_effort":before.versions["onboarding.reasoning_effort"]??0,"onboarding.service_tier":before.versions["onboarding.service_tier"]??0}});
     await finish(harness,slot);
+  });
+
+  it("maps leftover low to catalog defaultReasoningEffort and keeps an explicit supported high", async () => {
+    const { harness, slot } = await mountWithBackend();
+    const before = await harness.behavior.callRpc("get_screen", { projectId }) as { versions:Record<string,number> };
+    const versions = {
+      "writer.provider":before.versions["writer.provider"] ?? 0,
+      "writer.model":before.versions["writer.model"] ?? 0,
+      "writer.reasoning_effort":before.versions["writer.reasoning_effort"],
+      "writer.service_tier":before.versions["writer.service_tier"],
+    };
+    const leftoverLow = await harness.behavior.callRpc("save_writer_selection", {
+      projectId, providerId:"acp-cursor", model:"grok-4.6", reasoningLevel:"low", serviceTier:"fast", expectedVersions:versions,
+    }) as { ok:boolean; values:Record<string,unknown>; versions:Record<string,number> };
+    expect(leftoverLow).toMatchObject({
+      ok:true,
+      values:{
+        "writer.provider":"acp-cursor",
+        "writer.model":"grok-4.6",
+        "writer.reasoning_effort":"xhigh",
+        "writer.service_tier":"standard",
+      },
+    });
+    const explicitHigh = await harness.behavior.callRpc("save_writer_selection", {
+      projectId, providerId:"acp-cursor", model:"grok-4.6", reasoningLevel:"high", serviceTier:null,
+      expectedVersions:leftoverLow.versions,
+    }) as { ok:boolean; values:Record<string,unknown> };
+    expect(explicitHigh).toMatchObject({ ok:true, values:{ "writer.reasoning_effort":"high", "writer.model":"grok-4.6" } });
+    const readback = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown> };
+    expect(readback.values).toMatchObject({
+      "writer.provider":"acp-cursor",
+      "writer.model":"grok-4.6",
+      "writer.reasoning_effort":"high",
+      "writer.service_tier":"standard",
+    });
+    await finish(harness, slot);
+  });
+
+  it("keeps the last Cursor selection while an earlier writer save is still in flight", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const { harness, slot, saveCalls } = await mountWithBackend({
+      delayWriterSave: async (input) => {
+        if (input.providerId === "codex" && input.reasoningLevel === "low") {
+          await new Promise<void>((resolve) => { releaseFirst = resolve; });
+        }
+      },
+    });
+    await choosePickerValue({ providerId:"codex", model:"gpt-6-luna", reasoningLevel:"low", serviceTier:"default" });
+    await waitFor(() => expect(releaseFirst).toBeTypeOf("function"));
+    await choosePickerValue({ providerId:"acp-cursor", model:"claude-opus-5", reasoningLevel:"low" });
+    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("acp-cursor");
+    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-model")).toBe("claude-opus-5");
+    releaseFirst!();
+    await waitFor(async () => {
+      const current = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown> };
+      expect(current.values).toMatchObject({
+        "writer.provider":"acp-cursor",
+        "writer.model":"claude-opus-5",
+        "writer.reasoning_effort":"medium",
+      });
+    });
+    expect(saveCalls.at(-1)).toMatchObject({ providerId:"acp-cursor", model:"claude-opus-5" });
+    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("acp-cursor");
+    expect(slot.queryByTestId("setting-validation-error")).toBeNull();
+    await finish(harness, slot);
+  });
+
+  it("keeps the attempted picker draft and shows the RPC reason when the model is not in catalog", async () => {
+    const { harness, slot } = await mountWithBackend();
+    await choosePickerValue({ providerId:"acp-cursor", model:"not-in-catalog", reasoningLevel:"medium" });
+    await waitFor(() => expect(slot.getByTestId("setting-validation-error")).toBeTruthy());
+    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("acp-cursor");
+    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-model")).toBe("not-in-catalog");
+    const persisted = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown> };
+    expect(persisted.values["writer.provider"]).toBe("codex");
+    expect(persisted.values["writer.model"]).toBe("gpt-6-luna");
+    await finish(harness, slot);
+  });
+
+  it("does not reload away a Cursor draft when writer save hits a CAS conflict", async () => {
+    const { harness, slot } = await mountWithBackend();
+    const before = await harness.behavior.callRpc("get_screen", { projectId }) as { versions:Record<string,number> };
+    const external = await harness.behavior.callRpc("save_writer_selection", {
+      projectId, providerId:"codex", model:"gpt-6-luna", reasoningLevel:"xhigh", serviceTier:"fast",
+      expectedVersions:{
+        "writer.provider":before.versions["writer.provider"] ?? 0,
+        "writer.model":before.versions["writer.model"] ?? 0,
+        "writer.reasoning_effort":before.versions["writer.reasoning_effort"],
+        "writer.service_tier":before.versions["writer.service_tier"],
+      },
+    }) as { ok:boolean };
+    expect(external.ok).toBe(true);
+    await choosePickerValue({ providerId:"acp-cursor", model:"claude-opus-5", reasoningLevel:"medium" });
+    await waitFor(() => expect(slot.getByTestId("cas-conflict")).toBeTruthy());
+    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("acp-cursor");
+    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-model")).toBe("claude-opus-5");
+    const persisted = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown> };
+    expect(persisted.values).toMatchObject({ "writer.provider":"codex", "writer.model":"gpt-6-luna", "writer.reasoning_effort":"xhigh" });
+    await finish(harness, slot);
   });
 });
