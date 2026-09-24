@@ -14,19 +14,53 @@ export const onboardingPreviewSchema = z.object({
 
 export type OnboardingPreview = z.infer<typeof onboardingPreviewSchema>;
 export type OnboardingInputPage = {path:string;sha256:string|null;content:string|null};
+export type OnboardingAcceptedEvidence = {
+  outputSha256:string|null;
+  status:string|null;
+  output:string|null;
+  ownsPaths:string[];
+  produced:string[];
+  verification:Array<{command:string;exitCode:number|null}>;
+};
+
+export function acceptedOnboardingEvidence(input:{outputSha256?:string|null;result?:unknown}):OnboardingAcceptedEvidence {
+  const result=input.result && typeof input.result==="object"?input.result as Record<string,unknown>:{};
+  const strings=(value:unknown,limit:number)=>Array.isArray(value)
+    ?value.filter((item):item is string=>typeof item==="string").slice(0,limit)
+    :[];
+  const verification=Array.isArray(result.verification)
+    ?result.verification.slice(0,16).map((row)=>{
+      const item=row && typeof row==="object"?row as Record<string,unknown>:{};
+      return {
+        command:typeof item.command==="string"?item.command.slice(0,500):"",
+        exitCode:typeof item.exitCode==="number"?item.exitCode:null,
+      };
+    }).filter((row)=>row.command)
+    :[];
+  return {
+    outputSha256:typeof input.outputSha256==="string"?input.outputSha256:null,
+    status:typeof result.status==="string"?result.status:null,
+    output:typeof result.output==="string"?result.output.slice(0,4_000):null,
+    ownsPaths:strings(result.ownsPaths,32),
+    produced:strings(result.produced,32),
+    verification,
+  };
+}
 
 export function onboardingPreviewSha256(preview:OnboardingPreview):string {
   return createHash("sha256").update(JSON.stringify(preview.edits),"utf8").digest("hex");
 }
 
-export function onboardingPrompt(input:{task:unknown;pages:OnboardingInputPage[];agent?:string;depth:"fast"|"deep"}):string {
+export function onboardingPrompt(input:{task:unknown;pages:OnboardingInputPage[];accepted?:OnboardingAcceptedEvidence|null;agent?:string;depth:"fast"|"deep"}):string {
   return [
     `You are ${input.agent?.trim()||"project-onboarder"}. Produce a reviewable onboarding preview for the supplied task and project documents.`,
     `Depth: ${input.depth}. Return exactly one JSON object: {summary, edits:[{path, expectedSha256, content}]}.`,
     "Do not use tools, write files, claim validation you did not perform, or include credentials. The host applies edits only after a separate explicit confirmation.",
     "Only propose Markdown files under docs/ or apps/. Existing pages must carry their supplied exact SHA-256; a new path uses expectedSha256:null. Never replace an existing page with a null hash.",
     "Limit proposals to eight focused pages. Prefer an empty-project first onboarding guide when no suitable page exists. Preserve verified facts, label open questions, and keep the output within the supplied scope.",
+    "Treat ACCEPTED WRITER RECEIPT as authoritative for listed produced files, owns_paths, and verification exit codes. Do not state those facts as unconfirmed. Observed pages may be stale; when they conflict with the receipt, prefer the receipt. Facts not listed in the receipt stay questions. Preview only — do not write files.",
     "TASK:",JSON.stringify(input.task),
+    "ACCEPTED WRITER RECEIPT:",JSON.stringify(input.accepted??null),
     "OBSERVED PROJECT PAGES:",JSON.stringify(input.pages),
   ].join("\n\n");
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { parseWorkspaceMode, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree } from "../../src/workspace/routing";
+import { classifyManagedWorkspace, parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "../../src/workspace/routing";
 import plugin from "../../server";
 import { getRun, openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/database";
 
@@ -21,6 +21,60 @@ describe("workspace routing", () => {
     expect(() => resolveManagedWorkspace(row, "host-2")).toThrow(/host mismatch/);
     expect(() => resolveManagedWorkspace({ ...row, managed:false }, "host-1")).toThrow(/not a managed worktree/);
     expect(() => resolveManagedWorkspace({ ...row, path:null }, "host-1")).toThrow(/absolute path/);
+  });
+
+  it("waits for environmentId bind and ready managed env before succeeding", async () => {
+    const ready = { id:"env-1", hostId:"host-1", status:"ready", managed:true,
+      workspaceProvisionType:"managed-worktree", path:"/workspaces/project-1" };
+    let now = 0;
+    const threadStates = [{}, {environmentId:"env-1"}];
+    const envStates = [{status:"creating"}, ready];
+    const result = await waitManagedWorktreeReady({
+      threadId:"holder",
+      expectedHostId:"host-1",
+      getThread:async () => threadStates.shift() ?? {environmentId:"env-1"},
+      getEnvironment:async () => envStates.shift() ?? ready,
+      now:() => now,
+      sleep:async (ms) => { now += ms; },
+      timeoutMs:40,
+      intervalMs:10,
+    });
+    expect(result).toEqual({environmentId:"env-1"});
+    expect(classifyManagedWorkspace({status:"creating"}, "host-1")).toEqual({kind:"pending",status:"creating"});
+    expect(classifyManagedWorkspace({status:"destroyed"}, "host-1")).toEqual({kind:"failed",reason:"destroyed"});
+  });
+
+  it("fails closed on destroyed provision and on wait deadline without binding a checkout", async () => {
+    await expect(waitManagedWorktreeReady({
+      threadId:"holder",
+      expectedHostId:"host-1",
+      spawnEnvironmentId:"env-dead",
+      getThread:async () => ({environmentId:"env-dead"}),
+      getEnvironment:async () => ({id:"env-dead",status:"destroyed"}),
+      now:() => 0,
+      sleep:async () => undefined,
+      timeoutMs:20,
+      intervalMs:5,
+    })).rejects.toThrow(/attempt_worktree_provision_failed:destroyed/);
+    let now = 0;
+    await expect(waitManagedWorktreeReady({
+      threadId:"holder",
+      expectedHostId:"host-1",
+      getThread:async () => ({}),
+      getEnvironment:async () => { throw new Error("must not look up without environmentId"); },
+      now:() => now,
+      sleep:async (ms) => { now += ms; },
+      timeoutMs:15,
+      intervalMs:10,
+    })).rejects.toThrow(/attempt_worktree_provision_timeout:missing_environment_id/);
+  });
+
+  it("blocks managed-worktree when the git-worktree provider is missing or unavailable", () => {
+    expect(requireManagedWorktreeProvider([{id:"git-worktree",pluginId:"environment-git-worktree"}])).toEqual({id:"git-worktree"});
+    expect(() => requireManagedWorktreeProvider([{id:"project-checkout"}])).toThrow(/attempt_worktree_provider_unavailable$/);
+    expect(() => requireManagedWorktreeProvider([{id:"git-worktree",availability:{status:"unavailable",message:"disabled"}}]))
+      .toThrow(/attempt_worktree_provider_unavailable:disabled/);
+    expect(() => requireManagedWorktreeProvider(undefined)).toThrow(/listProviders/);
   });
 
   it("routes auto work by validated risk score and multi-write policy, preserving explicit modes", () => {

@@ -194,6 +194,7 @@ export const migrations = [
   `CREATE INDEX lane_pilot_memory_project_bot_audience ON lane_pilot_memory(project_id,personal_bot,audience)`,
   `ALTER TABLE lane_pilot_run ADD COLUMN writer_environment_id TEXT`,
   `ALTER TABLE lane_pilot_run ADD COLUMN run_gate TEXT NOT NULL DEFAULT 'none' CHECK(run_gate IN ('none','pre-merge'))`,
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN holder_thread_id TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -426,6 +427,31 @@ export type StageReceiptRow = {
   result:unknown|null; reason:string|null; updatedAt:number;
 };
 
+/** One caller may spawn the child; others observe. Crash after this flag is reconcile-only. */
+export function claimStageSpawn(db: LanePilotDatabase, runId:string, taskId:string, stageId:StageId): boolean {
+  return db.transaction(() => {
+    const row = db.prepare(`SELECT state,thread_id,result_json FROM lane_pilot_stage_receipt
+      WHERE run_id=? AND task_id=? AND stage_id=?`).get(runId, taskId, stageId) as
+      {state:StageState;thread_id:string|null;result_json:string|null}|undefined;
+    if (!row || row.state !== "running" || row.thread_id) return false;
+    let result: Record<string, unknown> = {};
+    if (row.result_json) {
+      const parsed = JSON.parse(row.result_json) as unknown;
+      if (parsed && typeof parsed === "object") result = parsed as Record<string, unknown>;
+    }
+    if (result.spawnAttempted === true) return false;
+    const next = JSON.stringify({ ...result, spawnAttempted:true });
+    return db.prepare(`UPDATE lane_pilot_stage_receipt SET result_json=?, updated_at=?
+      WHERE run_id=? AND task_id=? AND stage_id=? AND state='running' AND thread_id IS NULL
+        AND (result_json IS NULL OR json_extract(result_json,'$.spawnAttempted') IS NOT 1)`)
+      .run(next, Date.now(), runId, taskId, stageId).changes === 1;
+  }).immediate();
+}
+
+export function claimDocsSpawn(db: LanePilotDatabase, runId:string, taskId:string): boolean {
+  return claimStageSpawn(db, runId, taskId, "docs-maintenance");
+}
+
 export function saveStageReceipt(db: LanePilotDatabase, row:StageReceiptRow): void {
   const { result, ...fields } = row;
   db.transaction(() => {
@@ -538,6 +564,15 @@ export function setAttemptWorkspace(db:LanePilotDatabase, attemptId:string, bind
   return changed===1;
 }
 
+export function setAttemptHolderThread(db:LanePilotDatabase, attemptId:string, holderThreadId:string):boolean {
+  if (!holderThreadId.trim()) throw new Error("holder thread id must be non-empty");
+  const changed=db.prepare(`UPDATE lane_pilot_attempt SET holder_thread_id=?,updated_at=?
+    WHERE id=? AND holder_thread_id IS NULL AND thread_id IS NULL AND workspace_path IS NULL
+    AND state IN ('queued','spawn_requested')`)
+    .run(holderThreadId,Date.now(),attemptId).changes;
+  return changed===1;
+}
+
 export function countAttempts(db: LanePilotDatabase, runId: string, taskId: string): number {
   const row = db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").get(runId, taskId) as
     {count:number};
@@ -647,16 +682,16 @@ export function inspectState(db: LanePilotDatabase, projectId: string): Record<s
 }
 
 export function getAttempt(db: LanePilotDatabase, attemptId: string): {
-  id:string; run_id:string; task_id:string; thread_id:string|null; state:string; attempt_no:number; dirt_before:DirtSnapshot[];
+  id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; attempt_no:number; dirt_before:DirtSnapshot[];
   workspace_path:string|null;environment_id:string|null;workspace_decision:unknown|null;
 }|undefined {
-  const row = db.prepare("SELECT id,run_id,task_id,thread_id,state,attempt_no,dirt_before_json,workspace_path,environment_id,workspace_decision_json FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
-    {id:string; run_id:string; task_id:string; thread_id:string|null; state:string; attempt_no:number; dirt_before_json?:string;workspace_path:string|null;environment_id:string|null;workspace_decision_json:string|null}|undefined;
+  const row = db.prepare("SELECT id,run_id,task_id,thread_id,holder_thread_id,state,attempt_no,dirt_before_json,workspace_path,environment_id,workspace_decision_json FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
+    {id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; attempt_no:number; dirt_before_json?:string;workspace_path:string|null;environment_id:string|null;workspace_decision_json:string|null}|undefined;
   if (!row) return undefined;
   const dirt_before = parseDirtSnapshots(row.dirt_before_json ?? "[]");
   let workspace_decision:unknown|null=null;
   if(row.workspace_decision_json){try{workspace_decision=JSON.parse(row.workspace_decision_json);}catch{workspace_decision={invalidStoredDecision:true};}}
-  return { id:row.id, run_id:row.run_id, task_id:row.task_id, thread_id:row.thread_id, state:row.state, attempt_no:row.attempt_no, dirt_before,
+  return { id:row.id, run_id:row.run_id, task_id:row.task_id, thread_id:row.thread_id, holder_thread_id:row.holder_thread_id, state:row.state, attempt_no:row.attempt_no, dirt_before,
     workspace_path:row.workspace_path,environment_id:row.environment_id,workspace_decision };
 }
 

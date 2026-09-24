@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_Diff as Diff,
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -39,7 +39,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import { Slider } from "../../components/ui/slider";
 import { Switch } from "../../components/ui/switch";
 import {
   Table,
@@ -163,18 +162,53 @@ function stageTitle(stageId: string): string {
   return key ? t(key) : stageId;
 }
 
-function diagnosticRows(): CatalogRow[] {
+const PICKER_KEYS = new Set([
+  WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER,
+  MEMORY_PROVIDER, MEMORY_MODEL, MEMORY_EFFORT, MEMORY_SERVICE_TIER,
+  NIGHT_PROVIDER, NIGHT_MODEL, NIGHT_EFFORT, NIGHT_SERVICE_TIER,
+  DOCS_PROVIDER, DOCS_MODEL, DOCS_EFFORT, DOCS_SERVICE_TIER,
+  ONBOARDING_PROVIDER, ONBOARDING_MODEL, ONBOARDING_EFFORT, ONBOARDING_SERVICE_TIER,
+]);
+const DEDICATED_KEYS = new Set(["night_review.enabled", "night_review.auto_merge"]);
+const BASIC_SETTING_KEYS = new Set([
+  "night_review.max_fix_tasks", "writer.agent",
+  "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
+  "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.search_engine",
+  "ops.max_tasks", "onboarding.depth",
+]);
+
+function uniqueByStorage(rows: CatalogRow[]): CatalogRow[] {
   const rank: Record<CatalogRow["uiStatus"], number> = { editable: 3, readonly: 2, gap: 1, excluded: 0 };
   const byKey = new Map<string, CatalogRow>();
-  for (const row of VISIBLE_CATALOG) {
-    if (row.section === "jev" || JEV_KEYS.has(row.storageKey)) continue;
-    if ([WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER].includes(row.storageKey)) continue;
-    if (row.storageKey === MEMORY_PROVIDER) continue;
-    if (["night_review.enabled",NIGHT_PROVIDER,NIGHT_MODEL,NIGHT_EFFORT,NIGHT_SERVICE_TIER].includes(row.storageKey)) continue;
+  for (const row of rows) {
     const current = byKey.get(row.storageKey);
     if (!current || rank[row.uiStatus] > rank[current.uiStatus]) byKey.set(row.storageKey, row);
   }
   return [...byKey.values()];
+}
+
+function diagnosticRows(): CatalogRow[] {
+  const settingsKeys = new Set(extraSettingRows().map((row) => row.storageKey));
+  return uniqueByStorage(VISIBLE_CATALOG.filter((row) => {
+    if (row.section === "jev" || JEV_KEYS.has(row.storageKey)) return false;
+    if (PICKER_KEYS.has(row.storageKey) && row.storageKey !== "writer.fast_mode") return false;
+    if (DEDICATED_KEYS.has(row.storageKey)) return false;
+    if (settingsKeys.has(row.storageKey)) return false;
+    return true;
+  }));
+}
+
+function extraSettingRows(): CatalogRow[] {
+  return uniqueByStorage(VISIBLE_CATALOG.filter((row) => (
+    row.uiStatus === "editable"
+    && !JEV_KEYS.has(row.storageKey)
+    && !PICKER_KEYS.has(row.storageKey)
+    && !DEDICATED_KEYS.has(row.storageKey)
+  )));
+}
+
+function numericUnit(row: CatalogRow): I18nKey {
+  return row.storageKey.includes("score") ? "fieldUnitScore" : "fieldUnitTasks";
 }
 
 function asBoolean(value: unknown, fallback: boolean): boolean {
@@ -190,12 +224,14 @@ function FieldControl({
   disabled,
   options: optionOverride,
   onChange,
+  onDraft,
 }: {
   row: CatalogRow;
   value: unknown;
   disabled: boolean;
   options?: string[];
   onChange: (next: unknown) => void;
+  onDraft?: (next: unknown) => void;
 }) {
   const control = JEV_KEYS.has(row.storageKey) ? "switch" : row.control;
   const label = t(fieldKey(row.id));
@@ -211,7 +247,7 @@ function FieldControl({
     );
   }
   if (control === "select") {
-    const options = optionOverride ?? row.options;
+    const options = [...new Set(optionOverride ?? row.options)];
     if (options.length === 0) return <Input disabled value={String(value ?? "")} aria-label={label} />;
     const current = String(value ?? options[0] ?? "");
     return (
@@ -227,28 +263,79 @@ function FieldControl({
       </Select>
     );
   }
-  if (control === "slider" && row.min !== null && row.max !== null) {
-    const numeric = typeof value === "number" ? value : Number(value ?? row.min);
+  if (control === "slider" || control === "number") {
+    const numeric = typeof value === "number" ? value : Number(value ?? row.min ?? 0);
+    const parsed = (raw: string) => raw === "" ? "" : Number(raw);
     return (
-      <Slider
-        min={row.min}
-        max={row.max}
-        step={1}
-        disabled={disabled}
-        value={[Number.isFinite(numeric) ? numeric : row.min]}
-        onValueChange={(next) => onChange(next[0])}
-        aria-label={label}
-      />
+      <div className="flex min-w-0 items-center gap-2">
+        <Input
+          type="number"
+          disabled={disabled}
+          min={row.min ?? undefined}
+          max={row.max ?? undefined}
+          step={1}
+          value={Number.isFinite(numeric) ? numeric : ""}
+          onChange={(event) => (onDraft ?? onChange)(parsed(event.target.value))}
+          onBlur={(event) => onChange(parsed(event.target.value))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") onChange(parsed((event.target as HTMLInputElement).value));
+          }}
+          aria-label={label}
+        />
+        <span className="shrink-0 text-xs text-muted-foreground">{t(numericUnit(row))}</span>
+      </div>
     );
   }
   return (
     <Input
-      type={control === "number" ? "number" : "text"}
+      type="text"
       disabled={disabled}
       value={value == null ? "" : String(value)}
-      onChange={(event) => onChange(control === "number" ? Number(event.target.value) : event.target.value)}
+      onChange={(event) => (onDraft ?? onChange)(event.target.value)}
+      onBlur={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") onChange((event.target as HTMLInputElement).value);
+      }}
       aria-label={label}
     />
+  );
+}
+
+function SettingField({
+  row,
+  value,
+  disabled,
+  onChange,
+  onDraft,
+}: {
+  row: CatalogRow;
+  value: unknown;
+  disabled: boolean;
+  onChange: (next: unknown) => void;
+  onDraft?: (next: unknown) => void;
+}) {
+  const inherited = value == null || value === "";
+  const effective = inherited ? row.defaultValue : value;
+  return (
+    <div
+      data-testid={`field-${row.id}`}
+      data-storage-key={row.storageKey}
+      data-ui-status={row.uiStatus}
+      className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center"
+    >
+      <div className="space-y-1">
+        <Label className="text-sm">{t(fieldKey(row.id))}</Label>
+        <p className="text-xs text-muted-foreground">{t("fieldDefault")}: {row.defaultValue || "—"}</p>
+        <p className="text-xs text-muted-foreground">
+          {inherited ? t("fieldInherited") : `${t("fieldEffective")}: ${String(effective)}`}
+        </p>
+        {row.min !== null && row.max !== null ? (
+          <p className="text-xs text-muted-foreground">{t("fieldLimits")}: {row.min}–{row.max} {t(numericUnit(row))}</p>
+        ) : null}
+        {disabled ? <p className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</p> : null}
+      </div>
+      <FieldControl row={row} value={inherited ? row.defaultValue : value} disabled={disabled} onChange={onChange} onDraft={onDraft} />
+    </div>
   );
 }
 
@@ -315,6 +402,12 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const [resultSource, setResultSource] = useState<string | null>(null);
   const [locale, setLocale] = useState<Locale>(detectLocale);
   const [localePreference, setLocalePreference] = useState<LocalePreference>("auto");
+  const [settingsQuery, setSettingsQuery] = useState("");
+  const [settingsDepth, setSettingsDepth] = useState<"basic" | "advanced">("basic");
+  const [drafts, setDrafts] = useState<Record<string, unknown>>({});
+  const dataRef = useRef<ScreenPayload | null>(null);
+  const draftsRef = useRef<Record<string, unknown>>({});
+  const saveTailRef = useRef<Record<string, Promise<unknown>>>({});
 
   useEffect(() => {
     let current = true;
@@ -367,10 +460,15 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     await rpc.call("set_locale", { locale: next, suggestedLocale });
   };
 
+  dataRef.current = data;
+  draftsRef.current = drafts;
+
   const load = useCallback(async () => {
     if (!projectId) return;
     setError(null);
     setData(null);
+    draftsRef.current = {};
+    setDrafts({});
     try {
       const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
       setData(next);
@@ -396,15 +494,45 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
       .map((section) => ({ section, rows: map.get(section) ?? [] }));
   }, []);
 
+  const extrasGrouped = useMemo(() => {
+    const query = settingsQuery.trim().toLowerCase();
+    const map = new Map<string, CatalogRow[]>();
+    for (const section of SECTION_ORDER) map.set(section, []);
+    for (const row of extraSettingRows()) {
+      if (!query && settingsDepth === "basic" && !BASIC_SETTING_KEYS.has(row.storageKey)) continue;
+      if (query) {
+        const haystack = [t(fieldKey(row.id)), t(sectionKey(row.section)), row.storageKey].join(" ").toLowerCase();
+        if (!haystack.includes(query)) continue;
+      }
+      const list = map.get(row.section) ?? [];
+      list.push(row);
+      map.set(row.section, list);
+    }
+    return SECTION_ORDER.filter((section) => (map.get(section) ?? []).length > 0)
+      .map((section) => ({ section, rows: map.get(section) ?? [] }));
+  }, [settingsQuery, settingsDepth, locale]);
+
+  const cardVisible = (...keys: I18nKey[]) => {
+    const query = settingsQuery.trim().toLowerCase();
+    if (!query) return true;
+    return keys.some((key) => t(key).toLowerCase().includes(query));
+  };
+
   const chooseProject = (next: string) => {
     setSelectedProjectId(next);
     setProjectListError(false);
     void rpc.call("remember_project", { projectId: next }).catch(() => setProjectListError(true));
   };
 
+  const writeDraft = (key: string, value: unknown) => {
+    draftsRef.current = { ...draftsRef.current, [key]: value };
+    setDrafts((current) => ({ ...current, [key]: value }));
+  };
+
   const save = async (row: CatalogRow, value: unknown) => {
-    if (!projectId || !data) return false;
-    const expectedVersion = data.versions[row.storageKey] ?? 0;
+    const snapshot = dataRef.current;
+    if (!projectId || !snapshot) return false;
+    const expectedVersion = snapshot.versions[row.storageKey] ?? 0;
     const result = await rpc.call("save_setting", {
       projectId,
       key: row.storageKey,
@@ -413,7 +541,15 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     });
     if (result.conflict) {
       setSaveError({ kind: "cas" });
-      await load();
+      setData((current) => {
+        const next = current ? {
+          ...current,
+          values: { ...current.values, [row.storageKey]: result.value },
+          versions: { ...current.versions, [row.storageKey]: result.version },
+        } : current;
+        dataRef.current = next;
+        return next;
+      });
       return false;
     }
     if (!result.ok) {
@@ -422,13 +558,45 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
       return false;
     }
     setSaveError(null);
-    setData((current) => current ? {
-      ...current,
-      values: { ...current.values, [row.storageKey]: result.value },
-      versions: { ...current.versions, [row.storageKey]: result.version },
-    } : current);
+    setData((current) => {
+      const next = current ? {
+        ...current,
+        values: { ...current.values, [row.storageKey]: result.value },
+        versions: { ...current.versions, [row.storageKey]: result.version },
+      } : current;
+      dataRef.current = next;
+      return next;
+    });
     return true;
   };
+
+  const applySetting = async (row: CatalogRow, value: unknown) => {
+    writeDraft(row.storageKey, value);
+    const key = row.storageKey;
+    const queued = (saveTailRef.current[key] ?? Promise.resolve()).then(async () => {
+      const latest = draftsRef.current[key];
+      if (latest === undefined) return true;
+      const ok = await save(row, latest);
+      if (ok && Object.is(draftsRef.current[key], latest)) {
+        const next = { ...draftsRef.current };
+        delete next[key];
+        draftsRef.current = next;
+        setDrafts((current) => {
+          if (!Object.is(current[key], latest)) return current;
+          const copy = { ...current };
+          delete copy[key];
+          return copy;
+        });
+      }
+      return ok;
+    });
+    saveTailRef.current[key] = queued.then(() => undefined, () => undefined);
+    return queued;
+  };
+
+  const displayedValue = (key: string) => (
+    Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : data?.values[key]
+  );
 
   const saveWriterSelection = async (selection: ExperimentalProviderModelPickerValue) => {
     if (!projectId || !data) return false;
@@ -630,7 +798,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
         <main className="min-w-0 flex-1 space-y-5" data-testid="project-settings">
         {!projectId ? <Card data-testid="project-settings-empty"><CardContent className="p-5 text-sm text-muted-foreground">{t("noProjectSelected")}</CardContent></Card> : <>
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div><p className="text-xs text-muted-foreground">{t("selectedProject")}</p><h1 className="break-words text-lg font-semibold">{selectedProjectName}</h1></div>
+          <div><p className="text-xs text-muted-foreground">{t("selectedProject")}</p><h1 className="break-words text-xl font-semibold">{selectedProjectName}</h1></div>
         </div>
         {error ? (
           <Alert variant="destructive">
@@ -657,7 +825,23 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
           </TabsList>
 
           <TabsContent value="settings" forceMount={true} className="space-y-5" hidden={tab !== "settings"} data-testid="settings-panel">
-            <Card data-testid="writer-picker">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1 space-y-1">
+                <Label htmlFor="settings-search">{t("settingsSearch")}</Label>
+                <Input
+                  id="settings-search"
+                  data-testid="settings-search"
+                  value={settingsQuery}
+                  placeholder={t("settingsSearchPlaceholder")}
+                  onChange={(event) => setSettingsQuery(event.target.value)}
+                />
+              </div>
+              <div className="flex gap-1" data-testid="settings-depth" aria-label={t("settingsAdvanced")}>
+                <Button size="sm" variant={settingsDepth === "basic" ? "default" : "outline"} aria-pressed={settingsDepth === "basic"} onClick={() => setSettingsDepth("basic")}>{t("settingsBasic")}</Button>
+                <Button size="sm" variant={settingsDepth === "advanced" ? "default" : "outline"} aria-pressed={settingsDepth === "advanced"} onClick={() => setSettingsDepth("advanced")}>{t("settingsAdvanced")}</Button>
+              </div>
+            </div>
+            {cardVisible("writerPicker", "writerPickerHelp") ? <Card data-testid="writer-picker">
               <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">{t("writerPicker")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
@@ -675,9 +859,9 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                 />
               ) : <p className="text-sm text-muted-foreground">{providers.status === "loading" ? t("writerCatalogLoading") : t("writerCatalogUnavailable")}</p>}
               </CardContent>
-            </Card>
+            </Card> : null}
 
-            <Card data-testid="memory-picker">
+            {cardVisible("memoryPicker", "memoryPickerHelp") ? <Card data-testid="memory-picker">
               <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("memoryPicker")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
@@ -688,34 +872,34 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                       routing={routing} onChange={(next)=>{void saveMemorySelection(next);}} />
                   : <p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>) : null}
               </CardContent>
-            </Card>
+            </Card> : null}
 
-            <section className="space-y-3" data-testid="jev-settings">
+            {cardVisible("jevSettings", "jevEffort", "jevOpencode") ? <section className="space-y-3" data-testid="jev-settings">
               <h2 className="text-sm font-medium">{t("jevSettings")}</h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 {jevRows.map((row) => {
                   const label = t(row.storageKey === "jev.LANE_JEV_EFFORT" ? "jevEffort" : "jevOpencode");
                   return <div key={row.storageKey} className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
                     <Label className="text-sm" htmlFor={row.id}>{label}</Label>
-                    <Switch id={row.id} checked={asBoolean(data?.values[row.storageKey], true)} aria-label={label}
-                      onCheckedChange={(next) => void save(row, next ? "1" : "0")} />
+                    <Switch id={row.id} checked={asBoolean(displayedValue(row.storageKey), true)} aria-label={label}
+                      onCheckedChange={(next) => void applySetting(row, next ? "1" : "0")} />
                   </div>;
                 })}
               </div>
-            </section>
+            </section> : null}
 
-          <Card data-testid="night-review-settings">
+          {cardVisible("nightReviewEnabled", "nightReviewAutoMerge", "stageNightReview") ? <Card data-testid="night-review-settings">
               <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t(sectionKey("night-review"))}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
                   <Label className="text-sm" htmlFor="night-review-enabled">{t("nightReviewEnabled")}</Label>
-                  <Switch id="night-review-enabled" checked={asBoolean(data?.values["night_review.enabled"],false)} aria-label={t("nightReviewEnabled")}
-                    onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void save(row,next);}} />
+                  <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}
+                    onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void applySetting(row,next);}} />
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
                   <Label className="text-sm" htmlFor="night-review-auto-merge">{t("nightReviewAutoMerge")}</Label>
-                  <Switch id="night-review-auto-merge" checked={asBoolean(data?.values["night_review.auto_merge"],false)} aria-label={t("nightReviewAutoMerge")}
-                    onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.auto_merge");if(row)void save(row,next);}} />
+                  <Switch id="night-review-auto-merge" checked={asBoolean(displayedValue("night_review.auto_merge"),false)} aria-label={t("nightReviewAutoMerge")}
+                    onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.auto_merge");if(row)void applySetting(row,next);}} />
                 </div>
                 <p className="break-all text-xs text-muted-foreground">{nightPickerValue.providerId}/{nightPickerValue.model} · {nightPickerValue.reasoningLevel} · {nightPickerValue.serviceTier??"standard"}</p>
                 <Button size="sm" variant="outline" onClick={()=>setNightPickerOpen((open)=>!open)}>{nightPickerOpen?t("closeNightPicker"):t("configureNightPicker")}</Button>
@@ -723,8 +907,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                   ?<ProviderModelPicker value={nightPickerValue.providerId?nightPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveNightReviewSelection(next);}} />
                   :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
               </CardContent>
-          </Card>
-            <Card data-testid="docs-picker">
+          </Card> : null}
+            {cardVisible("docsPicker", "docsPickerHelp") ? <Card data-testid="docs-picker">
               <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("docsPicker")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
@@ -734,8 +918,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                   ?<ProviderModelPicker value={docsPickerValue.providerId?docsPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveDocsSelection(next);}} />
                   :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
               </CardContent>
-            </Card>
-            <Card data-testid="onboarding-picker">
+            </Card> : null}
+            {cardVisible("onboardingPicker", "onboardingPickerHelp") ? <Card data-testid="onboarding-picker">
               <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("onboardingPicker")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">{t("onboardingPickerHelp")}</p>
@@ -745,7 +929,27 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                   ?<ProviderModelPicker value={onboardingPickerValue.providerId?onboardingPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveOnboardingSelection(next);}} />
                   :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
               </CardContent>
-            </Card>
+            </Card> : null}
+            {extrasGrouped.map(({ section, rows }) => (
+              <section key={section} className="space-y-3" data-testid={`settings-group-${section}`}>
+                <h2 className="text-sm font-medium">{t(sectionKey(section))}</h2>
+                <div className="space-y-2">
+                  {rows.map((row) => (
+                    <SettingField
+                      key={row.storageKey}
+                      row={row}
+                      value={displayedValue(row.storageKey)}
+                      disabled={false}
+                      onChange={(next) => void applySetting(row, next)}
+                      onDraft={(next) => writeDraft(row.storageKey, next)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+            {settingsQuery.trim() && extrasGrouped.length === 0 && !cardVisible("writerPicker", "memoryPicker", "jevSettings", "nightReviewEnabled", "docsPicker", "onboardingPicker") ? (
+              <p className="text-sm text-muted-foreground">{t("noMatchingSettings")}</p>
+            ) : null}
           </TabsContent>
 
           <TabsContent value="monitor" forceMount={true} className="space-y-4" data-testid="run-monitor" hidden={tab !== "monitor"}>
@@ -894,7 +1098,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
             <section className="space-y-2">
               <h2 className="text-sm font-medium">{t("unapplied")}</h2>
               {data?.unapplied.length ? <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-                {data.unapplied.map((item) => <li key={item.key}>{item.key}: {unappliedReason(item.reason)}</li>)}
+                {data.unapplied.map((item, index) => <li key={`${item.key}:${index}`}>{item.key}: {unappliedReason(item.reason)}</li>)}
               </ul> : <p className="text-xs text-muted-foreground">{t("noUnapplied")}</p>}
             </section>
 
@@ -908,17 +1112,20 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                     data-ui-status={row.uiStatus} className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
                     <div className="space-y-1">
                       <Label className="text-sm">{row.storageKey === "writer.fast_mode" ? t("legacyFastMode") : t(fieldKey(row.id))}</Label>
-                      {row.storageKey === "writer.fast_mode" ? <p className="text-xs text-muted-foreground">{t("legacyFastModeExplanation")}</p> : <>
-                        <p className="text-xs text-muted-foreground">{row.area} · {row.location}</p>
-                        {disabled ? <p className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</p> : null}
-                      </>}
-                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        <StatusBadge status={row.uiStatus} />
-                        <span>{t("casVersion")} {data?.versions[row.storageKey] ?? 0}</span>
-                      </div>
+                      {row.storageKey === "writer.fast_mode" ? <p className="text-xs text-muted-foreground">{t("legacyFastModeExplanation")}</p> : (
+                        disabled ? <p className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</p> : null
+                      )}
+                      <StatusBadge status={row.uiStatus} />
+                      <details className="text-xs text-muted-foreground">
+                        <summary className="cursor-pointer">{t("fieldTechnicalDetails")}</summary>
+                        <p className="mt-1">{row.area} · {row.location}</p>
+                        <p>{t("casVersion")} {data?.versions[row.storageKey] ?? 0}</p>
+                      </details>
                     </div>
                     {row.storageKey === "writer.fast_mode" ? <code className="text-xs">{String(value ?? "unset")}</code> : <FieldControl
-                      row={row} value={value} disabled={disabled} onChange={(next) => { if (!disabled) void save(row, next); }} />}
+                      row={row} value={displayedValue(row.storageKey) ?? value} disabled={disabled}
+                      onDraft={(next) => { if (!disabled) writeDraft(row.storageKey, next); }}
+                      onChange={(next) => { if (!disabled) void applySetting(row, next); }} />}
                   </div>;
                 })}
               </div>

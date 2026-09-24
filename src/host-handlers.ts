@@ -102,7 +102,7 @@ export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["li
       if (!info.isFile() || info.isSymbolicLink()) continue;
       const bytes = await readFile(path);
       if (bytes.byteLength > 40_000) throw new Error(`docs page exceeds 40000 bytes: ${rel}`);
-      pages.push({path:rel,modifiedAt:info.mtimeMs,sha256:createHash("sha256").update(bytes).digest("hex"),content:bytes.toString("utf8")});
+      pages.push({path:rel,modifiedAt:Math.trunc(info.mtimeMs),sha256:createHash("sha256").update(bytes).digest("hex"),content:bytes.toString("utf8")});
       if (pages.length > 5000) throw new Error("docs inventory exceeds 5000 markdown files; reduce the source tree before running maintenance");
     }
   };
@@ -212,9 +212,18 @@ export const coexistenceOperation: ExperimentalHostRpcHandlers<typeof hostContra
   })
 );
 
-export const detect: ExperimentalHostRpcHandlers<typeof hostContract>["detect"] = async (input) => (
-  detectStack(ctx(input))
-);
+export const detect: ExperimentalHostRpcHandlers<typeof hostContract>["detect"] = async (input) => {
+  const detected = await detectStack(ctx(input));
+  return {
+    hostId: detected.hostId,
+    laneStack: detected.laneStack,
+    openCode: detected.openCode,
+    workspace: detected.workspace,
+    targetSha: detected.targetSha,
+    matchesTarget: detected.matchesTarget,
+    scenario: detected.scenario,
+  };
+};
 
 export const snapshot: ExperimentalHostRpcHandlers<typeof hostContract>["snapshot"] = async (input) => (
   snapshotStack(ctx(input))

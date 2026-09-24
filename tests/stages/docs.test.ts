@@ -32,6 +32,7 @@ describe("living docs stage policy", () => {
       expect(result.hostId).toBe("host-test");
       expect(result.pages.map((item)=>item.path).sort()).toEqual(["apps/app.md","docs/guide.md"]);
       expect(result.pages.every((item)=>/^[a-f0-9]{64}$/.test(item.sha256))).toBe(true);
+      expect(result.pages.every((item)=>Number.isInteger(item.modifiedAt))).toBe(true);
     } finally { await rm(root,{recursive:true,force:true}); }
   });
 

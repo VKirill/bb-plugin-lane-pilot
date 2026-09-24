@@ -121,13 +121,27 @@ describe("Lane Pilot UI", () => {
     expect(slot.getByTestId("settings-panel").textContent).not.toContain("CAS version");
     expect(slot.getByTestId("settings-panel").textContent).not.toContain("--writer-provider");
     fireEvent.click(slot.getByTestId("tab-diagnostics"));
-    const fields = Array.from(slot.container.querySelectorAll<HTMLElement>("[data-storage-key]"));
+    const fields = Array.from(slot.getByTestId("diagnostics-panel").querySelectorAll<HTMLElement>("[data-storage-key]"));
     const keys = fields.map((node) => node.getAttribute("data-storage-key"));
     expect(keys.length).toBeGreaterThan(0);
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toContain("writer.fast_mode");
     expect(slot.getByTestId("field-s024").textContent).toContain(en.legacyFastModeExplanation);
     expect(EDITABLE_IDS.length + DISABLED_IDS.length).toBe(VISIBLE_CATALOG.length);
+    slot.lifecycle.unmount();
+  });
+
+  it("does not emit React duplicate-key warnings for medium or night_review.model", async () => {
+    const errors: unknown[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args) => { errors.push(args); });
+    const slot = await mountPage();
+    fireEvent.click(slot.getByRole("button", { name: en.configureNightPicker }));
+    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    const joined = errors.map((item) => String(item)).join("\n");
+    expect(joined).not.toMatch(/same key/i);
+    expect(joined).not.toContain("night_review.model");
+    expect(joined).not.toMatch(/key=["']medium["']/i);
+    spy.mockRestore();
     slot.lifecycle.unmount();
   });
 
@@ -472,6 +486,98 @@ describe("Lane Pilot UI", () => {
     const migration = await slot.findByTestId("field-s024");
     expect(migration.textContent).toContain(en.legacyFastModeExplanation);
     expect(migration.querySelector("[role='switch']")).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("renders numeric limits instead of sliders and keeps a failed draft", async () => {
+    const slot = await mountPage({
+      save_setting: () => ({ ok: false, conflict: false, version: 1, value: 5, validation: {
+        code: "invalid_choice", key: "night_review.max_fix_tasks", params: ["night_review.max_fix_tasks", "1-10"],
+      } }),
+    });
+    await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    const field = await slot.findByTestId("settings-panel").then((panel) => panel.querySelector("[data-testid='field-s006']") as HTMLElement);
+    expect(field).toBeTruthy();
+    expect(field.querySelector("[role='slider']")).toBeNull();
+    const input = field.querySelector("input[type='number']") as HTMLInputElement;
+    expect(input.min).toBe("1");
+    expect(input.max).toBe("10");
+    expect(field.textContent).toContain(en.fieldLimits);
+    fireEvent.change(input, { target: { value: "8" } });
+    fireEvent.blur(input);
+    await slot.findByTestId("setting-validation-error");
+    expect((field.querySelector("input[type='number']") as HTMLInputElement).value).toBe("8");
+    slot.lifecycle.unmount();
+  });
+
+  it("keeps the latest numeric value across deferred saves from 1 to 10", async () => {
+    const deferred: Array<{
+      value: unknown;
+      expectedVersion: number;
+      resolve: (result: { ok: boolean; conflict: boolean; version: number; value: unknown }) => void;
+    }> = [];
+    const slot = await mountPage({
+      save_setting: (input: unknown) => {
+        const { value, expectedVersion } = input as { value: unknown; expectedVersion: number };
+        return new Promise((resolve) => {
+          deferred.push({ value, expectedVersion, resolve });
+        });
+      },
+    });
+    await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    const input = slot.getByTestId("settings-panel").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "1" } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(deferred.length).toBe(1));
+    fireEvent.change(input, { target: { value: "10" } });
+    fireEvent.blur(input);
+    expect(input.value).toBe("10");
+    deferred[0]!.resolve({ ok: true, conflict: false, version: 2, value: deferred[0]!.value });
+    await waitFor(() => expect(deferred.some((item) => item.value === 10)).toBe(true));
+    expect(input.value).toBe("10");
+    expect(slot.queryByTestId("cas-conflict")).toBeNull();
+    for (const item of deferred) item.resolve({ ok: true, conflict: false, version: item.expectedVersion + 1, value: item.value });
+    await waitFor(() => expect(input.value).toBe("10"));
+    expect(deferred.at(-1)?.value).toBe(10);
+    slot.lifecycle.unmount();
+  });
+
+  it("keeps the unsaved numeric draft on an external CAS conflict", async () => {
+    const slot = await mountPage({
+      save_setting: () => ({ ok: false, conflict: true, version: 9, value: 3 }),
+    });
+    await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    const input = slot.getByTestId("settings-panel").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "10" } });
+    fireEvent.blur(input);
+    await slot.findByTestId("cas-conflict");
+    expect(input.value).toBe("10");
+    slot.lifecycle.unmount();
+  });
+
+  it("filters settings by search and keeps picker keys off the settings list", async () => {
+    const slot = await mountPage();
+    expect(slot.getByTestId("settings-panel").querySelector("[data-testid='field-s004']")).toBeNull();
+    expect(slot.getByTestId("settings-group-browser-qa")).toBeTruthy();
+    fireEvent.change(slot.getByTestId("settings-search"), { target: { value: "zzzz-no-match" } });
+    expect(slot.queryByTestId("writer-picker")).toBeNull();
+    expect(slot.getByText(en.noMatchingSettings)).toBeTruthy();
+    fireEvent.change(slot.getByTestId("settings-search"), { target: { value: "" } });
+    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
+    expect(slot.getByTestId("settings-group-workspace")).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("switches the new settings chrome in Russian", async () => {
+    Object.defineProperty(navigator, "language", { configurable: true, value: "ru-RU" });
+    setLocaleOverride(null);
+    document.documentElement.lang = "ru";
+    const slot = await mountPage({
+      get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: null }),
+    });
+    expect(slot.getByText(ru.settingsSearch)).toBeTruthy();
+    expect(slot.getByText(ru.settingsBasic)).toBeTruthy();
+    expect(slot.getByText(ru.settingsAdvanced)).toBeTruthy();
     slot.lifecycle.unmount();
   });
 

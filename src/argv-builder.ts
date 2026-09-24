@@ -85,7 +85,7 @@ export function buildCliInvocation(input: {
 
   const seen = new Set<string>();
   for (const spec of SETTING_CATALOG) {
-    if (!(spec.key in settings)) continue;
+    if (!(spec.key in settings) || seen.has(spec.key)) continue;
     seen.add(spec.key);
     const value = settings[spec.key];
     const invalidSetting = validationByKey.get(spec.key);

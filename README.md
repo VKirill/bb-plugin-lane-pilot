@@ -2,7 +2,7 @@
 
 BB plugin that runs [Lane Stack](https://github.com/VKirill/claude-lane-stack) in two modes without duplicating the engine: ordinary Claude/adoc in a terminal, and an isolated PM thread inside BB that delegates work to native BB writers.
 
-Based on [VKirill/claude-lane-stack](https://github.com/VKirill/claude-lane-stack) v1.38.0 (SHA `747a9ff9b2fa4ffdcf5c65c8d07eff2b9386a821`), MIT. Copied files under `lane-stack/hooks/` and `lane-stack/schemas/` keep the upstream MIT copyright (`lane-stack/schemas/LICENSE`). Lane Stack itself is not re-published.
+Based on [VKirill/claude-lane-stack](https://github.com/VKirill/claude-lane-stack), MIT. Required writer/PM interfaces are probed on the installed engine. A newer or custom checkout that already exposes those interfaces is reused with no engine, user-config, or cache writes. SHA/version is provenance only and does not force an install or downgrade. Copied files under `lane-stack/hooks/` and `lane-stack/schemas/` keep the upstream MIT copyright (`lane-stack/schemas/LICENSE`). Lane Stack itself is not re-published.
 
 Кратко по-русски: плагин подключает Lane Stack к BB — обычный CLI без изменений и отдельный PM-тред в BB с писателями как скрытыми тредами. Upstream не форкается.
 
@@ -19,7 +19,7 @@ Based on [VKirill/claude-lane-stack](https://github.com/VKirill/claude-lane-stac
 | GitNexus | indexed from this checkout; name `bb-plugin-lane-pilot` |
 | Install | `git:` URL or a `path:` checkout the hub can read |
 | Data | plugin SQLite via BB storage (per project) |
-| Dependencies | BB ≥0.43.3 `<0.44`, Plugin SDK 0.4.104, Lane Stack 1.38.0, Node 22/24/26 |
+| Dependencies | BB ≥0.43.3 `<0.44`, Plugin SDK 0.4.104, compatible Lane Stack (newer/custom reused), Node 22/24/26 |
 
 ## Modes
 
@@ -40,7 +40,7 @@ Technical fields, including argv/environment previews, unapplied settings, stora
 
 - BB `>=0.43.3 <0.44`
 - `@get-bb/plugin-sdk` `0.4.104`
-- Lane Stack **1.38.0** (`747a9ff…`) on the project host for CLI writers / install scenarios
+- A Lane Stack (or compatible newer/custom engine) on the project host whose required interfaces pass the probe. CLI writers use that reused engine; an incompatible host gets an isolated managed checkout instead of overwriting the user install.
 
 ## Install, update, rollback
 
@@ -74,9 +74,9 @@ For BB PM delegation, set task-v2 `project_cwd` to exactly the project's configu
 
 | # | Situation | Lane Pilot |
 |---|---|---|
-| S1 | `~/.agents/install.json.source_sha` is the target SHA | Reuse; PM activation allowed |
-| S2 | SHA present but different | Snapshot, then install to target SHA; rollback snapshot on failure |
-| S3 | No `install.json` | Same as S2 without a mismatch warning |
+| S1 | Required interfaces already work (including newer/custom; SHA may differ) | Reuse; zero engine/config/cache writes; PM activation allowed |
+| S2 | Marker SHA present but the engine is incompatible | Isolated owned managed checkout; ordinary Claude/OpenCode configs are not written |
+| S3 | No `install.json` and no compatible engine | Same isolated managed path as S2; existing user configs stay byte-identical |
 | S4 | Already configured project | Idempotent; no duplicate hook merges |
 | S5 | OpenCode `opencode.json` or `.jsonc` | Additive JSONC `plugin[]` patch |
 | S6 | OpenCode missing | Skip S5 |

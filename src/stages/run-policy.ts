@@ -26,8 +26,29 @@ export function parseRunPolicy(value:unknown):RunPolicy {
   return runPolicySchema.parse(value);
 }
 
-export function shouldReconcileAttemptThread(state:string):boolean {
-  return state!=="queued";
+export function shouldResumeWorktreeHolder(attempt:{
+  state:string; holder_thread_id?:string|null; thread_id?:string|null; workspace_path?:string|null;
+}):boolean {
+  return Boolean(attempt.holder_thread_id)
+    && !attempt.thread_id
+    && (attempt.state==="spawn_requested" || attempt.state==="spawn_unknown");
+}
+
+export function shouldScanLostWorktreeHolder(attempt:{
+  state:string; holder_thread_id?:string|null; thread_id?:string|null;
+}):boolean {
+  return !attempt.holder_thread_id
+    && !attempt.thread_id
+    && (attempt.state==="spawn_requested" || attempt.state==="spawn_unknown");
+}
+
+export function shouldReconcileAttemptThread(
+  state:string,
+  attempt?:{holder_thread_id?:string|null; thread_id?:string|null; workspace_path?:string|null},
+):boolean {
+  if (state==="queued") return false;
+  if (attempt && shouldResumeWorktreeHolder({state,...attempt})) return false;
+  return true;
 }
 
 export function buildRunExecutionProfile(risk:unknown,policy:RunPolicy):RunExecutionProfile {

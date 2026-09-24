@@ -202,6 +202,18 @@ const chromeEn = {
   yes: "Yes",
   no: "No",
   unknown: "unknown",
+  settingsSearch: "Search settings",
+  settingsSearchPlaceholder: "Search by name or effect",
+  settingsBasic: "Basic",
+  settingsAdvanced: "Advanced",
+  fieldDefault: "Default",
+  fieldEffective: "Effective",
+  fieldInherited: "Inherits the default",
+  fieldLimits: "Allowed range",
+  fieldUnitTasks: "tasks",
+  fieldUnitScore: "score",
+  fieldTechnicalDetails: "Technical details",
+  noMatchingSettings: "No settings match this search.",
 };
 
 const chromeRu: { [K in keyof typeof chromeEn]: string } = {
@@ -405,6 +417,18 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   yes: "Да",
   no: "Нет",
   unknown: "неизвестно",
+  settingsSearch: "Поиск настроек",
+  settingsSearchPlaceholder: "Искать по названию или эффекту",
+  settingsBasic: "Основные",
+  settingsAdvanced: "Расширенные",
+  fieldDefault: "По умолчанию",
+  fieldEffective: "Действует",
+  fieldInherited: "Берётся значение по умолчанию",
+  fieldLimits: "Допустимый диапазон",
+  fieldUnitTasks: "задач",
+  fieldUnitScore: "баллы",
+  fieldTechnicalDetails: "Технические сведения",
+  noMatchingSettings: "Нет настроек по этому запросу.",
 };
 
 export const en = { ...chromeEn, ...fieldEn };

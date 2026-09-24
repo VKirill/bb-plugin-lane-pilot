@@ -231,10 +231,14 @@ describe("production spawn_unknown reconciliation", () => {
           },
           list: async () => [{ id:"writer-existing" }] as never,
           wait: async () => { throw new Error("wait sentinel after reconcile"); },
-          get: async ({threadId}) => ({ id:threadId, status:threadId==="workspace-holder"?"idle":"active" }) as never,
+          get: async ({threadId}) => ({ id:threadId, status:threadId==="workspace-holder"?"idle":"active",
+            ...(threadId==="workspace-holder" ? {environmentId:"reconcile-env"} : {}) }) as never,
           stop: async () => ({ok:true}) as never,
         },
-        environments:{get:async ({environmentId})=>({id:environmentId,hostId:"host-test",path:environmentId==="reconcile-env"?"/tmp/reconciled-attempt-worktree":config.writerWorkspacePath,status:"ready",managed:true,workspaceProvisionType:"managed-worktree"}) as never},
+        environments:{
+          listProviders:async ()=>[{id:"git-worktree",pluginId:"environment-git-worktree"}] as never,
+          get:async ({environmentId})=>({id:environmentId,hostId:"host-test",path:environmentId==="reconcile-env"?"/tmp/reconciled-attempt-worktree":config.writerWorkspacePath,status:"ready",managed:true,workspaceProvisionType:"managed-worktree"}) as never,
+        },
         providers:{
           list:async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:false }, serviceTiers:[] }] as never,
           models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }),

@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {buildRunExecutionProfile,buildRunPolicy,mapBounded,parseRunPolicy,RunWriterPool,shouldReconcileAttemptThread} from "../../src/stages/run-policy";
+import {buildRunExecutionProfile,buildRunPolicy,mapBounded,parseRunPolicy,RunWriterPool,shouldReconcileAttemptThread,shouldResumeWorktreeHolder,shouldScanLostWorktreeHolder} from "../../src/stages/run-policy";
 
 describe("run-v2 policy adapter",()=>{
   it("snapshots bounded pool settings and applies the configured verification cap in input order",async()=>{
@@ -35,5 +35,10 @@ describe("run-v2 policy adapter",()=>{
     expect(shouldReconcileAttemptThread("queued")).toBe(false);
     expect(shouldReconcileAttemptThread("running")).toBe(true);
     expect(shouldReconcileAttemptThread("spawn_unknown")).toBe(true);
+    expect(shouldResumeWorktreeHolder({state:"spawn_requested",holder_thread_id:"holder-1",thread_id:null})).toBe(true);
+    expect(shouldReconcileAttemptThread("spawn_requested",{holder_thread_id:"holder-1",thread_id:null})).toBe(false);
+    expect(shouldReconcileAttemptThread("spawn_requested",{holder_thread_id:null,thread_id:null})).toBe(true);
+    expect(shouldScanLostWorktreeHolder({state:"spawn_requested",holder_thread_id:null,thread_id:null})).toBe(true);
+    expect(shouldScanLostWorktreeHolder({state:"spawn_requested",holder_thread_id:"holder-1",thread_id:null})).toBe(false);
   });
 });

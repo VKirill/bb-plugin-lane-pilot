@@ -129,6 +129,17 @@ describe("argv-builder channels", () => {
     expect(built.unapplied.map((row) => row.key).sort()).toEqual(["plan_critique.mode","plan_critique.provider","writer.fast_mode"]);
     expect(built.unapplied.find((item) => item.key === "plan_critique.mode")?.reason).toMatch(/no --mode/);
   });
+  it("emits one unapplied row for a duplicated catalog key", () => {
+    const built = buildCliInvocation({
+      binary:"run-controller",
+      subcommand:"run",
+      settings:{ "night_review.model":"gpt-6-astra", "writer.reasoning_effort":"medium" },
+    });
+    const night = built.unapplied.filter((row) => row.key === "night_review.model");
+    expect(night).toHaveLength(1);
+    expect(night[0]?.reason).toMatch(/native Lane Pilot stage/i);
+    expect(new Set(built.unapplied.map((row) => row.key)).size).toBe(built.unapplied.length);
+  });
   it.each([[false, "standard"], [true, "fast"]] as const)("migrates legacy fast_mode=%s through one service-tier flag", (legacy, expectedTier) => {
     const built = buildCliInvocation({
       binary:"run-controller", subcommand:"run", settings:{ "writer.fast_mode":legacy },

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { appendGateEvaluation, casSetting, claimDailySchedule, closeRun, createAttempt, createRun, createTask, getAttempt, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
+import { appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, getAttempt, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -144,6 +144,40 @@ describe("section 9 storage.database DDL", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("claims docs spawn once while running and thread_id is null", async () => {
+    const {bb,harness} = createFakePluginHost({pluginId:"lane-pilot"});
+    const db = openDatabase(bb);
+    createRun(db, "docs-claim-run", "project-a");
+    createTask(db, { id:"docs-claim-task", runId:"docs-claim-run", kind:"bb", contract:{id:"docs-claim-task"} });
+    saveStageReceipt(db, {
+      runId:"docs-claim-run", taskId:"docs-claim-task", stageId:"docs-maintenance", contractVersion:1, state:"running",
+      inputSha256:"a".repeat(64), outputSha256:null, attempt:0, providerId:null, model:null,
+      threadId:null, result:{ snapshot:{ pages:[], since:"yesterday", truncated:false, inputSha256:"b".repeat(64) } },
+      reason:"docs_spawn_requested", updatedAt:Date.now(),
+    });
+    expect(claimDocsSpawn(db,"docs-claim-run","docs-claim-task")).toBe(true);
+    expect(claimDocsSpawn(db,"docs-claim-run","docs-claim-task")).toBe(false);
+    expect((listStageReceipts(db,"docs-claim-run","docs-claim-task")[0].result as {spawnAttempted?:boolean}).spawnAttempted).toBe(true);
+    await harness.lifecycle.dispose();
+  });
+
+  it("claims onboarding spawn once while running and thread_id is null", async () => {
+    const {bb,harness} = createFakePluginHost({pluginId:"lane-pilot"});
+    const db = openDatabase(bb);
+    createRun(db, "onboard-claim-run", "project-a");
+    createTask(db, { id:"onboard-claim-task", runId:"onboard-claim-run", kind:"bb", contract:{id:"onboard-claim-task"} });
+    saveStageReceipt(db, {
+      runId:"onboard-claim-run", taskId:"onboard-claim-task", stageId:"onboarding-preview", contractVersion:1, state:"running",
+      inputSha256:"a".repeat(64), outputSha256:null, attempt:0, providerId:null, model:null,
+      threadId:null, result:{ snapshot:{ pages:[], inputBytes:0, inputPageCount:0, availablePageCount:0, acceptanceSha256:"b".repeat(64), agent:"project-onboarder", depth:"fast" } },
+      reason:"onboarding_spawn_requested", updatedAt:Date.now(),
+    });
+    expect(claimStageSpawn(db,"onboard-claim-run","onboard-claim-task","onboarding-preview")).toBe(true);
+    expect(claimStageSpawn(db,"onboard-claim-run","onboard-claim-task","onboarding-preview")).toBe(false);
+    expect((listStageReceipts(db,"onboard-claim-run","onboard-claim-task")[0].result as {spawnAttempted?:boolean}).spawnAttempted).toBe(true);
+    await harness.lifecycle.dispose();
+  });
+
   it("binds a managed workspace exactly once before run dispatch", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
     const db = openDatabase(bb);
@@ -183,6 +217,9 @@ describe("section 9 storage.database DDL", () => {
     createRun(db,"attempt-workspace-run","A","bb","/repo");
     createTask(db,{id:"attempt-workspace-task",runId:"attempt-workspace-run",kind:"bb",contract:{}});
     createAttempt(db,{id:"attempt-workspace-1",runId:"attempt-workspace-run",taskId:"attempt-workspace-task"});
+    expect(setAttemptHolderThread(db,"attempt-workspace-1","holder-thread-1")).toBe(true);
+    expect(setAttemptHolderThread(db,"attempt-workspace-1","holder-thread-2")).toBe(false);
+    expect(getAttempt(db,"attempt-workspace-1")).toMatchObject({holder_thread_id:"holder-thread-1",thread_id:null});
     const decision={mode:"auto",risk:"high",score:8,multiWrite:true,isolated:true,reason:"risk_threshold"};
     expect(setAttemptWorkspace(db,"attempt-workspace-1",{path:"/worktrees/task-1",environmentId:"env-task-1",decision})).toBe(true);
     expect(getAttempt(db,"attempt-workspace-1")).toMatchObject({workspace_path:"/worktrees/task-1",environment_id:"env-task-1",workspace_decision:decision});

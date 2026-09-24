@@ -39,6 +39,81 @@ export function resolveAttemptWorkspace(input:{mode:WorkspaceMode;risk:unknown;e
   return {schemaVersion:1,mode:input.mode,taskRisk:risk,score,minScore:input.minScore,multiWrite,multiWriteEnabled:input.multiWriteEnabled,strategy:"inherit_run",reason:"below_threshold"};
 }
 
+export function requireManagedWorktreeProvider(providers: unknown): { id: string } {
+  if (!Array.isArray(providers)) throw new Error("attempt_worktree_provider_unavailable:listProviders");
+  const found = providers.find((row) => {
+    if (!row || typeof row !== "object") return false;
+    const rec = row as Record<string, unknown>;
+    return rec.id === "git-worktree" || rec.pluginId === "environment-git-worktree";
+  }) as Record<string, unknown> | undefined;
+  if (!found || typeof found.id !== "string" || !found.id) throw new Error("attempt_worktree_provider_unavailable");
+  const availability = found.availability;
+  if (availability && typeof availability === "object") {
+    const status = (availability as Record<string, unknown>).status;
+    if (status === "unavailable") {
+      const message = (availability as Record<string, unknown>).message;
+      throw new Error(`attempt_worktree_provider_unavailable:${typeof message === "string" && message ? message : "unavailable"}`);
+    }
+  }
+  return { id: found.id };
+}
+
+function stringField(value: unknown, key: string): string | null {
+  if (!value || typeof value !== "object") return null;
+  const got = Reflect.get(value, key);
+  return typeof got === "string" && got ? got : null;
+}
+
+export function classifyManagedWorkspace(
+  environment: unknown,
+  expectedHostId: string,
+): {kind:"ready";workspace:{environmentId:string;hostId:string;path:string}} | {kind:"pending";status:string} | {kind:"failed";reason:string} {
+  if (!environment || typeof environment !== "object") return {kind:"pending",status:"missing"};
+  const status = stringField(environment, "status") ?? "unknown";
+  if (status === "failed" || status === "destroyed" || status === "error") return {kind:"failed",reason:status};
+  if (status !== "ready") return {kind:"pending",status};
+  try {
+    return {kind:"ready",workspace:resolveManagedWorkspace(environment, expectedHostId)};
+  } catch (cause) {
+    return {kind:"failed",reason:cause instanceof Error ? cause.message : String(cause)};
+  }
+}
+
+export async function waitManagedWorktreeReady(input:{
+  threadId:string;
+  expectedHostId:string;
+  spawnEnvironmentId?:string|null;
+  getThread:(threadId:string)=>Promise<unknown>;
+  getEnvironment:(environmentId:string)=>Promise<unknown>;
+  now?:()=>number;
+  sleep?:(ms:number)=>Promise<void>;
+  timeoutMs?:number;
+  intervalMs?:number;
+}): Promise<{environmentId:string}> {
+  const timeoutMs = input.timeoutMs ?? 45_000;
+  const intervalMs = input.intervalMs ?? 500;
+  const now = input.now ?? Date.now;
+  const sleep = input.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const deadline = now() + timeoutMs;
+  let environmentId = input.spawnEnvironmentId && input.spawnEnvironmentId.trim() ? input.spawnEnvironmentId.trim() : "";
+  let lastStatus = environmentId ? "bound" : "unbound";
+  while (now() < deadline) {
+    const thread = await input.getThread(input.threadId);
+    environmentId = stringField(thread, "environmentId") ?? environmentId;
+    if (environmentId) {
+      const classified = classifyManagedWorkspace(await input.getEnvironment(environmentId), input.expectedHostId);
+      if (classified.kind === "ready") return {environmentId:classified.workspace.environmentId};
+      if (classified.kind === "failed") throw new Error(`attempt_worktree_provision_failed:${classified.reason}`);
+      lastStatus = classified.status;
+    } else {
+      lastStatus = "missing_environment_id";
+    }
+    if (now() >= deadline) break;
+    await sleep(intervalMs);
+  }
+  throw new Error(`attempt_worktree_provision_timeout:${lastStatus}`);
+}
+
 export function resolveManagedWorkspace(
   environment: unknown,
   expectedHostId: string,

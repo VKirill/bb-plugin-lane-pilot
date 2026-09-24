@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reconcile, type IdempotencyTriple, type ReconcilePort } from "../src/reconcile";
+import { reconcile, reconcileHolder, type HolderIdentity, type IdempotencyTriple, type ReconcilePort } from "../src/reconcile";
 
 const key: IdempotencyTriple = { lanePilotRunId:"run", lanePilotTaskId:"task", attemptId:"attempt" };
 const metadata = (match:boolean) => match ? key : { lanePilotRunId:"other" };
@@ -31,5 +31,19 @@ describe("E3 reconcile", () => {
   it("does not convert list errors to not_found", async () => {
     await expect(reconcile({list:async()=>{throw new Error("network")},metadata:async()=>({})}, key))
       .resolves.toEqual({kind:"error", message:"network"});
+  });
+
+  it("finds a workspace holder by workspaceAttemptId and blocks duplicates", async () => {
+    const holder:HolderIdentity={lanePilotRunId:"run",lanePilotTaskId:"task",workspaceAttemptId:"attempt"};
+    const holderPort=(pages:string[][], matching:string[]):ReconcilePort=>({
+      list:async ({offset,limit})=>pages[Math.floor(offset/limit)]?.map((id)=>({id}))??[],
+      metadata:async (id)=>matching.includes(id)
+        ? {role:"workspace-provisioner",...holder}
+        : {role:"writer",lanePilotRunId:"run",lanePilotTaskId:"task",attemptId:"attempt"},
+    });
+    await expect(reconcileHolder(holderPort([["writer","holder"],[]], ["holder"]), holder, {limit:2}))
+      .resolves.toEqual({kind:"found",threadId:"holder"});
+    await expect(reconcileHolder(holderPort([["a","b"],[]], ["a","b"]), holder, {limit:2}))
+      .resolves.toEqual({kind:"blocked",reason:"ambiguous"});
   });
 });

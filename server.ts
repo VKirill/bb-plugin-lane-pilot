@@ -20,6 +20,8 @@ import { findUnownedChanges, resolveRunOwnershipScope, validateOwnershipContract
 import { parseReadFirstHints } from "./src/stages/read-first";
 import { buildExecutionPacket, renderExecutionPacket } from "./src/stages/execution-packet";
 import { emergencyFallbackDecision, sameWriterSelection } from "./src/stages/emergency-writer";
+import { resolveStageWriterSelection } from "./src/stage-writer-selection";
+import { decideThreadCompletion } from "./src/thread-completion";
 import { acceptanceArtifactDir, buildAcceptanceV2, bbWriterReportMarkdown, validateAcceptanceV2 } from "./src/acceptance-v2";
 import {
   claimActivation,
@@ -59,10 +61,13 @@ import {
   casUpsertSetting,
   casUpsertSettings,
   claimDailySchedule,
+  claimDocsSpawn,
+  claimStageSpawn,
   openDatabase,
   releaseActivation,
   savePrototypeConfig,
   saveProjectSetting,
+  setAttemptHolderThread,
   setAttemptWorkspace,
   setRunState,
   setRunThread,
@@ -71,7 +76,7 @@ import {
 } from "./src/database";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "./src/state-machine";
 import { validateTaskV2 } from "./src/task-v2";
-import { reconcile, type IdempotencyTriple } from "./src/reconcile";
+import { reconcile, reconcileHolder, type IdempotencyTriple } from "./src/reconcile";
 import { spawnWithSeam } from "./src/spawn-seam";
 import { VISIBLE_CATALOG } from "./src/ui-catalog";
 import { bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "./src/jev-reasoning";
@@ -80,19 +85,19 @@ import type { CoverageFinding } from "./src/stages/critique-coverage";
 import { findTaskPlaceholderPaths } from "./src/stages/critique-coverage";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./src/stages/specialist";
 import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
-import { parseWorkspaceMode, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree } from "./src/workspace/routing";
+import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./src/workspace/routing";
 import { docsInputHash, docsMaintenancePrompt, docsScheduleDue, localDateKey, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage } from "./src/stages/docs";
-import { memoryContext, memoryMaintenancePrompt, parseMemoryCandidates, parseMemorySettings } from "./src/stages/memory";
+import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
 import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "./src/stages/night-fix";
 import { parseOpenCodeToolTelemetry } from "./src/stages/opencode-telemetry";
 import { boundedAgentName } from "./src/stages/role";
 import { resolveRetryEffort } from "./src/stages/retry-effort";
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "./src/stages/pm-read";
-import { onboardingPreviewSha256, onboardingPrompt, onboardingPreviewSchema, parseOnboardingPreview, type OnboardingInputPage } from "./src/stages/onboarding";
+import { acceptedOnboardingEvidence, onboardingPreviewSha256, onboardingPrompt, onboardingPreviewSchema, parseOnboardingPreview, type OnboardingAcceptedEvidence, type OnboardingInputPage } from "./src/stages/onboarding";
 import { readGateReport } from "./src/stages/gate-report";
 import { gateTriagePrompt, parseGateTriageResult } from "./src/stages/gate-triage";
-import { buildRunExecutionProfile, buildRunPolicy, mapBounded, parseRunPolicy, RunWriterPool, shouldReconcileAttemptThread } from "./src/stages/run-policy";
+import { buildRunExecutionProfile, buildRunPolicy, mapBounded, parseRunPolicy, RunWriterPool, shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "./src/stages/run-policy";
 
 export { rpcContract } from "./src/contracts";
 
@@ -107,6 +112,85 @@ function valueAt(value: unknown, key: string): unknown {
 function stringAt(value: unknown, key: string): string | null {
   const found = valueAt(value, key);
   return typeof found === "string" && found.length > 0 ? found : null;
+}
+
+function sanitizeEventsListError(cause: unknown): string {
+  const text = cause instanceof Error ? cause.message : String(cause);
+  return text.replace(/\s+/g, " ").slice(0, 240);
+}
+
+function eventsListQueryLabel(query: Record<string, unknown>): string {
+  const types = Array.isArray(query.types) ? query.types.join(",") : "";
+  return `threadId=${String(query.threadId ?? "")};types=${types || "all"};order=${String(query.order ?? "")};limit=${String(query.limit ?? "")}`;
+}
+
+async function listThreadEventsRaw(
+  bb: BbPluginApi,
+  query: { threadId:string; types?: readonly ["turn/started","turn/completed"]; order:"desc"; limit:"50" },
+): Promise<{ ok:true; events:unknown[] } | { ok:false; kind:"error"|"invalid"; detail:string }> {
+  try {
+    const listed = await bb.sdk.threads.events.list(query);
+    if (!Array.isArray(listed)) {
+      return { ok:false, kind:"invalid", detail:`events_list_invalid:${eventsListQueryLabel(query)};result=${listed === null ? "null" : typeof listed}` };
+    }
+    return { ok:true, events:listed };
+  } catch (cause) {
+    return { ok:false, kind:"error", detail:`events_list_error:${eventsListQueryLabel(query)};error=${sanitizeEventsListError(cause)}` };
+  }
+}
+
+async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMs: number, timeoutMessage: string): Promise<void> {
+  let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+    const listed = await listThreadEventsRaw(bb, {
+      threadId, types:["turn/started","turn/completed"], order:"desc", limit:"50",
+    });
+    if (!listed.ok) throw new Error(`${timeoutMessage}:${listed.detail}`);
+    const decision = decideThreadCompletion({
+      threadId,
+      status:stringAt(thread, "status"),
+      queuedWork:stringAt(thread, "queuedWork"),
+      events:listed.events,
+    });
+    if (decision.ok) return;
+    if (decision.via === "error" || decision.via === "canceled") {
+      throw new Error(`${timeoutMessage}:${decision.via}:${decision.detail}`);
+    }
+    lastDetail = decision.detail;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`${timeoutMessage}:incomplete:${lastDetail}`);
+}
+
+async function observeStageChild(
+  bb: BbPluginApi,
+  threadId: string,
+  timeoutMs: number,
+): Promise<{ kind:"completed" } | { kind:"product_failure"; via:string; detail:string } | { kind:"observing"; detail:string }> {
+  let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
+  const deadline = Date.now() + Math.max(1, timeoutMs);
+  while (Date.now() < deadline) {
+    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+    const listed = await listThreadEventsRaw(bb, {
+      threadId, types:["turn/started","turn/completed"], order:"desc", limit:"50",
+    });
+    if (!listed.ok) return { kind:"observing", detail:listed.detail };
+    const decision = decideThreadCompletion({
+      threadId,
+      status:stringAt(thread, "status"),
+      queuedWork:stringAt(thread, "queuedWork"),
+      events:listed.events,
+    });
+    if (decision.ok) return { kind:"completed" };
+    if (decision.via === "error" || decision.via === "canceled") {
+      return { kind:"product_failure", via:decision.via, detail:decision.detail };
+    }
+    lastDetail = decision.detail;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return { kind:"observing", detail:lastDetail };
 }
 
 function configuredSetting(settings: Record<string, unknown>, setting: string): unknown {
@@ -237,6 +321,106 @@ function planDigest(plan:string): { sha256:string; length:number } {
   return { sha256:createHash("sha256").update(plan, "utf8").digest("hex"), length:Buffer.byteLength(plan, "utf8") };
 }
 
+type DocsChildSnapshot = { pages:DocsPage[]; since:string; truncated:boolean; inputSha256:string; pageCap?:number; dispatchInput?:unknown };
+
+function docsResultObject(result:unknown): Record<string, unknown> {
+  return result && typeof result === "object" ? { ...result as Record<string, unknown> } : {};
+}
+
+function docsPageCapValue(value:unknown): number|null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function docsPageCapFromDispatchInput(value:unknown): number|null {
+  if (!value || typeof value !== "object") return null;
+  const settings = (value as { settings?:unknown }).settings;
+  if (!settings || typeof settings !== "object") return null;
+  return docsPageCapValue((settings as { pageCap?:unknown }).pageCap);
+}
+
+function docsChildSnapshot(result:unknown): DocsChildSnapshot|null {
+  const snapshot = docsResultObject(result).snapshot;
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const row = snapshot as Record<string, unknown>;
+  if (!Array.isArray(row.pages) || typeof row.since !== "string" || typeof row.truncated !== "boolean" || typeof row.inputSha256 !== "string") return null;
+  const pageCap = docsPageCapValue(row.pageCap);
+  return {
+    pages:row.pages as DocsPage[], since:row.since, truncated:row.truncated, inputSha256:row.inputSha256,
+    ...(pageCap !== null ? { pageCap } : {}),
+    ...(row.dispatchInput !== undefined ? { dispatchInput:row.dispatchInput } : {}),
+  };
+}
+
+function resolveDocsSnapshotPageCap(snapshot:DocsChildSnapshot, result:unknown): number|null {
+  return docsPageCapValue(snapshot.pageCap)
+    ?? docsPageCapFromDispatchInput(snapshot.dispatchInput)
+    ?? docsPageCapFromDispatchInput(docsResultObject(result).dispatchInput);
+}
+
+function childResultObject(result:unknown): Record<string, unknown> {
+  return result && typeof result === "object" ? { ...result as Record<string, unknown> } : {};
+}
+
+type OnboardingChildSnapshot = {
+  pages:OnboardingInputPage[]; inputBytes:number; inputPageCount:number; availablePageCount:number;
+  acceptanceSha256:string; agent:string; depth:"fast"|"deep"; dispatchInput?:unknown;
+  acceptedEvidence?:OnboardingAcceptedEvidence;
+};
+
+function onboardingAcceptedEvidenceFromUnknown(value:unknown): OnboardingAcceptedEvidence|undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Record<string, unknown>;
+  if (!Array.isArray(row.ownsPaths) || !Array.isArray(row.produced) || !Array.isArray(row.verification)) return undefined;
+  return acceptedOnboardingEvidence({
+    outputSha256:typeof row.outputSha256 === "string" ? row.outputSha256 : null,
+    result:row,
+  });
+}
+
+function onboardingChildSnapshot(result:unknown): OnboardingChildSnapshot|null {
+  const snapshot = childResultObject(result).snapshot;
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const row = snapshot as Record<string, unknown>;
+  if (!Array.isArray(row.pages) || typeof row.inputBytes !== "number" || typeof row.inputPageCount !== "number"
+    || typeof row.availablePageCount !== "number" || typeof row.acceptanceSha256 !== "string"
+    || typeof row.agent !== "string" || (row.depth !== "fast" && row.depth !== "deep")) return null;
+  const acceptedEvidence=onboardingAcceptedEvidenceFromUnknown(row.acceptedEvidence);
+  return {
+    pages:row.pages as OnboardingInputPage[], inputBytes:row.inputBytes, inputPageCount:row.inputPageCount,
+    availablePageCount:row.availablePageCount, acceptanceSha256:row.acceptanceSha256, agent:row.agent, depth:row.depth,
+    ...(row.dispatchInput !== undefined ? { dispatchInput:row.dispatchInput } : {}),
+    ...(acceptedEvidence ? { acceptedEvidence } : {}),
+  };
+}
+
+type MemoryChildSnapshot = { acceptanceSha256:string; settings:MemorySettings; agent:string; dispatchInput?:unknown };
+
+function memoryChildSnapshot(result:unknown): MemoryChildSnapshot|null {
+  const snapshot = childResultObject(result).snapshot;
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const row = snapshot as Record<string, unknown>;
+  if (typeof row.acceptanceSha256 !== "string" || typeof row.agent !== "string" || !row.settings || typeof row.settings !== "object") return null;
+  const settings = row.settings as MemorySettings;
+  if (typeof settings.enabled !== "boolean" || typeof settings.coreBudget !== "number") return null;
+  return {
+    acceptanceSha256:row.acceptanceSha256, settings, agent:row.agent,
+    ...(row.dispatchInput !== undefined ? { dispatchInput:row.dispatchInput } : {}),
+  };
+}
+
+type NightChildSnapshot = { acceptanceSha256:string; agent:string; dispatchInput?:unknown };
+
+function nightChildSnapshot(result:unknown): NightChildSnapshot|null {
+  const snapshot = childResultObject(result).snapshot;
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const row = snapshot as Record<string, unknown>;
+  if (typeof row.acceptanceSha256 !== "string" || typeof row.agent !== "string") return null;
+  return {
+    acceptanceSha256:row.acceptanceSha256, agent:row.agent,
+    ...(row.dispatchInput !== undefined ? { dispatchInput:row.dispatchInput } : {}),
+  };
+}
+
 function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:string;taskId:string;stageId:StageId;state:StageState;input:string;attempt?:number;
   providerId?:string|null;model?:string|null;threadId?:string|null;result?:unknown|null;reason?:string|null}): void {
   const previous = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === input.stageId);
@@ -265,8 +449,9 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
   const parsedSettings=parsePmReadSettings(Object.fromEntries([
     "pm_read.enabled","pm_read.min_lines","pm_read.provider","pm_read.model","pm_read.reasoning_effort","pm_read.service_tier",
   ].map((key)=>[key,configuredSetting(settings,key)])));
-  const providerId=parsedSettings.provider??input.config.writerProviderId;
-  const modelId=parsedSettings.model??input.config.writerModel;
+  const fallback=resolveStageWriterSelection({settings,config:input.config});
+  const providerId=parsedSettings.provider??fallback.providerId;
+  const modelId=parsedSettings.model??fallback.model;
   const source=JSON.stringify({taskId:input.taskId,readFirst:input.task.read_first,settings:parsedSettings,providerId,modelId});
   const base={runId:input.runId,taskId:input.taskId,stageId:"pm-read" as const,input:source,attempt:Math.min(countAttempts(input.db,input.runId,input.taskId),MAIN_ATTEMPT_LIMIT)};
   const existing=listStageReceipts(input.db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read");
@@ -283,7 +468,7 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
   recordStage(input.db,{...base,state:"running",providerId,model:modelId});
   try {
     const packet=await buildExecutionPacket(input.task.read_first,async(path)=>{
-      const file=await input.bb.sdk.files.read({hostId:input.config.hostId,rootPath:input.task.project_cwd,path});
+      const file=await input.bb.sdk.files.read({hostId:input.config.hostId,rootPath:input.task.project_cwd,path:resolve(input.task.project_cwd, path)});
       if(typeof file.content!=="string") return null;
       return {content:file.content,contentEncoding:file.contentEncoding,sha256:file.sha256,sizeBytes:file.sizeBytes};
     });
@@ -311,8 +496,7 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
     threadId=stringAt(spawned,"id");
     if(!threadId) throw new Error("pm_read_thread_id_missing");
     recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
-    const waited=await input.bb.sdk.threads.wait({threadId,status:"idle",timeoutMs:90_000});
-    if(!waited.matched) throw new Error("pm_read_timeout");
+    await waitThreadIdle(input.bb,threadId,90_000,"pm_read_timeout");
     const output=(await input.bb.sdk.threads.output({threadId})).output;
     if(typeof output!=="string"||!output.trim()) throw new Error("pm_read_output_empty");
     const parsed=parsePmReadResult(output);
@@ -334,12 +518,9 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
 async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string})
   : Promise<{allowed:boolean;reason?:string;critique?:unknown}> {
   const settings = loadProjectSettings(input.db, input.projectId);
-  const providerId = typeof settings["plan_critique.provider"] === "string" && settings["plan_critique.provider"]
-    ? settings["plan_critique.provider"] as string
-    : typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
-  const modelId = typeof settings["plan_critique.model"] === "string" && settings["plan_critique.model"]
-    ? settings["plan_critique.model"] as string
-    : typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
+  const selection=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
+  const providerId=selection.providerId;
+  const modelId=selection.model;
   const mode = settings["plan_critique.mode"] === "advisory" ? "advisory" : "gate";
   const agent = boundedAgentName(settings["plan_critique.agent"],"plan-critic");
   const runTasks = listTasksForRun(input.db,input.runId).map((row) => ({id:row.id,...row.contract as {lane?:string;owns_paths?:string[];verify?:TaskV2["verify"];verification?:TaskV2["verification"]}}));
@@ -429,8 +610,7 @@ async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDa
     threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("critique_thread_id_missing");
     recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId });
-    const waited = await input.bb.sdk.threads.wait({ threadId, status:"idle", timeoutMs:90_000 });
-    if (!waited.matched) throw new Error("critique_thread_timeout");
+    await waitThreadIdle(input.bb, threadId, 90_000, "critique_thread_timeout");
     const raw = (await input.bb.sdk.threads.output({ threadId })).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
     const critique = parseCritique(raw);
@@ -467,12 +647,9 @@ async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof op
     return failedPolicy ? {allowed:false,reason:policy.reason ?? "specialist_policy_invalid"} : {allowed:true};
   }
 
-  const providerId = typeof settings["specialist.provider"] === "string" && settings["specialist.provider"]
-    ? settings["specialist.provider"] as string
-    : typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
-  const modelId = typeof settings["specialist.model"] === "string" && settings["specialist.model"]
-    ? settings["specialist.model"] as string
-    : typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
+  const selection=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"specialist.provider",stageModelKey:"specialist.model"});
+  const providerId=selection.providerId;
+  const modelId=selection.model;
   const effort = typeof settings["specialist.reasoning_effort"] === "string" && settings["specialist.reasoning_effort"]
     ? settings["specialist.reasoning_effort"] as string : "high";
   const serviceTier = "standard";
@@ -503,8 +680,7 @@ async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof op
     threadId = stringAt(spawned,"id");
     if (!threadId) throw new Error("specialist_thread_id_missing");
     recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
-    const waited = await input.bb.sdk.threads.wait({threadId,status:"idle",timeoutMs:90_000});
-    if (!waited.matched) throw new Error("specialist_thread_timeout");
+    await waitThreadIdle(input.bb,threadId,90_000,"specialist_thread_timeout");
     const raw = (await input.bb.sdk.threads.output({threadId})).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("specialist_output_empty");
     const review = parseSpecialistResult(raw);
@@ -580,6 +756,62 @@ export default async function plugin(bb: BbPluginApi) {
       : {type:"host" as const,hostId,workspace:{type:"unmanaged" as const,path:workspace.path}};
   }
 
+  function threadReconcilePort(projectId:string) {
+    return {
+      list: async ({ limit, offset }:{limit:number;offset:number}) => (await bb.sdk.threads.list({
+        projectId,
+        originPluginId:"lane-pilot",
+        includeHidden:true,
+        limit,
+        offset,
+      })).map((thread) => ({ id:thread.id })),
+      metadata: async (threadId:string) => bb.sdk.threads.getPluginMetadata({ threadId }),
+    };
+  }
+
+  async function recoverLostHolderThread(
+    projectId:string,
+    attempt:NonNullable<ReturnType<typeof getAttempt>>,
+  ): Promise<string|null> {
+    const result = await reconcileHolder(threadReconcilePort(projectId), {
+      lanePilotRunId:attempt.run_id,
+      lanePilotTaskId:attempt.task_id,
+      workspaceAttemptId:attempt.id,
+    });
+    if (result.kind === "not_found") return null;
+    if (result.kind === "found") {
+      if (!setAttemptHolderThread(db, attempt.id, result.threadId)) {
+        const persisted = getAttempt(db, attempt.id)?.holder_thread_id;
+        if (!persisted || persisted !== result.threadId) throw new WriterSelectionError("attempt_worktree_holder_cas_conflict");
+      }
+      return result.threadId;
+    }
+    if (result.kind === "blocked") {
+      transitionAttempt(db, attempt.id, "blocked", { reason:`holder_reconcile_${result.reason}` });
+      throw new WriterSelectionError(`attempt_worktree_holder_ambiguous:${result.reason}`);
+    }
+    transitionAttempt(db, attempt.id, "spawn_unknown", { reason:`holder_reconcile_error:${result.message}` });
+    throw new WriterSelectionError(`attempt_worktree_holder_reconcile_error:${result.message}`);
+  }
+
+  function enqueueResumedWriter(projectId:string, attempt:NonNullable<ReturnType<typeof getAttempt>>, writerThreadId?:string):boolean {
+    const run = getRun(db, attempt.run_id);
+    const stored = getTask(db, attempt.task_id);
+    const config = loadPrototypeConfig(db, projectId);
+    const parsed = stored?.kind === "bb" ? taskV2Schema.safeParse(stored.contract) : null;
+    if (!run?.writer_workspace_path || !config || !parsed?.success) return false;
+    const taskWorkspace=acceptedTaskWorkspace(attempt.run_id,attempt.task_id,run.writer_workspace_path,parsed.data,attempt.id);
+    startWriterTask({
+      projectId, runId:attempt.run_id, taskId:attempt.task_id,
+      firstAttemptId:attempt.id, pmThreadId:run.pm_thread_id ?? "", writerThreadId,
+      dirtBefore:attempt.dirt_before,
+      config:{ ...config, writerWorkspacePath:taskWorkspace.path },
+      task:taskWorkspace.task,
+      plan:getTaskPlan(db, attempt.task_id) ?? parsed.data.objective,
+    });
+    return true;
+  }
+
   async function reconcileAttemptThread(
     projectId: string,
     attempt: NonNullable<ReturnType<typeof getAttempt>>,
@@ -589,16 +821,7 @@ export default async function plugin(bb: BbPluginApi) {
       lanePilotTaskId:attempt.task_id,
       attemptId:attempt.id,
     };
-    const result = await reconcile({
-      list: async ({ limit, offset }) => (await bb.sdk.threads.list({
-        projectId,
-        originPluginId:"lane-pilot",
-        includeHidden:true,
-        limit,
-        offset,
-      })).map((thread) => ({ id:thread.id })),
-      metadata: async (threadId) => bb.sdk.threads.getPluginMetadata({ threadId }),
-    }, key);
+    const result = await reconcile(threadReconcilePort(projectId), key);
     if (result.kind === "found") {
       transitionAttempt(db, attempt.id, "running", { threadId:result.threadId });
       return result.threadId;
@@ -662,7 +885,20 @@ export default async function plugin(bb: BbPluginApi) {
         // A queued attempt has not requested a provider thread yet. Do not feed it
         // through thread reconciliation, which correctly rejects a missing spawn;
         // resume it directly through the persisted run pool after reload.
-        const writerThreadId = shouldReconcileAttemptThread(attempt.state) ? await reconcileAttemptThread(row.project_id, attempt) : "";
+        if (shouldResumeWorktreeHolder(attempt)) {
+          enqueueResumedWriter(row.project_id, attempt);
+          resumed.push(row.id);
+          continue;
+        }
+        if (shouldScanLostWorktreeHolder(attempt)) {
+          const recovered = await recoverLostHolderThread(row.project_id, attempt);
+          if (recovered) {
+            enqueueResumedWriter(row.project_id, getAttempt(db, attempt.id) ?? attempt);
+            resumed.push(row.id);
+            continue;
+          }
+        }
+        const writerThreadId = shouldReconcileAttemptThread(attempt.state, attempt) ? await reconcileAttemptThread(row.project_id, attempt) : "";
         const current = getAttempt(db, row.id);
         if (current && await maybeFinishResumedAttempt({
           projectId:row.project_id, attempt:current, writerThreadId,
@@ -974,19 +1210,61 @@ export default async function plugin(bb: BbPluginApi) {
         ? { type:"reuse" as const, environmentId:run.writer_environment_id }
         : { type:"host" as const, hostId:input.config.hostId, workspace:{ type:"unmanaged" as const, path:input.task.project_cwd } };
       if (workspaceDecision.strategy === "provision_attempt_worktree") {
-        // Provision a managed worktree with a short-lived, read-only holder thread. Stop and
-        // validate it before the writer starts so the attempt baseline cannot race writer edits.
-        const holder = await spawnWithSeam(() => bb.sdk.threads.spawn({
-          projectId:input.projectId, ...execution,
-          prompt:"Prepare the assigned managed workspace and make no file changes. Return only WORKSPACE_READY.",
-          environment:{type:"host",hostId:input.config.hostId,workspace:{type:"managed-worktree",baseBranch:{kind:"default"}}},
-          visibility:"hidden",pluginMetadata:{role:"workspace-provisioner",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,workspaceAttemptId:input.attemptId},
-        }));
-        const holderThreadId=stringAt(holder,"id");
-        const environmentId=stringAt(holder,"environmentId");
-        if(!holderThreadId) throw new WriterSelectionError("attempt_worktree_provision_missing_thread");
+        const bound=getAttempt(db,input.attemptId);
+        if (bound?.workspace_path && bound.environment_id) {
+          workspacePath=bound.workspace_path;
+          environment={type:"reuse",environmentId:bound.environment_id};
+        } else {
+        try {
+          requireManagedWorktreeProvider(await bb.sdk.environments.listProviders({
+            projectId:input.projectId, hostId:input.config.hostId,
+          }));
+        } catch (cause) {
+          throw new WriterSelectionError(cause instanceof Error ? cause.message : String(cause));
+        }
+        // Provision a managed worktree with a short-lived holder. Wait until the environment is
+        // bound and ready, then stop the holder before the writer starts.
+        let holderThreadId=getAttempt(db,input.attemptId)?.holder_thread_id ?? null;
+        let spawnEnvironmentId:string|null=null;
+        if(!holderThreadId) {
+          const current=getAttempt(db,input.attemptId);
+          if(!current) throw new WriterSelectionError("attempt_worktree_holder_missing_attempt");
+          holderThreadId=await recoverLostHolderThread(input.projectId, current);
+        }
+        if(!holderThreadId) {
+          const holder = await spawnWithSeam(() => bb.sdk.threads.spawn({
+            projectId:input.projectId, ...execution,
+            prompt:"Prepare the assigned managed workspace and make no file changes. Return only WORKSPACE_READY.",
+            environment:{type:"host",hostId:input.config.hostId,workspace:{type:"managed-worktree",baseBranch:{kind:"default"}}},
+            visibility:"hidden",pluginMetadata:{role:"workspace-provisioner",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,workspaceAttemptId:input.attemptId},
+          }));
+          holderThreadId=stringAt(holder,"id");
+          spawnEnvironmentId=stringAt(holder,"environmentId");
+          if(!holderThreadId) throw new WriterSelectionError("attempt_worktree_provision_missing_thread");
+          if(!setAttemptHolderThread(db,input.attemptId,holderThreadId)) {
+            const persisted=getAttempt(db,input.attemptId)?.holder_thread_id;
+            if(!persisted) throw new WriterSelectionError("attempt_worktree_holder_cas_conflict");
+            if(persisted!==holderThreadId) {
+              await bb.sdk.threads.stop({threadId:holderThreadId}).catch(()=>undefined);
+              holderThreadId=persisted;
+              spawnEnvironmentId=null;
+            }
+          }
+        }
+        let environmentId:string;
+        try {
+          environmentId=(await waitManagedWorktreeReady({
+            threadId:holderThreadId,
+            expectedHostId:input.config.hostId,
+            spawnEnvironmentId,
+            getThread:(threadId)=>bb.sdk.threads.get({threadId}),
+            getEnvironment:(id)=>bb.sdk.environments.get({environmentId:id}),
+          })).environmentId;
+        } catch (cause) {
+          await bb.sdk.threads.stop({threadId:holderThreadId}).catch(()=>undefined);
+          throw new WriterSelectionError(cause instanceof Error ? cause.message : String(cause));
+        }
         await bb.sdk.threads.stop({threadId:holderThreadId});
-        if(!environmentId) throw new WriterSelectionError("attempt_worktree_provision_missing_environment_id");
         const holderState=await bb.sdk.threads.get({threadId:holderThreadId});
         const holderStatus=stringAt(holderState,"status");
         if(holderStatus!=="idle"&&holderStatus!=="error") throw new WriterSelectionError(`attempt_worktree_provisioner_not_stopped:${holderStatus??"unknown"}`);
@@ -1000,6 +1278,7 @@ export default async function plugin(bb: BbPluginApi) {
           throw new WriterSelectionError("attempt_workspace_cas_conflict");
         }
         environment={type:"reuse",environmentId:managed.environmentId};
+        }
       } else if (!setAttemptWorkspace(db,input.attemptId,{path:workspacePath,environmentId:run.writer_environment_id,decision:workspaceDecision})) {
         throw new WriterSelectionError("attempt_workspace_cas_conflict");
       }
@@ -1010,7 +1289,7 @@ export default async function plugin(bb: BbPluginApi) {
       let executionPacketSha256:string;
       try {
         const packet = await buildExecutionPacket(attemptTask.read_first, async (path) => {
-          const file = await bb.sdk.files.read({ hostId:input.config.hostId, rootPath:workspacePath, path });
+          const file = await bb.sdk.files.read({ hostId:input.config.hostId, rootPath:workspacePath, path:resolve(workspacePath, path) });
           if (typeof file.content !== "string") return null;
           return { content:file.content, contentEncoding:file.contentEncoding, sha256:file.sha256, sizeBytes:file.sizeBytes };
         });
@@ -2018,7 +2297,27 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
-  async function runDocsMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string}):Promise<Record<string,unknown>> {
+  async function reconcileStageChild(projectId:string, runId:string, taskId:string, stageId:StageId, role:string) {
+    return reconcile({
+      list: async ({ limit, offset }) => (await bb.sdk.threads.list({
+        projectId, originPluginId:"lane-pilot", includeHidden:true, limit, offset,
+      })).map((thread) => ({ id:thread.id })),
+      metadata: async (threadId) => {
+        const meta = await bb.sdk.threads.getPluginMetadata({ threadId }) as Record<string, unknown>;
+        if (meta.role === role && meta.stageId === stageId
+          && meta.lanePilotRunId === runId && meta.lanePilotTaskId === taskId) {
+          return { ...meta, attemptId:stageId };
+        }
+        return meta;
+      },
+    }, { lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId:stageId });
+  }
+
+  async function reconcileDocsChild(projectId:string, runId:string, taskId:string) {
+    return reconcileStageChild(projectId, runId, taskId, "docs-maintenance", "docs-maintainer");
+  }
+
+  async function runDocsMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if (valueAt(metadata,"role") !== "pm" || stringAt(metadata,"lanePilotRunId") !== args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run = getRun(db,args.runId), config = loadPrototypeConfig(db,args.projectId), taskRow = getTask(db,args.taskId);
@@ -2029,31 +2328,131 @@ export default async function plugin(bb: BbPluginApi) {
     if (listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt")?.state !== "passed") throw new Error("docs maintenance requires an accepted writer receipt first");
     const settings = loadProjectSettings(db,args.projectId);
     const docsAgent=boundedAgentName(settings["docs.agent"],"docs-maintainer");
-    const docsProviderId=typeof settings["docs.provider"]==="string"&&settings["docs.provider"]?settings["docs.provider"] as string:config.writerProviderId;
-    const docsModelId=typeof settings["docs.model"]==="string"&&settings["docs.model"]?settings["docs.model"] as string:config.writerModel;
+    const docsSelection=resolveStageWriterSelection({settings,config,stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
+    const docsProviderId=docsSelection.providerId;
+    const docsModelId=docsSelection.model;
     const configuredDocsEffort=typeof settings["docs.reasoning_effort"]==="string"&&settings["docs.reasoning_effort"]?settings["docs.reasoning_effort"] as string:null;
     const docsServiceTier=settings["docs.service_tier"]==="fast"?"fast":"standard";
     const parsedSettings:Record<string,unknown> = Object.fromEntries(["docs.enabled","docs.maintain","docs.since","docs.page_cap","docs.hour","docs.agent"].map((key)=>[key,configuredSetting(settings,key)]));
     const docsSettings = parseDocsSettings(parsedSettings);
     const base = {runId:args.runId,taskId:args.taskId,stageId:"docs-maintenance" as const,input:JSON.stringify({taskId:args.taskId,settings:docsSettings,agent:docsAgent,providerId:docsProviderId,model:docsModelId,reasoningEffort:configuredDocsEffort,serviceTier:docsServiceTier})};
     const existing = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
-    if (existing) return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"docs maintenance already has a receipt; create a new task for another run",stage:existing};
-    recordStage(db,{...base,state:"pending"});
-    if (!docsSettings.enabled || !docsSettings.maintain) {
+    if (existing && !["pending","running"].includes(existing.state)) {
+      return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"docs maintenance already has a receipt; create a new task for another run",stage:existing};
+    }
+    if (!existing) recordStage(db,{...base,state:"pending",providerId:docsProviderId,model:docsModelId});
+    const claimed = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+    if (claimed?.state === "pending") {
+      recordStage(db,{...base,state:"running",providerId:docsProviderId,model:docsModelId,threadId:claimed.threadId,result:claimed.result,reason:"docs_spawn_requested"});
+    }
+    let receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+    const liveChild = Boolean(receipt?.threadId || docsChildSnapshot(receipt?.result));
+    if ((!docsSettings.enabled || !docsSettings.maintain) && !liveChild) {
       recordStage(db,{...base,state:"skipped",reason:!docsSettings.enabled?"disabled_by_project_setting":"docs_maintain_disabled"});
       return {runId:args.runId,taskId:args.taskId,state:"skipped",reason:!docsSettings.enabled?"disabled_by_project_setting":"docs_maintain_disabled"};
     }
-    recordStage(db,{...base,state:"running",providerId:docsProviderId,model:docsModelId});
-    let threadId:string|null=null;
+    let threadId:string|null=receipt?.threadId??null;
     const changed:Array<{path:string;sha256:string}> = [];
+    const observeMs=Math.min(240, Math.max(1, args.timeoutSec ?? 60)) * 1000;
+    const persistRunning=(nextThreadId:string|null, result:unknown, reason?:string)=>{
+      const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+      if (current && !["pending","running"].includes(current.state)) return current;
+      recordStage(db,{...base,state:"running",providerId:docsProviderId,model:docsModelId,
+        threadId:nextThreadId ?? current?.threadId ?? null,
+        result:{...docsResultObject(current?.result),...docsResultObject(result)},reason});
+      return undefined;
+    };
+    const finishObservation=async(childId:string, snapshot:DocsChildSnapshot|null):Promise<Record<string,unknown>>=>{
+      const already=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+      if (already && !["pending","running"].includes(already.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:already.state,reason:"docs maintenance already has a receipt; create a new task for another run",stage:already};
+      }
+      const observed=await observeStageChild(bb,childId,observeMs);
+      const latest=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+      if (latest && !["pending","running"].includes(latest.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:latest.state,reason:"docs maintenance already has a receipt; create a new task for another run",stage:latest};
+      }
+      const prior=docsResultObject(latest?.result ?? receipt?.result);
+      if (observed.kind === "observing") {
+        persistRunning(childId,{...prior,...(snapshot?{snapshot}:{}),observing:observed.detail});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:observed.detail};
+      }
+      if (observed.kind === "product_failure") {
+        recordStage(db,{...base,state:"failed",providerId:docsProviderId,model:docsModelId,threadId:childId,reason:`${observed.via}:${observed.detail}`,result:{error:`${observed.via}:${observed.detail}`}});
+        return {runId:args.runId,taskId:args.taskId,state:"failed",threadId:childId,reason:`${observed.via}:${observed.detail}`};
+      }
+      if (!snapshot) {
+        persistRunning(childId,{...prior,observing:"docs_snapshot_missing"});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:"docs_snapshot_missing"};
+      }
+      const pageCap=resolveDocsSnapshotPageCap(snapshot, prior);
+      if (pageCap === null) {
+        persistRunning(childId,{...prior,snapshot,observing:"docs_snapshot_page_cap_missing"});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:"docs_snapshot_page_cap_missing"};
+      }
+      const raw=(await bb.sdk.threads.output({threadId:childId})).output; if(typeof raw!=="string"||!raw.trim()) throw new Error("docs_maintainer_output_empty");
+      let decoded:unknown; try { decoded=JSON.parse(raw); } catch { throw new Error("docs_maintainer_output_must_be_json_array"); }
+      const edits=validateDocsEdits(decoded,snapshot.pages,pageCap);
+      for (const edit of edits) {
+        await bb.sdk.files.write({hostId:config.hostId,rootPath:task.project_cwd,path:`${task.project_cwd}/${edit.path}`,content:edit.content,contentEncoding:"utf8",createParents:false,expectedSha256:edit.expectedSha256});
+        const readback=await bb.sdk.files.read({hostId:config.hostId,rootPath:task.project_cwd,path:`${task.project_cwd}/${edit.path}`});
+        const afterContent=stringAt(readback,"content");
+        if (afterContent !== edit.content) throw new Error(`docs_write_readback_mismatch:${edit.path}`);
+        changed.push({path:edit.path,sha256:sha256(afterContent)});
+      }
+      const result={selected:snapshot.pages.length,changed,inputSha256:snapshot.inputSha256,since:snapshot.since,truncated:snapshot.truncated,threadId:childId,snapshot};
+      recordStage(db,{...base,state:"passed",providerId:docsProviderId,model:docsModelId,threadId:childId,result});
+      return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+    };
     try {
-      const inventory = await host.call("listDocsPages",{requestedHostId:config.hostId,projectCwd:task.project_cwd},{hostId:config.hostId,timeoutMs:60_000});
-      if (inventory.hostId !== config.hostId) throw new Error("docs inventory came from a different host");
-      const selected = selectDocsPages(inventory.pages as DocsPage[],docsSettings.since,docsSettings.pageCap);
-      if (!selected.pages.length) {
-        const result={selected:0,changed:[],inputSha256:docsInputHash([]),since:docsSettings.since,truncated:false};
-        recordStage(db,{...base,state:"passed",result});
-        return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+      receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+      threadId = receipt?.threadId ?? null;
+      let snapshot = docsChildSnapshot(receipt?.result);
+      if (!threadId) {
+        const recovered = await reconcileDocsChild(args.projectId, args.runId, args.taskId);
+        if (recovered.kind === "found") {
+          threadId = recovered.threadId;
+          persistRunning(threadId, { ...docsResultObject(receipt?.result), ...(snapshot?{snapshot}:{}) });
+          receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+        } else if (recovered.kind !== "not_found") {
+          persistRunning(null, { ...docsResultObject(receipt?.result), ...(snapshot?{snapshot}:{}), observing:recovered.kind });
+          return {runId:args.runId,taskId:args.taskId,state:"running",reason:"observing",detail:recovered.kind};
+        }
+      }
+      if (threadId) return await finishObservation(threadId, snapshot);
+      if (!snapshot) {
+        const inventory = await host.call("listDocsPages",{requestedHostId:config.hostId,projectCwd:task.project_cwd},{hostId:config.hostId,timeoutMs:60_000});
+        if (inventory.hostId !== config.hostId) throw new Error("docs inventory came from a different host");
+        receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+        snapshot = docsChildSnapshot(receipt?.result);
+        threadId = receipt?.threadId ?? null;
+        if (threadId) return await finishObservation(threadId, snapshot);
+        if (!snapshot) {
+          const selected = selectDocsPages(inventory.pages as DocsPage[],docsSettings.since,docsSettings.pageCap);
+          if (!selected.pages.length) {
+            const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+            if (current && !["pending","running"].includes(current.state)) {
+              return {runId:args.runId,taskId:args.taskId,state:current.state,reason:"docs maintenance already has a receipt; create a new task for another run",stage:current};
+            }
+            const result={selected:0,changed:[],inputSha256:docsInputHash([]),since:docsSettings.since,truncated:false};
+            recordStage(db,{...base,state:"passed",result});
+            return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+          }
+          snapshot = { pages:selected.pages, since:docsSettings.since, truncated:selected.truncated, inputSha256:docsInputHash(selected.pages),
+            pageCap:docsSettings.pageCap, dispatchInput:JSON.parse(base.input) };
+          persistRunning(null, { snapshot }, "docs_spawn_requested");
+          receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+        }
+      }
+      const resolvedPageCap=resolveDocsSnapshotPageCap(snapshot, receipt?.result);
+      if (resolvedPageCap === null) {
+        persistRunning(threadId, { snapshot, observing:"docs_snapshot_page_cap_missing" });
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId,reason:"observing",detail:"docs_snapshot_page_cap_missing"};
+      }
+      if (!claimDocsSpawn(db, args.runId, args.taskId)) {
+        receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+        if (receipt?.threadId) return await finishObservation(receipt.threadId, snapshot);
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"docs_spawn_claimed"};
       }
       const [providers,catalog] = await Promise.all([bb.sdk.providers.list({hostId:config.hostId}),bb.sdk.providers.models({providerId:docsProviderId,hostId:config.hostId})]);
       const provider=providers.find((item)=>item.id===docsProviderId&&item.available);
@@ -2063,34 +2462,37 @@ export default async function plugin(bb: BbPluginApi) {
       if (!docsEffort) throw new Error("docs_writer_model_has_no_supported_reasoning_effort");
       const tier=provider.capabilities.supportsServiceTier?bbServiceTier(docsServiceTier):null;
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`docs_writer_service_tier_unsupported:${tier}`);
-      const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:selected.pages,pageCap:docsSettings.pageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),visibility:"hidden",pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId}});
+      const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),visibility:"hidden",pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId}});
       threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs_maintainer_thread_id_missing");
-      recordStage(db,{...base,state:"running",providerId:docsProviderId,model:docsModelId,threadId});
-      const waited=await bb.sdk.threads.wait({threadId,status:"idle",timeoutMs:180_000}); if(!waited.matched) throw new Error("docs_maintainer_timeout");
-      const raw=(await bb.sdk.threads.output({threadId})).output; if(typeof raw!=="string"||!raw.trim()) throw new Error("docs_maintainer_output_empty");
-      let decoded:unknown; try { decoded=JSON.parse(raw); } catch { throw new Error("docs_maintainer_output_must_be_json_array"); }
-      const edits=validateDocsEdits(decoded,selected.pages,docsSettings.pageCap);
-      for (const edit of edits) {
-        await bb.sdk.files.write({hostId:config.hostId,rootPath:task.project_cwd,path:`${task.project_cwd}/${edit.path}`,content:edit.content,contentEncoding:"utf8",createParents:false,expectedSha256:edit.expectedSha256});
-        const readback=await bb.sdk.files.read({hostId:config.hostId,rootPath:task.project_cwd,path:`${task.project_cwd}/${edit.path}`});
-        const afterContent=stringAt(readback,"content");
-        if (afterContent !== edit.content) throw new Error(`docs_write_readback_mismatch:${edit.path}`);
-        const after=sha256(afterContent);
-        changed.push({path:edit.path,sha256:after});
-      }
-      const result={selected:selected.pages.length,changed,inputSha256:docsInputHash(selected.pages),since:docsSettings.since,truncated:selected.truncated,threadId};
-      recordStage(db,{...base,state:"passed",providerId:docsProviderId,model:docsModelId,threadId,result});
-      return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+      persistRunning(threadId, { ...docsResultObject(receipt?.result), snapshot, spawnAttempted:true });
+      receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+      return await finishObservation(threadId, snapshot);
     } catch(cause) {
+      const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
+      if (current && !["pending","running"].includes(current.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:current.state,reason:"docs maintenance already has a receipt; create a new task for another run",stage:current};
+      }
       const reason=cause instanceof Error?cause.message:String(cause);
-      if(threadId){const thread=await bb.sdk.threads.get({threadId}).catch(()=>null);if(["active","starting"].includes(stringAt(thread,"status")??"")) await bb.sdk.threads.stop({threadId}).catch(()=>undefined);}
+      if (!threadId) {
+        const recovered = await reconcileDocsChild(args.projectId, args.runId, args.taskId).catch(() => ({ kind:"error" as const, message:reason }));
+        if (recovered.kind === "found") {
+          persistRunning(recovered.threadId, { ...docsResultObject(receipt?.result), observing:reason });
+          return {runId:args.runId,taskId:args.taskId,state:"running",threadId:recovered.threadId,reason:"observing",detail:reason};
+        }
+        persistRunning(null, { ...docsResultObject(receipt?.result), observing:reason }, "docs_spawn_unknown");
+        return {runId:args.runId,taskId:args.taskId,state:"running",reason:"observing",detail:reason};
+      }
+      if (reason.includes("events_list_error") || reason.includes("host") || reason.includes("disconnect") || reason.includes("ECONN") || reason.includes("502")) {
+        persistRunning(threadId, { ...docsResultObject(receipt?.result), observing:reason });
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId,reason:"observing",detail:reason};
+      }
       const state=changed.length?"blocked":"failed";
       recordStage(db,{...base,state,providerId:docsProviderId,model:docsModelId,threadId,reason,result:{error:reason,changed,inputSha256:null}});
       return {runId:args.runId,taskId:args.taskId,state,reason,changed};
     }
   }
 
-  async function runOnboardingPreview(args:{threadId:string;projectId:string;runId:string;taskId:string}):Promise<Record<string,unknown>> {
+  async function runOnboardingPreview(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
@@ -2098,29 +2500,107 @@ export default async function plugin(bb: BbPluginApi) {
     const taskContract=taskV2Schema.parse(taskRow.contract);
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
     const task=workspace.task;
-    const receipts=listStageReceipts(db,args.runId,args.taskId),accepted=receipts.find((row)=>row.stageId==="acceptance-receipt");
+    const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed") throw new Error("onboarding preview requires an accepted writer receipt first");
-    const existing=receipts.find((row)=>row.stageId==="onboarding-preview");
-    if(existing) return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"onboarding preview already has a receipt; create a new task for another preview",stage:existing};
     const settings=loadProjectSettings(db,args.projectId);
     const agent=boundedAgentName(settings["onboarding.agent"],"project-onboarder");
     const depth=settings["onboarding.depth"]==="deep"?"deep":"fast";
-    const providerId=typeof settings["onboarding.provider"]==="string"&&settings["onboarding.provider"]?settings["onboarding.provider"] as string:config.writerProviderId;
-    const modelId=typeof settings["onboarding.model"]==="string"&&settings["onboarding.model"]?settings["onboarding.model"] as string:config.writerModel;
+    const selection=resolveStageWriterSelection({settings,config,stageProviderKey:"onboarding.provider",stageModelKey:"onboarding.model"});
+    const providerId=selection.providerId;
+    const modelId=selection.model;
     const base={runId:args.runId,taskId:args.taskId,stageId:"onboarding-preview" as const,
       input:JSON.stringify({taskId:args.taskId,acceptanceSha256:accepted.outputSha256,agent,depth,providerId,modelId})};
-    recordStage(db,{...base,state:"pending",providerId,model:modelId});
-    recordStage(db,{...base,state:"running",providerId,model:modelId});
-    let threadId:string|null=null;
+    const existing=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+    if(existing && !["pending","running"].includes(existing.state)) {
+      return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"onboarding preview already has a receipt; create a new task for another preview",stage:existing};
+    }
+    if(!existing) recordStage(db,{...base,state:"pending",providerId,model:modelId});
+    const claimed=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+    if(claimed?.state==="pending") recordStage(db,{...base,state:"running",providerId,model:modelId,threadId:claimed.threadId,result:claimed.result,reason:"onboarding_spawn_requested"});
+    let receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+    let threadId:string|null=receipt?.threadId??null;
+    const observeMs=Math.min(240, Math.max(1, args.timeoutSec ?? 60)) * 1000;
+    const persistRunning=(nextThreadId:string|null, result:unknown, reason?:string)=>{
+      const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+      if(current && !["pending","running"].includes(current.state)) return current;
+      recordStage(db,{...base,state:"running",providerId,model:modelId,
+        threadId:nextThreadId ?? current?.threadId ?? null,
+        result:{...childResultObject(current?.result),...childResultObject(result)},reason});
+      return undefined;
+    };
+    const finishObservation=async(childId:string, snapshot:OnboardingChildSnapshot|null):Promise<Record<string,unknown>>=>{
+      const already=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+      if(already && !["pending","running"].includes(already.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:already.state,reason:"onboarding preview already has a receipt; create a new task for another preview",stage:already};
+      }
+      const observed=await observeStageChild(bb,childId,observeMs);
+      const latest=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+      if(latest && !["pending","running"].includes(latest.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:latest.state,reason:"onboarding preview already has a receipt; create a new task for another preview",stage:latest};
+      }
+      const prior=childResultObject(latest?.result ?? receipt?.result);
+      if(observed.kind==="observing") {
+        persistRunning(childId,{...prior,...(snapshot?{snapshot}:{}),observing:observed.detail});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:observed.detail};
+      }
+      if(observed.kind==="product_failure") {
+        recordStage(db,{...base,state:"failed",providerId,model:modelId,threadId:childId,reason:`${observed.via}:${observed.detail}`,result:{error:`${observed.via}:${observed.detail}`}});
+        return {runId:args.runId,taskId:args.taskId,state:"failed",threadId:childId,reason:`${observed.via}:${observed.detail}`};
+      }
+      if(!snapshot) {
+        persistRunning(childId,{...prior,observing:"onboarding_snapshot_missing"});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:"onboarding_snapshot_missing"};
+      }
+      const raw=(await bb.sdk.threads.output({threadId:childId})).output; if(typeof raw!=="string"||!raw.trim()) throw new Error("onboarding_preview_output_empty");
+      const preview=parseOnboardingPreview(raw,snapshot.pages),previewSha256=onboardingPreviewSha256(preview);
+      const result={preview,previewSha256,inputPages:snapshot.pages.map(({path,sha256})=>({path,sha256})),
+        inputBytes:snapshot.inputBytes,inputPageCount:snapshot.inputPageCount,availablePageCount:snapshot.availablePageCount,
+        threadId:childId,agent:snapshot.agent,depth:snapshot.depth,snapshot};
+      recordStage(db,{...base,state:"passed",providerId,model:modelId,threadId:childId,result});
+      return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+    };
     try{
-      const inventory=await host.call("listDocsPages",{requestedHostId:config.hostId,projectCwd:task.project_cwd},{hostId:config.hostId,timeoutMs:60_000});
-      if(inventory.hostId!==config.hostId) throw new Error("onboarding inventory came from a different host");
-      const sorted=[...inventory.pages].sort((a,b)=>b.modifiedAt-a.modifiedAt||a.path.localeCompare(b.path));
-      const pages:OnboardingInputPage[]=[];let total=0;
-      for(const page of sorted){
-        const bytes=Buffer.byteLength(page.content,"utf8");
-        if(pages.length>=40||total+bytes>80_000) continue;
-        pages.push({path:page.path,sha256:page.sha256,content:page.content});total+=bytes;
+      receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+      threadId=receipt?.threadId??null;
+      let snapshot=onboardingChildSnapshot(receipt?.result);
+      if(!threadId){
+        const recovered=await reconcileStageChild(args.projectId,args.runId,args.taskId,"onboarding-preview","onboarder");
+        if(recovered.kind==="found"){
+          threadId=recovered.threadId;
+          persistRunning(threadId,{...childResultObject(receipt?.result),...(snapshot?{snapshot}:{})});
+          receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+        } else if(recovered.kind!=="not_found") {
+          persistRunning(null,{...childResultObject(receipt?.result),...(snapshot?{snapshot}:{}),observing:recovered.kind});
+          return {runId:args.runId,taskId:args.taskId,state:"running",reason:"observing",detail:recovered.kind};
+        }
+      }
+      if(threadId) return await finishObservation(threadId,snapshot);
+      if(!snapshot){
+        const inventory=await host.call("listDocsPages",{requestedHostId:config.hostId,projectCwd:task.project_cwd},{hostId:config.hostId,timeoutMs:60_000});
+        if(inventory.hostId!==config.hostId) throw new Error("onboarding inventory came from a different host");
+        receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+        snapshot=onboardingChildSnapshot(receipt?.result);
+        threadId=receipt?.threadId??null;
+        if(threadId) return await finishObservation(threadId,snapshot);
+        if(!snapshot){
+          const sorted=[...inventory.pages].sort((a,b)=>b.modifiedAt-a.modifiedAt||a.path.localeCompare(b.path));
+          const pages:OnboardingInputPage[]=[]; let total=0;
+          for(const page of sorted){
+            const bytes=Buffer.byteLength(page.content,"utf8");
+            if(pages.length>=40||total+bytes>80_000) continue;
+            pages.push({path:page.path,sha256:page.sha256,content:page.content}); total+=bytes;
+          }
+          snapshot={pages,inputBytes:total,inputPageCount:pages.length,availablePageCount:inventory.pages.length,
+            acceptanceSha256:accepted.outputSha256??"",agent,depth,dispatchInput:JSON.parse(base.input),
+            acceptedEvidence:acceptedOnboardingEvidence({outputSha256:accepted.outputSha256,result:accepted.result})};
+          persistRunning(null,{snapshot},"onboarding_spawn_requested");
+          receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+        }
+      }
+      if(!claimStageSpawn(db,args.runId,args.taskId,"onboarding-preview")){
+        receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+        if(receipt?.threadId) return await finishObservation(receipt.threadId,snapshot);
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"onboarding_spawn_claimed"};
       }
       const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:config.hostId}),bb.sdk.providers.models({providerId,hostId:config.hostId})]);
       const provider=providers.find((item)=>item.id===providerId&&item.available),model=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
@@ -2131,21 +2611,34 @@ export default async function plugin(bb: BbPluginApi) {
       const requestedTier=settings["onboarding.service_tier"]==="fast"?"fast":"standard";
       const tier=provider.capabilities.supportsServiceTier?bbServiceTier(requestedTier):null;
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`onboarding_service_tier_unsupported:${tier}`);
-      const prompt=onboardingPrompt({task:{objective:task.objective,owns_paths:task.owns_paths,never_touch:task.never_touch,expected_outputs:task.expected_outputs,verification:task.verification},pages,agent,depth});
+      const acceptedEvidence=snapshot.acceptedEvidence
+        ?? acceptedOnboardingEvidence({outputSha256:accepted.outputSha256,result:accepted.result});
+      const prompt=onboardingPrompt({task:{objective:task.objective,owns_paths:task.owns_paths,never_touch:task.never_touch,expected_outputs:task.expected_outputs,verification:task.verification},pages:snapshot.pages,accepted:acceptedEvidence,agent:snapshot.agent,depth:snapshot.depth});
       const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,...writerExecutionSelection(providerId,modelId,effort,tier),prompt,
         environment:workspaceExecutionEnvironment(config.hostId,workspace),visibility:"hidden",
         pluginMetadata:{role:"onboarder",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"onboarding-preview",parentPmThreadId:args.threadId}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("onboarding_thread_id_missing");
-      recordStage(db,{...base,state:"running",providerId,model:modelId,threadId});
-      const waited=await bb.sdk.threads.wait({threadId,status:"idle",timeoutMs:180_000});if(!waited.matched) throw new Error("onboarding_preview_timeout");
-      const raw=(await bb.sdk.threads.output({threadId})).output;if(typeof raw!=="string"||!raw.trim()) throw new Error("onboarding_preview_output_empty");
-      const preview=parseOnboardingPreview(raw,pages),previewSha256=onboardingPreviewSha256(preview);
-      const result={preview,previewSha256,inputPages:pages.map(({path,sha256})=>({path,sha256})),inputBytes:total,inputPageCount:pages.length,availablePageCount:inventory.pages.length,threadId,agent,depth,reasoningEffort:effort,serviceTier:requestedTier};
-      recordStage(db,{...base,state:"passed",providerId,model:modelId,threadId,result});
-      return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+      persistRunning(threadId,{...childResultObject(receipt?.result),snapshot,spawnAttempted:true});
+      return await finishObservation(threadId,snapshot);
     }catch(cause){
+      const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="onboarding-preview");
+      if(current && !["pending","running"].includes(current.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:current.state,reason:"onboarding preview already has a receipt; create a new task for another preview",stage:current};
+      }
       const reason=cause instanceof Error?cause.message:String(cause);
-      if(threadId){const thread=await bb.sdk.threads.get({threadId}).catch(()=>null);if(["active","starting"].includes(stringAt(thread,"status")??"")) await bb.sdk.threads.stop({threadId}).catch(()=>undefined);}
+      if(!threadId){
+        const recovered=await reconcileStageChild(args.projectId,args.runId,args.taskId,"onboarding-preview","onboarder").catch(()=>({kind:"error" as const,message:reason}));
+        if(recovered.kind==="found"){
+          persistRunning(recovered.threadId,{...childResultObject(receipt?.result),observing:reason});
+          return {runId:args.runId,taskId:args.taskId,state:"running",threadId:recovered.threadId,reason:"observing",detail:reason};
+        }
+        persistRunning(null,{...childResultObject(receipt?.result),observing:reason},"onboarding_spawn_unknown");
+        return {runId:args.runId,taskId:args.taskId,state:"running",reason:"observing",detail:reason};
+      }
+      if(reason.includes("events_list_error")||reason.includes("host")||reason.includes("disconnect")||reason.includes("ECONN")||reason.includes("502")){
+        persistRunning(threadId,{...childResultObject(receipt?.result),observing:reason});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId,reason:"observing",detail:reason};
+      }
       recordStage(db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
       return {runId:args.runId,taskId:args.taskId,state:"failed",reason};
     }
@@ -2195,7 +2688,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
-  async function runMemoryMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string}):Promise<Record<string,unknown>> {
+  async function runMemoryMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
@@ -2203,8 +2696,7 @@ export default async function plugin(bb: BbPluginApi) {
     const taskContract=taskV2Schema.parse(taskRow.contract);
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
     const task=workspace.task;
-    const receipts=listStageReceipts(db,args.runId,args.taskId);
-    const accepted=receipts.find((row)=>row.stageId==="acceptance-receipt");
+    const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed"||!accepted.outputSha256) throw new Error("memory maintenance requires an accepted writer receipt first");
     const settings=loadProjectSettings(db,args.projectId);
     const memoryAgent=boundedAgentName(settings["memory.agent"],"memory-maintainer");
@@ -2212,24 +2704,107 @@ export default async function plugin(bb: BbPluginApi) {
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget",
     ].map((key)=>[key,configuredSetting(settings,key)])));
-    const memoryProviderId=typeof settings["memory.provider"]==="string"?settings["memory.provider"] as string:config.writerProviderId;
-    const memoryModel=typeof settings["memory.model"]==="string"?settings["memory.model"] as string:config.writerModel;
+    const memorySelection=resolveStageWriterSelection({settings,config,stageProviderKey:"memory.provider",stageModelKey:"memory.model"});
+    const memoryProviderId=memorySelection.providerId;
+    const memoryModel=memorySelection.model;
     const memoryEffort=typeof settings["memory.reasoning_effort"]==="string"?settings["memory.reasoning_effort"] as string:"medium";
     const memoryTier=settings["memory.service_tier"]==="fast"?"fast":"standard";
     const base={runId:args.runId,taskId:args.taskId,stageId:"memory-maintenance" as const,
       input:JSON.stringify({taskId:args.taskId,acceptanceSha256:accepted.outputSha256,settings:memorySettings,
         providerId:memoryProviderId,model:memoryModel,reasoningEffort:memoryEffort,serviceTier:memoryTier,agent:memoryAgent})};
-    const existing=receipts.find((row)=>row.stageId==="memory-maintenance");
-    if(existing) return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"memory maintenance already has a receipt; create a new task for another run",stage:existing};
-    recordStage(db,{...base,state:"pending"});
-    if(!memorySettings.enabled||!memorySettings.maintain) {
+    const existing=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+    if(existing && !["pending","running"].includes(existing.state)) {
+      return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"memory maintenance already has a receipt; create a new task for another run",stage:existing};
+    }
+    if(!existing) recordStage(db,{...base,state:"pending"});
+    const liveChild=Boolean(existing?.threadId || memoryChildSnapshot(existing?.result));
+    if((!memorySettings.enabled||!memorySettings.maintain) && !liveChild) {
       const reason=!memorySettings.enabled?"disabled_by_project_setting":"memory_maintain_disabled";
       recordStage(db,{...base,state:"skipped",reason,result:{stored:0,audience:memorySettings.audience}});
       return {runId:args.runId,taskId:args.taskId,state:"skipped",reason};
     }
-    let threadId:string|null=null;
-    recordStage(db,{...base,state:"running",providerId:memoryProviderId,model:memoryModel});
+    const claimed=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+    if(claimed?.state==="pending") recordStage(db,{...base,state:"running",providerId:memoryProviderId,model:memoryModel,threadId:claimed.threadId,result:claimed.result,reason:"memory_spawn_requested"});
+    let receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+    let threadId:string|null=receipt?.threadId??null;
+    const observeMs=Math.min(240, Math.max(1, args.timeoutSec ?? 60)) * 1000;
+    const persistRunning=(nextThreadId:string|null, result:unknown, reason?:string)=>{
+      const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+      if(current && !["pending","running"].includes(current.state)) return current;
+      recordStage(db,{...base,state:"running",providerId:memoryProviderId,model:memoryModel,
+        threadId:nextThreadId ?? current?.threadId ?? null,
+        result:{...childResultObject(current?.result),...childResultObject(result)},reason});
+      return undefined;
+    };
+    const finishObservation=async(childId:string, snapshot:MemoryChildSnapshot|null):Promise<Record<string,unknown>>=>{
+      const already=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+      if(already && !["pending","running"].includes(already.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:already.state,reason:"memory maintenance already has a receipt; create a new task for another run",stage:already};
+      }
+      const observed=await observeStageChild(bb,childId,observeMs);
+      const latest=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+      if(latest && !["pending","running"].includes(latest.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:latest.state,reason:"memory maintenance already has a receipt; create a new task for another run",stage:latest};
+      }
+      const prior=childResultObject(latest?.result ?? receipt?.result);
+      if(observed.kind==="observing") {
+        persistRunning(childId,{...prior,...(snapshot?{snapshot}:{}),observing:observed.detail});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:observed.detail};
+      }
+      if(observed.kind==="product_failure") {
+        recordStage(db,{...base,state:"failed",providerId:memoryProviderId,model:memoryModel,threadId:childId,reason:`${observed.via}:${observed.detail}`,result:{error:`${observed.via}:${observed.detail}`}});
+        return {runId:args.runId,taskId:args.taskId,state:"failed",threadId:childId,reason:`${observed.via}:${observed.detail}`};
+      }
+      if(!snapshot) {
+        persistRunning(childId,{...prior,observing:"memory_snapshot_missing"});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:"memory_snapshot_missing"};
+      }
+      const output=(await bb.sdk.threads.output({threadId:childId})).output;
+      if(typeof output!=="string"||!output.trim()) throw new Error("memory_maintainer_output_empty");
+      const entries=parseMemoryCandidates(output,snapshot.settings);
+      const records=storeMemoryRecords(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
+        entries,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget});
+      const byId=new Map(records.records.map((row)=>[row.id,row]));
+      const recordIds:string[]=[];
+      for(const entry of entries){
+        const id=memoryRecordId(args.projectId,entry.kind,entry.content,snapshot.settings.personalBot);
+        const row=byId.get(id);
+        if(!row) throw new Error("memory_record_ids_missing_after_store");
+        if(row.sourceSha256===snapshot.acceptanceSha256) recordIds.push(id);
+      }
+      const result={stored:recordIds.length,recordIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,
+        reasoningEffort:memoryEffort,serviceTier:memoryTier,
+        budgets:{core:snapshot.settings.coreBudget,note:snapshot.settings.noteBudget,index:snapshot.settings.indexBudget},
+        retrievedForWriter:snapshot.settings.inject&&snapshot.settings.audience==="subagent",threadId:childId,snapshot};
+      recordStage(db,{...base,state:"passed",providerId:memoryProviderId,model:memoryModel,threadId:childId,result:{...result,recordsAvailable:records.records.length}});
+      return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+    };
     try {
+      receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+      threadId=receipt?.threadId??null;
+      let snapshot=memoryChildSnapshot(receipt?.result);
+      if(!threadId){
+        const recovered=await reconcileStageChild(args.projectId,args.runId,args.taskId,"memory-maintenance","memory-maintainer");
+        if(recovered.kind==="found"){
+          threadId=recovered.threadId;
+          persistRunning(threadId,{...childResultObject(receipt?.result),...(snapshot?{snapshot}:{})});
+          receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+        } else if(recovered.kind!=="not_found") {
+          persistRunning(null,{...childResultObject(receipt?.result),...(snapshot?{snapshot}:{}),observing:recovered.kind});
+          return {runId:args.runId,taskId:args.taskId,state:"running",reason:"observing",detail:recovered.kind};
+        }
+      }
+      if(threadId) return await finishObservation(threadId,snapshot);
+      if(!snapshot){
+        snapshot={acceptanceSha256:accepted.outputSha256,settings:memorySettings,agent:memoryAgent,dispatchInput:JSON.parse(base.input)};
+        persistRunning(null,{snapshot},"memory_spawn_requested");
+        receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+      }
+      if(!claimStageSpawn(db,args.runId,args.taskId,"memory-maintenance")){
+        receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+        if(receipt?.threadId) return await finishObservation(receipt.threadId,snapshot);
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"memory_spawn_claimed"};
+      }
       const [providers,catalog]=await Promise.all([
         bb.sdk.providers.list({hostId:config.hostId}),
         bb.sdk.providers.models({providerId:memoryProviderId,hostId:config.hostId}),
@@ -2242,38 +2817,38 @@ export default async function plugin(bb: BbPluginApi) {
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`memory_writer_service_tier_unsupported:${tier}`);
       const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
-        prompt:memoryMaintenancePrompt({task,acceptedResult:accepted.result,settings:memorySettings,agent:memoryAgent}),
+        prompt:memoryMaintenancePrompt({task,acceptedResult:accepted.result,settings:snapshot.settings,agent:snapshot.agent}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         visibility:"hidden",pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
           stageId:"memory-maintenance",parentPmThreadId:args.threadId}});
       threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("memory_maintainer_thread_id_missing");
-      recordStage(db,{...base,state:"running",providerId:memoryProviderId,model:memoryModel,threadId});
-      const waited=await bb.sdk.threads.wait({threadId,status:"idle",timeoutMs:120_000});
-      if(!waited.matched) throw new Error("memory_maintainer_timeout");
-      const output=(await bb.sdk.threads.output({threadId})).output;
-      if(typeof output!=="string"||!output.trim()) throw new Error("memory_maintainer_output_empty");
-      const entries=parseMemoryCandidates(output,memorySettings);
-      const records=storeMemoryRecords(db,{projectId:args.projectId,personalBot:memorySettings.personalBot,audience:memorySettings.audience,sourceSha256:accepted.outputSha256,
-        entries,coreBudget:memorySettings.coreBudget,noteBudget:memorySettings.noteBudget,indexBudget:memorySettings.indexBudget});
-      const recordIds=records.insertedIds;
-      const result={stored:recordIds.length,recordIds,sourceSha256:accepted.outputSha256,audience:memorySettings.audience,personalBot:memorySettings.personalBot,
-        reasoningEffort:memoryEffort,serviceTier:memoryTier,
-        budgets:{core:memorySettings.coreBudget,note:memorySettings.noteBudget,index:memorySettings.indexBudget},
-        retrievedForWriter:memorySettings.inject&&memorySettings.audience==="subagent",threadId};
-      recordStage(db,{...base,state:"passed",providerId:memoryProviderId,model:memoryModel,threadId,result:{...result,recordsAvailable:records.records.length}});
-      return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+      persistRunning(threadId,{...childResultObject(receipt?.result),snapshot,spawnAttempted:true});
+      return await finishObservation(threadId,snapshot);
     } catch(cause) {
+      const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
+      if(current && !["pending","running"].includes(current.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:current.state,reason:"memory maintenance already has a receipt; create a new task for another run",stage:current};
+      }
       const reason=cause instanceof Error?cause.message:String(cause);
-      if(threadId) {
-        const thread=await bb.sdk.threads.get({threadId}).catch(()=>null);
-        if(["active","starting"].includes(stringAt(thread,"status")??"")) await bb.sdk.threads.stop({threadId}).catch(()=>undefined);
+      if(!threadId){
+        const recovered=await reconcileStageChild(args.projectId,args.runId,args.taskId,"memory-maintenance","memory-maintainer").catch(()=>({kind:"error" as const,message:reason}));
+        if(recovered.kind==="found"){
+          persistRunning(recovered.threadId,{...childResultObject(receipt?.result),observing:reason});
+          return {runId:args.runId,taskId:args.taskId,state:"running",threadId:recovered.threadId,reason:"observing",detail:reason};
+        }
+        persistRunning(null,{...childResultObject(receipt?.result),observing:reason},"memory_spawn_unknown");
+        return {runId:args.runId,taskId:args.taskId,state:"running",reason:"observing",detail:reason};
+      }
+      if(reason.includes("events_list_error")||reason.includes("host")||reason.includes("disconnect")||reason.includes("ECONN")||reason.includes("502")){
+        persistRunning(threadId,{...childResultObject(receipt?.result),observing:reason});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId,reason:"observing",detail:reason};
       }
       recordStage(db,{...base,state:"failed",providerId:memoryProviderId,model:memoryModel,threadId,reason,result:{error:reason}});
       return {runId:args.runId,taskId:args.taskId,state:"failed",reason};
     }
   }
 
-  async function runNightReview(args:{threadId:string;projectId:string;runId:string;taskId:string}):Promise<Record<string,unknown>> {
+  async function runNightReview(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
@@ -2281,29 +2856,100 @@ export default async function plugin(bb: BbPluginApi) {
     const taskContract=taskV2Schema.parse(taskRow.contract);
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
     const task=workspace.task;
-    const receipts=listStageReceipts(db,args.runId,args.taskId);
-    const accepted=receipts.find((row)=>row.stageId==="acceptance-receipt");
+    const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed"||!accepted.outputSha256) throw new Error("night review requires an accepted writer receipt first");
     const settings=loadProjectSettings(db,args.projectId);
     const policy=shouldRunNightReview(settings["night_review.enabled"]);
-    const providerId=typeof settings["night_review.provider"]==="string"&&settings["night_review.provider"]?settings["night_review.provider"] as string:config.writerProviderId;
-    const modelId=typeof settings["night_review.model"]==="string"&&settings["night_review.model"]?settings["night_review.model"] as string:config.writerModel;
+    const selection=resolveStageWriterSelection({settings,config,stageProviderKey:"night_review.provider",stageModelKey:"night_review.model"});
+    const providerId=selection.providerId;
+    const modelId=selection.model;
     const effort=typeof settings["night_review.reasoning_effort"]==="string"&&settings["night_review.reasoning_effort"]?settings["night_review.reasoning_effort"] as string:"high";
     const serviceTier=settings["night_review.service_tier"]==="fast"?"fast":"standard";
     const agent=typeof settings["night_review.agent"]==="string"&&settings["night_review.agent"].trim()?settings["night_review.agent"].trim().slice(0,100):"lane-reviewer";
     const source=JSON.stringify({taskId:args.taskId,acceptanceSha256:accepted.outputSha256,providerId,modelId,effort,serviceTier,agent});
     const base={runId:args.runId,taskId:args.taskId,stageId:"night-review" as const,input:source};
-    const existing=receipts.find((row)=>row.stageId==="night-review");
-    if(existing) return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"night review already has a receipt; create a new task for another review",stage:existing};
-    recordStage(db,{...base,state:"pending",providerId,model:modelId});
-    if(!policy.run) {
+    const existing=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+    if(existing && !["pending","running"].includes(existing.state)) {
+      return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"night review already has a receipt; create a new task for another review",stage:existing};
+    }
+    if(!existing) recordStage(db,{...base,state:"pending",providerId,model:modelId});
+    const liveChild=Boolean(existing?.threadId || nightChildSnapshot(existing?.result));
+    if(!policy.run && !liveChild) {
       const invalid=policy.reason?.startsWith("invalid_");
       recordStage(db,{...base,state:invalid?"blocked":"skipped",providerId,model:modelId,reason:policy.reason??undefined});
       return {runId:args.runId,taskId:args.taskId,state:invalid?"blocked":"skipped",reason:policy.reason};
     }
-    let threadId:string|null=null;
-    recordStage(db,{...base,state:"running",providerId,model:modelId});
+    const claimed=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+    if(claimed?.state==="pending") recordStage(db,{...base,state:"running",providerId,model:modelId,threadId:claimed.threadId,result:claimed.result,reason:"night_spawn_requested"});
+    let receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+    let threadId:string|null=receipt?.threadId??null;
+    const observeMs=Math.min(240, Math.max(1, args.timeoutSec ?? 60)) * 1000;
+    const persistRunning=(nextThreadId:string|null, result:unknown, reason?:string)=>{
+      const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+      if(current && !["pending","running"].includes(current.state)) return current;
+      recordStage(db,{...base,state:"running",providerId,model:modelId,
+        threadId:nextThreadId ?? current?.threadId ?? null,
+        result:{...childResultObject(current?.result),...childResultObject(result)},reason});
+      return undefined;
+    };
+    const finishObservation=async(childId:string, snapshot:NightChildSnapshot|null):Promise<Record<string,unknown>>=>{
+      const already=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+      if(already && !["pending","running"].includes(already.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:already.state,reason:"night review already has a receipt; create a new task for another review",stage:already};
+      }
+      const observed=await observeStageChild(bb,childId,observeMs);
+      const latest=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+      if(latest && !["pending","running"].includes(latest.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:latest.state,reason:"night review already has a receipt; create a new task for another review",stage:latest};
+      }
+      const prior=childResultObject(latest?.result ?? receipt?.result);
+      if(observed.kind==="observing") {
+        persistRunning(childId,{...prior,...(snapshot?{snapshot}:{}),observing:observed.detail});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:observed.detail};
+      }
+      if(observed.kind==="product_failure") {
+        recordStage(db,{...base,state:"failed",providerId,model:modelId,threadId:childId,reason:`${observed.via}:${observed.detail}`,result:{error:`${observed.via}:${observed.detail}`}});
+        return {runId:args.runId,taskId:args.taskId,state:"failed",threadId:childId,reason:`${observed.via}:${observed.detail}`};
+      }
+      if(!snapshot) {
+        persistRunning(childId,{...prior,observing:"night_snapshot_missing"});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:"night_snapshot_missing"};
+      }
+      const output=(await bb.sdk.threads.output({threadId:childId})).output;
+      if(typeof output!=="string"||!output.trim()) throw new Error("night_review_output_empty");
+      const parsed=parseNightReviewResult(output);
+      const state=parsed.findings.some((item)=>item.severity==="blocking")?"blocked":"passed";
+      const reason=state==="blocked"?"night_review_blocking_findings":undefined;
+      const acceptedResult={...parsed,sourceSha256:snapshot.acceptanceSha256,agent:snapshot.agent,serviceTier,findingsCount:parsed.findings.length,snapshot};
+      recordStage(db,{...base,state,providerId,model:modelId,threadId:childId,result:acceptedResult,reason});
+      return {runId:args.runId,taskId:args.taskId,state,result:acceptedResult,reason};
+    };
     try {
+      receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+      threadId=receipt?.threadId??null;
+      let snapshot=nightChildSnapshot(receipt?.result);
+      if(!threadId){
+        const recovered=await reconcileStageChild(args.projectId,args.runId,args.taskId,"night-review","night-reviewer");
+        if(recovered.kind==="found"){
+          threadId=recovered.threadId;
+          persistRunning(threadId,{...childResultObject(receipt?.result),...(snapshot?{snapshot}:{})});
+          receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+        } else if(recovered.kind!=="not_found") {
+          persistRunning(null,{...childResultObject(receipt?.result),...(snapshot?{snapshot}:{}),observing:recovered.kind});
+          return {runId:args.runId,taskId:args.taskId,state:"running",reason:"observing",detail:recovered.kind};
+        }
+      }
+      if(threadId) return await finishObservation(threadId,snapshot);
+      if(!snapshot){
+        snapshot={acceptanceSha256:accepted.outputSha256,agent,dispatchInput:JSON.parse(base.input)};
+        persistRunning(null,{snapshot},"night_spawn_requested");
+        receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+      }
+      if(!claimStageSpawn(db,args.runId,args.taskId,"night-review")){
+        receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+        if(receipt?.threadId) return await finishObservation(receipt.threadId,snapshot);
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"night_spawn_claimed"};
+      }
       const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:config.hostId}),bb.sdk.providers.models({providerId,hostId:config.hostId})]);
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       const model=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
@@ -2312,26 +2958,30 @@ export default async function plugin(bb: BbPluginApi) {
       const tier=provider.capabilities.supportsServiceTier?bbServiceTier(serviceTier):null;
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`night_review_service_tier_unsupported:${tier}`);
       const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,...writerExecutionSelection(providerId,modelId,effort,tier),
-        prompt:nightReviewPrompt({agent,task,acceptedResult:accepted.result,workspace:task.project_cwd,maxFindings:20}),
+        prompt:nightReviewPrompt({agent:snapshot.agent,task,acceptedResult:accepted.result,workspace:task.project_cwd,maxFindings:20}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),visibility:"hidden",
         pluginMetadata:{role:"night-reviewer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-review",parentPmThreadId:args.threadId}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("night_review_thread_id_missing");
-      recordStage(db,{...base,state:"running",providerId,model:modelId,threadId});
-      const waited=await bb.sdk.threads.wait({threadId,status:"idle",timeoutMs:120_000});
-      if(!waited.matched) throw new Error("night_review_timeout");
-      const output=(await bb.sdk.threads.output({threadId})).output;
-      if(typeof output!=="string"||!output.trim()) throw new Error("night_review_output_empty");
-      const result=parseNightReviewResult(output);
-      const state=result.findings.some((item)=>item.severity==="blocking")?"blocked":"passed";
-      const reason=state==="blocked"?"night_review_blocking_findings":undefined;
-      const acceptedResult={...result,sourceSha256:accepted.outputSha256,agent,serviceTier,findingsCount:result.findings.length};
-      recordStage(db,{...base,state,providerId,model:modelId,threadId,result:acceptedResult,reason});
-      return {runId:args.runId,taskId:args.taskId,state,result:acceptedResult,reason};
+      persistRunning(threadId,{...childResultObject(receipt?.result),snapshot,spawnAttempted:true});
+      return await finishObservation(threadId,snapshot);
     } catch(cause) {
+      const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="night-review");
+      if(current && !["pending","running"].includes(current.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:current.state,reason:"night review already has a receipt; create a new task for another review",stage:current};
+      }
       const reason=cause instanceof Error?cause.message:String(cause);
-      if(threadId) {
-        const thread=await bb.sdk.threads.get({threadId}).catch(()=>null);
-        if(["active","starting"].includes(stringAt(thread,"status")??"")) await bb.sdk.threads.stop({threadId}).catch(()=>undefined);
+      if(!threadId){
+        const recovered=await reconcileStageChild(args.projectId,args.runId,args.taskId,"night-review","night-reviewer").catch(()=>({kind:"error" as const,message:reason}));
+        if(recovered.kind==="found"){
+          persistRunning(recovered.threadId,{...childResultObject(receipt?.result),observing:reason});
+          return {runId:args.runId,taskId:args.taskId,state:"running",threadId:recovered.threadId,reason:"observing",detail:reason};
+        }
+        persistRunning(null,{...childResultObject(receipt?.result),observing:reason},"night_spawn_unknown");
+        return {runId:args.runId,taskId:args.taskId,state:"running",reason:"observing",detail:reason};
+      }
+      if(reason.includes("events_list_error")||reason.includes("host")||reason.includes("disconnect")||reason.includes("ECONN")||reason.includes("502")){
+        persistRunning(threadId,{...childResultObject(receipt?.result),observing:reason});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId,reason:"observing",detail:reason};
       }
       recordStage(db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
       return {runId:args.runId,taskId:args.taskId,state:"failed",reason};
@@ -2365,8 +3015,7 @@ export default async function plugin(bb: BbPluginApi) {
         pluginMetadata:{role:"gate-triage",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"gate-triage",parentPmThreadId:args.threadId}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("gate_triage_thread_id_missing");
       recordStage(db,{...base,state:"running",providerId,model:modelId,threadId});
-      const waited=await bb.sdk.threads.wait({threadId,status:"idle",timeoutMs:120_000});
-      if(!waited.matched) throw new Error("gate_triage_timeout");
+      await waitThreadIdle(bb,threadId,120_000,"gate_triage_timeout");
       const output=(await bb.sdk.threads.output({threadId})).output;
       if(typeof output!=="string"||!output.trim()) throw new Error("gate_triage_output_empty");
       const result=parseGateTriageResult(output);
@@ -2401,8 +3050,9 @@ export default async function plugin(bb: BbPluginApi) {
     const parsed=parseNightReviewResult(JSON.stringify({decision:reviewValue.decision,summary:reviewValue.summary,findings:reviewValue.findings}));
     const settings=loadProjectSettings(db,args.projectId);
     const configuredLimit=settings["night_review.max_fix_tasks"];
-    const repairProviderId=typeof settings["night_review.provider"]==="string"&&settings["night_review.provider"]?settings["night_review.provider"] as string:config.writerProviderId;
-    const repairModelId=typeof settings["night_review.model"]==="string"&&settings["night_review.model"]?settings["night_review.model"] as string:config.writerModel;
+    const repairSelection=resolveStageWriterSelection({settings,config,stageProviderKey:"night_review.provider",stageModelKey:"night_review.model"});
+    const repairProviderId=repairSelection.providerId;
+    const repairModelId=repairSelection.model;
     const repairEffort=typeof settings["night_review.reasoning_effort"]==="string"&&settings["night_review.reasoning_effort"]?settings["night_review.reasoning_effort"] as string:"high";
     const repairTier=settings["night_review.service_tier"]==="fast"?"fast":"standard";
     const maxFixTasks=typeof configuredLimit==="number"?configuredLimit:typeof configuredLimit==="string"?Number(configuredLimit):5;
@@ -2429,8 +3079,7 @@ export default async function plugin(bb: BbPluginApi) {
         environment:workspaceExecutionEnvironment(config.hostId,workspace),visibility:"hidden",
         pluginMetadata:{role:"night-fixer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-fix",parentPmThreadId:args.threadId}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("night_fix_thread_id_missing");
-      const waited=await bb.sdk.threads.wait({threadId,status:"idle",timeoutMs:600_000});
-      if(!waited.matched) throw new Error("night_fix_timeout");
+      await waitThreadIdle(bb,threadId,600_000,"night_fix_timeout");
       const output=(await bb.sdk.threads.output({threadId})).output;
       const after=await workspaceDirt(config,task.project_cwd);
       if(!after.ok) throw new Error(`night_fix_snapshot_failed:${after.reason}`);
@@ -2549,12 +3198,22 @@ export default async function plugin(bb: BbPluginApi) {
       const config=loadPrototypeConfig(db,projectId); if(!config) continue;
       const settings=loadProjectSettings(db,projectId);
       const docsSettings=parseDocsSettings(Object.fromEntries(["docs.enabled","docs.maintain","docs.since","docs.page_cap","docs.hour"].map((key)=>[key,configuredSetting(settings,key)])));
-      if(!docsSettings.enabled||!docsSettings.maintain||!docsScheduleDue(now,docsSettings.hour,null)) continue;
+      if(!docsSettings.enabled||!docsSettings.maintain) continue;
       const activation=getActivation(db,projectId); if(!activation) continue;
       const run=getRun(db,activation.run_id); if(!run||run.closed_at||run.pm_thread_id!==activation.pm_thread_id) continue;
       const runHistory=listRunsWithAttempts(db,projectId).find((item)=>item.id===run.id);
-      const taskId=runHistory?.attempts.map((item)=>item.task_id).find((candidate)=>listStageReceipts(db,run.id,candidate).some((receipt)=>receipt.stageId==="acceptance-receipt"&&receipt.state==="passed")&&!listStageReceipts(db,run.id,candidate).some((receipt)=>receipt.stageId==="docs-maintenance"));
-      if(!taskId||!claimDailySchedule(db,projectId,"docs-maintenance",today)) continue;
+      const taskId=runHistory?.attempts.map((item)=>item.task_id).find((candidate)=>{
+        const receipts=listStageReceipts(db,run.id,candidate);
+        if(!receipts.some((receipt)=>receipt.stageId==="acceptance-receipt"&&receipt.state==="passed")) return false;
+        const docs=receipts.find((receipt)=>receipt.stageId==="docs-maintenance");
+        return !docs || docs.state==="pending" || docs.state==="running";
+      });
+      if(!taskId) continue;
+      const docs=listStageReceipts(db,run.id,taskId).find((receipt)=>receipt.stageId==="docs-maintenance");
+      const resume=docs?.state==="pending"||docs?.state==="running";
+      if(!resume) {
+        if(!docsScheduleDue(now,docsSettings.hour,null)||!claimDailySchedule(db,projectId,"docs-maintenance",today)) continue;
+      }
       await runDocsMaintenance({threadId:activation.pm_thread_id,projectId,runId:run.id,taskId});
     }
   }
@@ -3201,18 +3860,18 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name:"lane_pilot_docs_maintain",
-    description:"Run bounded documentation maintenance for recently changed Markdown pages and return a stage receipt.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. The operation reads and writes only markdown beneath docs/ and apps/, obeys docs.since/docs.page_cap, uses per-file SHA compare-and-swap, and reports partial writes as blocked.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1)}).strict(),
-    execute:async(params,context)=>JSON.stringify(await runDocsMaintenance({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId}),null,2),
+    description:"Dispatch or poll bounded documentation maintenance and return a stage receipt or running child id.",
+    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another writer. Observation timeout is not a product failure. Reads and writes only markdown beneath docs/ and apps/ with per-file SHA compare-and-swap.",
+    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),timeoutSec:z.number().int().min(1).max(240).default(60)}).strict(),
+    execute:async(params,context)=>JSON.stringify(await runDocsMaintenance({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
   });
 
   bb.agents.registerTool({
     name:"lane_pilot_onboarding_preview",
-    description:"Generate a bounded onboarding preview from an accepted task and project Markdown inventory; this stage does not write files.",
-    instructions:"Use only from the matching Lane Pilot PM thread after an accepted writer receipt. Show the returned summary, paths, expected hashes, and content for review. Writes are never automatic; use lane_pilot_onboarding_apply only after separate explicit confirmation and with this exact previewSha256.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1)}).strict(),
-    execute:async(params,context)=>JSON.stringify(await runOnboardingPreview({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId}),null,2),
+    description:"Dispatch or poll a bounded onboarding preview from an accepted task and persisted Markdown inventory; this stage does not write files.",
+    instructions:"Use only from the matching Lane Pilot PM thread after an accepted writer receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another child. Observation timeout is not a product failure. Show the returned summary, paths, expected hashes, and content for review. Writes are never automatic; use lane_pilot_onboarding_apply only after separate explicit confirmation and with this exact previewSha256.",
+    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),timeoutSec:z.number().int().min(1).max(240).default(60)}).strict(),
+    execute:async(params,context)=>JSON.stringify(await runOnboardingPreview({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
   });
   bb.agents.registerTool({
     name:"lane_pilot_onboarding_apply",
@@ -3224,18 +3883,18 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name:"lane_pilot_memory_maintain",
-    description:"Maintain the project memory corpus from an accepted Lane Pilot task and return a stage receipt.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. Memory is project-scoped; credentials are rejected; audience and aggregate token budgets are enforced before persistence.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1)}).strict(),
-    execute:async(params,context)=>JSON.stringify(await runMemoryMaintenance({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId}),null,2),
+    description:"Dispatch or poll project memory maintenance from an accepted Lane Pilot task and return a stage receipt or running child id.",
+    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another child. Observation timeout is not a product failure. Memory is project-scoped; credentials are rejected; audience and aggregate token budgets are enforced from the persisted snapshot.",
+    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),timeoutSec:z.number().int().min(1).max(240).default(60)}).strict(),
+    execute:async(params,context)=>JSON.stringify(await runMemoryMaintenance({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
   });
 
   bb.agents.registerTool({
     name:"lane_pilot_night_review",
-    description:"Run the configured bounded night reviewer after an accepted writer receipt and persist its findings as a stage receipt.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. This stage is read-only: it reports bounded findings and never edits or merges. A blocking finding stops progression until a separately authorized bounded fix is verified.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1)}).strict(),
-    execute:async(params,context)=>JSON.stringify(await runNightReview({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId}),null,2),
+    description:"Dispatch or poll the configured bounded night reviewer after an accepted writer receipt and persist its findings as a stage receipt or running child id.",
+    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another child. Observation timeout is not a product failure. This stage is read-only: it reports bounded findings and never edits or merges. A blocking finding stops progression until a separately authorized bounded fix is verified.",
+    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),timeoutSec:z.number().int().min(1).max(240).default(60)}).strict(),
+    execute:async(params,context)=>JSON.stringify(await runNightReview({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
   });
 
   bb.agents.registerTool({
@@ -3314,6 +3973,8 @@ export default async function plugin(bb: BbPluginApi) {
     "bb lane-pilot resume [project-id]",
     "bb lane-pilot dispatch-cli <project-id> <pm-thread-id> [binary] [subcommand] [task-file] [task-id] [run-dir]",
     "bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json]",
+    "bb lane-pilot events-list <thread-id>",
+    "bb lane-pilot wait-thread <thread-id>",
   ].join("\n");
   bb.cli.register({
     name:"lane-pilot",
@@ -3340,6 +4001,8 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"resume", summary:"Reconcile orphaned writer attempts without spawning duplicates", usage:"bb lane-pilot resume [project-id]" },
       { name:"dispatch-cli", summary:"Dispatch a CLI writer run for a PM thread", usage:"bb lane-pilot dispatch-cli <project-id> <pm-thread-id> [binary] [subcommand]" },
       { name:"dispatch-bb", summary:"Dispatch a BB writer task, optional task-v2 JSON", usage:"bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json]" },
+      { name:"events-list", summary:"Read-only SDK events.list probe", usage:"bb lane-pilot events-list <thread-id>" },
+      { name:"wait-thread", summary:"Read-only waitThreadIdle probe", usage:"bb lane-pilot wait-thread <thread-id>" },
     ],
     async run(argv) {
       try {
@@ -3508,6 +4171,63 @@ export default async function plugin(bb: BbPluginApi) {
             task,
             baseRef:args[3]||undefined,
           }), null, 2) };
+        }
+        if (command === "wait-thread" && args.length === 1) {
+          const threadId = args[0]!;
+          const startedAt = Date.now();
+          try {
+            await waitThreadIdle(bb, threadId, 15_000, "wait_thread_probe_timeout");
+            const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+            const listed = await listThreadEventsRaw(bb, {
+              threadId, types:["turn/started","turn/completed"], order:"desc", limit:"50",
+            });
+            const decision = listed.ok
+              ? decideThreadCompletion({
+                threadId,
+                status:stringAt(thread, "status"),
+                queuedWork:stringAt(thread, "queuedWork"),
+                events:listed.events,
+              })
+              : { ok:false as const, via:"incomplete" as const, detail:listed.detail };
+            return { exitCode: decision.ok ? 0 : 1, stdout:JSON.stringify({
+              threadId,
+              helper:"waitThreadIdle",
+              elapsedMs:Date.now() - startedAt,
+              status:stringAt(thread, "status"),
+              decision,
+            }) };
+          } catch (cause) {
+            return { exitCode:1, stdout:JSON.stringify({
+              threadId,
+              helper:"waitThreadIdle",
+              elapsedMs:Date.now() - startedAt,
+              ok:false,
+              error:cause instanceof Error ? cause.message : String(cause),
+            }) };
+          }
+        }
+        if (command === "events-list" && args.length === 1) {
+          const threadId = args[0]!;
+          const filteredQuery = { threadId, types:["turn/started","turn/completed"] as const, order:"desc" as const, limit:"50" as const };
+          const unfilteredQuery = { threadId, order:"desc" as const, limit:"50" as const };
+          const summarize = (listed: unknown[]) => listed.map((row) => ({
+            seq: row && typeof row === "object" ? Reflect.get(row, "seq") : null,
+            type: row && typeof row === "object" ? Reflect.get(row, "type") : null,
+            threadId: row && typeof row === "object" ? Reflect.get(row, "threadId") : null,
+            status: row && typeof row === "object" && Reflect.get(row, "data") && typeof Reflect.get(row, "data") === "object"
+              ? Reflect.get(Reflect.get(row, "data") as object, "status") : null,
+          }));
+          const filtered = await listThreadEventsRaw(bb, filteredQuery);
+          const unfiltered = await listThreadEventsRaw(bb, unfilteredQuery);
+          return { exitCode:0, stdout:JSON.stringify({
+            threadId,
+            filtered: filtered.ok
+              ? { ok:true, query:eventsListQueryLabel(filteredQuery), n:filtered.events.length, rows:summarize(filtered.events) }
+              : { ok:false, kind:filtered.kind, detail:filtered.detail },
+            unfiltered: unfiltered.ok
+              ? { ok:true, query:eventsListQueryLabel(unfilteredQuery), n:unfiltered.events.length, rows:summarize(unfiltered.events) }
+              : { ok:false, kind:unfiltered.kind, detail:unfiltered.detail },
+          }, null, 2) };
         }
         if (command === "host-import-config" && args.length >= 2) {
           const imported = await host.call("importConfig", {
