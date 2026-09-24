@@ -369,8 +369,8 @@ describe("writer output validation", () => {
       produced:["hello.txt"],
       contents:{ "hello.txt":"hello\n" },
       verifies:[
-        { command:"true", exitCode:0, stderr:"" },
-        { command:"false", exitCode:1, stderr:"boom" },
+        { command:"true", exitCode:0, stdout:"", stderr:"" },
+        { command:"false", exitCode:1, stdout:"", stderr:"boom" },
       ],
     });
     expect(classified.ok).toBe(false);

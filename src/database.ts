@@ -195,6 +195,7 @@ export const migrations = [
   `ALTER TABLE lane_pilot_run ADD COLUMN writer_environment_id TEXT`,
   `ALTER TABLE lane_pilot_run ADD COLUMN run_gate TEXT NOT NULL DEFAULT 'none' CHECK(run_gate IN ('none','pre-merge'))`,
   `ALTER TABLE lane_pilot_attempt ADD COLUMN holder_thread_id TEXT`,
+  `ALTER TABLE lane_pilot_run ADD COLUMN helper_policy_json TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -713,6 +714,23 @@ export type ReasoningTrace = {
   runId:string;
   attemptId:string;
   threadId:string|null;
+  effortMode?:"automatic"|"manual";
+  dispatchContext?:{
+    memoryText:string;
+    executionPacket:string;
+    executionPacketSha256:string;
+    pmReadContext:string;
+    agent:string;
+    helperMode:string;
+    helperRequired:boolean;
+  };
+  selectionSource?:{
+    providerId:string;
+    model:string;
+    reasoningLevel:string;
+    serviceTier:"default"|"fast"|null;
+    reasoningLevelSource:"explicit"|"client-preference";
+  };
 };
 
 export function saveReasoningTrace(db: LanePilotDatabase, trace: ReasoningTrace): void {
@@ -892,6 +910,19 @@ export function listRunsWithAttempts(db: LanePilotDatabase, projectId: string): 
       id:string; state:string; attempt_no:number; thread_id:string|null; reason:string|null; task_id:string;
     }>,
   }));
+}
+
+export function loadRunHelperPolicyJson(db: LanePilotDatabase, runId: string): string | null {
+  const row = db.prepare("SELECT helper_policy_json FROM lane_pilot_run WHERE id=?").get(runId) as { helper_policy_json: string | null } | undefined;
+  return row?.helper_policy_json ?? null;
+}
+
+export function persistRunHelperPolicyJson(db: LanePilotDatabase, runId: string, json: string): boolean {
+  const result = db.prepare("UPDATE lane_pilot_run SET helper_policy_json=?, updated_at=? WHERE id=? AND helper_policy_json IS NULL")
+    .run(json, Date.now(), runId);
+  if (result.changes === 1) return true;
+  const current = loadRunHelperPolicyJson(db, runId);
+  return current === json;
 }
 
 export function getRun(db: LanePilotDatabase, runId: string): {

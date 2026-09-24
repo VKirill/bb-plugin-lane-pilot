@@ -54,6 +54,8 @@ import {
   listTaskTerminalStates,
   listAttemptsForTask,
   loadProjectSettings,
+  loadRunHelperPolicyJson,
+  persistRunHelperPolicyJson,
   loadPrototypeConfig,
   listSettingRows,
   listRunsWithAttempts,
@@ -78,9 +80,44 @@ import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "./src/sta
 import { validateTaskV2 } from "./src/task-v2";
 import { reconcile, reconcileHolder, type IdempotencyTriple } from "./src/reconcile";
 import { spawnWithSeam } from "./src/spawn-seam";
+import {
+  compileMainAgentProfile,
+  compiledMainAgentSpawnBinding,
+  detectCompiledMainAgentCapability,
+  MAIN_AGENT_PROFILE_IDS,
+  resolveSelectedMainAgentProfile,
+} from "./src/agent-profile";
 import { VISIBLE_CATALOG } from "./src/ui-catalog";
-import { bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "./src/jev-reasoning";
+import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "./src/jev-reasoning";
+import { QA_HOST_KEY, QA_WORKSPACE_KEY, mapListedQaHosts, qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "./src/qa-host";
+import { resolveWriterBinding, type ProjectSourceBinding } from "./src/project-binding";
+import { inheritProjectValues, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "./src/lp-defaults";
+import { helperSpawnFields, resolveHelperPlacement } from "./src/helper-placement";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "./src/stages/critique";
+import {
+  actionableFindings,
+  buildCandidateEvidence,
+  codeCritiquePrompt,
+  codeCritiqueSource,
+  codeRepairPrompt,
+  critiqueFromStageResult,
+  findingsHash,
+  nextRepairAction,
+  parseCodeCritique,
+  parseCodeCritiqueSettings,
+  freezeCritiquePolicy,
+  settingsFromFrozenPolicy,
+  critiquePolicyFromResult,
+  parseWriterRepairReply,
+  persistLedgerFields,
+  repairLedgerFromResult,
+  sameUnresolvedFindings,
+  sameWriterIdentity,
+  shouldRequestRepair,
+  type FrozenCritiquePolicy,
+  type CandidateEvidence,
+  type WriterIdentity,
+} from "./src/stages/code-critique";
 import type { CoverageFinding } from "./src/stages/critique-coverage";
 import { findTaskPlaceholderPaths } from "./src/stages/critique-coverage";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./src/stages/specialist";
@@ -94,11 +131,12 @@ import { parseOpenCodeToolTelemetry } from "./src/stages/opencode-telemetry";
 import { boundedAgentName } from "./src/stages/role";
 import { resolveRetryEffort } from "./src/stages/retry-effort";
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "./src/stages/pm-read";
+import { decideHelperDispatch, detectVkCapability, parseHelperContextSettings, type HelperPolicySnapshot } from "./src/helper-context";
+import { compatibleReasoningLevel, compatibleServiceTier } from "./src/picker-compat";
 import { acceptedOnboardingEvidence, onboardingPreviewSha256, onboardingPrompt, onboardingPreviewSchema, parseOnboardingPreview, type OnboardingAcceptedEvidence, type OnboardingInputPage } from "./src/stages/onboarding";
 import { readGateReport } from "./src/stages/gate-report";
 import { gateTriagePrompt, parseGateTriageResult } from "./src/stages/gate-triage";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded, parseRunPolicy, RunWriterPool, shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "./src/stages/run-policy";
-import { compatibleReasoningLevel, compatibleServiceTier } from "./src/picker-compat";
 
 export { rpcContract } from "./src/contracts";
 
@@ -207,6 +245,9 @@ const NATIVE_MEMORY_KEYS = new Set(["memory.provider", "memory.model", "memory.r
 const NATIVE_NIGHT_REVIEW_KEYS = new Set(["night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier"]);
 const NATIVE_DOCS_KEYS = new Set(["docs.provider", "docs.model", "docs.reasoning_effort", "docs.service_tier"]);
 const NATIVE_ONBOARDING_KEYS = new Set(["onboarding.provider", "onboarding.model", "onboarding.reasoning_effort", "onboarding.service_tier"]);
+const NATIVE_PM_READ_KEYS = new Set(["pm_read.provider", "pm_read.model", "pm_read.reasoning_effort", "pm_read.service_tier"]);
+const NATIVE_PLAN_CRITIQUE_KEYS = new Set(["plan_critique.provider", "plan_critique.model", "plan_critique.reasoning_effort", "plan_critique.service_tier"]);
+const NATIVE_CODE_CRITIQUE_KEYS = new Set(["code_critique.provider", "code_critique.model", "code_critique.reasoning_effort", "code_critique.service_tier"]);
 
 function cancelRejection(db: ReturnType<typeof openDatabase>, attempt: NonNullable<ReturnType<typeof getAttempt>>): string | null {
   const run = getRun(db, attempt.run_id);
@@ -423,9 +464,12 @@ function nightChildSnapshot(result:unknown): NightChildSnapshot|null {
 }
 
 function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:string;taskId:string;stageId:StageId;state:StageState;input:string;attempt?:number;
-  providerId?:string|null;model?:string|null;threadId?:string|null;result?:unknown|null;reason?:string|null}): void {
+  providerId?:string|null;model?:string|null;threadId?:string|null;result?:unknown|null;reason?:string|null;replaceOnNewInput?:boolean}): void {
   const previous = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === input.stageId);
-  if (previous && !stageTransition(previous.state, input.state)) {
+  const nextInputSha = sha256(input.input);
+  const replace = Boolean(input.replaceOnNewInput && previous && previous.inputSha256 !== nextInputSha
+    && ["passed", "failed", "blocked", "skipped"].includes(previous.state) && input.state === "pending");
+  if (previous && !replace && !stageTransition(previous.state, input.state)) {
     throw new Error(`illegal stage transition ${input.stageId}: ${previous.state} -> ${input.state}`);
   }
   const result = input.result ?? null;
@@ -442,6 +486,55 @@ function recordGateEvaluation(db:ReturnType<typeof openDatabase>,input:{projectI
   const output=input.summary===undefined?null:JSON.stringify(input.summary);
   appendGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:input.gate,status:input.status,
     inputSha256:sha256(input.input),outputSha256:output===null?null:sha256(output),attempt:Math.min(input.attempt,2),occurredAt:Date.now()});
+}
+
+function resolveHelperDispatch(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string}): ReturnType<typeof decideHelperDispatch> {
+  const stored = loadRunHelperPolicyJson(input.db, input.runId);
+  let snapshot: HelperPolicySnapshot | null = null;
+  if (stored) {
+    try { snapshot = JSON.parse(stored) as HelperPolicySnapshot; }
+    catch { return { ok: false, reason: "helper_context_snapshot_invalid" }; }
+    if (snapshot?.schemaVersion !== 1 || (snapshot.mode !== "inherit" && snapshot.mode !== "selected" && snapshot.mode !== "none")) {
+      return { ok: false, reason: "helper_context_snapshot_invalid" };
+    }
+  }
+  const parsed = parseHelperContextSettings(loadProjectSettings(input.db, input.projectId));
+  if (!parsed.ok && !snapshot) return { ok: false, reason: parsed.reason };
+  const settings = snapshot?.settings ?? (parsed.ok ? parsed.settings : { mode: "inherit" as const, skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] });
+  const capability = detectVkCapability((input.bb as { agents?: { experimental_vkSessionPolicy?: unknown; experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {});
+  const decision = decideHelperDispatch({ settings, capability, snapshot });
+  if (decision.ok && !stored) persistRunHelperPolicyJson(input.db, input.runId, JSON.stringify(decision.snapshot));
+  return decision;
+}
+
+function requireHelperSpawn(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string}): HelperPolicySnapshot {
+  const decision = resolveHelperDispatch(input);
+  if (!decision.ok) throw new Error(decision.reason);
+  return decision.snapshot;
+}
+
+async function helperChildPlacement(input:{
+  bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;role:string;taskTitle?:string;
+}): Promise<ReturnType<typeof helperSpawnFields>> {
+  const run = getRun(input.db, input.runId);
+  const parentId = run?.pm_thread_id;
+  if (!parentId) throw new Error("helper_parent_thread_missing");
+  const parentThread = await input.bb.sdk.threads.get({ threadId:parentId }).catch(() => null);
+  const settings = loadProjectSettings(input.db, input.projectId);
+  const resolved = resolveHelperPlacement({
+    mode:settings["helper.placement"],
+    projectId:input.projectId,
+    parent:{
+      id:parentId,
+      projectId:input.projectId,
+      environmentId:stringAt(parentThread, "environmentId"),
+      lifecycleOwnerThreadId:stringAt(parentThread, "lifecycleOwnerThreadId") ?? parentId,
+    },
+    role:input.role,
+    taskTitle:input.taskTitle,
+  });
+  if (!resolved.ok) throw new Error(resolved.reason);
+  return helperSpawnFields(resolved.placement);
 }
 
 async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2})
@@ -489,11 +582,16 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
     if(!model.supportedReasoningEfforts.some((row)=>row.reasoningEffort===parsedSettings.effort)) throw new Error(`pm_read_reasoning_effort_unsupported:${parsedSettings.effort}`);
     const serviceTier=provider.capabilities.supportsServiceTier?bbServiceTier(parsedSettings.serviceTier):null;
     if(serviceTier&&!(provider.serviceTiers??[]).some((row)=>row.id===serviceTier)) throw new Error(`pm_read_service_tier_unsupported:${serviceTier}`);
-    const spawned=await input.bb.sdk.threads.spawn({projectId:input.projectId,
+    const helperPolicy=requireHelperSpawn(input);
+    const placement=await helperChildPlacement({
+      bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"pm-reader", taskTitle:input.task.title,
+    });
+    const spawned=await input.bb.sdk.threads.spawn({
+      ...placement,
       ...writerExecutionSelection(providerId,modelId,parsedSettings.effort,serviceTier),
       prompt:pmReadPrompt({agent:"pm-read",packet:renderExecutionPacket(packet),task:input.task}),
       environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
-      visibility:"hidden",pluginMetadata:{role:"pm-reader",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,stageId:"pm-read",parentPmThreadId:input.pmThreadId}});
+      pluginMetadata:{role:"pm-reader",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,stageId:"pm-read",parentPmThreadId:input.pmThreadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
     threadId=stringAt(spawned,"id");
     if(!threadId) throw new Error("pm_read_thread_id_missing");
     recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
@@ -598,15 +696,19 @@ async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDa
     if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) {
       throw new Error(`critique_service_tier_unsupported:${serviceTier}`);
     }
+    const helperPolicy=requireHelperSpawn(input);
+    const placement = await helperChildPlacement({
+      bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"plan-critic", taskTitle:input.task.title,
+    });
     const spawned = await input.bb.sdk.threads.spawn({
-      projectId:input.projectId,
+      ...placement,
       ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
       prompt:critiquePrompt({ plan:input.plan, task:input.task, agent, pmReadContext:input.pmReadContext, structuralFindings }),
       environment:{ type:"host", hostId:input.config.hostId,
         workspace:{ type:"unmanaged", path:input.task.project_cwd } },
-      visibility:"hidden",
       pluginMetadata:{ role:"plan-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
-        stageId:"plan-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null },
+        stageId:"plan-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
+        helperMode:helperPolicy.mode, helperRequired:helperPolicy.policy?.required===true },
     });
     threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("critique_thread_id_missing");
@@ -631,6 +733,151 @@ async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDa
     recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, threadId, reason,
       result:{ error:reason } });
     return { allowed:false, reason:`plan_critique_failed:${reason}` };
+  }
+}
+
+async function runCodeCritique(input:{
+  bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;
+  config:PrototypeConfig;task:TaskV2;evidence:CandidateEvidence;disputes?:unknown;frozenPolicy?:FrozenCritiquePolicy;
+}): Promise<{allowed:boolean;reason?:string;review:"passed"|"not_required";critique?:unknown;parsed?:ReturnType<typeof parseCodeCritique>;settings?:ReturnType<typeof parseCodeCritiqueSettings>;policy?:FrozenCritiquePolicy}> {
+  const settings = loadProjectSettings(input.db, input.projectId);
+  const existing = listStageReceipts(input.db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
+  const frozen = input.frozenPolicy ?? critiquePolicyFromResult(existing?.result);
+  let parsed:ReturnType<typeof parseCodeCritiqueSettings>;
+  try { parsed = frozen ? settingsFromFrozenPolicy(frozen) : parseCodeCritiqueSettings(settings); }
+  catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    return { allowed:false, reason:`code_critique_policy_invalid:${reason}`, review:"not_required" };
+  }
+  const source = codeCritiqueSource({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes });
+  const hashFields = {
+    artifactRevisionSha256: input.evidence.artifactRevisionSha256,
+    evidenceSha256: input.evidence.evidenceSha256,
+    revisionSha256: input.evidence.artifactRevisionSha256,
+  };
+  const base = { runId:input.runId, taskId:input.taskId, stageId:"code-critique" as const, input:source };
+  const ledgerCarry = persistLedgerFields(existing?.result);
+  if (existing && existing.inputSha256 === sha256(source)) {
+    if (existing.state === "passed" || existing.state === "skipped") {
+      return { allowed:true, review:existing.state === "skipped" ? "not_required" : "passed", critique:existing.result, settings:parsed, policy:frozen ?? critiquePolicyFromResult(existing.result) };
+    }
+    if (existing.state === "blocked" || existing.state === "failed") {
+      return {
+        allowed:false, reason:existing.reason ?? "code_critique_blocked", review:"not_required",
+        critique:existing.result, parsed:critiqueFromStageResult(existing.result), settings:parsed,
+        policy:frozen ?? critiquePolicyFromResult(existing.result),
+      };
+    }
+    if ((existing.state === "running" || existing.state === "pending") && existing.threadId) {
+      try {
+        await waitThreadIdle(input.bb, existing.threadId, 90_000, "critique_thread_timeout");
+        const raw = (await input.bb.sdk.threads.output({ threadId:existing.threadId })).output;
+        if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+        const critique = parseCodeCritique(raw);
+        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
+        recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
+          threadId:existing.threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+        return blocked
+          ? { allowed:false, reason:"code_critique_blocked", critique:result, parsed:critique, settings:parsed, review:"not_required", policy:result.policy }
+          : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy:result.policy };
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        recordStage(input.db, { ...base, state:"failed", threadId:existing.threadId, reason, result:{ ...ledgerCarry, error:reason, policy:frozen } });
+        return { allowed:false, reason:`code_critique_failed:${reason}`, review:"not_required", settings:parsed };
+      }
+    }
+  }
+  recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, result:{ ...ledgerCarry, ...hashFields, truncated:input.evidence.truncated } });
+  const liveSelection = resolveStageWriterSelection({
+    settings, config:input.config, stageProviderKey:"code_critique.provider", stageModelKey:"code_critique.model",
+  });
+  const providerId = frozen?.providerId ?? liveSelection.providerId;
+  const modelId = frozen?.model ?? liveSelection.model;
+  const configuredEffort = frozen?.reasoningEffort ?? (typeof settings["code_critique.reasoning_effort"] === "string"
+    ? settings["code_critique.reasoning_effort"] as string
+    : typeof settings["writer.reasoning_effort"] === "string" ? settings["writer.reasoning_effort"] as string : "medium");
+  const savedTier = frozen?.serviceTier ?? settings["code_critique.service_tier"];
+  const policy = frozen ?? freezeCritiquePolicy({
+    settings:parsed, providerId, model:modelId, reasoningEffort:configuredEffort,
+    serviceTier:typeof savedTier === "string" && savedTier ? String(savedTier) : "standard",
+  });
+  if (!parsed.enabled) {
+    recordStage(input.db, { ...base, state:"skipped", reason:"disabled_by_project_setting", result:{ ...ledgerCarry, ...hashFields, policy } });
+    return { allowed:true, review:"not_required", settings:parsed, policy };
+  }
+  if (input.evidence.truncated) {
+    const reason = `code_critique_evidence_unknown:${input.evidence.truncateReason ?? "truncated"}`;
+    recordStage(input.db, { ...base, state:"blocked", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
+    return { allowed:false, reason, review:"not_required", settings:parsed, policy };
+  }
+  const snapshot = {
+    ...ledgerCarry,
+    ...hashFields,
+    mode:parsed.mode, autoFix:parsed.autoFix, maxRounds:parsed.maxRounds,
+    reviewer:{ providerId, model:modelId },
+    policy,
+  };
+  recordStage(input.db, { ...base, state:"running", providerId, model:modelId, result:snapshot });
+  let threadId:string|null = null;
+  try {
+    const [providers, catalog] = await Promise.all([
+      input.bb.sdk.providers.list({ hostId:input.config.hostId }),
+      input.bb.sdk.providers.models({ providerId, hostId:input.config.hostId }),
+    ]);
+    const provider = providers.find((row) => row.id === providerId && row.available);
+    const model = catalog.models.find((row) => row.id === modelId || row.model === modelId);
+    if (!provider || !model) throw new Error("critique_provider_or_model_unavailable");
+    const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
+    if (!new Set<string>(levels).has(configuredEffort)) throw new Error(`critique_reasoning_effort_unsupported:${configuredEffort}`);
+    const tier = savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings);
+    const serviceTier = provider.capabilities.supportsServiceTier ? bbServiceTier(tier) : null;
+    if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) {
+      throw new Error(`critique_service_tier_unsupported:${serviceTier}`);
+    }
+    const helperPolicy = requireHelperSpawn(input);
+    const placement = await helperChildPlacement({
+      bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"code-critic", taskTitle:input.task.title,
+    });
+    const reviewerSnapshot = {
+      providerId, model:modelId, reasoningEffort:configuredEffort,
+      serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix,
+    };
+    const spawned = await input.bb.sdk.threads.spawn({
+      ...placement,
+      ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
+      prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes }),
+      environment:{ type:"host", hostId:input.config.hostId,
+        workspace:{ type:"unmanaged", path:input.task.project_cwd } },
+      pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
+        stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
+        revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
+        helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot },
+    });
+    threadId = stringAt(spawned, "id");
+    if (!threadId) throw new Error("critique_thread_id_missing");
+    recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId, result:{ ...snapshot, threadId, policy } });
+    await waitThreadIdle(input.bb, threadId, 90_000, "critique_thread_timeout");
+    const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+    if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+    const critique = parseCodeCritique(raw);
+    const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+    const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
+    recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
+      threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+    return blocked
+      ? { allowed:false, reason:"code_critique_blocked", critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
+      : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy };
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    if (threadId) {
+      const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+      if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
+        await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+      }
+    }
+    recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, threadId, reason, result:{ ...ledgerCarry, error:reason, policy } });
+    return { allowed:false, reason:`code_critique_failed:${reason}`, review:"not_required", settings:parsed, policy };
   }
 }
 
@@ -669,14 +916,18 @@ async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof op
     }
     const tier = provider.capabilities.supportsServiceTier ? bbServiceTier(serviceTier) : null;
     if (tier && !(provider.serviceTiers ?? []).some((item) => item.id === tier)) throw new Error(`specialist_service_tier_unsupported:${tier}`);
+    const helperPolicy=requireHelperSpawn(input);
+    const placement = await helperChildPlacement({
+      bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"specialist-reviewer", taskTitle:input.task.title,
+    });
     const spawned = await input.bb.sdk.threads.spawn({
-      projectId:input.projectId,
+      ...placement,
       ...writerExecutionSelection(providerId,modelId,effort,tier),
       prompt:specialistPrompt({task:input.task,plan:input.plan,agent}),
       environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
-      visibility:"hidden",
       pluginMetadata:{role:"specialist-reviewer",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,
-        stageId:"specialist-review",parentPmThreadId:getRun(input.db,input.runId)?.pm_thread_id ?? null},
+        stageId:"specialist-review",parentPmThreadId:getRun(input.db,input.runId)?.pm_thread_id ?? null,
+        helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true},
     });
     threadId = stringAt(spawned,"id");
     if (!threadId) throw new Error("specialist_thread_id_missing");
@@ -1061,6 +1312,12 @@ export default async function plugin(bb: BbPluginApi) {
         visibility:"visible",
         pluginMetadata:{ role:"pm", lanePilotRunId:runId },
         executionInputSources:{ providerId:"explicit", model:"explicit" },
+        ...compiledMainAgentSpawnBinding({
+          capability: detectCompiledMainAgentCapability(
+            (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
+          ),
+          profile: resolveSelectedMainAgentProfile(settings),
+        }),
       });
     } catch (cause) {
       setRunState(db, runId, "blocked");
@@ -1096,12 +1353,13 @@ export default async function plugin(bb: BbPluginApi) {
     config:PrototypeConfig; task:TaskV2; plan:string; pmThreadId:string; pmReadContext?:string;
     emergency?:{providerId:string;model:string;reason:string}; retryIndex?:number;
   }): Promise<
-    | { ok:true; threadId:string; providerId:string|null; model:string|null; dirtBefore:import("./src/cli-outcome").DirtSnapshot[]; workspacePath:string; executionPacketSha256?:string }
+    | { ok:true; threadId:string; providerId:string|null; model:string|null; reasoningLevel?:string; serviceTier?:"default"|"fast"|null; selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}; dirtBefore:import("./src/cli-outcome").DirtSnapshot[]; workspacePath:string; executionPacketSha256?:string }
     | { ok:false; status:"spawn_rejected"; reason:string; attemptId:string }
   > {
     let dirtBefore:DirtSnapshot[]=[];
     let selectedProviderId:string|null=null;
     let selectedModel:string|null=null;
+    let lastExecution:{reasoningLevel:string;serviceTier:"default"|"fast"|null;selectionSource:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}}|null=null;
     transitionAttempt(db, input.attemptId, "spawn_requested");
     try {
       const settings = loadProjectSettings(db, input.projectId);
@@ -1150,10 +1408,7 @@ export default async function plugin(bb: BbPluginApi) {
         : typeof settings["writer.reasoning_effort"] === "string"
           ? settings["writer.reasoning_effort"] as string : "medium";
       const digest = planDigest(input.plan);
-      const flag = settings["jev.LANE_JEV_EFFORT"];
-      const disabled = flag === false || flag === 0
-        || (typeof flag === "string" && ["0", "off", "false", "no"].includes(flag.trim().toLowerCase()));
-      const enabled = !disabled;
+      const enabled = automaticEffortRoutingEnabled(settings);
       let jev:Awaited<ReturnType<typeof host.call<"classifyPlan">>>;
       if (!enabled) {
         jev = { hostId:input.config.hostId, status:"disabled", effort:null, reason:"jev_disabled_by_project_setting",
@@ -1189,6 +1444,11 @@ export default async function plugin(bb: BbPluginApi) {
       ].filter(Boolean).join(";") || null;
       const requested = choice.requested;
       const effective = retryEffort.after;
+      const reasoningLevelSource = enabled && jev.status === "ok" && jevDecision ? "client-preference" as const : "explicit" as const;
+      const selectionSource = {
+        providerId:writerProviderId, model:writerModel, reasoningLevel:effective,
+        serviceTier:effectiveServiceTier, reasoningLevelSource,
+      };
       const trace = {
         planSha256:digest.sha256, sentPlanSha256:jev.sentPlanSha256, sourceLength:digest.length, sentLength:jev.sentLength,
         jevStatus:jev.status, jevDecision, requestedReasoningLevel:requested,
@@ -1197,13 +1457,18 @@ export default async function plugin(bb: BbPluginApi) {
         providerId:writerProviderId, model:writerModel, serviceTier:effectiveServiceTier,
         requestedServiceTier,
         runId:input.runId, attemptId:input.attemptId, threadId:null,
+        effortMode: enabled ? "automatic" as const : "manual" as const,
+        selectionSource,
       } as const;
       saveReasoningTrace(db, trace);
       bb.log.info(`Lane Pilot writer reasoning trace ${JSON.stringify(trace)}`);
       if (choice.manualSupported === false) {
         throw new WriterSelectionError(`manual_writer_reasoning_effort_unsupported:${effective}; supported=${[...supported].join(",")}`);
       }
-      const execution = writerExecutionSelection(writerProviderId, writerModel, effective, effectiveServiceTier);
+      const execution = writerExecutionSelection(writerProviderId, writerModel, effective, effectiveServiceTier, {
+        reasoningLevel: reasoningLevelSource,
+      });
+      lastExecution = { reasoningLevel:effective, serviceTier:effectiveServiceTier, selectionSource };
       const run = getRun(db, input.runId);
       if (!run?.writer_workspace_path) throw new Error("writer run has no immutable workspace binding");
       let workspacePath = run.writer_workspace_path;
@@ -1299,14 +1564,36 @@ export default async function plugin(bb: BbPluginApi) {
       } catch (cause) {
         throw new WriterSelectionError(`execution_packet_failed:${cause instanceof Error ? cause.message : String(cause)}`);
       }
+      const helperDecision = resolveHelperDispatch({ bb, db, projectId:input.projectId, runId:input.runId });
+      const helperSnapshot = helperDecision.ok ? helperDecision.snapshot : null;
+      const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
+      const existingTrace = getReasoningTrace(db, input.attemptId);
+      if (existingTrace) {
+        saveReasoningTrace(db, {
+          ...existingTrace,
+          dispatchContext:{
+            memoryText:relevantMemory.text,
+            executionPacket,
+            executionPacketSha256,
+            pmReadContext:input.pmReadContext ?? "",
+            agent:writerAgent,
+            helperMode:helperSnapshot?.mode ?? "inherit",
+            helperRequired:helperSnapshot?.policy?.required === true,
+          },
+        });
+      }
+      const placement = await helperChildPlacement({
+        bb, db, projectId:input.projectId, runId:input.runId,
+        role:input.emergency ? "emergency-writer" : "writer",
+        taskTitle:input.task.title,
+      });
       const spawned = await spawnWithSeam(() => bb.sdk.threads.spawn({
-        projectId: input.projectId,
+        ...placement,
         ...execution,
         prompt: writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
           ? `Fallback reason: ${input.emergency.reason}. Primary provider/model: ${typeof settings["writer.provider"] === "string" ? settings["writer.provider"] : input.config.writerProviderId}/${typeof settings["writer.model"] === "string" ? settings["writer.model"] : input.config.writerModel}.`
-          : undefined,boundedAgentName(settings["writer.agent"],"Lane Pilot writer"),input.pmReadContext ?? ""),
+          : undefined,writerAgent,input.pmReadContext ?? ""),
         environment,
-        visibility:"hidden",
         pluginMetadata:{
           role:input.emergency ? "emergency-writer" : "writer",
           lanePilotRunId:input.runId,
@@ -1321,7 +1608,9 @@ export default async function plugin(bb: BbPluginApi) {
       setReasoningThread(db, input.attemptId, writerThreadId);
       const spawnedTrace = getReasoningTrace(db, input.attemptId);
       if (spawnedTrace) bb.log.info(`Lane Pilot writer execution ${JSON.stringify({ attemptId:input.attemptId, threadId:writerThreadId, providerId:spawnedTrace.providerId, model:spawnedTrace.model, reasoningLevel:spawnedTrace.effectiveReasoningLevel, serviceTier:spawnedTrace.serviceTier })}`);
-      return { ok:true, threadId:writerThreadId, providerId:selectedProviderId, model:selectedModel, dirtBefore, workspacePath, executionPacketSha256 };
+      return { ok:true, threadId:writerThreadId, providerId:selectedProviderId, model:selectedModel,
+        reasoningLevel:lastExecution?.reasoningLevel, serviceTier:lastExecution?.serviceTier, selectionSource:lastExecution?.selectionSource,
+        dirtBefore, workspacePath, executionPacketSha256 };
     } catch (cause) {
       if (cause instanceof WriterSelectionError) {
         const reason = cause.message;
@@ -1395,10 +1684,10 @@ export default async function plugin(bb: BbPluginApi) {
         workspacePath:task.project_cwd,
       }));
       if (ran.hostId !== config.hostId) {
-        return {command:command.command,exitCode:1,stderr:"sandbox result host did not match the configured host",
+        return {command:command.command,exitCode:1,stdout:"",stderr:"sandbox result host did not match the configured host",
           sandboxBackend:null,policySha256:null,workspacePath:task.project_cwd};
       }
-      return {command:command.command,exitCode:ran.exitCode,stderr:ran.stderr,
+      return {command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?ran.stdout:"",stderr:typeof ran.stderr==="string"?ran.stderr:"",
         sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath};
       } finally { release(); }
     });
@@ -1408,6 +1697,7 @@ export default async function plugin(bb: BbPluginApi) {
     config:PrototypeConfig; task:TaskV2; runId:string; taskId:string; attempt:number;
     attemptId:string; pmThreadId:string; writerThreadId:string; output:string; verification:VerifyResult[];
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
+    review?:"passed"|"not_required";
   }): Promise<Record<string,unknown>> {
     const reportText = bbWriterReportMarkdown(input.task, input.attempt);
     const reasoningTrace = getReasoningTrace(db, input.attemptId);
@@ -1415,6 +1705,7 @@ export default async function plugin(bb: BbPluginApi) {
       task:input.task, attempt:input.attempt,
       providerId:reasoningTrace?.providerId ?? input.config.writerProviderId,
       model:reasoningTrace?.model ?? input.config.writerModel, reportText,
+      review:input.review,
     });
     const validation = validateAcceptanceV2(acceptance);
     if (!validation.ok) throw new Error(`upstream acceptance-v2 rejected generated receipt: ${validation.errors.join("; ")}`);
@@ -1600,16 +1891,320 @@ export default async function plugin(bb: BbPluginApi) {
         transitionAttempt(db, input.attemptId, checked.status, { reason:checked.reason });
         return { ...checked, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
+      let candidate = checked;
+      let writerThreadId = input.writerThreadId;
+      let review:"passed"|"not_required" = "not_required";
+      const existingCritique = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
+      const storedLedger = repairLedgerFromResult(existingCritique?.result);
+      let repairRound = storedLedger?.repairRound ?? 0;
+      let previousFindings:ReturnType<typeof actionableFindings> = storedLedger?.findings?.length
+        ? storedLedger.findings.filter((row) => row.severity === "blocking")
+        : [];
+      let lastArtifact = storedLedger?.artifactRevisionSha256 ?? "";
+      let approvedArtifact = "";
+      let frozenPolicy = storedLedger?.policy;
+      const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(loadProjectSettings(db, input.projectId));
+      const baselineHashes = Object.fromEntries(input.dirtBefore.map((row) => [row.path, row.sha256 || null]));
+      const captureEvidence = async () => {
+        const dirt = await workspaceDirt(input.config, input.task.project_cwd);
+        const byPath = new Map((dirt.ok ? dirt.snapshots : []).map((row) => [row.path, row.sha256 || null]));
+        const hashes = Object.fromEntries((candidate.produced ?? []).map((path) => [path, byPath.get(path) ?? null]));
+        const files:Array<{ path:string; content:string|null }> = [];
+        for (const path of candidate.produced ?? []) {
+          const file = await bb.sdk.files.read({
+            hostId:input.config.hostId, rootPath:input.task.project_cwd, path:resolve(input.task.project_cwd, path),
+          }).catch(() => ({ content:null }));
+          files.push({ path, content:typeof file.content === "string" ? file.content : null });
+        }
+        return buildCandidateEvidence({
+          produced:candidate.produced ?? [],
+          hashes,
+          baselineHashes,
+          files,
+          verification:(candidate.verification ?? []).map((row) => ({
+            command:row.command, exitCode:row.exitCode,
+            stdout:row.stdout, stderr:row.stderr,
+          })),
+          output:candidate.output,
+          ownsPaths:input.task.owns_paths,
+          neverTouch:input.task.never_touch,
+          dirtOk:dirt.ok,
+          dirtReason:dirt.ok ? undefined : dirt.reason,
+        });
+      };
+      if (liveCritiquePolicy.enabled) {
+      for (;;) {
+        const evidence = await captureEvidence();
+        const ledger = repairLedgerFromResult(listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === "code-critique")?.result);
+        if (ledger?.policy) frozenPolicy = ledger.policy;
+        if (ledger?.repairRound) repairRound = Math.max(repairRound, ledger.repairRound);
+        const disputes = repairRound > 0 ? parseWriterRepairReply(candidate.output) : null;
+        if (disputes && disputes.replies.length > 0 && disputes.replies.every((row) => row.status === "disputed")) {
+          const recritique = await runCodeCritique({
+            bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+            config:input.config, task:input.task, evidence, disputes, frozenPolicy,
+          });
+          if (recritique.policy) frozenPolicy = recritique.policy;
+          if (recritique.allowed) { review = recritique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason:recritique.reason}});
+          transitionAttempt(db, input.attemptId, "blocked", { reason:recritique.reason });
+          return { status:"blocked", reason:recritique.reason, attemptId:input.attemptId, writerThreadId };
+        }
+        const inflight = nextRepairAction({
+          ledger, nextRound:Math.max(1, ledger?.repairRound ?? repairRound),
+          attemptId:input.attemptId, artifactRevisionSha256:evidence.artifactRevisionSha256,
+        });
+        if (inflight === "unknown") {
+          const reason = "code_critique_repair_unknown";
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
+          transitionAttempt(db, input.attemptId, "blocked", { reason });
+          return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+        }
+        if (inflight === "wait" && ledger?.repairThreadId) {
+          writerThreadId = ledger.repairThreadId;
+          repairRound = ledger.repairRound;
+          lastArtifact = ledger.artifactRevisionSha256 || lastArtifact;
+          await waitThreadIdle(bb, ledger.repairThreadId, 600_000, "code_critique_repair_timeout");
+          candidate = await validateWriterResult({
+            config:input.config, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+            attempt:countAttempts(db,input.runId,input.taskId), task:input.task, writerThreadId:ledger.repairThreadId,
+            attemptId:input.attemptId, dirtBefore:input.dirtBefore,
+          });
+          if (candidate.status !== "accepted") {
+            recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+              attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:candidate.status}});
+            transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason });
+            return { ...candidate, attemptId:input.attemptId, writerThreadId };
+          }
+          recordStage(db, {
+            runId:input.runId, taskId:input.taskId, stageId:"code-critique",
+            state:"blocked",
+            input:codeCritiqueSource({ evidence, task:input.task, agent:frozenPolicy?.agent ?? "code-critic" }),
+            result:{ ...ledger, spawnAttempted:true, repairObserved:true, repairThreadId:ledger.repairThreadId, repairRound:ledger.repairRound },
+            reason:"critique_changes_requested",
+          });
+          continue;
+        }
+        if (lastArtifact && evidence.artifactRevisionSha256 === lastArtifact && repairRound > 0
+          && !(disputes && disputes.replies.some((row) => row.status === "disputed"))) {
+          const reason = "code_critique_revision_unchanged";
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
+          transitionAttempt(db, input.attemptId, "blocked", { reason });
+          return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+        }
+        const critique = await runCodeCritique({
+          bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+          config:input.config, task:input.task, evidence, frozenPolicy,
+        });
+        if (critique.policy) frozenPolicy = critique.policy;
+        if (critique.allowed) { review = critique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
+        const parsed = critique.parsed;
+        const critiqueSettings = frozenPolicy ? settingsFromFrozenPolicy(frozenPolicy) : critique.settings;
+        if (!parsed || !critiqueSettings || !shouldRequestRepair({ settings:critiqueSettings, result:parsed, round:repairRound })) {
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason:critique.reason}});
+          transitionAttempt(db, input.attemptId, "blocked", { reason:critique.reason });
+          return { status:"blocked", reason:critique.reason, attemptId:input.attemptId, writerThreadId };
+        }
+        const nextFindings = actionableFindings(parsed);
+        if (previousFindings.length && sameUnresolvedFindings(previousFindings, nextFindings)) {
+          const reason = "code_critique_repeated_finding";
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
+          transitionAttempt(db, input.attemptId, "blocked", { reason });
+          return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+        }
+        previousFindings = nextFindings;
+        lastArtifact = evidence.artifactRevisionSha256;
+        const nextRound = repairRound + 1;
+        const spawnLedger = repairLedgerFromResult(critique.critique);
+        const action = nextRepairAction({ ledger:spawnLedger, nextRound, attemptId:input.attemptId, artifactRevisionSha256:evidence.artifactRevisionSha256 });
+        if (action === "unknown") {
+          const reason = "code_critique_repair_unknown";
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
+          transitionAttempt(db, input.attemptId, "blocked", { reason });
+          return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+        }
+        const trace = getReasoningTrace(db, input.attemptId);
+        const bound = getAttempt(db, input.attemptId);
+        if (!trace || !bound) {
+          const reason = "code_critique_writer_identity_unknown";
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
+          transitionAttempt(db, input.attemptId, "blocked", { reason });
+          return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+        }
+        const writerSnapshot:WriterIdentity = {
+          attemptId:input.attemptId,
+          providerId:trace.providerId,
+          model:trace.model,
+          reasoningLevel:trace.effectiveReasoningLevel,
+          serviceTier:trace.serviceTier,
+          environmentId:bound.environment_id,
+          workspacePath:bound.workspace_path ?? input.task.project_cwd,
+        };
+        if (trace.attemptId !== input.attemptId || (spawnLedger?.writer && !sameWriterIdentity(spawnLedger.writer, writerSnapshot))) {
+          const reason = "code_critique_writer_mismatch";
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
+          transitionAttempt(db, input.attemptId, "blocked", { reason });
+          return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+        }
+        const frozenFindings = spawnLedger?.findings?.length ? spawnLedger.findings : nextFindings;
+        const frozenHash = spawnLedger?.findingsHash || findingsHash(frozenFindings);
+        if (frozenHash !== findingsHash(nextFindings) && spawnLedger?.findingsHash) {
+          const reason = "code_critique_findings_mutated";
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
+          transitionAttempt(db, input.attemptId, "blocked", { reason });
+          return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+        }
+        let repairThreadId = action === "wait" ? spawnLedger?.repairThreadId : undefined;
+        const critiqueInput = codeCritiqueSource({ evidence, task:input.task, agent:critiqueSettings.agent });
+        const ledgerBase = {
+          ...parsed,
+          artifactRevisionSha256:evidence.artifactRevisionSha256,
+          evidenceSha256:evidence.evidenceSha256,
+          revisionSha256:evidence.artifactRevisionSha256,
+          findingsHash:frozenHash,
+          findings:frozenFindings,
+          repairRound:nextRound,
+          writer:writerSnapshot,
+          policy:frozenPolicy,
+          reviewer:(critique.critique && typeof critique.critique === "object" && "reviewer" in critique.critique)
+            ? (critique.critique as { reviewer?: unknown }).reviewer
+            : undefined,
+          mode:critiqueSettings.mode, autoFix:critiqueSettings.autoFix, maxRounds:critiqueSettings.maxRounds,
+        };
+        if (!repairThreadId) {
+          recordStage(db, {
+            runId:input.runId, taskId:input.taskId, stageId:"code-critique",
+            state:"blocked", input:critiqueInput,
+            result:{ ...ledgerBase, spawnAttempted:true },
+            reason:critique.reason ?? "critique_changes_requested",
+          });
+          const dispatch = trace.dispatchContext;
+          if (!dispatch) {
+            const reason = "code_critique_dispatch_context_missing";
+            recordStage(db, {
+              runId:input.runId, taskId:input.taskId, stageId:"code-critique",
+              state:"blocked", input:critiqueInput, result:{ ...ledgerBase, spawnAttempted:true }, reason,
+            });
+            transitionAttempt(db, input.attemptId, "blocked", { reason });
+            return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+          }
+          let helperPolicy:HelperPolicySnapshot;
+          try {
+            helperPolicy = requireHelperSpawn({ bb, db, projectId:input.projectId, runId:input.runId });
+          } catch (cause) {
+            const reason = `code_critique_helper_policy_missing:${cause instanceof Error ? cause.message : String(cause)}`;
+            transitionAttempt(db, input.attemptId, "blocked", { reason });
+            return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+          }
+          if (helperPolicy.mode !== dispatch.helperMode || (helperPolicy.policy?.required === true) !== dispatch.helperRequired) {
+            const reason = "code_critique_helper_policy_mismatch";
+            transitionAttempt(db, input.attemptId, "blocked", { reason });
+            return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+          }
+          const repairPrompt = [
+            writerPrompt(input.task, dispatch.memoryText, dispatch.executionPacket, undefined, dispatch.agent, dispatch.pmReadContext),
+            codeRepairPrompt({ task:input.task, findings:frozenFindings, evidence, agent:dispatch.agent }),
+          ].join("\n\n");
+          const environment = bound.environment_id
+            ? { type:"reuse" as const, environmentId:bound.environment_id }
+            : { type:"host" as const, hostId:input.config.hostId, workspace:{ type:"unmanaged" as const, path:writerSnapshot.workspacePath } };
+          const placement = await helperChildPlacement({
+            bb, db, projectId:input.projectId, runId:input.runId, role:"writer", taskTitle:input.task.title,
+          });
+          let spawned: unknown;
+          try {
+            spawned = await bb.sdk.threads.spawn({
+              ...placement,
+              ...writerExecutionSelection(
+                writerSnapshot.providerId,
+                writerSnapshot.model,
+                writerSnapshot.reasoningLevel,
+                writerSnapshot.serviceTier,
+              ),
+              prompt:repairPrompt,
+              environment,
+              pluginMetadata:{
+                role:"writer", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
+                attemptId:input.attemptId, repairRound:nextRound,
+                revisionSha256:evidence.revisionSha256, findingsHash:frozenHash, stageId:"writer-agent",
+                writer:writerSnapshot,
+              },
+            });
+          } catch {
+            const reason = "code_critique_repair_unknown";
+            recordStage(db, {
+              runId:input.runId, taskId:input.taskId, stageId:"code-critique",
+              state:"blocked", input:critiqueInput,
+              result:{ ...ledgerBase, spawnAttempted:true },
+              reason,
+            });
+            transitionAttempt(db, input.attemptId, "blocked", { reason });
+            return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+          }
+          repairThreadId = stringAt(spawned, "id") ?? undefined;
+          if (!repairThreadId) {
+            const reason = "code_critique_repair_unknown";
+            recordStage(db, {
+              runId:input.runId, taskId:input.taskId, stageId:"code-critique",
+              state:"blocked", input:critiqueInput,
+              result:{ ...ledgerBase, spawnAttempted:true },
+              reason,
+            });
+            transitionAttempt(db, input.attemptId, "blocked", { reason });
+            return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+          }
+          recordStage(db, {
+            runId:input.runId, taskId:input.taskId, stageId:"code-critique",
+            state:"blocked", input:critiqueInput,
+            result:{ ...ledgerBase, spawnAttempted:true, repairThreadId },
+            reason:critique.reason ?? "critique_changes_requested",
+          });
+        }
+        writerThreadId = repairThreadId;
+        repairRound = nextRound;
+        await waitThreadIdle(bb, repairThreadId, 600_000, "code_critique_repair_timeout");
+        candidate = await validateWriterResult({
+          config:input.config, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+          attempt:countAttempts(db,input.runId,input.taskId), task:input.task, writerThreadId:repairThreadId,
+          attemptId:input.attemptId, dirtBefore:input.dirtBefore,
+        });
+        if (candidate.status !== "accepted") {
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:candidate.status}});
+          transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason });
+          return { ...candidate, attemptId:input.attemptId, writerThreadId };
+        }
+      }
+      const confirm = await captureEvidence();
+      if (confirm.truncated || !approvedArtifact || confirm.artifactRevisionSha256 !== approvedArtifact) {
+        const reason = confirm.truncated
+          ? `code_critique_evidence_unknown:${confirm.truncateReason ?? "truncated"}`
+          : "code_critique_stale_revision";
+        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
+        transitionAttempt(db, input.attemptId, "blocked", { reason });
+        return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+      }
+      }
       const receipt = await persistWriterAcceptance({
         config:input.config, task:input.task, runId:input.runId, taskId:input.taskId,
         attempt:countAttempts(db, input.runId, input.taskId), attemptId:input.attemptId,
-        pmThreadId:input.pmThreadId, writerThreadId:input.writerThreadId, output:checked.output, verification:checked.verification,
-        emergencyFallback:input.emergencyFallback,
+        pmThreadId:input.pmThreadId, writerThreadId, output:candidate.output, verification:candidate.verification,
+        emergencyFallback:input.emergencyFallback, review,
       });
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
         attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true}});
       transitionAttempt(db, input.attemptId, "accepted");
-      return { ...receipt, verification:checked.verification, produced:checked.produced };
+      return { ...receipt, verification:candidate.verification, produced:candidate.produced };
     } catch (cause) {
       const thread = await getThreadBounded(input.writerThreadId);
       if (stringAt(thread, "status") === "error") {
@@ -1629,9 +2224,13 @@ export default async function plugin(bb: BbPluginApi) {
     activeWriterTasks.add(key);
     let attemptId = input.firstAttemptId;
     let writerThreadId = input.writerThreadId;
-    let writerSelection:{providerId:string;model:string}|undefined;
+    let writerSelection:{providerId:string;model:string;reasoningLevel?:string;serviceTier?:"default"|"fast"|null;selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}}|undefined;
     const existingTrace=getReasoningTrace(db,attemptId);
-    if(existingTrace) writerSelection={providerId:existingTrace.providerId,model:existingTrace.model};
+    if(existingTrace) writerSelection={
+      providerId:existingTrace.providerId, model:existingTrace.model,
+      reasoningLevel:existingTrace.effectiveReasoningLevel, serviceTier:existingTrace.serviceTier,
+      selectionSource:existingTrace.selectionSource,
+    };
     let activeTask = input.task;
     let dirtBefore = input.dirtBefore ?? [];
     let baselineDirtBefore:DirtSnapshot[]|null=input.dirtBefore?[...input.dirtBefore]:null;
@@ -1665,7 +2264,10 @@ export default async function plugin(bb: BbPluginApi) {
             last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
           } else {
             writerThreadId = spawned.threadId;
-            writerSelection=spawned.providerId&&spawned.model?{providerId:spawned.providerId,model:spawned.model}:undefined;
+            writerSelection=spawned.providerId&&spawned.model?{
+              providerId:spawned.providerId,model:spawned.model,
+              reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
+            }:undefined;
             activeTask = {...input.task,project_cwd:spawned.workspacePath,
               verification:input.task.verification.map(command=>({...command,cwd:spawned.workspacePath}))};
             dirtBefore = spawned.dirtBefore;
@@ -1758,7 +2360,10 @@ export default async function plugin(bb: BbPluginApi) {
               writerThreadId=undefined;
             } else {
               writerThreadId=spawned.threadId;
-              writerSelection=spawned.providerId&&spawned.model?{providerId:spawned.providerId,model:spawned.model}:undefined;
+              writerSelection=spawned.providerId&&spawned.model?{
+              providerId:spawned.providerId,model:spawned.model,
+              reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
+            }:undefined;
               activeTask={...input.task,project_cwd:spawned.workspacePath,
                 verification:input.task.verification.map(command=>({...command,cwd:spawned.workspacePath}))};
               executionPacketSha256=spawned.executionPacketSha256 ?? null;
@@ -1790,7 +2395,16 @@ export default async function plugin(bb: BbPluginApi) {
           input:input.plan, attempt:Math.min(countAttempts(db, input.runId, input.taskId),MAIN_ATTEMPT_LIMIT),
           providerId:stageId==="writer-agent"?writerSelection?.providerId:undefined,
           model:stageId==="writer-agent"?writerSelection?.model:undefined,threadId:writerThreadId,
-          result:stageId === "writer-agent" ? last : accepted ? stageId === "verification"
+          result:stageId === "writer-agent" ? {
+            ...last,
+            execution: writerSelection ? {
+              providerId:writerSelection.providerId,
+              model:writerSelection.model,
+              reasoningLevel:writerSelection.reasoningLevel ?? null,
+              serviceTier:writerSelection.serviceTier ?? null,
+              selectionSource:writerSelection.selectionSource ?? null,
+            } : last,
+          } : accepted ? stageId === "verification"
             ? { produced:last.produced, verification:last.verification, runV2:last.runV2 }
             : last : null, reason:accepted ? undefined : reason });
       }
@@ -2172,13 +2786,28 @@ export default async function plugin(bb: BbPluginApi) {
     const reasoningSetting = configuredSetting(settings,"browser_qa.reasoning_effort");
     const configuredReasoningValue = typeof reasoningSetting === "string" ? reasoningSetting.trim() : "";
     const configuredReasoning = configuredReasoningValue && configuredReasoningValue !== "provider-specific" ? configuredReasoningValue : undefined;
+    const requestInput = {url:args.url,cases:args.cases,envClass:args.envClass,viewports:args.viewports,authorized:args.authorized};
     const base = { runId:args.runId, taskId:args.taskId, stageId:"browser-qa" as const,
-      input:JSON.stringify({url:args.url,cases:args.cases,envClass:args.envClass,viewports:args.viewports,authorized:args.authorized}),
+      input:JSON.stringify(requestInput),
       attempt:countAttempts(db,args.runId,args.taskId), providerId:`browser-qa-${provider}`,
       model:configuredModel ?? null };
     const existing = listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa");
-    if (existing) return { runId:args.runId,taskId:args.taskId,state:existing.state,reason:"browser QA stage already has a receipt; create a new task for another proof run",stage:existing };
-    recordStage(db,{...base,state:"pending"});
+    if (existing) {
+      const stale = resolveStaleBrowserQaReceipt({ state:existing.state, result:existing.result, updatedAt:existing.updatedAt });
+      if (stale.kind === "terminal") {
+        return { runId:args.runId,taskId:args.taskId,state:existing.state,reason:"browser QA stage already has a receipt; create a new task for another proof run",stage:existing };
+      }
+      if (stale.kind === "observe") {
+        return { runId:args.runId,taskId:args.taskId,state:existing.state,reason:"browser_qa_dispatch_unconfirmed_waiting_stale_window",stage:existing };
+      }
+      if (stale.kind === "outcome_unknown") {
+        const frozenInput = existing.result && typeof existing.result === "object"
+          ? JSON.stringify({ ...(existing.result as Record<string, unknown>), url:args.url })
+          : base.input;
+        recordStage(db,{...base,input:frozenInput,state:"blocked",reason:stale.reason,result:stale.result});
+        return {runId:args.runId,taskId:args.taskId,state:"blocked",reason:stale.reason,stage:listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="browser-qa"),result:stale.result};
+      }
+    }
     const enabledOff = enabled === false || enabled === 0 || (typeof enabled === "string" && ["false","off","0","no"].includes(enabled.toLowerCase()));
     if (enabledOff) {
       recordStage(db,{...base,state:"skipped",reason:"disabled_by_project_setting"});
@@ -2219,7 +2848,7 @@ export default async function plugin(bb: BbPluginApi) {
       return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
     const model = configuredModel;
-    const reasoning = configuredReasoning as "low"|"medium"|"high"|"xhigh"|"max"|undefined;
+    let reasoning = configuredReasoning as "low"|"medium"|"high"|"xhigh"|"max"|undefined;
     const backendValue = configuredSetting(settings,"browser_qa.backend");
     const backend = backendValue == null || backendValue === "chrome-qa" ? "chrome-qa"
       : backendValue === "live-chrome" || backendValue === "headless" ? backendValue : null;
@@ -2230,15 +2859,95 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const timeoutValue = configuredSetting(settings,"browser_qa.timeout_sec");
     const timeoutSec = typeof timeoutValue === "number" && Number.isInteger(timeoutValue) ? Math.min(1800,Math.max(30,timeoutValue)) : 900;
-    recordStage(db,{...base,state:"running",providerId:base.providerId,model});
+    let qaTarget;
     try {
+      qaTarget = resolveBrowserQaTarget({
+        writerHostId: config.hostId,
+        configuredHostId: configuredSetting(settings, QA_HOST_KEY),
+        configuredWorkspace: configuredSetting(settings, QA_WORKSPACE_KEY),
+        writerWorkspace: task.project_cwd,
+      });
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      recordStage(db,{...base,state:"pending"});
+      recordStage(db,{...base,state:"blocked",reason});
+      return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+    }
+    if (provider === "codex") {
+      try {
+        const [qaProviders, qaCatalog] = await Promise.all([
+          bb.sdk.providers.list({ hostId: qaTarget.hostId }),
+          bb.sdk.providers.models({ providerId: "codex", hostId: qaTarget.hostId }),
+        ]);
+        const preflight = qaCodexPreflight({
+          hostId: qaTarget.hostId,
+          providers: qaProviders,
+          models: qaCatalog.models,
+          model,
+          reasoning,
+        });
+        if (!preflight.ok) {
+          recordStage(db,{...base,state:"pending"});
+          recordStage(db,{...base,state:"blocked",reason:preflight.reason});
+          return {runId:args.runId,taskId:args.taskId,state:"blocked",reason:preflight.reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+        }
+        reasoning = preflight.effort as typeof reasoning;
+      } catch (cause) {
+        const reason = `browser_qa_catalog_unavailable_on_host:${qaTarget.hostId}:${cause instanceof Error ? cause.message : String(cause)}`;
+        recordStage(db,{...base,state:"pending"});
+        recordStage(db,{...base,state:"blocked",reason});
+        return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+      }
+    }
+    const dispatched = {
+      ...requestInput,
+      hostId: qaTarget.hostId,
+      workspacePath: qaTarget.workspacePath,
+      provider,
+      model: model ?? null,
+      backend,
+      reasoning: reasoning ?? null,
+    };
+    const dispatchedBase = { ...base, input: JSON.stringify(dispatched) };
+    const targetSnapshot = {
+      writerHostId: config.hostId,
+      configuredHostId: qaTarget.hostId,
+      workspacePath: qaTarget.workspacePath,
+      provider,
+      configuredModel: model ?? null,
+      configuredBackend: backend,
+      configuredReasoning: reasoning ?? null,
+    };
+    const priorQa = listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa");
+    if (!priorQa) {
+      recordStage(db,{...dispatchedBase,state:"pending"});
+      recordStage(db,{...dispatchedBase,state:"running",providerId:base.providerId,model,result:targetSnapshot});
+    }
+    if (!claimStageSpawn(db, args.runId, args.taskId, "browser-qa")) {
+      const current = listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa");
+      return {runId:args.runId,taskId:args.taskId,state:current?.state ?? "running",reason:"browser_qa_already_dispatched",stage:current};
+    }
+    try {
+      let probe;
+      try {
+        probe = await host.call("probeBrowserQaTarget", {
+          requestedHostId: qaTarget.hostId,
+          workspacePath: qaTarget.workspacePath,
+          url: args.url,
+        }, { hostId: qaTarget.hostId, timeoutMs: 15_000 });
+      } catch (cause) {
+        const reason = qaHostUnreachableReason(qaTarget.hostId, cause);
+        recordStage(db,{...dispatchedBase,state:"failed",reason,result:targetSnapshot});
+        return {runId:args.runId,taskId:args.taskId,state:"failed",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+      }
+      if (probe.hostId !== qaTarget.hostId) throw new Error("browser QA probe came from a different host");
       const result = await host.call("runBrowserQa",{
-        requestedHostId:config.hostId, projectCwd:task.project_cwd, url:args.url,
+        requestedHostId:qaTarget.hostId, projectCwd:qaTarget.workspacePath, url:args.url,
         slug:`lp-qa-${args.runId.replace(/[^a-z0-9-]/gi,"").slice(-12)}-${args.taskId.replace(/[^a-z0-9-]/gi,"").slice(-12)}-${Date.now()}`.toLowerCase(),
         cases:args.cases, envClass:args.envClass, viewports:args.viewports, authorized:args.authorized,
         provider, ...(model ? {model} : {}), ...(reasoning ? {reasoningEffort:reasoning} : {}), backend, timeoutSec,
-      },{hostId:config.hostId,timeoutMs:(timeoutSec+30)*1000});
-      if (result.hostId !== config.hostId) throw new Error("browser QA result came from a different host");
+      },{hostId:qaTarget.hostId,timeoutMs:(timeoutSec+30)*1000});
+      if (result.hostId !== qaTarget.hostId) throw new Error("browser QA result came from a different host");
       const mismatches = [
         model && result.actualModel !== model ? `configured_model=${model}, actual_model=${result.actualModel ?? "unknown"}` : null,
         reasoning && result.actualReasoningEffort !== reasoning ? `configured_effort=${reasoning}, actual_effort=${result.actualReasoningEffort ?? "unknown"}` : null,
@@ -2246,11 +2955,23 @@ export default async function plugin(bb: BbPluginApi) {
       ].filter((item):item is string => item !== null);
       const state = mismatches.length ? "blocked" : result.verdict === "passed" ? "passed" : result.verdict === "failed" ? "failed" : "blocked";
       const reason = mismatches.length ? `browser_qa_runtime_setting_mismatch:${mismatches.join("; ")}` : result.reason ?? undefined;
-      recordStage(db,{...base,state,providerId:base.providerId,model:result.actualModel ?? model,result,reason});
-      return {runId:args.runId,taskId:args.taskId,state,stage:listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa"),result,reason};
+      const snapshot = {
+        ...result,
+        writerHostId: config.hostId,
+        configuredHostId: qaTarget.hostId,
+        workspacePath: qaTarget.workspacePath,
+        url: args.url,
+        probe,
+        provider,
+        configuredModel: model ?? null,
+        configuredBackend: backend,
+        configuredReasoning: reasoning ?? null,
+      };
+      recordStage(db,{...dispatchedBase,state,providerId:base.providerId,model:result.actualModel ?? model,result:snapshot,reason});
+      return {runId:args.runId,taskId:args.taskId,state,stage:listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa"),result:snapshot,reason};
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
-      recordStage(db,{...base,state:"failed",reason});
+      recordStage(db,{...dispatchedBase,state:"failed",reason,result:targetSnapshot});
       return {runId:args.runId,taskId:args.taskId,state:"failed",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
   }
@@ -2463,7 +3184,11 @@ export default async function plugin(bb: BbPluginApi) {
       if (!docsEffort) throw new Error("docs_writer_model_has_no_supported_reasoning_effort");
       const tier=provider.capabilities.supportsServiceTier?bbServiceTier(docsServiceTier):null;
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`docs_writer_service_tier_unsupported:${tier}`);
-      const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),visibility:"hidden",pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId}});
+      const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
+      const placement=await helperChildPlacement({
+        bb, db, projectId:args.projectId, runId:args.runId, role:"docs-maintainer",
+      });
+      const spawned=await bb.sdk.threads.spawn({...placement,...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs_maintainer_thread_id_missing");
       persistRunning(threadId, { ...docsResultObject(receipt?.result), snapshot, spawnAttempted:true });
       receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
@@ -2615,9 +3340,13 @@ export default async function plugin(bb: BbPluginApi) {
       const acceptedEvidence=snapshot.acceptedEvidence
         ?? acceptedOnboardingEvidence({outputSha256:accepted.outputSha256,result:accepted.result});
       const prompt=onboardingPrompt({task:{objective:task.objective,owns_paths:task.owns_paths,never_touch:task.never_touch,expected_outputs:task.expected_outputs,verification:task.verification},pages:snapshot.pages,accepted:acceptedEvidence,agent:snapshot.agent,depth:snapshot.depth});
-      const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,...writerExecutionSelection(providerId,modelId,effort,tier),prompt,
-        environment:workspaceExecutionEnvironment(config.hostId,workspace),visibility:"hidden",
-        pluginMetadata:{role:"onboarder",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"onboarding-preview",parentPmThreadId:args.threadId}});
+      const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
+      const placement=await helperChildPlacement({
+        bb, db, projectId:args.projectId, runId:args.runId, role:"onboarder",
+      });
+      const spawned=await bb.sdk.threads.spawn({...placement,...writerExecutionSelection(providerId,modelId,effort,tier),prompt,
+        environment:workspaceExecutionEnvironment(config.hostId,workspace),
+        pluginMetadata:{role:"onboarder",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"onboarding-preview",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("onboarding_thread_id_missing");
       persistRunning(threadId,{...childResultObject(receipt?.result),snapshot,spawnAttempted:true});
       return await finishObservation(threadId,snapshot);
@@ -2816,12 +3545,16 @@ export default async function plugin(bb: BbPluginApi) {
       if(!model.supportedReasoningEfforts.some((item)=>item.reasoningEffort===memoryEffort)) throw new Error(`memory_writer_reasoning_effort_unsupported:${memoryEffort}`);
       const tier=provider.capabilities.supportsServiceTier?bbServiceTier(memoryTier):null;
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`memory_writer_service_tier_unsupported:${tier}`);
-      const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,
+      const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
+      const placement=await helperChildPlacement({
+        bb, db, projectId:args.projectId, runId:args.runId, role:"memory-maintainer",
+      });
+      const spawned=await bb.sdk.threads.spawn({...placement,
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
         prompt:memoryMaintenancePrompt({task,acceptedResult:accepted.result,settings:snapshot.settings,agent:snapshot.agent}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
-        visibility:"hidden",pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
-          stageId:"memory-maintenance",parentPmThreadId:args.threadId}});
+        pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
+          stageId:"memory-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("memory_maintainer_thread_id_missing");
       persistRunning(threadId,{...childResultObject(receipt?.result),snapshot,spawnAttempted:true});
       return await finishObservation(threadId,snapshot);
@@ -2958,10 +3691,14 @@ export default async function plugin(bb: BbPluginApi) {
       if(!model.supportedReasoningEfforts.some((item)=>item.reasoningEffort===effort)) throw new Error(`night_review_reasoning_effort_unsupported:${effort}`);
       const tier=provider.capabilities.supportsServiceTier?bbServiceTier(serviceTier):null;
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`night_review_service_tier_unsupported:${tier}`);
-      const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,...writerExecutionSelection(providerId,modelId,effort,tier),
+      const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
+      const placement=await helperChildPlacement({
+        bb, db, projectId:args.projectId, runId:args.runId, role:"night-reviewer",
+      });
+      const spawned=await bb.sdk.threads.spawn({...placement,...writerExecutionSelection(providerId,modelId,effort,tier),
         prompt:nightReviewPrompt({agent:snapshot.agent,task,acceptedResult:accepted.result,workspace:task.project_cwd,maxFindings:20}),
-        environment:workspaceExecutionEnvironment(config.hostId,workspace),visibility:"hidden",
-        pluginMetadata:{role:"night-reviewer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-review",parentPmThreadId:args.threadId}});
+        environment:workspaceExecutionEnvironment(config.hostId,workspace),
+        pluginMetadata:{role:"night-reviewer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-review",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("night_review_thread_id_missing");
       persistRunning(threadId,{...childResultObject(receipt?.result),snapshot,spawnAttempted:true});
       return await finishObservation(threadId,snapshot);
@@ -3011,9 +3748,13 @@ export default async function plugin(bb: BbPluginApi) {
       const provider=providers.find((row)=>row.id===providerId&&row.available),model=catalog.models.find((row)=>row.id===modelId||row.model===modelId);
       if(!provider||!model) throw new Error("gate_triage_provider_or_model_unavailable");
       if(!model.supportedReasoningEfforts.some((row)=>row.reasoningEffort===effort)) throw new Error(`gate_triage_reasoning_effort_unsupported:${effort}`);
-      const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,...writerExecutionSelection(providerId,modelId,effort,null),
-        prompt:gateTriagePrompt(report),environment:workspaceExecutionEnvironment(config.hostId,{path:run.writer_workspace_path??config.pmWorkspacePath,environmentId:null}),visibility:"hidden",
-        pluginMetadata:{role:"gate-triage",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"gate-triage",parentPmThreadId:args.threadId}});
+      const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
+      const placement=await helperChildPlacement({
+        bb, db, projectId:args.projectId, runId:args.runId, role:"gate-triage",
+      });
+      const spawned=await bb.sdk.threads.spawn({...placement,...writerExecutionSelection(providerId,modelId,effort,null),
+        prompt:gateTriagePrompt(report),environment:workspaceExecutionEnvironment(config.hostId,{path:run.writer_workspace_path??config.pmWorkspacePath,environmentId:null}),
+        pluginMetadata:{role:"gate-triage",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"gate-triage",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("gate_triage_thread_id_missing");
       recordStage(db,{...base,state:"running",providerId,model:modelId,threadId});
       await waitThreadIdle(bb,threadId,120_000,"gate_triage_timeout");
@@ -3075,10 +3816,14 @@ export default async function plugin(bb: BbPluginApi) {
       if(!model.supportedReasoningEfforts.some((item)=>item.reasoningEffort===repairEffort)) throw new Error(`night_fix_reasoning_effort_unsupported:${repairEffort}`);
       const tier=provider.capabilities.supportsServiceTier?bbServiceTier(repairTier):null;
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`night_fix_service_tier_unsupported:${tier}`);
-      const spawned=await bb.sdk.threads.spawn({projectId:args.projectId,...writerExecutionSelection(repairProviderId,repairModelId,repairEffort,tier),
+      const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
+      const placement=await helperChildPlacement({
+        bb, db, projectId:args.projectId, runId:args.runId, role:"night-fixer",
+      });
+      const spawned=await bb.sdk.threads.spawn({...placement,...writerExecutionSelection(repairProviderId,repairModelId,repairEffort,tier),
         prompt:nightFixPrompt({task,findings:plan.findings,paths:plan.paths}),
-        environment:workspaceExecutionEnvironment(config.hostId,workspace),visibility:"hidden",
-        pluginMetadata:{role:"night-fixer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-fix",parentPmThreadId:args.threadId}});
+        environment:workspaceExecutionEnvironment(config.hostId,workspace),
+        pluginMetadata:{role:"night-fixer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-fix",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("night_fix_thread_id_missing");
       await waitThreadIdle(bb,threadId,600_000,"night_fix_timeout");
       const output=(await bb.sdk.threads.output({threadId})).output;
@@ -3346,6 +4091,69 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
+  async function resolveProjectWriterHost(args: {
+    projectId: string;
+    threadId?: string | null;
+    selected?: { hostId: string; path: string } | null;
+  }) {
+    const project = await bb.sdk.projects.get({ projectId: args.projectId }).catch(() => null);
+    const sources = ((project && "sources" in project ? project.sources : []) ?? []) as ProjectSourceBinding[];
+    const config = loadPrototypeConfig(db, args.projectId);
+    let session: { environmentId?: string | null; projectId?: string | null } | undefined;
+    let environment: { id: string; hostId: string; path: string | null; status: string; projectId?: string | null } | null = null;
+    if (args.threadId) {
+      const thread = await bb.sdk.threads.get({ threadId: args.threadId }).catch(() => null);
+      if (thread && stringAt(thread, "projectId") === args.projectId) {
+        const environmentId = stringAt(thread, "environmentId");
+        session = { environmentId, projectId: stringAt(thread, "projectId") };
+        if (environmentId) {
+          const env = await bb.sdk.environments.get({ environmentId }).catch(() => null);
+          if (env) {
+            environment = {
+              id: stringAt(env, "id") ?? environmentId,
+              hostId: stringAt(env, "hostId") ?? "",
+              path: stringAt(env, "path"),
+              status: stringAt(env, "status") ?? "",
+              projectId: stringAt(env, "projectId"),
+            };
+          }
+        }
+      }
+    }
+    return resolveWriterBinding({
+      projectId: args.projectId,
+      sources,
+      session,
+      environment,
+      explicit: config ? { hostId: config.hostId, path: config.writerWorkspacePath } : undefined,
+      selected: args.selected ?? null,
+    });
+  }
+
+  async function selectionCatalogHost(projectId: string, threadId?: string | null, selected?: { hostId: string; path: string } | null) {
+    const binding = await resolveProjectWriterHost({ projectId, threadId, selected });
+    if (binding.status === "setup_required") {
+      return { ok: false as const, validation: { code: "setup_required" as const, key: "project.sources", params: ["project.sources", "project_folders_source_required"] } };
+    }
+    if (binding.status === "ambiguous") {
+      return { ok: false as const, validation: { code: "writer_binding_ambiguous" as const, key: "project.sources", params: ["project.sources", "select_existing_project_binding"] } };
+    }
+    if (binding.status === "offline") {
+      return { ok: false as const, validation: { code: "writer_host_offline" as const, key: "project.sources", params: ["project.sources", binding.hostId] } };
+    }
+    return { ok: true as const, hostId: binding.hostId };
+  }
+
+  async function listedAgentProfiles() {
+    const overrides = (await bb.storage.kv.get<Record<string, { prompt?: string; description?: string }>>(LP_AGENT_OVERRIDES_KEY)) ?? {};
+    return MAIN_AGENT_PROFILE_IDS.map((id) => {
+      const override = overrides[id];
+      const compiled = compileMainAgentProfile(id, override);
+      const stock = compileMainAgentProfile(id);
+      return { id, description: compiled.description, prompt: compiled.prompt, sourceHash: compiled.sourceHash, edited: compiled.sourceHash !== stock.sourceHash };
+    });
+  }
+
   bb.rpc.register(rpcContract, {
     get_preferences: async ({ suggestedLocale }) => {
       const storedLocale = await bb.storage.kv.get<string>("preferences:locale");
@@ -3367,9 +4175,29 @@ export default async function plugin(bb: BbPluginApi) {
     list_projects: async () => {
       const projects = await bb.sdk.projects.list({ includePersonal: true });
       return {
-        projects: projects.map(({ id, name }) => ({ id, name })),
+        projects: projects.map((row) => ({
+          id: row.id,
+          name: row.name,
+          kind: row.kind === "personal" || row.kind === "standard" ? row.kind : undefined,
+        })),
         lastProjectId: await bb.storage.kv.get<string>("preferences:lastProjectId") ?? null,
       };
+    },
+    get_globals: async () => ({
+      defaults: parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)),
+      agents: await listedAgentProfiles(),
+    }),
+    save_globals: async ({ defaults }) => {
+      const next = parseLanePilotDefaults(defaults);
+      await bb.storage.kv.set(LP_DEFAULTS_KEY, next);
+      return { ok: true as const, defaults: next };
+    },
+    save_agent_profile: async ({ id, prompt, description }) => {
+      const overrides = (await bb.storage.kv.get<Record<string, { prompt?: string; description?: string }>>(LP_AGENT_OVERRIDES_KEY)) ?? {};
+      overrides[id] = { prompt, ...(description ? { description } : {}) };
+      await bb.storage.kv.set(LP_AGENT_OVERRIDES_KEY, overrides);
+      const compiled = compileMainAgentProfile(id, overrides[id]);
+      return { ok: true as const, id, sourceHash: compiled.sourceHash };
     },
     finish_run: async ({ projectId, runId }) => {
       await finishRunSafely(bb, db, projectId, runId, "rpc");
@@ -3379,7 +4207,7 @@ export default async function plugin(bb: BbPluginApi) {
       if (!sourceThreadId) throw new Error("Open an ordinary thread before enabling Lane Pilot");
       return activate(projectId, sourceThreadId);
     },
-    get_screen: ({ projectId }) => {
+    get_screen: async ({ projectId }) => {
       const config = loadPrototypeConfig(db, projectId);
       const settings = loadProjectSettings(db, projectId);
       const rows = listSettingRows(db, projectId);
@@ -3389,6 +4217,9 @@ export default async function plugin(bb: BbPluginApi) {
         values[row.key] = row.value;
         versions[row.key] = row.version;
       }
+      const inherited = inheritProjectValues(values, parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)));
+      Object.assign(values, inherited.values);
+      const writerBinding = await resolveProjectWriterHost({ projectId });
       for (const row of VISIBLE_CATALOG) {
         if (!(row.storageKey in values)) {
           if (row.storageKey === "jev.LANE_JEV_EFFORT" || row.storageKey === "jev.LANE_OPENCODE_JEV") {
@@ -3398,6 +4229,10 @@ export default async function plugin(bb: BbPluginApi) {
       }
       values["plan_critique.enabled"] ??= true;
       values["plan_critique.mode"] ??= "gate";
+      values["code_critique.enabled"] ??= false;
+      values["code_critique.mode"] ??= "gate";
+      values["code_critique.auto_fix"] ??= true;
+      values["code_critique.max_rounds"] ??= 1;
       if (config) {
         values["writer.provider"] ??= settings["writer.provider"] ?? config.writerProviderId;
         values["writer.model"] ??= settings["writer.model"] ?? config.writerModel;
@@ -3443,8 +4278,18 @@ export default async function plugin(bb: BbPluginApi) {
         .find((text) => text != null) ?? null;
       return {
         projectId,
-        hostId: config?.hostId ?? null,
-        workspacePath: config?.writerWorkspacePath ?? null,
+        hostId: writerBinding.status === "resolved" ? writerBinding.hostId : config?.hostId ?? null,
+        workspacePath: writerBinding.status === "resolved" ? writerBinding.path : config?.writerWorkspacePath ?? null,
+        inheritedKeys: inherited.inherited,
+        writerBinding: {
+          status: writerBinding.status === "offline" ? "offline" : writerBinding.status,
+          hostId: writerBinding.status === "resolved" || writerBinding.status === "offline" ? writerBinding.hostId : null,
+          path: writerBinding.status === "resolved" || writerBinding.status === "offline" ? writerBinding.path : null,
+          source: writerBinding.status === "resolved" ? writerBinding.source : null,
+          bindings: writerBinding.status === "ambiguous" ? writerBinding.bindings.map((row) => ({
+            id: row.id, hostId: row.hostId, path: row.path, isDefault: row.isDefault,
+          })) : [],
+        },
         values,
         versions,
         importSource: {
@@ -3472,6 +4317,34 @@ export default async function plugin(bb: BbPluginApi) {
         writerResultJson: asJsonText(values["writer.lastResult"]),
         writerResultPatch: asJsonText(values["writer.lastPatch"]),
         cliReceiptJson: latestReceipt,
+        qaHosts: await (async () => {
+          try {
+            const listed = await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.();
+            return mapListedQaHosts(listed ?? []);
+          } catch {
+            return [];
+          }
+        })(),
+        lastWriterTrace: (() => {
+          for (const run of listed) {
+            for (const attempt of [...run.attempts].reverse()) {
+              const trace = getReasoningTrace(db, attempt.id);
+              if (!trace) continue;
+              return {
+                providerId: trace.providerId,
+                model: trace.model,
+                requestedReasoningLevel: trace.requestedReasoningLevel,
+                effectiveReasoningLevel: trace.effectiveReasoningLevel,
+                serviceTier: trace.serviceTier,
+                fallbackReason: trace.fallbackReason,
+                jevStatus: trace.jevStatus,
+                ...(trace.effortMode ? { effortMode: trace.effortMode } : {}),
+                ...(trace.selectionSource ? { selectionSource: trace.selectionSource } : {}),
+              };
+            }
+          }
+          return null;
+        })(),
       };
     },
     save_setting: ({ projectId, key, value, expectedVersion }) => {
@@ -3479,6 +4352,9 @@ export default async function plugin(bb: BbPluginApi) {
       if (NATIVE_NIGHT_REVIEW_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic night-review provider/model selection"]}};
       if (NATIVE_DOCS_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic docs provider/model selection"]}};
       if (NATIVE_ONBOARDING_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic onboarding provider/model selection"]}};
+      if (NATIVE_PM_READ_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic PM-read provider/model selection"]}};
+      if (NATIVE_PLAN_CRITIQUE_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic plan-critique provider/model selection"]}};
+      if (NATIVE_CODE_CRITIQUE_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic code-critique provider/model selection"]}};
       if (!NATIVE_WRITER_KEYS.has(key)) {
         const result = casUpsertSettings(db, { projectId, changes:[{ key, value, expectedVersion }] }, { nativeWriterSelection:true });
         const current = { version:result.versions[key] ?? 0, value:result.values[key] ?? null };
@@ -3504,23 +4380,30 @@ export default async function plugin(bb: BbPluginApi) {
       if(docsKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:docsKey,params:[docsKey,"use atomic docs provider/model selection"]}};
       const onboardingKey=changes.find(({key})=>NATIVE_ONBOARDING_KEYS.has(key))?.key;
       if(onboardingKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:onboardingKey,params:[onboardingKey,"use atomic onboarding provider/model selection"]}};
+      const pmReadKey=changes.find(({key})=>NATIVE_PM_READ_KEYS.has(key))?.key;
+      if(pmReadKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:pmReadKey,params:[pmReadKey,"use atomic PM-read provider/model selection"]}};
+      const planKey=changes.find(({key})=>NATIVE_PLAN_CRITIQUE_KEYS.has(key))?.key;
+      if(planKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:planKey,params:[planKey,"use atomic plan-critique provider/model selection"]}};
+      const codeKey=changes.find(({key})=>NATIVE_CODE_CRITIQUE_KEYS.has(key))?.key;
+      if(codeKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:codeKey,params:[codeKey,"use atomic code-critique provider/model selection"]}};
       return casUpsertSettings(db,{projectId,changes},{nativeWriterSelection:changes.every(({key})=>!NATIVE_WRITER_KEYS.has(key))});
     },
-    save_writer_selection: async ({ projectId, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
-      const reject = (code:"invalid_choice"|"incompatible_setting", key:string, message:string) => ({
+    save_writer_selection: async ({ projectId, threadId, selectedBinding, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
+      const reject = (code:"invalid_choice"|"incompatible_setting"|"setup_required"|"writer_binding_ambiguous"|"writer_host_offline"|"catalog_unavailable", key:string, message:string) => ({
         ok:false, conflict:false, values:{}, versions:{}, validation:{ code, key, params:[key, message] },
       });
-      const config = loadPrototypeConfig(db, projectId);
-      if (!config) return reject("invalid_choice", "writer.provider", "project has no configured writer host");
+      const catalogHost = await selectionCatalogHost(projectId, threadId, selectedBinding);
+      if (!catalogHost.ok) return { ok:false, conflict:false, values:{}, versions:{}, validation:catalogHost.validation };
+      const catalogHostId = catalogHost.hostId;
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
       let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
       try {
         [providers, catalog] = await Promise.all([
-          bb.sdk.providers.list({ hostId:config.hostId }),
-          bb.sdk.providers.models({ providerId, hostId:config.hostId }),
+          bb.sdk.providers.list({ hostId:catalogHostId }),
+          bb.sdk.providers.models({ providerId, hostId:catalogHostId }),
         ]);
       } catch {
-        return reject("invalid_choice", "writer.provider", "the live provider catalog for this host is unavailable");
+        return reject("catalog_unavailable", "writer.provider", catalogHostId);
       }
       const provider = providers.find((item) => item.id === providerId && item.available);
       if (!provider) return reject("invalid_choice", "writer.provider", `provider ${providerId} is unavailable on this host`);
@@ -3553,20 +4436,22 @@ export default async function plugin(bb: BbPluginApi) {
       }, { nativeWriterSelection:true });
     },
     save_memory_selection: async ({ projectId, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
-      const reject = (code:"invalid_choice"|"incompatible_setting", key:string, message:string) => ({
+      const reject = (code:"invalid_choice"|"incompatible_setting"|"setup_required"|"writer_binding_ambiguous"|"writer_host_offline"|"catalog_unavailable", key:string, message:string) => ({
         ok:false, conflict:false, values:{}, versions:{}, validation:{code,key,params:[key,message]},
       });
-      const config=loadPrototypeConfig(db,projectId);
-      if(!config) return reject("invalid_choice","memory.provider","project has no configured writer host");
+      const binding=await resolveProjectWriterHost({projectId});
+      if(binding.status==="setup_required") return reject("setup_required","project.sources","project_folders_source_required");
+      if(binding.status==="ambiguous") return reject("writer_binding_ambiguous","project.sources","select_existing_project_binding");
+      if(binding.status==="offline") return reject("writer_host_offline","project.sources",binding.hostId);
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
       let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
       try {
         [providers,catalog]=await Promise.all([
-          bb.sdk.providers.list({hostId:config.hostId}),
-          bb.sdk.providers.models({providerId,hostId:config.hostId}),
+          bb.sdk.providers.list({hostId:binding.hostId}),
+          bb.sdk.providers.models({providerId,hostId:binding.hostId}),
         ]);
       } catch {
-        return reject("invalid_choice","memory.provider","the live provider catalog for this host is unavailable");
+        return reject("catalog_unavailable","memory.provider",binding.hostId);
       }
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","memory.provider",`provider ${providerId} is unavailable on this host`);
@@ -3585,12 +4470,12 @@ export default async function plugin(bb: BbPluginApi) {
       ]},{nativeWriterSelection:true});
     },
     save_night_review_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
-      const reject=(code:"invalid_choice"|"incompatible_setting",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
-      const config=loadPrototypeConfig(db,projectId);
-      if(!config) return reject("invalid_choice","night_review.provider","project has no configured writer host");
+      const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
+      const catalogHost=await selectionCatalogHost(projectId);
+      if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:config.hostId}),bb.sdk.providers.models({providerId,hostId:config.hostId})]);}
-      catch {return reject("invalid_choice","night_review.provider","the live provider catalog for this host is unavailable");}
+      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      catch {return reject("catalog_unavailable","night_review.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","night_review.provider",`provider ${providerId} is unavailable on this host`);
       const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
@@ -3608,12 +4493,12 @@ export default async function plugin(bb: BbPluginApi) {
       ]},{nativeWriterSelection:true});
     },
     save_docs_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
-      const reject=(code:"invalid_choice"|"incompatible_setting",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
-      const config=loadPrototypeConfig(db,projectId);
-      if(!config) return reject("invalid_choice","docs.provider","project has no configured writer host");
+      const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
+      const catalogHost=await selectionCatalogHost(projectId);
+      if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:config.hostId}),bb.sdk.providers.models({providerId,hostId:config.hostId})]);}
-      catch {return reject("invalid_choice","docs.provider","the live provider catalog for this host is unavailable");}
+      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      catch {return reject("catalog_unavailable","docs.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","docs.provider",`provider ${providerId} is unavailable on this host`);
       const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
@@ -3630,13 +4515,36 @@ export default async function plugin(bb: BbPluginApi) {
         {key:"docs.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["docs.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
-    save_onboarding_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
-      const reject=(code:"invalid_choice"|"incompatible_setting",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
-      const config=loadPrototypeConfig(db,projectId);
-      if(!config) return reject("invalid_choice","onboarding.provider","project has no configured writer host");
+    save_pm_read_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+      const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
+      const catalogHost=await selectionCatalogHost(projectId);
+      if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:config.hostId}),bb.sdk.providers.models({providerId,hostId:config.hostId})]);}
-      catch {return reject("invalid_choice","onboarding.provider","the live provider catalog for this host is unavailable");}
+      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      catch {return reject("catalog_unavailable","pm_read.provider",catalogHost.hostId);}
+      const provider=providers.find((item)=>item.id===providerId&&item.available);
+      if(!provider) return reject("invalid_choice","pm_read.provider",`provider ${providerId} is unavailable on this host`);
+      const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
+      if(!selectedModel) return reject("invalid_choice","pm_read.model",`model ${modelId} is not in the live catalog for ${providerId}`);
+      const efforts=selectedModel.supportedReasoningEfforts.map((item)=>item.reasoningEffort);
+      if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","pm_read.reasoning_effort",`model supports: ${efforts.join(", ")}`);
+      const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
+      const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
+      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","pm_read.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      return casUpsertSettings(db,{projectId,changes:[
+        {key:"pm_read.provider",value:providerId,expectedVersion:expectedVersions["pm_read.provider"]},
+        {key:"pm_read.model",value:modelId,expectedVersion:expectedVersions["pm_read.model"]},
+        {key:"pm_read.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["pm_read.reasoning_effort"]},
+        {key:"pm_read.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["pm_read.service_tier"]},
+      ]},{nativeWriterSelection:true});
+    },
+    save_onboarding_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+      const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
+      const catalogHost=await selectionCatalogHost(projectId);
+      if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
+      let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
+      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      catch {return reject("catalog_unavailable","onboarding.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","onboarding.provider",`provider ${providerId} is unavailable on this host`);
       const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
@@ -3651,6 +4559,52 @@ export default async function plugin(bb: BbPluginApi) {
         {key:"onboarding.model",value:modelId,expectedVersion:expectedVersions["onboarding.model"]},
         {key:"onboarding.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["onboarding.reasoning_effort"]},
         {key:"onboarding.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["onboarding.service_tier"]},
+      ]},{nativeWriterSelection:true});
+    },
+    save_plan_critique_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+      const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
+      const catalogHost=await selectionCatalogHost(projectId);
+      if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
+      let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
+      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      catch {return reject("catalog_unavailable","plan_critique.provider",catalogHost.hostId);}
+      const provider=providers.find((item)=>item.id===providerId&&item.available);
+      if(!provider) return reject("invalid_choice","plan_critique.provider",`provider ${providerId} is unavailable on this host`);
+      const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
+      if(!selectedModel) return reject("invalid_choice","plan_critique.model",`model ${modelId} is not in the live catalog for ${providerId}`);
+      const efforts=selectedModel.supportedReasoningEfforts.map((item)=>item.reasoningEffort);
+      if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","plan_critique.reasoning_effort",`model supports: ${efforts.join(", ")}`);
+      const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
+      const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
+      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","plan_critique.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      return casUpsertSettings(db,{projectId,changes:[
+        {key:"plan_critique.provider",value:providerId,expectedVersion:expectedVersions["plan_critique.provider"]},
+        {key:"plan_critique.model",value:modelId,expectedVersion:expectedVersions["plan_critique.model"]},
+        {key:"plan_critique.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["plan_critique.reasoning_effort"]},
+        {key:"plan_critique.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["plan_critique.service_tier"]},
+      ]},{nativeWriterSelection:true});
+    },
+    save_code_critique_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+      const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
+      const catalogHost=await selectionCatalogHost(projectId);
+      if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
+      let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
+      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      catch {return reject("catalog_unavailable","code_critique.provider",catalogHost.hostId);}
+      const provider=providers.find((item)=>item.id===providerId&&item.available);
+      if(!provider) return reject("invalid_choice","code_critique.provider",`provider ${providerId} is unavailable on this host`);
+      const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
+      if(!selectedModel) return reject("invalid_choice","code_critique.model",`model ${modelId} is not in the live catalog for ${providerId}`);
+      const efforts=selectedModel.supportedReasoningEfforts.map((item)=>item.reasoningEffort);
+      if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","code_critique.reasoning_effort",`model supports: ${efforts.join(", ")}`);
+      const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
+      const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
+      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","code_critique.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      return casUpsertSettings(db,{projectId,changes:[
+        {key:"code_critique.provider",value:providerId,expectedVersion:expectedVersions["code_critique.provider"]},
+        {key:"code_critique.model",value:modelId,expectedVersion:expectedVersions["code_critique.model"]},
+        {key:"code_critique.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["code_critique.reasoning_effort"]},
+        {key:"code_critique.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["code_critique.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
     cancel_attempt: async ({ attemptId }) => {
@@ -3933,7 +4887,7 @@ export default async function plugin(bb: BbPluginApi) {
     name:"lane_pilot_gate_report",
     description:"Read a bounded project-local report of Lane Pilot gate evaluations or stage history.",
     instructions:"Use only from the matching Lane Pilot PM thread. Gate categories are owns-paths, validate, accept, and verification, recorded as separate append-only events; this reads Lane Pilot's own ledgers and never reads or modifies upstream ~/.agents gate logs. Choose a period from 1 to 365 days and optionally one gate category or one exact stage ID. Results contain counts and receipt hashes, not task content.",
-    parameters:z.object({days:z.number().int().min(1).max(365).default(7),stageId:z.enum(["pm-read","plan-critique","specialist-review","writer-agent","verification","acceptance-receipt","browser-qa","docs-maintenance","onboarding-preview","onboarding-apply","memory-maintenance","night-review","night-fix","workspace-status","opencode-telemetry","gate-triage"]).optional(),gate:z.enum(["owns-paths","validate","accept","verification"]).optional()}).strict(),
+    parameters:z.object({days:z.number().int().min(1).max(365).default(7),stageId:z.enum(["pm-read","plan-critique","specialist-review","writer-agent","verification","code-critique","acceptance-receipt","browser-qa","docs-maintenance","onboarding-preview","onboarding-apply","memory-maintenance","night-review","night-fix","workspace-status","opencode-telemetry","gate-triage"]).optional(),gate:z.enum(["owns-paths","validate","accept","verification"]).optional()}).strict(),
     execute:async(params,context)=>JSON.stringify(readGateReport(db,{projectId:context.projectId,days:params.days,stageId:params.stageId,gate:params.gate}),null,2),
   });
 

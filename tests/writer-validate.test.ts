@@ -164,7 +164,7 @@ describe("BB writer validation on the server path", () => {
       "lane_pilot_wait_writer", { runId:"run-delayed", timeoutSec:2 }, { threadId:pmThreadId, projectId },
     )));
     expect(completed).toMatchObject({ state:"accepted", receipt:{ lanePilotRunId:"run-delayed", attemptId:dispatched.attemptId } });
-    expect(spawnedInput).toMatchObject({ providerId:"codex", model:"codex-test", reasoningLevel:"xhigh", serviceTier:"fast", executionInputSources:{ reasoningLevel:"explicit", serviceTier:"explicit" } });
+    expect(spawnedInput).toMatchObject({ providerId:"codex", model:"codex-test", reasoningLevel:"xhigh", serviceTier:"fast", executionInputSources:{ reasoningLevel:"client-preference", serviceTier:"explicit" } });
     const fullPlan = "Canonical delayed writer plan. Keep all Unicode 🧭 and newline. CRITICAL_TAIL";
     expect(completed.receipt.reasoning[0]).toMatchObject({
       planSha256:createHash("sha256").update(fullPlan, "utf8").digest("hex"),
@@ -282,6 +282,107 @@ describe("BB writer validation on the server path", () => {
     expect(getReasoningTrace(db,attempts[1]!.id)).toMatchObject({
       requestedReasoningLevel:"medium",effectiveReasoningLevel:"high",fallbackReason:"retry_effort_escalated:medium->high",
       retryEffort:{enabled:true,retryIndex:1,before:"medium",after:"high",changed:true},
+    });
+    await harness.lifecycle.dispose();
+  });
+
+  it("dispatches saved high in manual mode even when Jev answers low", async () => {
+    let classifyCalls=0;
+    let snapshots=0;
+    let spawnedInput:Record<string,unknown>|null=null;
+    const {bb,harness}=createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{threads:{
+        getPluginMetadata:async ({threadId})=>threadId===pmThreadId?{role:"pm",lanePilotRunId:"run-manual-high"}:{role:"writer"},
+        spawn:async (input)=>{spawnedInput=input as unknown as Record<string,unknown>;return {id:"writer-manual-high"};},
+        wait:async ()=>({matched:true,thread:{status:"idle"}}),
+        get:async ({threadId})=>({id:threadId,status:"idle"}),
+        output:async ()=>({text:"created hello.txt"}),list:async ()=>[] as never,
+      },providers:{list:listLiveWriterProviders,models:listLiveWriterModels},files:{
+        read:async ({path})=>path.endsWith("README.md")?{content:"manual high fixture\n"}:path.endsWith("hello.txt")?{content:"hello\n"}:{content:null},
+        write:async ()=>({ok:true}),
+      }},
+      experimental_callHostRpc:(call)=>{
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if(call.method==="classifyPlan"){
+          classifyCalls+=1;
+          const plan=(call.input as {plan:string}).plan;
+          const sha=createHash("sha256").update(plan,"utf8").digest("hex");
+          return {hostId:"host-test",status:"ok",effort:"low",reason:null,planSha256:sha,sentPlanSha256:sha,
+            sourceLength:Buffer.byteLength(plan),sentLength:Buffer.byteLength(plan)};
+        }
+        if(call.method!=="runCommand") throw new Error(`unexpected ${call.method}`);
+        const command=String((call.input as {command?:string}).command??"");
+        return {hostId:"host-test",exitCode:0,stdout:command.includes("porcelain")
+          ?JSON.stringify(++snapshots===1?[]:[{path:"hello.txt",sha256:"created"}]):"",stderr:""};
+      },
+    });
+    const db=openDatabase(bb);
+    saveLegacyWriterConfig(db);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
+    saveProjectSetting(db, projectId, "writer.reasoning_effort", "high");
+    createRun(db,"run-manual-high",projectId,"bb",config.writerWorkspacePath);
+    setRunThread(db,"run-manual-high",pmThreadId);
+    await plugin(bb);
+    const dispatched=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
+      {confirm:true,plan:"Manual high must survive a low classifier answer",task:{...task,id:"manual-high-task",verify:"none",verification:[]}},
+      {threadId:pmThreadId,projectId}))) as {attemptId:string};
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"run-manual-high",timeoutSec:3},{threadId:pmThreadId,projectId});
+    expect(classifyCalls).toBe(0);
+    expect(spawnedInput).toMatchObject({reasoningLevel:"high",executionInputSources:{reasoningLevel:"explicit"}});
+    expect(getReasoningTrace(db, dispatched.attemptId)).toMatchObject({
+      effortMode:"manual", effectiveReasoningLevel:"high", jevStatus:"disabled",
+      selectionSource:{reasoningLevel:"high",reasoningLevelSource:"explicit"},
+    });
+    expect(listStageReceipts(db,"run-manual-high","manual-high-task").find((row)=>row.stageId==="writer-agent")?.result)
+      .toMatchObject({execution:{reasoningLevel:"high",selectionSource:{reasoningLevelSource:"explicit"}}});
+    await harness.lifecycle.dispose();
+  });
+
+  it("records automatic low with a reason when Jev overrides a saved high", async () => {
+    let snapshots=0;
+    let spawnedInput:Record<string,unknown>|null=null;
+    const {bb,harness}=createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{threads:{
+        getPluginMetadata:async ({threadId})=>threadId===pmThreadId?{role:"pm",lanePilotRunId:"run-auto-low"}:{role:"writer"},
+        spawn:async (input)=>{spawnedInput=input as unknown as Record<string,unknown>;return {id:"writer-auto-low"};},
+        wait:async ()=>({matched:true,thread:{status:"idle"}}),
+        get:async ({threadId})=>({id:threadId,status:"idle"}),
+        output:async ()=>({text:"created hello.txt"}),list:async ()=>[] as never,
+      },providers:{list:listLiveWriterProviders,models:listLiveWriterModels},files:{
+        read:async ({path})=>path.endsWith("README.md")?{content:"automatic low fixture\n"}:path.endsWith("hello.txt")?{content:"hello\n"}:{content:null},
+        write:async ()=>({ok:true}),
+      }},
+      experimental_callHostRpc:(call)=>{
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if(call.method==="classifyPlan"){
+          const plan=(call.input as {plan:string}).plan;
+          const sha=createHash("sha256").update(plan,"utf8").digest("hex");
+          return {hostId:"host-test",status:"ok",effort:"medium",reason:null,planSha256:sha,sentPlanSha256:sha,
+            sourceLength:Buffer.byteLength(plan),sentLength:Buffer.byteLength(plan)};
+        }
+        if(call.method!=="runCommand") throw new Error(`unexpected ${call.method}`);
+        const command=String((call.input as {command?:string}).command??"");
+        return {hostId:"host-test",exitCode:0,stdout:command.includes("porcelain")
+          ?JSON.stringify(++snapshots===1?[]:[{path:"hello.txt",sha256:"created"}]):"",stderr:""};
+      },
+    });
+    const db=openDatabase(bb);
+    saveLegacyWriterConfig(db);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", true);
+    saveProjectSetting(db, projectId, "writer.reasoning_effort", "high");
+    createRun(db,"run-auto-low",projectId,"bb",config.writerWorkspacePath);
+    setRunThread(db,"run-auto-low",pmThreadId);
+    await plugin(bb);
+    const dispatched=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
+      {confirm:true,plan:"Automatic mode may choose a cheaper level",task:{...task,id:"auto-low-task",verify:"none",verification:[]}},
+      {threadId:pmThreadId,projectId}))) as {attemptId:string};
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"run-auto-low",timeoutSec:3},{threadId:pmThreadId,projectId});
+    expect(spawnedInput).toMatchObject({reasoningLevel:"medium",executionInputSources:{reasoningLevel:"client-preference"}});
+    expect(getReasoningTrace(db, dispatched.attemptId)).toMatchObject({
+      effortMode:"automatic", requestedReasoningLevel:"medium", effectiveReasoningLevel:"medium", jevStatus:"ok",
+      selectionSource:{reasoningLevel:"medium",reasoningLevelSource:"client-preference"},
     });
     await harness.lifecycle.dispose();
   });

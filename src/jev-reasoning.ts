@@ -26,6 +26,13 @@ export function resolveJevReasoning(input:{
 
 export type WriterServiceTier = "standard" | "fast";
 export type BbServiceTier = "default" | "fast";
+export type ExecutionFieldSource = "explicit" | "client-preference";
+
+export function automaticEffortRoutingEnabled(settings: Readonly<Record<string, unknown>>): boolean {
+  const flag = settings["jev.LANE_JEV_EFFORT"];
+  return !(flag === false || flag === 0
+    || (typeof flag === "string" && ["0", "off", "false", "no"].includes(flag.trim().toLowerCase())));
+}
 
 export function writerServiceTier(settings: Readonly<Record<string, unknown>>): WriterServiceTier {
   const explicit = settings["writer.service_tier"];
@@ -41,7 +48,13 @@ export function bbServiceTier(tier: WriterServiceTier): BbServiceTier {
   return tier === "fast" ? "fast" : "default";
 }
 
-export function writerExecutionSelection(providerId:string, model:string, reasoningLevel:string, serviceTier:BbServiceTier|null) {
+export function writerExecutionSelection(
+  providerId:string,
+  model:string,
+  reasoningLevel:string,
+  serviceTier:BbServiceTier|null,
+  sources?: { reasoningLevel?: ExecutionFieldSource },
+) {
   return {
     providerId,
     model,
@@ -50,7 +63,7 @@ export function writerExecutionSelection(providerId:string, model:string, reason
     executionInputSources:{
       providerId:"explicit" as const,
       model:"explicit" as const,
-      reasoningLevel:"explicit" as const,
+      reasoningLevel:sources?.reasoningLevel ?? "explicit",
       ...(serviceTier ? { serviceTier:"explicit" as const } : {}),
     },
   };

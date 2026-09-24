@@ -23,11 +23,24 @@ let holderEnvGets=0;
 let holderBindAfterGets=0;
 let holderReadyAfterGets=0;
 let holderEnvStatusOverride:string|null=null;
+let throwOnRepairSpawn=false;
+let mutateCritiqueSettingsOnFirstSpawn=false;
+let setupDb:ReturnType<typeof openDatabase>|undefined;
 const seededThreadMeta=new Map<string,Record<string,unknown>>();
 function resetHolderProvisionDelay(){
   holderThreadGets=0;holderEnvGets=0;holderBindAfterGets=0;holderReadyAfterGets=0;holderEnvStatusOverride=null;
   seededThreadMeta.clear();
 }
+
+const noteContent = "reviewed output\n";
+const noteSha = createHash("sha256").update(noteContent, "utf8").digest("hex");
+const noteA = "reviewed output A\n";
+const noteASha = createHash("sha256").update(noteA, "utf8").digest("hex");
+const noteB = "reviewed output B\n";
+const noteBSha = createHash("sha256").update(noteB, "utf8").digest("hex");
+const noteMutated = "mutated output\n";
+const noteMutatedSha = createHash("sha256").update(noteMutated, "utf8").digest("hex");
+const noteBySha:Record<string,string> = { [noteSha]:noteContent, [noteASha]:noteA, [noteBSha]:noteB, [noteMutatedSha]:noteMutated };
 
 const task:TaskV2 = {
   schema_version:2, id:"stage-task", title:"Write a fixture", risk:"low", lane:"writer",
@@ -38,12 +51,14 @@ const task:TaskV2 = {
   verification:[{ command:"test -f note.txt", cwd:config.writerWorkspacePath, timeout_sec:30 }],
 };
 
-async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[]) {
+async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[], codeCritiqueOutputs?:string[], codeRepairOutput?:string) {
+  writerControl = writerControl ?? {hold:false,states:new Map()};
   const spawned:Array<Record<string,unknown>> = [];
   const threadMeta=new Map<string,Record<string,unknown>>();
   let docsInventoryCalls=0;
   const fileReads:Array<{rootPath?:string;path:string}> = [];
   let snapshots = 0;
+  let lastDirt:Array<{path:string;sha256?:string}> = [];
   let nextWriterFailure=writerFailures;
   const failedThreadIds=new Set<string>();
   const telemetryReads={count:0};
@@ -53,10 +68,15 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
   let docsSecondContent="# Second documentation fixture\n";
   const docsWrites:Array<Record<string,unknown>>=[];
   let nextThread=0;
+  let nextCodeCritic=0;
+  const codeCritiqueQueue=[...(codeCritiqueOutputs??['{"decision":"approve","summary":"Candidate checked","findings":[]}'])];
+  const codeCritiqueByThread=new Map<string,string>();
   let idleWaitGets=0;
   const eventListCounts=new Map<string,number>();
   const stopCalls:string[]=[];
   const waitCalls:Array<{threadId:string;status?:string}>=[];
+  const qaHostId="host-qa-mini";
+  const hostRpcCalls:Array<{method:string;hostId:string;input:unknown}>=[];
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
     sdk:{
@@ -69,6 +89,9 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           spawned.push(request);
           const stageId = (request.pluginMetadata as Record<string,unknown>).stageId;
           const role=(request.pluginMetadata as Record<string,unknown>).role;
+          if(throwOnRepairSpawn && Number((request.pluginMetadata as Record<string,unknown>).repairRound) > 0) {
+            throw new Error("repair_spawn_crashed");
+          }
           if(role === "writer" && nextWriterFailure > 0) {
             nextWriterFailure-=1;
             const id=`writer-failed-${++nextThread}`;
@@ -76,7 +99,15 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
             threadMeta.set(id, (request.pluginMetadata as Record<string,unknown>) ?? { role });
             return {id};
           }
-          const id=role === "workspace-provisioner" ? "workspace-provisioner-thread" : stageId === "pm-read" ? "pm-read-thread" : stageId === "plan-critique" ? "critic-thread" : stageId === "specialist-review" ? "specialist-thread" : stageId === "memory-maintenance" ? "memory-thread" : stageId === "docs-maintenance" ? "docs-thread" : stageId === "onboarding-preview" ? "onboarding-thread" : stageId === "night-review" ? "night-thread" : stageId === "night-fix" ? "night-fix-thread" : stageId === "gate-triage" ? "gate-triage-thread" : role === "emergency-writer" ? "emergency-thread" : `writer-thread-${++nextThread}`;
+          const id=role === "workspace-provisioner" ? "workspace-provisioner-thread" : role === "writer" ? `writer-thread-${++nextThread}` : stageId === "pm-read" ? "pm-read-thread" : stageId === "plan-critique" ? "critic-thread" : stageId === "code-critique" ? `code-critic-thread-${++nextCodeCritic}` : stageId === "specialist-review" ? "specialist-thread" : stageId === "memory-maintenance" ? "memory-thread" : stageId === "docs-maintenance" ? "docs-thread" : stageId === "onboarding-preview" ? "onboarding-thread" : stageId === "night-review" ? "night-thread" : stageId === "night-fix" ? "night-fix-thread" : stageId === "gate-triage" ? "gate-triage-thread" : role === "emergency-writer" ? "emergency-thread" : `writer-thread-${++nextThread}`;
+          if(stageId === "code-critique") {
+            codeCritiqueByThread.set(id, codeCritiqueQueue.shift() ?? '{"decision":"approve","summary":"Candidate checked","findings":[]}');
+            if(mutateCritiqueSettingsOnFirstSpawn && setupDb && nextCodeCritic === 1) {
+              saveProjectSetting(setupDb, projectId, "code_critique.model", "other-model");
+              saveProjectSetting(setupDb, projectId, "code_critique.max_rounds", 3);
+              saveProjectSetting(setupDb, projectId, "code_critique.provider", "codex");
+            }
+          }
           if(role==="writer"&&writerControl.hold)writerControl.states.set(id,"active");
           threadMeta.set(id, (request.pluginMetadata as Record<string,unknown>) ?? { role });
           return { id };
@@ -132,13 +163,25 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
         output:async ({ threadId }) => threadId === "pm-read-thread" ? {output:pmReadOutput} : threadId === "docs-thread" ? {output:docsControl.output??JSON.stringify([{path:"docs/fixture.md",expectedSha256:createHash("sha256").update(docsContent).digest("hex"),content:"# Updated documentation fixture\n"}])} : threadId === "onboarding-thread" ? {output:onboardingOutput??JSON.stringify({summary:"Add a concise project guide",edits:[{path:"docs/fixture.md",expectedSha256:createHash("sha256").update(docsContent).digest("hex"),content:"# Onboarding guide\n"}]})} : threadId === "memory-thread" ? {output:memoryOutput} : threadId === "night-thread" ? {output:nightOutput} : threadId === "night-fix-thread" ? {output:nightFixOutput} : threadId === "gate-triage-thread" ? {output:JSON.stringify({decision:"recommendations",summary:"Verification failures need receipt inspection.",recommendations:[{stageId:"verification",state:"failed",count:1,action:"Inspect the verification receipt for the affected task."}]})} : threadId === "critic-thread"
           ? { output:critiqueOutput } : threadId === "specialist-thread"
             ? { output:specialistOutput }
-            : { output:"writer created note.txt" },
+            : threadId.startsWith("code-critic-thread")
+              ? { output:codeCritiqueByThread.get(threadId) ?? '{"decision":"approve","summary":"Candidate checked","findings":[]}' }
+            : { output: Number((threadMeta.get(threadId) as {repairRound?:unknown}|undefined)?.repairRound) > 0
+              ? (codeRepairOutput ?? '{"replies":[{"id":"f1","status":"fixed","evidence":"updated note.txt"}]}')
+              : "writer created note.txt" },
         list:async () => [...new Set([...threadMeta.keys(), ...seededThreadMeta.keys()])].map((id)=>({id})) as never,
       },
       providers:{
         list:async () => ["codex", "critic"].map((id) => ({ id, available:true, capabilities:{ supportsServiceTier:true }, serviceTiers:[{ id:"default", label:"Default" }] })) as never,
-        models:async (args) => { const providerId = (args as { providerId:string } | undefined)?.providerId; return { models:[{ id:providerId === "critic" ? "critic-model" : "gpt-6-luna", model:providerId === "critic" ? "critic-model" : "gpt-6-luna",
-          supportedReasoningEfforts:["medium","high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }; },
+        models:async (args) => {
+          const providerId = (args as { providerId:string; hostId?:string } | undefined)?.providerId;
+          const hostId = (args as { hostId?:string } | undefined)?.hostId;
+          if (hostId === "host-qa-no-codex") return { models:[] as never };
+          if (hostId === "host-qa-bad-effort") return { models:[{ id:"gpt-6-luna", model:"gpt-6-luna", defaultReasoningEffort:"xhigh",
+            supportedReasoningEfforts:[{ reasoningEffort:"medium", description:"medium" }] }] as never };
+          return { models:[{ id:providerId === "critic" ? "critic-model" : "gpt-6-luna", model:providerId === "critic" ? "critic-model" : "gpt-6-luna",
+          defaultReasoningEffort:"medium",
+          supportedReasoningEfforts:["medium","high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never };
+        },
       },
       environments:{
         listProviders:async ()=>listedEnvironmentProviders as never,
@@ -156,6 +199,10 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
         status:async ()=>({outcome:"available",workspace:{branch:{currentBranch:"lane-pilot-run",defaultBranch:"main"}}}) as never,
         diff:async (args)=>{expect(args).toMatchObject({target:"uncommitted"});return {outcome:"available",diff:{diff:"diff --git a/note.txt b/note.txt",files:"note.txt",shortstat:"1 file changed",truncated:false}} as never;},
       },
+      projects:{
+        get:async ({ projectId:id }) => ({ id, name:id, sources:[] }),
+        list:async () => [{ id:projectId, name:projectId, sources:[] }],
+      },
       files:{
         listPaths:async()=>({truncated:false,paths:[
           {kind:"file",name:"unowned.ts",path:"src/unowned.ts",positions:[],score:1},
@@ -167,12 +214,17 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           return path.endsWith("README.md") ? readFirstUnavailable ? { content:null } : { content:"stage fixture heading\nread-first fixture excerpt\n"+Array.from({length:60},(_,index)=>`bounded PM context line ${index+1}`).join("\n") }
           : path.endsWith("docs/fixture.md") ? {content:docsContent}
           : path.endsWith("docs/second.md") ? {content:docsSecondContent}
-          : path.endsWith(".txt") ? { content:"reviewed output\n" } : { content:null };
+          : path.endsWith(".txt") ? (() => {
+            const sha = lastDirt.find((row)=>path.endsWith(row.path))?.sha256;
+            const content = (sha && noteBySha[sha]) || noteContent;
+            return { content, sha256:createHash("sha256").update(content,"utf8").digest("hex") };
+          })() : { content:null };
         },
         write:async (args) => {const path=String((args as {path?:unknown}).path??"");if(path.includes("/docs/")){docsWrites.push(args as unknown as Record<string,unknown>);if(path.endsWith("docs/fixture.md"))docsContent=String((args as {content?:unknown}).content??"");if(path.endsWith("docs/second.md"))docsSecondContent=String((args as {content?:unknown}).content??"");}return {ok:true};},
       },
     },
     experimental_callHostRpc:async (call) => {
+      hostRpcCalls.push({method:call.method,hostId:call.hostId,input:call.input});
       if(call.method==="inspectCritiqueCoverage") {
         const input=call.input as {plan?:unknown;tasks?:Array<{id:string;lane?:string;ownsPaths:string[];hasVerification:boolean}>};
         const plan=String(input.plan??"");
@@ -215,15 +267,20 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           data:{tool:"read",chars:27,dup:false,n:1,fp:"d7a091"},task:"TASK.md",session:"opencode-session-1"})+"\n";
         return {hostId:config.hostId,relativePath:"opencode-lane.jsonl",size:Buffer.byteLength(content),sha256:"a".repeat(64),content};
       }
+      if (call.method === "probeBrowserQaTarget") {
+        if (call.hostId === "host-qa-offline") throw new Error("ECONNREFUSED");
+        return {hostId:call.hostId, workspaceRealPath:String((call.input as {workspacePath?:string}).workspacePath ?? config.writerWorkspacePath), url:String((call.input as {url?:string}).url ?? ""), processHostId:call.hostId};
+      }
       if (call.method === "runBrowserQa" && typeof browserQaResult === "function") return browserQaResult(call.input);
       if (call.method === "runBrowserQa") return browserQaResult ?? {
-        hostId:config.hostId, provider:"jev", runner:"browser-qa-jev", exitCode:0, verdict:"passed",
+        hostId:call.hostId, provider:"jev", runner:"browser-qa-jev", exitCode:0, verdict:"passed",
         actualModel:"typesafe/jev-1.13", actualReasoningEffort:null, actualBackend:"chrome-qa",
         reportPath:".agents/qa/lp-qa-test/REPORT.md", reportSha256:"a".repeat(64),
         reportText:"Total / Passed / Failed / Blocked / Pending: 1 / 1 / 0 / 0 / 0",
         artifacts:[{path:".agents/qa/lp-qa-test/REPORT.md",sha256:"a".repeat(64),size:80},
           {path:".agents/qa/lp-qa-test/shots/TC-001-375.png",sha256:"b".repeat(64),size:32}],
         stdout:"browser-qa-jev: verdict=passed", stderr:"", reason:null,
+        processPid:4242, runnerPath:"/tmp/browser-qa-jev",
       };
       if (call.method === "runSandboxedCommand") {
         sandboxRequests.push(call.input as Record<string,unknown>);
@@ -236,22 +293,24 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
       const command = String((call.input as { command?:string }).command ?? "");
       if (command.includes("porcelain")) {
         snapshots += 1;
-        return { hostId:config.hostId, exitCode:0,
-          stdout:JSON.stringify(writerControl.snapshots?.[snapshots-1] ?? snapshotOverrides?.[snapshots-1] ?? (snapshots === 1 ? [] : [{ path:"note.txt", sha256:"new-content" }])), stderr:"" };
+        const payload = writerControl.snapshots?.[snapshots-1] ?? snapshotOverrides?.[snapshots-1] ?? (snapshots === 1 ? [] : [{ path:"note.txt", sha256:"new-content" }]);
+        lastDirt = Array.isArray(payload) ? payload as Array<{path:string;sha256?:string}> : [];
+        return { hostId:config.hostId, exitCode:0, stdout:JSON.stringify(payload), stderr:"" };
       }
       return { hostId:config.hostId, exitCode:0, stdout:"", stderr:"" };
     },
   });
   const db = openDatabase(bb);
+  setupDb = db;
   savePrototypeConfig(db, emergencySelection ? {...config,pmProviderId:emergencySelection.providerId,pmModel:emergencySelection.model} : config);
   saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
-  for (const [key,value] of Object.entries({"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,...projectSettings})) saveProjectSetting(db,projectId,key,value);
+  for (const [key,value] of Object.entries({"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,"browser_qa.host_id":qaHostId,"browser_qa.workspace_path":"/tmp/lane-pilot-qa",...projectSettings})) saveProjectSetting(db,projectId,key,value);
   createRun(db, "stage-run", projectId, "bb", environmentId ? null : config.writerWorkspacePath,
     projectSettings["run.gate"] === "pre-merge" ? "pre-merge" : "none",buildRunPolicy(projectSettings));
   if (environmentId) setRunWorkspace(db,"stage-run",config.writerWorkspacePath,environmentId);
   setRunThread(db, "stage-run", pmThreadId);
   await plugin(bb);
-  return { bb, db, harness, spawned, telemetryReads, docsWrites, sandboxRequests, gitChangedPaths, writerControl, fileReads, stopCalls, docsInventoryCalls:()=>docsInventoryCalls };
+  return { bb, db, harness, spawned, telemetryReads, docsWrites, sandboxRequests, gitChangedPaths, writerControl, fileReads, stopCalls, docsInventoryCalls:()=>docsInventoryCalls, hostRpcCalls, qaHostId };
 }
 
 describe("stage → native writer → receipt", () => {
@@ -438,6 +497,22 @@ describe("stage → native writer → receipt", () => {
     expect(fileReads.filter((row)=>row.rootPath===config.writerWorkspacePath && row.path===resolve(config.writerWorkspacePath,"README.md"))).toHaveLength(2);
     expect(listStageReceipts(db,"stage-run",longReadTask.id).find((row)=>row.stageId==="pm-read"))
       .toMatchObject({state:"passed",providerId:"critic",model:"critic-model",threadId:"pm-read-thread"});
+    await harness.lifecycle.dispose();
+  });
+  it("refuses helper spawn when selected isolation is stored and the required API is absent",async()=>{
+    const {db,harness,spawned}=await setup('should not run',undefined,{
+      "helper.context_mode":"selected","helper.skills":"lane-contract",
+      "pm_read.enabled":true,"pm_read.min_lines":50,"pm_read.provider":"critic","pm_read.model":"critic-model","pm_read.reasoning_effort":"medium",
+    });
+    const longReadTask={...task,id:"stage-task-helper-selected",read_first:["README.md L1-L80"]};
+    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{
+      confirm:true,plan:"Do not start helpers without a required policy",task:longReadTask,
+    },{threadId:pmThreadId,projectId})));
+    expect(result.state).toBe("blocked");
+    expect(result.reason).toContain("helper_context_required_api_unavailable");
+    expect(spawned).toEqual([]);
+    expect(listStageReceipts(db,"stage-run",longReadTask.id).find((row)=>row.stageId==="pm-read"))
+      .toMatchObject({state:"failed",reason:"helper_context_required_api_unavailable",threadId:null});
     await harness.lifecycle.dispose();
   });
   it("records deterministic plan-path ownership findings in the critique receipt and model input",async()=>{
@@ -1221,6 +1296,10 @@ describe("stage → native writer → receipt", () => {
     expect(result.state).toBe("accepted");
     expect(spawned.map((row) => (row.pluginMetadata as Record<string,unknown>).stageId ?? (row.pluginMetadata as Record<string,unknown>).role))
       .toEqual(["plan-critique", "writer"]);
+    expect(spawned[0].parentThreadId).toBe(pmThreadId);
+    expect(String(spawned[0].title)).toMatch(/plan critique/i);
+    expect(spawned[1].parentThreadId).toBe(pmThreadId);
+    expect(String(spawned[1].title)).toMatch(/writer/i);
     expect(spawned[1].prompt).toContain('"startLine": 1');
     expect(spawned[1].prompt).toContain('"endLine": 2');
     expect(listStageReceipts(db, "stage-run", task.id).map((row) => [row.stageId,row.state]))
@@ -1235,7 +1314,7 @@ describe("stage → native writer → receipt", () => {
     expect(acceptedAttempt).toMatchObject({state:"accepted",thread_id:writerReceipt?.threadId,workspace_path:config.writerWorkspacePath,environment_id:null});
     expect((result.stages as typeof receipts).filter((row) => row.taskId === task.id)).toEqual(receipts);
     expect(receipts.find((row) => row.stageId === "verification")?.result).toEqual({
-      produced:["note.txt"], verification:[{ command:"test -f note.txt", exitCode:0, stderr:"",
+      produced:["note.txt"], verification:[{ command:"test -f note.txt", exitCode:0, stdout:"", stderr:"",
         sandboxBackend:"macos-seatbelt",policySha256:"c".repeat(64),workspacePath:config.writerWorkspacePath }],
       runV2:{schemaVersion:1,pools:{provider:5,verification:2},score:2,risk:"low",sourceRisk:"low",scoreAdapter:"task-risk-v1"},
     });
@@ -1446,7 +1525,7 @@ describe("stage → native writer → receipt", () => {
   });
 
   it("runs browser QA only after acceptance and persists the report and screenshot evidence", async () => {
-    const { db, harness } = await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    const { db, harness, hostRpcCalls, qaHostId } = await setup('{"decision":"approve","summary":"Checked","findings":[]}');
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
     await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
     const qa = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_browser_qa", {
@@ -1455,6 +1534,12 @@ describe("stage → native writer → receipt", () => {
     }, { threadId:pmThreadId, projectId })));
     expect(qa.state).toBe("passed");
     expect(qa.result.actualModel).toBe("typesafe/jev-1.13");
+    expect(qa.result.configuredHostId).toBe(qaHostId);
+    expect(qa.result.writerHostId).toBe(config.hostId);
+    expect(qa.result.workspacePath).toBe("/tmp/lane-pilot-qa");
+    expect(qa.result.processPid).toBe(4242);
+    expect(hostRpcCalls.filter((call)=>call.method==="probeBrowserQaTarget"||call.method==="runBrowserQa").every((call)=>call.hostId===qaHostId)).toBe(true);
+    expect(hostRpcCalls.some((call)=>call.method==="runBrowserQa" && call.hostId===config.hostId)).toBe(false);
     expect(qa.result.artifacts.map((item:{path:string}) => item.path)).toContain(".agents/qa/lp-qa-test/shots/TC-001-375.png");
     const receipt = listStageReceipts(db,"stage-run",task.id).find((row) => row.stageId === "browser-qa");
     expect(receipt?.state).toBe("passed");
@@ -1486,10 +1571,11 @@ describe("stage → native writer → receipt", () => {
   });
 
   it("blocks browser QA when the selected backend did not run", async () => {
-    const mismatched = { hostId:config.hostId, provider:"jev", runner:"browser-qa-jev", exitCode:0, verdict:"passed",
+    const mismatched = { hostId:"host-qa-mini", provider:"jev", runner:"browser-qa-jev", exitCode:0, verdict:"passed",
       actualModel:"typesafe/jev-1.13", actualReasoningEffort:null, actualBackend:"chrome-qa",
       reportPath:".agents/qa/lp-qa-test/REPORT.md", reportSha256:"a".repeat(64),
-      reportText:"Total / Passed / Failed / Blocked / Pending: 1 / 1 / 0 / 0 / 0", artifacts:[], stdout:"", stderr:"", reason:null };
+      reportText:"Total / Passed / Failed / Blocked / Pending: 1 / 1 / 0 / 0 / 0", artifacts:[], stdout:"", stderr:"", reason:null,
+      processPid:1, runnerPath:"/tmp/browser-qa-jev" };
     const { db, harness } = await setup('{"decision":"approve","summary":"Checked","findings":[]}',mismatched,{"browser_qa.backend":"headless"});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
     await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
@@ -1500,6 +1586,130 @@ describe("stage → native writer → receipt", () => {
     expect(qa.state).toBe("blocked");
     expect(qa.reason).toContain("configured_backend=headless, actual_backend=chrome-qa");
     expect(listStageReceipts(db,"stage-run",task.id).find((row) => row.stageId === "browser-qa")?.state).toBe("blocked");
+    await harness.lifecycle.dispose();
+  });
+
+  it("blocks browser QA when the selected host is missing", async () => {
+    const missing = await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"browser_qa.host_id":""});
+    await missing.harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await missing.harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const required = JSON.parse(String(await missing.harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(required.state).toBe("blocked");
+    expect(required.reason).toBe("browser_qa_host_required");
+    await missing.harness.lifecycle.dispose();
+  });
+
+  it("runs same-host Mini QA once and blocks empty cwd on another host", async () => {
+    const same = await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+      "browser_qa.host_id":config.hostId, "browser_qa.workspace_path":"",
+    });
+    await same.harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await same.harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const first = JSON.parse(String(await same.harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(first.state).toBe("passed");
+    expect(first.result.configuredHostId).toBe(config.hostId);
+    expect(first.result.workspacePath).toBe(config.writerWorkspacePath);
+    expect(same.hostRpcCalls.filter((call)=>call.method==="runBrowserQa" && call.hostId===config.hostId)).toHaveLength(1);
+    const replay = JSON.parse(String(await same.harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(replay.state).toBe("passed");
+    expect(same.hostRpcCalls.filter((call)=>call.method==="runBrowserQa")).toHaveLength(1);
+    await same.harness.lifecycle.dispose();
+
+    const cross = await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"browser_qa.workspace_path":""});
+    await cross.harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await cross.harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const blocked = JSON.parse(String(await cross.harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(blocked.state).toBe("blocked");
+    expect(blocked.reason).toBe("browser_qa_workspace_required_for_cross_host");
+    expect(cross.hostRpcCalls.some((call)=>call.method==="runBrowserQa")).toBe(false);
+    await cross.harness.lifecycle.dispose();
+  });
+
+  it("blocks Codex QA when the model is missing on the selected host", async () => {
+    const { harness, hostRpcCalls } = await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+      "browser_qa.host_id":"host-qa-no-codex",
+      "browser_qa.workspace_path":"/tmp/lane-pilot-qa",
+      "browser_qa.provider":"codex",
+      "browser_qa.model":"gpt-6-luna",
+    });
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const qa = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(qa.state).toBe("blocked");
+    expect(qa.reason).toBe("browser_qa_model_unavailable_on_host:host-qa-no-codex:codex/gpt-6-luna");
+    expect(hostRpcCalls.some((call)=>call.method==="runBrowserQa")).toBe(false);
+    await harness.lifecycle.dispose();
+  });
+
+  it("blocks Codex QA when the selected-host default effort is unsupported and does not spawn a runner", async () => {
+    const { harness, hostRpcCalls } = await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+      "browser_qa.host_id":"host-qa-bad-effort",
+      "browser_qa.workspace_path":"/tmp/lane-pilot-qa",
+      "browser_qa.provider":"codex",
+      "browser_qa.model":"gpt-6-luna",
+    });
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const qa = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(qa.state).toBe("blocked");
+    expect(qa.reason).toBe("browser_qa_effort_unavailable_on_host:host-qa-bad-effort:codex/gpt-6-luna/xhigh");
+    expect(hostRpcCalls.some((call)=>call.method==="runBrowserQa" || call.method==="probeBrowserQaTarget")).toBe(false);
+    await harness.lifecycle.dispose();
+  });
+
+  it("recovers a stale claimed running browser QA receipt without a second runner", async () => {
+    const { db, harness, hostRpcCalls, qaHostId } = await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const frozen = { spawnAttempted:true, configuredHostId:qaHostId, writerHostId:config.hostId, workspacePath:"/tmp/lane-pilot-qa" };
+    saveStageReceipt(db, {
+      runId:"stage-run", taskId:task.id, stageId:"browser-qa", contractVersion:1, state:"running",
+      inputSha256:createHash("sha256").update("stale-qa").digest("hex"), outputSha256:createHash("sha256").update(JSON.stringify(frozen)).digest("hex"),
+      attempt:1, providerId:"browser-qa-jev", model:null, threadId:null, result:frozen, reason:null,
+      updatedAt:Date.now() - 61_000,
+    });
+    const qa = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(qa.state).toBe("blocked");
+    expect(String(qa.reason)).toContain("browser_qa_outcome_unknown");
+    expect(qa.result).toMatchObject({ spawnAttempted:true, configuredHostId:qaHostId, workspacePath:"/tmp/lane-pilot-qa" });
+    expect(hostRpcCalls.filter((call)=>call.method==="runBrowserQa")).toHaveLength(0);
+    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="browser-qa")?.state).toBe("blocked");
+    await harness.lifecycle.dispose();
+  });
+
+  it("fails closed when the QA host is unreachable and does not call the writer host", async () => {
+    const { harness, hostRpcCalls } = await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"browser_qa.host_id":"host-qa-offline"});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const qa = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(qa.state).toBe("failed");
+    expect(qa.reason).toContain("browser_qa_host_unreachable:host-qa-offline");
+    expect(hostRpcCalls.some((call)=>call.method==="runBrowserQa")).toBe(false);
+    expect(hostRpcCalls.some((call)=>call.hostId===config.hostId && (call.method==="probeBrowserQaTarget"||call.method==="runBrowserQa"))).toBe(false);
     await harness.lifecycle.dispose();
   });
 
@@ -1532,4 +1742,204 @@ describe("stage → native writer → receipt", () => {
     expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="opencode-telemetry")?.state).toBe("passed");
     await harness.lifecycle.dispose();
   });
+
+  const codeOn={"code_critique.enabled":true,"code_critique.provider":"critic","code_critique.model":"critic-model"};
+  const finding='{"decision":"changes_requested","summary":"Missing invariant coverage","findings":[{"id":"f1","severity":"blocking","finding":"note.txt omits the required invariant","criterion":"invariants"}]}';
+  const approved='{"decision":"approve","summary":"Candidate checked","findings":[]}';
+  function setupCode(snapshots:Array<Array<Record<string,string>>>, extra?:{outputs?:string[];repair?:string;idleWait?:string}) {
+    return setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,codeOn,undefined,undefined,undefined,undefined,undefined,snapshots,false,0,undefined,undefined,undefined,undefined,undefined,undefined,extra?.idleWait,false,{},[],extra?.outputs,extra?.repair);
+  }
+
+  it("skips code critique by default and accepts without a repair writer",async()=>{
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique")).toHaveLength(0);
+    expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound)).toHaveLength(0);
+    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")).toBeUndefined();
+    await harness.lifecycle.dispose();
+  });
+
+  it("runs independent code critique after candidate verification and accepts without repair when approved",async()=>{
+    const {db,harness,spawned}=await setupCode([
+      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+    ]);
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique")).toHaveLength(1);
+    expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound)).toHaveLength(0);
+    const critic=spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique") as Record<string,unknown>;
+    expect(critic.parentThreadId).toBe(pmThreadId);
+    expect(String(critic.title)).toMatch(/code critique/i);
+    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")?.state).toBe("passed");
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("returns blocking findings to the same writer, then recritiques the repaired revision",async()=>{
+    const {harness,spawned}=await setupCode([
+      [],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
+    ],{outputs:[finding,approved]});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    const critics=spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique");
+    expect(critics.length).toBeGreaterThanOrEqual(2);
+    expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
+    const original=spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).role==="writer" && !(row.pluginMetadata as Record<string,unknown>).repairRound) as Record<string,unknown>;
+    const repair=spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1) as Record<string,unknown>;
+    expect(repair.providerId ?? (repair as {provider?:string}).provider).toBe(original.providerId ?? (original as {provider?:string}).provider);
+    expect(repair.model).toBe(original.model);
+    expect(repair.environment).toEqual(original.environment);
+    expect(repair.parentThreadId).toBe(pmThreadId);
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("sends an unchanged disputed finding back to the independent critic without forcing an edit",async()=>{
+    const {harness,spawned}=await setupCode([
+      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+    ],{outputs:[finding,approved],repair:'{"replies":[{"id":"f1","status":"disputed","evidence":"invariant is already in note.txt"}]}'});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    const recritique=spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique");
+    expect(recritique.length).toBeGreaterThanOrEqual(2);
+    expect(spawned.some((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toBe(true);
+    expect(recritique.map((row)=>String(row.prompt)).join("\n")).toContain("WRITER DISPUTES");
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("blocks when candidate evidence hashes are missing",async()=>{
+    const {db,harness}=await setupCode([
+      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt"}],[{path:"note.txt"}],
+    ]);
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("blocked");
+    expect(String(waited.reason)).toContain("code_critique_evidence_unknown");
+    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")?.state).toBe("blocked");
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("blocks when the independent critic times out",async()=>{
+    const {db,harness}=await setupCode([
+      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+    ],{idleWait:"code-critic-thread-1"});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("blocked");
+    expect(String(waited.reason)).toContain("code_critique_failed");
+    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")?.state).toBe("failed");
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("refuses final acceptance when the workspace revision changed after critique",async()=>{
+    const {harness}=await setupCode([
+      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteMutatedSha}],
+    ]);
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("blocked");
+    expect(waited.reason).toBe("code_critique_stale_revision");
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("does not send a second repair after crash mid-repair with a claimed round and no thread id",async()=>{
+    throwOnRepairSpawn=true;
+    try {
+      const {db,harness,spawned}=await setupCode([
+        [],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],
+      ],{outputs:[finding,approved]});
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+      const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+      expect(waited.state).toBe("blocked");
+      expect(String(waited.reason)).toContain("code_critique_repair_unknown");
+      const ledger=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")?.result as {spawnAttempted?:boolean;repairThreadId?:string;repairRound?:number};
+      expect(ledger).toMatchObject({spawnAttempted:true,repairRound:1});
+      expect(ledger.repairThreadId).toBeUndefined();
+      expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
+      const restarted=await harness.reload(plugin);
+      await restarted.harness.behavior.callRpc("resume_runs",{projectId});
+      await restarted.harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId});
+      expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
+      await restarted.harness.lifecycle.dispose();
+    } finally {
+      throwOnRepairSpawn=false;
+    }
+  },20_000);
+
+  it("does not spawn a second critic after reload when the receipt already passed",async()=>{
+    const {harness,spawned}=await setupCode([
+      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+    ]);
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId});
+    expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique")).toHaveLength(1);
+    const restarted=await harness.reload(plugin);
+    await restarted.harness.behavior.callRpc("resume_runs",{projectId});
+    expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique")).toHaveLength(1);
+    await restarted.harness.lifecycle.dispose();
+  },20_000);
+
+  it("gives the critic host-read file bytes and verification io, not only hashes and a green test -f",async()=>{
+    const {harness,spawned}=await setupCode([
+      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+    ]);
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    const critic=spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique") as Record<string,unknown>;
+    expect(String(critic.prompt)).toContain("HOST-READ PACKET");
+    expect(String(critic.prompt)).toContain("reviewed output");
+    expect(String(critic.prompt)).toContain("test -f note.txt");
+    expect(String(critic.prompt)).toMatch(/"stdout":""/);
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("blocks when host-read bytes do not match the captured dirt hash",async()=>{
+    const {harness}=await setupCode([
+      [],[{path:"note.txt",sha256:"0".repeat(64)}],[{path:"note.txt",sha256:"0".repeat(64)}],[{path:"note.txt",sha256:"0".repeat(64)}],
+    ]);
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("blocked");
+    expect(String(waited.reason)).toContain("code_critique_evidence_unknown");
+    expect(String(waited.reason)).toContain("content_hash_mismatch");
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("restores the original writer dispatch context on repair and keeps frozen reviewer after live settings change",async()=>{
+    mutateCritiqueSettingsOnFirstSpawn=true;
+    const findingTwo='{"decision":"changes_requested","summary":"Still broken","findings":[{"id":"f2","severity":"blocking","finding":"second defect","criterion":"invariants"}]}';
+    try {
+      const {db,harness,spawned}=await setupCode([
+        [],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
+      ],{outputs:[finding,findingTwo]});
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+      const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+      expect(waited.state).toBe("blocked");
+      const original=spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).role==="writer" && !(row.pluginMetadata as Record<string,unknown>).repairRound) as Record<string,unknown>;
+      const repair=spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1) as Record<string,unknown>;
+      expect(String(repair.prompt)).toContain("stage fixture heading");
+      expect(String(repair.prompt)).toContain("read-first fixture excerpt");
+      expect(String(repair.prompt)).toContain("You are Lane Pilot writer");
+      expect(String(original.prompt)).toContain("stage fixture heading");
+      const critics=spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique");
+      expect(critics.every((row)=>row.model==="critic-model")).toBe(true);
+      expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
+      const ledger=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")?.result as {policy?:{model?:string;maxRounds?:number};repairRound?:number};
+      expect(ledger.policy).toMatchObject({model:"critic-model",maxRounds:1});
+      expect(loadProjectSettings(db,projectId)["code_critique.model"]).toBe("other-model");
+      expect(loadProjectSettings(db,projectId)["code_critique.max_rounds"]).toBe(3);
+      const restarted=await harness.reload(plugin);
+      await restarted.harness.behavior.callRpc("resume_runs",{projectId});
+      expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
+      expect(critics.concat(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique"))
+        .every((row)=>row.model==="critic-model")).toBe(true);
+      await restarted.harness.lifecycle.dispose();
+    } finally {
+      mutateCritiqueSettingsOnFirstSpawn=false;
+    }
+  },20_000);
 });

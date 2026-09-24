@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyPlan } from "../src/host-handlers";
-import { bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../src/jev-reasoning";
+import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../src/jev-reasoning";
 
 const { missingCredentialFile } = vi.hoisted(() => ({ missingCredentialFile:{ value:false } }));
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -38,6 +38,10 @@ describe("Lane Pilot Jev complete-plan adapter", () => {
     expect(bbServiceTier("standard")).toBe("default");
     expect(bbServiceTier("fast")).toBe("fast");
     expect(writerExecutionSelection("codex", "gpt-6-luna", "medium", "fast").reasoningLevel).toBe("medium");
+    expect(writerExecutionSelection("codex", "gpt-6-luna", "high", "fast", { reasoningLevel:"client-preference" }).executionInputSources.reasoningLevel)
+      .toBe("client-preference");
+    expect(automaticEffortRoutingEnabled({ "jev.LANE_JEV_EFFORT":true })).toBe(true);
+    expect(automaticEffortRoutingEnabled({ "jev.LANE_JEV_EFFORT":"0" })).toBe(false);
   });
 
   it("uses the selected manual effort for unsupported decisions, timeout, and disabled Jev", () => {

@@ -15,6 +15,19 @@ export const prototypeConfigSchema = z.object({
 
 export type PrototypeConfig = z.infer<typeof prototypeConfigSchema>;
 
+export const settingValidationSchema = z.object({
+  code: z.enum([
+    "invalid_choice",
+    "incompatible_setting",
+    "setup_required",
+    "writer_binding_ambiguous",
+    "writer_host_offline",
+    "catalog_unavailable",
+  ]),
+  key: z.string(),
+  params: z.array(z.string()),
+}).strict();
+
 export const taskV2Schema = z.object({
   schema_version: z.literal(2),
   id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
@@ -252,6 +265,15 @@ export const hostContract = defineRpcContract({
       actualModel:z.string().nullable(),actualReasoningEffort:z.string().nullable(),actualBackend:z.string().nullable(),
       reportText:z.string().nullable(), artifacts:z.array(z.object({path:z.string(),sha256:z.string(),size:z.number().int().nonnegative()}).strict()),
       stdout:z.string(), stderr:z.string(), reason:z.string().nullable(),
+      processPid:z.number().int().nullable(), runnerPath:z.string().nullable(),
+    }).strict(),
+  },
+  probeBrowserQaTarget: {
+    input: z.object({
+      requestedHostId:z.string().min(1), workspacePath:z.string().startsWith("/"), url:z.string().url(),
+    }).strict(),
+    output:z.object({
+      hostId:z.string(), workspaceRealPath:z.string(), url:z.string(), processHostId:z.string(),
     }).strict(),
   },
   classifyPlan: {
@@ -298,7 +320,49 @@ export const rpcContract = defineRpcContract({
   },
   list_projects: {
     input: z.object({}).strict(),
-    output: z.object({ projects: z.array(z.object({ id: z.string(), name: z.string() }).strict()), lastProjectId: z.string().nullable() }).strict(),
+    output: z.object({
+      projects: z.array(z.object({ id: z.string(), name: z.string(), kind: z.enum(["personal", "standard"]).optional() }).strict()),
+      lastProjectId: z.string().nullable(),
+    }).strict(),
+  },
+  get_globals: {
+    input: z.object({}).strict(),
+    output: z.object({
+      defaults: z.object({
+        writerProviderId: z.string().optional(),
+        writerModel: z.string().optional(),
+        writerReasoningEffort: z.string().optional(),
+        helperPlacement: z.enum(["plugin", "project_tree"]).optional(),
+        qaHostId: z.string().optional(),
+      }).strict(),
+      agents: z.array(z.object({
+        id: z.string(),
+        description: z.string(),
+        prompt: z.string(),
+        sourceHash: z.string(),
+        edited: z.boolean(),
+      }).strict()),
+    }).strict(),
+  },
+  save_globals: {
+    input: z.object({
+      defaults: z.object({
+        writerProviderId: z.string().optional(),
+        writerModel: z.string().optional(),
+        writerReasoningEffort: z.string().optional(),
+        helperPlacement: z.enum(["plugin", "project_tree"]).optional(),
+        qaHostId: z.string().optional(),
+      }).strict(),
+    }).strict(),
+    output: z.object({ ok: z.literal(true), defaults: z.record(z.string(), z.unknown()) }).strict(),
+  },
+  save_agent_profile: {
+    input: z.object({
+      id: z.enum(["dev-orchestrator", "copy-lead", "seo-specialist"]),
+      prompt: z.string().min(1).max(32_000),
+      description: z.string().min(1).max(400).optional(),
+    }).strict(),
+    output: z.object({ ok: z.literal(true), id: z.string(), sourceHash: z.string() }).strict(),
   },
   finish_run: {
     input: z.object({ projectId: z.string().min(1), runId: z.string().min(1) }).strict(),
@@ -314,6 +378,16 @@ export const rpcContract = defineRpcContract({
       projectId: z.string(),
       hostId: z.string().nullable(),
       workspacePath: z.string().nullable(),
+      inheritedKeys: z.array(z.string()).optional(),
+      writerBinding: z.object({
+        status: z.enum(["resolved", "ambiguous", "setup_required", "offline"]),
+        hostId: z.string().nullable(),
+        path: z.string().nullable(),
+        source: z.enum(["session", "unique_source", "explicit_override"]).nullable(),
+        bindings: z.array(z.object({
+          id: z.string().optional(), hostId: z.string(), path: z.string(), isDefault: z.boolean().optional(),
+        }).strict()),
+      }).strict().optional(),
       values: z.record(z.string(), z.unknown()),
       versions: z.record(z.string(), z.number()),
       importSource: z.object({
@@ -352,6 +426,26 @@ export const rpcContract = defineRpcContract({
       writerResultJson: z.string().nullable(),
       writerResultPatch: z.string().nullable(),
       cliReceiptJson: z.string().nullable(),
+      qaHosts: z.array(z.object({
+        id: z.string(), name: z.string(), status: z.string(), connected: z.boolean(),
+      }).strict()),
+      lastWriterTrace: z.object({
+        providerId: z.string(),
+        model: z.string(),
+        requestedReasoningLevel: z.string(),
+        effectiveReasoningLevel: z.string(),
+        serviceTier: z.enum(["default", "fast"]).nullable(),
+        fallbackReason: z.string().nullable(),
+        jevStatus: z.enum(["ok", "disabled", "timeout", "error"]),
+        effortMode: z.enum(["automatic", "manual"]).optional(),
+        selectionSource: z.object({
+          providerId: z.string(),
+          model: z.string(),
+          reasoningLevel: z.string(),
+          serviceTier: z.enum(["default", "fast"]).nullable(),
+          reasoningLevelSource: z.enum(["explicit", "client-preference"]),
+        }).strict().optional(),
+      }).nullable(),
     }).strict(),
   },
   save_setting: {
@@ -366,11 +460,7 @@ export const rpcContract = defineRpcContract({
       conflict: z.boolean(),
       version: z.number().int(),
       value: z.unknown(),
-      validation: z.object({
-        code: z.enum(["invalid_choice", "incompatible_setting"]),
-        key: z.string(),
-        params: z.array(z.string()),
-      }).strict().optional(),
+      validation: settingValidationSchema.optional(),
     }).strict(),
   },
   save_settings: {
@@ -395,16 +485,14 @@ export const rpcContract = defineRpcContract({
       conflict: z.boolean(),
       values: z.record(z.string(), z.unknown()),
       versions: z.record(z.string(), z.number().int()),
-      validation: z.object({
-        code: z.enum(["invalid_choice", "incompatible_setting"]),
-        key: z.string(),
-        params: z.array(z.string()),
-      }).strict().optional(),
+      validation: settingValidationSchema.optional(),
     }).strict(),
   },
   save_writer_selection: {
     input: z.object({
       projectId: z.string().min(1),
+      threadId: z.string().min(1).nullable().optional(),
+      selectedBinding: z.object({ hostId: z.string().min(1), path: z.string().min(1) }).strict().optional(),
       providerId: z.string().min(1),
       model: z.string().min(1),
       reasoningLevel: z.enum(["none", "low", "medium", "high", "xhigh", "ultracode", "max", "ultra"]),
@@ -421,11 +509,7 @@ export const rpcContract = defineRpcContract({
       conflict: z.boolean(),
       values: z.record(z.string(), z.unknown()),
       versions: z.record(z.string(), z.number().int()),
-      validation: z.object({
-        code: z.enum(["invalid_choice", "incompatible_setting"]),
-        key: z.string(),
-        params: z.array(z.string()),
-      }).strict().optional(),
+      validation: settingValidationSchema.optional(),
     }).strict(),
   },
   save_memory_selection: {
@@ -447,7 +531,7 @@ export const rpcContract = defineRpcContract({
       conflict: z.boolean(),
       values: z.record(z.string(), z.unknown()),
       versions: z.record(z.string(), z.number().int()),
-      validation: z.object({code:z.enum(["invalid_choice","incompatible_setting"]),key:z.string(),params:z.array(z.string())}).strict().optional(),
+      validation: settingValidationSchema.optional(),
     }).strict(),
   },
   save_night_review_selection: {
@@ -457,7 +541,7 @@ export const rpcContract = defineRpcContract({
       serviceTier:z.enum(["default","fast"]).nullable(),
       expectedVersions:z.object({"night_review.provider":z.number().int().min(0),"night_review.model":z.number().int().min(0),"night_review.reasoning_effort":z.number().int().min(0),"night_review.service_tier":z.number().int().min(0)}).strict(),
     }).strict(),
-    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:z.object({code:z.enum(["invalid_choice","incompatible_setting"]),key:z.string(),params:z.array(z.string())}).strict().optional()}).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
   },
   save_docs_selection: {
     input:z.object({
@@ -466,7 +550,16 @@ export const rpcContract = defineRpcContract({
       serviceTier:z.enum(["default","fast"]).nullable(),
       expectedVersions:z.object({"docs.provider":z.number().int().min(0),"docs.model":z.number().int().min(0),"docs.reasoning_effort":z.number().int().min(0),"docs.service_tier":z.number().int().min(0)}).strict(),
     }).strict(),
-    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:z.object({code:z.enum(["invalid_choice","incompatible_setting"]),key:z.string(),params:z.array(z.string())}).strict().optional()}).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
+  },
+  save_pm_read_selection: {
+    input:z.object({
+      projectId:z.string().min(1),providerId:z.string().min(1),model:z.string().min(1),
+      reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]),
+      serviceTier:z.enum(["default","fast"]).nullable(),
+      expectedVersions:z.object({"pm_read.provider":z.number().int().min(0),"pm_read.model":z.number().int().min(0),"pm_read.reasoning_effort":z.number().int().min(0),"pm_read.service_tier":z.number().int().min(0)}).strict(),
+    }).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
   },
   save_onboarding_selection: {
     input:z.object({
@@ -475,7 +568,25 @@ export const rpcContract = defineRpcContract({
       serviceTier:z.enum(["default","fast"]).nullable(),
       expectedVersions:z.object({"onboarding.provider":z.number().int().min(0),"onboarding.model":z.number().int().min(0),"onboarding.reasoning_effort":z.number().int().min(0),"onboarding.service_tier":z.number().int().min(0)}).strict(),
     }).strict(),
-    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:z.object({code:z.enum(["invalid_choice","incompatible_setting"]),key:z.string(),params:z.array(z.string())}).strict().optional()}).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
+  },
+  save_plan_critique_selection: {
+    input:z.object({
+      projectId:z.string().min(1),providerId:z.string().min(1),model:z.string().min(1),
+      reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]),
+      serviceTier:z.enum(["default","fast"]).nullable(),
+      expectedVersions:z.object({"plan_critique.provider":z.number().int().min(0),"plan_critique.model":z.number().int().min(0),"plan_critique.reasoning_effort":z.number().int().min(0),"plan_critique.service_tier":z.number().int().min(0)}).strict(),
+    }).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
+  },
+  save_code_critique_selection: {
+    input:z.object({
+      projectId:z.string().min(1),providerId:z.string().min(1),model:z.string().min(1),
+      reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]),
+      serviceTier:z.enum(["default","fast"]).nullable(),
+      expectedVersions:z.object({"code_critique.provider":z.number().int().min(0),"code_critique.model":z.number().int().min(0),"code_critique.reasoning_effort":z.number().int().min(0),"code_critique.service_tier":z.number().int().min(0)}).strict(),
+    }).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
   },
   cancel_attempt: {
     input: z.object({ attemptId: z.string().min(1) }).strict(),
