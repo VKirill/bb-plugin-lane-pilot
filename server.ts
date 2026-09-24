@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
@@ -10,6 +10,7 @@ import {
   type PrototypeConfig,
   type TaskV2,
 } from "./src/contracts";
+import { LANE_PILOT_READ_NAME } from "./src/bounded-read";
 import { TARGET_SHA, cliReceiptAttemptKey, cliReceiptRunKey } from "./src/constants";
 import { aggregateRun } from "./src/aggregation";
 import { buildCliInvocation } from "./src/argv-builder";
@@ -33,6 +34,7 @@ import {
   getActivation,
   getAttempt,
   getRun,
+  getRunWriterHost,
   getTask,
   getTaskGitBase,
   listTasksForRun,
@@ -1042,7 +1044,7 @@ export default async function plugin(bb: BbPluginApi) {
     const workspaceMode = parseWorkspaceMode(settings["adoc.040"]);
     const managedWorkspace = usesManagedWorktree(workspaceMode);
     const runId = id("lprun");
-    createRun(db, runId, projectId, kind, managedWorkspace ? null : config.writerWorkspacePath, runGate, buildRunPolicy(settings));
+    createRun(db, runId, projectId, kind, managedWorkspace ? null : config.writerWorkspacePath, runGate, buildRunPolicy(settings), config.hostId);
     claimActivation(db, { projectId, pmThreadId:`pending:${sourceThreadId}`, runId });
     await host.call("writePmSettings", {
       requestedHostId: config.hostId,
@@ -1827,6 +1829,35 @@ export default async function plugin(bb: BbPluginApi) {
       releaseWriterSlot?.();
       activeWriterTasks.delete(key);
     });
+  }
+
+  async function readWriterWorkspaceFile(args:{
+    threadId:string; projectId:string; path:string; offset:number; maxLines:number;
+  }): Promise<Record<string, unknown>> {
+    const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
+    if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
+    const runId = stringAt(metadata, "lanePilotRunId");
+    if (!runId) throw new Error("PM thread has no lanePilotRunId");
+    const run = getRun(db, runId);
+    if (!run || run.project_id !== args.projectId || run.pm_thread_id !== args.threadId) {
+      throw new Error("run does not belong to this PM thread and project");
+    }
+    const hostId = getRunWriterHost(db, runId);
+    const workspacePath = run.writer_workspace_path;
+    if (!hostId || !workspacePath) throw new Error("run has no frozen writer host or workspace binding");
+    if (args.path.includes("\0") || isAbsolute(args.path)) throw new Error("lane_pilot_read_path_escaped_workspace");
+    const absolute = resolve(workspacePath, args.path);
+    const rel = relative(workspacePath, absolute);
+    if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("lane_pilot_read_path_escaped_workspace");
+    const file = await host.call("readBoundedFile", {
+      requestedHostId: hostId,
+      projectCwd: workspacePath,
+      relativePath: rel.split("\\").join("/"),
+      offset: args.offset,
+      maxLines: args.maxLines,
+    }, { hostId, timeoutMs: 15_000 });
+    if (file.hostId !== hostId) throw new Error("lane_pilot_read_host_mismatch");
+    return file;
   }
 
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string}): Promise<Record<string,unknown>> {
@@ -3795,6 +3826,20 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   bb.agents.registerTool({
+    name:LANE_PILOT_READ_NAME,
+    description:"Read a bounded UTF-8 slice of a file inside the current run's writer workspace.",
+    instructions:"Use only from the matching Lane Pilot PM thread. path is relative to the frozen writer workspace. offset is a 0-based line index. maxLines is the maximum number of lines returned. Paths that leave the workspace, including .. segments and absolute paths, are rejected. This is not the pm_read stage.",
+    parameters:z.object({
+      path:z.string().min(1).max(1024),
+      offset:z.number().int().min(0).default(0),
+      maxLines:z.number().int().min(1).max(2000).default(200),
+    }).strict(),
+    execute: async (params, context) => JSON.stringify(await readWriterWorkspaceFile({
+      threadId:context.threadId, projectId:context.projectId, path:params.path, offset:params.offset, maxLines:params.maxLines,
+    }), null, 2),
+  });
+
+  bb.agents.registerTool({
     name:"lane_pilot_dispatch_writer",
     description:"Start a task-v2 contract with the configured native BB writer and return run/attempt identity immediately.",
     instructions:"Use only from a Lane Pilot PM thread. Returns before writer completion. Then call lane_pilot_wait_writer with the returned runId; if it reports still running, call it again. Persists identity before spawn, retries at most twice, never falls back to Codex.",
@@ -3951,7 +3996,7 @@ export default async function plugin(bb: BbPluginApi) {
     if (context.origin.pluginId !== "lane-pilot" || role !== "pm" || typeof runId !== "string") return { tools:[], skills:[] };
     const config = loadPrototypeConfig(db, context.project.id);
     return {
-      tools:["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli","lane_pilot_browser_qa","lane_pilot_ingest_opencode_telemetry","lane_pilot_docs_maintain","lane_pilot_onboarding_preview","lane_pilot_onboarding_apply","lane_pilot_memory_maintain","lane_pilot_memory_context","lane_pilot_night_review","lane_pilot_night_fix","lane_pilot_workspace_status","lane_pilot_gate_report","lane_pilot_gate_triage"],
+      tools:["lane_pilot_read","lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli","lane_pilot_browser_qa","lane_pilot_ingest_opencode_telemetry","lane_pilot_docs_maintain","lane_pilot_onboarding_preview","lane_pilot_onboarding_apply","lane_pilot_memory_maintain","lane_pilot_memory_context","lane_pilot_night_review","lane_pilot_night_fix","lane_pilot_workspace_status","lane_pilot_gate_report","lane_pilot_gate_triage"],
       skills:[],
       instructions:config
         ? `Lane Pilot PM ${runId}. Writer=${config.writerProviderId}/${config.writerModel}; writer workspace=${config.writerWorkspacePath}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread. To delegate: supply the complete canonical plan in the separate plan parameter of lane_pilot_dispatch_writer and the task-v2 contract in task; never put wrapper/system instructions into plan. If pm_read is enabled, task.read_first is read by the bounded native PM-read stage before critique; its receipt and summary are passed to critique and writer. Then immediately note its runId/attemptId; call lane_pilot_wait_writer with that runId (timeoutSec up to 240), repeating while running. After a passed writer receipt, onboarding_preview can return an explicit hash-bound Markdown proposal; present it for review and only call onboarding_apply after separate explicit user confirmation. Return every stage receipt verbatim.`

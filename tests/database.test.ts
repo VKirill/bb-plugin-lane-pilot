@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, getAttempt, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
+import { appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -189,6 +189,15 @@ describe("section 9 storage.database DDL", () => {
     });
     setRunThread(db, "worktree-run", "pm-worktree");
     expect(setRunWorkspace(db, "worktree-run", "/tmp/late", "env-late")).toBe(false);
+    await harness.lifecycle.dispose();
+  });
+
+  it("freezes writer_host_id at createRun and does not expose it through getRun", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "host-frozen", "A", "bb", "/repo", "none", {schemaVersion:1,pools:{provider:5,verification:2}}, "host-a");
+    expect(getRunWriterHost(db, "host-frozen")).toBe("host-a");
+    expect(getRun(db, "host-frozen")).not.toHaveProperty("writer_host_id");
     await harness.lifecycle.dispose();
   });
 

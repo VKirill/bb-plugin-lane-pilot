@@ -195,6 +195,7 @@ export const migrations = [
   `ALTER TABLE lane_pilot_run ADD COLUMN writer_environment_id TEXT`,
   `ALTER TABLE lane_pilot_run ADD COLUMN run_gate TEXT NOT NULL DEFAULT 'none' CHECK(run_gate IN ('none','pre-merge'))`,
   `ALTER TABLE lane_pilot_attempt ADD COLUMN holder_thread_id TEXT`,
+  `ALTER TABLE lane_pilot_run ADD COLUMN writer_host_id TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -337,10 +338,16 @@ export function claimDailySchedule(db:LanePilotDatabase, projectId:string, sched
   }).immediate();
 }
 
-export function createRun(db: LanePilotDatabase, id: string, projectId: string, kind: "bb"|"cli" = "bb", writerWorkspacePath: string | null = null, runGate: "none"|"pre-merge" = "none", runPolicy:unknown = {schemaVersion:1,pools:{provider:5,verification:2}}): void {
+export function createRun(db: LanePilotDatabase, id: string, projectId: string, kind: "bb"|"cli" = "bb", writerWorkspacePath: string | null = null, runGate: "none"|"pre-merge" = "none", runPolicy:unknown = {schemaVersion:1,pools:{provider:5,verification:2}}, writerHostId: string | null = null): void {
   const now = Date.now();
-  db.prepare("INSERT INTO lane_pilot_run(id,project_id,state,kind,created_at,updated_at,writer_workspace_path,run_gate,run_policy_json) VALUES (?,?,\'pending\',?,?,?,?,?,?)")
-    .run(id, projectId, kind, now, now, writerWorkspacePath, runGate, JSON.stringify(runPolicy));
+  db.prepare("INSERT INTO lane_pilot_run(id,project_id,state,kind,created_at,updated_at,writer_workspace_path,run_gate,run_policy_json,writer_host_id) VALUES (?,?,\'pending\',?,?,?,?,?,?,?)")
+    .run(id, projectId, kind, now, now, writerWorkspacePath, runGate, JSON.stringify(runPolicy), writerHostId);
+}
+
+export function getRunWriterHost(db: LanePilotDatabase, runId: string): string | null {
+  const row = db.prepare("SELECT writer_host_id FROM lane_pilot_run WHERE id=?").get(runId) as {writer_host_id:string|null}|undefined;
+  const hostId = row?.writer_host_id?.trim();
+  return hostId ? hostId : null;
 }
 
 /** Bind a provisioned BB managed worktree once, before the run can dispatch any tasks. */

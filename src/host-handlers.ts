@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contracts";
+import { readBoundedWorkspaceFile } from "./bounded-read";
 import { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
 import { runBrowserQaOnHost } from "./stages/browser-qa";
 import { scanCritiqueCoverage } from "./stages/critique-coverage";
@@ -85,6 +86,20 @@ export const readOpenCodeTelemetry: ExperimentalHostRpcHandlers<typeof hostContr
   catch { throw new Error("telemetry log is not valid UTF-8"); }
   return { hostId:process.env.BB_HOST_ID ?? input.requestedHostId, relativePath:normalized,
     size:bytes.byteLength, sha256:createHash("sha256").update(bytes).digest("hex"), content };
+};
+
+export const readBoundedFile: ExperimentalHostRpcHandlers<typeof hostContract>["readBoundedFile"] = async (input) => {
+  const workerHost = process.env.BB_HOST_ID?.trim();
+  if (workerHost && workerHost !== input.requestedHostId) {
+    throw new Error("lane_pilot_read_host_mismatch");
+  }
+  return readBoundedWorkspaceFile({
+    hostId: workerHost || input.requestedHostId,
+    projectCwd: input.projectCwd,
+    relativePath: input.relativePath,
+    offset: input.offset,
+    maxLines: input.maxLines,
+  });
 };
 
 export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["listDocsPages"] = async (input) => {

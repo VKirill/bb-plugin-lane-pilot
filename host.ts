@@ -13,6 +13,7 @@ import {
   importConfig,
   inspectCritiqueCoverage,
   install,
+  readBoundedFile,
   readOpenCodeTelemetry,
   rollback,
   runCli,
@@ -27,7 +28,7 @@ import {
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
-    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, readOpenCodeTelemetry, listDocsPages, applyOnboardingPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
+    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
     runCli, runCommand, runSandboxedCommand, runBrowserQa, writePmSettings,
   },
 });
