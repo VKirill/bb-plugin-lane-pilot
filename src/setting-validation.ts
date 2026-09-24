@@ -20,7 +20,15 @@ export function allowedSettingChoices(key: string): string[] | null {
 
 export function validateSettingValue(key: string, value: unknown): SettingValidationError | null {
   const minimum = key === "plan_critique.min_score" ? 0
-    : key === "plan_critique.min_write_tasks" ? 1 : null;
+    : key === "plan_critique.min_write_tasks" ? 1
+    : key === "code_critique.max_rounds" ? 1 : null;
+  if (key === "code_critique.max_rounds" && value !== undefined && value !== null && value !== "") {
+    const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
+    if (typeof parsed !== "number" || !Number.isSafeInteger(parsed) || parsed < 1 || parsed > 3) {
+      return { code:"invalid_choice", key, params:[key, "integer 1-3"] };
+    }
+    return null;
+  }
   if (minimum !== null && value !== undefined && value !== null && value !== "") {
     const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
     if (typeof parsed !== "number" || !Number.isSafeInteger(parsed) || parsed < minimum) {

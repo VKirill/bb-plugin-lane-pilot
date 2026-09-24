@@ -115,12 +115,15 @@ describe("UI storage keys feed runtime channels", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(145);
+    expect(editable).toHaveLength(160);
     const atomicPickerKeys = new Set([
       "memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier",
       "night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier",
       "docs.provider", "docs.model", "docs.reasoning_effort", "docs.service_tier",
       "onboarding.provider", "onboarding.model", "onboarding.reasoning_effort", "onboarding.service_tier",
+      "pm_read.provider", "pm_read.model", "pm_read.reasoning_effort", "pm_read.service_tier",
+      "plan_critique.provider", "plan_critique.model", "plan_critique.reasoning_effort", "plan_critique.service_tier",
+      "code_critique.provider", "code_critique.model", "code_critique.reasoning_effort", "code_critique.service_tier",
     ]);
     for (const row of editable) {
       const choices = UI_CATALOG.filter((candidate) => candidate.storageKey === row.storageKey && candidate.control === "select")
@@ -157,7 +160,7 @@ describe("UI storage keys feed runtime channels", () => {
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
     expect(booleanFlags.map((spec) => spec.key)).toEqual([]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(145);
+    expect(editable).toHaveLength(160);
     expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
     for (const row of editable) {
       if (row.storageKey === "ui.language") {
@@ -266,7 +269,10 @@ describe("UI storage keys feed runtime channels", () => {
   });
 
   it("saves writer.provider and jev keys that get_screen returns", async () => {
-    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk:{ projects:{ get:async ({ projectId }) => ({ id:projectId, name:projectId, sources:[] }), list:async () => [] } },
+    });
     await plugin(bb);
     const provider = await harness.behavior.callRpc("save_setting", {
       projectId: "proj_runtime",

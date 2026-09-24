@@ -298,6 +298,11 @@ SETTING_CATALOG_KEYS = CONSUMER_KEYS | LEGACY_READONLY_KEYS | {
     "docs.page_cap",
     "docs.since",
     "docs.hour",
+    "helper.context_mode",
+    "helper.skills",
+    "helper.mcp_servers",
+    "helper.bb_plugins",
+    "helper.native_plugins",
 }
 
 EDITABLE_RATIONALE = {
@@ -1214,7 +1219,7 @@ def main() -> None:
             rationale = "Native Lane Pilot memory stage consumes this isolated project setting; durable records stay in the plugin database and are never written to user .agents files"
             evidence = "server.ts:runMemoryMaintenance,spawnWriterAttempt"
             if storage_key == "memory.provider":
-                rationale = "Native Lane Pilot stage uses the BB ProviderModelPicker to configure its memory provider/model/reasoning/tier"
+                rationale = "Native Lane Pilot stage uses the BB ProviderModelPicker; dispatch records effective provider/model/effort/tier and selection source. Writer effort automatic mode may differ from the saved level; manual mode must dispatch the saved supported effort (src/jev-reasoning.ts:automaticEffortRoutingEnabled, server.ts:spawnWriterAttempt)"
                 evidence = "server.ts:save_memory_selection,runMemoryMaintenance"
             elif storage_key in {"memory.enabled","memory.maintain","memory.inject"}:
                 options, default_value = ["true", "false"], {"memory.enabled":"false","memory.maintain":"true","memory.inject":"true"}[storage_key]

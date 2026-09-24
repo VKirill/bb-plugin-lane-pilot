@@ -93,6 +93,9 @@ async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:s
     sdk:{ providers:{
       list:async () => providers,
       models:async (input) => ({ models:(input?.providerId === "codex" ? [codexModel] : input?.providerId === "claude-code" ? [claudeModel] : input?.providerId === "acp-cursor" ? [cursorModel, cursorGrokModel] : [qwenModel]) as never }),
+    }, projects:{
+      get:async ({ projectId: id }) => ({ id, name:id, sources:[{ hostId, path:"/tmp/writer-settings", isDefault:true }] }),
+      list:async () => [],
     } },
   });
   const db = openDatabase(bb);
@@ -261,7 +264,8 @@ describe("native writer settings against the registered SQLite backend", () => {
     const before = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };
     const key = "jev.LANE_JEV_EFFORT";
     const expectedValue = String(before.values[key]) === "1" ? "0" : "1";
-    fireEvent.click(slot.getByTestId("jev-settings").querySelector("[role='switch']") as HTMLButtonElement);
+    fireEvent.click(slot.getByTestId("writer-effort-mode").querySelector("button") as HTMLButtonElement);
+    fireEvent.click(slot.getByText(expectedValue === "1" ? en.writerEffortAutomatic : en.writerEffortManual));
     await waitFor(() => expect(singleSaveCalls).toContainEqual(expect.objectContaining({ key, value:expectedValue, expectedVersion:before.versions[key] ?? 0 })));
     await waitFor(async () => {
       const current = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };
@@ -269,8 +273,7 @@ describe("native writer settings against the registered SQLite backend", () => {
       expect(current.versions[key]).toBe((before.versions[key] ?? 0) + 1);
       expect(current.values["writer.provider"]).toBe("claude-code");
     });
-    await waitFor(() => expect(slot.getByTestId("jev-settings").querySelector("[role='switch']")?.getAttribute("data-state"))
-      .toBe(expectedValue === "1" ? "checked" : "unchecked"));
+    expect(slot.getByTestId("writer-effort-mode").textContent).toContain(expectedValue === "1" ? en.writerEffortAutomatic : en.writerEffortManual);
     expect(slot.queryByTestId("setting-validation-error")).toBeNull();
     await finish(harness, slot);
   });
@@ -320,7 +323,8 @@ describe("native writer settings against the registered SQLite backend", () => {
     expect(slot.getByTestId(`project-item-${projectId}`)).toBeTruthy();
     expect(slot.getByTestId("writer-picker")).toBeTruthy();
     expect(slot.getByTestId("memory-picker")).toBeTruthy();
-    expect(slot.getByTestId("jev-settings").querySelectorAll("[role='switch']")).toHaveLength(2);
+    expect(slot.getByTestId("jev-settings").querySelectorAll("[role='switch']")).toHaveLength(1);
+    expect(slot.getByTestId("writer-effort-mode")).toBeTruthy();
     expect(slot.getByTestId("night-review-settings").textContent).toContain(en.nightReviewEnabled);
     expect(slot.getByLabelText(en.nightReviewEnabled)).toBeTruthy();
     expect(slot.getByTestId("settings-panel").textContent).not.toContain("--writer-provider");

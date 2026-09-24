@@ -5,7 +5,7 @@ export type OutputCheck =
   | { ok:true }
   | { ok:false; state:"empty_output"|"validation_failed"; reason:string };
 
-export type VerifyResult = { command:string; exitCode:number; stderr:string };
+export type VerifyResult = { command:string; exitCode:number; stdout:string; stderr:string };
 
 export function parseGitChangedPaths(stdout: string): string[] {
   const paths = new Set<string>();

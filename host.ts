@@ -20,6 +20,7 @@ import {
   runCommand,
   runSandboxedCommand,
   runBrowserQa,
+  probeBrowserQaTarget,
   snapshot,
   snapshotDryRun,
   writePmSettings,
@@ -29,6 +30,6 @@ export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
-    runCli, runCommand, runSandboxedCommand, runBrowserQa, writePmSettings,
+    runCli, runCommand, runSandboxedCommand, runBrowserQa, probeBrowserQaTarget, writePmSettings,
   },
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_Diff as Diff,
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -52,6 +52,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/ta
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "../state-machine";
 import type { StageReceipt } from "../stages/contract";
+import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa-host";
+import { presentEnumLabel } from "../enum-labels";
+import { OwnedSettings } from "./owned-settings";
+import { userVisibleProjects } from "../project-scope";
+import { inheritProjectValues, type LanePilotDefaults } from "../lp-defaults";
 
 type ScreenPayload = {
   projectId: string;
@@ -59,6 +64,7 @@ type ScreenPayload = {
   workspacePath: string | null;
   values: Record<string, unknown>;
   versions: Record<string, number>;
+  explicitKeys: string[];
   importSource: { completed: boolean; at: number | null; routingPath: string | null; nightPath: string | null };
   runs: Array<{
     id: string;
@@ -85,6 +91,32 @@ type ScreenPayload = {
   writerResultJson: string | null;
   writerResultPatch: string | null;
   cliReceiptJson: string | null;
+  inheritedKeys?: string[];
+  writerBinding?: {
+    status: "resolved" | "ambiguous" | "setup_required" | "offline" | "catalog_unavailable";
+    hostId: string | null;
+    path: string | null;
+    source: "session" | "unique_source" | "explicit_override" | null;
+    bindings: Array<{ id?: string; hostId: string; path: string; isDefault?: boolean }>;
+  };
+  qaHosts?: Array<{ id: string; name: string; status: string; connected: boolean }>;
+  lastWriterTrace?: {
+    providerId: string;
+    model: string;
+    requestedReasoningLevel: string;
+    effectiveReasoningLevel: string;
+    serviceTier: "default" | "fast" | null;
+    fallbackReason: string | null;
+    jevStatus: "ok" | "disabled" | "timeout" | "error";
+    effortMode?: "automatic" | "manual";
+    selectionSource?: {
+      providerId: string;
+      model: string;
+      reasoningLevel: string;
+      serviceTier: "default" | "fast" | null;
+      reasoningLevelSource: "explicit" | "client-preference";
+    };
+  } | null;
 };
 
 type StackDetectResult = {
@@ -135,6 +167,18 @@ const ONBOARDING_PROVIDER = "onboarding.provider";
 const ONBOARDING_MODEL = "onboarding.model";
 const ONBOARDING_EFFORT = "onboarding.reasoning_effort";
 const ONBOARDING_SERVICE_TIER = "onboarding.service_tier";
+const PM_READ_PROVIDER = "pm_read.provider";
+const PM_READ_MODEL = "pm_read.model";
+const PM_READ_EFFORT = "pm_read.reasoning_effort";
+const PM_READ_SERVICE_TIER = "pm_read.service_tier";
+const PLAN_CRITIQUE_PROVIDER = "plan_critique.provider";
+const PLAN_CRITIQUE_MODEL = "plan_critique.model";
+const PLAN_CRITIQUE_EFFORT = "plan_critique.reasoning_effort";
+const PLAN_CRITIQUE_SERVICE_TIER = "plan_critique.service_tier";
+const CODE_CRITIQUE_PROVIDER = "code_critique.provider";
+const CODE_CRITIQUE_MODEL = "code_critique.model";
+const CODE_CRITIQUE_EFFORT = "code_critique.reasoning_effort";
+const CODE_CRITIQUE_SERVICE_TIER = "code_critique.service_tier";
 
 function fieldKey(id: string): I18nKey {
   return `field_${id}` as I18nKey;
@@ -149,6 +193,7 @@ function sectionKey(section: string): I18nKey {
 function stageTitle(stageId: string): string {
   const labels: Record<string, I18nKey> = {
     "plan-critique":"stagePlanCritique",
+    "code-critique":"stageCodeCritique",
     "writer-agent":"stageWriterAgent",
     verification:"stageVerification",
     "acceptance-receipt":"stageAcceptanceReceipt",
@@ -168,14 +213,60 @@ const PICKER_KEYS = new Set([
   NIGHT_PROVIDER, NIGHT_MODEL, NIGHT_EFFORT, NIGHT_SERVICE_TIER,
   DOCS_PROVIDER, DOCS_MODEL, DOCS_EFFORT, DOCS_SERVICE_TIER,
   ONBOARDING_PROVIDER, ONBOARDING_MODEL, ONBOARDING_EFFORT, ONBOARDING_SERVICE_TIER,
+  PM_READ_PROVIDER, PM_READ_MODEL, PM_READ_EFFORT, PM_READ_SERVICE_TIER,
+  PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_SERVICE_TIER,
+  CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_SERVICE_TIER,
 ]);
-const DEDICATED_KEYS = new Set(["night_review.enabled", "night_review.auto_merge"]);
+const DEDICATED_KEYS = new Set([
+  "night_review.enabled", "night_review.auto_merge",
+  "pm_read.enabled", "pm_read.min_lines",
+  "docs.enabled", "docs.maintain", "docs.page_cap", "docs.since", "docs.hour",
+  "helper.placement", "helper.context_mode", "helper.skills", "helper.mcp_servers", "helper.bb_plugins", "helper.native_plugins",
+  "plan_critique.enabled", "plan_critique.mode", "plan_critique.agent",
+  "plan_critique.min_score", "plan_critique.min_write_tasks", "plan_critique.on_high_risk",
+  "code_critique.enabled", "code_critique.mode", "code_critique.agent",
+  "code_critique.auto_fix", "code_critique.max_rounds",
+]);
 const BASIC_SETTING_KEYS = new Set([
   "night_review.max_fix_tasks", "writer.agent",
   "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
+  "browser_qa.approve", "browser_qa.reasoning_effort",
   "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.search_engine",
+  "memory.personal_bot", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget",
   "ops.max_tasks", "onboarding.depth",
+  "adoc.040", "adoc.041", "adoc.042",
+  "specialist.enabled", "specialist.when",
 ]);
+const HELP_BY_KEY: Record<string, I18nKey> = {
+  "pm_read.enabled": "largeFileReadHelp",
+  "pm_read.min_lines": "largeFileThresholdHelp",
+  "docs.maintain": "docsMaintainHelp",
+  "docs.page_cap": "docsPageCap",
+  "docs.since": "docsSince",
+  "docs.hour": "docsHour",
+  "adoc.040": "workspaceModeHelp",
+  "adoc.041": "workspaceModeHelp",
+  "adoc.042": "workspaceModeHelp",
+  "browser_qa.enabled": "browserQaApproveHelp",
+  "browser_qa.approve": "browserQaApproveHelp",
+  "browser_qa.provider": "browserQaProviderLimit",
+  "browser_qa.model": "browserQaProviderLimit",
+  "browser_qa.backend": "browserQaProviderLimit",
+  "browser_qa.reasoning_effort": "browserQaProviderLimit",
+  "writer.agent": "writerAgentHelp",
+  "helper.placement": "helperPlacementHelp",
+  "plan_critique.enabled": "planCritiqueHelp",
+  "plan_critique.mode": "planCritiqueHelp",
+  "code_critique.enabled": "codeCritiqueHelp",
+  "code_critique.mode": "codeCritiqueHelp",
+  "code_critique.auto_fix": "codeCritiqueHelp",
+  "code_critique.max_rounds": "codeCritiqueHelp",
+  "helper.context_mode": "helperContextHelp",
+  "helper.skills": "emptyAllowlist",
+  "helper.mcp_servers": "emptyAllowlist",
+  "helper.bb_plugins": "emptyAllowlist",
+  "helper.native_plugins": "emptyAllowlist",
+};
 
 function uniqueByStorage(rows: CatalogRow[]): CatalogRow[] {
   const rank: Record<CatalogRow["uiStatus"], number> = { editable: 3, readonly: 2, gap: 1, excluded: 0 };
@@ -187,6 +278,10 @@ function uniqueByStorage(rows: CatalogRow[]): CatalogRow[] {
   return [...byKey.values()];
 }
 
+function isCompatibilityAlias(row: CatalogRow): boolean {
+  return row.storageKey.startsWith("adoc.") && row.channel === "NONE";
+}
+
 function diagnosticRows(): CatalogRow[] {
   const settingsKeys = new Set(extraSettingRows().map((row) => row.storageKey));
   return uniqueByStorage(VISIBLE_CATALOG.filter((row) => {
@@ -194,8 +289,13 @@ function diagnosticRows(): CatalogRow[] {
     if (PICKER_KEYS.has(row.storageKey) && row.storageKey !== "writer.fast_mode") return false;
     if (DEDICATED_KEYS.has(row.storageKey)) return false;
     if (settingsKeys.has(row.storageKey)) return false;
+    if (isCompatibilityAlias(row)) return false;
     return true;
   }));
+}
+
+function compatibilityAliasRows(): CatalogRow[] {
+  return uniqueByStorage(VISIBLE_CATALOG.filter((row) => isCompatibilityAlias(row)));
 }
 
 function extraSettingRows(): CatalogRow[] {
@@ -250,14 +350,16 @@ function FieldControl({
     const options = [...new Set(optionOverride ?? row.options)];
     if (options.length === 0) return <Input disabled value={String(value ?? "")} aria-label={label} />;
     const current = String(value ?? options[0] ?? "");
+    const listed = options.includes(current) ? options : [...options, current];
+    const selectedLabel = presentEnumLabel(row.storageKey, current);
     return (
       <Select value={current} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger aria-label={label}>
+        <SelectTrigger aria-label={`${label}: ${selectedLabel}`}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option} value={option}>{option}</SelectItem>
+          {listed.map((option) => (
+            <SelectItem key={option} value={option}>{presentEnumLabel(row.storageKey, option)}</SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -301,6 +403,46 @@ function FieldControl({
   );
 }
 
+function settingHelpText(row: CatalogRow): string {
+  const mapped = HELP_BY_KEY[row.storageKey];
+  const parts = [
+    mapped ? t(mapped) : t("fieldHelpGeneric"),
+    `${t("fieldDefault")}: ${row.control === "select" && row.defaultValue ? presentEnumLabel(row.storageKey, String(row.defaultValue)) : (row.defaultValue || "—")}`,
+    t("fieldInherited"),
+  ];
+  if (row.min !== null && row.max !== null) {
+    parts.push(`${t("fieldLimits")}: ${row.min}–${row.max} ${t(numericUnit(row))}`);
+  }
+  return parts.filter(Boolean).join(" ");
+}
+
+function SettingHelp({ row }: { row: CatalogRow }) {
+  const [open, setOpen] = useState(false);
+  const title = t(fieldKey(row.id));
+  return (
+    <div className="space-y-2">
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="h-11 min-h-11 min-w-11 px-2"
+        aria-label={t("settingHelp")}
+        aria-expanded={open}
+        data-testid={`help-${row.storageKey}`}
+        onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen((current) => !current); }}
+      >?</Button>
+      {open ? (
+        <div role="dialog" aria-label={title} className="rounded-md border border-border bg-background p-3 text-xs" data-testid={`help-dialog-${row.storageKey}`}>
+          <p>{settingHelpText(row)}</p>
+          <Button type="button" size="sm" className="mt-2 min-h-11" onClick={() => setOpen(false)}>{t("closeHelp")}</Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const InheritanceContext = createContext<{ locale: Locale; data: ScreenPayload | null; reset: (keys: string[]) => void } | null>(null);
+
 function SettingField({
   row,
   value,
@@ -314,6 +456,7 @@ function SettingField({
   onChange: (next: unknown) => void;
   onDraft?: (next: unknown) => void;
 }) {
+  const inheritance = useContext(InheritanceContext);
   const inherited = value == null || value === "";
   const effective = inherited ? row.defaultValue : value;
   return (
@@ -324,11 +467,15 @@ function SettingField({
       className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center"
     >
       <div className="space-y-1">
-        <Label className="text-sm">{t(fieldKey(row.id))}</Label>
-        <p className="text-xs text-muted-foreground">{t("fieldDefault")}: {row.defaultValue || "—"}</p>
+        <div className="flex items-start justify-between gap-2">
+          <Label className="text-sm">{t(fieldKey(row.id))}</Label>
+          <SettingHelp row={row} />
+        </div>
+        <p className="text-xs text-muted-foreground">{t("fieldDefault")}: {row.control === "select" && row.defaultValue ? presentEnumLabel(row.storageKey, String(row.defaultValue)) : (row.defaultValue || "—")}</p>
         <p className="text-xs text-muted-foreground">
-          {inherited ? t("fieldInherited") : `${t("fieldEffective")}: ${String(effective)}`}
+          {inherited ? t("fieldInherited") : `${t("fieldEffective")}: ${row.control === "select" ? presentEnumLabel(row.storageKey, String(effective)) : String(effective)}`}
         </p>
+        {inheritance ? <div className="text-xs text-muted-foreground"><p>{inheritance.locale === "ru" ? "Источник: " : "Source: "}{inheritance.data?.explicitKeys?.includes(row.storageKey) ? (inheritance.locale === "ru" ? "переопределение проекта" : "project override") : inheritance.data?.inheritedKeys?.includes(row.storageKey) ? (inheritance.locale === "ru" ? "общие настройки" : "owner defaults") : (inheritance.locale === "ru" ? "значение по умолчанию" : "factory default")}</p>{inheritance.data?.explicitKeys?.includes(row.storageKey) ? <Button variant="ghost" className="min-h-11" disabled={disabled} onClick={() => inheritance.reset([row.storageKey])}>{inheritance.locale === "ru" ? "Наследовать" : "Reset to inherited"}</Button> : null}</div> : null}
         {row.min !== null && row.max !== null ? (
           <p className="text-xs text-muted-foreground">{t("fieldLimits")}: {row.min}–{row.max} {t(numericUnit(row))}</p>
         ) : null}
@@ -376,12 +523,13 @@ function canRetryAttempt(run: MonitorRun, attempt: MonitorAttempt): boolean {
     && run.attempts.filter((item) => item.task_id === attempt.task_id).length < MAIN_ATTEMPT_LIMIT;
 }
 
-export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
+export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" }) {
+  const [activeScope, setActiveScope] = useState(scope);
   const rpc = useRpc<typeof rpcContract>();
-  const { projectId: routeProjectId } = useBbContext();
+  const { projectId: routeProjectId, threadId: routeThreadId } = useBbContext();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const projectId = selectedProjectId ?? routeProjectId ?? (subPath || null);
-  const [projects, setProjects] = useState<Array<{ id:string; name:string }>>([]);
+  const [projects, setProjects] = useState<Array<{ id:string; name:string; kind?:string }>>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectListError, setProjectListError] = useState(false);
   const [finishing, setFinishing] = useState(false);
@@ -389,11 +537,14 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const [nightPickerOpen, setNightPickerOpen] = useState(false);
   const [docsPickerOpen, setDocsPickerOpen] = useState(false);
   const [onboardingPickerOpen, setOnboardingPickerOpen] = useState(false);
+  const [pmReadPickerOpen, setPmReadPickerOpen] = useState(false);
+  const [planCritiquePickerOpen, setPlanCritiquePickerOpen] = useState(false);
+  const [codeCritiquePickerOpen, setCodeCritiquePickerOpen] = useState(false);
   const providers = useProviders();
   const [tab, setTab] = useState("settings");
   const [data, setData] = useState<ScreenPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<{ kind: "cas" } | { kind: "validation"; code: "invalid_choice" | "incompatible_setting"; params: string[] } | null>(null);
+  const [saveError, setSaveError] = useState<{ kind: "cas" } | { kind: "validation"; code: "invalid_choice" | "incompatible_setting" | "setup_required" | "writer_binding_ambiguous" | "writer_host_offline" | "catalog_unavailable"; params: string[] } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingOp, setPendingOp] = useState<"install" | "connect" | "rollback" | null>(null);
   const [snapshotPath, setSnapshotPath] = useState("");
@@ -410,16 +561,21 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   const saveTailRef = useRef<Record<string, Promise<unknown>>>({});
   const writerDraftRef = useRef<ExperimentalProviderModelPickerValue | null>(null);
   const [writerDraft, setWriterDraft] = useState<ExperimentalProviderModelPickerValue | null>(null);
+  const [selectedBinding, setSelectedBinding] = useState<{ hostId: string; path: string } | null>(null);
   const writerSaveTail = useRef(Promise.resolve());
+  const projectCache = useRef(new Map<string, { data: ScreenPayload; drafts: Record<string, unknown>; writer: ExperimentalProviderModelPickerValue | null }>());
+  const loadGeneration = useRef(0);
+
 
   useEffect(() => {
     let current = true;
     void rpc.call("list_projects", {}).then((result) => {
       if (current) {
-        setProjects(result.projects);
+        setProjects(userVisibleProjects(result.projects));
         setProjectsLoaded(true);
         if (!routeProjectId && !subPath) {
-          const preferred = result.lastProjectId ?? result.projects[0]?.id ?? null;
+          const visible = userVisibleProjects(result.projects);
+          const preferred = visible.find((project) => project.id === result.lastProjectId)?.id ?? visible[0]?.id ?? null;
           if (preferred) setSelectedProjectId((current) => current ?? preferred);
         }
       }
@@ -468,6 +624,9 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
 
   const load = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++loadGeneration.current;
+    const cached = projectCache.current.get(projectId);
+    if (cached) { setData(cached.data); dataRef.current = cached.data; setDrafts(cached.drafts); draftsRef.current = cached.drafts; setWriterDraft(cached.writer); writerDraftRef.current = cached.writer; return; }
     setError(null);
     setData(null);
     draftsRef.current = {};
@@ -476,6 +635,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     setWriterDraft(null);
     try {
       const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
+      if (generation !== loadGeneration.current) return;
       setData(next);
       if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
       setResultSource(next.writerResultJson);
@@ -524,6 +684,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
   };
 
   const chooseProject = (next: string) => {
+    if (dataRef.current) projectCache.current.set(dataRef.current.projectId, { data: dataRef.current, drafts: { ...draftsRef.current }, writer: writerDraftRef.current });
+    setActiveScope("projects");
     setSelectedProjectId(next);
     setProjectListError(false);
     void rpc.call("remember_project", { projectId: next }).catch(() => setProjectListError(true));
@@ -568,6 +730,45 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
         ...current,
         values: { ...current.values, [row.storageKey]: result.value },
         versions: { ...current.versions, [row.storageKey]: result.version },
+        explicitKeys: [...new Set([...current.explicitKeys, row.storageKey])],
+      } : current;
+      dataRef.current = next;
+      return next;
+    });
+    return true;
+  };
+
+  const saveKey = async (key: string, value: unknown) => {
+    const snapshot = dataRef.current;
+    if (!projectId || !snapshot) return false;
+    const result = await rpc.call("save_setting", {
+      projectId, key, value, expectedVersion: snapshot.versions[key] ?? 0,
+    });
+    if (result.conflict) {
+      setSaveError({ kind: "cas" });
+      setData((current) => {
+        const next = current ? {
+          ...current,
+          values: { ...current.values, [key]: result.value },
+          versions: { ...current.versions, [key]: result.version },
+        } : current;
+        dataRef.current = next;
+        return next;
+      });
+      return false;
+    }
+    if (!result.ok) {
+      if (result.validation) setSaveError({ kind: "validation", code: result.validation.code, params: result.validation.params });
+      else setSaveError({ kind: "cas" });
+      return false;
+    }
+    setSaveError(null);
+    setData((current) => {
+      const next = current ? {
+        ...current,
+        values: { ...current.values, [key]: result.value },
+        versions: { ...current.versions, [key]: result.version },
+        explicitKeys: [...new Set([...current.explicitKeys, key])],
       } : current;
       dataRef.current = next;
       return next;
@@ -599,6 +800,23 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     return queued;
   };
 
+  const resetInherited = async (keys: string[]) => {
+    const snapshot = dataRef.current;
+    if (!projectId || !snapshot || snapshot.projectId !== projectId) return;
+    try {
+      const result = await rpc.call("reset_project_settings", { projectId, keys, expectedVersions: Object.fromEntries(keys.map((key) => [key, snapshot.versions[key] ?? 0])) });
+      if (dataRef.current?.projectId !== projectId) return;
+      if (!result.ok) { setSaveError(result.validation ? { kind: "validation", code: result.validation.code, params: result.validation.params } : { kind: "cas" }); return; }
+      const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
+      if (dataRef.current?.projectId !== projectId) return;
+      setData(next); dataRef.current = next;
+      const remaining = { ...draftsRef.current }; for (const key of keys) delete remaining[key];
+      setDrafts(remaining); draftsRef.current = remaining;
+      if (keys.includes(WRITER_PROVIDER)) { setWriterDraft(null); writerDraftRef.current = null; }
+      setSaveError(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  };
+
   const displayedValue = (key: string) => (
     Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : data?.values[key]
   );
@@ -608,6 +826,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     if (!projectId || !snapshot) return false;
     const result = await rpc.call("save_writer_selection", {
       projectId,
+      threadId: routeThreadId ?? null,
+      ...(selectedBinding ? { selectedBinding } : {}),
       providerId: selection.providerId,
       model: selection.model,
       reasoningLevel: selection.reasoningLevel,
@@ -619,13 +839,16 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
         "writer.service_tier": snapshot.versions[WRITER_SERVICE_TIER] ?? 0,
       },
     });
-    const applyScreen = (values: Record<string, unknown>, versions: Record<string, number>) => {
+    const applyScreen = (values: Record<string, unknown>, versions: Record<string, number>, markExplicit = false) => {
       const current = dataRef.current;
       if (!current) return;
       const next = {
         ...current,
         values: { ...current.values, ...values },
         versions: { ...current.versions, ...versions },
+        explicitKeys: markExplicit
+          ? [...new Set([...current.explicitKeys, WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER])]
+          : current.explicitKeys,
       };
       dataRef.current = next;
       setData(next);
@@ -641,7 +864,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
       return false;
     }
     setSaveError(null);
-    applyScreen(result.values, result.versions);
+    applyScreen(result.values, result.versions, true);
     return true;
   };
 
@@ -711,11 +934,54 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     return true;
   };
 
+  const savePmReadSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
+    if(!projectId||!data)return false;
+    const result=await rpc.call("save_pm_read_selection",{
+      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
+      expectedVersions:{[PM_READ_PROVIDER]:data.versions[PM_READ_PROVIDER]??0,[PM_READ_MODEL]:data.versions[PM_READ_MODEL]??0,[PM_READ_EFFORT]:data.versions[PM_READ_EFFORT]??0,[PM_READ_SERVICE_TIER]:data.versions[PM_READ_SERVICE_TIER]??0},
+    });
+    if(result.conflict){
+      setSaveError({kind:"cas"});
+      setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+      return false;
+    }
+    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
+
   const saveOnboardingSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
     const result=await rpc.call("save_onboarding_selection",{
       projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
       expectedVersions:{[ONBOARDING_PROVIDER]:data.versions[ONBOARDING_PROVIDER]??0,[ONBOARDING_MODEL]:data.versions[ONBOARDING_MODEL]??0,[ONBOARDING_EFFORT]:data.versions[ONBOARDING_EFFORT]??0,[ONBOARDING_SERVICE_TIER]:data.versions[ONBOARDING_SERVICE_TIER]??0},
+    });
+    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
+    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
+
+  const savePlanCritiqueSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
+    if(!projectId||!data)return false;
+    const result=await rpc.call("save_plan_critique_selection",{
+      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
+      expectedVersions:{[PLAN_CRITIQUE_PROVIDER]:data.versions[PLAN_CRITIQUE_PROVIDER]??0,[PLAN_CRITIQUE_MODEL]:data.versions[PLAN_CRITIQUE_MODEL]??0,[PLAN_CRITIQUE_EFFORT]:data.versions[PLAN_CRITIQUE_EFFORT]??0,[PLAN_CRITIQUE_SERVICE_TIER]:data.versions[PLAN_CRITIQUE_SERVICE_TIER]??0},
+    });
+    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
+    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
+
+  const saveCodeCritiqueSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
+    if(!projectId||!data)return false;
+    const result=await rpc.call("save_code_critique_selection",{
+      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
+      expectedVersions:{[CODE_CRITIQUE_PROVIDER]:data.versions[CODE_CRITIQUE_PROVIDER]??0,[CODE_CRITIQUE_MODEL]:data.versions[CODE_CRITIQUE_MODEL]??0,[CODE_CRITIQUE_EFFORT]:data.versions[CODE_CRITIQUE_EFFORT]??0,[CODE_CRITIQUE_SERVICE_TIER]:data.versions[CODE_CRITIQUE_SERVICE_TIER]??0},
     });
     if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
     if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
@@ -763,6 +1029,29 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     reasoningLevel:(String(data?.values[ONBOARDING_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
     ...(providers.providers?.find((provider)=>provider.id===onboardingProviderId)?.serviceTiers?.length?{serviceTier:data?.values[ONBOARDING_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
   };
+  const pmReadProviderId=String(data?.values[PM_READ_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
+  const pmReadPickerValue:ExperimentalProviderModelPickerValue={
+    providerId:pmReadProviderId,
+    model:String(data?.values[PM_READ_MODEL]??data?.values[WRITER_MODEL]??""),
+    reasoningLevel:(String(data?.values[PM_READ_EFFORT]??"low")||"low") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider)=>provider.id===pmReadProviderId)?.serviceTiers?.length?{serviceTier:data?.values[PM_READ_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
+  };
+  const planCritiqueProviderId=String(data?.values[PLAN_CRITIQUE_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
+  const planCritiquePickerValue:ExperimentalProviderModelPickerValue={
+    providerId:planCritiqueProviderId,
+    model:String(data?.values[PLAN_CRITIQUE_MODEL]??data?.values[WRITER_MODEL]??""),
+    reasoningLevel:(String(data?.values[PLAN_CRITIQUE_EFFORT]??data?.values[WRITER_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider)=>provider.id===planCritiqueProviderId)?.serviceTiers?.length?{serviceTier:data?.values[PLAN_CRITIQUE_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
+  };
+  const codeCritiqueProviderId=String(data?.values[CODE_CRITIQUE_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
+  const codeCritiquePickerValue:ExperimentalProviderModelPickerValue={
+    providerId:codeCritiqueProviderId,
+    model:String(data?.values[CODE_CRITIQUE_MODEL]??data?.values[WRITER_MODEL]??""),
+    reasoningLevel:(String(data?.values[CODE_CRITIQUE_EFFORT]??data?.values[WRITER_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider)=>provider.id===codeCritiqueProviderId)?.serviceTiers?.length?{serviceTier:data?.values[CODE_CRITIQUE_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
+  };
+
+  const catalogRow = (key: string) => VISIBLE_CATALOG.find((item) => item.storageKey === key);
 
   const hostId = data?.hostId;
   const routing = hostId ? { kind: "host" as const, hostId } : undefined;
@@ -799,11 +1088,27 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
     return VISIBLE_CATALOG.filter((row) => JEV_KEYS.has(row.storageKey) && !seen.has(row.storageKey) && Boolean(seen.add(row.storageKey)));
   }, []);
   const selectedProjectName = projects.find((item) => item.id === projectId)?.name ?? projectId;
+  const applyGlobalDefaults = (defaults: LanePilotDefaults) => {
+    const reconcile = (payload: ScreenPayload): ScreenPayload => {
+      const explicit = { ...payload.values };
+      for (const key of payload.inheritedKeys ?? []) delete explicit[key];
+      const inherited = inheritProjectValues(explicit, defaults);
+      const next = { ...payload, values: inherited.values, inheritedKeys: inherited.inherited };
+      projectCache.current.set(payload.projectId, { ...projectCache.current.get(payload.projectId), data: next, drafts: projectCache.current.get(payload.projectId)?.drafts ?? {}, writer: projectCache.current.get(payload.projectId)?.writer ?? null });
+      return next;
+    };
+    setData((current) => { const next = current ? reconcile(current) : current; dataRef.current = next; return next; });
+    for (const [id, cached] of projectCache.current) projectCache.current.set(id, { ...cached, data: reconcile(cached.data) });
+  };
 
   return (
-    <div className="h-full overflow-auto p-3 md:p-5" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
+    <InheritanceContext.Provider value={{ locale, data, reset: (keys) => void resetInherited(keys) }}><div className="h-full overflow-auto p-3 md:p-5" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 md:flex-row md:items-start md:gap-6">
         <aside className="w-full shrink-0 space-y-3 md:sticky md:top-0 md:w-56" data-testid="project-rail">
+          <nav className="grid gap-1" aria-label={locale === "ru" ? "Настройки Lane Pilot" : "Lane Pilot settings"}>
+            <Button className="min-h-11 justify-start" variant={activeScope === "globals" ? "secondary" : "ghost"} onClick={() => setActiveScope("globals")}>{locale === "ru" ? "Общие настройки" : "General settings"}</Button>
+            <Button className="min-h-11 justify-start" variant={activeScope === "agents" ? "secondary" : "ghost"} onClick={() => setActiveScope("agents")}>{locale === "ru" ? "Агенты" : "Agents"}</Button>
+          </nav>
           <div>
             <h1 className="text-sm font-semibold">{t("projects")}</h1>
             <p className="mt-1 text-xs text-muted-foreground">{t("projectRailHint")}</p>
@@ -819,14 +1124,14 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
               variant={project.id === projectId ? "secondary" : "ghost"}
               aria-current={project.id === projectId ? "page" : undefined}
               data-testid={`project-item-${project.id}`}
-              className="justify-start truncate"
+              className="min-h-11 justify-start truncate"
               onClick={() => chooseProject(project.id)}
             >{project.name}</Button>)}
           </nav> : null}
           <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
         </aside>
 
-        <main className="min-w-0 flex-1 space-y-5" data-testid="project-settings">
+        <div className="min-w-0 flex-1"><OwnedSettings scope={activeScope} locale={locale} onDefaultsSaved={applyGlobalDefaults} /><main hidden={activeScope !== "projects"} className="space-y-5" data-testid="project-settings">
         {!projectId ? <Card data-testid="project-settings-empty"><CardContent className="p-5 text-sm text-muted-foreground">{t("noProjectSelected")}</CardContent></Card> : <>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div><p className="text-xs text-muted-foreground">{t("selectedProject")}</p><h1 className="break-words text-xl font-semibold">{selectedProjectName}</h1></div>
@@ -841,15 +1146,56 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
           <Alert variant="destructive" data-testid={saveError.kind === "cas" ? "cas-conflict" : "setting-validation-error"}>
             <AlertTitle>{saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}</AlertTitle>
             <AlertDescription>
-              <Button size="sm" variant="outline" onClick={() => void load()}>{t("reload")}</Button>
+              {saveError.kind === "validation" && (saveError.code === "setup_required" || saveError.code === "writer_binding_ambiguous")
+                ? null
+                : <Button size="sm" variant="outline" onClick={() => void load()}>{t("reload")}</Button>}
             </AlertDescription>
           </Alert>
+        ) : null}
+        {data?.writerBinding ? (
+          <Card data-testid="writer-binding">
+            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("projectMachineFolder")}</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {data.writerBinding.status === "resolved" ? (
+                <p>
+                  {data.writerBinding.hostId} · {data.writerBinding.path}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {data.writerBinding.source === "session" ? t("inheritedFromSession")
+                      : data.writerBinding.source === "explicit_override" ? t("inheritedFromProject")
+                        : t("inheritedFromProject")}
+                  </span>
+                </p>
+              ) : null}
+              {data.writerBinding.status === "ambiguous" ? (
+                <Select onValueChange={(next) => {
+                  const [hostId, path] = next.split("\u0000");
+                  if (hostId && path) setSelectedBinding({ hostId, path });
+                }}>
+                  <SelectTrigger data-testid="writer-binding-select" aria-label={t("projectMachineFolder")}>
+                    <SelectValue placeholder={t("bindingAmbiguous")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {data.writerBinding.bindings.map((row) => (
+                      <SelectItem key={`${row.hostId}:${row.path}`} value={`${row.hostId}\u0000${row.path}`}>
+                        {row.hostId} · {row.path}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+              {data.writerBinding.status === "setup_required" ? <p>{t("bindingSetupRequired")}</p> : null}
+              {data.writerBinding.status === "offline" ? <p>{t("bindingOffline")}</p> : null}
+              {data.writerBinding.status === "catalog_unavailable" ? <p>{t("writerCatalogUnavailable")}</p> : null}
+              {(data.inheritedKeys ?? []).length ? <p className="text-xs text-muted-foreground">{t("inheritedFromGlobal")}: {data.inheritedKeys?.join(", ")}</p> : null}
+            </CardContent>
+          </Card>
         ) : null}
 
         <Tabs value={tab} onValueChange={setTab}>
           {/* Keep the plugin's own EN/RU labels out of BB's DOM-based Russianizer. */}
           <TabsList data-bb-ru-skip>
             <TabsTrigger value="settings" data-testid="tab-settings">{t("tabSettings")}</TabsTrigger>
+            <TabsTrigger value="checks" data-testid="tab-checks">{t("tabChecks")}</TabsTrigger>
             <TabsTrigger value="monitor" data-testid="tab-monitor">{t("tabMonitor")}</TabsTrigger>
             <TabsTrigger value="install" data-testid="tab-install">{t("tabInstall")}</TabsTrigger>
             <TabsTrigger value="diagnostics" data-testid="tab-diagnostics">{t("tabDiagnostics")}</TabsTrigger>
@@ -872,10 +1218,37 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                 <Button size="sm" variant={settingsDepth === "advanced" ? "default" : "outline"} aria-pressed={settingsDepth === "advanced"} onClick={() => setSettingsDepth("advanced")}>{t("settingsAdvanced")}</Button>
               </div>
             </div>
-            {cardVisible("writerPicker", "writerPickerHelp") ? <Card data-testid="writer-picker">
+            {cardVisible("writerPicker", "writerPickerHelp", "writerEffortMode", "writerEffortModeHelp") ? <Card data-testid="writer-picker">
               <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">{t("writerPicker")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
+                <Button variant="outline" className="min-h-11" disabled={![WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER].some((key) => data?.explicitKeys.includes(key))} onClick={() => void resetInherited([WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER])}>{locale === "ru" ? "Наследовать модель и параметры" : "Inherit model and settings"}</Button>
+                {(() => {
+                  const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
+                  const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
+                  return effortRow ? <div className="space-y-2 rounded-md border border-border p-3" data-testid="writer-effort-mode">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label className="text-sm" htmlFor="writer-effort-mode">{t("writerEffortMode")}</Label>
+                      <Select
+                        value={automaticEffort ? "automatic" : "manual"}
+                        onValueChange={(next) => void applySetting(effortRow, next === "automatic" ? "1" : "0")}
+                      >
+                        <SelectTrigger id="writer-effort-mode" aria-label={t("writerEffortMode")}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="automatic">{t("writerEffortAutomatic")}</SelectItem>
+                          <SelectItem value="manual">{t("writerEffortManual")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <details className="text-xs text-muted-foreground">
+                      <summary className="cursor-pointer">{t("writerEffortWhy")}</summary>
+                      <p className="mt-1">{t("writerEffortModeHelp")}</p>
+                    </details>
+                    <p className="text-xs text-muted-foreground">{automaticEffort ? t("writerEffortFallbackNote") : t("writerEffortManualNote")}</p>
+                  </div> : null;
+                })()}
               {pickerValue.providerId || (providers.providers?.length ?? 0) > 0 ? (
                 <ProviderModelPicker
                   value={pickerValue.providerId ? pickerValue : {
@@ -885,7 +1258,7 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                   }}
                   routing={routing}
                   onChange={(next) => {
-                    void saveWriterSelection(next);
+                    saveWriterSelection(next);
                   }}
                 />
               ) : <p className="text-sm text-muted-foreground">{providers.status === "loading" ? t("writerCatalogLoading") : t("writerCatalogUnavailable")}</p>}
@@ -905,11 +1278,11 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
               </CardContent>
             </Card> : null}
 
-            {cardVisible("jevSettings", "jevEffort", "jevOpencode") ? <section className="space-y-3" data-testid="jev-settings">
+            {cardVisible("jevSettings", "jevOpencode") ? <section className="space-y-3" data-testid="jev-settings">
               <h2 className="text-sm font-medium">{t("jevSettings")}</h2>
               <div className="grid gap-3 sm:grid-cols-2">
-                {jevRows.map((row) => {
-                  const label = t(row.storageKey === "jev.LANE_JEV_EFFORT" ? "jevEffort" : "jevOpencode");
+                {jevRows.filter((row) => row.storageKey !== "jev.LANE_JEV_EFFORT").map((row) => {
+                  const label = t("jevOpencode");
                   return <div key={row.storageKey} className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
                     <Label className="text-sm" htmlFor={row.id}>{label}</Label>
                     <Switch id={row.id} checked={asBoolean(displayedValue(row.storageKey), true)} aria-label={label}
@@ -939,10 +1312,15 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                   :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
               </CardContent>
           </Card> : null}
-            {cardVisible("docsPicker", "docsPickerHelp") ? <Card data-testid="docs-picker">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("docsPicker")}</CardTitle></CardHeader>
+            {cardVisible("docsPicker", "docsPickerHelp", "docsMaintain", "groupDocs") ? <Card data-testid="docs-picker">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("groupDocs")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
+                {(["docs.enabled","docs.maintain","docs.page_cap","docs.since","docs.hour"] as const).map((key) => {
+                  const row = catalogRow(key);
+                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                })}
                 <p className="break-all text-xs text-muted-foreground">{docsPickerValue.providerId}/{docsPickerValue.model} · {docsPickerValue.reasoningLevel} · {docsPickerValue.serviceTier??"standard"}</p>
                 <Button size="sm" variant="outline" onClick={()=>setDocsPickerOpen((open)=>!open)}>{docsPickerOpen?t("closeDocsPicker"):t("configureDocsPicker")}</Button>
                 {docsPickerOpen?(docsPickerValue.providerId||(providers.providers?.length??0)>0
@@ -959,6 +1337,68 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                 {onboardingPickerOpen?(onboardingPickerValue.providerId||(providers.providers?.length??0)>0
                   ?<ProviderModelPicker value={onboardingPickerValue.providerId?onboardingPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveOnboardingSelection(next);}} />
                   :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
+              </CardContent>
+            </Card> : null}
+            {cardVisible("largeFileRead", "largeFileReadHelp", "largeFilePicker") ? <Card data-testid="pm-read-settings">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("largeFileRead")}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">{t("largeFileReadHelp")}</p>
+                {(["pm_read.enabled","pm_read.min_lines"] as const).map((key) => {
+                  const row = catalogRow(key);
+                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                })}
+                <p className="text-xs text-muted-foreground">{t("largeFilePickerHelp")}</p>
+                <p className="break-all text-xs text-muted-foreground">{pmReadPickerValue.providerId}/{pmReadPickerValue.model} · {pmReadPickerValue.reasoningLevel} · {pmReadPickerValue.serviceTier??"standard"}</p>
+                <Button size="sm" variant="outline" onClick={()=>setPmReadPickerOpen((open)=>!open)}>{pmReadPickerOpen?t("closePmReadPicker"):t("configurePmReadPicker")}</Button>
+                {pmReadPickerOpen?(pmReadPickerValue.providerId||(providers.providers?.length??0)>0
+                  ?<ProviderModelPicker value={pmReadPickerValue.providerId?pmReadPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void savePmReadSelection(next);}} />
+                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
+              </CardContent>
+            </Card> : null}
+            {cardVisible("helperContext", "helperContextHelp") ? <Card data-testid="helper-context-settings">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("helperContext")}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">{t("helperContextHelp")}</p>
+                <p className="text-xs text-muted-foreground">{t("helperContextNoneNote")}</p>
+                {(["helper.placement","helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins"] as const).map((key) => {
+                  const row = catalogRow(key);
+                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                })}
+              </CardContent>
+            </Card> : null}
+            {cardVisible("browserQaHost", "browserQaHostHelp", "browserQaWorkspace") ? <Card data-testid="browser-qa-host">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("browserQaHost")}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">{t("browserQaHostHelp")}</p>
+                {(() => {
+                  const options = (data?.qaHosts ?? []).filter((host) => host.connected);
+                  const current = String(displayedValue(QA_HOST_KEY) ?? "");
+                  if (!options.length) return <p className="text-sm text-muted-foreground">{t("browserQaHostNone")}</p>;
+                  return <Select value={options.some((host) => host.id === current) ? current : ""} onValueChange={(next) => void saveKey(QA_HOST_KEY, next)}>
+                    <SelectTrigger aria-label={t("browserQaHost")} data-testid="browser-qa-host-select">
+                      <SelectValue placeholder={t("browserQaHost")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {options.map((host) => (
+                        <SelectItem key={host.id} value={host.id}>{host.name} ({host.id})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>;
+                })()}
+                <div className="space-y-1">
+                  <Label htmlFor="browser-qa-workspace">{t("browserQaWorkspace")}</Label>
+                  <Input
+                    id="browser-qa-workspace"
+                    data-testid="browser-qa-workspace"
+                    value={String(displayedValue(QA_WORKSPACE_KEY) ?? "")}
+                    placeholder={data?.workspacePath ?? "/"}
+                    onChange={(event) => writeDraft(QA_WORKSPACE_KEY, event.target.value)}
+                    onBlur={(event) => void saveKey(QA_WORKSPACE_KEY, event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">{t("browserQaWorkspaceHelp")}</p>
+                </div>
               </CardContent>
             </Card> : null}
             {extrasGrouped.map(({ section, rows }) => (
@@ -978,9 +1418,44 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                 </div>
               </section>
             ))}
-            {settingsQuery.trim() && extrasGrouped.length === 0 && !cardVisible("writerPicker", "memoryPicker", "jevSettings", "nightReviewEnabled", "docsPicker", "onboardingPicker") ? (
+            {settingsQuery.trim() && extrasGrouped.length === 0 && !cardVisible("writerPicker", "memoryPicker", "jevSettings", "nightReviewEnabled", "docsPicker", "onboardingPicker", "largeFileRead", "helperContext", "browserQaHost") ? (
               <p className="text-sm text-muted-foreground">{t("noMatchingSettings")}</p>
             ) : null}
+          </TabsContent>
+
+          <TabsContent value="checks" forceMount={true} className="space-y-5" hidden={tab !== "checks"} data-testid="checks-panel">
+            <Card data-testid="plan-critique-settings">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("stagePlanCritique")}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">{t("planCritiqueHelp")}</p>
+                {(["plan_critique.enabled","plan_critique.mode","plan_critique.min_score","plan_critique.min_write_tasks","plan_critique.on_high_risk","plan_critique.agent"] as const).map((key) => {
+                  const row = catalogRow(key);
+                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                })}
+                <p className="break-all text-xs text-muted-foreground">{planCritiquePickerValue.providerId}/{planCritiquePickerValue.model} · {planCritiquePickerValue.reasoningLevel} · {planCritiquePickerValue.serviceTier??"standard"}</p>
+                <Button size="sm" variant="outline" onClick={()=>setPlanCritiquePickerOpen((open)=>!open)}>{planCritiquePickerOpen?t("closePlanCritiquePicker"):t("configurePlanCritiquePicker")}</Button>
+                {planCritiquePickerOpen?(planCritiquePickerValue.providerId||(providers.providers?.length??0)>0
+                  ?<ProviderModelPicker value={planCritiquePickerValue.providerId?planCritiquePickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void savePlanCritiqueSelection(next);}} />
+                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
+              </CardContent>
+            </Card>
+            <Card data-testid="code-critique-settings">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("stageCodeCritique")}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">{t("codeCritiqueHelp")}</p>
+                {(["code_critique.enabled","code_critique.mode","code_critique.auto_fix","code_critique.max_rounds","code_critique.agent"] as const).map((key) => {
+                  const row = catalogRow(key);
+                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                })}
+                <p className="break-all text-xs text-muted-foreground">{codeCritiquePickerValue.providerId}/{codeCritiquePickerValue.model} · {codeCritiquePickerValue.reasoningLevel} · {codeCritiquePickerValue.serviceTier??"standard"}</p>
+                <Button size="sm" variant="outline" onClick={()=>setCodeCritiquePickerOpen((open)=>!open)}>{codeCritiquePickerOpen?t("closeCodeCritiquePicker"):t("configureCodeCritiquePicker")}</Button>
+                {codeCritiquePickerOpen?(codeCritiquePickerValue.providerId||(providers.providers?.length??0)>0
+                  ?<ProviderModelPicker value={codeCritiquePickerValue.providerId?codeCritiquePickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveCodeCritiqueSelection(next);}} />
+                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="monitor" forceMount={true} className="space-y-4" data-testid="run-monitor" hidden={tab !== "monitor"}>
@@ -1112,6 +1587,16 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
               </CardContent>
             </Card>
 
+            <section className="space-y-2" data-testid="writer-trace">
+              <h2 className="text-sm font-medium">{t("writerTrace")}</h2>
+              {data?.lastWriterTrace ? <div className="space-y-1 text-xs">
+                <p data-testid="writer-trace-execution">{data.lastWriterTrace.providerId}/{data.lastWriterTrace.model} · {data.lastWriterTrace.effectiveReasoningLevel} · {data.lastWriterTrace.serviceTier ?? "default"}</p>
+                <p>{t("writerTraceMode")}: {data.lastWriterTrace.effortMode === "manual" ? t("writerEffortManual") : t("writerEffortAutomatic")}</p>
+                <p>{t("writerTraceRequested")}: {data.lastWriterTrace.requestedReasoningLevel}</p>
+                {data.lastWriterTrace.fallbackReason ? <p>{t("writerTraceReason")}: {data.lastWriterTrace.fallbackReason}</p> : null}
+                {data.lastWriterTrace.selectionSource ? <p>{t("writerTraceSource")}: {data.lastWriterTrace.selectionSource.reasoningLevelSource}</p> : null}
+              </div> : <p className="text-xs text-muted-foreground">{t("noDiagnosticData")}</p>}
+            </section>
             <section className="space-y-2" data-testid="cli-preview">
               <h2 className="text-sm font-medium">{t("cliPreview")}</h2>
               {data?.cliPreview ? <pre className="max-h-80 max-w-full overflow-auto rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground"><code>{JSON.stringify(data.cliPreview, null, 2)}</code></pre>
@@ -1153,14 +1638,28 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
                         <p>{t("casVersion")} {data?.versions[row.storageKey] ?? 0}</p>
                       </details>
                     </div>
-                    {row.storageKey === "writer.fast_mode" ? <code className="text-xs">{String(value ?? "unset")}</code> : <FieldControl
-                      row={row} value={displayedValue(row.storageKey) ?? value} disabled={disabled}
-                      onDraft={(next) => { if (!disabled) writeDraft(row.storageKey, next); }}
-                      onChange={(next) => { if (!disabled) void applySetting(row, next); }} />}
+                    {row.storageKey === "writer.fast_mode" ? <code className="text-xs">{String(value ?? "unset")}</code> : (
+                      disabled ? <code className="text-xs">{String(value ?? "unset")}</code> : <FieldControl
+                        row={row} value={displayedValue(row.storageKey) ?? value} disabled={disabled}
+                        onDraft={(next) => { if (!disabled) writeDraft(row.storageKey, next); }}
+                        onChange={(next) => { if (!disabled) void applySetting(row, next); }} />
+                    )}
                   </div>;
                 })}
               </div>
             </section>)}
+
+            <details className="rounded-md border border-border p-3" data-testid="compat-aliases">
+              <summary className="cursor-pointer text-sm font-medium">{t("compatTitle")}</summary>
+              <p className="mt-2 text-xs text-muted-foreground">{t("compatIntro")}</p>
+              <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                {compatibilityAliasRows().map((row) => (
+                  <li key={row.id} data-storage-key={row.storageKey} data-testid={`compat-${row.storageKey}`}>
+                    {row.storageKey} · {row.setting}
+                  </li>
+                ))}
+              </ul>
+            </details>
 
             <section className="space-y-3" data-testid="cli-receipt">
               <h2 className="text-sm font-medium">{t("cliReceipt")}</h2>
@@ -1278,8 +1777,8 @@ export function LanePilotPage({ subPath = "" }: { subPath?: string }) {
           </AlertDialogContent>
         </AlertDialog>
         </>}
-        </main>
+        </main></div>
       </div>
-    </div>
+    </div></InheritanceContext.Provider>
   );
 }

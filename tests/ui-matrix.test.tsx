@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
 import { en, ru, setLocaleOverride, t, validationMessage } from "../i18n";
@@ -18,6 +18,7 @@ function screenFixture() {
     projectId: "proj_ui",
     hostId: "host_ui",
     workspacePath: "/tmp/lane-pilot-ui",
+    explicitKeys: ["writer.provider", "writer.model", "writer.reasoning_effort"],
     values,
     versions: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, 1])),
     importSource: { completed: true, at: 1, routingPath: "/tmp/routing.profile.yaml", nightPath: "/tmp/night-shift.yaml" },
@@ -51,6 +52,11 @@ function screenFixture() {
     writerResultJson: "{\"status\":\"accepted\",\"output\":\"hello from writer\"}",
     writerResultPatch: "--- /dev/null\n+++ b/writer-output.txt\n@@ -0,0 +1,1 @@\n+hello from writer\n",
     cliReceiptJson: null,
+    qaHosts: [
+      { id:"host_ui", name:"Writer", status:"connected", connected:true },
+      { id:"host-qa-mini", name:"Mini", status:"connected", connected:true },
+    ],
+    lastWriterTrace: null,
   };
 }
 
@@ -120,6 +126,15 @@ describe("Lane Pilot UI", () => {
     expect(slot.queryByTestId("field-s004")).toBeNull();
     expect(slot.getByTestId("settings-panel").textContent).not.toContain("CAS version");
     expect(slot.getByTestId("settings-panel").textContent).not.toContain("--writer-provider");
+    expect(slot.getByTestId("settings-panel").querySelector("[data-storage-key='adoc.177']")).toBeNull();
+    expect(slot.getByTestId("settings-panel").querySelector("[data-storage-key='adoc.166']")).toBeNull();
+    expect(slot.getByTestId("pm-read-settings")).toBeTruthy();
+    fireEvent.click(slot.getByTestId("tab-checks"));
+    expect(slot.getByTestId("plan-critique-settings")).toBeTruthy();
+    expect(slot.getByTestId("code-critique-settings")).toBeTruthy();
+    fireEvent.click(slot.getByTestId("tab-settings"));
+    fireEvent.click(slot.getByTestId("help-pm_read.min_lines"));
+    expect(slot.getByTestId("help-dialog-pm_read.min_lines").textContent).toContain(en.largeFileThresholdHelp);
     fireEvent.click(slot.getByTestId("tab-diagnostics"));
     const fields = Array.from(slot.getByTestId("diagnostics-panel").querySelectorAll<HTMLElement>("[data-storage-key]"));
     const keys = fields.map((node) => node.getAttribute("data-storage-key"));
@@ -127,6 +142,8 @@ describe("Lane Pilot UI", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toContain("writer.fast_mode");
     expect(slot.getByTestId("field-s024").textContent).toContain(en.legacyFastModeExplanation);
+    expect(slot.getByTestId("compat-aliases")).toBeTruthy();
+    expect(slot.getByTestId("compat-adoc.177").querySelector("input,button[role='combobox'],button[role='switch']")).toBeNull();
     expect(EDITABLE_IDS.length + DISABLED_IDS.length).toBe(VISIBLE_CATALOG.length);
     slot.lifecycle.unmount();
   });
@@ -156,6 +173,7 @@ describe("Lane Pilot UI", () => {
     expect(t("confirmBody")).toBe(ru.confirmBody);
     const slot = await mountPage();
     expect(slot.getByText(ru.tabSettings)).toBeTruthy();
+    expect(slot.getByText(ru.tabChecks)).toBeTruthy();
     expect(slot.getByText(ru.tabMonitor)).toBeTruthy();
     slot.lifecycle.unmount();
   });
@@ -197,10 +215,45 @@ describe("Lane Pilot UI", () => {
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
     const settings = slot.container.querySelector("[data-testid='settings-panel']")!;
     expect(settings?.querySelector("[data-testid='writer-picker'] [data-testid='bb-provider-model-picker']")).not.toBeNull();
+    expect(settings.querySelector("[data-testid='writer-effort-mode']")).not.toBeNull();
+    expect(settings.querySelector("[data-testid='browser-qa-host']")).not.toBeNull();
     expect(settings.querySelector("[data-testid='field-s004']")).toBeNull();
     expect(settings.querySelector("[data-testid='field-s022']")).toBeNull();
     expect(settings.querySelector("[data-testid='field-s023']")).toBeNull();
     slot.lifecycle.unmount();
+  });
+
+  it("shows localized enum labels and stores the original codes", async () => {
+    const saved: Array<{ key:string; value:unknown }> = [];
+    const slot = await mountPage({
+      save_setting: (input: unknown) => {
+        const row = input as { key:string; value:unknown };
+        saved.push(row);
+        return { ok:true, conflict:false, version:2, value:row.value };
+      },
+    });
+    await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    const field = slot.getByTestId("field-s040");
+    expect(field.textContent).toContain(en.enumWorkspaceAuto);
+    expect(field.textContent).not.toContain("in_place");
+    fireEvent.click(slot.getByTestId("help-adoc.040"));
+    expect(slot.getByTestId("help-dialog-adoc.040").textContent).toContain(en.workspaceModeHelp);
+    expect(slot.getByTestId("help-dialog-adoc.040").textContent).not.toContain("in_place");
+    fireEvent.click(field.querySelector("button[role='combobox']") as HTMLButtonElement);
+    fireEvent.click(slot.getByRole("option", { name: en.enumWorkspaceInPlace }));
+    await waitFor(() => expect(saved).toContainEqual(expect.objectContaining({ key:"adoc.040", value:"in_place" })));
+    expect(slot.getByTestId("browser-qa-host-select")).toBeTruthy();
+    expect(slot.getByTestId("browser-qa-host").textContent).not.toContain(en.browserQaHostNone);
+    slot.lifecycle.unmount();
+    Object.defineProperty(navigator, "language", { configurable: true, value: "ru-RU" });
+    document.documentElement.lang = "ru";
+    const ruSlot = await mountPage();
+    await waitFor(() => expect(ruSlot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    expect(ruSlot.getByTestId("field-s040").textContent).toContain(ru.enumWorkspaceAuto);
+    expect(ruSlot.getByTestId("field-s040").textContent).not.toContain("in_place");
+    ruSlot.lifecycle.unmount();
+    document.documentElement.lang = "en";
+    setLocaleOverride(null);
   });
 
   it("asks for confirmation before external install operations", async () => {
@@ -578,6 +631,71 @@ describe("Lane Pilot UI", () => {
     expect(slot.getByText(ru.settingsSearch)).toBeTruthy();
     expect(slot.getByText(ru.settingsBasic)).toBeTruthy();
     expect(slot.getByText(ru.settingsAdvanced)).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("refreshes active and cached project inheritance after saving global defaults without dropping drafts", async () => {
+    let revision = 0;
+    let defaults: Record<string, unknown> = { helperPlacement: "plugin" };
+    const screen = () => {
+      const payload = screenFixture();
+      return { ...payload, values: { ...payload.values, "helper.placement": "plugin" }, versions: { ...payload.versions, "helper.placement": 0 }, inheritedKeys: ["helper.placement"] };
+    };
+    const slot = await mountPage({
+      get_screen: screen,
+      get_globals: () => ({ defaults, revision, agents: [] }),
+      save_globals: ({ defaults: next, expectedRevision }: any) => {
+        if (expectedRevision !== revision) return { ok: false, revision, defaults };
+        defaults = next; revision += 1;
+        return { ok: true, revision, defaults };
+      },
+    });
+    await slot.findByTestId("settings-panel");
+    fireEvent.click(slot.getByRole("button", { name: "General settings" }));
+    const placement = await slot.findByRole("combobox", { name: "Default helper placement" });
+    fireEvent.click(placement);
+    fireEvent.click(await slot.findByRole("option", { name: "In the project tree" }));
+    fireEvent.click(slot.getByRole("button", { name: "Save" }));
+    await slot.findByRole("status");
+    fireEvent.click(slot.getByTestId("project-item-proj_ui"));
+    await waitFor(() => expect(slot.getByTestId("project-settings").hidden).toBe(false));
+    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
+    const row = slot.getByTestId("field-s371");
+    expect(row.textContent).toContain("In the project tree");
+    expect(row.textContent).toContain("owner defaults");
+    // Reselecting this project takes the reconciled cache, never the pre-save value.
+    fireEvent.click(slot.getByRole("button", { name: "General settings" }));
+    fireEvent.click(slot.getByTestId("project-item-proj_ui"));
+    await waitFor(() => expect(slot.getByTestId("project-settings").hidden).toBe(false));
+    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
+    expect(slot.getByTestId("field-s371").textContent).toContain("In the project tree");
+    slot.lifecycle.unmount();
+  });
+
+  it("shows owner inheritance after reset even while the durable CAS generation stays positive", async () => {
+    let reset = false;
+    const getScreen = () => {
+      const payload = screenFixture();
+      return {
+        ...payload,
+        values: { ...payload.values, "helper.placement": "project_tree" },
+        versions: { ...payload.versions, "helper.placement": reset ? 2 : 1 },
+        explicitKeys: reset ? [] : ["writer.provider", "writer.model", "writer.reasoning_effort", "helper.placement"],
+        inheritedKeys: reset ? ["helper.placement"] : [],
+      };
+    };
+    const slot = await mountPage({
+      get_screen: getScreen,
+      reset_project_settings: () => { reset = true; return { ok: true, conflict: false, values: { "helper.placement": null }, versions: { "helper.placement": 2 } }; },
+    });
+    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
+    const row = slot.getByTestId("field-s371");
+    await waitFor(() => expect(row.textContent).toContain("project override"));
+    fireEvent.click(within(row).getByRole("button", { name: "Reset to inherited" }));
+    await waitFor(() => expect(row.textContent).toContain("owner defaults"));
+    expect(row.textContent).not.toContain("project override");
+    expect(within(row).queryByRole("button", { name: "Reset to inherited" })).toBeNull();
+    expect(slot.getByTestId("field-s371").textContent).toContain("project tree");
     slot.lifecycle.unmount();
   });
 

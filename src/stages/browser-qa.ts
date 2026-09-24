@@ -21,6 +21,7 @@ export type BrowserQaResult = {
   actualModel:string|null; actualReasoningEffort:string|null; actualBackend:string|null;
   reportPath:string|null; reportSha256:string|null; reportText:string|null;
   artifacts:Array<{path:string; sha256:string; size:number}>; stdout:string; stderr:string; reason:string|null;
+  processPid:number|null; runnerPath:string|null;
 };
 
 function sha256(data:Buffer|string):string {
@@ -109,8 +110,9 @@ export async function runBrowserQaOnHost(raw:BrowserQaInput):Promise<BrowserQaRe
   if (input.authorized) argv.push("--authorized");
   if (input.provider === "codex") {
     if (!input.model) throw new Error("browser_qa_codex_requires_configured_model");
+    if (!input.reasoningEffort) throw new Error("browser_qa_codex_requires_supported_effort");
     argv.push("--model", input.model);
-    if (input.reasoningEffort) argv.push("--reasoning-effort", input.reasoningEffort);
+    argv.push("--reasoning-effort", input.reasoningEffort);
   }
   const completed = spawnSync(binary, argv, { cwd:project, encoding:"utf8", timeout:input.timeoutSec * 1000, maxBuffer:4_000_000 });
   const exitCode = completed.status ?? 1;
@@ -149,12 +151,13 @@ export async function runBrowserQaOnHost(raw:BrowserQaInput):Promise<BrowserQaRe
     const message = cause instanceof Error ? cause.message : String(cause);
     if (exitCode === 0) return { hostId:process.env.BB_HOST_ID ?? input.requestedHostId, provider:input.provider, runner, exitCode,
       verdict:"blocked", actualModel, actualReasoningEffort, actualBackend, reportPath:null, reportSha256:null, reportText:null, artifacts, stdout:redact(completed.stdout ?? ""),
-      stderr:redact(completed.stderr ?? ""), reason:message };
+      stderr:redact(completed.stderr ?? ""), reason:message, processPid:completed.pid ?? null, runnerPath:binary };
   }
   return {
     hostId:process.env.BB_HOST_ID ?? input.requestedHostId, provider:input.provider, runner, exitCode,
     verdict:reportText ? browserQaVerdict(reportText, exitCode) : "blocked", actualModel, actualReasoningEffort, actualBackend, reportPath, reportSha256, reportText,
     artifacts, stdout:redact((completed.stdout ?? "").slice(0, 12_000)), stderr:redact((completed.stderr ?? "").slice(0, 12_000)),
     reason:reportText ? null : "browser_qa_report_missing",
+    processPid:completed.pid ?? null, runnerPath:binary,
   };
 }

@@ -15,11 +15,11 @@ language: ru
 
 | Решение | Число |
 |---|---:|
-| editable | 145 |
+| editable | 160 |
 | read-only | 91 |
 | gap | 0 |
 | excluded | 130 |
-| **сумма** | **366** |
+| **сумма** | **381** |
 
 Из бывших 88 read-only: (a) канал найден и поле стало editable — 0; (b) неприменимо в BB — 50; (c) gap без контракта upstream/SDK — 33.
 
@@ -131,7 +131,7 @@ language: ru
 | 103 | pipeline_stages.py stage: memory | memory.enabled | bin/pipeline_stages.py:265,542 | user | OWN | editable | Native Lane Pilot memory stage consumes this isolated project setting; durable records stay in the plugin database and are never written to user .agents files (`bin/pipeline_stages.py:265`) |
 | 104 | pipeline_stages.py stage: memory | memory.maintain | bin/pipeline_stages.py:266,543 | unclear | OWN | editable | Native Lane Pilot memory stage consumes this isolated project setting; durable records stay in the plugin database and are never written to user .agents files (`bin/pipeline_stages.py:266`) |
 | 105 | pipeline_stages.py stage: memory | memory.inject | bin/pipeline_stages.py:267,544 | unclear | OWN | editable | Native Lane Pilot memory stage consumes this isolated project setting; durable records stay in the plugin database and are never written to user .agents files (`bin/pipeline_stages.py:267`) |
-| 106 | pipeline_stages.py stage: memory | memory.provider/.model/.reasoning_effort/.service_tier | bin/pipeline_stages.py:268-272,522-549 | user | OWN | editable | Native Lane Pilot stage uses the BB ProviderModelPicker to configure its memory provider/model/reasoning/tier (`bin/pipeline_stages.py:268`) |
+| 106 | pipeline_stages.py stage: memory | memory.provider/.model/.reasoning_effort/.service_tier | bin/pipeline_stages.py:268-272,522-549 | user | OWN | editable | Native Lane Pilot stage uses the BB ProviderModelPicker; dispatch records effective provider/model/effort/tier and selection source. Writer effort automatic mode may differ from the saved level; manual mode must dispatch the saved supported effort (src/jev-reasoning.ts:automaticEffortRoutingEnabled, server.ts:spawnWriterAttempt) (`server.ts:1237`) |
 | 107 | pipeline_stages.py stage: memory | memory.audience | bin/pipeline_stages.py:272,530-532 | user | OWN | editable | Native Lane Pilot memory stage consumes this isolated project setting; durable records stay in the plugin database and are never written to user .agents files (`bin/pipeline_stages.py:272`) |
 | 108 | pipeline_stages.py stage: memory | memory.search_engine | bin/pipeline_stages.py:273,533-535 | user | OWN | editable | Native Lane Pilot memory stage consumes this isolated project setting; durable records stay in the plugin database and are never written to user .agents files (`bin/pipeline_stages.py:273`) |
 | 109 | pipeline_stages.py stage: memory | memory.core_budget | bin/pipeline_stages.py:274,553 | unclear | OWN | editable | Native Lane Pilot memory stage consumes this isolated project setting; durable records stay in the plugin database and are never written to user .agents files (`bin/pipeline_stages.py:274`) |
@@ -391,3 +391,18 @@ language: ru
 | 363 | Lane Pilot native onboarding stage | onboarding.agent | server.ts:1849 | user | OWN | editable | Native onboarding preview uses live BB provider/model capabilities, bounded role/depth controls, exact preview hashes, explicit confirmation, and host compare-and-swap for writes (`server.ts:1849`) |
 | 364 | Lane Pilot native onboarding stage | onboarding.depth | server.ts:1850 | user | OWN | editable | Native onboarding preview uses live BB provider/model capabilities, bounded role/depth controls, exact preview hashes, explicit confirmation, and host compare-and-swap for writes (`server.ts:1850`) |
 | 365 | Lane Pilot host verification sandbox | sandbox.backend | src/verification/sandbox.ts:22 | user | OWN | editable | Native verification stage selects Seatbelt on macOS or bubblewrap on Linux; absent backend and unprotectable workspace guard paths fail closed (`src/verification/sandbox.ts:22; server.ts:998`) |
+| 366 | Lane Pilot helper session filter | helper.context_mode | src/helper-context.ts:36 | user | OWN | editable | Persisted inherit/selected/none filter; not fail-closed until a required static core policy exists (`src/helper-context.ts:36`) |
+| 367 | Lane Pilot helper session filter | helper.skills | src/helper-context.ts:40 | user | OWN | editable | Selected-mode allowlist; empty means none, not inherit (`src/helper-context.ts:40`) |
+| 368 | Lane Pilot helper session filter | helper.mcp_servers | src/helper-context.ts:41 | user | OWN | editable | Selected-mode allowlist; empty means none, not inherit (`src/helper-context.ts:41`) |
+| 369 | Lane Pilot helper session filter | helper.bb_plugins | src/helper-context.ts:42 | user | OWN | editable | Selected-mode allowlist; empty means none, not inherit (`src/helper-context.ts:42`) |
+| 370 | Lane Pilot helper session filter | helper.native_plugins | src/helper-context.ts:43 | user | OWN | editable | Selected-mode allowlist; empty means none, not inherit (`src/helper-context.ts:43`) |
+| 371 | Lane Pilot helper placement | helper.placement | src/helper-placement.ts:1 | user | OWN | editable | New helper threads stay hidden in Lane Pilot or appear in the same project tree as the parent session; workspace holder stays hidden (`src/helper-placement.ts:1`) |
+| 372 | Lane Pilot native code critique | code_critique.enabled | src/stages/code-critique.ts:1 | user | OWN | editable | Post-writer independent critique before final acceptance; default off keeps legacy behavior (`src/stages/code-critique.ts:1`) |
+| 373 | Lane Pilot native code critique | code_critique.mode | src/stages/code-critique.ts:1 | user | OWN | editable | Gate blocks final acceptance on changes_requested; advisory records findings (`src/stages/code-critique.ts:1`) |
+| 374 | Lane Pilot native code critique | code_critique.provider | src/stages/code-critique.ts:1 | user | OWN | editable | Independent reviewer provider validated against the live host catalog (`src/stages/code-critique.ts:1`) |
+| 375 | Lane Pilot native code critique | code_critique.model | src/stages/code-critique.ts:1 | user | OWN | editable | Independent reviewer model validated against the live host catalog (`src/stages/code-critique.ts:1`) |
+| 376 | Lane Pilot native code critique | code_critique.reasoning_effort | src/stages/code-critique.ts:1 | user | OWN | editable | Independent reviewer effort validated against the live host catalog (`src/stages/code-critique.ts:1`) |
+| 377 | Lane Pilot native code critique | code_critique.service_tier | src/stages/code-critique.ts:1 | user | OWN | editable | Independent reviewer tier validated against the live host catalog (`src/stages/code-critique.ts:1`) |
+| 378 | Lane Pilot native code critique | code_critique.agent | src/stages/code-critique.ts:1 | user | OWN | editable | Role label included in the code-critique prompt (`src/stages/code-critique.ts:1`) |
+| 379 | Lane Pilot native code critique | code_critique.auto_fix | src/stages/code-critique.ts:1 | user | OWN | editable | Return actionable findings to the original writer for a bounded repair (`src/stages/code-critique.ts:1`) |
+| 380 | Lane Pilot native code critique | code_critique.max_rounds | src/stages/code-critique.ts:1 | user | OWN | editable | Maximum automatic writer repair rounds after code critique (`src/stages/code-critique.ts:1`) |

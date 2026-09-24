@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { chmod, lstat, open, readFile, readlink, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
@@ -275,6 +277,42 @@ export const runSandboxedCommand: ExperimentalHostRpcHandlers<typeof hostContrac
 export const runBrowserQa: ExperimentalHostRpcHandlers<typeof hostContract>["runBrowserQa"] = async (input) => (
   runBrowserQaOnHost(input)
 );
+
+export const probeBrowserQaTarget: ExperimentalHostRpcHandlers<typeof hostContract>["probeBrowserQaTarget"] = async (input) => {
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  let workspaceRealPath: string;
+  try {
+    workspaceRealPath = await realpath(input.workspacePath);
+  } catch {
+    throw new Error("browser_qa_workspace_unreachable");
+  }
+  const target = new URL(input.url);
+  if (!["http:", "https:"].includes(target.protocol) || target.username || target.password) {
+    throw new Error("browser_qa_url_must_be_http_without_userinfo");
+  }
+  await new Promise<void>((resolve, reject) => {
+    const send = target.protocol === "https:" ? httpsRequest : httpRequest;
+    const req = send({
+      hostname: target.hostname,
+      port: target.port || (target.protocol === "https:" ? 443 : 80),
+      path: `${target.pathname}${target.search}`,
+      method: "GET",
+      timeout: 5000,
+    }, (res) => {
+      res.resume();
+      resolve();
+    });
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("browser_qa_url_timeout"));
+    });
+    req.on("error", (cause) => {
+      reject(new Error(`browser_qa_url_unreachable:${cause instanceof Error ? cause.message : String(cause)}`));
+    });
+    req.end();
+  });
+  return { hostId, workspaceRealPath, url: input.url, processHostId: hostId };
+};
 
 const PLAN_EFFORT_QUESTION = {
   type:"choice",

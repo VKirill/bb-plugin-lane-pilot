@@ -26,6 +26,8 @@ describe("settings CAS over RPC", () => {
     const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ providers:{
       list:async () => [{ id:"claude-code", available:true, capabilities:{ supportsServiceTier:false }, serviceTiers:[] }] as never,
       models:async () => ({ models:[{ id:"claude-opus-5", model:"claude-opus-5", supportedReasoningEfforts:[{ reasoningEffort:"medium", description:"Medium" }] }] as never }),
+    }, projects:{
+      get:async ({ projectId: id }) => ({ id, name:id, sources:[{ hostId:"host-native", path:"/tmp/writer-before", isDefault:true }] }),
     } } });
     const db = openDatabase(bb);
     savePrototypeConfig(db, {
