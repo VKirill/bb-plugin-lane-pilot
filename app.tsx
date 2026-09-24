@@ -79,7 +79,11 @@ function EnableLanePilotAction() {
       data-locale={locale}
       className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2 text-xs font-medium text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {pending ? t("enabling") : error ? t("failed") : t("enable")}
+      {/* A text label in a span: composer themes (Beautiful Chat) square off
+          action-row buttons without one into 28px icon buttons. */}
+      <span className="whitespace-nowrap">
+        {pending ? t("enabling") : error ? t("failed") : t("enable")}
+      </span>
     </button>
   );
 }
