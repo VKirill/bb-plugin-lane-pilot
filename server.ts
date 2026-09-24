@@ -1,3 +1,4 @@
+import { casResetSettings } from "./src/database";
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
@@ -58,6 +59,7 @@ import {
   persistRunHelperPolicyJson,
   loadPrototypeConfig,
   listSettingRows,
+  getSettingVersions,
   listRunsWithAttempts,
   listStageReceipts,
   casUpsertSetting,
@@ -4144,13 +4146,23 @@ export default async function plugin(bb: BbPluginApi) {
     return { ok: true as const, hostId: binding.hostId };
   }
 
+  // Serialize KV read/compare/write operations across concurrent settings editors.
+  let ownedSettingsTail: Promise<unknown> = Promise.resolve();
+  function withOwnedSettingsLock<T>(work: () => Promise<T>): Promise<T> {
+    const next = ownedSettingsTail.then(work, work);
+    ownedSettingsTail = next.catch(() => undefined);
+    return next;
+  }
+
   async function listedAgentProfiles() {
     const overrides = (await bb.storage.kv.get<Record<string, { prompt?: string; description?: string }>>(LP_AGENT_OVERRIDES_KEY)) ?? {};
-    return MAIN_AGENT_PROFILE_IDS.map((id) => {
+    return [...new Set([...MAIN_AGENT_PROFILE_IDS, ...Object.keys(overrides)])].map((id) => {
       const override = overrides[id];
-      const compiled = compileMainAgentProfile(id, override);
-      const stock = compileMainAgentProfile(id);
-      return { id, description: compiled.description, prompt: compiled.prompt, sourceHash: compiled.sourceHash, edited: compiled.sourceHash !== stock.sourceHash };
+      const compiled = resolveSelectedMainAgentProfile({ "main.agent": id }, overrides)!;
+      const stock = (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(id) ? compileMainAgentProfile(id) : null;
+      return { id, description: compiled.description, prompt: compiled.prompt, sourceHash: compiled.sourceHash, sourceVersion: compiled.sourceVersion,
+        ...(compiled.tools ? { tools: compiled.tools } : {}), ...(compiled.disallowedTools ? { disallowedTools: compiled.disallowedTools } : {}),
+        ...(compiled.skills ? { skills: compiled.skills } : {}), ...(compiled.mcpServers ? { mcpServers: compiled.mcpServers } : {}), edited: compiled.sourceHash !== stock?.sourceHash };
     });
   }
 
@@ -4183,22 +4195,29 @@ export default async function plugin(bb: BbPluginApi) {
         lastProjectId: await bb.storage.kv.get<string>("preferences:lastProjectId") ?? null,
       };
     },
-    get_globals: async () => ({
+    get_globals: () => withOwnedSettingsLock(async () => ({
       defaults: parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)),
+      revision: (await bb.storage.kv.get<{ revision?: number }>(LP_DEFAULTS_KEY))?.revision ?? 0,
       agents: await listedAgentProfiles(),
-    }),
-    save_globals: async ({ defaults }) => {
+    })),
+    save_globals: ({ defaults, expectedRevision }) => withOwnedSettingsLock(async () => {
+      const revision = (await bb.storage.kv.get<{ revision?: number }>(LP_DEFAULTS_KEY))?.revision ?? 0;
+      if (expectedRevision !== revision) return { ok: false, revision, defaults: parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)) };
       const next = parseLanePilotDefaults(defaults);
-      await bb.storage.kv.set(LP_DEFAULTS_KEY, next);
-      return { ok: true as const, defaults: next };
-    },
-    save_agent_profile: async ({ id, prompt, description }) => {
-      const overrides = (await bb.storage.kv.get<Record<string, { prompt?: string; description?: string }>>(LP_AGENT_OVERRIDES_KEY)) ?? {};
-      overrides[id] = { prompt, ...(description ? { description } : {}) };
+      await bb.storage.kv.set(LP_DEFAULTS_KEY, { ...next, revision: revision + 1 });
+      return { ok: true, revision: revision + 1, defaults: next };
+    }),
+    save_agent_profile: ({ id, prompt, description, expectedSourceHash, tools, disallowedTools, skills, mcpServers }) => withOwnedSettingsLock(async () => {
+      const overrides = (await bb.storage.kv.get<Record<string, { prompt?: string; description?: string; compiled?: ReturnType<typeof compileMainAgentProfile> }>>(LP_AGENT_OVERRIDES_KEY)) ?? {};
+      const exists = Object.prototype.hasOwnProperty.call(overrides, id) || (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(id);
+      const current = exists ? resolveSelectedMainAgentProfile({ "main.agent": id }, overrides)! : null;
+      if ((current?.sourceHash ?? "") !== expectedSourceHash) return { ok: false, id, sourceHash: current?.sourceHash ?? "" };
+      // Validate before writing; persist the full owned snapshot, not a live template link.
+      const compiled = compileMainAgentProfile(id, { tools: tools ?? current?.tools, disallowedTools: disallowedTools ?? current?.disallowedTools, skills: skills ?? current?.skills, mcpServers: mcpServers ?? current?.mcpServers, prompt, description: description ?? current?.description });
+      overrides[id] = { prompt: compiled.prompt, description: compiled.description, compiled };
       await bb.storage.kv.set(LP_AGENT_OVERRIDES_KEY, overrides);
-      const compiled = compileMainAgentProfile(id, overrides[id]);
-      return { ok: true as const, id, sourceHash: compiled.sourceHash };
-    },
+      return { ok: true, id, sourceHash: compiled.sourceHash };
+    }),
     finish_run: async ({ projectId, runId }) => {
       await finishRunSafely(bb, db, projectId, runId, "rpc");
       return { projectId, finishedRunIds: [runId], closed: true };
@@ -4217,6 +4236,7 @@ export default async function plugin(bb: BbPluginApi) {
         values[row.key] = row.value;
         versions[row.key] = row.version;
       }
+      Object.assign(versions, getSettingVersions(db,projectId,[...new Set(VISIBLE_CATALOG.map((row) => row.storageKey))]));
       const inherited = inheritProjectValues(values, parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)));
       Object.assign(values, inherited.values);
       const writerBinding = await resolveProjectWriterHost({ projectId });
@@ -4281,6 +4301,7 @@ export default async function plugin(bb: BbPluginApi) {
         hostId: writerBinding.status === "resolved" ? writerBinding.hostId : config?.hostId ?? null,
         workspacePath: writerBinding.status === "resolved" ? writerBinding.path : config?.writerWorkspacePath ?? null,
         inheritedKeys: inherited.inherited,
+        explicitKeys: rows.map((row) => row.key),
         writerBinding: {
           status: writerBinding.status === "offline" ? "offline" : writerBinding.status,
           hostId: writerBinding.status === "resolved" || writerBinding.status === "offline" ? writerBinding.hostId : null,
@@ -4371,6 +4392,39 @@ export default async function plugin(bb: BbPluginApi) {
       }
       return { ok: true, conflict: false, version: result.version, value };
     },
+    reset_project_settings: ({ projectId, keys, expectedVersions }) => withOwnedSettingsLock(async () => {
+      const reject = (key: string, message: string) => ({ ok: false, conflict: false, values: {}, versions: {}, validation: { code: "incompatible_setting" as const, key, params: [key, message] } });
+      const editable = new Set(VISIBLE_CATALOG.filter((row) => row.uiStatus === "editable").map((row) => row.storageKey));
+      const invalid = keys.find((key) => !editable.has(key) || expectedVersions[key] === undefined);
+      if (invalid) return reject(invalid, "unknown or noneditable setting / missing CAS version");
+      const groups = ["writer", "memory", "night_review", "docs", "onboarding", "pm_read", "plan_critique", "code_critique"].map((prefix) => ["provider", "model", "reasoning_effort", "service_tier"].map((suffix) => `${prefix}.${suffix}`));
+      const affected = groups.filter((group) => group.some((key) => keys.includes(key)));
+      if (affected.some((group) => group.some((key) => !keys.includes(key)))) return reject(keys[0], "reset the complete provider/model/effort/tier group");
+      const rows = listSettingRows(db, projectId);
+      const explicit = Object.fromEntries(rows.filter((row) => !keys.includes(row.key)).map((row) => [row.key, row.value]));
+      const effective = inheritProjectValues(explicit, parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY))).values;
+      if (affected.length) {
+        const host = await selectionCatalogHost(projectId);
+        if (!host.ok) return { ok: false, conflict: false, values: {}, versions: {}, validation: host.validation };
+        try {
+          const providers = await bb.sdk.providers.list({ hostId: host.hostId });
+          for (const group of affected) {
+            const providerId = effective[group[0]] ?? effective["writer.provider"];
+            const modelId = effective[group[1]] ?? effective["writer.model"];
+            if (typeof providerId !== "string" || typeof modelId !== "string") return reject(group[0], "inherited provider and model are not configured");
+            const provider = providers.find((item) => item.id === providerId && item.available);
+            const catalog = await bb.sdk.providers.models({ hostId: host.hostId, providerId });
+            const model = catalog.models.find((item) => item.id === modelId || item.model === modelId);
+            if (!provider || !model) return reject(group[0], "inherited selection is unavailable in this host catalog");
+            const effort = effective[group[2]];
+            if (effort && !model.supportedReasoningEfforts.some((item) => item.reasoningEffort === effort)) return reject(group[2], "inherited effort is unsupported");
+            const tier = effective[group[3]];
+            if (tier && tier !== "standard" && !provider.serviceTiers?.some((item) => item.id === tier)) return reject(group[3], "inherited service tier is unsupported");
+          }
+        } catch { return reject(keys[0], "inherited catalog is unavailable"); }
+      }
+      return casResetSettings(db, { projectId, keys, expectedVersions, validationKeys: [...new Set([...keys, ...affected.flat()])], validatedRows: rows });
+    }),
     save_settings: ({ projectId, changes }) => {
       const memoryKey=changes.find(({key})=>NATIVE_MEMORY_KEYS.has(key))?.key;
       if(memoryKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:memoryKey,params:[memoryKey,"use atomic memory provider/model selection"]}};

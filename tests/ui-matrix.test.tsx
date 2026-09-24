@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
 import { en, ru, setLocaleOverride, t, validationMessage } from "../i18n";
@@ -18,6 +18,7 @@ function screenFixture() {
     projectId: "proj_ui",
     hostId: "host_ui",
     workspacePath: "/tmp/lane-pilot-ui",
+    explicitKeys: ["writer.provider", "writer.model", "writer.reasoning_effort"],
     values,
     versions: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, 1])),
     importSource: { completed: true, at: 1, routingPath: "/tmp/routing.profile.yaml", nightPath: "/tmp/night-shift.yaml" },
@@ -630,6 +631,71 @@ describe("Lane Pilot UI", () => {
     expect(slot.getByText(ru.settingsSearch)).toBeTruthy();
     expect(slot.getByText(ru.settingsBasic)).toBeTruthy();
     expect(slot.getByText(ru.settingsAdvanced)).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("refreshes active and cached project inheritance after saving global defaults without dropping drafts", async () => {
+    let revision = 0;
+    let defaults: Record<string, unknown> = { helperPlacement: "plugin" };
+    const screen = () => {
+      const payload = screenFixture();
+      return { ...payload, values: { ...payload.values, "helper.placement": "plugin" }, versions: { ...payload.versions, "helper.placement": 0 }, inheritedKeys: ["helper.placement"] };
+    };
+    const slot = await mountPage({
+      get_screen: screen,
+      get_globals: () => ({ defaults, revision, agents: [] }),
+      save_globals: ({ defaults: next, expectedRevision }: any) => {
+        if (expectedRevision !== revision) return { ok: false, revision, defaults };
+        defaults = next; revision += 1;
+        return { ok: true, revision, defaults };
+      },
+    });
+    await slot.findByTestId("settings-panel");
+    fireEvent.click(slot.getByRole("button", { name: "General settings" }));
+    const placement = await slot.findByRole("combobox", { name: "Default helper placement" });
+    fireEvent.click(placement);
+    fireEvent.click(await slot.findByRole("option", { name: "In the project tree" }));
+    fireEvent.click(slot.getByRole("button", { name: "Save" }));
+    await slot.findByRole("status");
+    fireEvent.click(slot.getByTestId("project-item-proj_ui"));
+    await waitFor(() => expect(slot.getByTestId("project-settings").hidden).toBe(false));
+    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
+    const row = slot.getByTestId("field-s371");
+    expect(row.textContent).toContain("In the project tree");
+    expect(row.textContent).toContain("owner defaults");
+    // Reselecting this project takes the reconciled cache, never the pre-save value.
+    fireEvent.click(slot.getByRole("button", { name: "General settings" }));
+    fireEvent.click(slot.getByTestId("project-item-proj_ui"));
+    await waitFor(() => expect(slot.getByTestId("project-settings").hidden).toBe(false));
+    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
+    expect(slot.getByTestId("field-s371").textContent).toContain("In the project tree");
+    slot.lifecycle.unmount();
+  });
+
+  it("shows owner inheritance after reset even while the durable CAS generation stays positive", async () => {
+    let reset = false;
+    const getScreen = () => {
+      const payload = screenFixture();
+      return {
+        ...payload,
+        values: { ...payload.values, "helper.placement": "project_tree" },
+        versions: { ...payload.versions, "helper.placement": reset ? 2 : 1 },
+        explicitKeys: reset ? [] : ["writer.provider", "writer.model", "writer.reasoning_effort", "helper.placement"],
+        inheritedKeys: reset ? ["helper.placement"] : [],
+      };
+    };
+    const slot = await mountPage({
+      get_screen: getScreen,
+      reset_project_settings: () => { reset = true; return { ok: true, conflict: false, values: { "helper.placement": null }, versions: { "helper.placement": 2 } }; },
+    });
+    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
+    const row = slot.getByTestId("field-s371");
+    await waitFor(() => expect(row.textContent).toContain("project override"));
+    fireEvent.click(within(row).getByRole("button", { name: "Reset to inherited" }));
+    await waitFor(() => expect(row.textContent).toContain("owner defaults"));
+    expect(row.textContent).not.toContain("project override");
+    expect(within(row).queryByRole("button", { name: "Reset to inherited" })).toBeNull();
+    expect(slot.getByTestId("field-s371").textContent).toContain("project tree");
     slot.lifecycle.unmount();
   });
 

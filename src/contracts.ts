@@ -335,17 +335,24 @@ export const rpcContract = defineRpcContract({
         helperPlacement: z.enum(["plugin", "project_tree"]).optional(),
         qaHostId: z.string().optional(),
       }).strict(),
+      revision: z.number().int().nonnegative(),
       agents: z.array(z.object({
         id: z.string(),
         description: z.string(),
         prompt: z.string(),
         sourceHash: z.string(),
         edited: z.boolean(),
+        sourceVersion: z.string(),
+        tools: z.array(z.string()).optional(),
+        disallowedTools: z.array(z.string()).optional(),
+        skills: z.array(z.string()).optional(),
+        mcpServers: z.array(z.string()).optional(),
       }).strict()),
     }).strict(),
   },
   save_globals: {
     input: z.object({
+      expectedRevision: z.number().int().nonnegative(),
       defaults: z.object({
         writerProviderId: z.string().optional(),
         writerModel: z.string().optional(),
@@ -354,15 +361,20 @@ export const rpcContract = defineRpcContract({
         qaHostId: z.string().optional(),
       }).strict(),
     }).strict(),
-    output: z.object({ ok: z.literal(true), defaults: z.record(z.string(), z.unknown()) }).strict(),
+    output: z.object({ ok: z.boolean(), revision: z.number(), defaults: z.record(z.string(), z.unknown()) }).strict(),
   },
   save_agent_profile: {
     input: z.object({
-      id: z.enum(["dev-orchestrator", "copy-lead", "seo-specialist"]),
+      id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+      expectedSourceHash: z.string(),
+      tools: z.array(z.string().min(1)).max(64).optional(),
+      disallowedTools: z.array(z.string().min(1)).max(64).optional(),
+      skills: z.array(z.string().min(1)).max(64).optional(),
+      mcpServers: z.array(z.string().min(1)).max(64).optional(),
       prompt: z.string().min(1).max(32_000),
       description: z.string().min(1).max(400).optional(),
     }).strict(),
-    output: z.object({ ok: z.literal(true), id: z.string(), sourceHash: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), id: z.string(), sourceHash: z.string() }).strict(),
   },
   finish_run: {
     input: z.object({ projectId: z.string().min(1), runId: z.string().min(1) }).strict(),
@@ -379,6 +391,7 @@ export const rpcContract = defineRpcContract({
       hostId: z.string().nullable(),
       workspacePath: z.string().nullable(),
       inheritedKeys: z.array(z.string()).optional(),
+      explicitKeys: z.array(z.string()),
       writerBinding: z.object({
         status: z.enum(["resolved", "ambiguous", "setup_required", "offline"]),
         hostId: z.string().nullable(),
@@ -460,6 +473,18 @@ export const rpcContract = defineRpcContract({
       conflict: z.boolean(),
       version: z.number().int(),
       value: z.unknown(),
+      validation: settingValidationSchema.optional(),
+    }).strict(),
+  },
+  reset_project_settings: {
+    input: z.object({
+      projectId: z.string().min(1),
+      keys: z.array(z.string().min(1)).min(1).max(64).refine((keys) => new Set(keys).size === keys.length),
+      expectedVersions: z.record(z.string(), z.number().int().nonnegative()),
+    }).strict(),
+    output: z.object({
+      ok: z.boolean(), conflict: z.boolean(),
+      values: z.record(z.string(), z.unknown()), versions: z.record(z.string(), z.number()),
       validation: settingValidationSchema.optional(),
     }).strict(),
   },

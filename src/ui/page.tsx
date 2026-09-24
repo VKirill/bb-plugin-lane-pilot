@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_Diff as Diff,
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -54,7 +54,9 @@ import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "
 import type { StageReceipt } from "../stages/contract";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa-host";
 import { presentEnumLabel } from "../enum-labels";
+import { OwnedSettings } from "./owned-settings";
 import { userVisibleProjects } from "../project-scope";
+import { inheritProjectValues, type LanePilotDefaults } from "../lp-defaults";
 
 type ScreenPayload = {
   projectId: string;
@@ -62,6 +64,7 @@ type ScreenPayload = {
   workspacePath: string | null;
   values: Record<string, unknown>;
   versions: Record<string, number>;
+  explicitKeys: string[];
   importSource: { completed: boolean; at: number | null; routingPath: string | null; nightPath: string | null };
   runs: Array<{
     id: string;
@@ -438,6 +441,8 @@ function SettingHelp({ row }: { row: CatalogRow }) {
   );
 }
 
+const InheritanceContext = createContext<{ locale: Locale; data: ScreenPayload | null; reset: (keys: string[]) => void } | null>(null);
+
 function SettingField({
   row,
   value,
@@ -451,6 +456,7 @@ function SettingField({
   onChange: (next: unknown) => void;
   onDraft?: (next: unknown) => void;
 }) {
+  const inheritance = useContext(InheritanceContext);
   const inherited = value == null || value === "";
   const effective = inherited ? row.defaultValue : value;
   return (
@@ -469,6 +475,7 @@ function SettingField({
         <p className="text-xs text-muted-foreground">
           {inherited ? t("fieldInherited") : `${t("fieldEffective")}: ${row.control === "select" ? presentEnumLabel(row.storageKey, String(effective)) : String(effective)}`}
         </p>
+        {inheritance ? <div className="text-xs text-muted-foreground"><p>{inheritance.locale === "ru" ? "Источник: " : "Source: "}{inheritance.data?.explicitKeys?.includes(row.storageKey) ? (inheritance.locale === "ru" ? "переопределение проекта" : "project override") : inheritance.data?.inheritedKeys?.includes(row.storageKey) ? (inheritance.locale === "ru" ? "общие настройки" : "owner defaults") : (inheritance.locale === "ru" ? "значение по умолчанию" : "factory default")}</p>{inheritance.data?.explicitKeys?.includes(row.storageKey) ? <Button variant="ghost" className="min-h-11" disabled={disabled} onClick={() => inheritance.reset([row.storageKey])}>{inheritance.locale === "ru" ? "Наследовать" : "Reset to inherited"}</Button> : null}</div> : null}
         {row.min !== null && row.max !== null ? (
           <p className="text-xs text-muted-foreground">{t("fieldLimits")}: {row.min}–{row.max} {t(numericUnit(row))}</p>
         ) : null}
@@ -517,6 +524,7 @@ function canRetryAttempt(run: MonitorRun, attempt: MonitorAttempt): boolean {
 }
 
 export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" }) {
+  const [activeScope, setActiveScope] = useState(scope);
   const rpc = useRpc<typeof rpcContract>();
   const { projectId: routeProjectId, threadId: routeThreadId } = useBbContext();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -555,6 +563,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const [writerDraft, setWriterDraft] = useState<ExperimentalProviderModelPickerValue | null>(null);
   const [selectedBinding, setSelectedBinding] = useState<{ hostId: string; path: string } | null>(null);
   const writerSaveTail = useRef(Promise.resolve());
+  const projectCache = useRef(new Map<string, { data: ScreenPayload; drafts: Record<string, unknown>; writer: ExperimentalProviderModelPickerValue | null }>());
+  const loadGeneration = useRef(0);
+
 
   useEffect(() => {
     let current = true;
@@ -563,7 +574,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         setProjects(userVisibleProjects(result.projects));
         setProjectsLoaded(true);
         if (!routeProjectId && !subPath) {
-          const preferred = result.lastProjectId ?? result.projects[0]?.id ?? null;
+          const visible = userVisibleProjects(result.projects);
+          const preferred = visible.find((project) => project.id === result.lastProjectId)?.id ?? visible[0]?.id ?? null;
           if (preferred) setSelectedProjectId((current) => current ?? preferred);
         }
       }
@@ -612,6 +624,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   const load = useCallback(async () => {
     if (!projectId) return;
+    const generation = ++loadGeneration.current;
+    const cached = projectCache.current.get(projectId);
+    if (cached) { setData(cached.data); dataRef.current = cached.data; setDrafts(cached.drafts); draftsRef.current = cached.drafts; setWriterDraft(cached.writer); writerDraftRef.current = cached.writer; return; }
     setError(null);
     setData(null);
     draftsRef.current = {};
@@ -620,6 +635,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     setWriterDraft(null);
     try {
       const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
+      if (generation !== loadGeneration.current) return;
       setData(next);
       if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
       setResultSource(next.writerResultJson);
@@ -629,7 +645,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     }
   }, [projectId, rpc]);
 
-  useEffect(() => { if (scope === "projects") void load(); }, [load, scope]);
+  useEffect(() => { void load(); }, [load]);
 
   const diagnosticsGrouped = useMemo(() => {
     const map = new Map<string, CatalogRow[]>();
@@ -668,6 +684,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   };
 
   const chooseProject = (next: string) => {
+    if (dataRef.current) projectCache.current.set(dataRef.current.projectId, { data: dataRef.current, drafts: { ...draftsRef.current }, writer: writerDraftRef.current });
+    setActiveScope("projects");
     setSelectedProjectId(next);
     setProjectListError(false);
     void rpc.call("remember_project", { projectId: next }).catch(() => setProjectListError(true));
@@ -712,6 +730,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         ...current,
         values: { ...current.values, [row.storageKey]: result.value },
         versions: { ...current.versions, [row.storageKey]: result.version },
+        explicitKeys: [...new Set([...current.explicitKeys, row.storageKey])],
       } : current;
       dataRef.current = next;
       return next;
@@ -749,6 +768,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         ...current,
         values: { ...current.values, [key]: result.value },
         versions: { ...current.versions, [key]: result.version },
+        explicitKeys: [...new Set([...current.explicitKeys, key])],
       } : current;
       dataRef.current = next;
       return next;
@@ -780,6 +800,23 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     return queued;
   };
 
+  const resetInherited = async (keys: string[]) => {
+    const snapshot = dataRef.current;
+    if (!projectId || !snapshot || snapshot.projectId !== projectId) return;
+    try {
+      const result = await rpc.call("reset_project_settings", { projectId, keys, expectedVersions: Object.fromEntries(keys.map((key) => [key, snapshot.versions[key] ?? 0])) });
+      if (dataRef.current?.projectId !== projectId) return;
+      if (!result.ok) { setSaveError(result.validation ? { kind: "validation", code: result.validation.code, params: result.validation.params } : { kind: "cas" }); return; }
+      const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
+      if (dataRef.current?.projectId !== projectId) return;
+      setData(next); dataRef.current = next;
+      const remaining = { ...draftsRef.current }; for (const key of keys) delete remaining[key];
+      setDrafts(remaining); draftsRef.current = remaining;
+      if (keys.includes(WRITER_PROVIDER)) { setWriterDraft(null); writerDraftRef.current = null; }
+      setSaveError(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  };
+
   const displayedValue = (key: string) => (
     Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : data?.values[key]
   );
@@ -802,13 +839,16 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         "writer.service_tier": snapshot.versions[WRITER_SERVICE_TIER] ?? 0,
       },
     });
-    const applyScreen = (values: Record<string, unknown>, versions: Record<string, number>) => {
+    const applyScreen = (values: Record<string, unknown>, versions: Record<string, number>, markExplicit = false) => {
       const current = dataRef.current;
       if (!current) return;
       const next = {
         ...current,
         values: { ...current.values, ...values },
         versions: { ...current.versions, ...versions },
+        explicitKeys: markExplicit
+          ? [...new Set([...current.explicitKeys, WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER])]
+          : current.explicitKeys,
       };
       dataRef.current = next;
       setData(next);
@@ -824,7 +864,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
       return false;
     }
     setSaveError(null);
-    applyScreen(result.values, result.versions);
+    applyScreen(result.values, result.versions, true);
     return true;
   };
 
@@ -1048,11 +1088,27 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     return VISIBLE_CATALOG.filter((row) => JEV_KEYS.has(row.storageKey) && !seen.has(row.storageKey) && Boolean(seen.add(row.storageKey)));
   }, []);
   const selectedProjectName = projects.find((item) => item.id === projectId)?.name ?? projectId;
+  const applyGlobalDefaults = (defaults: LanePilotDefaults) => {
+    const reconcile = (payload: ScreenPayload): ScreenPayload => {
+      const explicit = { ...payload.values };
+      for (const key of payload.inheritedKeys ?? []) delete explicit[key];
+      const inherited = inheritProjectValues(explicit, defaults);
+      const next = { ...payload, values: inherited.values, inheritedKeys: inherited.inherited };
+      projectCache.current.set(payload.projectId, { ...projectCache.current.get(payload.projectId), data: next, drafts: projectCache.current.get(payload.projectId)?.drafts ?? {}, writer: projectCache.current.get(payload.projectId)?.writer ?? null });
+      return next;
+    };
+    setData((current) => { const next = current ? reconcile(current) : current; dataRef.current = next; return next; });
+    for (const [id, cached] of projectCache.current) projectCache.current.set(id, { ...cached, data: reconcile(cached.data) });
+  };
 
   return (
-    <div className="h-full overflow-auto p-3 md:p-5" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
+    <InheritanceContext.Provider value={{ locale, data, reset: (keys) => void resetInherited(keys) }}><div className="h-full overflow-auto p-3 md:p-5" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 md:flex-row md:items-start md:gap-6">
         <aside className="w-full shrink-0 space-y-3 md:sticky md:top-0 md:w-56" data-testid="project-rail">
+          <nav className="grid gap-1" aria-label={locale === "ru" ? "Настройки Lane Pilot" : "Lane Pilot settings"}>
+            <Button className="min-h-11 justify-start" variant={activeScope === "globals" ? "secondary" : "ghost"} onClick={() => setActiveScope("globals")}>{locale === "ru" ? "Общие настройки" : "General settings"}</Button>
+            <Button className="min-h-11 justify-start" variant={activeScope === "agents" ? "secondary" : "ghost"} onClick={() => setActiveScope("agents")}>{locale === "ru" ? "Агенты" : "Agents"}</Button>
+          </nav>
           <div>
             <h1 className="text-sm font-semibold">{t("projects")}</h1>
             <p className="mt-1 text-xs text-muted-foreground">{t("projectRailHint")}</p>
@@ -1068,14 +1124,14 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               variant={project.id === projectId ? "secondary" : "ghost"}
               aria-current={project.id === projectId ? "page" : undefined}
               data-testid={`project-item-${project.id}`}
-              className="justify-start truncate"
+              className="min-h-11 justify-start truncate"
               onClick={() => chooseProject(project.id)}
             >{project.name}</Button>)}
           </nav> : null}
           <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
         </aside>
 
-        <main className="min-w-0 flex-1 space-y-5" data-testid="project-settings">
+        <div className="min-w-0 flex-1"><OwnedSettings scope={activeScope} locale={locale} onDefaultsSaved={applyGlobalDefaults} /><main hidden={activeScope !== "projects"} className="space-y-5" data-testid="project-settings">
         {!projectId ? <Card data-testid="project-settings-empty"><CardContent className="p-5 text-sm text-muted-foreground">{t("noProjectSelected")}</CardContent></Card> : <>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div><p className="text-xs text-muted-foreground">{t("selectedProject")}</p><h1 className="break-words text-xl font-semibold">{selectedProjectName}</h1></div>
@@ -1165,6 +1221,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">{t("writerPicker")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
+                <Button variant="outline" className="min-h-11" disabled={![WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER].some((key) => data?.explicitKeys.includes(key))} onClick={() => void resetInherited([WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER])}>{locale === "ru" ? "Наследовать модель и параметры" : "Inherit model and settings"}</Button>
                 {(() => {
                   const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
                   const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
@@ -1719,8 +1776,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </AlertDialogContent>
         </AlertDialog>
         </>}
-        </main>
+        </main></div>
       </div>
-    </div>
+    </div></InheritanceContext.Provider>
   );
 }

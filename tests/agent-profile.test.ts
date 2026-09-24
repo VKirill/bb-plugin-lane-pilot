@@ -56,3 +56,17 @@ describe("Lane Pilot owned main-agent profiles", () => {
       .toBe("seo-specialist");
   });
 });
+
+it("rejects stored compiled instructions whose digest no longer matches", () => {
+  const compiled = compileMainAgentProfile("copy-lead");
+  expect(() => resolveSelectedMainAgentProfile({ "main.agent": "copy-lead" }, {
+    "copy-lead": { compiled: { ...compiled, prompt: "Tampered body" } },
+  })).toThrow(/digest/);
+});
+
+
+it("fails closed on schema-invalid saved payload even if a legacy prompt is present", () => {
+  expect(() => resolveSelectedMainAgentProfile({ "main.agent": "copy-lead" }, {
+    "copy-lead": { prompt: "Legacy fallback must not run", description: "Legacy", compiled: { id: "copy-lead", sourceVersion: "lp-owned-2", sourceHash: "invalid", description: "Bad", prompt: "Broken" } as never },
+  })).toThrow();
+});

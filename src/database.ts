@@ -196,6 +196,15 @@ export const migrations = [
   `ALTER TABLE lane_pilot_run ADD COLUMN run_gate TEXT NOT NULL DEFAULT 'none' CHECK(run_gate IN ('none','pre-merge'))`,
   `ALTER TABLE lane_pilot_attempt ADD COLUMN holder_thread_id TEXT`,
   `ALTER TABLE lane_pilot_run ADD COLUMN helper_policy_json TEXT`,
+  `CREATE TABLE lane_pilot_setting_generation (
+    project_id TEXT NOT NULL,
+    binding_id TEXT NOT NULL DEFAULT '',
+    key TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    PRIMARY KEY (project_id,binding_id,key)
+  ) WITHOUT ROWID`,
+  `INSERT INTO lane_pilot_setting_generation(project_id,binding_id,key,version)
+    SELECT project_id,binding_id,key,version FROM lane_pilot_project_settings`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -266,7 +275,12 @@ export function savePrototypeConfig(db: LanePilotDatabase, config: PrototypeConf
     ON CONFLICT(project_id,binding_id,key) DO UPDATE SET
       value=excluded.value, version=lane_pilot_project_settings.version+1, updated_at=excluded.updated_at`);
   db.transaction(() => {
-    for (const key of CONFIG_KEYS) statement.run(config.projectId, "", key, JSON.stringify(config[key]), now);
+    for (const key of CONFIG_KEYS) {
+      const nextVersion = getSettingVersions(db,config.projectId,[key])[key] + 1;
+      statement.run(config.projectId, "", key, JSON.stringify(config[key]), now);
+      db.prepare(`UPDATE lane_pilot_project_settings SET version=? WHERE project_id=? AND binding_id='' AND key=?`).run(nextVersion,config.projectId,key);
+      bumpSettingGeneration(db,config.projectId,key,nextVersion);
+    }
   })();
 }
 
@@ -621,11 +635,15 @@ export function saveProjectSetting(
   key: string,
   value: unknown,
 ): void {
-  db.prepare(`INSERT INTO lane_pilot_project_settings
-    (project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,1,?)
-    ON CONFLICT(project_id,binding_id,key) DO UPDATE SET
-      value=excluded.value, version=lane_pilot_project_settings.version+1, updated_at=excluded.updated_at`)
-    .run(projectId, "", key, JSON.stringify(value), Date.now());
+  db.transaction(() => {
+    const nextVersion = getSettingVersions(db,projectId,[key])[key] + 1;
+    db.prepare(`INSERT INTO lane_pilot_project_settings
+      (project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,?,?)
+      ON CONFLICT(project_id,binding_id,key) DO UPDATE SET
+        value=excluded.value, version=excluded.version, updated_at=excluded.updated_at`)
+      .run(projectId, "", key, JSON.stringify(value), nextVersion, Date.now());
+    bumpSettingGeneration(db,projectId,key,nextVersion);
+  })();
 }
 
 export function claimActivation(
@@ -757,8 +775,9 @@ export function setAttemptDirtBefore(db: LanePilotDatabase, attemptId: string, f
 export function listSettingRows(db: LanePilotDatabase, projectId: string): Array<{
   key:string; value:unknown; version:number; updated_at:number;
 }> {
-  return (db.prepare(`SELECT key,value,version,updated_at FROM lane_pilot_project_settings
-    WHERE project_id=? AND binding_id=''`).all(projectId) as Array<{
+  return (db.prepare(`SELECT s.key,s.value,COALESCE(g.version,s.version) AS version,s.updated_at FROM lane_pilot_project_settings s
+    LEFT JOIN lane_pilot_setting_generation g ON g.project_id=s.project_id AND g.binding_id=s.binding_id AND g.key=s.key
+    WHERE s.project_id=? AND s.binding_id=''`).all(projectId) as Array<{
     key:string; value:string; version:number; updated_at:number;
   }>).map((row) => {
     let value: unknown = row.value;
@@ -767,20 +786,38 @@ export function listSettingRows(db: LanePilotDatabase, projectId: string): Array
   });
 }
 
+export function getSettingVersions(db: LanePilotDatabase, projectId: string, keys: string[]): Record<string, number> {
+  const result = Object.fromEntries(keys.map((key) => [key, 0]));
+  if (!keys.length) return result;
+  const placeholders = keys.map(() => "?").join(",");
+  const rows = db.prepare(`SELECT key,version FROM lane_pilot_setting_generation WHERE project_id=? AND binding_id='' AND key IN (${placeholders})`).all(projectId,...keys) as Array<{key:string;version:number}>;
+  for (const row of rows) result[row.key] = row.version;
+  return result;
+}
+
+function bumpSettingGeneration(db: LanePilotDatabase, projectId: string, key: string, version: number): void {
+  db.prepare(`INSERT INTO lane_pilot_setting_generation(project_id,binding_id,key,version) VALUES (?,'',?,?)
+    ON CONFLICT(project_id,binding_id,key) DO UPDATE SET version=excluded.version`).run(projectId,key,version);
+}
+
+type CasUpsertSettingResult = { ok:true; version:number } | { ok:false; conflict:true; version:number; value:unknown }
+  | { ok:false; conflict:false; version:number; value:unknown; validation:SettingValidationError };
+
 export function casUpsertSetting(
   db: LanePilotDatabase,
   args: { projectId:string; key:string; value:unknown; expectedVersion:number },
-): { ok:true; version:number } | { ok:false; conflict:true; version:number; value:unknown }
-  | { ok:false; conflict:false; version:number; value:unknown; validation:SettingValidationError } {
+): CasUpsertSettingResult {
+  const save = db.transaction((): CasUpsertSettingResult => {
   const current = db.prepare(`SELECT value,version FROM lane_pilot_project_settings
     WHERE project_id=? AND binding_id='' AND key=?`).get(args.projectId, args.key) as
     {value:string; version:number}|undefined;
-  if ((args.expectedVersion === 0 && current) || (args.expectedVersion > 0 && (!current || current.version !== args.expectedVersion))) {
+  const version = getSettingVersions(db,args.projectId,[args.key])[args.key];
+  if (args.expectedVersion !== version) {
     let value: unknown = current?.value ?? null;
     if (current) {
       try { value = JSON.parse(current.value); } catch { /* keep stored text */ }
     }
-    return { ok:false, conflict:true, version:current?.version ?? 0, value };
+    return { ok:false, conflict:true, version, value };
   }
   const projectRows = db.prepare(`SELECT key,value FROM lane_pilot_project_settings
     WHERE project_id=? AND binding_id=''`).all(args.projectId) as Array<{key:string; value:string}>;
@@ -795,28 +832,28 @@ export function casUpsertSetting(
     if (current) {
       try { value = JSON.parse(current.value); } catch { /* keep stored text */ }
     }
-    return { ok:false, conflict:false, version:current?.version ?? 0, value, validation };
+    return { ok:false, conflict:false, version, value, validation };
   }
-  if (args.expectedVersion === 0) {
-    if (current) {
-      let value: unknown = current.value;
-      try { value = JSON.parse(current.value); } catch { /* keep */ }
-      return { ok:false, conflict:true, version:current.version, value };
-    }
+  const nextVersion = version + 1;
+  if (!current) {
     db.prepare(`INSERT INTO lane_pilot_project_settings
-      (project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,1,?)`)
-      .run(args.projectId, "", args.key, JSON.stringify(args.value), Date.now());
-    return { ok:true, version:1 };
+      (project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,?,?)`)
+      .run(args.projectId, "", args.key, JSON.stringify(args.value), nextVersion, Date.now());
+    bumpSettingGeneration(db,args.projectId,args.key,nextVersion);
+    return { ok:true, version:nextVersion };
   }
-  if (!casSetting(db, args)) {
+  if (!casSetting(db, { ...args, expectedVersion:version })) {
     if (!current) return { ok:false, conflict:true, version:0, value:null };
     let value: unknown = current.value;
     try { value = JSON.parse(current.value); } catch { /* keep */ }
     return { ok:false, conflict:true, version:current.version, value };
   }
+  bumpSettingGeneration(db,args.projectId,args.key,nextVersion);
   const next = db.prepare(`SELECT version FROM lane_pilot_project_settings
     WHERE project_id=? AND binding_id='' AND key=?`).get(args.projectId, args.key) as {version:number};
   return { ok:true, version:next.version };
+  });
+  return save.immediate();
 }
 
 export type SettingChange = { key:string; value:unknown; expectedVersion:number };
@@ -844,23 +881,24 @@ export function casUpsertSettings(
         key:string; value:string; version:number;
       }>;
     const settings: Record<string, unknown> = {};
+    const generations = getSettingVersions(db,args.projectId,keys);
     const stored = new Map<string, { value:unknown; version:number }>();
     for (const row of rows) {
       let value: unknown = row.value;
       try { value = JSON.parse(row.value); } catch { /* keep stored text */ }
       settings[row.key] = value;
-      stored.set(row.key, { value, version:row.version });
+      stored.set(row.key, { value, version:generations[row.key] ?? row.version });
     }
     const snapshot = () => {
       const values: Record<string, unknown> = {};
       const versions: Record<string, number> = {};
       for (const key of keys) {
         values[key] = stored.get(key)?.value ?? null;
-        versions[key] = stored.get(key)?.version ?? 0;
+        versions[key] = generations[key] ?? 0;
       }
       return { values, versions };
     };
-    if (args.changes.some((change) => (stored.get(change.key)?.version ?? 0) !== change.expectedVersion)) {
+    if (args.changes.some((change) => (generations[change.key] ?? 0) !== change.expectedVersion)) {
       return { ok:false, conflict:true, ...snapshot() };
     }
     for (const change of args.changes) settings[change.key] = change.value;
@@ -872,20 +910,21 @@ export function casUpsertSettings(
 
     const now = Date.now();
     const insert = db.prepare(`INSERT INTO lane_pilot_project_settings
-      (project_id,binding_id,key,value,version,updated_at) VALUES (?, '', ?, ?, 1, ?)`);
+      (project_id,binding_id,key,value,version,updated_at) VALUES (?, '', ?, ?, ?, ?)`);
     const update = db.prepare(`UPDATE lane_pilot_project_settings SET value=?, version=version+1, updated_at=?
-      WHERE project_id=? AND binding_id='' AND key=? AND version=?`);
+      WHERE project_id=? AND binding_id='' AND key=?`);
     const values: Record<string, unknown> = {};
     const versions: Record<string, number> = {};
     for (const change of args.changes) {
-      if (change.expectedVersion === 0) {
-        insert.run(args.projectId, change.key, JSON.stringify(change.value), now);
-        versions[change.key] = 1;
+      const nextVersion = change.expectedVersion + 1;
+      if (!stored.has(change.key)) {
+        insert.run(args.projectId, change.key, JSON.stringify(change.value), nextVersion, now);
       } else {
-        const result = update.run(JSON.stringify(change.value), now, args.projectId, change.key, change.expectedVersion);
+        const result = update.run(JSON.stringify(change.value), nextVersion, now, args.projectId, change.key);
         if (result.changes !== 1) throw new Error(`save_settings CAS changed during transaction: ${change.key}`);
-        versions[change.key] = change.expectedVersion + 1;
       }
+      bumpSettingGeneration(db,args.projectId,change.key,nextVersion);
+      versions[change.key] = nextVersion;
       values[change.key] = change.value;
     }
     return { ok:true, conflict:false, values, versions };
@@ -930,4 +969,29 @@ export function getRun(db: LanePilotDatabase, runId: string): {
 }|undefined {
   return db.prepare("SELECT id,project_id,pm_thread_id,state,kind,closed_at,writer_workspace_path,writer_environment_id,run_gate,run_policy_json FROM lane_pilot_run WHERE id=?").get(runId) as
     {id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null; writer_workspace_path:string|null; writer_environment_id:string|null; run_gate:"none"|"pre-merge";run_policy_json:string}|undefined;
+}
+
+/** Remove explicit rows only after the validated snapshot still matches. Durable generations survive deletion. */
+export function casResetSettings(
+  db: LanePilotDatabase,
+  args: { projectId: string; keys: string[]; expectedVersions: Record<string, number>; validationKeys: string[]; validatedRows: ReturnType<typeof listSettingRows> },
+): SaveSettingsResult {
+  return db.transaction((): SaveSettingsResult => {
+    const rows = listSettingRows(db, args.projectId);
+    const byKey = new Map(rows.map((row) => [row.key, row]));
+    const values = Object.fromEntries(args.keys.map((key) => [key, byKey.get(key)?.value ?? null]));
+    const versions = getSettingVersions(db,args.projectId,args.validationKeys);
+    const fingerprint = (items: typeof rows) => JSON.stringify(args.validationKeys.flatMap((key) => { const row = items.find((item) => item.key === key); return row ? [{ key: row.key, value: row.value, version: row.version }] : []; }).sort((a, b) => a.key.localeCompare(b.key)));
+    if (args.keys.some((key) => versions[key] !== args.expectedVersions[key]) || fingerprint(rows) !== fingerprint(args.validatedRows)) {
+      return { ok: false, conflict: true, values, versions };
+    }
+    const remove = db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?");
+    for (const key of args.keys) {
+      remove.run(args.projectId, key);
+      const nextVersion = versions[key] + 1;
+      bumpSettingGeneration(db,args.projectId,key,nextVersion);
+      versions[key] = nextVersion;
+    }
+    return { ok: true, conflict: false, values: Object.fromEntries(args.keys.map((key) => [key, null])), versions: Object.fromEntries(args.keys.map((key) => [key, versions[key]])) };
+  })();
 }
