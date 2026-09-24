@@ -106,8 +106,6 @@ export const migrations = [
   `ALTER TABLE lane_pilot_task_next RENAME TO lane_pilot_task`,
   `ALTER TABLE lane_pilot_attempt_next RENAME TO lane_pilot_attempt`,
   `ALTER TABLE lane_pilot_run ADD COLUMN writer_workspace_path TEXT`,
-  `ALTER TABLE lane_pilot_run ADD COLUMN writer_environment_id TEXT`,
-  `ALTER TABLE lane_pilot_run ADD COLUMN run_gate TEXT NOT NULL DEFAULT 'none' CHECK(run_gate IN ('none','pre-merge'))`,
   `CREATE TABLE lane_pilot_attempt_reasoning (
     attempt_id TEXT PRIMARY KEY,
     trace_json TEXT NOT NULL,
@@ -194,6 +192,8 @@ export const migrations = [
   `ALTER TABLE lane_pilot_run ADD COLUMN run_policy_json TEXT NOT NULL DEFAULT '{"schemaVersion":1,"pools":{"provider":5,"verification":2}}'`,
   `ALTER TABLE lane_pilot_memory ADD COLUMN personal_bot TEXT NOT NULL DEFAULT ''`,
   `CREATE INDEX lane_pilot_memory_project_bot_audience ON lane_pilot_memory(project_id,personal_bot,audience)`,
+  `ALTER TABLE lane_pilot_run ADD COLUMN writer_environment_id TEXT`,
+  `ALTER TABLE lane_pilot_run ADD COLUMN run_gate TEXT NOT NULL DEFAULT 'none' CHECK(run_gate IN ('none','pre-merge'))`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
