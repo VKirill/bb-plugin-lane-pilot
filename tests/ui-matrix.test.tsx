@@ -81,6 +81,7 @@ async function mountPage(
       list_projects: () => ({ projects:[{ id:"proj_ui", name:"UI test" }], lastProjectId:"proj_ui" }),
       finish_run: () => ({ projectId:"proj_ui", finishedRunIds:[], closed:true }),
       get_screen: () => screenFixture(),
+      get_globals: () => ({ defaults: {}, revision: 0, agents: [] }),
       save_setting: () => ({ ok: true, conflict: false, version: 2, value: true }),
       save_settings: () => ({ ok:true, conflict:false, values:{}, versions:{} }),
       cancel_attempt: () => ({ ok: true, state: "canceled", reason: null }),
@@ -131,8 +132,12 @@ describe("Lane Pilot UI", () => {
     expect(slot.getByTestId("pm-read-settings")).toBeTruthy();
     fireEvent.click(slot.getByTestId("tab-checks"));
     expect(slot.getByTestId("plan-critique-settings")).toBeTruthy();
+    expect(slot.getByTestId("plan-critique-settings").textContent).not.toContain("plan_critique.agent");
+    expect(slot.getByTestId("plan-critique-settings").textContent).not.toMatch(/dispatch|changes_requested/);
     expect(slot.getByTestId("code-critique-settings")).toBeTruthy();
     fireEvent.click(slot.getByTestId("tab-settings"));
+    expect(slot.getByTestId("settings-panel").textContent).not.toContain(`${en.fieldDefault}:`);
+    expect(slot.getByTestId("settings-panel").textContent).not.toContain(`${en.fieldEffective}:`);
     fireEvent.click(slot.getByTestId("help-pm_read.min_lines"));
     expect(slot.getByTestId("help-dialog-pm_read.min_lines").textContent).toContain(en.largeFileThresholdHelp);
     fireEvent.click(slot.getByTestId("tab-diagnostics"));
@@ -651,7 +656,7 @@ describe("Lane Pilot UI", () => {
       },
     });
     await slot.findByTestId("settings-panel");
-    fireEvent.click(slot.getByRole("button", { name: "General settings" }));
+    fireEvent.click(slot.getByRole("tab", { name: "General settings" }));
     const placement = await slot.findByRole("combobox", { name: "Default helper placement" });
     fireEvent.click(placement);
     fireEvent.click(await slot.findByRole("option", { name: "In the project tree" }));
@@ -664,7 +669,7 @@ describe("Lane Pilot UI", () => {
     expect(row.textContent).toContain("In the project tree");
     expect(row.textContent).toContain("owner defaults");
     // Reselecting this project takes the reconciled cache, never the pre-save value.
-    fireEvent.click(slot.getByRole("button", { name: "General settings" }));
+    fireEvent.click(slot.getByRole("tab", { name: "General settings" }));
     fireEvent.click(slot.getByTestId("project-item-proj_ui"));
     await waitFor(() => expect(slot.getByTestId("project-settings").hidden).toBe(false));
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
@@ -690,10 +695,10 @@ describe("Lane Pilot UI", () => {
     });
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     const row = slot.getByTestId("field-s371");
-    await waitFor(() => expect(row.textContent).toContain("project override"));
+    await waitFor(() => expect(row.textContent).toContain("Set on this project"));
     fireEvent.click(within(row).getByRole("button", { name: "Reset to inherited" }));
     await waitFor(() => expect(row.textContent).toContain("owner defaults"));
-    expect(row.textContent).not.toContain("project override");
+    expect(row.textContent).not.toContain("Set on this project");
     expect(within(row).queryByRole("button", { name: "Reset to inherited" })).toBeNull();
     expect(slot.getByTestId("field-s371").textContent).toContain("project tree");
     slot.lifecycle.unmount();

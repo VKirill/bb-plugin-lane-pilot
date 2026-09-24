@@ -52,16 +52,19 @@ export function resolveWriterBinding(input: {
   }
   const env = input.environment;
   if (input.session?.environmentId && env && env.id === input.session.environmentId) {
-    const belongs = (env.projectId ?? input.session.projectId ?? null) === input.projectId
-      || sources.some((row) => row.hostId === env.hostId);
+    const sessionProject = env.projectId ?? input.session.projectId ?? null;
+    const belongs = sessionProject === input.projectId;
     if (!belongs) {
-      /* foreign environment — ignore */
+      /* foreign project environment is not a session binding */
     } else if (env.status !== "ready" || !env.path?.startsWith("/")) {
       if (env.hostId && env.path?.startsWith("/")) return { status: "offline", hostId: env.hostId, path: env.path };
     } else {
-      const matched = sourceForPair(sources, env.hostId, env.path) ?? sources.find((row) => row.hostId === env.hostId);
-      if (matched || sources.length === 0) {
-        return { status: "resolved", hostId: env.hostId, path: env.path, source: "session", bindingId: matched?.id };
+      const matched = sourceForPair(sources, env.hostId, env.path);
+      if (matched) {
+        return { status: "resolved", hostId: matched.hostId, path: matched.path, source: "session", bindingId: matched.id };
+      }
+      if (sources.length === 0 && env.hostId && env.path.startsWith("/")) {
+        return { status: "resolved", hostId: env.hostId, path: env.path, source: "session" };
       }
     }
   }

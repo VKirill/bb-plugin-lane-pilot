@@ -28,11 +28,11 @@ describe("owned settings source DOM", () => {
     const { slot, harness } = await mount(locale);
     try {
       const ru = locale === "ru";
-      fireEvent.click(await slot.findByRole("button", { name: ru ? "Агенты" : "Agents" }));
+      fireEvent.click(await slot.findByRole("tab", { name: ru ? "Агенты" : "Agents" }));
       const prompt = await slot.findByLabelText(ru ? "Инструкции" : "Instructions");
       fireEvent.change(prompt, { target: { value: "My independent instructions" } });
-      fireEvent.click(slot.getByRole("button", { name: ru ? "Общие настройки" : "General settings" }));
-      fireEvent.click(slot.getByRole("button", { name: ru ? "Агенты" : "Agents" }));
+      fireEvent.click(slot.getByRole("tab", { name: ru ? "Общие настройки" : "General settings" }));
+      fireEvent.click(slot.getByRole("tab", { name: ru ? "Агенты" : "Agents" }));
       expect((slot.getByLabelText(ru ? "Инструкции" : "Instructions") as HTMLTextAreaElement).value).toBe("My independent instructions");
       fireEvent.click(slot.getByRole("button", { name: ru ? "Сохранить" : "Save" }));
       await slot.findByRole("status");
@@ -44,7 +44,7 @@ describe("owned settings source DOM", () => {
   it("retains a stale editor draft on CAS conflict without overwriting another editor", async () => {
     const { slot, harness } = await mount("en");
     try {
-      fireEvent.click(await slot.findByRole("button", { name: "Agents" }));
+      fireEvent.click(await slot.findByRole("tab", { name: "Agents" }));
       const prompt = await slot.findByLabelText("Instructions");
       const before: any = await harness.behavior.callRpc("get_globals", {});
       await harness.behavior.callRpc("save_agent_profile", { id: "dev-orchestrator", prompt: "Other editor", description: "Other", expectedSourceHash: before.agents[0].sourceHash });

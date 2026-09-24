@@ -410,8 +410,33 @@ export const rpcContract = defineRpcContract({
     output: z.object({ projectId: z.string(), finishedRunIds: z.array(z.string()), closed: z.boolean() }).strict(),
   },
   activate_pm: {
-    input: z.object({ projectId: z.string().min(1), sourceThreadId: z.string().nullable() }).strict(),
+    input: z.object({
+      projectId: z.string().min(1),
+      sourceThreadId: z.string().nullable(),
+      agentId: z.string().nullable().optional(),
+    }).strict(),
     output: z.object({ threadId: z.string().min(1), runId: z.string().min(1) }).strict(),
+  },
+  activation_context: {
+    input: z.object({
+      projectId: z.string().nullable(),
+      threadId: z.string().nullable(),
+    }).strict(),
+    output: z.object({
+      projectId: z.string().nullable(),
+      projects: z.array(z.object({ id: z.string(), name: z.string() }).strict()),
+      bindingStatus: z.enum(["resolved", "ambiguous", "setup_required", "offline", "catalog_unavailable"]).nullable(),
+      compiledMainAgent: z.enum(["supported", "none"]),
+      mainAgents: z.array(z.object({ id: z.string(), description: z.string() }).strict()),
+      writer: z.object({
+        providerId: z.string().nullable(),
+        model: z.string().nullable(),
+        reasoningEffort: z.string().nullable(),
+      }).strict(),
+      liveRun: z.object({ threadId: z.string(), runId: z.string() }).strict().nullable(),
+      pluginRole: z.string().nullable(),
+      threadStatus: z.string().nullable(),
+    }).strict(),
   },
   get_screen: {
     input: z.object({ projectId: z.string().min(1) }).strict(),
@@ -471,6 +496,8 @@ export const rpcContract = defineRpcContract({
       qaHosts: z.array(z.object({
         id: z.string(), name: z.string(), status: z.string(), connected: z.boolean(),
       }).strict()),
+      compiledMainAgent: z.enum(["supported", "none"]).optional(),
+      mainAgents: z.array(z.object({ id: z.string(), description: z.string() }).strict()).optional(),
       lastWriterTrace: z.object({
         providerId: z.string(),
         model: z.string(),

@@ -82,7 +82,7 @@ import {
 } from "./src/database";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "./src/state-machine";
 import { validateTaskV2 } from "./src/task-v2";
-import { reconcile, reconcileHolder, type IdempotencyTriple } from "./src/reconcile";
+import { reconcile, reconcileCritic, reconcileHolder, type IdempotencyTriple } from "./src/reconcile";
 import { spawnWithSeam } from "./src/spawn-seam";
 import {
   compileMainAgentProfile,
@@ -96,9 +96,10 @@ import {
 } from "./src/agent-profile";
 import { VISIBLE_CATALOG } from "./src/ui-catalog";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "./src/jev-reasoning";
-import { QA_HOST_KEY, QA_WORKSPACE_KEY, mapListedQaHosts, qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "./src/qa-host";
+import { QA_HOST_KEY, QA_WORKSPACE_KEY, mapListedQaHosts, qaCodexPreflight, qaHostUnreachableReason, qaSpawnClaimed, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "./src/qa-host";
 import { resolveWriterBinding, type ProjectSourceBinding, type WriterBindingResolution } from "./src/project-binding";
-import { inheritProjectValues, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseLanePilotDefaults } from "./src/lp-defaults";
+import { userVisibleProjects } from "./src/project-scope";
+import { inheritProjectValues, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseHelperPlacement, parseLanePilotDefaults, type HelperPlacementMode } from "./src/lp-defaults";
 import { helperSpawnFields, resolveHelperPlacement } from "./src/helper-placement";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "./src/stages/critique";
 import {
@@ -495,6 +496,82 @@ function recordGateEvaluation(db:ReturnType<typeof openDatabase>,input:{projectI
     inputSha256:sha256(input.input),outputSha256:output===null?null:sha256(output),attempt:Math.min(input.attempt,2),occurredAt:Date.now()});
 }
 
+function parseRunHelperJson(stored: string | null): Record<string, unknown> | null {
+  if (!stored) return null;
+  try {
+    const parsed = JSON.parse(stored) as unknown;
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function routingFieldsFromSettings(settings: Record<string, unknown>): { helperPlacement: HelperPlacementMode; qaHostId: string | null } {
+  const host = settings["browser_qa.host_id"];
+  return {
+    helperPlacement: parseHelperPlacement(settings["helper.placement"]),
+    qaHostId: typeof host === "string" && host.trim() ? host.trim() : null,
+  };
+}
+
+function runRoutingFromParsed(parsed: Record<string, unknown> | null): { helperPlacement: HelperPlacementMode; qaHostId: string | null } | null {
+  if (!parsed || typeof parsed.helperPlacement !== "string") return null;
+  const host = parsed.qaHostId;
+  return {
+    helperPlacement: parseHelperPlacement(parsed.helperPlacement),
+    qaHostId: typeof host === "string" && host.trim() ? host.trim() : null,
+  };
+}
+
+async function inheritedProjectSettings(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, projectId: string): Promise<Record<string, unknown>> {
+  return inheritProjectValues(
+    loadProjectSettings(db, projectId),
+    parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)),
+  ).values;
+}
+
+function freezeRunRouting(
+  db: ReturnType<typeof openDatabase>,
+  runId: string,
+  settings: Record<string, unknown>,
+): { helperPlacement: HelperPlacementMode; qaHostId: string | null } {
+  const stored = loadRunHelperPolicyJson(db, runId);
+  const parsed = parseRunHelperJson(stored);
+  const existing = runRoutingFromParsed(parsed);
+  if (existing) return existing;
+  const routing = routingFieldsFromSettings(settings);
+  const helperParsed = parseHelperContextSettings(settings);
+  const helperSettings = helperParsed.ok
+    ? helperParsed.settings
+    : { mode: "inherit" as const, skills: [] as string[], mcpServers: [] as string[], bbPlugins: [] as string[], nativePlugins: [] as string[] };
+  persistRunHelperPolicyJson(db, runId, JSON.stringify({
+    schemaVersion: 1,
+    mode: helperSettings.mode,
+    settings: helperSettings,
+    parentRequired: false,
+    parentPolicy: null,
+    policy: parsed && "policy" in parsed ? parsed.policy : null,
+    ...(parsed ?? {}),
+    ...routing,
+  }));
+  return routing;
+}
+
+function criticReconcilePort(bb: BbPluginApi, projectId: string) {
+  return {
+    list: async ({ limit, offset }:{limit:number;offset:number}) => (await bb.sdk.threads.list({
+      projectId,
+      originPluginId: "lane-pilot",
+      includeHidden: true,
+      limit,
+      offset,
+    })).map((thread) => ({ id: thread.id })),
+    metadata: async (threadId: string) => bb.sdk.threads.getPluginMetadata({ threadId }),
+  };
+}
+
+const CRITIC_OUTCOME_UNKNOWN = "code_critique_outcome_unknown";
+
 function resolveHelperDispatch(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string}): ReturnType<typeof decideHelperDispatch> {
   const stored = loadRunHelperPolicyJson(input.db, input.runId);
   let snapshot: HelperPolicySnapshot | null = null;
@@ -536,27 +613,33 @@ async function helperChildPlacement(input:{
   const run = getRun(input.db, input.runId);
   const parentId = run?.pm_thread_id;
   if (!parentId) throw new Error("helper_parent_thread_missing");
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const parentThread = await Promise.race([
-    input.bb.sdk.threads.get({ threadId:parentId }).catch(() => null),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), 1_000)),
-  ]);
+    input.bb.sdk.threads.get({ threadId:parentId }),
+    new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), 2_000); }),
+  ]).finally(() => { if (timer) clearTimeout(timer); }).catch(() => null);
+  if (!parentThread) throw new Error("helper_parent_thread_unresolved");
   const threadProject = stringAt(parentThread, "projectId");
-  if (threadProject && threadProject !== input.projectId) throw new Error("helper_parent_project_mismatch");
-  const sourceThreadId = stringAt(parentThread, "sourceThreadId") || parentId;
-  const lifecycleOwnerThreadId = stringAt(parentThread, "lifecycleOwnerThreadId") || parentId;
-  const settings = loadProjectSettings(input.db, input.projectId);
+  if (!threadProject) throw new Error("helper_parent_identity_unresolved");
+  if (threadProject !== input.projectId) throw new Error("helper_parent_project_mismatch");
+  const sourceThreadId = stringAt(parentThread, "sourceThreadId");
+  const lifecycleOwnerThreadId = stringAt(parentThread, "lifecycleOwnerThreadId");
+  if (!sourceThreadId || !lifecycleOwnerThreadId) throw new Error("helper_parent_relation_missing");
+  const settings = await inheritedProjectSettings(input.bb, input.db, input.projectId);
+  const routing = freezeRunRouting(input.db, input.runId, settings);
   const resolved = resolveHelperPlacement({
-    mode:settings["helper.placement"],
-    projectId:input.projectId,
-    parent:{
-      id:parentId,
-      projectId:input.projectId,
-      environmentId:stringAt(parentThread, "environmentId"),
+    mode: routing.helperPlacement,
+    projectId: threadProject,
+    parent: {
+      id: parentId,
+      projectId: threadProject,
+      sectionId: stringAt(parentThread, "sectionId"),
+      environmentId: stringAt(parentThread, "environmentId"),
       sourceThreadId,
       lifecycleOwnerThreadId,
     },
-    role:input.role,
-    taskTitle:input.taskTitle,
+    role: input.role,
+    taskTitle: input.taskTitle,
   });
   if (!resolved.ok) throw new Error(resolved.reason);
   return helperSpawnFields(resolved.placement);
@@ -814,8 +897,49 @@ async function runCodeCritique(input:{
         return { allowed:false, reason:`code_critique_failed:${reason}`, review:"not_required", settings:parsed };
       }
     }
+    if (existing.state === "running" || existing.state === "pending") {
+      const recovered = await reconcileCritic(criticReconcilePort(input.bb, input.projectId), {
+        lanePilotRunId: input.runId, lanePilotTaskId: input.taskId, stageId: "code-critique", role: "code-critic",
+      });
+      if (recovered.kind === "found") {
+        recordStage(input.db, { ...base, state:"running", providerId:existing.providerId, model:existing.model,
+          threadId:recovered.threadId, result:{ ...ledgerCarry, ...hashFields, spawnAttempted:true, policy:frozen ?? critiquePolicyFromResult(existing.result) } });
+        try {
+          await waitThreadIdle(input.bb, recovered.threadId, 90_000, "critique_thread_timeout");
+          const raw = (await input.bb.sdk.threads.output({ threadId:recovered.threadId })).output;
+          if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+          const critique = parseCodeCritique(raw);
+          const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+          const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
+          recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
+            threadId:recovered.threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+          return blocked
+            ? { allowed:false, reason:"code_critique_blocked", critique:result, parsed:critique, settings:parsed, review:"not_required", policy:result.policy }
+            : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy:result.policy };
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          recordStage(input.db, { ...base, state:"failed", threadId:recovered.threadId, reason, result:{ ...ledgerCarry, error:reason, policy:frozen } });
+          return { allowed:false, reason:`code_critique_failed:${reason}`, review:"not_required", settings:parsed };
+        }
+      }
+      if (recovered.kind !== "not_found" || qaSpawnClaimed(existing.result) || existing.state === "running") {
+        const claimed = qaSpawnClaimed(existing.result);
+        if (recovered.kind !== "not_found" || claimed) {
+          const reason = recovered.kind === "error"
+            ? `${CRITIC_OUTCOME_UNKNOWN}:${recovered.message}`
+            : recovered.kind === "blocked"
+              ? `${CRITIC_OUTCOME_UNKNOWN}:${recovered.reason}`
+              : `${CRITIC_OUTCOME_UNKNOWN}: critic spawn claimed without threadId; no second critic`;
+          recordStage(input.db, { ...base, state:"blocked", reason, result:{ ...ledgerCarry, ...hashFields, spawnAttempted:true, policy:frozen ?? critiquePolicyFromResult(existing.result) } });
+          return { allowed:false, reason, review:"not_required", settings:parsed };
+        }
+        /* running, unclaimed, not_found: crash before spawn — continue to claim/spawn, never pending */
+      }
+    }
   }
-  recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, result:{ ...ledgerCarry, ...hashFields, truncated:input.evidence.truncated } });
+  if (!(existing && existing.inputSha256 === sha256(source) && existing.state === "running")) {
+    recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, result:{ ...ledgerCarry, ...hashFields, truncated:input.evidence.truncated } });
+  }
   const liveSelection = resolveStageWriterSelection({
     settings, config:input.config, stageProviderKey:"code_critique.provider", stageModelKey:"code_critique.model",
   });
@@ -848,6 +972,48 @@ async function runCodeCritique(input:{
   recordStage(input.db, { ...base, state:"running", providerId, model:modelId, result:snapshot });
   let threadId:string|null = null;
   try {
+    if (!claimStageSpawn(input.db, input.runId, input.taskId, "code-critique")) {
+      const current = listStageReceipts(input.db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
+      if (current?.threadId) {
+        threadId = current.threadId;
+        await waitThreadIdle(input.bb, threadId, 90_000, "critique_thread_timeout");
+        const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+        if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+        const critique = parseCodeCritique(raw);
+        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier: writerServiceTier(settings) === "fast" ? "fast" : "standard", mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
+        recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
+          threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+        return blocked
+          ? { allowed:false, reason:"code_critique_blocked", critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
+          : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy };
+      }
+      const recovered = await reconcileCritic(criticReconcilePort(input.bb, input.projectId), {
+        lanePilotRunId: input.runId, lanePilotTaskId: input.taskId, stageId: "code-critique", role: "code-critic",
+      });
+      if (recovered.kind === "found") {
+        recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId:recovered.threadId, result:{ ...snapshot, spawnAttempted:true, threadId:recovered.threadId, policy } });
+        threadId = recovered.threadId;
+        await waitThreadIdle(input.bb, threadId, 90_000, "critique_thread_timeout");
+        const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+        if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+        const critique = parseCodeCritique(raw);
+        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const result = { ...snapshot, ...critique, policy, rawOutput:raw.slice(0, 12_000) };
+        recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
+          threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+        return blocked
+          ? { allowed:false, reason:"code_critique_blocked", critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
+          : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy };
+      }
+      const reason = recovered.kind === "error"
+        ? `${CRITIC_OUTCOME_UNKNOWN}:${recovered.message}`
+        : recovered.kind === "blocked"
+          ? `${CRITIC_OUTCOME_UNKNOWN}:${recovered.reason}`
+          : `${CRITIC_OUTCOME_UNKNOWN}: critic spawn claimed without threadId; no second critic`;
+      recordStage(input.db, { ...base, state:"blocked", providerId, model:modelId, reason, result:{ ...snapshot, spawnAttempted:true, policy } });
+      return { allowed:false, reason, review:"not_required", settings:parsed, policy };
+    }
     const [providers, catalog] = await Promise.all([
       input.bb.sdk.providers.list({ hostId:input.config.hostId }),
       input.bb.sdk.providers.models({ providerId, hostId:input.config.hostId }),
@@ -1316,10 +1482,12 @@ export default async function plugin(bb: BbPluginApi) {
     return settings;
   }
 
-  async function activate(projectId: string, sourceThreadId: string, kind: "bb"|"cli" = "bb"): Promise<{threadId:string; runId:string}> {
-    const sourceMetadata = await bb.sdk.threads.getPluginMetadata({ threadId:sourceThreadId });
-    if (valueAt(sourceMetadata, "role") === "writer") {
-      throw new Error("Lane Pilot writer threads cannot activate a PM");
+  async function activate(projectId: string, sourceThreadId: string | null, kind: "bb"|"cli" = "bb", agentId?: string | null): Promise<{threadId:string; runId:string}> {
+    if (sourceThreadId) {
+      const sourceMetadata = await bb.sdk.threads.getPluginMetadata({ threadId:sourceThreadId });
+      if (valueAt(sourceMetadata, "role") === "writer") {
+        throw new Error("Lane Pilot writer threads cannot activate a PM");
+      }
     }
     const config = loadPrototypeConfig(db, projectId);
     if (!config) throw new Error(`Lane Pilot prototype is not configured for ${projectId}`);
@@ -1349,8 +1517,21 @@ export default async function plugin(bb: BbPluginApi) {
     importSettingsOnce(db, projectId, imported.imported);
     const existing = getActivation(db, projectId);
     if (existing) refreshRun(existing.run_id);
-    const settings = (await effectiveProjectSettings(projectId)).values;
+    const settings = { ...(await effectiveProjectSettings(projectId)).values };
+    if (agentId !== undefined && agentId !== null) {
+      if (agentId === "") delete settings["main.agent"];
+      else settings["main.agent"] = agentId;
+    }
     const owned = await ownedAgents();
+    compiledMainAgentSpawnBinding({
+      capability: detectCompiledMainAgentCapability(
+        (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
+      ),
+      profile: (() => {
+        const profile = resolveSelectedMainAgentProfile(settings, owned);
+        return profile ? Object.freeze(JSON.parse(JSON.stringify(profile)) as CompiledMainAgent) : null;
+      })(),
+    });
     const configuredRunGate = settings["run.gate"];
     if (configuredRunGate !== undefined && configuredRunGate !== "none" && configuredRunGate !== "pre-merge") {
       throw new Error(`invalid run.gate setting: ${String(configuredRunGate)}`);
@@ -1360,21 +1541,28 @@ export default async function plugin(bb: BbPluginApi) {
     const managedWorkspace = usesManagedWorktree(workspaceMode);
     const runId = id("lprun");
     createRun(db, runId, projectId, kind, managedWorkspace ? null : config.writerWorkspacePath, runGate, buildRunPolicy(settings), config.hostId);
-    claimActivation(db, { projectId, pmThreadId:`pending:${sourceThreadId}`, runId });
+    claimActivation(db, { projectId, pmThreadId:`pending:${sourceThreadId ?? "new"}`, runId });
     await host.call("writePmSettings", {
       requestedHostId: config.hostId,
       pmWorkspacePath: config.pmWorkspacePath,
     }, { hostId: config.hostId, timeoutMs: 15_000 }).catch(() => undefined);
+    let lifecycleOwnerThreadId = sourceThreadId ?? undefined;
+    if (sourceThreadId) {
+      try {
+        lifecycleOwnerThreadId = stringAt(await bb.sdk.threads.get({ threadId: sourceThreadId }), "lifecycleOwnerThreadId") || sourceThreadId;
+      } catch {
+        lifecycleOwnerThreadId = sourceThreadId;
+      }
+    }
     let spawned:Awaited<ReturnType<typeof bb.sdk.threads.spawn>>;
     try {
       spawned = await bb.sdk.threads.spawn({
         projectId,
-        sourceThreadId,
-        parentThreadId: sourceThreadId,
-        lifecycleOwnerThreadId: stringAt(
-          await bb.sdk.threads.get({ threadId: sourceThreadId }).catch(() => null),
-          "lifecycleOwnerThreadId",
-        ) || sourceThreadId,
+        ...(sourceThreadId ? {
+          sourceThreadId,
+          parentThreadId: sourceThreadId,
+          ...(lifecycleOwnerThreadId ? { lifecycleOwnerThreadId } : {}),
+        } : {}),
         providerId: config.pmProviderId,
         model: config.pmModel,
         prompt: pmPrompt(runId, config, managedWorkspace),
@@ -2888,7 +3076,8 @@ export default async function plugin(bb: BbPluginApi) {
     const task=workspace.task;
     const acceptance = listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "acceptance-receipt");
     if (acceptance?.state !== "passed") throw new Error("browser QA requires an accepted writer receipt first");
-    const settings = loadProjectSettings(db,args.projectId);
+    const settings = await inheritedProjectSettings(bb, db, args.projectId);
+    const routing = freezeRunRouting(db, args.runId, settings);
     const enabled = configuredSetting(settings,"browser_qa.enabled");
     const providerValue = configuredSetting(settings,"browser_qa.provider");
     const provider = providerValue == null || providerValue === "jev" ? "jev"
@@ -2976,7 +3165,7 @@ export default async function plugin(bb: BbPluginApi) {
     try {
       qaTarget = resolveBrowserQaTarget({
         writerHostId: config.hostId,
-        configuredHostId: configuredSetting(settings, QA_HOST_KEY),
+        configuredHostId: routing.qaHostId ?? configuredSetting(settings, QA_HOST_KEY),
         configuredWorkspace: configuredSetting(settings, QA_WORKSPACE_KEY),
         writerWorkspace: task.project_cwd,
       });
@@ -4383,9 +4572,55 @@ export default async function plugin(bb: BbPluginApi) {
       await finishRunSafely(bb, db, projectId, runId, "rpc");
       return { projectId, finishedRunIds: [runId], closed: true };
     },
-    activate_pm: ({ projectId, sourceThreadId }) => {
-      if (!sourceThreadId) throw new Error("Open an ordinary thread before enabling Lane Pilot");
-      return activate(projectId, sourceThreadId);
+    activate_pm: ({ projectId, sourceThreadId, agentId }) => {
+      return activate(projectId, sourceThreadId, "bb", agentId);
+    },
+    activation_context: async ({ projectId, threadId }) => {
+      const listed = await bb.sdk.projects.list({ includePersonal: true });
+      const projects = userVisibleProjects(listed.map((row) => ({
+        id: row.id,
+        name: row.name,
+        kind: row.kind === "personal" || row.kind === "standard" ? row.kind : undefined,
+      }))).map((row) => ({ id: row.id, name: row.name }));
+      let bindingStatus: "resolved" | "ambiguous" | "setup_required" | "offline" | "catalog_unavailable" | null = null;
+      let writer = { providerId: null as string | null, model: null as string | null, reasoningEffort: null as string | null };
+      let liveRun: { threadId: string; runId: string } | null = null;
+      if (projectId) {
+        const binding = await resolveProjectWriterHost({ projectId });
+        bindingStatus = binding.status;
+        const settings = (await effectiveProjectSettings(projectId)).values;
+        writer = {
+          providerId: typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : null,
+          model: typeof settings["writer.model"] === "string" ? settings["writer.model"] as string : null,
+          reasoningEffort: typeof settings["writer.reasoning_effort"] === "string" ? settings["writer.reasoning_effort"] as string : null,
+        };
+        const activation = getActivation(db, projectId);
+        if (activation && !activation.pm_thread_id.startsWith("pending:")) {
+          liveRun = { threadId: activation.pm_thread_id, runId: activation.run_id };
+        }
+      }
+      let pluginRole: string | null = null;
+      let threadStatus: string | null = null;
+      if (threadId) {
+        const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null);
+        const role = valueAt(metadata, "role");
+        pluginRole = typeof role === "string" ? role : null;
+        const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+        threadStatus = stringAt(thread, "status");
+      }
+      return {
+        projectId,
+        projects,
+        bindingStatus,
+        compiledMainAgent: detectCompiledMainAgentCapability(
+          (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
+        ),
+        mainAgents: (await listedAgentProfiles()).map((row) => ({ id: row.id, description: row.description })),
+        writer,
+        liveRun,
+        pluginRole,
+        threadStatus,
+      };
     },
     get_screen: async ({ projectId }) => {
       const config = loadPrototypeConfig(db, projectId);
@@ -4499,6 +4734,10 @@ export default async function plugin(bb: BbPluginApi) {
             return [];
           }
         })(),
+        compiledMainAgent: detectCompiledMainAgentCapability(
+          (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
+        ),
+        mainAgents: (await listedAgentProfiles()).map((row) => ({ id: row.id, description: row.description })),
         lastWriterTrace: (() => {
           for (const run of listed) {
             for (const attempt of [...run.attempts].reverse()) {

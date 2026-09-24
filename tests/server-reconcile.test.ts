@@ -231,8 +231,14 @@ describe("production spawn_unknown reconciliation", () => {
           },
           list: async () => [{ id:"writer-existing" }] as never,
           wait: async () => { throw new Error("wait sentinel after reconcile"); },
-          get: async ({threadId}) => ({ id:threadId, status:threadId==="workspace-holder"?"idle":"active",
-            ...(threadId==="workspace-holder" ? {environmentId:"reconcile-env"} : {}) }) as never,
+          get: async ({threadId}) => ({
+            id:threadId,
+            projectId,
+            sourceThreadId:"source-thread",
+            lifecycleOwnerThreadId:pmThreadId,
+            status:threadId==="workspace-holder"?"idle":"active",
+            ...(threadId==="workspace-holder" ? {environmentId:"reconcile-env"} : {}),
+          }) as never,
           stop: async () => ({ok:true}) as never,
         },
         environments:{

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { helperSpawnFields, resolveHelperPlacement } from "../src/helper-placement";
 
 describe("helper placement", () => {
-  const parent = { id:"thr_pm", projectId:"proj", environmentId:"env-parent", sourceThreadId:"thr_source", lifecycleOwnerThreadId:"thr_owner" };
+  const parent = { id:"thr_pm", projectId:"proj", sectionId:"sec_same", environmentId:"env-parent", sourceThreadId:"thr_source", lifecycleOwnerThreadId:"thr_owner" };
 
   it("keeps plugin helpers hidden without stealing the parent environment", () => {
     const resolved = resolveHelperPlacement({ mode:"plugin", projectId:"proj", parent, role:"code-critic", taskTitle:"Write a fixture" });
@@ -10,6 +10,7 @@ describe("helper placement", () => {
     if (!resolved.ok) return;
     expect(helperSpawnFields(resolved.placement)).toMatchObject({
       visibility:"hidden", projectId:"proj", parentThreadId:"thr_pm", sourceThreadId:"thr_source", lifecycleOwnerThreadId:"thr_owner",
+      sectionId:"sec_same",
     });
     expect(resolved.placement.environmentId).toBeUndefined();
     expect(resolved.placement.title).toContain("code critique");

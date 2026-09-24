@@ -6,6 +6,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import type { Locale } from "../../i18n";
+import { t } from "../../i18n";
 import type { LanePilotDefaults } from "../lp-defaults";
 
 type Agent = { id: string; prompt: string; description: string; sourceHash: string; sourceVersion: string; edited: boolean; tools?: string[]; disallowedTools?: string[]; skills?: string[]; mcpServers?: string[] };
@@ -62,18 +63,35 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
     finally { setBusy(false); }
   };
   return <section hidden={scope === "projects"} className="space-y-5" data-testid="owned-settings">
-    <h1 className="text-xl font-medium">{scope === "globals" ? (ru ? "Общие настройки" : "General settings") : (ru ? "Агенты" : "Agents")}</h1>
-    <p className="text-sm text-muted-foreground">{ru ? "Настройки принадлежат Lane Pilot. Сохранённые инструкции применяются к новым запускам; существующие сессии сохраняют свой снимок." : "These settings belong to Lane Pilot. Saved instructions apply to new runs; existing sessions retain their snapshot."}</p>
+    <p className="text-sm text-muted-foreground">{scope === "globals" ? t("globalsHelp") : t("agentsHelp")}</p>
     {error ? <div className="space-y-2"><p role="alert" className="text-sm text-destructive">{error}</p><Button variant="outline" className="min-h-11" disabled={busy} onClick={() => { void rpc.call("get_globals", {}).then(setRemote).catch((cause) => setError(String(cause))); }}>{ru ? "Загрузить текущую версию для сравнения" : "Load current version to compare"}</Button></div> : null}
     {remote ? <section className="space-y-2 rounded-md border border-border p-3"><h2 className="text-sm font-medium">{ru ? "Текущая сохранённая версия" : "Current saved version"}</h2><pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{scope === "globals" ? JSON.stringify(remote.defaults, null, 2) : remote.agents.find((item) => item.id === selected)?.prompt ?? "—"}</pre><p className="text-sm">{ru ? "Ваш черновик остаётся в редакторе. Следующее сохранение заменит показанную версию." : "Your draft remains in the editor. The next save will replace the version shown here."}</p><Button variant="outline" className="min-h-11" onClick={() => { setSnapshot(remote); setRemote(null); setError(""); }}>{ru ? "Продолжить с моим черновиком" : "Continue with my draft"}</Button></section> : null}
     {!snapshot ? <p>{ru ? "Загрузка…" : "Loading…"}</p> : <>
-      <fieldset disabled={busy} hidden={scope !== "globals"} className="space-y-4">
-        <Label htmlFor="global-placement">{ru ? "Расположение помощников по умолчанию" : "Default helper placement"}</Label>
-        <Select value={defaults.helperPlacement ?? "plugin"} onValueChange={(value) => { setDefaults((current) => ({ ...current, helperPlacement: value as "plugin" | "project_tree" })); setSaved(false); }}>
-          <SelectTrigger id="global-placement" aria-label={ru ? "Расположение помощников по умолчанию" : "Default helper placement"} className="min-h-11"><SelectValue /></SelectTrigger>
-          <SelectContent><SelectItem value="plugin">{ru ? "В разделе Lane Pilot" : "In Lane Pilot"}</SelectItem><SelectItem value="project_tree">{ru ? "В дереве проекта" : "In the project tree"}</SelectItem></SelectContent>
-        </Select>
-        <details><summary className="min-h-11 cursor-pointer text-sm">{ru ? "? Как действует наследование" : "? How inheritance works"}</summary><p className="text-sm text-muted-foreground">{ru ? "Источник: общие настройки владельца. Значение по умолчанию: раздел Lane Pilot. Явный выбор проекта имеет приоритет. Применяется при следующем запуске помощника." : "Source: owner defaults. Factory default: Lane Pilot. An explicit project choice takes precedence. Applies at the next helper launch."}</p></details>
+      <fieldset disabled={busy} hidden={scope !== "globals"} className="space-y-0 divide-y divide-border">
+        <div className="grid gap-2 py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center">
+          <Label htmlFor="global-placement">{ru ? "Расположение помощников по умолчанию" : "Default helper placement"}</Label>
+          <Select value={defaults.helperPlacement ?? "plugin"} onValueChange={(value) => { setDefaults((current) => ({ ...current, helperPlacement: value as "plugin" | "project_tree" })); setSaved(false); }}>
+            <SelectTrigger id="global-placement" aria-label={ru ? "Расположение помощников по умолчанию" : "Default helper placement"} className="min-h-11"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="plugin">{ru ? "В разделе Lane Pilot" : "In Lane Pilot"}</SelectItem><SelectItem value="project_tree">{ru ? "В дереве проекта" : "In the project tree"}</SelectItem></SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-2 py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center">
+          <Label htmlFor="global-writer-provider">{t("globalWriterProvider")}</Label>
+          <Input id="global-writer-provider" className="min-h-11" value={defaults.writerProviderId ?? ""} onChange={(event) => { setDefaults((current) => ({ ...current, writerProviderId: event.target.value || undefined })); setSaved(false); }} />
+        </div>
+        <div className="grid gap-2 py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center">
+          <Label htmlFor="global-writer-model">{t("globalWriterModel")}</Label>
+          <Input id="global-writer-model" className="min-h-11" value={defaults.writerModel ?? ""} onChange={(event) => { setDefaults((current) => ({ ...current, writerModel: event.target.value || undefined })); setSaved(false); }} />
+        </div>
+        <div className="grid gap-2 py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center">
+          <Label htmlFor="global-writer-effort">{t("globalWriterEffort")}</Label>
+          <Input id="global-writer-effort" className="min-h-11" value={defaults.writerReasoningEffort ?? ""} onChange={(event) => { setDefaults((current) => ({ ...current, writerReasoningEffort: event.target.value || undefined })); setSaved(false); }} />
+        </div>
+        <div className="grid gap-2 py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center">
+          <Label htmlFor="global-qa-host">{t("globalQaHost")}</Label>
+          <Input id="global-qa-host" className="min-h-11" value={defaults.qaHostId ?? ""} onChange={(event) => { setDefaults((current) => ({ ...current, qaHostId: event.target.value || undefined })); setSaved(false); }} />
+        </div>
+        <p className="py-3 text-xs text-muted-foreground">{ru ? "Источник: общие настройки. Явный выбор проекта имеет приоритет. Применяется при следующем запуске." : "Source: owner defaults. An explicit project choice takes precedence. Applies at the next helper launch."}</p>
       </fieldset>
       <fieldset disabled={busy} hidden={scope !== "agents"} className="space-y-4">
         <div className="flex flex-wrap gap-2"><Input aria-label={ru ? "ID нового профиля" : "New profile ID"} value={newId} placeholder="my-agent" onChange={(event) => setNewId(event.target.value)} /><Button variant="outline" className="min-h-11" disabled={!/^[a-z][a-z0-9-]{0,63}$/.test(newId) || agents.some((item) => item.id === newId)} onClick={() => { setAgents((current) => [...current, { id: newId, description: newId, prompt: "", sourceHash: "", sourceVersion: "lp-owned-1", edited: true }]); setSelected(newId); setNewId(""); }}>{ru ? "Добавить профиль" : "Add profile"}</Button></div>

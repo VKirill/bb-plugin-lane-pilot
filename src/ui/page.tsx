@@ -49,6 +49,7 @@ import {
   TableRow,
 } from "../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "../state-machine";
 import type { StageReceipt } from "../stages/contract";
@@ -100,6 +101,8 @@ type ScreenPayload = {
     bindings: Array<{ id?: string; hostId: string; path: string; isDefault?: boolean }>;
   };
   qaHosts?: Array<{ id: string; name: string; status: string; connected: boolean }>;
+  compiledMainAgent?: "supported" | "none";
+  mainAgents?: Array<{ id: string; description: string }>;
   lastWriterTrace?: {
     providerId: string;
     model: string;
@@ -222,9 +225,9 @@ const DEDICATED_KEYS = new Set([
   "pm_read.enabled", "pm_read.min_lines",
   "docs.enabled", "docs.maintain", "docs.page_cap", "docs.since", "docs.hour",
   "helper.placement", "helper.context_mode", "helper.skills", "helper.mcp_servers", "helper.bb_plugins", "helper.native_plugins",
-  "plan_critique.enabled", "plan_critique.mode", "plan_critique.agent",
+  "plan_critique.enabled", "plan_critique.mode",
   "plan_critique.min_score", "plan_critique.min_write_tasks", "plan_critique.on_high_risk",
-  "code_critique.enabled", "code_critique.mode", "code_critique.agent",
+  "code_critique.enabled", "code_critique.mode",
   "code_critique.auto_fix", "code_critique.max_rounds",
 ]);
 const BASIC_SETTING_KEYS = new Set([
@@ -285,6 +288,7 @@ function isCompatibilityAlias(row: CatalogRow): boolean {
 function diagnosticRows(): CatalogRow[] {
   const settingsKeys = new Set(extraSettingRows().map((row) => row.storageKey));
   return uniqueByStorage(VISIBLE_CATALOG.filter((row) => {
+    if (row.storageKey.endsWith(".agent")) return true;
     if (row.section === "jev" || JEV_KEYS.has(row.storageKey)) return false;
     if (PICKER_KEYS.has(row.storageKey) && row.storageKey !== "writer.fast_mode") return false;
     if (DEDICATED_KEYS.has(row.storageKey)) return false;
@@ -304,6 +308,7 @@ function extraSettingRows(): CatalogRow[] {
     && !JEV_KEYS.has(row.storageKey)
     && !PICKER_KEYS.has(row.storageKey)
     && !DEDICATED_KEYS.has(row.storageKey)
+    && !row.storageKey.endsWith(".agent")
   )));
 }
 
@@ -405,43 +410,37 @@ function FieldControl({
 
 function settingHelpText(row: CatalogRow): string {
   const mapped = HELP_BY_KEY[row.storageKey];
-  const parts = [
-    mapped ? t(mapped) : t("fieldHelpGeneric"),
-    `${t("fieldDefault")}: ${row.control === "select" && row.defaultValue ? presentEnumLabel(row.storageKey, String(row.defaultValue)) : (row.defaultValue || "—")}`,
-    t("fieldInherited"),
-  ];
-  if (row.min !== null && row.max !== null) {
-    parts.push(`${t("fieldLimits")}: ${row.min}–${row.max} ${t(numericUnit(row))}`);
-  }
-  return parts.filter(Boolean).join(" ");
+  return mapped ? t(mapped) : t("fieldHelpGeneric");
 }
 
 function SettingHelp({ row }: { row: CatalogRow }) {
-  const [open, setOpen] = useState(false);
   const title = t(fieldKey(row.id));
   return (
-    <div className="space-y-2">
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="h-11 min-h-11 min-w-11 px-2"
-        aria-label={t("settingHelp")}
-        aria-expanded={open}
-        data-testid={`help-${row.storageKey}`}
-        onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen((current) => !current); }}
-      >?</Button>
-      {open ? (
-        <div role="dialog" aria-label={title} className="rounded-md border border-border bg-background p-3 text-xs" data-testid={`help-dialog-${row.storageKey}`}>
-          <p>{settingHelpText(row)}</p>
-          <Button type="button" size="sm" className="mt-2 min-h-11" onClick={() => setOpen(false)}>{t("closeHelp")}</Button>
-        </div>
-      ) : null}
-    </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-9 min-h-11 min-w-11"
+          aria-label={t("settingHelp")}
+          data-testid={`help-${row.storageKey}`}
+        >?</Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" data-testid={`help-dialog-${row.storageKey}`} aria-label={title}>
+        <p className="text-sm text-foreground">{settingHelpText(row)}</p>
+      </PopoverContent>
+    </Popover>
   );
 }
 
 const InheritanceContext = createContext<{ locale: Locale; data: ScreenPayload | null; reset: (keys: string[]) => void } | null>(null);
+
+function inheritanceSummary(storageKey: string, locale: Locale, data: ScreenPayload | null): string {
+  if (data?.explicitKeys?.includes(storageKey)) return locale === "ru" ? "Задано в этом проекте" : "Set on this project";
+  if (data?.inheritedKeys?.includes(storageKey)) return t("inheritedFromGlobal");
+  return locale === "ru" ? "Значение по умолчанию" : "Factory default";
+}
 
 function SettingField({
   row,
@@ -459,29 +458,35 @@ function SettingField({
   const inheritance = useContext(InheritanceContext);
   const inherited = value == null || value === "";
   const effective = inherited ? row.defaultValue : value;
+  const controlValue = inherited ? row.defaultValue : value;
   return (
     <div
       data-testid={`field-${row.id}`}
       data-storage-key={row.storageKey}
       data-ui-status={row.uiStatus}
-      className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center"
+      className="grid gap-2 border-b border-border py-3 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"
     >
-      <div className="space-y-1">
-        <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0 space-y-1">
+        <div className="flex items-center gap-1">
           <Label className="text-sm">{t(fieldKey(row.id))}</Label>
           <SettingHelp row={row} />
         </div>
-        <p className="text-xs text-muted-foreground">{t("fieldDefault")}: {row.control === "select" && row.defaultValue ? presentEnumLabel(row.storageKey, String(row.defaultValue)) : (row.defaultValue || "—")}</p>
-        <p className="text-xs text-muted-foreground">
-          {inherited ? t("fieldInherited") : `${t("fieldEffective")}: ${row.control === "select" ? presentEnumLabel(row.storageKey, String(effective)) : String(effective)}`}
-        </p>
-        {inheritance ? <div className="text-xs text-muted-foreground"><p>{inheritance.locale === "ru" ? "Источник: " : "Source: "}{inheritance.data?.explicitKeys?.includes(row.storageKey) ? (inheritance.locale === "ru" ? "переопределение проекта" : "project override") : inheritance.data?.inheritedKeys?.includes(row.storageKey) ? (inheritance.locale === "ru" ? "общие настройки" : "owner defaults") : (inheritance.locale === "ru" ? "значение по умолчанию" : "factory default")}</p>{inheritance.data?.explicitKeys?.includes(row.storageKey) ? <Button variant="ghost" className="min-h-11" disabled={disabled} onClick={() => inheritance.reset([row.storageKey])}>{inheritance.locale === "ru" ? "Наследовать" : "Reset to inherited"}</Button> : null}</div> : null}
+        {inheritance ? (
+          <p className="text-xs text-muted-foreground">
+            {inheritanceSummary(row.storageKey, inheritance.locale, inheritance.data)}
+            {inheritance.data?.explicitKeys?.includes(row.storageKey) ? (
+              <Button variant="ghost" size="sm" className="ml-2 h-8 min-h-11" disabled={disabled} onClick={() => inheritance.reset([row.storageKey])}>
+                {inheritance.locale === "ru" ? "Наследовать" : "Reset to inherited"}
+              </Button>
+            ) : null}
+          </p>
+        ) : null}
         {row.min !== null && row.max !== null ? (
           <p className="text-xs text-muted-foreground">{t("fieldLimits")}: {row.min}–{row.max} {t(numericUnit(row))}</p>
         ) : null}
         {disabled ? <p className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</p> : null}
       </div>
-      <FieldControl row={row} value={inherited ? row.defaultValue : value} disabled={disabled} onChange={onChange} onDraft={onDraft} />
+      <FieldControl row={row} value={controlValue} disabled={disabled} onChange={onChange} onDraft={onDraft} />
     </div>
   );
 }
@@ -1103,38 +1108,69 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   return (
     <InheritanceContext.Provider value={{ locale, data, reset: (keys) => void resetInherited(keys) }}><div className="h-full overflow-auto p-3 md:p-5" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 md:flex-row md:items-start md:gap-6">
-        <aside className="w-full shrink-0 space-y-3 md:sticky md:top-0 md:w-56" data-testid="project-rail">
-          <nav className="grid gap-1" aria-label={locale === "ru" ? "Настройки Lane Pilot" : "Lane Pilot settings"}>
-            <Button className="min-h-11 justify-start" variant={activeScope === "globals" ? "secondary" : "ghost"} onClick={() => setActiveScope("globals")}>{locale === "ru" ? "Общие настройки" : "General settings"}</Button>
-            <Button className="min-h-11 justify-start" variant={activeScope === "agents" ? "secondary" : "ghost"} onClick={() => setActiveScope("agents")}>{locale === "ru" ? "Агенты" : "Agents"}</Button>
-          </nav>
-          <div>
-            <h1 className="text-sm font-semibold">{t("projects")}</h1>
-            <p className="mt-1 text-xs text-muted-foreground">{t("projectRailHint")}</p>
-          </div>
-          {projectListError ? <p role="alert" className="text-xs text-destructive">{t("projectListError")}</p> : null}
-          {!projectsLoaded && !projectListError ? <p className="text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
-          {projectsLoaded && projects.length === 0 && !projectListError ? <p className="text-sm text-muted-foreground">{t("noProjects")}</p> : null}
-          {projects.length ? <nav aria-label={t("projects")} className="grid max-h-44 gap-1 overflow-y-auto rounded-md border border-border p-1 md:max-h-[calc(100vh-13rem)]">
-            {projects.map((project) => <Button
-              key={project.id}
-              type="button"
-              size="sm"
-              variant={project.id === projectId ? "secondary" : "ghost"}
-              aria-current={project.id === projectId ? "page" : undefined}
-              data-testid={`project-item-${project.id}`}
-              className="min-h-11 justify-start truncate"
-              onClick={() => chooseProject(project.id)}
-            >{project.name}</Button>)}
-          </nav> : null}
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Tabs value={activeScope} onValueChange={(next) => setActiveScope(next as "projects" | "globals" | "agents")}>
+            <TabsList aria-label={t("scopeNav")} data-testid="scope-nav" data-bb-ru-skip>
+              <TabsTrigger value="globals" className="min-h-11" onClick={() => setActiveScope("globals")}>{locale === "ru" ? "Общие настройки" : t("navGlobals")}</TabsTrigger>
+              <TabsTrigger value="agents" className="min-h-11" onClick={() => setActiveScope("agents")}>{locale === "ru" ? "Агенты" : t("navAgents")}</TabsTrigger>
+              <TabsTrigger value="projects" className="min-h-11" onClick={() => setActiveScope("projects")}>{locale === "ru" ? "Проекты" : t("navProjects")}</TabsTrigger>
+            </TabsList>
+          </Tabs>
           <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
-        </aside>
-
-        <div className="min-w-0 flex-1"><OwnedSettings scope={activeScope} locale={locale} onDefaultsSaved={applyGlobalDefaults} /><main hidden={activeScope !== "projects"} className="space-y-5" data-testid="project-settings">
+        </div>
+        <OwnedSettings scope={activeScope} locale={locale} onDefaultsSaved={applyGlobalDefaults} />
+        <main hidden={activeScope !== "projects"} className="space-y-5" data-testid="project-settings">
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">{t("projectRailHint")}</p>
+            {projectListError ? <p role="alert" className="text-xs text-destructive">{t("projectListError")}</p> : null}
+            {!projectsLoaded && !projectListError ? <p className="text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
+            {projectsLoaded && projects.length === 0 && !projectListError ? <p className="text-sm text-muted-foreground">{t("noProjects")}</p> : null}
+            {projects.length ? <nav aria-label={t("projects")} className="grid max-h-44 gap-1 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+              {projects.map((project) => <Button
+                key={project.id}
+                type="button"
+                size="sm"
+                variant={project.id === projectId ? "secondary" : "ghost"}
+                aria-current={project.id === projectId ? "page" : undefined}
+                data-testid={`project-item-${project.id}`}
+                className="min-h-11 justify-start truncate"
+                onClick={() => chooseProject(project.id)}
+              >{project.name}</Button>)}
+            </nav> : null}
+          </div>
         {!projectId ? <Card data-testid="project-settings-empty"><CardContent className="p-5 text-sm text-muted-foreground">{t("noProjectSelected")}</CardContent></Card> : <>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div><p className="text-xs text-muted-foreground">{t("selectedProject")}</p><h1 className="break-words text-xl font-semibold">{selectedProjectName}</h1></div>
+        </div>
+        <div className="grid gap-2 border-b border-border py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center" data-testid="main-agent">
+          <div className="space-y-1">
+            <Label className="text-sm">{t("mainAgent")}</Label>
+            <p className="text-xs text-muted-foreground">{t("mainAgentHelp")}</p>
+            {data?.compiledMainAgent === "none" && displayedValue("main.agent") ? <p className="text-xs text-muted-foreground">{t("mainAgentUnavailable")}</p> : null}
+          </div>
+          <Select
+            value={String(displayedValue("main.agent") ?? "") || "__default__"}
+            onValueChange={(next) => {
+              const value = next === "__default__" ? "" : next;
+              writeDraft("main.agent", value);
+              void rpc.call("save_setting", { projectId: projectId!, key: "main.agent", value, expectedVersion: data?.versions["main.agent"] ?? 0 }).then((result) => {
+                if (!result.ok) { setSaveError(result.validation ? { kind: "validation", code: result.validation.code, params: result.validation.params } : { kind: "cas" }); return; }
+                setSaveError(null);
+                setData((current) => {
+                  const nextData = current ? { ...current, values: { ...current.values, "main.agent": result.value }, versions: { ...current.versions, "main.agent": result.version }, explicitKeys: value ? [...new Set([...current.explicitKeys, "main.agent"])] : current.explicitKeys.filter((key) => key !== "main.agent") } : current;
+                  dataRef.current = nextData;
+                  return nextData;
+                });
+              }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+            }}
+          >
+            <SelectTrigger aria-label={t("mainAgent")} className="min-h-11"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__">{t("mainAgentDefault")}</SelectItem>
+              {(data?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agent.description}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
         {error ? (
           <Alert variant="destructive">
@@ -1186,7 +1222,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               {data.writerBinding.status === "setup_required" ? <p>{t("bindingSetupRequired")}</p> : null}
               {data.writerBinding.status === "offline" ? <p>{t("bindingOffline")}</p> : null}
               {data.writerBinding.status === "catalog_unavailable" ? <p>{t("writerCatalogUnavailable")}</p> : null}
-              {(data.inheritedKeys ?? []).length ? <p className="text-xs text-muted-foreground">{t("inheritedFromGlobal")}: {data.inheritedKeys?.join(", ")}</p> : null}
+              {(data.inheritedKeys ?? []).length ? <p className="text-xs text-muted-foreground">{t("inheritedFromGlobal")}</p> : null}
             </CardContent>
           </Card>
         ) : null}
@@ -1428,7 +1464,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("stagePlanCritique")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">{t("planCritiqueHelp")}</p>
-                {(["plan_critique.enabled","plan_critique.mode","plan_critique.min_score","plan_critique.min_write_tasks","plan_critique.on_high_risk","plan_critique.agent"] as const).map((key) => {
+                {(["plan_critique.enabled","plan_critique.mode","plan_critique.min_score","plan_critique.min_write_tasks","plan_critique.on_high_risk"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
@@ -1444,7 +1480,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("stageCodeCritique")}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">{t("codeCritiqueHelp")}</p>
-                {(["code_critique.enabled","code_critique.mode","code_critique.auto_fix","code_critique.max_rounds","code_critique.agent"] as const).map((key) => {
+                {(["code_critique.enabled","code_critique.mode","code_critique.auto_fix","code_critique.max_rounds"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
@@ -1777,7 +1813,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </AlertDialogContent>
         </AlertDialog>
         </>}
-        </main></div>
+        </main>
       </div>
     </div></InheritanceContext.Provider>
   );

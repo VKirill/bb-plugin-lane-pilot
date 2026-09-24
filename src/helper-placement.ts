@@ -18,6 +18,7 @@ export type HelperSpawnPlacement = {
   sourceThreadId: string;
   lifecycleOwnerThreadId: string;
   title: string;
+  sectionId?: string;
   environmentId?: string;
 };
 
@@ -58,12 +59,14 @@ export function resolveHelperPlacement(input: {
   }
   const mode: HelperPlacementMode = parseHelperPlacement(input.mode);
   const title = helperThreadTitle(input.role, input.taskTitle);
+  const sectionId = input.parent.sectionId?.trim() || "";
   const base = {
     projectId: input.projectId,
     parentThreadId: input.parent.id,
     sourceThreadId,
     lifecycleOwnerThreadId,
     title,
+    ...(sectionId ? { sectionId } : {}),
   };
   if (mode === "plugin") {
     return { ok: true, placement: { ...base, visibility: "hidden" } };
@@ -85,6 +88,8 @@ export function helperSpawnFields(placement: HelperSpawnPlacement): {
   sourceThreadId: string;
   lifecycleOwnerThreadId: string;
   title: string;
+  sectionId?: string;
+  environmentId?: string;
 } {
   return {
     visibility: placement.visibility,
@@ -93,5 +98,7 @@ export function helperSpawnFields(placement: HelperSpawnPlacement): {
     sourceThreadId: placement.sourceThreadId,
     lifecycleOwnerThreadId: placement.lifecycleOwnerThreadId,
     title: placement.title,
+    ...(placement.sectionId ? { sectionId: placement.sectionId } : {}),
+    ...(placement.environmentId ? { environmentId: placement.environmentId } : {}),
   };
 }

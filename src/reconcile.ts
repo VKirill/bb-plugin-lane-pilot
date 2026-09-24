@@ -67,3 +67,18 @@ export async function reconcileHolder(
 ): Promise<ReconcileResult> {
   return scan(port, (metadata) => matchesHolder(metadata, key), options);
 }
+
+export type CriticIdentity = { lanePilotRunId:string; lanePilotTaskId:string; stageId:string; role:string };
+
+export async function reconcileCritic(
+  port: ReconcilePort,
+  key: CriticIdentity,
+  options: { limit?:number; maxPages?:number } = {},
+): Promise<ReconcileResult> {
+  return scan(port, (metadata) => (
+    metadata.role === key.role
+    && metadata.lanePilotRunId === key.lanePilotRunId
+    && metadata.lanePilotTaskId === key.lanePilotTaskId
+    && metadata.stageId === key.stageId
+  ), options);
+}
