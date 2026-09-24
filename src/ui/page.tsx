@@ -50,6 +50,7 @@ import {
 } from "../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
+import { Separator } from "../../components/ui/separator";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "../state-machine";
 import type { StageReceipt } from "../stages/contract";
@@ -1106,39 +1107,59 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     for (const [id, cached] of projectCache.current) projectCache.current.set(id, { ...cached, data: reconcile(cached.data) });
   };
 
+  const mobileNavValue = activeScope === "projects" ? (projectId ? `project:${projectId}` : "projects") : activeScope;
+
   return (
-    <InheritanceContext.Provider value={{ locale, data, reset: (keys) => void resetInherited(keys) }}><div className="h-full overflow-auto p-3 md:p-5" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Tabs value={activeScope} onValueChange={(next) => setActiveScope(next as "projects" | "globals" | "agents")}>
-            <TabsList aria-label={t("scopeNav")} data-testid="scope-nav" data-bb-ru-skip>
-              <TabsTrigger value="globals" className="min-h-11" onClick={() => setActiveScope("globals")}>{locale === "ru" ? "Общие настройки" : t("navGlobals")}</TabsTrigger>
-              <TabsTrigger value="agents" className="min-h-11" onClick={() => setActiveScope("agents")}>{locale === "ru" ? "Агенты" : t("navAgents")}</TabsTrigger>
-              <TabsTrigger value="projects" className="min-h-11" onClick={() => setActiveScope("projects")}>{locale === "ru" ? "Проекты" : t("navProjects")}</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
+    <InheritanceContext.Provider value={{ locale, data, reset: (keys) => void resetInherited(keys) }}><div className="flex h-full min-h-0 min-w-0 overflow-hidden" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
+      <aside className="hidden w-56 shrink-0 flex-col border-r border-border md:flex lg:w-64" data-testid="scope-rail">
+        <nav aria-label={t("scopeNav")} data-testid="scope-nav" className="flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden p-2">
+          <Button type="button" role="tab" aria-selected={activeScope === "globals"} variant={activeScope === "globals" ? "secondary" : "ghost"} className="min-h-11 w-full justify-start" onClick={() => setActiveScope("globals")}>{t("navGlobals")}</Button>
+          <Button type="button" role="tab" aria-selected={activeScope === "agents"} variant={activeScope === "agents" ? "secondary" : "ghost"} className="min-h-11 w-full justify-start" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
+          <Separator className="my-2" />
+          <p className="px-2 text-xs text-muted-foreground">{t("projects")}</p>
+          {projectListError ? <p role="alert" className="px-2 text-xs text-destructive">{t("projectListError")}</p> : null}
+          {!projectsLoaded && !projectListError ? <p className="px-2 text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
+          {projectsLoaded && projects.length === 0 && !projectListError ? <p className="px-2 text-sm text-muted-foreground">{t("noProjects")}</p> : null}
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden" aria-label={t("projects")}>
+            {projects.map((project) => <Button
+              key={project.id}
+              type="button"
+              size="sm"
+              variant={activeScope === "projects" && project.id === projectId ? "secondary" : "ghost"}
+              aria-current={activeScope === "projects" && project.id === projectId ? "page" : undefined}
+              data-testid={`project-item-${project.id}`}
+              className="min-h-11 w-full justify-start truncate"
+              onClick={() => chooseProject(project.id)}
+            >{project.name}</Button>)}
+          </div>
+        </nav>
+      </aside>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <div className="min-w-0 flex-1 md:hidden">
+            <Select
+              value={mobileNavValue}
+              onValueChange={(next) => {
+                if (next === "globals" || next === "agents") setActiveScope(next);
+                else if (next.startsWith("project:")) chooseProject(next.slice("project:".length));
+              }}
+            >
+              <SelectTrigger aria-label={t("scopeNav")} className="min-h-11 w-full min-w-0" data-testid="scope-nav-mobile">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="globals">{t("navGlobals")}</SelectItem>
+                <SelectItem value="agents">{t("navAgents")}</SelectItem>
+                <SelectItem value="projects" disabled>{t("projectRailHint")}</SelectItem>
+                {projects.map((project) => <SelectItem key={project.id} value={`project:${project.id}`}>{project.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="ml-auto shrink-0"><LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} /></div>
         </div>
+        <div className="min-h-0 flex-1 overflow-auto overflow-x-hidden p-3 md:p-5">
         <OwnedSettings scope={activeScope} locale={locale} onDefaultsSaved={applyGlobalDefaults} />
         <main hidden={activeScope !== "projects"} className="space-y-5" data-testid="project-settings">
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">{t("projectRailHint")}</p>
-            {projectListError ? <p role="alert" className="text-xs text-destructive">{t("projectListError")}</p> : null}
-            {!projectsLoaded && !projectListError ? <p className="text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
-            {projectsLoaded && projects.length === 0 && !projectListError ? <p className="text-sm text-muted-foreground">{t("noProjects")}</p> : null}
-            {projects.length ? <nav aria-label={t("projects")} className="grid max-h-44 gap-1 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-              {projects.map((project) => <Button
-                key={project.id}
-                type="button"
-                size="sm"
-                variant={project.id === projectId ? "secondary" : "ghost"}
-                aria-current={project.id === projectId ? "page" : undefined}
-                data-testid={`project-item-${project.id}`}
-                className="min-h-11 justify-start truncate"
-                onClick={() => chooseProject(project.id)}
-              >{project.name}</Button>)}
-            </nav> : null}
-          </div>
         {!projectId ? <Card data-testid="project-settings-empty"><CardContent className="p-5 text-sm text-muted-foreground">{t("noProjectSelected")}</CardContent></Card> : <>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div><p className="text-xs text-muted-foreground">{t("selectedProject")}</p><h1 className="break-words text-xl font-semibold">{selectedProjectName}</h1></div>
@@ -1814,6 +1835,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         </AlertDialog>
         </>}
         </main>
+        </div>
       </div>
     </div></InheritanceContext.Provider>
   );

@@ -119,6 +119,11 @@ describe("Lane Pilot UI", () => {
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
     expect(remember).toHaveBeenCalledWith({ projectId:"proj_ui" });
     expect(slot.queryByRole("button", { name:en.openProject })).toBeNull();
+    expect(slot.getByTestId("scope-rail")).toBeTruthy();
+    expect(slot.getByTestId("scope-nav").querySelector(".grid")).toBeNull();
+    expect(slot.getByTestId("tab-settings").closest("[data-testid='project-settings']")).toBeTruthy();
+    expect(slot.getByTestId("main-agent").textContent).toContain(en.mainAgent);
+    expect(slot.getByTestId("main-agent").textContent).not.toMatch(/spawn|compiled/i);
     slot.lifecycle.unmount();
   }, 10_000);
 
