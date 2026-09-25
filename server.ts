@@ -139,7 +139,8 @@ import { parseOpenCodeToolTelemetry } from "./src/stages/opencode-telemetry";
 import { boundedAgentName } from "./src/stages/role";
 import { resolveRetryEffort } from "./src/stages/retry-effort";
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "./src/stages/pm-read";
-import { decideHelperDispatch, detectVkCapability, parseHelperContextSettings, parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding, type HelperPolicySnapshot } from "./src/helper-context";
+import { decideHelperDispatch, detectRequiredSessionPolicyCapability, detectVkCapability, parseHelperContextSettings, parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding, type HelperPolicySnapshot } from "./src/helper-context";
+import { applyResourceMode, collectAgentInventory } from "./src/agent-inventory";
 import { compatibleReasoningLevel, compatibleServiceTier } from "./src/picker-compat";
 import { acceptedOnboardingEvidence, onboardingPreviewSha256, onboardingPrompt, onboardingPreviewSchema, parseOnboardingPreview, type OnboardingAcceptedEvidence, type OnboardingInputPage } from "./src/stages/onboarding";
 import { readGateReport } from "./src/stages/gate-report";
@@ -4523,11 +4524,37 @@ export default async function plugin(bb: BbPluginApi) {
     },
     get_globals: async () => {
       const raw = await bb.storage.kv.get(LP_DEFAULTS_KEY);
+      let hosts: Array<{ id: string; name: string; status: string; connected: boolean }> = [];
+      try {
+        const listed = await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.();
+        hosts = mapListedQaHosts(listed ?? []);
+      } catch {
+        hosts = [];
+      }
       return {
         defaults: parseLanePilotDefaults(raw),
         revision: parseDefaultsRevision(raw),
         agents: await listedAgentProfiles(),
+        hosts,
+        requiredSessionPolicy: detectRequiredSessionPolicyCapability((bb as { agents?: { experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {}) ? "required" : "none",
       };
+    },
+    get_agent_inventory: async ({ projectId, hostId }) => {
+      return collectAgentInventory({
+        projectId,
+        listSkills: projectId
+          ? async (id) => {
+            const listed = await bb.sdk.skills.list({ projectId: id, environmentId: null });
+            return listed.skills.map((skill) => ({ name: skill.name, pluginId: skill.pluginId }));
+          }
+          : undefined,
+        listMcp: hostId
+          ? async () => {
+            const machine = await host.call("session_inventory", { cwd: null }, { hostId });
+            return machine.mcpServers;
+          }
+          : undefined,
+      });
     },
     save_globals: async ({ defaults, expectedRevision }) => serializedKv(async () => {
       const raw = await bb.storage.kv.get(LP_DEFAULTS_KEY);
@@ -4540,7 +4567,7 @@ export default async function plugin(bb: BbPluginApi) {
       await bb.storage.kv.set(LP_DEFAULTS_KEY, packStoredDefaults(next, nextRevision));
       return { ok: true, revision: nextRevision, defaults: next };
     }),
-    save_agent_profile: async ({ id, prompt, description, expectedSourceHash, tools, disallowedTools, skills, mcpServers }) => serializedKv(async () => {
+    save_agent_profile: async ({ id, prompt, description, expectedSourceHash, tools, disallowedTools, skills, mcpServers, resourceModes }) => serializedKv(async () => {
       const owned = await ownedAgents();
       if (owned[id]?.compiledCorrupt) return { ok: false, id, sourceHash: "" };
       const previous = owned[id]?.compiled;
@@ -4553,13 +4580,17 @@ export default async function plugin(bb: BbPluginApi) {
       }
       let compiled;
       try {
+        const nextTools = applyResourceMode(resourceModes?.tools, tools, previous?.tools);
+        const nextDisallowed = applyResourceMode(resourceModes?.disallowedTools, disallowedTools, previous?.disallowedTools);
+        const nextSkills = applyResourceMode(resourceModes?.skills, skills, previous?.skills);
+        const nextMcp = applyResourceMode(resourceModes?.mcpServers, mcpServers, previous?.mcpServers);
         compiled = compileMainAgentProfile(id, {
           prompt,
           description: description ?? previous?.description,
-          tools: tools ?? previous?.tools,
-          disallowedTools: disallowedTools ?? previous?.disallowedTools,
-          skills: skills ?? previous?.skills,
-          mcpServers: mcpServers ?? previous?.mcpServers,
+          ...(nextTools !== undefined ? { tools: nextTools } : {}),
+          ...(nextDisallowed !== undefined ? { disallowedTools: nextDisallowed } : {}),
+          ...(nextSkills !== undefined ? { skills: nextSkills } : {}),
+          ...(nextMcp !== undefined ? { mcpServers: nextMcp } : {}),
         });
       } catch {
         return { ok: false, id, sourceHash: currentHash };
@@ -4620,6 +4651,7 @@ export default async function plugin(bb: BbPluginApi) {
         liveRun,
         pluginRole,
         threadStatus,
+        requiredSessionPolicy: detectRequiredSessionPolicyCapability((bb as { agents?: { experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {}) ? "required" : "none",
       };
     },
     get_screen: async ({ projectId }) => {

@@ -16,6 +16,12 @@ async function mount(locale: "en" | "ru") {
       get_preferences: () => ({ locale, preference: locale, lastProjectId: null }),
       list_projects: () => ({ projects: [], lastProjectId: null }),
       get_globals: (input) => harness.behavior.callRpc("get_globals", input),
+      get_agent_inventory: () => ({
+        skills: { status: "ready", items: [{ name: "copywriter", label: "copywriter" }] },
+        mcpServers: { status: "unavailable", items: [] },
+        tools: { status: "unavailable", items: [] },
+        disallowedTools: { status: "unavailable", items: [] },
+      }),
       save_globals: (input) => harness.behavior.callRpc("save_globals", input),
       save_agent_profile: (input) => harness.behavior.callRpc("save_agent_profile", input),
     },
@@ -54,6 +60,19 @@ describe("owned settings source DOM", () => {
       expect((prompt as HTMLTextAreaElement).value).toBe("My unsaved draft");
       const readback: any = await harness.behavior.callRpc("get_globals", {});
       expect(readback.agents[0].prompt).toBe("Other editor");
+    } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
+  });
+
+  it("edits profile resources with inventory checkboxes instead of comma fields", async () => {
+    const { slot, harness } = await mount("en");
+    try {
+      fireEvent.click(await slot.findByRole("tab", { name: "Agents" }));
+      await slot.findByTestId("agent-resource-tools");
+      expect(slot.getByTestId("agent-resource-tools").querySelector("input[type='text']")).toBeNull();
+      expect(slot.getAllByText(/No authoritative AgentDefinition tool catalog/).length).toBeGreaterThan(0);
+      expect(slot.getByRole("combobox", { name: "Profile skills" })).toBeTruthy();
+      expect(slot.getByRole("combobox", { name: "Allowed tools" })).toBeTruthy();
+      expect(slot.queryByText(/имена через запятую/i)).toBeNull();
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 });

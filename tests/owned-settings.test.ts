@@ -52,7 +52,22 @@ describe("owned settings persistence and optimistic concurrency", () => {
       await expect(harness.behavior.callRpc("save_agent_profile", { id: "../escape", prompt: "Bad", description: "Bad", expectedSourceHash: "" })).rejects.toThrow();
       expect(await bb.storage.kv.get(LP_AGENT_OVERRIDES_KEY)).toEqual(owned);
       const readback: any = await harness.behavior.callRpc("get_globals", {});
+      expect(readback.requiredSessionPolicy).toBe("none");
       expect(readback.agents.find((item: any) => item.id === "my-editor")).toMatchObject({ prompt: compiled.prompt, sourceHash: saved.sourceHash });
+      const inventory: any = await harness.behavior.callRpc("get_agent_inventory", { projectId: null, hostId: null });
+      expect(inventory.tools.status).toBe("unavailable");
+      expect(inventory.skills.status).toBe("unavailable");
+      const keepUnknown: any = await harness.behavior.callRpc("save_agent_profile", {
+        id: "copy-lead",
+        prompt: "Keep unknown skill",
+        description: "Pinned",
+        expectedSourceHash: editedResources.sourceHash,
+        skills: ["copywriter", "missing-from-inventory"],
+        resourceModes: { skills: "selected" },
+      });
+      expect(keepUnknown.ok).toBe(true);
+      const afterUnknown: any = await bb.storage.kv.get(LP_AGENT_OVERRIDES_KEY);
+      expect(afterUnknown["copy-lead"].compiled.skills).toEqual(["copywriter", "missing-from-inventory"]);
       const edited = compileMainAgentProfile("copy-lead", { prompt: "Pinned text", description: "Pinned" });
       expect(resolveSelectedMainAgentProfile({ "main.agent": "copy-lead" }, { "copy-lead": { compiled: edited } })).toEqual(edited);
     } finally { await harness.lifecycle.dispose(); }

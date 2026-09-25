@@ -25,11 +25,12 @@ import {
   snapshotDryRun,
   writePmSettings,
 } from "./src/host-handlers";
+import { sessionInventory } from "./src/session-inventory";
 
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
-    runCli, runCommand, runSandboxedCommand, runBrowserQa, probeBrowserQaTarget, writePmSettings,
+    runCli, runCommand, runSandboxedCommand, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
   },
 });

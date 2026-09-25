@@ -26,8 +26,8 @@ async function mountComposer(input: {
     composer: { scope: input.scope },
     rpc: {
       get_preferences: () => ({ locale: "en", preference: "en", lastProjectId: null }),
-      activation_context: () => ({
-        projectId: input.projectId,
+      activation_context: (args: { projectId: string | null }) => ({
+        projectId: args.projectId,
         projects: input.context.projects,
         bindingStatus: input.context.bindingStatus,
         compiledMainAgent: input.context.compiledMainAgent ?? "none",
@@ -36,6 +36,7 @@ async function mountComposer(input: {
         liveRun: input.context.liveRun ?? null,
         pluginRole: input.context.pluginRole ?? null,
         threadStatus: input.context.threadStatus ?? null,
+        requiredSessionPolicy: "none",
       }),
       activate_pm: input.activate ?? (async () => ({ threadId: "thr_pm", runId: "run_1" })),
     },
@@ -79,15 +80,17 @@ describe("Enable Lane Pilot composer action", () => {
     expect((enable as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(enable);
     await slot.findByTestId("activation-popover");
+    expect(slot.queryByLabelText("Choose a project")).toBeNull();
     expect((slot.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(slot.getByText(/project is required/i)).toBeTruthy();
+    expect(slot.getByText(/BB composer first/i)).toBeTruthy();
+    expect(slot.getByText(/Strict required session policy is unavailable/)).toBeTruthy();
     slot.lifecycle.unmount();
   });
 
   it("starts a new-thread session with a selected project and null sourceThreadId", async () => {
     const calls: unknown[] = [];
     const slot = await mountComposer({
-      projectId: "proj_a",
+      projectId: "proj_route",
       threadId: null,
       scope: { kind: "new-thread", projectId: "proj_a" },
       context: { bindingStatus: "resolved", projects: [{ id: "proj_a", name: "Alpha" }] },

@@ -68,6 +68,12 @@ const hostBaseFields = {
   snapshotPath: z.string().startsWith("/").optional(),
 };
 
+const inventoryGroupSchema = z.object({
+  status: z.enum(["ready", "unavailable", "error"]),
+  items: z.array(z.object({ name: z.string(), label: z.string() }).strict()),
+  error: z.string().optional(),
+}).strict();
+
 const hostBaseInput = z.object(hostBaseFields).strict();
 
 const fileChangeSchema = z.object({
@@ -328,6 +334,13 @@ export const hostContract = defineRpcContract({
       guardPath: z.string(),
     }).strict(),
   },
+  session_inventory: {
+    input: z.object({ cwd: z.string().nullable() }).strict(),
+    output: z.object({
+      mcpServers: z.array(z.object({ name: z.string(), sources: z.array(z.enum(["claude", "codex", "opencode"])) }).strict()),
+      nativePlugins: z.array(z.object({ name: z.string(), sources: z.array(z.enum(["claude", "codex", "opencode"])) }).strict()),
+    }).strict(),
+  },
 });
 
 export const rpcContract = defineRpcContract({
@@ -373,6 +386,22 @@ export const rpcContract = defineRpcContract({
         skills: z.array(z.string()).optional(),
         mcpServers: z.array(z.string()).optional(),
       }).strict()),
+      hosts: z.array(z.object({
+        id: z.string(), name: z.string(), status: z.string(), connected: z.boolean(),
+      }).strict()).optional(),
+      requiredSessionPolicy: z.enum(["required", "none"]).optional(),
+    }).strict(),
+  },
+  get_agent_inventory: {
+    input: z.object({
+      projectId: z.string().nullable(),
+      hostId: z.string().nullable(),
+    }).strict(),
+    output: z.object({
+      skills: inventoryGroupSchema,
+      mcpServers: inventoryGroupSchema,
+      tools: inventoryGroupSchema,
+      disallowedTools: inventoryGroupSchema,
     }).strict(),
   },
   save_globals: {
@@ -402,6 +431,12 @@ export const rpcContract = defineRpcContract({
       disallowedTools: z.array(z.string().min(1)).max(64).optional(),
       skills: z.array(z.string().min(1)).max(64).optional(),
       mcpServers: z.array(z.string().min(1)).max(64).optional(),
+      resourceModes: z.object({
+        tools: z.enum(["inherit", "none", "selected"]).optional(),
+        disallowedTools: z.enum(["inherit", "none", "selected"]).optional(),
+        skills: z.enum(["inherit", "none", "selected"]).optional(),
+        mcpServers: z.enum(["inherit", "none", "selected"]).optional(),
+      }).strict().optional(),
     }).strict(),
     output: z.object({ ok: z.boolean(), id: z.string(), sourceHash: z.string() }).strict(),
   },
@@ -436,6 +471,7 @@ export const rpcContract = defineRpcContract({
       liveRun: z.object({ threadId: z.string(), runId: z.string() }).strict().nullable(),
       pluginRole: z.string().nullable(),
       threadStatus: z.string().nullable(),
+      requiredSessionPolicy: z.enum(["required", "none"]),
     }).strict(),
   },
   get_screen: {

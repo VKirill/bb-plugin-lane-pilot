@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useBbContext, useBbNavigate, useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate, useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t, detectLocale, setLocaleOverride } from "../../i18n";
 import { Button } from "../../components/ui/button";
@@ -23,6 +23,7 @@ type ContextPayload = {
   liveRun: { threadId: string; runId: string } | null;
   pluginRole: string | null;
   threadStatus: string | null;
+  requiredSessionPolicy?: "required" | "none";
 };
 
 function blockCopy(block: ActivationBlock): string {
@@ -33,16 +34,19 @@ function blockCopy(block: ActivationBlock): string {
   return t("compiledMainUnavailable");
 }
 
+function nativeProjectId(scope: ReturnType<typeof useComposerView>["scope"]): string | null {
+  return scope.kind === "new-thread" ? scope.projectId : null;
+}
+
 export function EnableLanePilotAction() {
   const rpc = useRpc<typeof rpcContract>();
-  const { projectId: routeProjectId, threadId } = useBbContext();
   const navigate = useBbNavigate();
   const view = useComposerView();
+  const projectId = nativeProjectId(view.scope);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [ctx, setCtx] = useState<ContextPayload | null>(null);
-  const [projectId, setProjectId] = useState<string>(routeProjectId ?? "");
   const [agentId, setAgentId] = useState("__default__");
 
   useEffect(() => {
@@ -51,20 +55,24 @@ export function EnableLanePilotAction() {
       if (!current) return;
       setLocaleOverride(result.preference === "auto" ? null : result.preference);
     }).catch(() => undefined);
-    void rpc.call("activation_context", { projectId: routeProjectId ?? null, threadId: threadId ?? null }).then((next) => {
-      if (!current) return;
-      setCtx(next);
-      setProjectId((currentId) => currentId || next.projectId || "");
+    return () => { current = false; };
+  }, [rpc]);
+
+  useEffect(() => {
+    let current = true;
+    setCtx(null);
+    void rpc.call("activation_context", { projectId, threadId: null }).then((next) => {
+      if (current) setCtx(next);
     }).catch((cause) => {
       if (current) setError(cause instanceof Error ? cause.message : String(cause));
     });
     return () => { current = false; };
-  }, [rpc, routeProjectId, threadId]);
+  }, [rpc, projectId]);
 
   const compiledRequested = agentId !== "__default__";
   const blocks = activationDisabledPredicate({
     pending,
-    projectId: projectId || null,
+    projectId,
     bindingStatus: ctx?.bindingStatus,
     compiledRequested,
     compiledSupported: ctx?.compiledMainAgent === "supported",
@@ -72,10 +80,10 @@ export function EnableLanePilotAction() {
   });
   const disabled = composerButtonDisabled(blocks);
   const blocked = startBlocked(blocks);
-  const writerLabel = [ctx?.writer.providerId, ctx?.writer.model, ctx?.writer.reasoningEffort].filter(Boolean).join(" · ") || "—";
+  const writerLabel = [ctx?.writer.providerId, ctx?.writer.model, ctx?.writer.reasoningEffort].filter(Boolean).join(" · ") || t("inheritChoice");
 
   const activate = async () => {
-    if (blocked || pending) return;
+    if (blocked || pending || !projectId) return;
     setPending(true);
     setError(null);
     try {
@@ -104,15 +112,6 @@ export function EnableLanePilotAction() {
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 space-y-3" data-testid="activation-popover">
         <div className="space-y-1">
-          <Label>{t("selectProject")}</Label>
-          <Select value={projectId} onValueChange={setProjectId}>
-            <SelectTrigger className="min-h-11" aria-label={t("selectProject")}><SelectValue placeholder={t("selectProject")} /></SelectTrigger>
-            <SelectContent>
-              {ctx?.projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
           <Label>{t("pickAgent")}</Label>
           <Select value={agentId} onValueChange={setAgentId}>
             <SelectTrigger className="min-h-11" aria-label={t("pickAgent")}><SelectValue /></SelectTrigger>
@@ -122,7 +121,9 @@ export function EnableLanePilotAction() {
             </SelectContent>
           </Select>
         </div>
-        <p className="text-xs text-muted-foreground">{t("effectiveModel")}: {writerLabel}</p>
+        <p className="text-xs text-muted-foreground">{t("globalWriterModel")}: {writerLabel}</p>
+        <p className="text-xs text-muted-foreground">{t("runnerPreferenceNote")}</p>
+        <p className="text-xs text-muted-foreground">{ctx?.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}</p>
         {blocks.filter((row) => row.code !== "pending").length ? (
           <div>
             <p className="text-xs font-medium">{t("activationBlocks")}</p>

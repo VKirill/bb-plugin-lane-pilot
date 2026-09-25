@@ -162,7 +162,7 @@ describe("Lane Pilot UI", () => {
     const errors: unknown[] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((...args) => { errors.push(args); });
     const slot = await mountPage();
-    fireEvent.click(slot.getByRole("button", { name: en.configureNightPicker }));
+    expect(slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy();
     fireEvent.click(slot.getByTestId("tab-diagnostics"));
     const joined = errors.map((item) => String(item)).join("\n");
     expect(joined).not.toMatch(/same key/i);
@@ -639,8 +639,8 @@ describe("Lane Pilot UI", () => {
       get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: null }),
     });
     expect(slot.getByText(ru.settingsSearch)).toBeTruthy();
-    expect(slot.getByText(ru.settingsBasic)).toBeTruthy();
-    expect(slot.getByText(ru.settingsAdvanced)).toBeTruthy();
+    expect(slot.getByTestId("settings-depth").textContent).toContain(ru.settingsBasic);
+    expect(slot.getByTestId("settings-depth").textContent).toContain(ru.settingsAdvanced);
     slot.lifecycle.unmount();
   });
 
@@ -661,7 +661,7 @@ describe("Lane Pilot UI", () => {
       },
     });
     await slot.findByTestId("settings-panel");
-    fireEvent.click(slot.getByRole("tab", { name: "General settings" }));
+    fireEvent.click(slot.getAllByRole("tab", { name: "General settings" })[0]!);
     const placement = await slot.findByRole("combobox", { name: "Default helper placement" });
     fireEvent.click(placement);
     fireEvent.click(await slot.findByRole("option", { name: "In the project tree" }));
@@ -674,7 +674,7 @@ describe("Lane Pilot UI", () => {
     expect(row.textContent).toContain("In the project tree");
     expect(row.textContent).toContain("owner defaults");
     // Reselecting this project takes the reconciled cache, never the pre-save value.
-    fireEvent.click(slot.getByRole("tab", { name: "General settings" }));
+    fireEvent.click(slot.getAllByRole("tab", { name: "General settings" })[0]!);
     fireEvent.click(slot.getByTestId("project-item-proj_ui"));
     await waitFor(() => expect(slot.getByTestId("project-settings").hidden).toBe(false));
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));

@@ -15,8 +15,7 @@ vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.f
 const projectId = "proj_settings_integration";
 const hostId = "host_settings_integration";
 type PickerValue = { providerId:string; model:string; reasoningLevel:string; serviceTier?:"default"|"fast" };
-let pickerValue: PickerValue | null = null;
-let pickerOnChange: ((next: PickerValue) => void) | null = null;
+type PickerNode = HTMLElement & { __pickerValue?: PickerValue; __pickerOnChange?: (next: PickerValue) => void };
 
 function installPickerTestDriver() {
   installTestPluginRuntime();
@@ -32,8 +31,12 @@ function installPickerTestDriver() {
         "data-model": props.value.model,
         "data-effort": props.value.reasoningLevel,
         "data-tier": props.value.serviceTier ?? "none",
+        ref: (node: PickerNode | null) => {
+          if (!node) return;
+          node.__pickerValue = props.value;
+          node.__pickerOnChange = props.onChange;
+        },
       },
-      (pickerValue = props.value, pickerOnChange = props.onChange, null),
     ),
   };
 }
@@ -159,16 +162,26 @@ async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:s
     },
   });
   await waitFor(() => {
-    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("codex");
-    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-effort")).toBe("medium");
+    const picker = writerPicker(slot);
+    expect(picker.getAttribute("data-provider")).toBe("codex");
+    expect(picker.getAttribute("data-effort")).toBe("medium");
   });
   return { harness, slot, saveCalls, memorySaveCalls, nightSaveCalls, docsSaveCalls, onboardingSaveCalls, singleSaveCalls };
 }
 
-async function choosePickerValue(next: PickerValue) {
-  if (!pickerValue || !pickerOnChange) throw new Error("ProviderModelPicker test driver was not rendered");
+function writerPicker(slot: RenderedSlot) {
+  return slot.getByTestId("writer-picker").querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
+}
+
+function scopedPicker(slot: RenderedSlot, testId: string) {
+  return slot.getByTestId(testId).querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
+}
+
+async function choosePickerValue(next: Partial<PickerValue>, node?: PickerNode) {
+  const picker = node ?? (document.querySelector("[data-testid='writer-picker'] [data-testid='bb-provider-model-picker']") as PickerNode | null);
+  if (!picker?.__pickerOnChange || !picker.__pickerValue) throw new Error("ProviderModelPicker test driver was not rendered");
   await act(async () => {
-    pickerOnChange!({ ...pickerValue!, ...next });
+    picker.__pickerOnChange!({ ...picker.__pickerValue!, ...next });
     await Promise.resolve();
   });
 }
@@ -181,8 +194,6 @@ async function finish(harness: Awaited<ReturnType<typeof createFakePluginHost>>[
 describe("native writer settings against the registered SQLite backend", () => {
   afterEach(() => {
     cleanup();
-    pickerValue = null;
-    pickerOnChange = null;
     setLocaleOverride(null);
     document.documentElement.lang = "en";
     vi.clearAllMocks();
@@ -202,7 +213,7 @@ describe("native writer settings against the registered SQLite backend", () => {
         "writer.reasoning_effort":"xhigh",
         "writer.service_tier":"fast",
       });
-      expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-tier")).toBe("fast");
+      expect(writerPicker(slot).getAttribute("data-tier")).toBe("fast");
     });
     expect(saveCalls[0]).toMatchObject({
       providerId:"codex", model:"gpt-6-luna", reasoningLevel:"xhigh", serviceTier:"fast",
@@ -237,9 +248,8 @@ describe("native writer settings against the registered SQLite backend", () => {
   it("uses a separate live native picker and atomic CAS for memory maintenance", async () => {
     const {harness,slot,memorySaveCalls}=await mountWithBackend();
     const before=await harness.behavior.callRpc("get_screen",{projectId}) as {versions:Record<string,number>};
-    fireEvent.click(slot.getByText(en.configureMemoryPicker));
     await waitFor(()=>expect(slot.getByTestId("memory-picker").querySelectorAll("[data-testid='bb-provider-model-picker']")).toHaveLength(1));
-    await choosePickerValue({providerId:"qwen",model:"qwen-test",reasoningLevel:"high",serviceTier:"default"});
+    await choosePickerValue({providerId:"qwen",model:"qwen-test",reasoningLevel:"high",serviceTier:"default"}, scopedPicker(slot, "memory-picker"));
     await waitFor(()=>expect(memorySaveCalls).toHaveLength(1));
     await waitFor(async()=>{
       const current=await harness.behavior.callRpc("get_screen",{projectId}) as {values:Record<string,unknown>};
@@ -337,11 +347,10 @@ describe("native writer settings against the registered SQLite backend", () => {
 
   it("saves night-review model selection as one provider-catalog-validated CAS tuple",async()=>{
     const {harness,slot,nightSaveCalls}=await mountWithBackend();
-    fireEvent.click(slot.getByText(en.configureNightPicker));
-    await waitFor(()=>expect(slot.getAllByTestId("bb-provider-model-picker")).toHaveLength(2));
-    const picker=slot.getAllByTestId("bb-provider-model-picker").at(-1)!;
+    await waitFor(()=>expect(slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    const picker=slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']")!;
     expect(picker.getAttribute("data-provider")).toBe("codex");
-    pickerOnChange?.({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"});
+    await choosePickerValue({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"}, picker as PickerNode);
     await waitFor(()=>expect(nightSaveCalls).toHaveLength(1));
     expect(nightSaveCalls[0]).toMatchObject({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",expectedVersions:{"night_review.provider":0,"night_review.model":0,"night_review.reasoning_effort":0,"night_review.service_tier":0}});
     await finish(harness,slot);
@@ -350,11 +359,10 @@ describe("native writer settings against the registered SQLite backend", () => {
   it("saves docs-maintenance model selection as a native catalog-validated CAS tuple",async()=>{
     const {harness,slot,docsSaveCalls}=await mountWithBackend();
     const before=await harness.behavior.callRpc("get_screen",{projectId}) as {versions:Record<string,number>};
-    fireEvent.click(slot.getByText(en.configureDocsPicker));
     await waitFor(()=>expect(slot.getByTestId("docs-picker").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy());
     const picker=slot.getByTestId("docs-picker").querySelector("[data-testid='bb-provider-model-picker']");
     expect(picker?.getAttribute("data-provider")).toBe("codex");
-    pickerOnChange?.({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"});
+    await choosePickerValue({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"}, picker as PickerNode);
     await waitFor(()=>expect(docsSaveCalls).toHaveLength(1));
     expect(docsSaveCalls[0]).toMatchObject({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",expectedVersions:{"docs.provider":before.versions["docs.provider"]??0,"docs.model":before.versions["docs.model"]??0,"docs.reasoning_effort":before.versions["docs.reasoning_effort"]??0,"docs.service_tier":before.versions["docs.service_tier"]??0}});
     await finish(harness,slot);
@@ -362,11 +370,10 @@ describe("native writer settings against the registered SQLite backend", () => {
   it("saves onboarding model selection as a native catalog-validated CAS tuple",async()=>{
     const {harness,slot,onboardingSaveCalls}=await mountWithBackend();
     const before=await harness.behavior.callRpc("get_screen",{projectId}) as {versions:Record<string,number>};
-    fireEvent.click(slot.getByText(en.configureOnboardingPicker));
     await waitFor(()=>expect(slot.getByTestId("onboarding-picker").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy());
     const picker=slot.getByTestId("onboarding-picker").querySelector("[data-testid='bb-provider-model-picker']");
     expect(picker?.getAttribute("data-provider")).toBe("codex");
-    pickerOnChange?.({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"});
+    await choosePickerValue({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"}, picker as PickerNode);
     await waitFor(()=>expect(onboardingSaveCalls).toHaveLength(1));
     expect(onboardingSaveCalls[0]).toMatchObject({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",expectedVersions:{"onboarding.provider":before.versions["onboarding.provider"]??0,"onboarding.model":before.versions["onboarding.model"]??0,"onboarding.reasoning_effort":before.versions["onboarding.reasoning_effort"]??0,"onboarding.service_tier":before.versions["onboarding.service_tier"]??0}});
     await finish(harness,slot);
@@ -420,8 +427,8 @@ describe("native writer settings against the registered SQLite backend", () => {
     await choosePickerValue({ providerId:"codex", model:"gpt-6-luna", reasoningLevel:"low", serviceTier:"default" });
     await waitFor(() => expect(releaseFirst).toBeTypeOf("function"));
     await choosePickerValue({ providerId:"acp-cursor", model:"claude-opus-5", reasoningLevel:"low" });
-    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("acp-cursor");
-    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-model")).toBe("claude-opus-5");
+    expect(writerPicker(slot).getAttribute("data-provider")).toBe("acp-cursor");
+    expect(writerPicker(slot).getAttribute("data-model")).toBe("claude-opus-5");
     releaseFirst!();
     await waitFor(async () => {
       const current = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown> };
@@ -432,7 +439,7 @@ describe("native writer settings against the registered SQLite backend", () => {
       });
     });
     expect(saveCalls.at(-1)).toMatchObject({ providerId:"acp-cursor", model:"claude-opus-5" });
-    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("acp-cursor");
+    expect(writerPicker(slot).getAttribute("data-provider")).toBe("acp-cursor");
     expect(slot.queryByTestId("setting-validation-error")).toBeNull();
     await finish(harness, slot);
   });
@@ -441,8 +448,8 @@ describe("native writer settings against the registered SQLite backend", () => {
     const { harness, slot } = await mountWithBackend();
     await choosePickerValue({ providerId:"acp-cursor", model:"not-in-catalog", reasoningLevel:"medium" });
     await waitFor(() => expect(slot.getByTestId("setting-validation-error")).toBeTruthy());
-    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("acp-cursor");
-    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-model")).toBe("not-in-catalog");
+    expect(writerPicker(slot).getAttribute("data-provider")).toBe("acp-cursor");
+    expect(writerPicker(slot).getAttribute("data-model")).toBe("not-in-catalog");
     const persisted = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown> };
     expect(persisted.values["writer.provider"]).toBe("codex");
     expect(persisted.values["writer.model"]).toBe("gpt-6-luna");
@@ -464,8 +471,8 @@ describe("native writer settings against the registered SQLite backend", () => {
     expect(external.ok).toBe(true);
     await choosePickerValue({ providerId:"acp-cursor", model:"claude-opus-5", reasoningLevel:"medium" });
     await waitFor(() => expect(slot.getByTestId("cas-conflict")).toBeTruthy());
-    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-provider")).toBe("acp-cursor");
-    expect(slot.getByTestId("bb-provider-model-picker").getAttribute("data-model")).toBe("claude-opus-5");
+    expect(writerPicker(slot).getAttribute("data-provider")).toBe("acp-cursor");
+    expect(writerPicker(slot).getAttribute("data-model")).toBe("claude-opus-5");
     const persisted = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown> };
     expect(persisted.values).toMatchObject({ "writer.provider":"codex", "writer.model":"gpt-6-luna", "writer.reasoning_effort":"xhigh" });
     await finish(harness, slot);

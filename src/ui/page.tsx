@@ -50,7 +50,7 @@ import {
 } from "../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
-import { Separator } from "../../components/ui/separator";
+import { Icon } from "../../components/ui/icon";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "../state-machine";
 import type { StageReceipt } from "../stages/contract";
@@ -539,13 +539,6 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectListError, setProjectListError] = useState(false);
   const [finishing, setFinishing] = useState(false);
-  const [memoryPickerOpen, setMemoryPickerOpen] = useState(false);
-  const [nightPickerOpen, setNightPickerOpen] = useState(false);
-  const [docsPickerOpen, setDocsPickerOpen] = useState(false);
-  const [onboardingPickerOpen, setOnboardingPickerOpen] = useState(false);
-  const [pmReadPickerOpen, setPmReadPickerOpen] = useState(false);
-  const [planCritiquePickerOpen, setPlanCritiquePickerOpen] = useState(false);
-  const [codeCritiquePickerOpen, setCodeCritiquePickerOpen] = useState(false);
   const providers = useProviders();
   const [tab, setTab] = useState("settings");
   const [data, setData] = useState<ScreenPayload | null>(null);
@@ -1061,6 +1054,14 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   const hostId = data?.hostId;
   const routing = hostId ? { kind: "host" as const, hostId } : undefined;
+  const modelPicker = (value: ExperimentalProviderModelPickerValue, onChange: (next: ExperimentalProviderModelPickerValue) => void) => (
+    value.providerId || (providers.providers?.length ?? 0) > 0
+      ? <ProviderModelPicker value={value.providerId ? value : { providerId: providers.providers?.[0]?.id ?? "none", model: "", reasoningLevel: "none" }} routing={routing} onChange={onChange} />
+      : <p className="text-sm text-muted-foreground">{providers.status === "loading" ? t("writerCatalogLoading") : t("writerCatalogUnavailable")}</p>
+  );
+  const inheritReset = (keys: string[]) => (
+    <Button type="button" size="sm" variant="ghost" className="h-8 px-2" disabled={!keys.some((key) => data?.explicitKeys.includes(key))} onClick={() => void resetInherited(keys)}>{t("inheritChoice")}</Button>
+  );
 
   const runStack = async (op: "detect" | "install" | "connect" | "rollback", confirm = false) => {
     if (!projectId) return;
@@ -1110,17 +1111,43 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const mobileNavValue = activeScope === "projects" ? (projectId ? `project:${projectId}` : "projects") : activeScope;
 
   return (
-    <InheritanceContext.Provider value={{ locale, data, reset: (keys) => void resetInherited(keys) }}><div className="flex h-full min-h-0 min-w-0 overflow-hidden" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-border md:flex lg:w-64" data-testid="scope-rail">
-        <nav aria-label={t("scopeNav")} data-testid="scope-nav" className="flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden p-2">
-          <Button type="button" role="tab" aria-selected={activeScope === "globals"} variant={activeScope === "globals" ? "secondary" : "ghost"} className="min-h-11 w-full justify-start" onClick={() => setActiveScope("globals")}>{t("navGlobals")}</Button>
-          <Button type="button" role="tab" aria-selected={activeScope === "agents"} variant={activeScope === "agents" ? "secondary" : "ghost"} className="min-h-11 w-full justify-start" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
-          <Separator className="my-2" />
-          <p className="px-2 text-xs text-muted-foreground">{t("projects")}</p>
+    <InheritanceContext.Provider value={{ locale, data, reset: (keys) => void resetInherited(keys) }}><div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
+      <div className="flex shrink-0 flex-col gap-2 border-b border-border p-2 md:hidden">
+        <div className="flex items-center gap-2">
+          <Select
+            value={mobileNavValue}
+            onValueChange={(next) => {
+              if (next === "globals" || next === "agents") setActiveScope(next);
+              else if (next.startsWith("project:")) chooseProject(next.slice("project:".length));
+            }}
+          >
+            <SelectTrigger aria-label={t("scopeNav")} className="min-h-11 min-w-0 flex-1" data-testid="scope-nav-mobile">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="globals">{t("navGlobals")}</SelectItem>
+              <SelectItem value="agents">{t("navAgents")}</SelectItem>
+              {projects.map((project) => <SelectItem key={project.id} value={`project:${project.id}`}>{project.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
+        </div>
+        <div className="-mx-2 flex gap-1 overflow-x-auto px-2 pb-1" role="navigation" aria-label={t("scopeNav")}>
+          <Button type="button" size="sm" aria-pressed={activeScope === "globals"} variant={activeScope === "globals" ? "secondary" : "ghost"} className="min-h-11 shrink-0 justify-center px-2.5" onClick={() => setActiveScope("globals")}>{t("navGlobals")}</Button>
+          <Button type="button" size="sm" aria-pressed={activeScope === "agents"} variant={activeScope === "agents" ? "secondary" : "ghost"} className="min-h-11 shrink-0 justify-center px-2.5" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
+        </div>
+      </div>
+      <nav className="hidden w-[13.5rem] shrink-0 flex-col border-r border-border bg-background md:flex" aria-label={t("scopeNav")} data-testid="scope-rail">
+        <div className="flex flex-col gap-0.5 border-b border-border p-2" data-testid="scope-nav">
+          <Button type="button" role="tab" size="sm" aria-selected={activeScope === "globals"} variant={activeScope === "globals" ? "secondary" : "ghost"} className="h-8 w-full justify-start px-2" onClick={() => setActiveScope("globals")}>{t("navGlobals")}</Button>
+          <Button type="button" role="tab" size="sm" aria-selected={activeScope === "agents"} variant={activeScope === "agents" ? "secondary" : "ghost"} className="h-8 w-full justify-start px-2" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
+        </div>
+        <div className="p-2"><span className="text-xs font-medium text-muted-foreground">{t("projects")}</span></div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
           {projectListError ? <p role="alert" className="px-2 text-xs text-destructive">{t("projectListError")}</p> : null}
-          {!projectsLoaded && !projectListError ? <p className="px-2 text-sm text-muted-foreground">{t("loadingProjects")}</p> : null}
-          {projectsLoaded && projects.length === 0 && !projectListError ? <p className="px-2 text-sm text-muted-foreground">{t("noProjects")}</p> : null}
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden" aria-label={t("projects")}>
+          {!projectsLoaded && !projectListError ? <p className="px-2 text-xs text-muted-foreground">{t("loadingProjects")}</p> : null}
+          {projectsLoaded && projects.length === 0 && !projectListError ? <p className="px-2 text-xs text-muted-foreground">{t("noProjects")}</p> : null}
+          <div className="flex flex-col gap-0.5">
             {projects.map((project) => <Button
               key={project.id}
               type="button"
@@ -1128,41 +1155,24 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               variant={activeScope === "projects" && project.id === projectId ? "secondary" : "ghost"}
               aria-current={activeScope === "projects" && project.id === projectId ? "page" : undefined}
               data-testid={`project-item-${project.id}`}
-              className="min-h-11 w-full justify-start truncate"
+              className="h-auto w-full justify-start px-2 py-1.5 text-left"
               onClick={() => chooseProject(project.id)}
-            >{project.name}</Button>)}
+            ><span className="min-w-0 truncate text-sm">{project.name}</span></Button>)}
           </div>
-        </nav>
-      </aside>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-          <div className="min-w-0 flex-1 md:hidden">
-            <Select
-              value={mobileNavValue}
-              onValueChange={(next) => {
-                if (next === "globals" || next === "agents") setActiveScope(next);
-                else if (next.startsWith("project:")) chooseProject(next.slice("project:".length));
-              }}
-            >
-              <SelectTrigger aria-label={t("scopeNav")} className="min-h-11 w-full min-w-0" data-testid="scope-nav-mobile">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="globals">{t("navGlobals")}</SelectItem>
-                <SelectItem value="agents">{t("navAgents")}</SelectItem>
-                <SelectItem value="projects" disabled>{t("projectRailHint")}</SelectItem>
-                {projects.map((project) => <SelectItem key={project.id} value={`project:${project.id}`}>{project.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="ml-auto shrink-0"><LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} /></div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto overflow-x-hidden p-3 md:p-5">
+      </nav>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="hidden items-center justify-end border-b border-border px-4 py-2 md:flex">
+          <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-5">
         <OwnedSettings scope={activeScope} locale={locale} onDefaultsSaved={applyGlobalDefaults} />
-        <main hidden={activeScope !== "projects"} className="space-y-5" data-testid="project-settings">
-        {!projectId ? <Card data-testid="project-settings-empty"><CardContent className="p-5 text-sm text-muted-foreground">{t("noProjectSelected")}</CardContent></Card> : <>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div><p className="text-xs text-muted-foreground">{t("selectedProject")}</p><h1 className="break-words text-xl font-semibold">{selectedProjectName}</h1></div>
+        <main hidden={activeScope !== "projects"} className="space-y-6" data-testid="project-settings">
+        {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
+        <div>
+          <p className="text-xs text-muted-foreground">{t("selectedProject")}</p>
+          <h1 className="break-words text-xl font-medium">{selectedProjectName}</h1>
         </div>
         <div className="grid gap-2 border-b border-border py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center" data-testid="main-agent">
           <div className="space-y-1">
@@ -1275,72 +1285,48 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 <Button size="sm" variant={settingsDepth === "advanced" ? "default" : "outline"} aria-pressed={settingsDepth === "advanced"} onClick={() => setSettingsDepth("advanced")}>{t("settingsAdvanced")}</Button>
               </div>
             </div>
-            {cardVisible("writerPicker", "writerPickerHelp", "writerEffortMode", "writerEffortModeHelp") ? <Card data-testid="writer-picker">
-              <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">{t("writerPicker")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
-                <Button variant="outline" className="min-h-11" disabled={![WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER].some((key) => data?.explicitKeys.includes(key))} onClick={() => void resetInherited([WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER])}>{locale === "ru" ? "Наследовать модель и параметры" : "Inherit model and settings"}</Button>
-                {(() => {
-                  const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
-                  const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
-                  return effortRow ? <div className="space-y-2 rounded-md border border-border p-3" data-testid="writer-effort-mode">
-                    <div className="flex items-center justify-between gap-3">
-                      <Label className="text-sm" htmlFor="writer-effort-mode">{t("writerEffortMode")}</Label>
-                      <Select
-                        value={automaticEffort ? "automatic" : "manual"}
-                        onValueChange={(next) => void applySetting(effortRow, next === "automatic" ? "1" : "0")}
-                      >
-                        <SelectTrigger id="writer-effort-mode" aria-label={t("writerEffortMode")}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="automatic">{t("writerEffortAutomatic")}</SelectItem>
-                          <SelectItem value="manual">{t("writerEffortManual")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <details className="text-xs text-muted-foreground">
-                      <summary className="cursor-pointer">{t("writerEffortWhy")}</summary>
-                      <p className="mt-1">{t("writerEffortModeHelp")}</p>
-                    </details>
-                    <p className="text-xs text-muted-foreground">{automaticEffort ? t("writerEffortFallbackNote") : t("writerEffortManualNote")}</p>
-                  </div> : null;
-                })()}
-              {pickerValue.providerId || (providers.providers?.length ?? 0) > 0 ? (
-                <ProviderModelPicker
-                  value={pickerValue.providerId ? pickerValue : {
-                    providerId: providers.providers?.[0]?.id ?? "none",
-                    model: "",
-                    reasoningLevel: "none",
-                  }}
-                  routing={routing}
-                  onChange={(next) => {
-                    saveWriterSelection(next);
-                  }}
-                />
-              ) : <p className="text-sm text-muted-foreground">{providers.status === "loading" ? t("writerCatalogLoading") : t("writerCatalogUnavailable")}</p>}
-              </CardContent>
-            </Card> : null}
+            {cardVisible("writerPicker", "writerPickerHelp", "writerEffortMode", "writerEffortModeHelp") ? <section className="space-y-3" data-testid="writer-picker">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium">{t("writerPicker")}</h2>
+                {inheritReset([WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER])}
+              </div>
+              <p className="text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
+              {modelPicker(pickerValue, (next) => { saveWriterSelection(next); })}
+              {(() => {
+                const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
+                const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
+                return effortRow ? <details className="space-y-2" data-testid="writer-effort-mode">
+                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                  <div className="flex items-center justify-between gap-3 pt-2">
+                    <Label className="text-sm" htmlFor="writer-effort-mode">{t("writerEffortMode")}</Label>
+                    <Select value={automaticEffort ? "automatic" : "manual"} onValueChange={(next) => void applySetting(effortRow, next === "automatic" ? "1" : "0")}>
+                      <SelectTrigger id="writer-effort-mode" aria-label={t("writerEffortMode")}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="automatic">{t("writerEffortAutomatic")}</SelectItem>
+                        <SelectItem value="manual">{t("writerEffortManual")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{automaticEffort ? t("writerEffortFallbackNote") : t("writerEffortManualNote")}</p>
+                </details> : null;
+              })()}
+            </section> : null}
 
-            {cardVisible("memoryPicker", "memoryPickerHelp") ? <Card data-testid="memory-picker">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("memoryPicker")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
-                <p className="break-all text-xs text-muted-foreground">{memoryPickerValue.providerId}/{memoryPickerValue.model} · {memoryPickerValue.reasoningLevel} · {memoryPickerValue.serviceTier ?? "standard"}</p>
-                <Button size="sm" variant="outline" onClick={()=>setMemoryPickerOpen((open)=>!open)}>{memoryPickerOpen?t("closeMemoryPicker"):t("configureMemoryPicker")}</Button>
-                {memoryPickerOpen ? (memoryPickerValue.providerId || (providers.providers?.length ?? 0)>0
-                  ? <ProviderModelPicker value={memoryPickerValue.providerId?memoryPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}}
-                      routing={routing} onChange={(next)=>{void saveMemorySelection(next);}} />
-                  : <p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>) : null}
-              </CardContent>
-            </Card> : null}
+            {cardVisible("memoryPicker", "memoryPickerHelp") ? <section className="space-y-3" data-testid="memory-picker">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium">{t("memoryPicker")}</h2>
+                {inheritReset([MEMORY_PROVIDER, MEMORY_MODEL, MEMORY_EFFORT, MEMORY_SERVICE_TIER])}
+              </div>
+              <p className="text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
+              {modelPicker(memoryPickerValue, (next) => { void saveMemorySelection(next); })}
+            </section> : null}
 
             {cardVisible("jevSettings", "jevOpencode") ? <section className="space-y-3" data-testid="jev-settings">
               <h2 className="text-sm font-medium">{t("jevSettings")}</h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 {jevRows.filter((row) => row.storageKey !== "jev.LANE_JEV_EFFORT").map((row) => {
                   const label = t("jevOpencode");
-                  return <div key={row.storageKey} className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+                  return <div key={row.storageKey} className="flex items-center justify-between gap-3">
                     <Label className="text-sm" htmlFor={row.id}>{label}</Label>
                     <Switch id={row.id} checked={asBoolean(displayedValue(row.storageKey), true)} aria-label={label}
                       onCheckedChange={(next) => void applySetting(row, next ? "1" : "0")} />
@@ -1349,115 +1335,112 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </div>
             </section> : null}
 
-          {cardVisible("nightReviewEnabled", "nightReviewAutoMerge", "stageNightReview") ? <Card data-testid="night-review-settings">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t(sectionKey("night-review"))}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
-                  <Label className="text-sm" htmlFor="night-review-enabled">{t("nightReviewEnabled")}</Label>
-                  <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}
-                    onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void applySetting(row,next);}} />
-                </div>
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
-                  <Label className="text-sm" htmlFor="night-review-auto-merge">{t("nightReviewAutoMerge")}</Label>
+          {cardVisible("nightReviewEnabled", "nightReviewAutoMerge", "stageNightReview") ? <section className="space-y-3" data-testid="night-review-settings">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium">{t(sectionKey("night-review"))}</h2>
+                <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}
+                  onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void applySetting(row,next);}} />
+              </div>
+              <p className="text-xs text-muted-foreground">{t("nightReviewEnabled")}</p>
+              {modelPicker(nightPickerValue, (next) => { void saveNightReviewSelection(next); })}
+              <details className="space-y-2">
+                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                <div className="flex items-center justify-between gap-2 pt-2">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <Label className="text-sm" htmlFor="night-review-auto-merge">{t("nightReviewAutoMerge")}</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button type="button" size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label={t("nightReviewAutoMergeHelp")}><Icon name="CircleQuestion" className="size-4 text-muted-foreground" /></Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="text-xs text-muted-foreground">{t("nightReviewAutoMergeHelp")}</PopoverContent>
+                    </Popover>
+                  </div>
                   <Switch id="night-review-auto-merge" checked={asBoolean(displayedValue("night_review.auto_merge"),false)} aria-label={t("nightReviewAutoMerge")}
                     onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.auto_merge");if(row)void applySetting(row,next);}} />
                 </div>
-                <p className="break-all text-xs text-muted-foreground">{nightPickerValue.providerId}/{nightPickerValue.model} · {nightPickerValue.reasoningLevel} · {nightPickerValue.serviceTier??"standard"}</p>
-                <Button size="sm" variant="outline" onClick={()=>setNightPickerOpen((open)=>!open)}>{nightPickerOpen?t("closeNightPicker"):t("configureNightPicker")}</Button>
-                {nightPickerOpen?(nightPickerValue.providerId||(providers.providers?.length??0)>0
-                  ?<ProviderModelPicker value={nightPickerValue.providerId?nightPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveNightReviewSelection(next);}} />
-                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
-              </CardContent>
-          </Card> : null}
-            {cardVisible("docsPicker", "docsPickerHelp", "docsMaintain", "groupDocs") ? <Card data-testid="docs-picker">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("groupDocs")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
-                {(["docs.enabled","docs.maintain","docs.page_cap","docs.since","docs.hour"] as const).map((key) => {
+              </details>
+          </section> : null}
+            {cardVisible("docsPicker", "docsPickerHelp", "docsMaintain", "groupDocs") ? <section className="space-y-3" data-testid="docs-picker">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium">{t("groupDocs")}</h2>
+                {(() => { const row = catalogRow("docs.enabled"); return row ? <Switch checked={asBoolean(displayedValue("docs.enabled"), false)} aria-label={t("groupDocs")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+              </div>
+              <p className="text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
+              {modelPicker(docsPickerValue, (next) => { void saveDocsSelection(next); })}
+              <details className="space-y-2">
+                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                {(["docs.maintain","docs.page_cap","docs.since","docs.hour"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
-                <p className="break-all text-xs text-muted-foreground">{docsPickerValue.providerId}/{docsPickerValue.model} · {docsPickerValue.reasoningLevel} · {docsPickerValue.serviceTier??"standard"}</p>
-                <Button size="sm" variant="outline" onClick={()=>setDocsPickerOpen((open)=>!open)}>{docsPickerOpen?t("closeDocsPicker"):t("configureDocsPicker")}</Button>
-                {docsPickerOpen?(docsPickerValue.providerId||(providers.providers?.length??0)>0
-                  ?<ProviderModelPicker value={docsPickerValue.providerId?docsPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveDocsSelection(next);}} />
-                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
-              </CardContent>
-            </Card> : null}
-            {cardVisible("onboardingPicker", "onboardingPickerHelp") ? <Card data-testid="onboarding-picker">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("onboardingPicker")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">{t("onboardingPickerHelp")}</p>
-                <p className="break-all text-xs text-muted-foreground">{onboardingPickerValue.providerId}/{onboardingPickerValue.model} · {onboardingPickerValue.reasoningLevel} · {onboardingPickerValue.serviceTier??"standard"}</p>
-                <Button size="sm" variant="outline" onClick={()=>setOnboardingPickerOpen((open)=>!open)}>{onboardingPickerOpen?t("closeOnboardingPicker"):t("configureOnboardingPicker")}</Button>
-                {onboardingPickerOpen?(onboardingPickerValue.providerId||(providers.providers?.length??0)>0
-                  ?<ProviderModelPicker value={onboardingPickerValue.providerId?onboardingPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveOnboardingSelection(next);}} />
-                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
-              </CardContent>
-            </Card> : null}
-            {cardVisible("largeFileRead", "largeFileReadHelp", "largeFilePicker") ? <Card data-testid="pm-read-settings">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("largeFileRead")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">{t("largeFileReadHelp")}</p>
-                {(["pm_read.enabled","pm_read.min_lines"] as const).map((key) => {
-                  const row = catalogRow(key);
-                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
-                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
-                })}
-                <p className="text-xs text-muted-foreground">{t("largeFilePickerHelp")}</p>
-                <p className="break-all text-xs text-muted-foreground">{pmReadPickerValue.providerId}/{pmReadPickerValue.model} · {pmReadPickerValue.reasoningLevel} · {pmReadPickerValue.serviceTier??"standard"}</p>
-                <Button size="sm" variant="outline" onClick={()=>setPmReadPickerOpen((open)=>!open)}>{pmReadPickerOpen?t("closePmReadPicker"):t("configurePmReadPicker")}</Button>
-                {pmReadPickerOpen?(pmReadPickerValue.providerId||(providers.providers?.length??0)>0
-                  ?<ProviderModelPicker value={pmReadPickerValue.providerId?pmReadPickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void savePmReadSelection(next);}} />
-                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
-              </CardContent>
-            </Card> : null}
-            {cardVisible("helperContext", "helperContextHelp") ? <Card data-testid="helper-context-settings">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("helperContext")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">{t("helperContextHelp")}</p>
+              </details>
+            </section> : null}
+            {cardVisible("onboardingPicker", "onboardingPickerHelp") ? <section className="space-y-3" data-testid="onboarding-picker">
+              <h2 className="text-sm font-medium">{t("onboardingPicker")}</h2>
+              <p className="text-xs text-muted-foreground">{t("onboardingPickerHelp")}</p>
+              {modelPicker(onboardingPickerValue, (next) => { void saveOnboardingSelection(next); })}
+            </section> : null}
+            {cardVisible("largeFileRead", "largeFileReadHelp", "largeFilePicker") ? <section className="space-y-3" data-testid="pm-read-settings">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium">{t("largeFileRead")}</h2>
+                {(() => { const row = catalogRow("pm_read.enabled"); return row ? <Switch checked={asBoolean(displayedValue("pm_read.enabled"), false)} aria-label={t("largeFileRead")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+              </div>
+              <p className="text-xs text-muted-foreground">{t("largeFileReadHelp")}</p>
+              {modelPicker(pmReadPickerValue, (next) => { void savePmReadSelection(next); })}
+              <details className="space-y-2">
+                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                {(() => { const row = catalogRow("pm_read.min_lines"); return row ? <SettingField row={row} value={displayedValue("pm_read.min_lines")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("pm_read.min_lines", next)} /> : null; })()}
+              </details>
+            </section> : null}
+            {cardVisible("helperContext", "helperContextHelp") ? <section className="space-y-3" data-testid="helper-context-settings">
+              <h2 className="text-sm font-medium">{t("helperContext")}</h2>
+              <p className="text-xs text-muted-foreground">{t("helperContextHelp")}</p>
+              {(() => { const row = catalogRow("helper.placement"); return row ? <SettingField row={row} value={displayedValue("helper.placement")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("helper.placement", next)} /> : null; })()}
+              <details className="space-y-2">
+                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
                 <p className="text-xs text-muted-foreground">{t("helperContextNoneNote")}</p>
-                {(["helper.placement","helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins"] as const).map((key) => {
+                {(["helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
-              </CardContent>
-            </Card> : null}
-            {cardVisible("browserQaHost", "browserQaHostHelp", "browserQaWorkspace") ? <Card data-testid="browser-qa-host">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("browserQaHost")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">{t("browserQaHostHelp")}</p>
-                {(() => {
-                  const options = (data?.qaHosts ?? []).filter((host) => host.connected);
-                  const current = String(displayedValue(QA_HOST_KEY) ?? "");
-                  if (!options.length) return <p className="text-sm text-muted-foreground">{t("browserQaHostNone")}</p>;
-                  return <Select value={options.some((host) => host.id === current) ? current : ""} onValueChange={(next) => void saveKey(QA_HOST_KEY, next)}>
-                    <SelectTrigger aria-label={t("browserQaHost")} data-testid="browser-qa-host-select">
-                      <SelectValue placeholder={t("browserQaHost")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {options.map((host) => (
-                        <SelectItem key={host.id} value={host.id}>{host.name} ({host.id})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>;
-                })()}
-                <div className="space-y-1">
-                  <Label htmlFor="browser-qa-workspace">{t("browserQaWorkspace")}</Label>
-                  <Input
-                    id="browser-qa-workspace"
-                    data-testid="browser-qa-workspace"
-                    value={String(displayedValue(QA_WORKSPACE_KEY) ?? "")}
-                    placeholder={data?.workspacePath ?? "/"}
-                    onChange={(event) => writeDraft(QA_WORKSPACE_KEY, event.target.value)}
-                    onBlur={(event) => void saveKey(QA_WORKSPACE_KEY, event.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">{t("browserQaWorkspaceHelp")}</p>
-                </div>
-              </CardContent>
-            </Card> : null}
+              </details>
+            </section> : null}
+            {cardVisible("browserQaHost", "browserQaHostHelp", "browserQaWorkspace") ? <section className="space-y-3" data-testid="browser-qa-host">
+              <h2 className="text-sm font-medium">{t("globalQaHost")}</h2>
+              <p className="text-xs text-muted-foreground">{t("browserQaHostHelp")}</p>
+              {(() => {
+                const options = data?.qaHosts ?? [];
+                const current = String(displayedValue(QA_HOST_KEY) ?? "");
+                const known = options.some((host) => host.id === current);
+                if (!options.length) return <p className="text-sm text-muted-foreground">{t("browserQaHostNone")}</p>;
+                return <Select value={known ? current : current ? current : "__inherit__"} onValueChange={(next) => { if (next === "__inherit__") void resetInherited([QA_HOST_KEY]); else void saveKey(QA_HOST_KEY, next); }}>
+                  <SelectTrigger aria-label={t("globalQaHost")} data-testid="browser-qa-host-select">
+                    <SelectValue placeholder={t("inheritChoice")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__inherit__">{t("inheritChoice")}</SelectItem>
+                    {options.map((host) => (
+                      <SelectItem key={host.id} value={host.id}>{host.name} · {host.connected ? t("hostConnected") : t("hostOffline")}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>;
+              })()}
+              {displayedValue(QA_HOST_KEY) && !(data?.qaHosts ?? []).some((host) => host.id === displayedValue(QA_HOST_KEY)) ? <p className="text-xs text-muted-foreground">{t("hostUnavailable")}</p> : null}
+              <details className="space-y-2">
+                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                <Label htmlFor="browser-qa-workspace">{t("browserQaWorkspace")}</Label>
+                <Input
+                  id="browser-qa-workspace"
+                  data-testid="browser-qa-workspace"
+                  value={String(displayedValue(QA_WORKSPACE_KEY) ?? "")}
+                  placeholder={data?.workspacePath ?? "/"}
+                  onChange={(event) => writeDraft(QA_WORKSPACE_KEY, event.target.value)}
+                  onBlur={(event) => void saveKey(QA_WORKSPACE_KEY, event.target.value)}
+                />
+              </details>
+            </section> : null}
             {extrasGrouped.map(({ section, rows }) => (
               <section key={section} className="space-y-3" data-testid={`settings-group-${section}`}>
                 <h2 className="text-sm font-medium">{t(sectionKey(section))}</h2>
@@ -1480,39 +1463,39 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             ) : null}
           </TabsContent>
 
-          <TabsContent value="checks" forceMount={true} className="space-y-5" hidden={tab !== "checks"} data-testid="checks-panel">
-            <Card data-testid="plan-critique-settings">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("stagePlanCritique")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">{t("planCritiqueHelp")}</p>
-                {(["plan_critique.enabled","plan_critique.mode","plan_critique.min_score","plan_critique.min_write_tasks","plan_critique.on_high_risk"] as const).map((key) => {
+          <TabsContent value="checks" forceMount={true} className="space-y-6" hidden={tab !== "checks"} data-testid="checks-panel">
+            <section className="space-y-3" data-testid="plan-critique-settings">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium">{t("stagePlanCritique")}</h2>
+                {(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+              </div>
+              <p className="text-xs text-muted-foreground">{t("planCritiqueHelp")}</p>
+              {modelPicker(planCritiquePickerValue, (next) => { void savePlanCritiqueSelection(next); })}
+              <details className="space-y-2">
+                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                {(["plan_critique.mode","plan_critique.min_score","plan_critique.min_write_tasks","plan_critique.on_high_risk"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
-                <p className="break-all text-xs text-muted-foreground">{planCritiquePickerValue.providerId}/{planCritiquePickerValue.model} · {planCritiquePickerValue.reasoningLevel} · {planCritiquePickerValue.serviceTier??"standard"}</p>
-                <Button size="sm" variant="outline" onClick={()=>setPlanCritiquePickerOpen((open)=>!open)}>{planCritiquePickerOpen?t("closePlanCritiquePicker"):t("configurePlanCritiquePicker")}</Button>
-                {planCritiquePickerOpen?(planCritiquePickerValue.providerId||(providers.providers?.length??0)>0
-                  ?<ProviderModelPicker value={planCritiquePickerValue.providerId?planCritiquePickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void savePlanCritiqueSelection(next);}} />
-                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
-              </CardContent>
-            </Card>
-            <Card data-testid="code-critique-settings">
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("stageCodeCritique")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">{t("codeCritiqueHelp")}</p>
-                {(["code_critique.enabled","code_critique.mode","code_critique.auto_fix","code_critique.max_rounds"] as const).map((key) => {
+              </details>
+            </section>
+            <section className="space-y-3" data-testid="code-critique-settings">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium">{t("stageCodeCritique")}</h2>
+                {(() => { const row = catalogRow("code_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("code_critique.enabled"), false)} aria-label={t("stageCodeCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+              </div>
+              <p className="text-xs text-muted-foreground">{t("codeCritiqueHelp")}</p>
+              {modelPicker(codeCritiquePickerValue, (next) => { void saveCodeCritiqueSelection(next); })}
+              <details className="space-y-2">
+                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                {(["code_critique.mode","code_critique.auto_fix","code_critique.max_rounds"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
-                <p className="break-all text-xs text-muted-foreground">{codeCritiquePickerValue.providerId}/{codeCritiquePickerValue.model} · {codeCritiquePickerValue.reasoningLevel} · {codeCritiquePickerValue.serviceTier??"standard"}</p>
-                <Button size="sm" variant="outline" onClick={()=>setCodeCritiquePickerOpen((open)=>!open)}>{codeCritiquePickerOpen?t("closeCodeCritiquePicker"):t("configureCodeCritiquePicker")}</Button>
-                {codeCritiquePickerOpen?(codeCritiquePickerValue.providerId||(providers.providers?.length??0)>0
-                  ?<ProviderModelPicker value={codeCritiquePickerValue.providerId?codeCritiquePickerValue:{providerId:providers.providers?.[0]?.id??"none",model:"",reasoningLevel:"none"}} routing={routing} onChange={(next)=>{void saveCodeCritiqueSelection(next);}} />
-                  :<p className="text-sm text-muted-foreground">{providers.status==="loading"?t("writerCatalogLoading"):t("writerCatalogUnavailable")}</p>):null}
-              </CardContent>
-            </Card>
+              </details>
+            </section>
           </TabsContent>
 
           <TabsContent value="monitor" forceMount={true} className="space-y-4" data-testid="run-monitor" hidden={tab !== "monitor"}>
@@ -1835,6 +1818,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         </AlertDialog>
         </>}
         </main>
+        </div>
         </div>
       </div>
     </div></InheritanceContext.Provider>
