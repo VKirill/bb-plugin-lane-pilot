@@ -14,6 +14,8 @@ describe("layout geometry harness", () => {
     expect(source).toContain("minInlineSize: 0");
     expect(source).toContain("min-w-0 max-w-full");
     expect(source).toContain('id="agent-prompt"');
+    expect(source).toContain("agentSavedUnknownHelp");
+    expect(source).toContain("items-start");
   });
 
   it("exposes panel descendant measurement, not only document width", () => {

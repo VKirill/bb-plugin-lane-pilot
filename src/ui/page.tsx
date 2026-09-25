@@ -52,7 +52,6 @@ import {
 } from "../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
-import { Separator } from "../../components/ui/separator";
 import { Icon } from "../../components/ui/icon";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "../state-machine";
@@ -62,7 +61,11 @@ import { presentEnumLabel } from "../enum-labels";
 import { OwnedSettings } from "./owned-settings";
 import { chromeIsCompact, contentStacksControls, PanelLayoutContext, useObservedWidth, usePanelLayout } from "./panel-layout";
 import { userVisibleProjects } from "../project-scope";
+import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { inheritProjectValues, type LanePilotDefaults } from "../lp-defaults";
+
+const CARD_HEAD = "space-y-1 px-3 pb-2 pt-3";
+const CARD_BODY = "px-3 pb-3 pt-0";
 
 type ScreenPayload = {
   projectId: string;
@@ -356,14 +359,40 @@ function HelpTip({ label, children }: { label: string; children: ReactNode }) {
 
 function SettingsGroup({ title, testId, help, children }: { title: string; testId: string; help?: ReactNode; children: ReactNode }) {
   return (
-    <section className="min-w-0 max-w-full space-y-2" data-testid={testId}>
-      <div className="flex min-w-0 items-center gap-1">
+    <Surface testId={testId}>
+      <SurfaceHeader>
         <h2 className="text-sm font-medium">{title}</h2>
         {help}
-      </div>
-      <Separator />
-      <div className="min-w-0 max-w-full space-y-5">{children}</div>
-    </section>
+      </SurfaceHeader>
+      <SurfaceBody className="space-y-4">{children}</SurfaceBody>
+    </Surface>
+  );
+}
+
+function CheckGroup({
+  title,
+  testId,
+  toggle,
+  help,
+  children,
+}: {
+  title: string;
+  testId: string;
+  toggle?: ReactNode;
+  help?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Surface testId={testId}>
+      <SurfaceHeader className="justify-between">
+        <h2 className="text-sm font-medium">{title}</h2>
+        {toggle}
+      </SurfaceHeader>
+      <SurfaceBody>
+        {help ? <p className="max-w-xl text-xs text-muted-foreground">{help}</p> : null}
+        {children}
+      </SurfaceBody>
+    </Surface>
   );
 }
 
@@ -510,8 +539,8 @@ function SettingField({
       data-storage-key={row.storageKey}
       data-ui-status={row.uiStatus}
       className={stackControls
-        ? "grid min-h-12 gap-1 border-b border-border py-1.5 last:border-b-0"
-        : "grid min-h-12 gap-1 border-b border-border py-1.5 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}
+        ? "grid min-h-11 min-w-0 gap-1 py-1"
+        : "grid min-h-11 min-w-0 gap-1 py-1 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}
     >
       <div className="min-w-0">
         <div className="flex min-h-8 items-center gap-1">
@@ -1222,7 +1251,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           <p className="text-xs text-muted-foreground">{t("selectedProject")}</p>
           <h1 className="break-words text-xl font-medium">{selectedProjectName}</h1>
         </div>
-        <div className={stackControls ? "grid gap-2 border-b border-border py-3" : "grid gap-2 border-b border-border py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"} data-testid="main-agent">
+        <Surface testId="main-agent">
+        <div className={stackControls ? "grid gap-2 px-3 py-3" : "grid gap-2 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}>
           <div className="space-y-1">
             <Label className="text-sm">{t("mainAgent")}</Label>
             <p className="text-xs text-muted-foreground">{t("mainAgentHelp")}</p>
@@ -1251,6 +1281,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             </SelectContent>
           </Select>
         </div>
+        </Surface>
         {error ? (
           <Alert variant="destructive">
             <AlertTitle>{t("loadError")}</AlertTitle>
@@ -1269,8 +1300,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         ) : null}
         {data?.writerBinding ? (
           <Card data-testid="writer-binding">
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("projectMachineFolder")}</CardTitle></CardHeader>
-            <CardContent className="space-y-2 text-sm">
+            <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("projectMachineFolder")}</CardTitle></CardHeader>
+            <CardContent className={`${CARD_BODY} space-y-2 text-sm`}>
               {data.writerBinding.status === "resolved" ? (
                 <p className="min-w-0 break-all">
                   {data.writerBinding.hostId} · {data.writerBinding.path}
@@ -1503,12 +1534,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </TabsContent>
 
           <TabsContent value="checks" forceMount={true} className="space-y-6" hidden={tab !== "checks"} data-testid="checks-panel">
-            <section className="space-y-2" data-testid="plan-critique-settings">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t("stagePlanCritique")}</h2>
-                {(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
-              </div>
-              <p className="max-w-xl text-xs text-muted-foreground">{t("planCritiqueHelp")}</p>
+            <CheckGroup testId="plan-critique-settings" title={t("stagePlanCritique")} help={t("planCritiqueHelp")} toggle={(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               <div className="max-w-xl">{modelPicker(planCritiquePickerValue, (next) => { void savePlanCritiqueSelection(next); })}</div>
               <details className="space-y-2">
                 <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
@@ -1518,13 +1544,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
               </details>
-            </section>
-            <section className="space-y-2" data-testid="code-critique-settings">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t("stageCodeCritique")}</h2>
-                {(() => { const row = catalogRow("code_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("code_critique.enabled"), false)} aria-label={t("stageCodeCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
-              </div>
-              <p className="max-w-xl text-xs text-muted-foreground">{t("codeCritiqueHelp")}</p>
+            </CheckGroup>
+            <CheckGroup testId="code-critique-settings" title={t("stageCodeCritique")} help={t("codeCritiqueHelp")} toggle={(() => { const row = catalogRow("code_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("code_critique.enabled"), false)} aria-label={t("stageCodeCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               <div className="max-w-xl">{modelPicker(codeCritiquePickerValue, (next) => { void saveCodeCritiqueSelection(next); })}</div>
               <details className="space-y-2">
                 <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
@@ -1534,13 +1555,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
               </details>
-            </section>
-            <section className="space-y-2" data-testid="specialist-settings">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t("specialistReview")}</h2>
-                {(() => { const row = catalogRow("specialist.enabled"); return row ? <Switch checked={asBoolean(displayedValue("specialist.enabled"), false)} aria-label={t("specialistReview")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
-              </div>
-              <p className="max-w-xl text-xs text-muted-foreground">{t("settingSpecialistEnabledHelp")}</p>
+            </CheckGroup>
+            <CheckGroup testId="specialist-settings" title={t("specialistReview")} help={t("settingSpecialistEnabledHelp")} toggle={(() => { const row = catalogRow("specialist.enabled"); return row ? <Switch checked={asBoolean(displayedValue("specialist.enabled"), false)} aria-label={t("specialistReview")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               <details className="space-y-2" open={settingsDepth === "advanced"}>
                 <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
                 {(["specialist.when","specialist.provider","specialist.model","specialist.reasoning_effort"] as const).map((key) => {
@@ -1549,14 +1565,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
               </details>
-            </section>
-            <section className="space-y-2" data-testid="night-review-settings">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t(sectionKey("night-review"))}</h2>
-                <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}
-                  onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void applySetting(row,next);}} />
-              </div>
-              <p className="max-w-xl text-xs text-muted-foreground">{t("nightReviewEnabled")}</p>
+            </CheckGroup>
+            <CheckGroup testId="night-review-settings" title={t(sectionKey("night-review"))} help={t("nightReviewEnabled")} toggle={
+              <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}
+                onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void applySetting(row,next);}} />
+            }>
               <div className="max-w-xl">{modelPicker(nightPickerValue, (next) => { void saveNightReviewSelection(next); })}</div>
               <details className="space-y-2">
                 <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
@@ -1570,13 +1583,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 {(() => { const row = catalogRow("night_review.max_fix_tasks"); return row ? <SettingField row={row} value={displayedValue("night_review.max_fix_tasks")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("night_review.max_fix_tasks", next)} /> : null; })()}
               </details>
-            </section>
-            <section className="space-y-2" data-testid="browser-qa-host">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t("globalQaHost")}</h2>
-                {(() => { const row = catalogRow("browser_qa.enabled"); return row ? <Switch checked={asBoolean(displayedValue("browser_qa.enabled"), false)} aria-label={t("globalQaHost")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
-              </div>
-              <p className="max-w-xl text-xs text-muted-foreground">{t("browserQaHostHelp")}</p>
+            </CheckGroup>
+            <CheckGroup testId="browser-qa-host" title={t("globalQaHost")} help={t("browserQaHostHelp")} toggle={(() => { const row = catalogRow("browser_qa.enabled"); return row ? <Switch checked={asBoolean(displayedValue("browser_qa.enabled"), false)} aria-label={t("globalQaHost")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               {(() => {
                 const options = data?.qaHosts ?? [];
                 const current = String(displayedValue(QA_HOST_KEY) ?? "");
@@ -1617,7 +1625,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   />
                 ))}
               </details>
-            </section>
+            </CheckGroup>
           </TabsContent>
 
           <TabsContent value="monitor" forceMount={true} className="space-y-4" data-testid="run-monitor" hidden={tab !== "monitor"}>
@@ -1715,10 +1723,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             )}
             {data?.runs.filter((run) => run.stages?.length).map((run) => (
               <Card key={`stages-${run.id}`} data-testid={`stage-receipts-${run.id}`}>
-                <CardHeader className="pb-2"><CardTitle className="break-all font-mono text-xs font-medium">{t("stageReceipts")} · {run.id}</CardTitle></CardHeader>
-                <CardContent className="space-y-3">
+                <CardHeader className={CARD_HEAD}><CardTitle className="break-all font-mono text-xs font-medium">{t("stageReceipts")} · {run.id}</CardTitle></CardHeader>
+                <CardContent className={`${CARD_BODY} divide-y divide-border`}>
                   {run.stages?.map((stage) => (
-                    <div key={`${stage.taskId}-${stage.stageId}`} className="space-y-2 rounded-md border p-3">
+                    <div key={`${stage.taskId}-${stage.stageId}`} className="space-y-2 py-3 first:pt-0 last:pb-0">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-sm font-medium">{stageTitle(stage.stageId)}</span>
                         <Badge variant={runTone(stage.state)}>{stateLabel(stage.state)}</Badge>
@@ -1738,8 +1746,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           <TabsContent value="diagnostics" forceMount={true} className="space-y-5" hidden={tab !== "diagnostics"} data-testid="diagnostics-panel">
             <p className="text-sm text-muted-foreground">{t("diagnosticsIntro")}</p>
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("importDetails")}</CardTitle></CardHeader>
-              <CardContent className="space-y-1 text-xs text-muted-foreground" data-testid="import-diagnostics">
+              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("importDetails")}</CardTitle></CardHeader>
+              <CardContent className={`${CARD_BODY} space-y-1 text-xs text-muted-foreground`} data-testid="import-diagnostics">
                 {data?.importSource.completed ? <>
                   <p>{t("importRouting")}: {data.importSource.routingPath ?? "—"}</p>
                   <p>{t("importNight")}: {data.importSource.nightPath ?? "—"}</p>
@@ -1749,8 +1757,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </CardContent>
             </Card>
 
-            <section className="space-y-2" data-testid="writer-trace">
-              <h2 className="text-sm font-medium">{t("writerTrace")}</h2>
+            <Surface testId="writer-trace">
+              <SurfaceHeader><h2 className="text-sm font-medium">{t("writerTrace")}</h2></SurfaceHeader>
+              <SurfaceBody>
               {data?.lastWriterTrace ? <div className="space-y-1 text-xs">
                 <p data-testid="writer-trace-execution">{data.lastWriterTrace.providerId}/{data.lastWriterTrace.model} · {data.lastWriterTrace.effectiveReasoningLevel} · {data.lastWriterTrace.serviceTier ?? "default"}</p>
                 <p>{t("writerTraceMode")}: {data.lastWriterTrace.effortMode === "manual" ? t("writerEffortManual") : t("writerEffortAutomatic")}</p>
@@ -1758,35 +1767,40 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 {data.lastWriterTrace.fallbackReason ? <p>{t("writerTraceReason")}: {data.lastWriterTrace.fallbackReason}</p> : null}
                 {data.lastWriterTrace.selectionSource ? <p>{t("writerTraceSource")}: {data.lastWriterTrace.selectionSource.reasoningLevelSource}</p> : null}
               </div> : <p className="text-xs text-muted-foreground">{t("noDiagnosticData")}</p>}
-            </section>
-            <section className="space-y-2" data-testid="cli-preview">
-              <h2 className="text-sm font-medium">{t("cliPreview")}</h2>
+              </SurfaceBody>
+            </Surface>
+            <Surface testId="cli-preview">
+              <SurfaceHeader><h2 className="text-sm font-medium">{t("cliPreview")}</h2></SurfaceHeader>
+              <SurfaceBody>
               {data?.cliPreview ? <pre className="max-h-80 max-w-full overflow-auto rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground"><code>{JSON.stringify(data.cliPreview, null, 2)}</code></pre>
                 : <p className="text-xs text-muted-foreground">{t("noDiagnosticData")}</p>}
-            </section>
+              </SurfaceBody>
+            </Surface>
 
-            <details className="space-y-2" data-testid="restore-previous-install">
+            <details className="space-y-2 rounded-lg border border-border bg-card p-3" data-testid="restore-previous-install">
               <summary className="cursor-pointer text-sm font-medium">{t("restorePreviousInstall")}</summary>
               <p className="max-w-xl text-xs text-muted-foreground">{t("snapshotBackupHelp")}</p>
               <Label htmlFor="snapshot-path">{t("snapshotBackupFolder")}</Label>
               <Input id="snapshot-path" value={snapshotPath} onChange={(event) => setSnapshotPath(event.target.value)} />
             </details>
 
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium">{t("unapplied")}</h2>
+            <Surface>
+              <SurfaceHeader><h2 className="text-sm font-medium">{t("unapplied")}</h2></SurfaceHeader>
+              <SurfaceBody>
               {data?.unapplied.length ? <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
                 {data.unapplied.map((item, index) => <li key={`${item.key}:${index}`}>{item.key}: {unappliedReason(item.reason)}</li>)}
               </ul> : <p className="text-xs text-muted-foreground">{t("noUnapplied")}</p>}
-            </section>
+              </SurfaceBody>
+            </Surface>
 
-            {diagnosticsGrouped.map(({ section, rows }) => <section key={section} className="space-y-3">
-              <h2 className="text-sm font-medium">{t(sectionKey(section))}</h2>
-              <div className="space-y-2">
+            {diagnosticsGrouped.map(({ section, rows }) => <Surface key={section}>
+              <SurfaceHeader><h2 className="text-sm font-medium">{t(sectionKey(section))}</h2></SurfaceHeader>
+              <SurfaceBody className="space-y-2">
                 {rows.map((row) => {
                   const disabled = row.uiStatus !== "editable";
                   const value = data?.values[row.storageKey];
                   return <div key={row.storageKey} data-testid={`field-${row.id}`} data-storage-key={row.storageKey}
-                    data-ui-status={row.uiStatus} className={stackControls ? "grid min-w-0 gap-2 rounded-md border border-border p-3" : "grid min-w-0 gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,14rem)] md:items-center"}>
+                    data-ui-status={row.uiStatus} className={stackControls ? "grid min-w-0 gap-2 py-1" : "grid min-w-0 gap-2 py-1 md:grid-cols-[minmax(0,1fr)_minmax(0,14rem)] md:items-center"}>
                     <div className="space-y-1">
                       <Label className="text-sm">{row.storageKey === "writer.fast_mode" ? t("legacyFastMode") : settingLabel(row)}</Label>
                       {row.storageKey === "writer.fast_mode" ? <p className="text-xs text-muted-foreground">{t("legacyFastModeExplanation")}</p> : (
@@ -1807,10 +1821,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     )}
                   </div>;
                 })}
-              </div>
-            </section>)}
+              </SurfaceBody>
+            </Surface>)}
 
-            <details className="rounded-md border border-border p-3" data-testid="compat-aliases">
+            <details className="rounded-lg border border-border bg-card p-3" data-testid="compat-aliases">
               <summary className="cursor-pointer text-sm font-medium">{t("compatTitle")}</summary>
               <p className="mt-2 text-xs text-muted-foreground">{t("compatIntro")}</p>
               <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
@@ -1822,8 +1836,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </ul>
             </details>
 
-            <section className="space-y-3" data-testid="cli-receipt">
-              <h2 className="text-sm font-medium">{t("cliReceipt")}</h2>
+            <Surface testId="cli-receipt">
+              <SurfaceHeader><h2 className="text-sm font-medium">{t("cliReceipt")}</h2></SurfaceHeader>
+              <SurfaceBody className="space-y-3">
               {data?.runs.flatMap((run) => {
                 const seen = new Set<string>();
                 const items: Array<{ id:string; json:string }> = [];
@@ -1838,20 +1853,25 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               })}
               {data?.cliReceiptJson && !data.runs.some((run) => run.cliReceiptJson || run.attempts.some((attempt) => attempt.cliReceiptJson))
                 ? <SourceCode content={data.cliReceiptJson} path="cli-receipt.json" overflow="scroll" /> : null}
-            </section>
+              </SurfaceBody>
+            </Surface>
 
-            {(resultPatch || resultSource) ? <section className="space-y-2" data-testid="writer-result">
-              <h2 className="text-sm font-medium">{t("result")}</h2>
+            {(resultPatch || resultSource) ? <Surface testId="writer-result">
+              <SurfaceHeader><h2 className="text-sm font-medium">{t("result")}</h2></SurfaceHeader>
+              <SurfaceBody>
               {resultPatch ? <Diff patch={resultPatch} path="writer-output.txt" view="unified" /> : null}
               {resultSource ? <SourceCode content={resultSource} path="acceptance.json" overflow="scroll" /> : null}
-            </section> : null}
-            {data?.lastReceiptJson ? <section className="space-y-2" data-testid="install-receipt">
-              <h2 className="text-sm font-medium">{t("installReceipt")}</h2>
+              </SurfaceBody>
+            </Surface> : null}
+            {data?.lastReceiptJson ? <Surface testId="install-receipt">
+              <SurfaceHeader><h2 className="text-sm font-medium">{t("installReceipt")}</h2></SurfaceHeader>
+              <SurfaceBody>
               <SourceCode content={data.lastReceiptJson} path="install-receipt.json" overflow="scroll" />
-            </section> : null}
+              </SurfaceBody>
+            </Surface> : null}
           </TabsContent>
 
-          <TabsContent value="install" forceMount={true} className="space-y-3" hidden={tab !== "install"} data-testid="install-panel">
+          <TabsContent value="install" forceMount={true} className="space-y-5" hidden={tab !== "install"} data-testid="install-panel">
             {!data?.hostId ? <p className="text-sm text-muted-foreground">{t("hostMissing")}</p> : null}
             <div className="flex flex-wrap gap-2">
               <Button size="sm" data-testid="stack-detect" onClick={() => void runStack("detect")}>{t("detect")}</Button>
@@ -1860,8 +1880,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               <Button size="sm" variant="destructive" onClick={() => { setPendingOp("rollback"); setConfirmOpen(true); }}>{t("rollback")}</Button>
             </div>
             {detectResult ? <Card data-testid="stack-detect-result">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("detectResult")}</CardTitle></CardHeader>
-              <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
+              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("detectResult")}</CardTitle></CardHeader>
+              <CardContent className={`${CARD_BODY} grid gap-2 text-sm sm:grid-cols-2`}>
                 <div><span className="text-muted-foreground">{t("detectScenario")}:</span> {detectResult.scenario}</div>
                 <div><span className="text-muted-foreground">{t("detectTargetMatch")}:</span> {detectResult.matchesTarget ? t("yes") : t("no")} ({t("targetMatchInformational")})</div>
                 <div><span className="text-muted-foreground">{t("detectLaneStack")}:</span> {detectResult.laneStack.present ? detectResult.laneStack.version ?? t("unknown") : t("no")}</div>
@@ -1869,10 +1889,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </CardContent>
             </Card> : null}
             {detectResult?.coexistence ? <Card data-testid="coexistence-inventory">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("coexInventory")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
+              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("coexInventory")}</CardTitle></CardHeader>
+              <CardContent className={`${CARD_BODY} divide-y divide-border`}>
                 {detectResult.coexistence.managers.map((manager) => (
-                  <div key={`${manager.manager}-${manager.path}`} className="space-y-2 rounded-md border p-3" data-testid={`coex-${manager.manager}`}>
+                  <div key={`${manager.manager}-${manager.path}`} className="space-y-2 py-3 first:pt-0 last:pb-0" data-testid={`coex-${manager.manager}`}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-medium">{t(COEXISTENCE_MANAGER_KEYS[manager.manager] ?? "coexUnknownManager")}</span>
                       <Badge variant={manager.compatible === false ? "destructive" : manager.decision === "reuse" ? "default" : "outline"}>{t(COEXISTENCE_VALUE_KEYS[manager.decision] ?? "coexDecisionUnknown")}</Badge>

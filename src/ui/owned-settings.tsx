@@ -13,16 +13,15 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Separator } from "../../components/ui/separator";
 import type { Locale } from "../../i18n";
 import { t } from "../../i18n";
 import { agentPickerLabel } from "../agent-display";
 import type { LanePilotDefaults } from "../lp-defaults";
 import { usePanelLayout } from "./panel-layout";
+import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 
 const FIELD = "min-w-0 w-full max-w-full";
 const CONTROL = `${FIELD} box-border`;
-const GROUP = "min-w-0 max-w-full space-y-2";
 
 function HelpTip({ label, children }: { label: string; children: string }) {
   return (
@@ -89,9 +88,35 @@ function ResourcePicker({
   const known = new Set((group?.items ?? []).map((item) => item.name));
   const errorTitle = resourceKey === "skills" ? t("agentSkillsLoadFailed") : resourceKey === "mcpServers" ? t("agentMcpLoadFailed") : t("agentInventoryError");
   const { stackControls } = usePanelLayout();
+  const unknownSaved = names.some((name) => !known.has(name));
+  const statusNote = status === "loading"
+    ? <p className="text-xs text-muted-foreground">{t("agentInventoryLoading")}</p>
+    : status === "error"
+      ? (
+        <div className="space-y-1">
+          <p className="break-words text-xs text-destructive">{errorTitle}{group?.error ? `: ${group.error}` : ""}</p>
+          <Button type="button" size="sm" variant="outline" className="h-8" onClick={onRetry}>{t("agentInventoryRetry")}</Button>
+        </div>
+      )
+      : status === "unavailable" && names.length === 0
+        ? <p className="text-xs text-muted-foreground">{resourceKey === "tools" || resourceKey === "disallowedTools" ? t("agentToolsUnavailable") : t("agentInventoryUnavailable")}</p>
+        : status === "ready" && (group?.items.length ?? 0) === 0 && names.length === 0
+          ? <p className="text-xs text-muted-foreground">{t("agentInventoryEmpty")}</p>
+          : !canSelect && !loading
+            ? <p className="text-xs text-muted-foreground">{t("agentSelectedUnavailable")}</p>
+            : null;
+  const technical = resourceKey === "tools" || resourceKey === "disallowedTools"
+    ? (
+      <details className="min-w-0 text-xs text-muted-foreground">
+        <summary className="cursor-pointer">{t("settingsAdvanced")}</summary>
+        <p className="mt-1 break-words">{t("agentToolsTechnical")}</p>
+      </details>
+    )
+    : null;
+  const showBody = Boolean(statusNote || mode === "selected" || technical);
   return (
-    <section className={GROUP} data-testid={`agent-resource-${resourceKey}`}>
-      <div className={stackControls ? "flex min-w-0 flex-col gap-2" : "flex min-w-0 items-center justify-between gap-2"}>
+    <Surface testId={`agent-resource-${resourceKey}`}>
+      <SurfaceHeader className={stackControls ? `flex-col items-stretch gap-2${showBody ? "" : " pb-3"}` : `justify-between${showBody ? "" : " pb-3"}`}>
         <Label className="min-w-0 truncate text-sm">{t(RESOURCE_LABEL[resourceKey])}</Label>
         <Select value={mode} disabled={disabled} onValueChange={(next) => {
           const selected = next as ResourceMode;
@@ -107,47 +132,39 @@ function ResourcePicker({
             <SelectItem value="selected" disabled={!canSelect}>{t("agentResourceSelected")}</SelectItem>
           </SelectContent>
         </Select>
-      </div>
-      {status === "loading" ? <p className="text-xs text-muted-foreground">{t("agentInventoryLoading")}</p> : null}
-      {status === "error" ? (
-        <div className="space-y-1">
-          <p className="break-words text-xs text-destructive">{errorTitle}{group?.error ? `: ${group.error}` : ""}</p>
-          <Button type="button" size="sm" variant="outline" className="h-8" onClick={onRetry}>{t("agentInventoryRetry")}</Button>
-        </div>
+      </SurfaceHeader>
+      {showBody ? (
+        <SurfaceBody>
+          {statusNote}
+          {mode === "selected" ? (
+            <div className="min-w-0 max-w-full space-y-2">
+              <p className="text-xs text-muted-foreground">{t("agentSelectedCount").replace("{n}", String(names.length))}</p>
+              {unknownSaved ? <p className="text-xs text-muted-foreground">{t("agentSavedUnknownHelp")}</p> : null}
+              <Input className={CONTROL} value={query} placeholder={t("agentResourceSearch")} aria-label={t("agentResourceSearch")} onChange={(event) => setQuery(event.target.value)} />
+              <ul className="max-h-40 min-w-0 divide-y divide-border overflow-y-auto rounded-md border border-border" role="list">
+                {listed.map((item) => (
+                  <li key={item.name} className="min-w-0 px-2.5 py-2">
+                    <label className="flex min-w-0 items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 size-4 shrink-0 accent-foreground"
+                        checked={names.includes(item.name)}
+                        disabled={disabled}
+                        onChange={(event) => onChange(event.target.checked ? [...names, item.name] : names.filter((name) => name !== item.name), "selected")}
+                      />
+                      <span className="min-w-0 flex-1 break-all">{item.label}</span>
+                      {!known.has(item.name) ? <span className="shrink-0 rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">{t("agentSavedUnknown")}</span> : null}
+                    </label>
+                  </li>
+                ))}
+                {listed.length === 0 ? <li className="px-2.5 py-2 text-xs text-muted-foreground">{t("agentInventoryEmpty")}</li> : null}
+              </ul>
+            </div>
+          ) : null}
+          {technical}
+        </SurfaceBody>
       ) : null}
-      {status === "unavailable" && names.length === 0 ? <p className="text-xs text-muted-foreground">{resourceKey === "tools" || resourceKey === "disallowedTools" ? t("agentToolsUnavailable") : t("agentInventoryUnavailable")}</p> : null}
-      {status === "ready" && (group?.items.length ?? 0) === 0 && names.length === 0 ? <p className="text-xs text-muted-foreground">{t("agentInventoryEmpty")}</p> : null}
-      {!canSelect && !loading ? <p className="text-xs text-muted-foreground">{t("agentSelectedUnavailable")}</p> : null}
-      {mode === "selected" ? (
-        <div className="min-w-0 max-w-full space-y-2">
-          <Input className={CONTROL} value={query} placeholder={t("agentResourceSearch")} aria-label={t("agentResourceSearch")} onChange={(event) => setQuery(event.target.value)} />
-          <ul className="max-h-40 min-w-0 space-y-1 overflow-y-auto" role="list">
-            {listed.map((item) => (
-              <li key={item.name} className="min-w-0">
-                <label className="flex min-w-0 items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="size-4 shrink-0 accent-foreground"
-                    checked={names.includes(item.name)}
-                    disabled={disabled}
-                    onChange={(event) => onChange(event.target.checked ? [...names, item.name] : names.filter((name) => name !== item.name), "selected")}
-                  />
-                  <span className="min-w-0 break-all">{item.label}</span>
-                  {!known.has(item.name) ? <span className="shrink-0 text-xs text-muted-foreground">{t("agentSavedUnknown")}</span> : null}
-                </label>
-              </li>
-            ))}
-            {listed.length === 0 ? <li className="text-xs text-muted-foreground">{t("agentInventoryEmpty")}</li> : null}
-          </ul>
-        </div>
-      ) : null}
-      {resourceKey === "tools" || resourceKey === "disallowedTools" ? (
-        <details className="min-w-0 text-xs text-muted-foreground">
-          <summary className="cursor-pointer">{t("settingsAdvanced")}</summary>
-          <p className="mt-1 break-words">{t("agentToolsTechnical")}</p>
-        </details>
-      ) : null}
-    </section>
+    </Surface>
   );
 }
 
@@ -243,18 +260,19 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
     {remote ? <section className="min-w-0 max-w-full space-y-2 rounded-md border border-border p-3"><h2 className="text-sm font-medium">{ru ? "Текущая сохранённая версия" : "Current saved version"}</h2><pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words text-xs">{scope === "globals" ? JSON.stringify(remote.defaults, null, 2) : remote.agents.find((item) => item.id === selected)?.prompt ?? "—"}</pre><p className="text-sm">{ru ? "Ваш черновик остаётся в редакторе. Следующее сохранение заменит показанную версию." : "Your draft remains in the editor. The next save will replace the version shown here."}</p><Button variant="outline" className="min-h-11" onClick={() => { setSnapshot(remote); setRemote(null); setError(""); }}>{ru ? "Продолжить с моим черновиком" : "Continue with my draft"}</Button></section> : null}
     {!snapshot ? <p>{ru ? "Загрузка…" : "Loading…"}</p> : <>
       <fieldset disabled={busy} hidden={scope !== "globals"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }}>
-        <section className={GROUP}>
-          <h2 className="text-sm font-medium">{t("globalsSectionPlacement")}</h2>
-          <Separator />
+        <Surface>
+          <SurfaceHeader><h2 className="text-sm font-medium">{t("globalsSectionPlacement")}</h2></SurfaceHeader>
+          <SurfaceBody>
           <Select value={defaults.helperPlacement ?? "plugin"} onValueChange={(value) => { setDefaults((current) => ({ ...current, helperPlacement: value as "plugin" | "project_tree" })); setSaved(false); }}>
             <SelectTrigger id="global-placement" aria-label={ru ? "Расположение помощников по умолчанию" : "Default helper placement"} className={`min-h-11 ${CONTROL}`}><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="plugin">{ru ? "В разделе Lane Pilot" : "In Lane Pilot"}</SelectItem><SelectItem value="project_tree">{ru ? "В дереве проекта" : "In the project tree"}</SelectItem></SelectContent>
           </Select>
-        </section>
-        <section className="min-w-0 max-w-full space-y-5">
-          <h2 className="text-sm font-medium">{t("globalsSectionMachine")}</h2>
-          <Separator />
-          <div className={GROUP}>
+          </SurfaceBody>
+        </Surface>
+        <Surface>
+          <SurfaceHeader><h2 className="text-sm font-medium">{t("globalsSectionMachine")}</h2></SurfaceHeader>
+          <SurfaceBody className="space-y-5">
+          <div className="min-w-0 max-w-full space-y-2">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <h3 className="min-w-0 text-sm font-medium">{t("globalQaHost")}</h3>
               <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2" disabled={!defaults.qaHostId} onClick={() => { setDefaults((current) => { const next = { ...current }; delete next.qaHostId; return next; }); setSaved(false); }}>{t("inheritChoice")}</Button>
@@ -268,7 +286,7 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
             </Select>
             {defaults.qaHostId && !hosts.some((host) => host.id === defaults.qaHostId) ? <p className="text-xs text-muted-foreground">{t("hostUnavailable")}</p> : null}
           </div>
-          <div className={GROUP}>
+          <div className="min-w-0 max-w-full space-y-2">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <h3 className="min-w-0 text-sm font-medium">{t("globalWriterModel")}</h3>
               <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2" disabled={!defaults.writerProviderId && !defaults.writerModel} onClick={() => { setDefaults((current) => { const next = { ...current }; delete next.writerProviderId; delete next.writerModel; delete next.writerReasoningEffort; return next; }); setSaved(false); }}>{t("inheritChoice")}</Button>
@@ -292,7 +310,8 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
               ) : <p className="text-xs text-muted-foreground">{t("catalogNeedsMachine")}</p>}
             </div>
           </div>
-        </section>
+          </SurfaceBody>
+        </Surface>
       </fieldset>
       <fieldset disabled={busy} hidden={scope !== "agents"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }}>
         <div className="flex min-w-0 items-start gap-1">
@@ -301,9 +320,9 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
             {snapshot.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}
           </HelpTip>
         </div>
-        <section className={GROUP}>
-          <h2 className="text-sm font-medium">{t("agentSectionProfile")}</h2>
-          <Separator />
+        <Surface>
+          <SurfaceHeader><h2 className="text-sm font-medium">{t("agentSectionProfile")}</h2></SurfaceHeader>
+          <SurfaceBody>
           <div className={stackControls ? "flex min-w-0 flex-col gap-2" : "flex min-w-0 flex-row gap-2"} data-testid="agent-new-profile">
             <Input className={`min-h-11 ${CONTROL}`} aria-label={ru ? "ID нового профиля" : "New profile ID"} value={newId} placeholder="my-agent" onChange={(event) => setNewId(event.target.value)} />
             <Button variant="outline" className="min-h-11 shrink-0" disabled={!/^[a-z][a-z0-9-]{0,63}$/.test(newId) || agents.some((item) => item.id === newId)} onClick={() => { setAgents((current) => [...current, { id: newId, description: newId, prompt: "", sourceHash: "", sourceVersion: "lp-owned-1", edited: true }]); setSelected(newId); setNewId(""); }}>{ru ? "Добавить профиль" : "Add profile"}</Button>
@@ -314,20 +333,21 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
             <Label htmlFor="agent-description">{ru ? "Название и назначение" : "Name and purpose"}</Label>
             <Input id="agent-description" className={`min-h-11 ${CONTROL}`} value={agent.description} onChange={(event) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, description: event.target.value } : item)); setSaved(false); }} />
           </> : null}
-        </section>
+          </SurfaceBody>
+        </Surface>
         {agent ? <>
-          <section className={GROUP}>
-            <h2 className="text-sm font-medium">{t("agentSectionInstructions")}</h2>
-            <Separator />
+          <Surface>
+            <SurfaceHeader><h2 className="text-sm font-medium">{t("agentSectionInstructions")}</h2></SurfaceHeader>
+            <SurfaceBody>
             <Label htmlFor="agent-prompt" className="sr-only">{t("agentSectionInstructions")}</Label>
             <textarea id="agent-prompt" className={`min-h-64 rounded-md border border-input bg-background p-3 text-sm ${CONTROL}`} style={{ overflowWrap: "anywhere", wordBreak: "break-word" }} value={agent.prompt} maxLength={32000} onChange={(event) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, prompt: event.target.value } : item)); setSaved(false); }} />
-          </section>
-          <section className="min-w-0 max-w-full space-y-5">
-            <div className="flex min-w-0 items-center gap-1">
+            </SurfaceBody>
+          </Surface>
+          <div className="min-w-0 max-w-full space-y-3">
+            <div className="flex min-w-0 items-center gap-1 px-0.5">
               <h2 className="text-sm font-medium">{t("agentSectionResources")}</h2>
               <HelpTip label={t("agentResourcesHelp")}>{t("agentResourcesHelp")}</HelpTip>
             </div>
-            <Separator />
             {RESOURCE_KEYS.map((key) => (
               <ResourcePicker
                 key={key}
@@ -348,7 +368,7 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
                 }}
               />
             ))}
-          </section>
+          </div>
           <details className="min-w-0 max-w-full"><summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary><p className="break-all text-xs text-muted-foreground">Lane Pilot · {agent.sourceVersion} · SHA-256 {agent.sourceHash}</p><p className="text-sm">{ru ? "После сохранения инструкции независимы от шаблона. Native MAIN требует поддержки ядра; сохранение профиля не подтверждает её наличие. Выбор модели сессии и потолок разрешений имеют приоритет." : "Once saved, instructions are independent of the template. Native MAIN requires core support; saving a profile does not confirm that support. The session model choice and permission ceiling take precedence."}</p></details>
         </> : null}
       </fieldset>

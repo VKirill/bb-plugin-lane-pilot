@@ -17,10 +17,10 @@ async function mount(locale: "en" | "ru") {
       list_projects: () => ({ projects: [], lastProjectId: null }),
       get_globals: (input) => harness.behavior.callRpc("get_globals", input),
       get_agent_inventory: () => ({
-        skills: { status: "ready", items: [{ name: "copywriter", label: "copywriter" }] },
+        skills: { status: "ready", items: [{ name: "copywriter", label: "copywriter" }, { name: "gitnexus-exploring", label: "gitnexus-exploring" }] },
         mcpServers: { status: "unavailable", items: [] },
-        tools: { status: "unavailable", items: [] },
-        disallowedTools: { status: "unavailable", items: [] },
+        tools: { status: "ready", items: [{ name: "Read", label: "Read" }, { name: "Edit", label: "Edit" }] },
+        disallowedTools: { status: "ready", items: [{ name: "Read", label: "Read" }] },
       }),
       save_globals: (input) => harness.behavior.callRpc("save_globals", input),
       save_agent_profile: (input) => harness.behavior.callRpc("save_agent_profile", input),
@@ -69,7 +69,7 @@ describe("owned settings source DOM", () => {
       fireEvent.click(await slot.findByRole("tab", { name: "Agents" }));
       await slot.findByTestId("agent-resource-tools");
       expect(slot.getByTestId("agent-resource-tools").querySelector("input[type='text']")).toBeNull();
-      expect(slot.getAllByText(/tool list is unavailable for the selected provider/).length).toBeGreaterThan(0);
+      expect(slot.getByTestId("agent-resource-mcpServers").textContent).toMatch(/unavailable/i);
       expect(slot.getByRole("combobox", { name: "Profile skills" })).toBeTruthy();
       expect(slot.getByRole("combobox", { name: "Allowed tools" })).toBeTruthy();
       expect(slot.queryByText(/имена через запятую/i)).toBeNull();
@@ -77,6 +77,15 @@ describe("owned settings source DOM", () => {
       fireEvent.click(slot.getByRole("option", { name: "Selected" }));
       expect(slot.getAllByLabelText("Search").length).toBeGreaterThan(0);
       expect(slot.getByRole("checkbox", { name: /copywriter/ })).toBeTruthy();
+      fireEvent.click(slot.getByRole("combobox", { name: "Allowed tools" }));
+      fireEvent.click(slot.getByRole("option", { name: "Selected" }));
+      expect(slot.getByRole("checkbox", { name: /^Read$/ })).toBeTruthy();
+      const tools = slot.getByTestId("agent-resource-tools");
+      expect(tools.querySelector("ul")?.className).toContain("border");
+      if (tools.textContent?.includes("Saved")) {
+        expect(tools.textContent).not.toMatch(/not in the current list/i);
+        expect((tools.textContent.match(/Saved names that are missing from the current list stay until you clear them\./g) ?? []).length).toBe(1);
+      }
       fireEvent.click(slot.getByRole("combobox", { name: "Allowed tools" }));
       expect(slot.getByRole("option", { name: "Selected" })).toBeTruthy();
       expect(slot.getByRole("option", { name: "No tools" })).toBeTruthy();
