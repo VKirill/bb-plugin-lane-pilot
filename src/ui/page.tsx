@@ -61,6 +61,8 @@ import { presentEnumLabel } from "../enum-labels";
 import { OwnedSettings } from "./owned-settings";
 import { chromeIsCompact, contentStacksControls, PanelLayoutContext, useObservedWidth, usePanelLayout } from "./panel-layout";
 import { userVisibleProjects } from "../project-scope";
+import { CONTROL_H } from "./control-row";
+import { Disclosure } from "./disclosure";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { inheritProjectValues, type LanePilotDefaults } from "../lp-defaults";
 
@@ -576,9 +578,9 @@ function StatusBadge({ status }: { status: CatalogRow["uiStatus"] }) {
 function LocaleControls({ preference, onChange }: { preference: LocalePreference; onChange: (next: LocalePreference) => void }) {
   return <div className="flex items-center gap-1" aria-label={t("language")}>
     <span className="mr-1 text-xs text-muted-foreground">{t("language")}</span>
-    <Button size="sm" variant={preference === "auto" ? "default" : "outline"} aria-pressed={preference === "auto"} onClick={() => onChange("auto")}>{t("automatic")}</Button>
-    <Button size="sm" variant={preference === "en" ? "default" : "outline"} aria-pressed={preference === "en"} onClick={() => onChange("en")}>EN</Button>
-    <Button size="sm" variant={preference === "ru" ? "default" : "outline"} aria-pressed={preference === "ru"} onClick={() => onChange("ru")}>RU</Button>
+    <Button className={CONTROL_H} variant={preference === "auto" ? "default" : "outline"} aria-pressed={preference === "auto"} onClick={() => onChange("auto")}>{t("automatic")}</Button>
+    <Button className={CONTROL_H} variant={preference === "en" ? "default" : "outline"} aria-pressed={preference === "en"} onClick={() => onChange("en")}>EN</Button>
+    <Button className={CONTROL_H} variant={preference === "ru" ? "default" : "outline"} aria-pressed={preference === "ru"} onClick={() => onChange("ru")}>RU</Button>
   </div>;
 }
 
@@ -1202,7 +1204,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               else if (next.startsWith("project:")) chooseProject(next.slice("project:".length));
             }}
           >
-            <SelectTrigger aria-label={t("scopeNav")} className="min-h-11 min-w-0 flex-1" data-testid="scope-nav-mobile">
+            <SelectTrigger aria-label={t("scopeNav")} className={`${CONTROL_H} min-w-0 flex-1`} data-testid="scope-nav-mobile">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1274,7 +1276,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
             }}
           >
-            <SelectTrigger aria-label={t("mainAgent")} className="min-h-11 min-w-0 max-w-full"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label={t("mainAgent")} className={`${CONTROL_H} min-w-0 max-w-full`}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__default__">{t("mainAgentDefault")}</SelectItem>
               {(data?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agentPickerLabel(agent, t)}</SelectItem>)}
@@ -1348,7 +1350,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </TabsList>
 
           <TabsContent value="settings" forceMount={true} className="space-y-6" hidden={tab !== "settings"} data-testid="settings-panel">
-            <div className={stackControls ? "flex flex-col gap-2" : "flex flex-col gap-2 sm:flex-row sm:items-end"}>
+            <div className={stackControls ? "flex flex-col gap-2" : "flex items-end gap-2"} data-testid="settings-toolbar">
               <div className="min-w-0 flex-1 space-y-1">
                 <Label htmlFor="settings-search">{t("settingsSearch")}</Label>
                 <Input
@@ -1359,9 +1361,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   onChange={(event) => setSettingsQuery(event.target.value)}
                 />
               </div>
-              <div className="flex gap-1" data-testid="settings-depth" aria-label={t("settingsAdvanced")}>
-                <Button size="sm" variant={settingsDepth === "basic" ? "default" : "outline"} aria-pressed={settingsDepth === "basic"} onClick={() => setSettingsDepth("basic")}>{t("settingsBasic")}</Button>
-                <Button size="sm" variant={settingsDepth === "advanced" ? "default" : "outline"} aria-pressed={settingsDepth === "advanced"} onClick={() => setSettingsDepth("advanced")}>{t("settingsAdvanced")}</Button>
+              <div className={stackControls ? "flex w-full gap-1" : "flex shrink-0 gap-1"} data-testid="settings-depth" aria-label={t("settingsAdvanced")}>
+                <Button className={stackControls ? `${CONTROL_H} min-w-0 flex-1` : CONTROL_H} variant={settingsDepth === "basic" ? "default" : "outline"} aria-pressed={settingsDepth === "basic"} onClick={() => setSettingsDepth("basic")}>{t("settingsBasic")}</Button>
+                <Button className={stackControls ? `${CONTROL_H} min-w-0 flex-1` : CONTROL_H} variant={settingsDepth === "advanced" ? "default" : "outline"} aria-pressed={settingsDepth === "advanced"} onClick={() => setSettingsDepth("advanced")}>{t("settingsAdvanced")}</Button>
               </div>
             </div>
             {cardVisible("writerPicker", "writerPickerHelp", "writerEffortMode", "jevSettings", "jevOpencode") ? <SettingsGroup title={t("sectionExecution")} testId="settings-execution">
@@ -1378,8 +1380,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 {(() => {
                   const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
                   const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
-                  return effortRow ? <details className="space-y-2" data-testid="writer-effort-mode">
-                    <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                  return effortRow ? <Disclosure testId="writer-effort-mode" summary={t("settingsAdvanced")}>
                     <div className="flex items-center justify-between gap-2 pt-2">
                       <Label className="text-sm" htmlFor="writer-effort-mode">{t("writerEffortMode")}</Label>
                       <Select value={automaticEffort ? "automatic" : "manual"} onValueChange={(next) => void applySetting(effortRow, next === "automatic" ? "1" : "0")}>
@@ -1406,20 +1407,19 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                       return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                         onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                     })}
-                  </details> : null;
+                  </Disclosure> : null;
                 })()}
               </section>
               <section className="space-y-2" data-testid="settings-group-workspace">
                 {(() => { const row = catalogRow("adoc.040"); return row ? <SettingField row={row} value={displayedValue("adoc.040")} disabled={false}
                   onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("adoc.040", next)} /> : null; })()}
-                <details className="space-y-2" open={settingsDepth === "advanced"}>
-                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                <Disclosure summary={t("settingsAdvanced")} open={settingsDepth === "advanced"}>
                   {(["adoc.041","adoc.042","ops.max_tasks"] as const).map((key) => {
                     const row = catalogRow(key);
                     return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                       onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                   })}
-                </details>
+                </Disclosure>
               </section>
             </SettingsGroup> : null}
 
@@ -1437,14 +1437,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
                 <div className="max-w-xl">{modelPicker(memoryPickerValue, (next) => { void saveMemorySelection(next); })}</div>
-                <details className="space-y-2" data-testid="memory-advanced" open={settingsDepth === "advanced"}>
-                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                <Disclosure testId="memory-advanced" summary={t("settingsAdvanced")} open={settingsDepth === "advanced"}>
                   {(["memory.maintain","memory.inject","memory.audience","memory.search_engine","memory.personal_bot","memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget"] as const).map((key) => {
                     const row = catalogRow(key);
                     return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                       onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                   })}
-                </details>
+                </Disclosure>
               </section> : null}
               {cardVisible("docsPicker", "docsPickerHelp", "docsMaintain", "groupDocs") ? <section className="space-y-2" data-testid="docs-picker">
                 <div className="flex items-center justify-between gap-2">
@@ -1456,14 +1455,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
                 <div className="max-w-xl">{modelPicker(docsPickerValue, (next) => { void saveDocsSelection(next); })}</div>
-                <details className="space-y-2">
-                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                <Disclosure summary={t("settingsAdvanced")}>
                   {(["docs.maintain","docs.page_cap","docs.since","docs.hour"] as const).map((key) => {
                     const row = catalogRow(key);
                     return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                       onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                   })}
-                </details>
+                </Disclosure>
               </section> : null}
               {cardVisible("onboardingPicker", "onboardingPickerHelp") ? <section className="space-y-2" data-testid="onboarding-picker">
                 <div className="flex min-w-0 items-center gap-1">
@@ -1473,10 +1471,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 <p className="max-w-xl text-xs text-muted-foreground">{t("onboardingPickerHelp")}</p>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("onboardingConstraint")}</p>
                 <div className="max-w-xl">{modelPicker(onboardingPickerValue, (next) => { void saveOnboardingSelection(next); })}</div>
-                <details className="space-y-2" open={settingsDepth === "advanced"}>
-                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                <Disclosure summary={t("settingsAdvanced")} open={settingsDepth === "advanced"}>
                   {(() => { const row = catalogRow("onboarding.depth"); return row ? <SettingField row={row} value={displayedValue("onboarding.depth")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("onboarding.depth", next)} /> : null; })()}
-                </details>
+                </Disclosure>
               </section> : null}
               {cardVisible("largeFileRead", "largeFileReadHelp", "largeFilePicker") ? <section className="space-y-2" data-testid="pm-read-settings">
                 <div className="flex items-center justify-between gap-2">
@@ -1489,10 +1486,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 <p className="max-w-xl text-xs text-muted-foreground">{t("largeFileReadHelp")}</p>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("largeFileReadConstraint")}</p>
                 <div className="max-w-xl">{modelPicker(pmReadPickerValue, (next) => { void savePmReadSelection(next); })}</div>
-                <details className="space-y-2">
-                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                <Disclosure summary={t("settingsAdvanced")}>
                   {(() => { const row = catalogRow("pm_read.min_lines"); return row ? <SettingField row={row} value={displayedValue("pm_read.min_lines")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("pm_read.min_lines", next)} /> : null; })()}
-                </details>
+                </Disclosure>
               </section> : null}
             </SettingsGroup> : null}
 
@@ -1501,14 +1497,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextHelp")}</p>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextConstraint")}</p>
                 {(() => { const row = catalogRow("helper.placement"); return row ? <SettingField row={row} value={displayedValue("helper.placement")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("helper.placement", next)} /> : null; })()}
-                <details className="space-y-2">
-                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                <Disclosure summary={t("settingsAdvanced")}>
                   {(["helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins"] as const).map((key) => {
                     const row = catalogRow(key);
                     return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                       onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                   })}
-                </details>
+                </Disclosure>
               </section>
             </SettingsGroup> : null}
             {extrasGrouped.filter((group) => group.section !== "night-review" && group.section !== "browser-qa").map(({ section, rows }) => (
@@ -1536,44 +1531,40 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           <TabsContent value="checks" forceMount={true} className="space-y-6" hidden={tab !== "checks"} data-testid="checks-panel">
             <CheckGroup testId="plan-critique-settings" title={t("stagePlanCritique")} help={t("planCritiqueHelp")} toggle={(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               <div className="max-w-xl">{modelPicker(planCritiquePickerValue, (next) => { void savePlanCritiqueSelection(next); })}</div>
-              <details className="space-y-2">
-                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+              <Disclosure summary={t("settingsAdvanced")}>
                 {(["plan_critique.mode","plan_critique.min_score","plan_critique.min_write_tasks","plan_critique.on_high_risk"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
-              </details>
+              </Disclosure>
             </CheckGroup>
             <CheckGroup testId="code-critique-settings" title={t("stageCodeCritique")} help={t("codeCritiqueHelp")} toggle={(() => { const row = catalogRow("code_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("code_critique.enabled"), false)} aria-label={t("stageCodeCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               <div className="max-w-xl">{modelPicker(codeCritiquePickerValue, (next) => { void saveCodeCritiqueSelection(next); })}</div>
-              <details className="space-y-2">
-                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+              <Disclosure summary={t("settingsAdvanced")}>
                 {(["code_critique.mode","code_critique.auto_fix","code_critique.max_rounds"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
-              </details>
+              </Disclosure>
             </CheckGroup>
             <CheckGroup testId="specialist-settings" title={t("specialistReview")} help={t("settingSpecialistEnabledHelp")} toggle={(() => { const row = catalogRow("specialist.enabled"); return row ? <Switch checked={asBoolean(displayedValue("specialist.enabled"), false)} aria-label={t("specialistReview")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
-              <details className="space-y-2" open={settingsDepth === "advanced"}>
-                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+              <Disclosure summary={t("settingsAdvanced")} open={settingsDepth === "advanced"}>
                 {(["specialist.when","specialist.provider","specialist.model","specialist.reasoning_effort"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
-              </details>
+              </Disclosure>
             </CheckGroup>
             <CheckGroup testId="night-review-settings" title={t(sectionKey("night-review"))} help={t("nightReviewEnabled")} toggle={
               <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}
                 onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void applySetting(row,next);}} />
             }>
               <div className="max-w-xl">{modelPicker(nightPickerValue, (next) => { void saveNightReviewSelection(next); })}</div>
-              <details className="space-y-2">
-                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
-                <div className="flex items-center justify-between gap-2 pt-2">
+              <Disclosure summary={t("settingsAdvanced")}>
+                <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1">
                     <Label className="text-sm" htmlFor="night-review-auto-merge">{t("nightReviewAutoMerge")}</Label>
                     <HelpTip label={t("nightReviewAutoMergeHelp")}><p>{t("nightReviewAutoMergeHelp")}</p></HelpTip>
@@ -1582,7 +1573,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.auto_merge");if(row)void applySetting(row,next);}} />
                 </div>
                 {(() => { const row = catalogRow("night_review.max_fix_tasks"); return row ? <SettingField row={row} value={displayedValue("night_review.max_fix_tasks")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("night_review.max_fix_tasks", next)} /> : null; })()}
-              </details>
+              </Disclosure>
             </CheckGroup>
             <CheckGroup testId="browser-qa-host" title={t("globalQaHost")} help={t("browserQaHostHelp")} toggle={(() => { const row = catalogRow("browser_qa.enabled"); return row ? <Switch checked={asBoolean(displayedValue("browser_qa.enabled"), false)} aria-label={t("globalQaHost")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               {(() => {
@@ -1603,8 +1594,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </Select>;
               })()}
               {displayedValue(QA_HOST_KEY) && !(data?.qaHosts ?? []).some((host) => host.id === displayedValue(QA_HOST_KEY)) ? <p className="text-xs text-muted-foreground">{t("hostUnavailable")}</p> : null}
-              <details className="space-y-2">
-                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+              <Disclosure summary={t("settingsAdvanced")}>
                 <Label htmlFor="browser-qa-workspace">{t("browserQaWorkspace")}</Label>
                 <Input
                   id="browser-qa-workspace"
@@ -1624,7 +1614,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     onDraft={(next) => writeDraft(row.storageKey, next)}
                   />
                 ))}
-              </details>
+              </Disclosure>
             </CheckGroup>
           </TabsContent>
 
@@ -1777,12 +1767,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </SurfaceBody>
             </Surface>
 
-            <details className="space-y-2 rounded-lg border border-border bg-card p-3" data-testid="restore-previous-install">
-              <summary className="cursor-pointer text-sm font-medium">{t("restorePreviousInstall")}</summary>
+            <Disclosure testId="restore-previous-install" summary={t("restorePreviousInstall")}>
               <p className="max-w-xl text-xs text-muted-foreground">{t("snapshotBackupHelp")}</p>
               <Label htmlFor="snapshot-path">{t("snapshotBackupFolder")}</Label>
               <Input id="snapshot-path" value={snapshotPath} onChange={(event) => setSnapshotPath(event.target.value)} />
-            </details>
+            </Disclosure>
 
             <Surface>
               <SurfaceHeader><h2 className="text-sm font-medium">{t("unapplied")}</h2></SurfaceHeader>
@@ -1807,11 +1796,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                         disabled ? <p className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</p> : null
                       )}
                       <StatusBadge status={row.uiStatus} />
-                      <details className="text-xs text-muted-foreground">
-                        <summary className="cursor-pointer">{t("fieldTechnicalDetails")}</summary>
-                        <p className="mt-1">{row.area} · {row.location}</p>
+                      <Disclosure compact summary={t("fieldTechnicalDetails")}>
+                        <p>{row.area} · {row.location}</p>
                         <p>{t("casVersion")} {data?.versions[row.storageKey] ?? 0}</p>
-                      </details>
+                      </Disclosure>
                     </div>
                     {row.storageKey === "writer.fast_mode" ? <code className="text-xs">{String(value ?? "unset")}</code> : (
                       disabled ? <code className="text-xs">{String(value ?? "unset")}</code> : <FieldControl
@@ -1824,17 +1812,16 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </SurfaceBody>
             </Surface>)}
 
-            <details className="rounded-lg border border-border bg-card p-3" data-testid="compat-aliases">
-              <summary className="cursor-pointer text-sm font-medium">{t("compatTitle")}</summary>
-              <p className="mt-2 text-xs text-muted-foreground">{t("compatIntro")}</p>
-              <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+            <Disclosure testId="compat-aliases" summary={t("compatTitle")}>
+              <p className="text-xs text-muted-foreground">{t("compatIntro")}</p>
+              <ul className="space-y-1 text-xs text-muted-foreground">
                 {compatibilityAliasRows().map((row) => (
                   <li key={row.id} data-storage-key={row.storageKey} data-testid={`compat-${row.storageKey}`}>
                     {row.storageKey} · {row.setting}
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
 
             <Surface testId="cli-receipt">
               <SurfaceHeader><h2 className="text-sm font-medium">{t("cliReceipt")}</h2></SurfaceHeader>
@@ -1908,9 +1895,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                       {manager.version ? <span>{t("version")}: {manager.version}</span> : null}
                     </div>
                     {manager.missingCapabilities.length ? <p className="text-xs text-destructive">{t("coexMissingCapabilities")}: {manager.missingCapabilities.join(", ")}</p> : null}
-                    <details className="text-xs"><summary className="cursor-pointer">{t("coexEvidence")} ({manager.evidence.length})</summary>
-                      <ul className="mt-2 space-y-1">{manager.evidence.map((evidence, index) => <li key={`${evidence.kind}-${index}`} className="break-words">{evidence.detail}{evidence.sha256 ? ` · SHA-256 ${evidence.sha256.slice(0, 12)}` : ""}</li>)}</ul>
-                    </details>
+                    <Disclosure compact summary={`${t("coexEvidence")} (${manager.evidence.length})`}>
+                      <ul className="space-y-1">{manager.evidence.map((evidence, index) => <li key={`${evidence.kind}-${index}`} className="break-words">{evidence.detail}{evidence.sha256 ? ` · SHA-256 ${evidence.sha256.slice(0, 12)}` : ""}</li>)}</ul>
+                    </Disclosure>
                   </div>
                 ))}
               </CardContent>

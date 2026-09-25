@@ -16,6 +16,18 @@ describe("layout geometry harness", () => {
     expect(source).toContain('id="agent-prompt"');
     expect(source).toContain("agentSavedUnknownHelp");
     expect(source).toContain("items-start");
+    expect(source).toContain("CONTROL_H");
+    expect(source).toContain("<Disclosure");
+    expect(source).not.toMatch(/<details /);
+  });
+
+  it("uses one Disclosure and matching control height on project settings", () => {
+    const source = readFileSync(join(import.meta.dirname, "../src/ui/page.tsx"), "utf8");
+    expect(source).toContain("<Disclosure");
+    expect(source).toContain("CONTROL_H");
+    expect(source).toContain("settings-toolbar");
+    expect(source).not.toMatch(/<details /);
+    expect(source).not.toMatch(/size="sm" variant=\{settingsDepth/);
   });
 
   it("exposes panel descendant measurement, not only document width", () => {
@@ -23,5 +35,6 @@ describe("layout geometry harness", () => {
     expect(measure).toContain("controlOverflow");
     expect(measure).toContain("scrollWidth");
     expect(measure).toContain("fieldset");
+    expect(measure).toContain("toolbarAligned");
   });
 });

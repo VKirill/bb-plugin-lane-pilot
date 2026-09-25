@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/button";
 import { Label } from "../../components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { CONTROL_H } from "./control-row";
 import {
   activationDisabledPredicate,
   composerButtonDisabled,
@@ -133,7 +134,7 @@ export function EnableLanePilotAction() {
         <div className="space-y-1">
           <Label>{t("pickAgent")}</Label>
           <Select value={agentId} onValueChange={setAgentId}>
-            <SelectTrigger className="min-h-11 min-w-0 max-w-full" aria-label={t("pickAgent")}><SelectValue /></SelectTrigger>
+            <SelectTrigger className={`${CONTROL_H} min-w-0 max-w-full`} aria-label={t("pickAgent")}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__default__">{t("bbDefaultAgent")}</SelectItem>
               {(ctx?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agentPickerLabel(agent, t)}</SelectItem>)}
@@ -158,7 +159,7 @@ export function EnableLanePilotAction() {
           </div>
         ) : null}
         {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
-        <Button className="min-h-11 w-full" disabled={blocked} onClick={() => void activate()}>
+        <Button className={`${CONTROL_H} w-full`} disabled={blocked} onClick={() => void activate()}>
           {pending ? t("enabling") : t("startLanePilot")}
         </Button>
       </PopoverContent>

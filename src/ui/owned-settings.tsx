@@ -17,6 +17,8 @@ import type { Locale } from "../../i18n";
 import { t } from "../../i18n";
 import { agentPickerLabel } from "../agent-display";
 import type { LanePilotDefaults } from "../lp-defaults";
+import { CONTROL_H } from "./control-row";
+import { Disclosure } from "./disclosure";
 import { usePanelLayout } from "./panel-layout";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 
@@ -95,7 +97,7 @@ function ResourcePicker({
       ? (
         <div className="space-y-1">
           <p className="break-words text-xs text-destructive">{errorTitle}{group?.error ? `: ${group.error}` : ""}</p>
-          <Button type="button" size="sm" variant="outline" className="h-8" onClick={onRetry}>{t("agentInventoryRetry")}</Button>
+          <Button type="button" variant="outline" className={CONTROL_H} onClick={onRetry}>{t("agentInventoryRetry")}</Button>
         </div>
       )
       : status === "unavailable" && names.length === 0
@@ -107,10 +109,9 @@ function ResourcePicker({
             : null;
   const technical = resourceKey === "tools" || resourceKey === "disallowedTools"
     ? (
-      <details className="min-w-0 text-xs text-muted-foreground">
-        <summary className="cursor-pointer">{t("settingsAdvanced")}</summary>
-        <p className="mt-1 break-words">{t("agentToolsTechnical")}</p>
-      </details>
+      <Disclosure compact summary={t("settingsAdvanced")}>
+        <p className="break-words">{t("agentToolsTechnical")}</p>
+      </Disclosure>
     )
     : null;
   const showBody = Boolean(statusNote || mode === "selected" || technical);
@@ -125,7 +126,7 @@ function ResourcePicker({
           else if (selected === "none") onChange([], "none");
           else onChange(names, "selected");
         }}>
-          <SelectTrigger className={stackControls ? `h-8 ${CONTROL}` : "h-8 w-[11rem] min-w-0 max-w-full shrink-0"} aria-label={t(RESOURCE_LABEL[resourceKey])}><SelectValue /></SelectTrigger>
+          <SelectTrigger className={stackControls ? `${CONTROL_H} ${CONTROL}` : `${CONTROL_H} w-[11rem] min-w-0 max-w-full shrink-0`} aria-label={t(RESOURCE_LABEL[resourceKey])}><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="inherit">{t("inheritChoice")}</SelectItem>
             <SelectItem value="none">{noneLabel(resourceKey)}</SelectItem>
@@ -256,15 +257,15 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
       <h1 className="text-xl font-medium">{scope === "globals" ? t("navGlobals") : t("navAgents")}</h1>
       <p className="text-sm text-muted-foreground">{scope === "globals" ? t("globalsHelp") : t("agentsHelp")}</p>
     </div>
-    {error ? <div className="min-w-0 space-y-2"><p role="alert" className="break-words text-sm text-destructive">{error}</p><Button variant="outline" className="min-h-11" disabled={busy} onClick={() => { void rpc.call("get_globals", {}).then(setRemote).catch((cause) => setError(String(cause))); }}>{ru ? "Загрузить текущую версию для сравнения" : "Load current version to compare"}</Button></div> : null}
-    {remote ? <section className="min-w-0 max-w-full space-y-2 rounded-md border border-border p-3"><h2 className="text-sm font-medium">{ru ? "Текущая сохранённая версия" : "Current saved version"}</h2><pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words text-xs">{scope === "globals" ? JSON.stringify(remote.defaults, null, 2) : remote.agents.find((item) => item.id === selected)?.prompt ?? "—"}</pre><p className="text-sm">{ru ? "Ваш черновик остаётся в редакторе. Следующее сохранение заменит показанную версию." : "Your draft remains in the editor. The next save will replace the version shown here."}</p><Button variant="outline" className="min-h-11" onClick={() => { setSnapshot(remote); setRemote(null); setError(""); }}>{ru ? "Продолжить с моим черновиком" : "Continue with my draft"}</Button></section> : null}
+    {error ? <div className="min-w-0 space-y-2"><p role="alert" className="break-words text-sm text-destructive">{error}</p><Button variant="outline" className={CONTROL_H} disabled={busy} onClick={() => { void rpc.call("get_globals", {}).then(setRemote).catch((cause) => setError(String(cause))); }}>{ru ? "Загрузить текущую версию для сравнения" : "Load current version to compare"}</Button></div> : null}
+    {remote ? <section className="min-w-0 max-w-full space-y-2 rounded-md border border-border p-3"><h2 className="text-sm font-medium">{ru ? "Текущая сохранённая версия" : "Current saved version"}</h2><pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words text-xs">{scope === "globals" ? JSON.stringify(remote.defaults, null, 2) : remote.agents.find((item) => item.id === selected)?.prompt ?? "—"}</pre><p className="text-sm">{ru ? "Ваш черновик остаётся в редакторе. Следующее сохранение заменит показанную версию." : "Your draft remains in the editor. The next save will replace the version shown here."}</p><Button variant="outline" className={CONTROL_H} onClick={() => { setSnapshot(remote); setRemote(null); setError(""); }}>{ru ? "Продолжить с моим черновиком" : "Continue with my draft"}</Button></section> : null}
     {!snapshot ? <p>{ru ? "Загрузка…" : "Loading…"}</p> : <>
       <fieldset disabled={busy} hidden={scope !== "globals"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }}>
         <Surface>
           <SurfaceHeader><h2 className="text-sm font-medium">{t("globalsSectionPlacement")}</h2></SurfaceHeader>
           <SurfaceBody>
           <Select value={defaults.helperPlacement ?? "plugin"} onValueChange={(value) => { setDefaults((current) => ({ ...current, helperPlacement: value as "plugin" | "project_tree" })); setSaved(false); }}>
-            <SelectTrigger id="global-placement" aria-label={ru ? "Расположение помощников по умолчанию" : "Default helper placement"} className={`min-h-11 ${CONTROL}`}><SelectValue /></SelectTrigger>
+            <SelectTrigger id="global-placement" aria-label={ru ? "Расположение помощников по умолчанию" : "Default helper placement"} className={`${CONTROL_H} ${CONTROL}`}><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="plugin">{ru ? "В разделе Lane Pilot" : "In Lane Pilot"}</SelectItem><SelectItem value="project_tree">{ru ? "В дереве проекта" : "In the project tree"}</SelectItem></SelectContent>
           </Select>
           </SurfaceBody>
@@ -275,10 +276,10 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           <div className="min-w-0 max-w-full space-y-2">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <h3 className="min-w-0 text-sm font-medium">{t("globalQaHost")}</h3>
-              <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2" disabled={!defaults.qaHostId} onClick={() => { setDefaults((current) => { const next = { ...current }; delete next.qaHostId; return next; }); setSaved(false); }}>{t("inheritChoice")}</Button>
+              <Button type="button" variant="ghost" className={`${CONTROL_H} shrink-0 px-2`} disabled={!defaults.qaHostId} onClick={() => { setDefaults((current) => { const next = { ...current }; delete next.qaHostId; return next; }); setSaved(false); }}>{t("inheritChoice")}</Button>
             </div>
             <Select value={defaults.qaHostId ?? "__inherit__"} onValueChange={(value) => { setDefaults((current) => ({ ...current, qaHostId: value === "__inherit__" ? undefined : value })); setSaved(false); }}>
-              <SelectTrigger id="global-qa-host" aria-label={t("globalQaHost")} className={`min-h-11 ${CONTROL}`}><SelectValue placeholder={t("inheritChoice")} /></SelectTrigger>
+              <SelectTrigger id="global-qa-host" aria-label={t("globalQaHost")} className={`${CONTROL_H} ${CONTROL}`}><SelectValue placeholder={t("inheritChoice")} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="__inherit__">{t("inheritChoice")}</SelectItem>
                 {hosts.map((host) => <SelectItem key={host.id} value={host.id}>{host.name} · {host.connected ? t("hostConnected") : t("hostOffline")}</SelectItem>)}
@@ -289,7 +290,7 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           <div className="min-w-0 max-w-full space-y-2">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <h3 className="min-w-0 text-sm font-medium">{t("globalWriterModel")}</h3>
-              <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2" disabled={!defaults.writerProviderId && !defaults.writerModel} onClick={() => { setDefaults((current) => { const next = { ...current }; delete next.writerProviderId; delete next.writerModel; delete next.writerReasoningEffort; return next; }); setSaved(false); }}>{t("inheritChoice")}</Button>
+              <Button type="button" variant="ghost" className={`${CONTROL_H} shrink-0 px-2`} disabled={!defaults.writerProviderId && !defaults.writerModel} onClick={() => { setDefaults((current) => { const next = { ...current }; delete next.writerProviderId; delete next.writerModel; delete next.writerReasoningEffort; return next; }); setSaved(false); }}>{t("inheritChoice")}</Button>
             </div>
             <div className="min-w-0 max-w-full">
               {defaults.qaHostId ? (
@@ -324,14 +325,14 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           <SurfaceHeader><h2 className="text-sm font-medium">{t("agentSectionProfile")}</h2></SurfaceHeader>
           <SurfaceBody>
           <div className={stackControls ? "flex min-w-0 flex-col gap-2" : "flex min-w-0 flex-row gap-2"} data-testid="agent-new-profile">
-            <Input className={`min-h-11 ${CONTROL}`} aria-label={ru ? "ID нового профиля" : "New profile ID"} value={newId} placeholder="my-agent" onChange={(event) => setNewId(event.target.value)} />
-            <Button variant="outline" className="min-h-11 shrink-0" disabled={!/^[a-z][a-z0-9-]{0,63}$/.test(newId) || agents.some((item) => item.id === newId)} onClick={() => { setAgents((current) => [...current, { id: newId, description: newId, prompt: "", sourceHash: "", sourceVersion: "lp-owned-1", edited: true }]); setSelected(newId); setNewId(""); }}>{ru ? "Добавить профиль" : "Add profile"}</Button>
+            <Input className={`${CONTROL_H} ${CONTROL}`} aria-label={ru ? "ID нового профиля" : "New profile ID"} value={newId} placeholder="my-agent" onChange={(event) => setNewId(event.target.value)} />
+            <Button variant="outline" className={`${CONTROL_H} shrink-0`} disabled={!/^[a-z][a-z0-9-]{0,63}$/.test(newId) || agents.some((item) => item.id === newId)} onClick={() => { setAgents((current) => [...current, { id: newId, description: newId, prompt: "", sourceHash: "", sourceVersion: "lp-owned-1", edited: true }]); setSelected(newId); setNewId(""); }}>{ru ? "Добавить профиль" : "Add profile"}</Button>
           </div>
           <Label htmlFor="owned-agent">{t("agentSelectedProfile")}</Label>
-          <Select value={selected} onValueChange={(value) => { setSelected(value); setSaved(false); }}><SelectTrigger id="owned-agent" className={`min-h-11 ${CONTROL}`}><SelectValue /></SelectTrigger><SelectContent>{agents.map((item) => <SelectItem key={item.id} value={item.id}>{agentPickerLabel(item, t)}</SelectItem>)}</SelectContent></Select>
+          <Select value={selected} onValueChange={(value) => { setSelected(value); setSaved(false); }}><SelectTrigger id="owned-agent" className={`${CONTROL_H} ${CONTROL}`}><SelectValue /></SelectTrigger><SelectContent>{agents.map((item) => <SelectItem key={item.id} value={item.id}>{agentPickerLabel(item, t)}</SelectItem>)}</SelectContent></Select>
           {agent ? <>
             <Label htmlFor="agent-description">{ru ? "Название и назначение" : "Name and purpose"}</Label>
-            <Input id="agent-description" className={`min-h-11 ${CONTROL}`} value={agent.description} onChange={(event) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, description: event.target.value } : item)); setSaved(false); }} />
+            <Input id="agent-description" className={`${CONTROL_H} ${CONTROL}`} value={agent.description} onChange={(event) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, description: event.target.value } : item)); setSaved(false); }} />
           </> : null}
           </SurfaceBody>
         </Surface>
@@ -369,10 +370,13 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
               />
             ))}
           </div>
-          <details className="min-w-0 max-w-full"><summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary><p className="break-all text-xs text-muted-foreground">Lane Pilot · {agent.sourceVersion} · SHA-256 {agent.sourceHash}</p><p className="text-sm">{ru ? "После сохранения инструкции независимы от шаблона. Native MAIN требует поддержки ядра; сохранение профиля не подтверждает её наличие. Выбор модели сессии и потолок разрешений имеют приоритет." : "Once saved, instructions are independent of the template. Native MAIN requires core support; saving a profile does not confirm that support. The session model choice and permission ceiling take precedence."}</p></details>
+          <Disclosure summary={t("settingsAdvanced")}>
+            <p className="break-all text-xs text-muted-foreground">Lane Pilot · {agent.sourceVersion} · SHA-256 {agent.sourceHash}</p>
+            <p className="text-sm">{ru ? "После сохранения инструкции независимы от шаблона. Native MAIN требует поддержки ядра; сохранение профиля не подтверждает её наличие. Выбор модели сессии и потолок разрешений имеют приоритет." : "Once saved, instructions are independent of the template. Native MAIN requires core support; saving a profile does not confirm that support. The session model choice and permission ceiling take precedence."}</p>
+          </Disclosure>
         </> : null}
       </fieldset>
-      <Button className="min-h-11" disabled={busy || (scope === "agents" && (!agent?.prompt.trim() || !agent.description.trim()))} onClick={() => void save()}>{busy ? (ru ? "Сохранение…" : "Saving…") : (ru ? "Сохранить" : "Save")}</Button>
+      <Button className={CONTROL_H} disabled={busy || (scope === "agents" && (!agent?.prompt.trim() || !agent.description.trim()))} onClick={() => void save()}>{busy ? (ru ? "Сохранение…" : "Saving…") : (ru ? "Сохранить" : "Save")}</Button>
       {saved ? <p role="status" className="text-sm">{ru ? "Сохранено и проверено повторным чтением." : "Saved and verified by readback."}</p> : null}
     </>}
   </section>;
