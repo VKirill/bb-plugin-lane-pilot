@@ -152,7 +152,7 @@ export async function transitionOwned(root: string, manifest: NativeInstallManif
     for (const name of manifest.createdConfigs) {
       const path = await safeTarget(manifest.home, name);
       const text = await readFile(path, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return ""; throw error; });
-      if (!text.trim() || (name.endsWith(".json") || name.endsWith(".jsonc")) && Object.keys(parse(text) ?? {}).length === 0) await rm(path, { force: true });
+      if (!text.trim() || (name.endsWith(".json") || name.endsWith(".jsonc")) && /^[\s{}]*$/.test(text)) await rm(path, { force: true });
     }
     for (const name of [...manifest.createdDirs].sort((a, b) => b.length - a.length)) await rmdir(await safeTarget(manifest.home, name)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT" && error.code !== "ENOTEMPTY") throw error; });
   }
