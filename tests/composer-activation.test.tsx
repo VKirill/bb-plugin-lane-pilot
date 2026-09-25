@@ -83,7 +83,7 @@ describe("Enable Lane Pilot composer action", () => {
     expect(slot.queryByLabelText("Choose a project")).toBeNull();
     expect((slot.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
     expect(slot.getByText(/BB composer first/i)).toBeTruthy();
-    expect(slot.getByText(/waiting for a public BB composer selection read/i)).toBeTruthy();
+    expect(slot.getAllByText(/native new-thread composer selection/i).length).toBeGreaterThan(0);
     expect(slot.getByText(/Strict required session policy is unavailable/)).toBeTruthy();
     slot.lifecycle.unmount();
   });
@@ -100,7 +100,7 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
     await slot.findByTestId("activation-popover");
     expect((slot.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(slot.getByText(/waiting for a public BB composer selection read/i)).toBeTruthy();
+    expect(slot.getAllByText(/native new-thread composer selection/i).length).toBeGreaterThan(0);
     expect(slot.queryByText(/codex/)).toBeNull();
     expect(slot.queryByText(/test-model/)).toBeNull();
     fireEvent.click(slot.getByRole("button", { name: "Start" }));

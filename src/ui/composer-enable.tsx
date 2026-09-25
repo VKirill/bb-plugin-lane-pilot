@@ -12,7 +12,12 @@ import {
   startBlocked,
   type ActivationBlock,
 } from "../activation";
-import { nativeSelectionReady, readNativeComposerSelection } from "../composer-selection";
+import {
+  composerSelectionBlock,
+  nativeSelectionProjectId,
+  nativeSelectionReady,
+  useNativeComposerSelection,
+} from "../composer-selection";
 
 type ContextPayload = {
   projectId: string | null;
@@ -31,7 +36,11 @@ function blockCopy(block: ActivationBlock): string {
   if (block.code === "pending") return t("enabling");
   if (block.code === "no_projects") return t("noProjects");
   if (block.code === "need_project") return t("activationNeedProject");
-  if (block.code === "need_composer_selection") return t("activationNeedComposerSelection");
+  if (block.code === "need_composer_selection") {
+    if (block.detail === "resolving") return t("activationComposerResolving");
+    if (block.detail === "need_existing_environment") return t("activationNeedExistingEnvironment");
+    return t("activationNeedComposerSelection");
+  }
   if (block.code === "need_binding") return t("noProjectBinding");
   return t("compiledMainUnavailable");
 }
@@ -44,7 +53,8 @@ export function EnableLanePilotAction() {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const view = useComposerView();
-  const projectId = nativeProjectId(view.scope);
+  const snapshot = useNativeComposerSelection();
+  const projectId = nativeSelectionProjectId(snapshot) ?? nativeProjectId(view.scope);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -72,8 +82,8 @@ export function EnableLanePilotAction() {
   }, [rpc, projectId]);
 
   const compiledRequested = agentId !== "__default__";
-  const nativeSelection = readNativeComposerSelection(view);
-  const selectionReady = nativeSelectionReady(nativeSelection);
+  const selectionReady = nativeSelectionReady(snapshot);
+  const selectionBlock = composerSelectionBlock(snapshot);
   const blocks = activationDisabledPredicate({
     pending,
     projectId,
@@ -82,12 +92,16 @@ export function EnableLanePilotAction() {
     compiledSupported: ctx?.compiledMainAgent === "supported",
     projectCount: ctx?.projects.length,
     nativeSelectionReady: selectionReady,
-  });
+  }).map((block) => (
+    block.code === "need_composer_selection" && selectionBlock
+      ? { ...block, detail: selectionBlock }
+      : block
+  ));
   const disabled = composerButtonDisabled(blocks);
   const blocked = startBlocked(blocks);
 
   const activate = async () => {
-    if (blocked || pending || !projectId || !nativeSelection) return;
+    if (blocked || pending || !projectId || !selectionReady || snapshot.status !== "ready") return;
     setPending(true);
     setError(null);
     try {
@@ -126,6 +140,15 @@ export function EnableLanePilotAction() {
           </Select>
         </div>
         <p className="text-xs text-muted-foreground">{t("runnerPreferenceNote")}</p>
+        {snapshot.status === "ready" ? (
+          <p className="text-xs text-muted-foreground" data-testid="native-composer-selection">
+            {snapshot.scope.kind} · {snapshot.projectId} · {snapshot.providerId} · {snapshot.model} · {snapshot.environment.kind}/{snapshot.environment.type}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground" data-testid="native-composer-selection">
+            {snapshot.status}{snapshot.status === "unsupported" ? ` · ${snapshot.reason}` : ""}
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">{ctx?.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}</p>
         {blocks.filter((row) => row.code !== "pending").length ? (
           <div>
