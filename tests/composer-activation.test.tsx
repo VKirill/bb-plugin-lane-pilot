@@ -113,6 +113,27 @@ describe("Enable Lane Pilot composer action", () => {
     slot.lifecycle.unmount();
   });
 
+  it("enables a section session even when the parent project has no folder binding", async () => {
+    const slot = await mountComposer({
+      projectId: "clients",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "clients" },
+      context: {
+        bindingStatus: "setup_required",
+        projects: [{ id: "clients", name: "Clients" }],
+        mainAgents: [{ id: "dev-orchestrator", description: "Section developer" }],
+      },
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
+    await slot.findByText("Section developer");
+    const start = slot.getByRole("button", { name: "Enable for this chat" }) as HTMLButtonElement;
+    expect(start.disabled).toBe(false);
+    fireEvent.click(start);
+    await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
+    expect(slot.inspection.navigateCalls).toEqual([]);
+    slot.lifecycle.unmount();
+  });
+
   it("shows locale stock labels and keeps a custom agent name", async () => {
     const slot = await mountComposer({
       projectId: "proj_a",

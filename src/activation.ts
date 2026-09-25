@@ -41,7 +41,7 @@ export function activationDisabledPredicate(input: {
   if (input.launchMode !== "mention" && input.nativeSelectionReady !== true) {
     blocks.push({ code: "need_composer_selection" });
   }
-  if (input.bindingStatus === "setup_required" || input.bindingStatus === "catalog_unavailable" || input.bindingStatus === "offline" || input.bindingStatus === "ambiguous") {
+  if (input.launchMode !== "mention" && (input.bindingStatus === "setup_required" || input.bindingStatus === "catalog_unavailable" || input.bindingStatus === "offline" || input.bindingStatus === "ambiguous")) {
     blocks.push({ code: "need_binding", detail: input.bindingStatus });
   }
   if (input.launchMode !== "mention" && input.compiledRequested && input.compiledSupported === false) {

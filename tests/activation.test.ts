@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { activationDisabledPredicate, classifyComposerSession, composerButtonDisabled } from "../src/activation";
 
 describe("composer activation", () => {
+  it.each(["setup_required", "ambiguous", "offline", "catalog_unavailable"])("defers %s project binding to native dispatch only in mention mode", (bindingStatus) => {
+    expect(activationDisabledPredicate({ projectId: "clients", bindingStatus, launchMode: "mention" })).toEqual([]);
+    expect(activationDisabledPredicate({ projectId: "clients", bindingStatus, launchMode: "spawn", nativeSelectionReady: true })).toEqual([{ code: "need_binding", detail: bindingStatus }]);
+  });
+
   it("classifies new-thread, unstarted, ordinary started, and LP-active sessions", () => {
     expect(classifyComposerSession({ composerKind: "new-thread", threadId: null })).toBe("new-thread");
     expect(classifyComposerSession({ composerKind: "thread", threadId: "thr_1" })).toBe("unstarted-thread");
