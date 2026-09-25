@@ -1,5 +1,3 @@
-import * as pluginApp from "@get-bb/plugin-sdk/app";
-
 export type ComposerSelectionScope =
   | { kind: "new-thread"; projectId: string | null }
   | { kind: "thread"; threadId: string }
@@ -52,25 +50,6 @@ export type ComposerSelectionBlock =
   | "unsupported"
   | "need_existing_environment"
   | null;
-
-function missingHookSnapshot(): ComposerSelectionSnapshot {
-  return {
-    status: "unsupported",
-    scope: { kind: "new-thread", projectId: null },
-    reason: "native-selection-unavailable",
-  };
-}
-
-export function useNativeComposerSelection(): ComposerSelectionSnapshot {
-  const hook = (pluginApp as { experimental_useComposerSelection?: () => ComposerSelectionSnapshot })
-    .experimental_useComposerSelection;
-  if (typeof hook !== "function") return missingHookSnapshot();
-  try {
-    return hook();
-  } catch {
-    return missingHookSnapshot();
-  }
-}
 
 export function existingEnvironmentUsable(environment: ComposerEnvironmentSelection): boolean {
   if (environment.kind === "existing") {

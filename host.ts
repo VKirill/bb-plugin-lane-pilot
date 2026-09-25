@@ -24,6 +24,8 @@ import {
   snapshot,
   snapshotDryRun,
   writePmSettings,
+  discoverClaudeAgentsHost,
+  prepareNativeClaudeHost,
 } from "./src/host-handlers";
 import { sessionInventory } from "./src/session-inventory";
 
@@ -32,5 +34,6 @@ export default experimental_defineHostEntry({
   handlers: {
     detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
     runCli, runCommand, runSandboxedCommand, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
+    discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
   },
 });

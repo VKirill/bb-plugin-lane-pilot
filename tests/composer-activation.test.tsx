@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "../i18n";
 
@@ -42,6 +42,13 @@ async function mountComposer(input: {
         requiredSessionPolicy: "none",
       }),
       activate_pm: input.activate ?? (async () => ({ threadId: "thr_pm", runId: "run_1" })),
+      prepare_native_session: async ({ agentId }: { agentId: string }) => ({
+        token: "11111111-1111-1111-1111-111111111111",
+        label: agentId === "copy-lead" ? "Night desk" : "Development coordinator",
+        agentId: agentId || "dev-orchestrator",
+        profileMode: "installed",
+        cliAgentsCollision: null,
+      }),
     },
   });
 }
@@ -84,30 +91,24 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(enable);
     await slot.findByTestId("activation-popover");
     expect(slot.queryByLabelText("Choose a project")).toBeNull();
-    expect((slot.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((slot.getByRole("button", { name: "Prepare this composer" }) as HTMLButtonElement).disabled).toBe(true);
     expect(slot.getByText(/BB composer first/i)).toBeTruthy();
-    expect(slot.getAllByText(/native new-thread composer selection/i).length).toBeGreaterThan(0);
-    expect(slot.getByText(/Strict required session policy is unavailable/)).toBeTruthy();
     slot.lifecycle.unmount();
   });
 
-  it("does not start when native composer model and folder are unread", async () => {
-    const calls: unknown[] = [];
+  it("inserts a unique mention and does not spawn", async () => {
     const slot = await mountComposer({
       projectId: "proj_route",
       threadId: null,
       scope: { kind: "new-thread", projectId: "proj_a" },
       context: { bindingStatus: "resolved", projects: [{ id: "proj_a", name: "Alpha" }] },
-      activate: async (args) => { calls.push(args); return { threadId: "thr_pm", runId: "run_1" }; },
     });
     fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
     await slot.findByTestId("activation-popover");
-    expect((slot.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(slot.getAllByText(/native new-thread composer selection/i).length).toBeGreaterThan(0);
-    expect(slot.queryByText(/codex/)).toBeNull();
-    expect(slot.queryByText(/test-model/)).toBeNull();
-    fireEvent.click(slot.getByRole("button", { name: "Start" }));
-    expect(calls).toHaveLength(0);
+    fireEvent.click(slot.getByRole("button", { name: "Prepare this composer" }));
+    await waitFor(() => expect(slot.inspection.composer.mentions).toEqual([
+      { provider: "lane-pilot", id: "11111111-1111-1111-1111-111111111111", label: "Development coordinator" },
+    ]));
     expect(slot.inspection.navigateCalls).toEqual([]);
     slot.lifecycle.unmount();
   });
@@ -129,8 +130,8 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
     await slot.findByTestId("activation-popover");
     fireEvent.click(slot.getByLabelText("Lane Pilot agent"));
-    expect(slot.getAllByText("No specialist agent").length).toBeGreaterThan(0);
-    expect(slot.getByText("Development coordinator")).toBeTruthy();
+    expect(slot.queryByText("No specialist agent")).toBeNull();
+    expect(slot.getAllByText("Development coordinator").length).toBeGreaterThan(0);
     expect(slot.getByText("Night desk")).toBeTruthy();
     expect(slot.queryByText("Lane Pilot development orchestrator")).toBeNull();
     expect(slot.queryByText("Lane Pilot copy lead")).toBeNull();

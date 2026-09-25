@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useBbNavigate, useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
+import { useComposer, useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t, detectLocale, setLocaleOverride } from "../../i18n";
 import { agentPickerLabel } from "../agent-display";
@@ -14,12 +14,7 @@ import {
   startBlocked,
   type ActivationBlock,
 } from "../activation";
-import {
-  composerSelectionBlock,
-  nativeSelectionProjectId,
-  nativeSelectionReady,
-  useNativeComposerSelection,
-} from "../composer-selection";
+import { DEFAULT_NATIVE_AGENT, NATIVE_MENTION_PROVIDER } from "../native-session";
 
 type ContextPayload = {
   projectId: string | null;
@@ -38,11 +33,6 @@ function blockCopy(block: ActivationBlock): string {
   if (block.code === "pending") return t("enabling");
   if (block.code === "no_projects") return t("noProjects");
   if (block.code === "need_project") return t("activationNeedProject");
-  if (block.code === "need_composer_selection") {
-    if (block.detail === "resolving") return t("activationComposerResolving");
-    if (block.detail === "need_existing_environment") return t("activationNeedExistingEnvironment");
-    return t("activationNeedComposerSelection");
-  }
   if (block.code === "need_binding") return t("noProjectBinding");
   return t("compiledMainUnavailable");
 }
@@ -53,15 +43,14 @@ function nativeProjectId(scope: ReturnType<typeof useComposerView>["scope"]): st
 
 export function EnableLanePilotAction() {
   const rpc = useRpc<typeof rpcContract>();
-  const navigate = useBbNavigate();
+  const composer = useComposer();
   const view = useComposerView();
-  const snapshot = useNativeComposerSelection();
-  const projectId = nativeSelectionProjectId(snapshot) ?? nativeProjectId(view.scope);
+  const projectId = nativeProjectId(view.scope);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [ctx, setCtx] = useState<ContextPayload | null>(null);
-  const [agentId, setAgentId] = useState("__default__");
+  const [agentId, setAgentId] = useState(DEFAULT_NATIVE_AGENT);
 
   useEffect(() => {
     let current = true;
@@ -83,38 +72,30 @@ export function EnableLanePilotAction() {
     return () => { current = false; };
   }, [rpc, projectId]);
 
-  const compiledRequested = agentId !== "__default__";
-  const selectionReady = nativeSelectionReady(snapshot);
-  const selectionBlock = composerSelectionBlock(snapshot);
   const blocks = activationDisabledPredicate({
     pending,
     projectId,
     bindingStatus: ctx?.bindingStatus,
-    compiledRequested,
-    compiledSupported: ctx?.compiledMainAgent === "supported",
+    compiledRequested: false,
+    compiledSupported: true,
     projectCount: ctx?.projects.length,
-    nativeSelectionReady: selectionReady,
-  }).map((block) => (
-    block.code === "need_composer_selection" && selectionBlock
-      ? { ...block, detail: selectionBlock }
-      : block
-  ));
+    launchMode: "mention",
+  });
   const disabled = composerButtonDisabled(blocks);
   const blocked = startBlocked(blocks);
 
-  const activate = async () => {
-    if (blocked || pending || !projectId || !selectionReady || snapshot.status !== "ready") return;
+  const prepare = async () => {
+    if (blocked || pending || !projectId) return;
     setPending(true);
     setError(null);
     try {
-      const result = await rpc.call("activate_pm", {
-        projectId,
-        sourceThreadId: null,
-        agentId: agentId === "__default__" ? "" : agentId,
-        snapshot,
+      const result = await rpc.call("prepare_native_session", { projectId, agentId });
+      composer.insertMention({
+        provider: NATIVE_MENTION_PROVIDER,
+        id: result.token,
+        label: result.label,
       });
       setOpen(false);
-      navigate.toThread(result.threadId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -137,22 +118,13 @@ export function EnableLanePilotAction() {
           <Select value={agentId} onValueChange={setAgentId}>
             <SelectTrigger className={`${CONTROL_H} min-w-0 max-w-full`} aria-label={t("pickAgent")}><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="__default__">{t("bbDefaultAgent")}</SelectItem>
-              {(ctx?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agentPickerLabel(agent, t)}</SelectItem>)}
+              {(ctx?.mainAgents ?? [{ id: DEFAULT_NATIVE_AGENT, description: "" }]).map((agent) => (
+                <SelectItem key={agent.id} value={agent.id}>{agentPickerLabel(agent, t)}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
-        <p className="text-xs text-muted-foreground">{t("runnerPreferenceNote")}</p>
-        {snapshot.status === "ready" ? (
-          <p className="break-all text-xs text-muted-foreground" data-testid="native-composer-selection">
-            {snapshot.scope.kind} · {snapshot.projectId} · {snapshot.providerId} · {snapshot.model} · {snapshot.environment.kind}/{snapshot.environment.type}
-          </p>
-        ) : (
-          <p className="text-xs text-muted-foreground" data-testid="native-composer-selection">
-            {snapshot.status}{snapshot.status === "unsupported" ? ` · ${snapshot.reason}` : ""}
-          </p>
-        )}
-        <p className="text-xs text-muted-foreground">{ctx?.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}</p>
+        <p className="text-xs text-muted-foreground">{t("nativeComposerHint")}</p>
         {blocks.filter((row) => row.code !== "pending").length ? (
           <div>
             <p className="text-xs font-medium">{t("activationBlocks")}</p>
@@ -160,8 +132,8 @@ export function EnableLanePilotAction() {
           </div>
         ) : null}
         {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
-        <Button className={`${CONTROL_H} w-full`} disabled={blocked} onClick={() => void activate()}>
-          {pending ? t("enabling") : t("startLanePilot")}
+        <Button className={`${CONTROL_H} w-full`} disabled={blocked} onClick={() => void prepare()}>
+          {pending ? t("enabling") : t("prepareNativeComposer")}
         </Button>
       </PopoverContent>
     </Popover>

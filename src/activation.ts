@@ -31,19 +31,20 @@ export function activationDisabledPredicate(input: {
   compiledSupported?: boolean;
   projectCount?: number;
   nativeSelectionReady?: boolean;
+  launchMode?: "spawn" | "mention";
 }): ActivationBlock[] {
   const blocks: ActivationBlock[] = [];
   if (input.pending) blocks.push({ code: "pending" });
   if (!input.projectId) {
     blocks.push({ code: input.projectCount === 0 ? "no_projects" : "need_project" });
   }
-  if (input.nativeSelectionReady !== true) {
+  if (input.launchMode !== "mention" && input.nativeSelectionReady !== true) {
     blocks.push({ code: "need_composer_selection" });
   }
   if (input.bindingStatus === "setup_required" || input.bindingStatus === "catalog_unavailable" || input.bindingStatus === "offline" || input.bindingStatus === "ambiguous") {
     blocks.push({ code: "need_binding", detail: input.bindingStatus });
   }
-  if (input.compiledRequested && input.compiledSupported === false) {
+  if (input.launchMode !== "mention" && input.compiledRequested && input.compiledSupported === false) {
     blocks.push({ code: "compiled_unsupported" });
   }
   return blocks;

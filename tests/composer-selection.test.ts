@@ -5,9 +5,9 @@ import {
   nativeSelectionProjectId,
   nativeSelectionReady,
   spawnEnvironmentFromSelection,
-  useNativeComposerSelection,
   type ComposerSelectionSnapshot,
 } from "../src/composer-selection";
+import { useNativeComposerSelection } from "../src/ui/composer-selection-hook";
 
 const request = { type: "reuse" as const, environmentId: "env_1" };
 const readyReuse: ComposerSelectionSnapshot = {

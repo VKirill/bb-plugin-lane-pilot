@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { t } from "./i18n";
 import { isAbsolute, relative, resolve } from "node:path";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -107,6 +108,20 @@ import { QA_HOST_KEY, QA_WORKSPACE_KEY, mapListedQaHosts, qaCodexPreflight, qaHo
 import { resolveWriterBinding, type ProjectSourceBinding, type WriterBindingResolution } from "./src/project-binding";
 import { userVisibleProjects } from "./src/project-scope";
 import { inheritProjectValues, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseHelperPlacement, parseLanePilotDefaults, type HelperPlacementMode } from "./src/lp-defaults";
+import {
+  DEFAULT_NATIVE_AGENT,
+  NATIVE_MENTION_PROVIDER,
+  nativeAgentCliId,
+  nativeSelectionSchema,
+} from "./src/native-session";
+import { agentPickerLabel } from "./src/agent-display";
+import { sessionOverrideAgentsJson } from "./src/native-agent-definition";
+import {
+  handleNativeDispatch,
+  mentionContext,
+  nativeContributedEnv,
+  prepareNativeSessionRecord,
+} from "./src/native-dispatch";
 import { helperSpawnFields, resolveHelperPlacement } from "./src/helper-placement";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "./src/stages/critique";
 import {
@@ -1181,6 +1196,18 @@ function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = fal
 export default async function plugin(bb: BbPluginApi) {
   const db = openDatabase(bb);
   const host = bb.hosts.experimental_client({ contract:hostContract });
+  bb.ui.registerMentionProvider({
+    id: NATIVE_MENTION_PROVIDER,
+    label: "Lane Pilot",
+    search: () => [],
+    resolve: async (token) => {
+      const selected = await bb.storage.kv.get(`native-selection:${token}`);
+      if (!selected) throw new Error("Lane Pilot selection is missing. Choose the profile again.");
+      return { context: mentionContext(nativeSelectionSchema.parse(selected)) };
+    },
+  });
+  bb.experimental_hooks.on("message.dispatch", (ctx) => handleNativeDispatch(bb, host, ctx, db));
+  bb.providers.experimental_contributeEnv("claude-code", (ctx) => nativeContributedEnv(bb, ctx));
   let kvChain = Promise.resolve();
   function serializedKv<T>(work: () => Promise<T>): Promise<T> {
     const next = kvChain.then(work, work);
@@ -4697,6 +4724,39 @@ export default async function plugin(bb: BbPluginApi) {
     },
     activate_pm: ({ projectId, sourceThreadId, agentId, snapshot }) => {
       return activate(projectId, sourceThreadId, "bb", agentId, snapshot);
+    },
+    prepare_native_session: async ({ projectId, agentId }) => {
+      const shortId = nativeAgentCliId(agentId || DEFAULT_NATIVE_AGENT);
+      const owned = await ownedAgents();
+      const stored = owned[shortId];
+      if (stored?.compiledCorrupt) throw new Error(`compiled_main_agent_corrupt:${shortId}`);
+      let compiled = null;
+      try { compiled = compileEffectiveMainAgent(shortId, stored); } catch { compiled = null; }
+      const stock = (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(shortId) ? compileMainAgentProfile(shortId) : null;
+      const edited = compiled && stock ? compiled.sourceHash !== stock.sourceHash : Boolean(compiled && !stock);
+      if (!compiled && !stock) throw new Error(`Unknown Lane Pilot profile ${shortId}.`);
+      const profileMode = edited ? "session-override" as const : "installed" as const;
+      const agentsJson = sessionOverrideAgentsJson({ agentId: shortId, edited, compiled });
+      const record = await prepareNativeSessionRecord({
+        projectId,
+        agentId: shortId,
+        profileMode,
+        agentsJson,
+        sourceHash: compiled?.sourceHash ?? null,
+      });
+      await bb.storage.kv.set(`native-selection:${record.token}`, record);
+      const label = agentPickerLabel({
+        id: shortId,
+        description: compiled?.description ?? shortId,
+      }, t);
+      return { token: record.token, label, agentId: shortId, profileMode, cliAgentsCollision: null };
+    },
+    native_thread: async ({ threadId }) => {
+      const selected = await bb.storage.kv.get(`native-thread:${threadId}`);
+      if (!selected) return null;
+      const parsed = nativeSelectionSchema.parse(selected);
+      const agentType = await bb.storage.kv.get<string>(`native-agent-type:${threadId}`) ?? parsed.agentId;
+      return { token: parsed.token, agentId: parsed.agentId, agentType, projectId: parsed.projectId };
     },
     activation_context: async ({ projectId, threadId }) => {
       const listed = await bb.sdk.projects.list({ includePersonal: true });

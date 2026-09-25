@@ -341,6 +341,29 @@ export const hostContract = defineRpcContract({
       nativePlugins: z.array(z.object({ name: z.string(), sources: z.array(z.enum(["claude", "codex", "opencode"])) }).strict()),
     }).strict(),
   },
+  discoverClaudeAgents: {
+    input: z.object({ cwd: z.string().startsWith("/") }).strict(),
+    output: z.object({
+      agents: z.array(z.object({ id: z.string(), source: z.string() }).strict()),
+      version: z.string(),
+      sessionAgents: z.boolean(),
+      pluginDir: z.boolean(),
+      supported: z.boolean(),
+    }).strict(),
+  },
+  prepareNativeClaude: {
+    input: z.object({
+      cwd: z.string().startsWith("/"),
+      agentId: z.string().min(1).max(200),
+      agentsJson: z.string().max(200_000).nullable(),
+    }).strict(),
+    output: z.object({
+      env: z.array(z.object({ name: z.string(), value: z.string(), reason: z.string() }).strict()),
+      agentId: z.string(),
+      claudePath: z.string(),
+      sessionAgents: z.boolean(),
+    }).strict(),
+  },
 });
 
 export const rpcContract = defineRpcContract({
@@ -537,6 +560,28 @@ export const rpcContract = defineRpcContract({
       threadStatus: z.string().nullable(),
       requiredSessionPolicy: z.enum(["required", "none"]),
     }).strict(),
+  },
+  prepare_native_session: {
+    input: z.object({
+      projectId: z.string().min(1),
+      agentId: z.string().min(1).max(200),
+    }).strict(),
+    output: z.object({
+      token: z.string().uuid(),
+      label: z.string().min(1),
+      agentId: z.string().min(1),
+      profileMode: z.enum(["installed", "session-override"]),
+      cliAgentsCollision: z.enum(["pending", "thread", "mention"]).nullable(),
+    }).strict(),
+  },
+  native_thread: {
+    input: z.object({ threadId: z.string().min(1) }).strict(),
+    output: z.object({
+      token: z.string(),
+      agentId: z.string(),
+      agentType: z.string(),
+      projectId: z.string(),
+    }).strict().nullable(),
   },
   get_screen: {
     input: z.object({ projectId: z.string().min(1) }).strict(),

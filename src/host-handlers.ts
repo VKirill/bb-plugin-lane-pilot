@@ -13,6 +13,7 @@ import { scanCritiqueCoverage } from "./stages/critique-coverage";
 import { runSandboxedCommandOnHost } from "./verification/sandbox";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "./verification/git-ownership";
 import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
+import { discoverClaudeAgents, prepareNativeClaude } from "./native-claude-host";
 import {
   connectOpencodeStack,
   detectStack,
@@ -393,6 +394,20 @@ export const inspectCritiqueCoverage: ExperimentalHostRpcHandlers<typeof hostCon
 
 export const writePmSettings: ExperimentalHostRpcHandlers<typeof hostContract>["writePmSettings"] = async (input) => (
   writePmSettingsOnHost(input)
+);
+
+export const discoverClaudeAgentsHost: ExperimentalHostRpcHandlers<typeof hostContract>["discoverClaudeAgents"] = async (input) => (
+  discoverClaudeAgents(input.cwd)
+);
+
+export const prepareNativeClaudeHost: ExperimentalHostRpcHandlers<typeof hostContract>["prepareNativeClaude"] = async (input, context) => (
+  prepareNativeClaude({
+    cwd: input.cwd,
+    agentId: input.agentId,
+    agentsJson: input.agentsJson,
+    dataDir: context.experimental_paths.dataDir,
+    signal: context.signal,
+  })
 );
 
 export const snapshotDryRun: ExperimentalHostRpcHandlers<typeof hostContract>["snapshotDryRun"] = async (input) => ({

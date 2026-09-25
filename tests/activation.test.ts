@@ -22,6 +22,12 @@ describe("composer activation", () => {
       nativeSelectionReady: true,
     });
     expect(selectedReady).toEqual([]);
+    const mentionReady = activationDisabledPredicate({
+      projectId: "proj_a",
+      bindingStatus: "resolved",
+      launchMode: "mention",
+    });
+    expect(mentionReady).toEqual([]);
     expect(composerButtonDisabled(selectedReady)).toBe(false);
     const pending = activationDisabledPredicate({ pending: true, projectId: "proj_a" });
     expect(composerButtonDisabled(pending)).toBe(true);
