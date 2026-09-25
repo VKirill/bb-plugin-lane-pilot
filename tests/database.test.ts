@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
+import { appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -189,6 +189,21 @@ describe("section 9 storage.database DDL", () => {
     });
     setRunThread(db, "worktree-run", "pm-worktree");
     expect(setRunWorkspace(db, "worktree-run", "/tmp/late", "env-late")).toBe(false);
+    await harness.lifecycle.dispose();
+  });
+
+  it("freezes native host+path+environment once and refuses a second bind", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "native-run", "A", "bb", null);
+    expect(freezeRunBinding(db, "native-run", { hostId: "host-mini", workspacePath: "/tmp/fixture", environmentId: "env-live" })).toBe(true);
+    expect(getRunWriterHost(db, "native-run")).toBe("host-mini");
+    expect(getRun(db, "native-run")).toMatchObject({
+      writer_workspace_path: "/tmp/fixture",
+      writer_environment_id: "env-live",
+    });
+    expect(freezeRunBinding(db, "native-run", { hostId: "host-other", workspacePath: "/tmp/other", environmentId: "env-other" })).toBe(false);
+    expect(getRunWriterHost(db, "native-run")).toBe("host-mini");
     await harness.lifecycle.dispose();
   });
 

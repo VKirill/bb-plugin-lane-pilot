@@ -15,15 +15,17 @@ export type ComposerEnvironmentSelection =
       type: "provider";
       environmentProviderId: string;
       machine?: { type: "existing"; hostId: string } | { type: "new"; machineProviderId: string };
-      request?: Record<string, unknown>;
-      provenance?: {
-        projectId: string;
-        sectionId: string | null;
-        projectSourceId: string | null;
-        hostId: string | null;
-        path: string | null;
-      };
     };
+
+export type ComposerEnvironmentRequest = Record<string, unknown> & { type: string };
+
+export type ComposerEnvironmentProvenance = {
+  projectId: string;
+  sectionId: null;
+  projectSourceId?: string;
+  hostId?: string;
+  path?: string;
+};
 
 export type ComposerSelectionSnapshot =
   | { status: "resolving"; scope: Extract<ComposerSelectionScope, { kind: "new-thread" }> }
@@ -36,6 +38,8 @@ export type ComposerSelectionSnapshot =
       reasoningLevel: string;
       serviceTier?: string;
       environment: ComposerEnvironmentSelection;
+      environmentRequest: ComposerEnvironmentRequest;
+      environmentProvenance: ComposerEnvironmentProvenance;
     }
   | {
       status: "unsupported";
@@ -80,46 +84,34 @@ export function existingEnvironmentUsable(environment: ComposerEnvironmentSelect
   }
   return environment.kind === "provisioning"
     && environment.type === "provider"
-    && Boolean(environment.environmentProviderId)
-    && environment.request !== undefined
-    && environment.request !== null
-    && typeof environment.request === "object";
+    && Boolean(environment.environmentProviderId);
+}
+
+function isEnvironmentRequest(value: unknown): value is ComposerEnvironmentRequest {
+  return Boolean(value) && typeof value === "object" && typeof (value as { type?: unknown }).type === "string";
 }
 
 export function nativeSelectionReady(snapshot: ComposerSelectionSnapshot | null): boolean {
   if (!snapshot || snapshot.status !== "ready") return false;
-  return existingEnvironmentUsable(snapshot.environment);
+  if (!existingEnvironmentUsable(snapshot.environment)) return false;
+  if (!isEnvironmentRequest(snapshot.environmentRequest)) return false;
+  if (!snapshot.environmentProvenance || snapshot.environmentProvenance.projectId !== snapshot.projectId) return false;
+  if (snapshot.environment.kind === "provisioning" && snapshot.environmentRequest.type !== "provider") return false;
+  return true;
 }
 
 export function composerSelectionBlock(snapshot: ComposerSelectionSnapshot): ComposerSelectionBlock {
   if (snapshot.status === "resolving") return "resolving";
   if (snapshot.status === "unsupported") return "unsupported";
-  if (!existingEnvironmentUsable(snapshot.environment)) return "need_existing_environment";
+  if (!nativeSelectionReady(snapshot)) return "need_existing_environment";
   return null;
 }
 
-export function spawnEnvironmentFromSelection(environment: ComposerEnvironmentSelection): Record<string, unknown> {
-  if (environment.kind === "existing" && environment.type === "reuse") {
-    return { type: "reuse", environmentId: environment.environmentId };
+export function spawnEnvironmentFromSelection(snapshot: Extract<ComposerSelectionSnapshot, { status: "ready" }>): ComposerEnvironmentRequest {
+  if (!isEnvironmentRequest(snapshot.environmentRequest)) {
+    throw new Error("composer_environment_request_missing");
   }
-  if (environment.kind === "existing" && environment.type === "host") {
-    if (!environment.hostId) throw new Error("composer_environment_host_missing");
-    if (environment.workspaceType === "personal") {
-      return { type: "host", hostId: environment.hostId, workspace: { type: "personal" } };
-    }
-    if (environment.workspaceType === "managed-worktree") {
-      return { type: "host", hostId: environment.hostId, workspace: { type: "managed-worktree", baseBranch: { kind: "default" } } };
-    }
-    if (!environment.path) throw new Error("composer_environment_path_missing");
-    return { type: "host", hostId: environment.hostId, workspace: { type: "unmanaged", path: environment.path } };
-  }
-  if (environment.kind === "provisioning" && environment.type === "provider") {
-    if (!environment.request || typeof environment.request !== "object") {
-      throw new Error("composer_environment_request_missing");
-    }
-    return environment.request;
-  }
-  throw new Error("composer_environment_not_spawnable");
+  return snapshot.environmentRequest;
 }
 
 export function readyComposerSnapshot(snapshot: ComposerSelectionSnapshot, projectId: string): Extract<ComposerSelectionSnapshot, { status: "ready" }> {
@@ -128,7 +120,8 @@ export function readyComposerSnapshot(snapshot: ComposerSelectionSnapshot, proje
   if (snapshot.scope.kind !== "new-thread") throw new Error("composer_snapshot_scope_unsupported");
   if (snapshot.scope.projectId && snapshot.scope.projectId !== projectId) throw new Error("composer_snapshot_scope_project_mismatch");
   if (!snapshot.providerId || !snapshot.model) throw new Error("composer_snapshot_model_missing");
-  if (!existingEnvironmentUsable(snapshot.environment)) throw new Error("composer_environment_not_spawnable");
+  if (!nativeSelectionReady(snapshot)) throw new Error("composer_environment_not_spawnable");
+  if (snapshot.environmentProvenance.projectId !== projectId) throw new Error("composer_snapshot_provenance_project_mismatch");
   return snapshot;
 }
 

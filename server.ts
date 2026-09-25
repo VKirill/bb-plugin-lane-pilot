@@ -82,6 +82,7 @@ import {
   setAttemptWorkspace,
   setRunState,
   setRunThread,
+  freezeRunBinding,
   setRunWorkspace,
   transitionAttempt,
 } from "./src/database";
@@ -1591,18 +1592,9 @@ export default async function plugin(bb: BbPluginApi) {
     const runGate = configuredRunGate === "pre-merge" ? "pre-merge" : "none";
     const workspaceMode = parseWorkspaceMode(settings["adoc.040"]);
     const managedWorkspace = usesManagedWorktree(workspaceMode);
-    const snapshotEnv = native ? spawnEnvironmentFromSelection(native.environment) : null;
-    const snapshotHostId = native?.environment.kind === "existing" && "hostId" in native.environment
-      ? native.environment.hostId
-      : native?.environment.kind === "provisioning" && native.environment.machine?.type === "existing"
-        ? native.environment.machine.hostId
-        : undefined;
-    const runHostId = snapshotHostId ?? config.hostId;
-    const runWorkspacePath = native
-      ? (native.environment.kind === "existing" && native.environment.type === "host" && native.environment.workspaceType === "unmanaged"
-        ? native.environment.path ?? null
-        : null)
-      : (managedWorkspace ? null : config.writerWorkspacePath);
+    const snapshotEnv = native ? spawnEnvironmentFromSelection(native) : null;
+    const runHostId = native ? null : config.hostId;
+    const runWorkspacePath = native ? null : (managedWorkspace ? null : config.writerWorkspacePath);
     const runId = id("lprun");
     createRun(db, runId, projectId, kind, runWorkspacePath, runGate, buildRunPolicy(settings), runHostId);
     claimActivation(db, { projectId, pmThreadId:`pending:${sourceThreadId ?? "new"}`, runId });
@@ -1659,12 +1651,20 @@ export default async function plugin(bb: BbPluginApi) {
       try {
         if (!environmentId) throw new Error("spawn returned no environmentId");
         const environment = await bb.sdk.environments.get({ environmentId });
-        const hostId = stringAt(environment, "hostId") ?? runHostId;
-        const workspace = native
-          ? { path: stringAt(environment, "path") ?? (native.environment.kind === "existing" && "path" in native.environment ? native.environment.path ?? null : null), environmentId }
-          : resolveManagedWorkspace(environment, hostId);
-        if (workspace.path && !setRunWorkspace(db, runId, workspace.path, workspace.environmentId ?? environmentId)) {
-          throw new Error("managed workspace CAS failed; run is no longer pending or already has a workspace binding");
+        if (native) {
+          const hostId = stringAt(environment, "hostId");
+          const path = stringAt(environment, "path");
+          if (!hostId || !path) throw new Error("spawned environment missing host or path");
+          if (!freezeRunBinding(db, runId, { hostId, workspacePath: path, environmentId })) {
+            throw new Error("native environment CAS failed; run is no longer pending or already has a binding");
+          }
+        } else {
+          const hostId = stringAt(environment, "hostId") ?? runHostId;
+          const workspace = resolveManagedWorkspace(environment, hostId);
+          if (!workspace.path) throw new Error("managed workspace missing path");
+          if (!setRunWorkspace(db, runId, workspace.path, workspace.environmentId ?? environmentId)) {
+            throw new Error("managed workspace CAS failed; run is no longer pending or already has a workspace binding");
+          }
         }
       } catch (cause) {
         setRunState(db, runId, "blocked");

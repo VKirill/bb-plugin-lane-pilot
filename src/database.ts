@@ -373,6 +373,17 @@ export function setRunWorkspace(db: LanePilotDatabase, runId: string, workspaceP
   return result.changes === 1;
 }
 
+export function freezeRunBinding(db: LanePilotDatabase, runId: string, binding: { hostId: string; workspacePath: string; environmentId: string }): boolean {
+  const result = db.prepare(`UPDATE lane_pilot_run
+    SET writer_host_id=?, writer_workspace_path=?, writer_environment_id=?, updated_at=?
+    WHERE id=? AND state='pending'
+      AND writer_host_id IS NULL
+      AND writer_workspace_path IS NULL
+      AND writer_environment_id IS NULL`)
+    .run(binding.hostId, binding.workspacePath, binding.environmentId, Date.now(), runId);
+  return result.changes === 1;
+}
+
 export function setRunState(db: LanePilotDatabase, runId: string, state: string): void {
   db.prepare("UPDATE lane_pilot_run SET state=?, updated_at=? WHERE id=?").run(state, Date.now(), runId);
 }
