@@ -1290,16 +1290,21 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-        {saveError ? (
-          <Alert variant="destructive" data-testid={saveError.kind === "cas" ? "cas-conflict" : "setting-validation-error"}>
-            <AlertTitle>{saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}</AlertTitle>
-            <AlertDescription>
-              {saveError.kind === "validation" && (saveError.code === "setup_required" || saveError.code === "writer_binding_ambiguous")
-                ? null
-                : <Button size="sm" variant="outline" onClick={() => void load()}>{t("reload")}</Button>}
-            </AlertDescription>
-          </Alert>
-        ) : null}
+        {saveError ? (() => {
+          const titleOnly = saveError.kind === "validation" && (saveError.code === "setup_required" || saveError.code === "writer_binding_ambiguous");
+          return (
+            <Alert variant="destructive" data-testid={saveError.kind === "cas" ? "cas-conflict" : "setting-validation-error"}>
+              <AlertTitle className={titleOnly ? "mb-0 leading-5" : undefined}>
+                {saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}
+              </AlertTitle>
+              {titleOnly ? null : (
+                <AlertDescription>
+                  <Button size="sm" variant="outline" onClick={() => void load()}>{t("reload")}</Button>
+                </AlertDescription>
+              )}
+            </Alert>
+          );
+        })() : null}
         {data?.writerBinding ? (
           <Card data-testid="writer-binding">
             <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("projectMachineFolder")}</CardTitle></CardHeader>

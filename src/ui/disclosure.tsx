@@ -20,7 +20,7 @@ export function Disclosure({
   return (
     <details
       data-testid={testId}
-      className={cn("min-w-0 max-w-full [&[open]_svg]:rotate-90", className)}
+      className={cn("min-w-0 max-w-full [&[open]>summary_[data-disclosure-chevron]]:rotate-90", className)}
       {...(open === undefined ? {} : { open })}
     >
       <summary
@@ -31,7 +31,9 @@ export function Disclosure({
           compact ? "min-h-7 px-2 py-1 text-xs text-muted-foreground" : "min-h-8 px-2.5 py-1.5 text-sm",
         )}
       >
-        <Icon name="ChevronRight" className={cn("shrink-0 text-muted-foreground transition-transform", compact ? "size-3" : "size-3.5")} />
+        <span data-disclosure-chevron className="inline-flex shrink-0 transition-transform">
+          <Icon name="ChevronRight" className={cn("text-muted-foreground", compact ? "size-3" : "size-3.5")} />
+        </span>
         <span className="min-w-0 flex-1 text-left">{summary}</span>
       </summary>
       <div className={cn("border-l border-border", compact ? "ml-2 mt-1.5 space-y-1 pl-2.5" : "ml-2 mt-2 space-y-2 pl-3")}>
