@@ -17,6 +17,7 @@ import {
 } from "../ui-catalog";
 import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, detectLocale, detectLocaleHint, subscribeToLocaleHintChanges, type I18nKey, type Locale, type LocalePreference } from "../../i18n";
 import { settingHelp, settingLabel, settingUnitKey, settingUsesNumericControl } from "../setting-copy";
+import { agentPickerLabel } from "../agent-display";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import {
   AlertDialog,
@@ -1237,7 +1238,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             <SelectTrigger aria-label={t("mainAgent")} className="min-h-11"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__default__">{t("mainAgentDefault")}</SelectItem>
-              {(data?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agent.description}</SelectItem>)}
+              {(data?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agentPickerLabel(agent, t)}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>

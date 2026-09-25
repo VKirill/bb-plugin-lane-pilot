@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useBbNavigate, useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t, detectLocale, setLocaleOverride } from "../../i18n";
+import { agentPickerLabel } from "../agent-display";
 import { Button } from "../../components/ui/button";
 import { Label } from "../../components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
@@ -135,7 +136,7 @@ export function EnableLanePilotAction() {
             <SelectTrigger className="min-h-11" aria-label={t("pickAgent")}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__default__">{t("bbDefaultAgent")}</SelectItem>
-              {(ctx?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agent.description}</SelectItem>)}
+              {(ctx?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agentPickerLabel(agent, t)}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>

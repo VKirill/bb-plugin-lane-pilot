@@ -12,6 +12,7 @@ async function mountComposer(input: {
     bindingStatus: "resolved" | "setup_required" | null;
     projects: Array<{ id: string; name: string }>;
     compiledMainAgent?: "supported" | "none";
+    mainAgents?: Array<{ id: string; description: string }>;
     pluginRole?: string | null;
     threadStatus?: string | null;
     liveRun?: { threadId: string; runId: string } | null;
@@ -31,7 +32,9 @@ async function mountComposer(input: {
         projects: input.context.projects,
         bindingStatus: input.context.bindingStatus,
         compiledMainAgent: input.context.compiledMainAgent ?? "none",
-        mainAgents: [{ id: "dev-orchestrator", description: "Lane Pilot development orchestrator" }],
+        mainAgents: input.context.mainAgents ?? [
+          { id: "dev-orchestrator", description: "Lane Pilot development orchestrator" },
+        ],
         writer: { providerId: "codex", model: "test-model", reasoningEffort: "medium" },
         liveRun: input.context.liveRun ?? null,
         pluginRole: input.context.pluginRole ?? null,
@@ -106,6 +109,31 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(slot.getByRole("button", { name: "Start" }));
     expect(calls).toHaveLength(0);
     expect(slot.inspection.navigateCalls).toEqual([]);
+    slot.lifecycle.unmount();
+  });
+
+  it("shows locale stock labels and keeps a custom agent name", async () => {
+    const slot = await mountComposer({
+      projectId: "proj_a",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "proj_a" },
+      context: {
+        bindingStatus: "resolved",
+        projects: [{ id: "proj_a", name: "Alpha" }],
+        mainAgents: [
+          { id: "dev-orchestrator", description: "Lane Pilot development orchestrator" },
+          { id: "copy-lead", description: "Night desk" },
+        ],
+      },
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
+    await slot.findByTestId("activation-popover");
+    fireEvent.click(slot.getByLabelText("Lane Pilot agent"));
+    expect(slot.getAllByText("No specialist agent").length).toBeGreaterThan(0);
+    expect(slot.getByText("Development coordinator")).toBeTruthy();
+    expect(slot.getByText("Night desk")).toBeTruthy();
+    expect(slot.queryByText("Lane Pilot development orchestrator")).toBeNull();
+    expect(slot.queryByText("Lane Pilot copy lead")).toBeNull();
     slot.lifecycle.unmount();
   });
 });
