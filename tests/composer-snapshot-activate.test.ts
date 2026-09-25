@@ -122,6 +122,10 @@ describe("composer snapshot activate", () => {
     expect(spawns[0]?.model).toBe("claude-opus-5");
     expect(spawns[0]?.reasoningLevel).toBe("medium");
     expect(spawns[0]?.environment).toEqual(request);
+    const prompt = String(spawns[0]?.prompt ?? "");
+    expect(prompt).toContain("current workspace");
+    expect(prompt).toMatch(/Wait for the user's task/i);
+    expect(prompt).not.toMatch(/fixture|production write|demonstrate the guard|lane_pilot_dispatch_writer|lane_pilot_wait_writer|\/tmp\/writer/i);
     expect(calls).not.toContain("writePmSettings");
     expect(spawns[0]?.experimental_vkCompiledMainAgent).toMatchObject({ id: "dev-orchestrator" });
     expect(spawns[0]?.experimental_vkCompiledMainAgent).not.toHaveProperty("model");

@@ -1158,7 +1158,14 @@ async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof op
   }
 }
 
-function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = false): string {
+function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = false, native = false): string {
+  if (native) {
+    return [
+      "You are the Lane Pilot PM in the selected role.",
+      `Run id: ${runId}. Stay in this thread's current workspace.`,
+      "Wait for the user's task. Do not write code, run write probes, or dispatch a writer until the user asks.",
+    ].join("\n");
+  }
   return [
     "You are the Lane Pilot PM. Do not write production code yourself.",
     managedWorkspace
@@ -1621,7 +1628,7 @@ export default async function plugin(bb: BbPluginApi) {
         ...(native
           ? writerExecutionSelection(spawnProviderId, spawnModel, native.reasoningLevel, spawnTier)
           : { providerId: spawnProviderId, model: spawnModel, executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const } }),
-        prompt: pmPrompt(runId, config, !native && managedWorkspace),
+        prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native)),
         environment: (snapshotEnv ?? (managedWorkspace
           ? { type:"host", hostId:config.hostId, workspace:{ type:"managed-worktree", baseBranch:{ kind:"default" } } }
           : { type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.pmWorkspacePath } })) as never,
