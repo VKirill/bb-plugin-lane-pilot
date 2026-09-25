@@ -1,3 +1,5 @@
+import { createNativeInstaller } from "./src/native-install-lifecycle";
+export { experimental_vkLifecycle } from "./src/native-install-lifecycle";
 import { createHash, randomUUID } from "node:crypto";
 import { t } from "./i18n";
 import { isAbsolute, relative, resolve } from "node:path";
@@ -1213,8 +1215,20 @@ export default async function plugin(bb: BbPluginApi) {
       return { context: mentionContext(parsed) };
     },
   });
-  bb.experimental_hooks.on("message.dispatch", (ctx) => handleNativeDispatch(bb, host, ctx, db));
-  bb.providers.experimental_contributeEnv("claude-code", (ctx) => nativeContributedEnv(bb, host, ctx));
+  const nativeInstaller = createNativeInstaller({
+    supported: (bb.server as unknown as { experimental_vkPluginLifecycle?: boolean }).experimental_vkPluginLifecycle === true,
+    kv: bb.storage.kv,
+    call: (hostId, action) => host.call("nativeInstall", { requestedHostId: hostId, action }, { hostId, timeoutMs: 600_000 }),
+    log: (message) => bb.log.warn(message),
+  });
+  const nativeHost = {
+    async call(method: string, input: unknown, options: { hostId: string }) {
+      if (method === "prepareNativeClaude") await nativeInstaller.ensure(options.hostId);
+      return (host.call as (method: string, input: unknown, options: { hostId: string }) => Promise<unknown>)(method, input, options);
+    },
+  };
+  bb.experimental_hooks.on("message.dispatch", (ctx) => handleNativeDispatch(bb, nativeHost, ctx, db));
+  bb.providers.experimental_contributeEnv("claude-code", (ctx) => nativeContributedEnv(bb, nativeHost, ctx));
   let kvChain = Promise.resolve();
   function serializedKv<T>(work: () => Promise<T>): Promise<T> {
     const next = kvChain.then(work, work);
@@ -5328,13 +5342,8 @@ export default async function plugin(bb: BbPluginApi) {
       const config = loadPrototypeConfig(db, projectId);
       if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
       if (!confirmExternalOps) return { schemaVersion:1, action:"install", status:"blocked", reason:"Explicit installation confirmation is required; no operation was run." };
-      const inventory = await coexistenceInventory(projectId, config.hostId);
-      const manager = inventory.managers.find((row) => row.manager === "managed-checkout");
-      if (!manager) throw new Error("Read-only inventory did not return the managed-checkout manager");
-      const receipt = await coexistenceOperation({
-        projectId, hostId:config.hostId, operation:"install", manager:"managed-checkout", path:manager.path,
-        expectedSha256:manager.sha256, targetSha:inventory.targetSha,
-      });
+      const result = await nativeInstaller.install(config.hostId);
+      const receipt = { schemaVersion: 1, action: "install", status: "ok", native: result };
       saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
       return receipt;
     },

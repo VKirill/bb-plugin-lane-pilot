@@ -220,6 +220,7 @@ export function nativeLauncherScript(input: {
   return [
     "#!/bin/sh",
     "unset BB_CLAUDE_CODE_EXECUTABLE",
+    'export PATH="$HOME/.agents/bin:$HOME/.local/bin:$PATH"',
     `if [ ! -f ${shellQuote(input.settingsPath)} ] || [ ! -f ${shellQuote(inject)} ] || [ ! -f ${shellQuote(guard)} ]; then`,
     "  echo 'Lane Pilot: native hooks missing' >&2",
     "  exit 78",

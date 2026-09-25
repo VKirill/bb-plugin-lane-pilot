@@ -26,6 +26,7 @@ async function setup(input?: {
   environmentPath?: string;
   failPrepareWithCwd?: boolean;
 }) {
+  const failPrepareWithCwd = input?.failPrepareWithCwd;
   const rpcCalls: Array<{ method: string; input: unknown }> = [];
   const prepareCalls: Array<{ cwd: string | null; agentId: string; agentsJson: string | null }> = [];
   const metadata: Array<{ threadId: string; set: Record<string, unknown> }> = [];
@@ -68,13 +69,14 @@ async function setup(input?: {
       },
     },
     experimental_callHostRpc: async ({ method, input }) => {
+      if (method === "nativeInstall") return { status: "enabled", sourceSha: "a".repeat(40), ownedFiles: 1, preservedFiles: 0 };
       if (method === "discoverClaudeAgents") throw new Error("discovery belongs to message.dispatch, not prepare");
       if (method === "prepareNativeClaude") {
         const cwd = (input as { cwd?: string }).cwd ?? null;
         const agentId = String((input as { agentId: string }).agentId);
         const agentsJson = (input as { agentsJson: string | null }).agentsJson ?? null;
         prepareCalls.push({ cwd, agentId, agentsJson });
-        if (input?.failPrepareWithCwd && cwd) throw new Error("late prepare failed");
+        if (failPrepareWithCwd && cwd) throw new Error("late prepare failed");
         return {
           env: [{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/launcher", reason: `Lane Pilot native: ${agentId}` }],
           agentId,
@@ -197,6 +199,7 @@ it("rejects a missing profile before contributing env", async () => {
       },
     },
     experimental_callHostRpc: async ({ method, input }) => {
+      if (method === "nativeInstall") return { status: "enabled", sourceSha: "a".repeat(40), ownedFiles: 1, preservedFiles: 0 };
       if (method === "discoverClaudeAgents") {
         return { agents: [{ id: "dev-orchestrator", source: "user" }], version: "t", sessionAgents: true, pluginDir: true, supported: true };
       }

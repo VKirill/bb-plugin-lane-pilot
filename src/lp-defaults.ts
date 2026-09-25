@@ -53,6 +53,18 @@ export function inheritProjectValues(
   apply("writer.provider", defaults.writerProviderId);
   apply("writer.model", defaults.writerModel);
   apply("writer.reasoning_effort", defaults.writerReasoningEffort);
+  const hasWriterSelection = [
+    project["writer.provider"], project["writer.model"],
+    project.writerProviderId, project.writerModel,
+    defaults.writerProviderId, defaults.writerModel,
+  ].some((value) => typeof value === "string" && value.length > 0);
+  if (!hasWriterSelection) {
+    apply("writer.provider", "codex");
+    apply("writer.model", "gpt-6-luna");
+    if (values["writer.reasoning_effort"] === undefined) apply("writer.reasoning_effort", "high");
+    apply("writer.service_tier", "fast");
+    apply("jev.LANE_JEV_EFFORT", false);
+  }
   apply("helper.placement", defaults.helperPlacement ?? "plugin");
   apply("browser_qa.host_id", defaults.qaHostId);
   if (!Object.prototype.hasOwnProperty.call(project, "helper.placement") && values["helper.placement"] === undefined) {

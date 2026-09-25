@@ -28,10 +28,12 @@ import {
   prepareNativeClaudeHost,
 } from "./src/host-handlers";
 import { sessionInventory } from "./src/session-inventory";
+import { nativeInstallHost } from "./src/native-install-host";
 
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
+    nativeInstall: nativeInstallHost,
     detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
     runCli, runCommand, runSandboxedCommand, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,

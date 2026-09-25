@@ -123,6 +123,10 @@ const coexistenceOperationResult = z.object({
 }).strict();
 
 export const hostContract = defineRpcContract({
+  nativeInstall: {
+    input: z.object({ requestedHostId: z.string().min(1), action: z.enum(["install", "enable", "disable", "remove", "status"]) }).strict(),
+    output: z.object({ status: z.enum(["absent", "prepared", "enabled", "disabled"]), sourceSha: z.string().nullable(), ownedFiles: z.number(), preservedFiles: z.number() }).strict(),
+  },
   gitOwnershipBase: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), baseRef:z.string().min(1).max(240).optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","invalid-ref","failed"]), branch:z.string().nullable(), headSha:z.string().nullable(), baseRef:z.string().nullable(), baseSha:z.string().nullable(), compareCommitted:z.boolean(), reason:z.string().nullable() }).strict(),
