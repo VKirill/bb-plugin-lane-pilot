@@ -353,7 +353,7 @@ export const hostContract = defineRpcContract({
   },
   prepareNativeClaude: {
     input: z.object({
-      cwd: z.string().startsWith("/"),
+      cwd: z.string().startsWith("/").optional(),
       agentId: z.string().min(1).max(200),
       agentsJson: z.string().max(200_000).nullable(),
     }).strict(),

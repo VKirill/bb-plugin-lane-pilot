@@ -79,6 +79,26 @@ describe("E2 Lane Pilot PM guard", () => {
     unlinkSync(link);
   });
 
+  it("treats Claude agentSetting namespace as the same PM identity", () => {
+    const namespaced = JSON.stringify({
+      agent_type: "lane-stack:dev-orchestrator",
+      tool_name: "Write",
+      tool_input: { file_path: "src/app.ts" },
+      cwd,
+    });
+    const short = JSON.stringify({
+      agent_type: "dev-orchestrator",
+      tool_name: "Write",
+      tool_input: { file_path: "src/app.ts" },
+      cwd,
+    });
+    const options = { encoding: "utf8" as const, env: { ...process.env, AGENT_HOOK_CLIENT: "claude" } };
+    const a = spawnSync("python3", [guard], { ...options, input: namespaced });
+    const b = spawnSync("python3", [guard], { ...options, input: short });
+    expect(a.status).toBe(b.status);
+    expect(a.status).not.toBe(0);
+  });
+
   it("leaves representative upstream PM_AGENTS behavior byte-for-byte", () => {
     const probes = [
       bash("read","git status",true),

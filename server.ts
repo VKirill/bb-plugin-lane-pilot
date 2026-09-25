@@ -122,6 +122,8 @@ import {
   nativeContributedEnv,
   prepareNativeSessionRecord,
 } from "./src/native-dispatch";
+import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "./src/native-run";
+import { NATIVE_LP_BRIDGE_TOOLS } from "./src/native-session-hooks";
 import { helperSpawnFields, resolveHelperPlacement } from "./src/helper-placement";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "./src/stages/critique";
 import {
@@ -1202,12 +1204,17 @@ export default async function plugin(bb: BbPluginApi) {
     search: () => [],
     resolve: async (token) => {
       const selected = await bb.storage.kv.get(`native-selection:${token}`);
-      if (!selected) throw new Error("Lane Pilot selection is missing. Choose the profile again.");
-      return { context: mentionContext(nativeSelectionSchema.parse(selected)) };
+      if (!selected) {
+        bb.log.warn(`native-trace mention.resolve token=${token} reason=selection_missing`);
+        throw new Error("Lane Pilot selection is missing. Choose the profile again.");
+      }
+      const parsed = nativeSelectionSchema.parse(selected);
+      bb.log.warn(`native-trace mention.resolve token=${parsed.token} project=${parsed.projectId} reason=ok`);
+      return { context: mentionContext(parsed) };
     },
   });
   bb.experimental_hooks.on("message.dispatch", (ctx) => handleNativeDispatch(bb, host, ctx, db));
-  bb.providers.experimental_contributeEnv("claude-code", (ctx) => nativeContributedEnv(bb, ctx));
+  bb.providers.experimental_contributeEnv("claude-code", (ctx) => nativeContributedEnv(bb, host, ctx));
   let kvChain = Promise.resolve();
   function serializedKv<T>(work: () => Promise<T>): Promise<T> {
     const next = kvChain.then(work, work);
@@ -5574,14 +5581,35 @@ export default async function plugin(bb: BbPluginApi) {
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;
     const runId = context.pluginMetadata.lanePilotRunId;
-    if (context.origin.pluginId !== "lane-pilot" || role !== "pm" || typeof runId !== "string") return { tools:[], skills:[] };
+    const legacyOrigin = context.origin.pluginId === "lane-pilot" && role === "pm" && typeof runId === "string";
+    const threadId = context.thread?.id;
+    const projectId = context.project?.id;
+    const native = typeof runId === "string" && threadId && projectId
+      ? ownedNativePmRun(db, { runId, threadId, projectId, role })
+      : null;
+    if (!legacyOrigin && !native) return { tools:[], skills:[] };
+    const resolvedRunId = typeof runId === "string" ? runId : native!.id;
+    if (native && context.environment?.id && context.environment.path && context.host?.id) {
+      finalizeNativeLaneBinding({
+        db,
+        runId: resolvedRunId,
+        hostId: context.host.id,
+        workspacePath: context.environment.path,
+        environmentId: context.environment.id,
+      });
+    }
+    const run = getRun(db, resolvedRunId);
     const config = loadPrototypeConfig(db, context.project.id);
+    const writerWorkspace = writerWorkspaceForPmInstructions(run, config?.writerWorkspacePath);
+    const waiting = Boolean(native && run?.kind === "cli" && !nativeRunReady(db, resolvedRunId));
     return {
-      tools:["lane_pilot_read","lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli","lane_pilot_browser_qa","lane_pilot_ingest_opencode_telemetry","lane_pilot_docs_maintain","lane_pilot_onboarding_preview","lane_pilot_onboarding_apply","lane_pilot_memory_maintain","lane_pilot_memory_context","lane_pilot_night_review","lane_pilot_night_fix","lane_pilot_workspace_status","lane_pilot_gate_report","lane_pilot_gate_triage"],
+      tools: [...NATIVE_LP_BRIDGE_TOOLS],
       skills:[],
-      instructions:config
-        ? `Lane Pilot PM ${runId}. Writer=${config.writerProviderId}/${config.writerModel}; writer workspace=${config.writerWorkspacePath}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread. To delegate: supply the complete canonical plan in the separate plan parameter of lane_pilot_dispatch_writer and the task-v2 contract in task; never put wrapper/system instructions into plan. If pm_read is enabled, task.read_first is read by the bounded native PM-read stage before critique; its receipt and summary are passed to critique and writer. Then immediately note its runId/attemptId; call lane_pilot_wait_writer with that runId (timeoutSec up to 240), repeating while running. After a passed writer receipt, onboarding_preview can return an explicit hash-bound Markdown proposal; present it for review and only call onboarding_apply after separate explicit user confirmation. Return every stage receipt verbatim.`
-        : `Lane Pilot PM ${runId}, but project configuration is missing.`,
+      instructions: waiting
+        ? `Lane Pilot PM ${resolvedRunId} is waiting for the native environment to attach. Lane Pilot tools are already bound to this chat; do not dispatch writers until the workspace is frozen.`
+        : config
+        ? `Lane Pilot PM ${resolvedRunId}. Writer=${config.writerProviderId}/${config.writerModel}; writer workspace=${writerWorkspace}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread. To delegate: supply the complete canonical plan in the separate plan parameter of lane_pilot_dispatch_writer and the task-v2 contract in task; never put wrapper/system instructions into plan. If pm_read is enabled, task.read_first is read by the bounded native PM-read stage before critique; its receipt and summary are passed to critique and writer. Then immediately note its runId/attemptId; call lane_pilot_wait_writer with that runId (timeoutSec up to 240), repeating while running. After a passed writer receipt, onboarding_preview can return an explicit hash-bound Markdown proposal; present it for review and only call onboarding_apply after separate explicit user confirmation. Return every stage receipt verbatim.`
+        : `Lane Pilot PM ${resolvedRunId}, but project configuration is missing.`,
     };
   });
 

@@ -91,7 +91,7 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(enable);
     await slot.findByTestId("activation-popover");
     expect(slot.queryByLabelText("Choose a project")).toBeNull();
-    expect((slot.getByRole("button", { name: "Prepare this composer" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((slot.getByRole("button", { name: "Enable for this chat" }) as HTMLButtonElement).disabled).toBe(true);
     expect(slot.getByText(/BB composer first/i)).toBeTruthy();
     slot.lifecycle.unmount();
   });
@@ -105,7 +105,7 @@ describe("Enable Lane Pilot composer action", () => {
     });
     fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
     await slot.findByTestId("activation-popover");
-    fireEvent.click(slot.getByRole("button", { name: "Prepare this composer" }));
+    fireEvent.click(slot.getByRole("button", { name: "Enable for this chat" }));
     await waitFor(() => expect(slot.inspection.composer.mentions).toEqual([
       { provider: "lane-pilot", id: "11111111-1111-1111-1111-111111111111", label: "Development coordinator" },
     ]));

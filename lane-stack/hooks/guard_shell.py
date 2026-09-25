@@ -12,6 +12,14 @@ from lib_payload import (  # type: ignore
 
 PM_AGENTS = {"dev-orchestrator", "frontend-orchestrator", "marketing-orchestrator"}
 LANE_PILOT_PM_AGENT_TYPES = {"lane-pilot-pm"}
+
+
+def agent_key(agent: object) -> str | None:
+    if not isinstance(agent, str) or not agent.strip():
+        return None
+    return agent.strip().rsplit(":", 1)[-1]
+
+
 LANE_PILOT_READ_COMMANDS = {
     "cat", "cd", "cmp", "cut", "echo", "file", "find", "grep", "head", "jq",
     "ls", "printf", "pwd", "readlink", "realpath", "rg", "sed", "sha256sum",
@@ -620,7 +628,8 @@ def main() -> None:
     client = detect_client(p)
     name = tool_name(p)
     agent = p.get("agent_type")
-    if agent in LANE_PILOT_PM_AGENT_TYPES:
+    key = agent_key(agent)
+    if key in LANE_PILOT_PM_AGENT_TYPES:
         if is_edit_tool(name):
             path = file_path(p)
             if not path or not _pm_edit_allowed(path, p.get("cwd") or p.get("workspaceRoot")):
@@ -635,7 +644,7 @@ def main() -> None:
         if error:
             _deny_pm(client, error)
         emit_allow(client)
-    if agent in PM_AGENTS and is_edit_tool(name):
+    if key in PM_AGENTS and is_edit_tool(name):
         path = file_path(p)
         if not path or not _pm_edit_allowed(path, p.get("cwd") or p.get("workspaceRoot")):
             _deny_pm(client, f"direct {name or 'edit'} outside PM contract files is forbidden")
@@ -650,7 +659,7 @@ def main() -> None:
 
     low = cmd.lower()
 
-    if p.get("agent_type") == "dev-orchestrator" and re.search(
+    if key == "dev-orchestrator" and re.search(
         r"(?:^|[;&|(\n]\s*|\b(?:until|while|if|then|do|exec|command)\s+)"
         r"(?:[^\s;&|()]+/)?run-controller\s+(?:start|watch|status)\b",
         cmd,
@@ -664,7 +673,7 @@ def main() -> None:
             "Agent(lane-supervisor) for manual status or recovery.",
         )
 
-    if agent in PM_AGENTS:
+    if key in PM_AGENTS:
         error = _pm_shell_error(cmd)
         if error:
             _deny_pm(client, error)

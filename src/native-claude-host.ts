@@ -3,8 +3,11 @@ import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "n
 import { constants } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { basename, delimiter, homedir, isAbsolute, join, relative, resolve } from "node:path";
-import { nativeAgentCliId } from "./native-session";
+import { homedir } from "node:os";
+import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
+import { stockAgentsOverlayFromInstalled, unionLpBridgeToolsOnAgentsJson } from "./native-agent-overlay";
+import { nativeAgentCliId, nativeAgentSettingId } from "./native-session";
+import { materializeNativeHookSession } from "./native-session-hooks";
 
 const exec = promisify(execFile);
 
@@ -71,7 +74,7 @@ async function listMarkdownNames(root: string): Promise<string[]> {
 async function enabledPluginAgents(
   cwd: string,
   configDir: string,
-): Promise<Array<{ id: string; source: string }>> {
+): Promise<Array<{ id: string; source: string; path: string }>> {
   const enabled: Record<string, boolean> = {};
   for (const path of [
     join(configDir, "settings.json"),
@@ -88,7 +91,7 @@ async function enabledPluginAgents(
   const registry = await readJsonObject(join(configDir, "plugins/installed_plugins.json"));
   const listed = registry.plugins;
   if (!listed || typeof listed !== "object" || Array.isArray(listed)) return [];
-  const agents: Array<{ id: string; source: string }> = [];
+  const agents: Array<{ id: string; source: string; path: string }> = [];
   for (const [key, installations] of Object.entries(listed as Record<string, unknown>)) {
     if (enabled[key] === false || !Array.isArray(installations)) continue;
     const rows = installations.filter((row): row is Record<string, unknown> => {
@@ -118,7 +121,7 @@ async function enabledPluginAgents(
       if (!within(row.installPath, resolved)) continue;
       for (const nameOnDisk of await listMarkdownNames(resolved)) {
         const id = nativeAgentCliId(nameOnDisk);
-        agents.push({ id, source: `plugin:${name}` });
+        agents.push({ id, source: `plugin:${name}`, path: join(resolved, `${nameOnDisk}.md`) });
       }
     }
   }
@@ -139,18 +142,48 @@ export async function discoverClaudeAgents(cwd: string, signal?: AbortSignal) {
   const dir = process.env.CLAUDE_CONFIG_DIR
     ? resolve(home, process.env.CLAUDE_CONFIG_DIR.replace(/^~\//, home + "/"))
     : join(home, ".claude");
-  const agents = new Map<string, { id: string; source: string }>();
-  for (const row of await enabledPluginAgents(cwd, dir)) agents.set(row.id, row);
+  const agents = new Map<string, { id: string; source: string; path: string }>();
+  for (const row of await listInstalledAgentFiles(cwd, dir)) agents.set(row.id, row);
+  return {
+    agents: [...agents.values()].map(({ id, source }) => ({ id, source })).sort((a, b) => a.id.localeCompare(b.id)),
+    version,
+    sessionAgents,
+    pluginDir,
+    supported: true,
+  };
+}
+
+export async function resolveInstalledAgentFile(cwd: string, agentId: string): Promise<{
+  id: string;
+  source: string;
+  path: string;
+} | null> {
+  const home = homedir();
+  const dir = process.env.CLAUDE_CONFIG_DIR
+    ? resolve(home, process.env.CLAUDE_CONFIG_DIR.replace(/^~\//, home + "/"))
+    : join(home, ".claude");
+  const id = nativeAgentCliId(agentId);
+  const agents = new Map<string, { id: string; source: string; path: string }>();
+  for (const row of await listInstalledAgentFiles(cwd, dir)) agents.set(row.id, row);
+  return agents.get(id) ?? null;
+}
+
+async function listInstalledAgentFiles(
+  cwd: string,
+  configDir: string,
+): Promise<Array<{ id: string; source: string; path: string }>> {
+  const agents: Array<{ id: string; source: string; path: string }> = [];
+  agents.push(...await enabledPluginAgents(cwd, configDir));
   for (const [root, source] of [
-    [join(dir, "agents"), "user"],
+    [join(configDir, "agents"), "user"],
     [join(cwd, ".claude/agents"), "project"],
   ] as const) {
     for (const name of await listMarkdownNames(root)) {
       const id = nativeAgentCliId(name);
-      agents.set(id, { id, source });
+      agents.push({ id, source, path: join(root, `${name}.md`) });
     }
   }
-  return { agents: [...agents.values()].sort((a, b) => a.id.localeCompare(b.id)), version, sessionAgents, pluginDir, supported: true };
+  return agents;
 }
 
 export function catalogHasAgent(agents: Array<{ id: string }>, agentId: string): boolean {
@@ -160,14 +193,7 @@ export function catalogHasAgent(agents: Array<{ id: string }>, agentId: string):
 
 function sessionAgentsObject(agentId: string, agentsJson: string | null): Record<string, unknown> | null {
   if (!agentsJson) return null;
-  const parsed = JSON.parse(agentsJson) as unknown;
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("native_agents_json_invalid");
-  const body = parsed as Record<string, unknown>;
-  const id = nativeAgentCliId(agentId);
-  if (body[id] && typeof body[id] === "object") return { [id]: body[id] };
-  const only = Object.values(body)[0];
-  if (only && typeof only === "object") return { [id]: only };
-  throw new Error("native_agents_json_missing_profile");
+  return unionLpBridgeToolsOnAgentsJson(nativeAgentCliId(agentId), agentsJson);
 }
 
 async function atomicWrite(path: string, content: string, mode: number) {
@@ -180,48 +206,120 @@ async function atomicWrite(path: string, content: string, mode: number) {
   }
 }
 
+export function nativeLauncherScript(input: {
+  destDir: string;
+  command: string;
+  settingsPath: string;
+  agentId: string;
+  settingId: string;
+  extraArgs: string[];
+}): string {
+  const inject = join(input.destDir, "hooks", "inject_agent_type.py");
+  const guard = join(input.destDir, "hooks", "guard_shell.py");
+  const args = [...input.extraArgs, `--settings ${shellQuote(input.settingsPath)}`, `--agent ${shellQuote(input.agentId)}`];
+  return [
+    "#!/bin/sh",
+    "unset BB_CLAUDE_CODE_EXECUTABLE",
+    `if [ ! -f ${shellQuote(input.settingsPath)} ] || [ ! -f ${shellQuote(inject)} ] || [ ! -f ${shellQuote(guard)} ]; then`,
+    "  echo 'Lane Pilot: native hooks missing' >&2",
+    "  exit 78",
+    "fi",
+    `if [ ! -x ${shellQuote(input.command)} ]; then`,
+    "  echo 'Lane Pilot: claude CLI is not executable' >&2",
+    "  exit 78",
+    "fi",
+    `export LANE_PILOT_AGENT_TYPE=${shellQuote(input.settingId)}`,
+    "export AGENT_HOOK_CLIENT=claude",
+    `export LANE_PILOT_HOOK_TRACE=${shellQuote(join(input.destDir, "hook-trace.jsonl"))}`,
+    `exec ${shellQuote(input.command)} "$@" ${args.join(" ")}`,
+    "",
+  ].join("\n");
+}
+
 export async function prepareNativeClaude(input: {
-  cwd: string;
+  cwd?: string | null;
   agentId: string;
   agentsJson: string | null;
   dataDir: string;
   signal?: AbortSignal;
 }) {
   const agentId = nativeAgentCliId(input.agentId);
-  const catalog = await discoverClaudeAgents(input.cwd, input.signal);
-  if (!catalog.supported) throw new Error("This Claude Code version does not support --agent.");
-  if (!catalogHasAgent(catalog.agents, agentId) && !input.agentsJson) {
-    throw new Error(`Agent ${agentId} is not installed in ${input.cwd}.`);
-  }
-  if (input.agentsJson && !catalog.sessionAgents) {
-    throw new Error("edited_profile_session_override_unavailable");
+  const cwd = input.cwd?.trim() && input.cwd.startsWith("/") ? input.cwd : null;
+  let settingId = nativeAgentSettingId(input.agentId);
+  let sessionAgentsJson = input.agentsJson
+    ? JSON.stringify(sessionAgentsObject(agentId, input.agentsJson))
+    : null;
+  let sourceStamp = input.agentsJson ? "edited" : "none";
+  if (cwd) {
+    const catalog = await discoverClaudeAgents(cwd, input.signal);
+    if (!catalog.supported) throw new Error("This Claude Code version does not support --agent.");
+    if (!catalogHasAgent(catalog.agents, agentId) && !input.agentsJson) {
+      throw new Error(`Agent ${agentId} is not installed in ${cwd}.`);
+    }
+    settingId = nativeAgentSettingId(
+      input.agentId,
+      catalog.agents.find((row) => nativeAgentCliId(row.id) === agentId)?.source,
+    );
+    if (sessionAgentsJson && !catalog.sessionAgents) {
+      throw new Error("edited_profile_session_override_unavailable");
+    }
+    if (!input.agentsJson) {
+      const installed = await resolveInstalledAgentFile(cwd, agentId);
+      if (!installed) throw new Error(`Agent ${agentId} source file is missing in ${cwd}.`);
+      const markdown = await readFile(installed.path, "utf8");
+      const overlay = stockAgentsOverlayFromInstalled({
+        agentId,
+        source: installed.source,
+        markdown,
+      });
+      if (overlay) {
+        if (!catalog.sessionAgents) throw new Error("stock_tools_overlay_unavailable");
+        sessionAgentsJson = JSON.stringify(overlay);
+        sourceStamp = createHash("sha256").update(`${installed.source}\n${markdown}`).digest("hex");
+      }
+    }
   }
   const command = await installedClaudeExecutable();
   const digest = createHash("sha256").update(JSON.stringify({
-    agentId, command, agentsJson: input.agentsJson, version: 2,
+    agentId, command, agentsJson: sessionAgentsJson, settingId, sourceStamp, version: 5,
   })).digest("hex").slice(0, 24);
   const dir = join(input.dataDir, "native-launchers", digest);
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  const args = [`--agent ${shellQuote(agentId)}`];
-  if (input.agentsJson) {
+  const session = await materializeNativeHookSession({
+    cwd,
+    destDir: dir,
+    moduleUrl: import.meta.url,
+  });
+  const extraArgs: string[] = [];
+  if (sessionAgentsJson) {
     const file = join(dir, "agents.json");
-    await atomicWrite(file, JSON.stringify(sessionAgentsObject(agentId, input.agentsJson)), 0o600);
-    args.unshift(`--agents ${shellQuote(file)}`);
+    await atomicWrite(file, sessionAgentsJson, 0o600);
+    extraArgs.unshift(`--agents ${shellQuote(file)}`);
   }
   const launcher = join(dir, "claude");
-  await atomicWrite(
-    launcher,
-    `#!/bin/sh\nunset BB_CLAUDE_CODE_EXECUTABLE\nexec ${shellQuote(command)} "$@" ${args.join(" ")}\n`,
-    0o700,
-  );
+  await atomicWrite(launcher, nativeLauncherScript({
+    destDir: dir,
+    command,
+    settingsPath: session.settingsPath,
+    agentId,
+    settingId,
+    extraArgs,
+  }), 0o700);
   return {
-    env: [{
-      name: "BB_CLAUDE_CODE_EXECUTABLE",
-      value: launcher,
-      reason: `Lane Pilot native: ${agentId}`,
-    }],
+    env: [
+      {
+        name: "BB_CLAUDE_CODE_EXECUTABLE",
+        value: launcher,
+        reason: `Lane Pilot native: ${agentId}`,
+      },
+      {
+        name: "LANE_PILOT_AGENT_TYPE",
+        value: settingId,
+        reason: `Claude agentSetting ${settingId}`,
+      },
+    ],
     agentId,
     claudePath: command,
-    sessionAgents: Boolean(input.agentsJson),
+    sessionAgents: Boolean(sessionAgentsJson),
   };
 }

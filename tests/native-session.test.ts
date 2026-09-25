@@ -3,15 +3,17 @@ import {
   classifyCliAgentsCollision,
   collisionMessage,
   nativeAgentCliId,
+  nativeAgentSettingId,
   nativeSelectionMarker,
   tokensFrom,
 } from "../src/native-session";
 
 describe("native agent id", () => {
-  it("keeps the short lane-pm / guard_shell id and never a lane-stack prefix", () => {
+  it("keeps --agent short and reconstructs the live agentSetting namespace", () => {
     expect(nativeAgentCliId("dev-orchestrator")).toBe("dev-orchestrator");
     expect(nativeAgentCliId("lane-stack:dev-orchestrator")).toBe("dev-orchestrator");
-    expect(nativeAgentCliId("dev-orchestrator")).not.toContain(":");
+    expect(nativeAgentSettingId("dev-orchestrator", "plugin:lane-stack")).toBe("lane-stack:dev-orchestrator");
+    expect(nativeAgentSettingId("lane-stack:dev-orchestrator")).toBe("lane-stack:dev-orchestrator");
   });
 });
 

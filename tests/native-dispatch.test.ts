@@ -23,10 +23,11 @@ function context(threadId: string, text: string, hostId = "host_a", path = "/wor
 async function setup(input?: {
   pending?: unknown;
   thread?: unknown;
-  prepare?: (cwd: string, agentId: string) => unknown;
+  environmentPath?: string;
+  failPrepareWithCwd?: boolean;
 }) {
   const rpcCalls: Array<{ method: string; input: unknown }> = [];
-  const prepareCalls: Array<{ cwd: string; agentId: string; agentsJson: string | null }> = [];
+  const prepareCalls: Array<{ cwd: string | null; agentId: string; agentsJson: string | null }> = [];
   const metadata: Array<{ threadId: string; set: Record<string, unknown> }> = [];
   const fake = createFakePluginHost({
     pluginId: "lane-pilot",
@@ -44,6 +45,12 @@ async function setup(input?: {
           id: "project_a",
           sources: [{ hostId: "host_a", path: "/workspace", isDefault: true }],
         }),
+      },
+      environments: {
+        get: async ({ environmentId }: { environmentId: string }) => {
+          if (!input?.environmentPath) throw new Error("environment not attached");
+          return { id: environmentId, path: input.environmentPath, hostId: "host_a" };
+        },
       },
       plugins: {
         experimental_discoverRpc: async () => [{ method: "pending" }, { method: "thread" }],
@@ -63,10 +70,11 @@ async function setup(input?: {
     experimental_callHostRpc: async ({ method, input }) => {
       if (method === "discoverClaudeAgents") throw new Error("discovery belongs to message.dispatch, not prepare");
       if (method === "prepareNativeClaude") {
-        const cwd = String((input as { cwd: string }).cwd);
+        const cwd = (input as { cwd?: string }).cwd ?? null;
         const agentId = String((input as { agentId: string }).agentId);
         const agentsJson = (input as { agentsJson: string | null }).agentsJson ?? null;
         prepareCalls.push({ cwd, agentId, agentsJson });
+        if (input?.failPrepareWithCwd && cwd) throw new Error("late prepare failed");
         return {
           env: [{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/launcher", reason: `Lane Pilot native: ${agentId}` }],
           agentId,
@@ -285,4 +293,109 @@ it("rejects a Lane token or bound thread on a non-Claude provider and leaves ord
   }));
   expect(rebound).toMatchObject({ action: "reject" });
   expect((rebound as { message: string }).message).toMatch(/Claude Code/);
+});
+
+function coldStart(threadId: string, text: string) {
+  return makeMessageDispatchHookContext({
+    thread: { id: threadId, projectId: "project_a", providerId: "claude-code", status: "pending" },
+    project: { id: "project_a" },
+    host: { id: "host_a" },
+    environment: null,
+    environmentIntent: {
+      kind: "provider",
+      environmentProviderId: "project-checkout",
+      machine: { type: "existing", hostId: "host_a" },
+      inputs: { path: "/checkout/selected", sourceId: "src_1" },
+    },
+    requestedExecution: { providerId: "claude-code" },
+    input: { text, blocks: [{ type: "text", text, mentions: [] }] },
+  });
+}
+
+it("prepares the launcher from project-checkout intent when environment is still null", async () => {
+  const fake = await setup();
+  const { token } = await fake.harness.behavior.callRpc("prepare_native_session", {
+    projectId: "project_a",
+    agentId: "dev-orchestrator",
+  }) as { token: string };
+  const hook = fake.harness.registrations.hooks["message.dispatch"]!;
+  expect(await hook(coldStart("thr_cold", nativeSelectionMarker(token)))).toEqual({ action: "proceed" });
+  expect(fake.prepareCalls).toEqual([{ cwd: "/checkout/selected", agentId: "dev-orchestrator", agentsJson: null }]);
+  const activation = getActivation(openDatabase(fake.bb), "project_a");
+  expect(activation).toMatchObject({ pm_thread_id: "thr_cold" });
+  expect(getRun(openDatabase(fake.bb), activation!.run_id)).toMatchObject({
+    kind: "cli",
+    writer_environment_id: null,
+  });
+  expect(await hook(coldStart("thr_cold", nativeSelectionMarker(token)))).toEqual({ action: "proceed" });
+  expect(getActivation(openDatabase(fake.bb), "project_a")?.run_id).toBe(activation!.run_id);
+  expect(
+    await fake.harness.behavior.resolveProviderEnv("claude-code", {
+      threadId: "thr_cold",
+      hostId: "host_a",
+      projectId: "project_a",
+    }),
+  ).toHaveLength(1);
+});
+
+it("rejects a Lane token when neither environment nor project-checkout path is present", async () => {
+  const fake = await setup();
+  const { token } = await fake.harness.behavior.callRpc("prepare_native_session", {
+    projectId: "project_a",
+    agentId: "dev-orchestrator",
+  }) as { token: string };
+  const result = await fake.harness.registrations.hooks["message.dispatch"]!(
+    makeMessageDispatchHookContext({
+      thread: { id: "thr_no_intent", projectId: "project_a", providerId: "claude-code" },
+      project: { id: "project_a" },
+      host: { id: "host_a" },
+      environment: null,
+      environmentIntent: null,
+      requestedExecution: { providerId: "claude-code" },
+      input: { text: nativeSelectionMarker(token), blocks: [{ type: "text", text: nativeSelectionMarker(token), mentions: [] }] },
+    }),
+  );
+  expect(result).toMatchObject({ action: "reject" });
+  expect((result as { message: string }).message).toMatch(/project-checkout/);
+  expect(getActivation(openDatabase(fake.bb), "project_a")).toBeUndefined();
+});
+
+function samepathStart(threadId: string, text: string) {
+  return makeMessageDispatchHookContext({
+    thread: { id: threadId, projectId: "project_a", providerId: "claude-code", status: "pending" },
+    project: { id: "project_a" },
+    host: { id: "host_a" },
+    environment: null,
+    environmentIntent: {
+      kind: "provider",
+      environmentProviderId: "project-checkout",
+      machine: { type: "existing", hostId: "host_a" },
+      inputs: {},
+    },
+    requestedExecution: { providerId: "claude-code" },
+    input: { text, blocks: [{ type: "text", text, mentions: [] }] },
+  });
+}
+
+it("prepares a host-only launcher for samepath before provision and keeps it if late prepare fails", async () => {
+  const fake = await setup({ environmentPath: "/checkout/actual", failPrepareWithCwd: true });
+  const { token } = await fake.harness.behavior.callRpc("prepare_native_session", {
+    projectId: "project_a",
+    agentId: "dev-orchestrator",
+  }) as { token: string };
+  const hook = fake.harness.registrations.hooks["message.dispatch"]!;
+  expect(await hook(samepathStart("thr_samepath", nativeSelectionMarker(token)))).toEqual({ action: "proceed" });
+  expect(fake.prepareCalls).toEqual([{ cwd: null, agentId: "dev-orchestrator", agentsJson: null }]);
+  expect(getActivation(openDatabase(fake.bb), "project_a")).toMatchObject({ pm_thread_id: "thr_samepath" });
+  const first = await fake.harness.behavior.resolveProviderEnv("claude-code", {
+    threadId: "thr_samepath",
+    hostId: "host_a",
+    projectId: "project_a",
+  });
+  expect(first.some((row) => row.name === "BB_CLAUDE_CODE_EXECUTABLE")).toBe(true);
+  expect(first[0]?.value).toBe("/launcher");
+  expect(fake.prepareCalls).toEqual([
+    { cwd: null, agentId: "dev-orchestrator", agentsJson: null },
+    { cwd: "/checkout/actual", agentId: "dev-orchestrator", agentsJson: null },
+  ]);
 });

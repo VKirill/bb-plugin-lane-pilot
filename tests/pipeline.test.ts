@@ -545,7 +545,7 @@ describe("PM tool gating", () => {
       origin:{ pluginId:"other" },
       pluginMetadata:{ role:"pm", lanePilotRunId:"run-x" },
     } as never);
-    expect(pm.tools.map((tool) => tool.name)).toEqual(["lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli","lane_pilot_browser_qa","lane_pilot_ingest_opencode_telemetry","lane_pilot_docs_maintain","lane_pilot_onboarding_preview","lane_pilot_onboarding_apply","lane_pilot_memory_maintain","lane_pilot_night_review","lane_pilot_night_fix","lane_pilot_workspace_status","lane_pilot_memory_context","lane_pilot_gate_report","lane_pilot_gate_triage"]);
+    expect(pm.tools.map((tool) => tool.name)).toEqual(["lane_pilot_read","lane_pilot_dispatch_writer","lane_pilot_wait_writer","lane_pilot_dispatch_cli","lane_pilot_browser_qa","lane_pilot_ingest_opencode_telemetry","lane_pilot_docs_maintain","lane_pilot_onboarding_preview","lane_pilot_onboarding_apply","lane_pilot_memory_maintain","lane_pilot_night_review","lane_pilot_night_fix","lane_pilot_workspace_status","lane_pilot_memory_context","lane_pilot_gate_report","lane_pilot_gate_triage"]);
     expect(writer.tools).toEqual([]);
     expect(ordinary.tools).toEqual([]);
     createRun(db,"gate-report-run",config.projectId);

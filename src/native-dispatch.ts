@@ -12,7 +12,13 @@ import {
   tokensFrom,
   type NativeSelection,
 } from "./native-session";
-import { bindNativeLaneRun } from "./native-run";
+import {
+  attachNativeLaneClaim,
+  claimNativeLaneRun,
+  finalizeNativeLaneBinding,
+  inspectDispatchPlacement,
+  resolveNativeDispatchWorkspace,
+} from "./native-run";
 
 type HostClient = {
   call: (method: string, input: unknown, opts: { hostId: string }) => Promise<unknown>;
@@ -100,6 +106,33 @@ export function mentionContext(selection: NativeSelection): string {
   return `${nativeSelectionMarker(selection.token)}\nNative Lane profile ${selection.agentId} (${selection.profileMode}).`;
 }
 
+function placementTrace(ctx: {
+  host?: { id?: string } | null;
+  environment?: { id?: string | null; path?: string | null; hostId?: string | null } | null;
+  environmentIntent?: unknown;
+}): Record<string, string | number | boolean | null> {
+  const placement = inspectDispatchPlacement(ctx);
+  return {
+    intent: placement.kind,
+    envProvider: placement.providerId,
+    machine: placement.machineType,
+    host: placement.hostId,
+    pathPresent: placement.pathPresent,
+    inputKeys: placement.inputKeys,
+  };
+}
+
+export function traceNativeDispatch(
+  log: { warn: (message: string) => void },
+  stage: string,
+  fields: Record<string, string | number | boolean | null | undefined>,
+): void {
+  const parts = Object.entries(fields)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}=${value === null ? "null" : String(value)}`);
+  log.warn(`native-trace ${stage} ${parts.join(" ")}`);
+}
+
 export async function handleNativeDispatch(
   bb: BbPluginApi,
   host: HostClient,
@@ -107,78 +140,199 @@ export async function handleNativeDispatch(
     thread: { id: string };
     project: { id: string };
     host?: { id?: string } | null;
-    environment?: { path?: string | null; id?: string | null } | null;
+    environment?: { path?: string | null; id?: string | null; hostId?: string | null } | null;
+    environmentIntent?: unknown;
     requestedExecution: { providerId: string };
     input: { blocks?: unknown };
   },
   db: LanePilotDatabase,
 ): Promise<{ action: "proceed" } | { action: "reject"; message: string }> {
+  const tokens = tokensFrom(ctx.input.blocks);
+  const base = {
+    thread: ctx.thread.id,
+    project: ctx.project.id,
+    token: tokens[0] ?? null,
+    tokens: tokens.length,
+    provider: ctx.requestedExecution.providerId,
+    env: ctx.environment?.id ? "attached" : "null",
+    ...placementTrace(ctx),
+  };
+  const reject = (
+    reason: string,
+    message: string,
+    extra?: Record<string, string | number | boolean | null>,
+  ) => {
+    traceNativeDispatch(bb.log, "reject", { ...base, reason, ...extra });
+    return { action: "reject" as const, message: `Lane Pilot: ${message}` };
+  };
   try {
-    const tokens = tokensFrom(ctx.input.blocks);
-    if (tokens.length > 1) throw new Error("Select one Lane Pilot profile per chat.");
+    traceNativeDispatch(bb.log, "dispatch.start", base);
+    if (tokens.length > 1) {
+      return reject("multiple_tokens", "Select one Lane Pilot profile per chat.");
+    }
     const boundRaw = await bb.storage.kv.get<NativeSelection>(`native-thread:${ctx.thread.id}`);
     const bound = boundRaw ? nativeSelectionSchema.parse(boundRaw) : null;
-    if (!tokens.length && !bound) return { action: "proceed" };
+    if (!tokens.length && !bound) {
+      traceNativeDispatch(bb.log, "dispatch.skip", { ...base, reason: "no_token_or_bound" });
+      return { action: "proceed" };
+    }
     if (ctx.requestedExecution.providerId !== "claude-code") {
-      throw new Error("Lane Pilot native profile needs Claude Code. Switch the composer provider back, or start without the Lane mention.");
+      return reject(
+        "provider_not_claude_code",
+        "Lane Pilot native profile needs Claude Code. Switch the composer provider back, or start without the Lane mention.",
+      );
     }
     if (tokens.length && bound && bound.token !== tokens[0]) {
-      throw new Error("The Lane Pilot profile is fixed for this chat. Start a new chat to choose another.");
+      return reject(
+        "bound_token_mismatch",
+        "The Lane Pilot profile is fixed for this chat. Start a new chat to choose another.",
+        { bound: bound.token },
+      );
     }
     let selected = bound;
     if (tokens.length) {
       const candidate = await bb.storage.kv.get<NativeSelection>(`native-selection:${tokens[0]}`);
-      if (!candidate) throw new Error("Lane Pilot selection is missing. Choose the profile again.");
+      if (!candidate) {
+        return reject("selection_missing", "Lane Pilot selection is missing. Choose the profile again.");
+      }
       selected = nativeSelectionSchema.parse(candidate);
     }
-    if (!selected) return { action: "proceed" };
+    if (!selected) {
+      traceNativeDispatch(bb.log, "dispatch.skip", { ...base, reason: "no_selection" });
+      return { action: "proceed" };
+    }
     if (selected.projectId !== ctx.project.id) {
-      throw new Error("The Lane Pilot profile belongs to a different project.");
+      return reject(
+        "project_mismatch",
+        "The Lane Pilot profile belongs to a different project.",
+        { tokenProject: selected.projectId },
+      );
+    }
+    let workspace;
+    try {
+      workspace = resolveNativeDispatchWorkspace(ctx);
+    } catch (error) {
+      return reject("workspace", (error as Error).message);
     }
     const collision = await probeCliAgentsCollision(bb, {
       projectId: ctx.project.id,
       threadId: ctx.thread.id,
-      hostId: ctx.host?.id,
+      hostId: workspace.hostId ?? undefined,
       providerId: ctx.requestedExecution.providerId,
       messageValue: ctx.input.blocks,
     });
-    if (collision) throw new Error(collisionMessage(collision));
-    const hostId = ctx.host?.id;
-    const path = ctx.environment?.path;
-    if (!hostId || !path) {
-      throw new Error("Native send needs the real host and workspace path. Lane Pilot does not invent them.");
+    if (collision) {
+      return reject("cli_agents_collision", collisionMessage(collision), { detail: collision });
     }
-    await bindNativeLaneRun({
-      bb,
+    const claimed = claimNativeLaneRun({
       db,
       threadId: ctx.thread.id,
       projectId: ctx.project.id,
-      hostId,
-      workspacePath: path,
-      environmentId: ctx.environment?.id,
     });
+    if (claimed.created) {
+      await attachNativeLaneClaim({
+        bb,
+        db,
+        threadId: ctx.thread.id,
+        projectId: ctx.project.id,
+        runId: claimed.runId,
+      });
+    }
+    if (workspace.phase === "pending") {
+      if (!workspace.hostId) {
+        return reject("workspace", "Native send needs the selected project-checkout host and path. Lane Pilot does not invent them.");
+      }
+      traceNativeDispatch(bb.log, "host.call", { ...base, reason: "prepareNativeClaude", host: workspace.hostId, phase: "host-only" });
+      const prepared = await host.call("prepareNativeClaude", {
+        agentId: selected.agentId,
+        agentsJson: selected.agentsJson,
+      }, { hostId: workspace.hostId }) as {
+        env: ExperimentalPluginProviderEnvEntry[];
+        agentId: string;
+      };
+      await bb.storage.kv.set(`native-thread:${ctx.thread.id}`, selected);
+      await bb.storage.kv.set(`native-env:${ctx.thread.id}`, prepared.env);
+      await bb.storage.kv.set(`native-agent-type:${ctx.thread.id}`, prepared.agentId);
+      traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "workspace_pending" });
+      return { action: "proceed" };
+    }
+    if (workspace.environmentId) {
+      if (!finalizeNativeLaneBinding({
+        db,
+        runId: claimed.runId,
+        hostId: workspace.hostId,
+        workspacePath: workspace.workspacePath,
+        environmentId: workspace.environmentId,
+      })) {
+        return reject(
+          "environment_cas",
+          "native environment CAS failed; run is no longer pending or already has a binding",
+        );
+      }
+    }
+    traceNativeDispatch(bb.log, "host.call", { ...base, reason: "prepareNativeClaude", host: workspace.hostId });
     const prepared = await host.call("prepareNativeClaude", {
-      cwd: path,
+      cwd: workspace.workspacePath,
       agentId: selected.agentId,
       agentsJson: selected.agentsJson,
-    }, { hostId }) as {
+    }, { hostId: workspace.hostId }) as {
       env: ExperimentalPluginProviderEnvEntry[];
       agentId: string;
     };
     await bb.storage.kv.set(`native-thread:${ctx.thread.id}`, selected);
     await bb.storage.kv.set(`native-env:${ctx.thread.id}`, prepared.env);
     await bb.storage.kv.set(`native-agent-type:${ctx.thread.id}`, prepared.agentId);
+    traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "ok" });
     return { action: "proceed" };
   } catch (error) {
-    return { action: "reject", message: `Lane Pilot: ${(error as Error).message}` };
+    return reject("exception", (error as Error).message);
   }
 }
 
 export async function nativeContributedEnv(
   bb: BbPluginApi,
+  host: HostClient,
   ctx: { threadId: string; hostId: string },
 ): Promise<ExperimentalPluginProviderEnvEntry[]> {
-  const selected = await bb.storage.kv.get<NativeSelection>(`native-thread:${ctx.threadId}`);
-  if (!selected) return [];
-  return (await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(`native-env:${ctx.threadId}`)) ?? [];
+  try {
+    const selected = await bb.storage.kv.get<NativeSelection>(`native-thread:${ctx.threadId}`);
+    if (!selected) return [];
+    const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(`native-env:${ctx.threadId}`);
+    const thread = await bb.sdk.threads.get({ threadId: ctx.threadId }).catch(() => null);
+    const environmentId = thread && typeof thread.environmentId === "string" ? thread.environmentId.trim() : "";
+    const environment = environmentId
+      ? await bb.sdk.environments.get({ environmentId }).catch(() => null)
+      : null;
+    const path = environment && typeof environment.path === "string" ? environment.path.trim() : "";
+    const envHost = environment && typeof environment.hostId === "string" && environment.hostId.trim()
+      ? environment.hostId.trim()
+      : ctx.hostId;
+    if (path.startsWith("/") && envHost && (!ctx.hostId || envHost === ctx.hostId)) {
+      try {
+        traceNativeDispatch(bb.log, "host.call", {
+          thread: ctx.threadId,
+          token: selected.token,
+          reason: "prepareNativeClaude",
+          host: envHost,
+          phase: "contributeEnv",
+        });
+        const prepared = await host.call("prepareNativeClaude", {
+          cwd: path,
+          agentId: selected.agentId,
+          agentsJson: selected.agentsJson,
+        }, { hostId: envHost }) as {
+          env: ExperimentalPluginProviderEnvEntry[];
+          agentId: string;
+        };
+        await bb.storage.kv.set(`native-env:${ctx.threadId}`, prepared.env);
+        await bb.storage.kv.set(`native-agent-type:${ctx.threadId}`, prepared.agentId);
+        return prepared.env;
+      } catch {
+        if (cached?.length) return cached;
+      }
+    }
+    return cached?.length ? cached : [];
+  } catch {
+    return [];
+  }
 }
