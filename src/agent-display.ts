@@ -9,6 +9,15 @@ export const STOCK_AGENT_SEED_DESCRIPTIONS: Readonly<Record<string, string>> = {
   tavily: "Lane Pilot Tavily research agent",
 };
 
+const BUNDLED_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  "dev-orchestrator": "Development coordinator",
+  "copy-lead": "Copy editor",
+  "seo-specialist": "SEO specialist",
+  "design-lead": "Designer",
+  "project-onboarder": "Project onboarding",
+  tavily: "Researcher",
+};
+
 const STOCK_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
   "dev-orchestrator": "agentDisplayDevOrchestrator",
   "copy-lead": "agentDisplayCopyLead",
@@ -18,13 +27,18 @@ const STOCK_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
   tavily: "agentDisplayTavily",
 };
 
+function stockDescriptions(id: string): string[] {
+  return [BUNDLED_DISPLAY_NAMES[id], STOCK_AGENT_SEED_DESCRIPTIONS[id]].filter(
+    (value): value is string => Boolean(value),
+  );
+}
+
 export function agentPickerLabel(
   agent: { id: string; description: string },
   translate: (key: I18nKey) => string,
 ): string {
-  const seed = STOCK_AGENT_SEED_DESCRIPTIONS[agent.id];
   const key = STOCK_LABEL_KEYS[agent.id];
-  if (seed !== undefined && key && agent.description.trim() === seed) {
+  if (key && stockDescriptions(agent.id).includes(agent.description.trim())) {
     return translate(key);
   }
   return agent.description;

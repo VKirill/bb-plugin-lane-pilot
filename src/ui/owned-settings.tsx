@@ -93,7 +93,7 @@ function ResourcePicker({
           <Button type="button" size="sm" variant="outline" className="h-8" onClick={onRetry}>{t("agentInventoryRetry")}</Button>
         </div>
       ) : null}
-      {status === "unavailable" ? <p className="text-xs text-muted-foreground">{resourceKey === "tools" || resourceKey === "disallowedTools" ? t("agentToolsUnavailable") : t("agentInventoryUnavailable")}</p> : null}
+      {status === "unavailable" && names.length === 0 ? <p className="text-xs text-muted-foreground">{resourceKey === "tools" || resourceKey === "disallowedTools" ? t("agentToolsUnavailable") : t("agentInventoryUnavailable")}</p> : null}
       {status === "ready" && (group?.items.length ?? 0) === 0 && names.length === 0 ? <p className="text-xs text-muted-foreground">{t("agentInventoryEmpty")}</p> : null}
       {!canSelect && !loading ? <p className="text-xs text-muted-foreground">{t("agentSelectedUnavailable")}</p> : null}
       {mode === "selected" ? (

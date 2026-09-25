@@ -85,6 +85,7 @@ import { validateTaskV2 } from "./src/task-v2";
 import { reconcile, reconcileCritic, reconcileHolder, type IdempotencyTriple } from "./src/reconcile";
 import { spawnWithSeam } from "./src/spawn-seam";
 import {
+  compileEffectiveMainAgent,
   compileMainAgentProfile,
   compiledMainAgentSpawnBinding,
   detectCompiledMainAgentCapability,
@@ -4472,9 +4473,7 @@ export default async function plugin(bb: BbPluginApi) {
     for (const id of ids) {
       try {
         if (owned[id]?.compiledCorrupt) continue;
-        const compiled = owned[id]?.compiled
-          ? validateCompiledMainAgent(owned[id].compiled)
-          : compileMainAgentProfile(id, owned[id]);
+        const compiled = compileEffectiveMainAgent(id, owned[id]);
         const stock = (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(id) ? compileMainAgentProfile(id) : null;
         rows.push({
           id,
@@ -4594,11 +4593,9 @@ export default async function plugin(bb: BbPluginApi) {
       const owned = await ownedAgents();
       if (owned[id]?.compiledCorrupt) return { ok: false, id, sourceHash: "" };
       const previous = owned[id]?.compiled;
-      let currentHash = previous?.sourceHash ?? "";
-      if (!currentHash) {
-        try { currentHash = compileMainAgentProfile(id, owned[id]).sourceHash; } catch { currentHash = ""; }
-      }
-      if (expectedSourceHash !== currentHash) {
+      let currentHash = "";
+      try { currentHash = compileEffectiveMainAgent(id, owned[id]).sourceHash; } catch { currentHash = previous?.sourceHash ?? ""; }
+      if (expectedSourceHash !== currentHash && expectedSourceHash !== (previous?.sourceHash ?? "")) {
         return { ok: false, id, sourceHash: currentHash };
       }
       let compiled;

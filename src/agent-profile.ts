@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import bundledAgents from "./bundled-agents.json";
 
 export const MAIN_AGENT_ID = /^[a-z][a-z0-9-]{0,63}$/;
 export const MAIN_AGENT_PROFILE_IDS = [
@@ -24,7 +25,7 @@ export const compiledMainAgentSchema = z.object({
 }).strict();
 export type CompiledMainAgent = z.infer<typeof compiledMainAgentSchema>;
 
-export const PROFILE_SOURCE_VERSION = "lp-owned-2";
+export const PROFILE_SOURCE_VERSION = "lane-stack-1.60.0";
 export type ProfileResources = Pick<CompiledMainAgent, "tools" | "disallowedTools" | "skills" | "mcpServers">;
 
 export type StoredAgentRow = {
@@ -75,7 +76,7 @@ export function validateCompiledMainAgent(raw: unknown): CompiledMainAgent {
   return profile;
 }
 
-const TEMPLATES: Record<string, { description: string; prompt: string }> = {
+export const LEGACY_STOCK_TEMPLATES: Readonly<Record<string, { description: string; prompt: string }>> = {
   "dev-orchestrator": {
     description: "Lane Pilot development orchestrator",
     prompt: "You are the Lane Pilot development orchestrator. Coordinate implementation, keep changes surgical, and stop at the requested verification.",
@@ -102,8 +103,61 @@ const TEMPLATES: Record<string, { description: string; prompt: string }> = {
   },
 };
 
+type BundledAgent = {
+  displayName: string;
+  prompt: string;
+  tools: string[];
+  skills: string[];
+  mcpServers: string[];
+  omittedNativeFields: string[];
+  provenance: { package: string; version: string; file: string; sha256: string; bytes: number };
+};
+
+const BUNDLED = bundledAgents as Record<string, BundledAgent>;
+
+function bundledTemplate(id: string): { description: string; prompt: string } & ProfileResources | undefined {
+  if (!Object.hasOwn(BUNDLED, id)) return undefined;
+  const row = BUNDLED[id];
+  if (!row) return undefined;
+  if (row.displayName.length > 400) throw new Error(`bundled_agent_description_too_long:${id}`);
+  if (row.prompt.length > 32_000) throw new Error(`bundled_agent_prompt_too_long:${id}`);
+  return {
+    description: row.displayName,
+    prompt: row.prompt,
+    ...(row.tools.length ? { tools: row.tools } : {}),
+    ...(row.skills.length ? { skills: row.skills } : {}),
+    ...(row.mcpServers.length ? { mcpServers: row.mcpServers } : {}),
+  };
+}
+
+export function isStockProfileId(id: string): boolean {
+  return (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(id);
+}
+
+export function isUnchangedStockStub(id: string, stored?: StoredAgentRow): boolean {
+  if (!isStockProfileId(id)) return false;
+  if (!stored) return true;
+  const legacy = LEGACY_STOCK_TEMPLATES[id];
+  const bundled = BUNDLED[id];
+  const description = (stored.description ?? stored.compiled?.description ?? "").trim();
+  const prompt = (stored.prompt ?? stored.compiled?.prompt ?? "").trim();
+  const descriptionStock = !description
+    || description === legacy.description
+    || description === bundled?.displayName;
+  const promptStock = !prompt || prompt === legacy.prompt;
+  return descriptionStock && promptStock;
+}
+
 export function isMainAgentProfileId(id: string): boolean {
   return MAIN_AGENT_ID.test(id);
+}
+
+function pickResource(
+  override: string[] | undefined,
+  bundled: string[] | undefined,
+): string[] | undefined {
+  if (override !== undefined) return override;
+  return bundled;
 }
 
 export function compileMainAgentProfile(
@@ -113,24 +167,49 @@ export function compileMainAgentProfile(
   if (!isMainAgentProfileId(id)) {
     throw new Error(`invalid_main_agent_profile_id:${id}`);
   }
-  const template = TEMPLATES[id];
+  const template = bundledTemplate(id);
   const description = overrides?.description?.trim() || template?.description || "";
   const prompt = overrides?.prompt?.trim() || template?.prompt || "";
   if (!description || !prompt) throw new Error(`incomplete_main_agent_profile:${id}`);
+  const tools = pickResource(overrides?.tools, template?.tools);
+  const disallowedTools = pickResource(overrides?.disallowedTools, template?.disallowedTools);
+  const skills = pickResource(overrides?.skills, template?.skills);
+  const mcpServers = pickResource(overrides?.mcpServers, template?.mcpServers);
   const unsigned = {
     id,
     sourceVersion: PROFILE_SOURCE_VERSION,
     description,
     prompt,
-    ...(overrides?.tools ? { tools: overrides.tools } : {}),
-    ...(overrides?.disallowedTools ? { disallowedTools: overrides.disallowedTools } : {}),
-    ...(overrides?.skills ? { skills: overrides.skills } : {}),
-    ...(overrides?.mcpServers ? { mcpServers: overrides.mcpServers } : {}),
+    ...(tools !== undefined ? { tools } : {}),
+    ...(disallowedTools !== undefined ? { disallowedTools } : {}),
+    ...(skills !== undefined ? { skills } : {}),
+    ...(mcpServers !== undefined ? { mcpServers } : {}),
   };
   return validateCompiledMainAgent({
     ...unsigned,
     sourceHash: compiledMainAgentDigest(unsigned),
   });
+}
+
+export function compileEffectiveMainAgent(id: string, stored?: StoredAgentRow): CompiledMainAgent {
+  if (stored?.compiledCorrupt) throw new Error(`compiled_main_agent_corrupt:${id}`);
+  if (stored?.compiled && !isUnchangedStockStub(id, stored)) {
+    const profile = validateCompiledMainAgent(stored.compiled);
+    if (profile.id !== id) throw new Error("main_agent_id_mismatch");
+    return profile;
+  }
+  const overlay: { prompt?: string; description?: string } & ProfileResources = {};
+  if (isUnchangedStockStub(id, stored)) {
+    const compiled = stored?.compiled;
+    if (compiled?.tools) overlay.tools = compiled.tools;
+    if (compiled?.disallowedTools) overlay.disallowedTools = compiled.disallowedTools;
+    if (compiled?.skills) overlay.skills = compiled.skills;
+    if (compiled?.mcpServers) overlay.mcpServers = compiled.mcpServers;
+  } else if (stored) {
+    if (stored.prompt) overlay.prompt = stored.prompt;
+    if (stored.description) overlay.description = stored.description;
+  }
+  return compileMainAgentProfile(id, overlay);
 }
 
 export function parseOwnedAgents(raw: unknown): Record<string, StoredAgentRow> {
@@ -192,12 +271,7 @@ export function resolveSelectedMainAgentProfile(
   if (typeof raw !== "string") throw new Error("main_agent_invalid");
   const stored = owned[raw];
   if (stored?.compiledCorrupt) throw new Error(`compiled_main_agent_corrupt:${raw}`);
-  if (stored?.compiled) {
-    const profile = validateCompiledMainAgent(stored.compiled);
-    if (profile.id !== raw) throw new Error("main_agent_id_mismatch");
-    return profile;
-  }
-  return compileMainAgentProfile(raw, stored);
+  return compileEffectiveMainAgent(raw, stored);
 }
 
 export function compiledMainAgentSpawnBinding(input: {
