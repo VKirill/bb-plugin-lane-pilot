@@ -96,7 +96,7 @@ export function EnableLanePilotAction() {
       }).experimental_vkSetDispatchData;
       if (!attach) throw new Error(t("nativeComposerUpgrade"));
       const selection = await composer.experimental_setSelection({
-        providerId: "claude-code", model: "claude-opus-5[1m]", permissionMode: "full-access",
+        providerId: "claude-code", model: "claude-opus-5[1m]", permissionMode: "full",
       });
       if (selection.providerId !== "claude-code" || selection.model !== "claude-opus-5[1m]") {
         throw new Error(t("nativeComposerModelUnavailable"));

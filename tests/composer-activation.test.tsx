@@ -115,7 +115,7 @@ describe("Enable Lane Pilot composer action", () => {
     await waitFor(() => expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" }));
     expect(slot.inspection.composer.mentions).toEqual([]);
     expect(slot.inspection.composer.text).toBe("Please review this project");
-    expect(slot.inspection.composer.selections).toEqual([{ providerId: "claude-code", model: "claude-opus-5[1m]", permissionMode: "full-access" }]);
+    expect(slot.inspection.composer.selections).toEqual([{ providerId: "claude-code", model: "claude-opus-5[1m]", permissionMode: "full" }]);
     fireEvent.click(slot.getByRole("button", { name: "Lane Pilot enabled" }));
     fireEvent.click(await slot.findByRole("button", { name: "Disable for this chat" }));
     expect(hiddenData.value).toBeNull();
