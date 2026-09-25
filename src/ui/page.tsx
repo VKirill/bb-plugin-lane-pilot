@@ -355,10 +355,10 @@ function HelpTip({ label, children }: { label: string; children: ReactNode }) {
 
 function SettingsGroup({ title, testId, children }: { title: string; testId: string; children: ReactNode }) {
   return (
-    <section className="space-y-2" data-testid={testId}>
+    <section className="min-w-0 max-w-full space-y-2" data-testid={testId}>
       <h2 className="text-sm font-medium">{title}</h2>
       <Separator />
-      <div className="space-y-5">{children}</div>
+      <div className="min-w-0 max-w-full space-y-5">{children}</div>
     </section>
   );
 }
@@ -399,7 +399,7 @@ function FieldControl({
     const selectedLabel = presentEnumLabel(row.storageKey, current);
     return (
       <Select value={current} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger aria-label={`${label}: ${selectedLabel}`}>
+        <SelectTrigger aria-label={`${label}: ${selectedLabel}`} className="min-w-0 max-w-full">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -1204,10 +1204,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         <div className="hidden items-center justify-end border-b border-border px-4 py-2 md:flex">
           <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-5">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6 px-4 py-5">
         <OwnedSettings scope={activeScope} locale={locale} onDefaultsSaved={applyGlobalDefaults} />
-        <main hidden={activeScope !== "projects"} className="space-y-6" data-testid="project-settings">
+        <main hidden={activeScope !== "projects"} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
         {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
         <div>
           <p className="text-xs text-muted-foreground">{t("selectedProject")}</p>
@@ -1235,7 +1235,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
             }}
           >
-            <SelectTrigger aria-label={t("mainAgent")} className="min-h-11"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label={t("mainAgent")} className="min-h-11 min-w-0 max-w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__default__">{t("mainAgentDefault")}</SelectItem>
               {(data?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agentPickerLabel(agent, t)}</SelectItem>)}
@@ -1263,7 +1263,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("projectMachineFolder")}</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
               {data.writerBinding.status === "resolved" ? (
-                <p>
+                <p className="min-w-0 break-all">
                   {data.writerBinding.hostId} · {data.writerBinding.path}
                   <span className="ml-2 text-xs text-muted-foreground">
                     {data.writerBinding.source === "session" ? t("inheritedFromSession")
@@ -1299,7 +1299,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
         <Tabs value={tab} onValueChange={setTab}>
           {/* Keep the plugin's own EN/RU labels out of BB's DOM-based Russianizer. */}
-          <TabsList data-bb-ru-skip>
+          <TabsList data-bb-ru-skip className="min-w-0 max-w-full">
             <TabsTrigger value="settings" data-testid="tab-settings">{t("tabSettings")}</TabsTrigger>
             <TabsTrigger value="checks" data-testid="tab-checks">{t("tabChecks")}</TabsTrigger>
             <TabsTrigger value="monitor" data-testid="tab-monitor">{t("tabMonitor")}</TabsTrigger>
@@ -1343,7 +1343,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     <div className="flex items-center justify-between gap-2 pt-2">
                       <Label className="text-sm" htmlFor="writer-effort-mode">{t("writerEffortMode")}</Label>
                       <Select value={automaticEffort ? "automatic" : "manual"} onValueChange={(next) => void applySetting(effortRow, next === "automatic" ? "1" : "0")}>
-                        <SelectTrigger id="writer-effort-mode" aria-label={t("writerEffortMode")} className="w-[11rem]"><SelectValue /></SelectTrigger>
+                        <SelectTrigger id="writer-effort-mode" aria-label={t("writerEffortMode")} className="w-[11rem] min-w-0 max-w-full"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="automatic">{t("writerEffortAutomatic")}</SelectItem>
                           <SelectItem value="manual">{t("writerEffortManual")}</SelectItem>
@@ -1578,7 +1578,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 const known = options.some((host) => host.id === current);
                 if (!options.length) return <p className="text-sm text-muted-foreground">{t("browserQaHostNone")}</p>;
                 return <Select value={known ? current : current ? current : "__inherit__"} onValueChange={(next) => { if (next === "__inherit__") void resetInherited([QA_HOST_KEY]); else void saveKey(QA_HOST_KEY, next); }}>
-                  <SelectTrigger aria-label={t("globalQaHost")} data-testid="browser-qa-host-select" className="max-w-xl">
+                  <SelectTrigger aria-label={t("globalQaHost")} data-testid="browser-qa-host-select" className="min-w-0 max-w-xl">
                     <SelectValue placeholder={t("inheritChoice")} />
                   </SelectTrigger>
                   <SelectContent>
@@ -1650,7 +1650,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   {run.state !== "closed" ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
                 </CardContent></Card>])}
               </div>
-              <div className="hidden sm:block">
+              <div className="hidden min-w-0 max-w-full overflow-x-auto sm:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1666,7 +1666,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     if (!run.attempts.length) {
                       return [(
                         <TableRow key={run.id} data-testid={`run-${run.id}`}>
-                          <TableCell className="font-mono text-xs">{run.id}</TableCell>
+                          <TableCell className="max-w-[12rem] truncate font-mono text-xs">{run.id}</TableCell>
                           <TableCell>{run.kind}</TableCell>
                           <TableCell>
                             <Badge variant={runTone(run.state)}>{stateLabel(run.state)}</Badge>
@@ -1681,7 +1681,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     const hasOpenAttempt = run.attempts.some((attempt) => ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(attempt.state));
                     return run.attempts.map((attempt, index) => (
                     <TableRow key={attempt.id} data-testid={`attempt-${attempt.id}`}>
-                      <TableCell className="font-mono text-xs">{run.id}</TableCell>
+                      <TableCell className="max-w-[12rem] truncate font-mono text-xs">{run.id}</TableCell>
                       <TableCell>{run.kind}</TableCell>
                       <TableCell>
                         <Badge variant={runTone(run.state === "closed" ? run.state : attempt.state)}>{stateLabel(run.state === "closed" ? run.state : attempt.state)}</Badge>
@@ -1781,7 +1781,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   const disabled = row.uiStatus !== "editable";
                   const value = data?.values[row.storageKey];
                   return <div key={row.storageKey} data-testid={`field-${row.id}`} data-storage-key={row.storageKey}
-                    data-ui-status={row.uiStatus} className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
+                    data-ui-status={row.uiStatus} className="grid min-w-0 gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,14rem)] md:items-center">
                     <div className="space-y-1">
                       <Label className="text-sm">{row.storageKey === "writer.fast_mode" ? t("legacyFastMode") : settingLabel(row)}</Label>
                       {row.storageKey === "writer.fast_mode" ? <p className="text-xs text-muted-foreground">{t("legacyFastModeExplanation")}</p> : (

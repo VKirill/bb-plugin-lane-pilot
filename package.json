@@ -58,6 +58,7 @@
     "tsx": "4.23.15",
     "typescript": "^5.7.0",
     "vaul": "^1.1.2",
+    "playwright": "^1.55.0",
     "vitest": "4.1.11",
     "jsdom": "^26.1.0",
     "@testing-library/dom": "^10.4.0",
@@ -67,6 +68,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "bb plugin build",
-    "check": "npm test && npm run typecheck && npm run build"
+    "test:layout": "node tests/layout/run.mjs",
+    "check": "npm test && npm run typecheck && npm run build && npm run test:layout"
   }
 }

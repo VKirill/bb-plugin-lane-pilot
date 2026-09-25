@@ -129,11 +129,11 @@ export function EnableLanePilotAction() {
           <span className="whitespace-nowrap">{pending ? t("enabling") : error ? t("failed") : t("enable")}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 space-y-3" data-testid="activation-popover">
+      <PopoverContent align="start" className="w-80 max-w-[min(20rem,calc(100vw-2rem))] min-w-0 space-y-3" data-testid="activation-popover">
         <div className="space-y-1">
           <Label>{t("pickAgent")}</Label>
           <Select value={agentId} onValueChange={setAgentId}>
-            <SelectTrigger className="min-h-11" aria-label={t("pickAgent")}><SelectValue /></SelectTrigger>
+            <SelectTrigger className="min-h-11 min-w-0 max-w-full" aria-label={t("pickAgent")}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__default__">{t("bbDefaultAgent")}</SelectItem>
               {(ctx?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agentPickerLabel(agent, t)}</SelectItem>)}
@@ -142,7 +142,7 @@ export function EnableLanePilotAction() {
         </div>
         <p className="text-xs text-muted-foreground">{t("runnerPreferenceNote")}</p>
         {snapshot.status === "ready" ? (
-          <p className="text-xs text-muted-foreground" data-testid="native-composer-selection">
+          <p className="break-all text-xs text-muted-foreground" data-testid="native-composer-selection">
             {snapshot.scope.kind} · {snapshot.projectId} · {snapshot.providerId} · {snapshot.model} · {snapshot.environment.kind}/{snapshot.environment.type}
           </p>
         ) : (
