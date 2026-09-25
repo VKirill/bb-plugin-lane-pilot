@@ -60,6 +60,7 @@ import type { StageReceipt } from "../stages/contract";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa-host";
 import { presentEnumLabel } from "../enum-labels";
 import { OwnedSettings } from "./owned-settings";
+import { chromeIsCompact, contentStacksControls, PanelLayoutContext, useObservedWidth, usePanelLayout } from "./panel-layout";
 import { userVisibleProjects } from "../project-scope";
 import { inheritProjectValues, type LanePilotDefaults } from "../lp-defaults";
 
@@ -353,10 +354,13 @@ function HelpTip({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function SettingsGroup({ title, testId, children }: { title: string; testId: string; children: ReactNode }) {
+function SettingsGroup({ title, testId, help, children }: { title: string; testId: string; help?: ReactNode; children: ReactNode }) {
   return (
     <section className="min-w-0 max-w-full space-y-2" data-testid={testId}>
-      <h2 className="text-sm font-medium">{title}</h2>
+      <div className="flex min-w-0 items-center gap-1">
+        <h2 className="text-sm font-medium">{title}</h2>
+        {help}
+      </div>
       <Separator />
       <div className="min-w-0 max-w-full space-y-5">{children}</div>
     </section>
@@ -496,6 +500,7 @@ function SettingField({
   onDraft?: (next: unknown) => void;
 }) {
   const inheritance = useContext(InheritanceContext);
+  const { stackControls } = usePanelLayout();
   const inherited = value == null || value === "";
   const effective = inherited ? row.defaultValue : value;
   const controlValue = inherited ? row.defaultValue : value;
@@ -504,7 +509,9 @@ function SettingField({
       data-testid={`field-${row.id}`}
       data-storage-key={row.storageKey}
       data-ui-status={row.uiStatus}
-      className="grid min-h-12 gap-1 border-b border-border py-1.5 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"
+      className={stackControls
+        ? "grid min-h-12 gap-1 border-b border-border py-1.5 last:border-b-0"
+        : "grid min-h-12 gap-1 border-b border-border py-1.5 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}
     >
       <div className="min-w-0">
         <div className="flex min-h-8 items-center gap-1">
@@ -593,6 +600,12 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const [localePreference, setLocalePreference] = useState<LocalePreference>("auto");
   const [settingsQuery, setSettingsQuery] = useState("");
   const [settingsDepth, setSettingsDepth] = useState<"basic" | "advanced">("basic");
+  const shellRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const shellWidth = useObservedWidth(shellRef);
+  const contentWidth = useObservedWidth(contentRef);
+  const compactChrome = chromeIsCompact(shellWidth);
+  const stackControls = contentStacksControls(contentWidth);
   const [drafts, setDrafts] = useState<Record<string, unknown>>({});
   const dataRef = useRef<ScreenPayload | null>(null);
   const draftsRef = useRef<Record<string, unknown>>({});
@@ -1150,8 +1163,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const mobileNavValue = activeScope === "projects" ? (projectId ? `project:${projectId}` : "projects") : activeScope;
 
   return (
-    <InheritanceContext.Provider value={{ locale, data, reset: (keys) => void resetInherited(keys) }}><div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row" data-testid="project-picker" data-locale={locale} data-bb-ru-skip>
-      <div className="flex shrink-0 flex-col gap-2 border-b border-border p-2 md:hidden">
+    <InheritanceContext.Provider value={{ locale, data, reset: (keys) => void resetInherited(keys) }}><PanelLayoutContext.Provider value={{ compactChrome, stackControls }}><div ref={shellRef} className={`flex h-full min-h-0 min-w-0 flex-1 overflow-hidden ${compactChrome ? "flex-col" : "flex-row"}`} data-testid="project-picker" data-locale={locale} data-lp-chrome={compactChrome ? "compact" : "rail"} data-lp-stack={stackControls ? "1" : "0"} data-bb-ru-skip>
+      <div className={compactChrome ? "flex shrink-0 flex-col gap-2 border-b border-border p-2" : "hidden"}>
         <div className="flex items-center gap-2">
           <Select
             value={mobileNavValue}
@@ -1171,12 +1184,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </Select>
           <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
         </div>
-        <div className="-mx-2 flex gap-1 overflow-x-auto px-2 pb-1" role="navigation" aria-label={t("scopeNav")}>
-          <Button type="button" size="sm" aria-pressed={activeScope === "globals"} variant={activeScope === "globals" ? "secondary" : "ghost"} className="min-h-11 shrink-0 justify-center px-2.5" onClick={() => setActiveScope("globals")}>{t("navGlobals")}</Button>
-          <Button type="button" size="sm" aria-pressed={activeScope === "agents"} variant={activeScope === "agents" ? "secondary" : "ghost"} className="min-h-11 shrink-0 justify-center px-2.5" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
-        </div>
       </div>
-      <nav className="hidden w-[13.5rem] shrink-0 flex-col border-r border-border bg-background md:flex" aria-label={t("scopeNav")} data-testid="scope-rail">
+      <nav className={compactChrome ? "hidden" : "flex w-[13.5rem] shrink-0 flex-col border-r border-border bg-background"} aria-label={t("scopeNav")} data-testid="scope-rail">
         <div className="flex flex-col gap-0.5 border-b border-border p-2" data-testid="scope-nav">
           <Button type="button" role="tab" size="sm" aria-selected={activeScope === "globals"} variant={activeScope === "globals" ? "secondary" : "ghost"} className="h-8 w-full justify-start px-2" onClick={() => setActiveScope("globals")}>{t("navGlobals")}</Button>
           <Button type="button" role="tab" size="sm" aria-selected={activeScope === "agents"} variant={activeScope === "agents" ? "secondary" : "ghost"} className="h-8 w-full justify-start px-2" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
@@ -1201,11 +1210,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         </div>
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="hidden items-center justify-end border-b border-border px-4 py-2 md:flex">
+        <div className={compactChrome ? "hidden" : "flex items-center justify-end border-b border-border px-4 py-2"}>
           <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
         </div>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6 px-4 py-5">
+        <div ref={contentRef} className="mx-auto w-full min-w-0 max-w-5xl space-y-6 px-4 py-5">
         <OwnedSettings scope={activeScope} locale={locale} onDefaultsSaved={applyGlobalDefaults} />
         <main hidden={activeScope !== "projects"} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
         {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
@@ -1213,7 +1222,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           <p className="text-xs text-muted-foreground">{t("selectedProject")}</p>
           <h1 className="break-words text-xl font-medium">{selectedProjectName}</h1>
         </div>
-        <div className="grid gap-2 border-b border-border py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center" data-testid="main-agent">
+        <div className={stackControls ? "grid gap-2 border-b border-border py-3" : "grid gap-2 border-b border-border py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"} data-testid="main-agent">
           <div className="space-y-1">
             <Label className="text-sm">{t("mainAgent")}</Label>
             <p className="text-xs text-muted-foreground">{t("mainAgentHelp")}</p>
@@ -1308,7 +1317,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </TabsList>
 
           <TabsContent value="settings" forceMount={true} className="space-y-6" hidden={tab !== "settings"} data-testid="settings-panel">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className={stackControls ? "flex flex-col gap-2" : "flex flex-col gap-2 sm:flex-row sm:items-end"}>
               <div className="min-w-0 flex-1 space-y-1">
                 <Label htmlFor="settings-search">{t("settingsSearch")}</Label>
                 <Input
@@ -1456,12 +1465,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </section> : null}
             </SettingsGroup> : null}
 
-            {cardVisible("helperContext", "helperContextHelp") ? <SettingsGroup title={t("sectionHelperContext")} testId="settings-helper-context">
+            {cardVisible("helperContext", "helperContextHelp") ? <SettingsGroup title={t("sectionHelperContext")} testId="settings-helper-context" help={<HelpTip label={t("helperContextTechnical")}><p>{t("helperContextTechnical")}</p><p className="mt-1">{t("helperContextNoneNote")}</p></HelpTip>}>
               <section className="space-y-2" data-testid="helper-context-settings">
-                <div className="flex min-w-0 items-center gap-1">
-                  <h3 className="text-sm font-medium">{t("helperContext")}</h3>
-                  <HelpTip label={t("helperContextTechnical")}><p>{t("helperContextTechnical")}</p><p className="mt-1">{t("helperContextNoneNote")}</p></HelpTip>
-                </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextHelp")}</p>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextConstraint")}</p>
                 {(() => { const row = catalogRow("helper.placement"); return row ? <SettingField row={row} value={displayedValue("helper.placement")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("helper.placement", next)} /> : null; })()}
@@ -1781,7 +1786,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   const disabled = row.uiStatus !== "editable";
                   const value = data?.values[row.storageKey];
                   return <div key={row.storageKey} data-testid={`field-${row.id}`} data-storage-key={row.storageKey}
-                    data-ui-status={row.uiStatus} className="grid min-w-0 gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,14rem)] md:items-center">
+                    data-ui-status={row.uiStatus} className={stackControls ? "grid min-w-0 gap-2 rounded-md border border-border p-3" : "grid min-w-0 gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,14rem)] md:items-center"}>
                     <div className="space-y-1">
                       <Label className="text-sm">{row.storageKey === "writer.fast_mode" ? t("legacyFastMode") : settingLabel(row)}</Label>
                       {row.storageKey === "writer.fast_mode" ? <p className="text-xs text-muted-foreground">{t("legacyFastModeExplanation")}</p> : (
@@ -1937,6 +1942,6 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         </div>
         </div>
       </div>
-    </div></InheritanceContext.Provider>
+    </div></PanelLayoutContext.Provider></InheritanceContext.Provider>
   );
 }

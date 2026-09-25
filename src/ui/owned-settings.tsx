@@ -18,6 +18,7 @@ import type { Locale } from "../../i18n";
 import { t } from "../../i18n";
 import { agentPickerLabel } from "../agent-display";
 import type { LanePilotDefaults } from "../lp-defaults";
+import { usePanelLayout } from "./panel-layout";
 
 const FIELD = "min-w-0 w-full max-w-full";
 const CONTROL = `${FIELD} box-border`;
@@ -87,9 +88,10 @@ function ResourcePicker({
   });
   const known = new Set((group?.items ?? []).map((item) => item.name));
   const errorTitle = resourceKey === "skills" ? t("agentSkillsLoadFailed") : resourceKey === "mcpServers" ? t("agentMcpLoadFailed") : t("agentInventoryError");
+  const { stackControls } = usePanelLayout();
   return (
     <section className={GROUP} data-testid={`agent-resource-${resourceKey}`}>
-      <div className="flex min-w-0 items-center justify-between gap-2">
+      <div className={stackControls ? "flex min-w-0 flex-col gap-2" : "flex min-w-0 items-center justify-between gap-2"}>
         <Label className="min-w-0 truncate text-sm">{t(RESOURCE_LABEL[resourceKey])}</Label>
         <Select value={mode} disabled={disabled} onValueChange={(next) => {
           const selected = next as ResourceMode;
@@ -98,7 +100,7 @@ function ResourcePicker({
           else if (selected === "none") onChange([], "none");
           else onChange(names, "selected");
         }}>
-          <SelectTrigger className="h-8 w-[11rem] min-w-0 max-w-full shrink-0" aria-label={t(RESOURCE_LABEL[resourceKey])}><SelectValue /></SelectTrigger>
+          <SelectTrigger className={stackControls ? `h-8 ${CONTROL}` : "h-8 w-[11rem] min-w-0 max-w-full shrink-0"} aria-label={t(RESOURCE_LABEL[resourceKey])}><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="inherit">{t("inheritChoice")}</SelectItem>
             <SelectItem value="none">{noneLabel(resourceKey)}</SelectItem>
@@ -189,6 +191,7 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
     }).catch((cause) => { if (current) setError(String(cause)); });
     return () => { current = false; };
   }, [rpc, scope, snapshot, locale]);
+  const { stackControls } = usePanelLayout();
   const agent = agents.find((item) => item.id === selected);
   const save = async () => {
     if (!snapshot || busy) return;
@@ -292,15 +295,20 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
         </section>
       </fieldset>
       <fieldset disabled={busy} hidden={scope !== "agents"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }}>
-        <p className="text-xs text-muted-foreground">{snapshot.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}</p>
+        <div className="flex min-w-0 items-start gap-1">
+          <p className="text-xs text-muted-foreground">{snapshot.requiredSessionPolicy === "required" ? t("agentResourceLimitsAvailable") : t("agentResourceLimitsUnavailable")}</p>
+          <HelpTip label={snapshot.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}>
+            {snapshot.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}
+          </HelpTip>
+        </div>
         <section className={GROUP}>
           <h2 className="text-sm font-medium">{t("agentSectionProfile")}</h2>
           <Separator />
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+          <div className={stackControls ? "flex min-w-0 flex-col gap-2" : "flex min-w-0 flex-row gap-2"} data-testid="agent-new-profile">
             <Input className={`min-h-11 ${CONTROL}`} aria-label={ru ? "ID нового профиля" : "New profile ID"} value={newId} placeholder="my-agent" onChange={(event) => setNewId(event.target.value)} />
             <Button variant="outline" className="min-h-11 shrink-0" disabled={!/^[a-z][a-z0-9-]{0,63}$/.test(newId) || agents.some((item) => item.id === newId)} onClick={() => { setAgents((current) => [...current, { id: newId, description: newId, prompt: "", sourceHash: "", sourceVersion: "lp-owned-1", edited: true }]); setSelected(newId); setNewId(""); }}>{ru ? "Добавить профиль" : "Add profile"}</Button>
           </div>
-          <Label htmlFor="owned-agent">{t("agentSectionProfile")}</Label>
+          <Label htmlFor="owned-agent">{t("agentSelectedProfile")}</Label>
           <Select value={selected} onValueChange={(value) => { setSelected(value); setSaved(false); }}><SelectTrigger id="owned-agent" className={`min-h-11 ${CONTROL}`}><SelectValue /></SelectTrigger><SelectContent>{agents.map((item) => <SelectItem key={item.id} value={item.id}>{agentPickerLabel(item, t)}</SelectItem>)}</SelectContent></Select>
           {agent ? <>
             <Label htmlFor="agent-description">{ru ? "Название и назначение" : "Name and purpose"}</Label>
@@ -311,7 +319,7 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           <section className={GROUP}>
             <h2 className="text-sm font-medium">{t("agentSectionInstructions")}</h2>
             <Separator />
-            <Label htmlFor="agent-prompt">{t("agentSectionInstructions")}</Label>
+            <Label htmlFor="agent-prompt" className="sr-only">{t("agentSectionInstructions")}</Label>
             <textarea id="agent-prompt" className={`min-h-64 rounded-md border border-input bg-background p-3 text-sm ${CONTROL}`} style={{ overflowWrap: "anywhere", wordBreak: "break-word" }} value={agent.prompt} maxLength={32000} onChange={(event) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, prompt: event.target.value } : item)); setSaved(false); }} />
           </section>
           <section className="min-w-0 max-w-full space-y-5">
