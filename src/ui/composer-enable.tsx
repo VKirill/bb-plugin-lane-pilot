@@ -14,7 +14,7 @@ import {
   startBlocked,
   type ActivationBlock,
 } from "../activation";
-import { DEFAULT_NATIVE_AGENT, NATIVE_MENTION_PROVIDER } from "../native-session";
+import { DEFAULT_NATIVE_AGENT } from "../native-session";
 
 type ContextPayload = {
   projectId: string | null;
@@ -46,6 +46,7 @@ export function EnableLanePilotAction() {
   const composer = useComposer();
   const view = useComposerView();
   const projectId = nativeProjectId(view.scope);
+  const [enabled, setEnabled] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -64,6 +65,7 @@ export function EnableLanePilotAction() {
   useEffect(() => {
     let current = true;
     setCtx(null);
+    setEnabled(false);
     void rpc.call("activation_context", { projectId, threadId: null }).then((next) => {
       if (current) setCtx(next);
     }).catch((cause) => {
@@ -89,12 +91,19 @@ export function EnableLanePilotAction() {
     setPending(true);
     setError(null);
     try {
-      const result = await rpc.call("prepare_native_session", { projectId, agentId });
-      composer.insertMention({
-        provider: NATIVE_MENTION_PROVIDER,
-        id: result.token,
-        label: result.label,
+      const attach = (composer as typeof composer & {
+        experimental_vkSetDispatchData?: (data: { token: string } | null) => void;
+      }).experimental_vkSetDispatchData;
+      if (!attach) throw new Error(t("nativeComposerUpgrade"));
+      const selection = await composer.experimental_setSelection({
+        providerId: "claude-code", model: "claude-opus-5[1m]", permissionMode: "full-access",
       });
+      if (selection.providerId !== "claude-code" || selection.model !== "claude-opus-5[1m]") {
+        throw new Error(t("nativeComposerModelUnavailable"));
+      }
+      const result = await rpc.call("prepare_native_session", { projectId, agentId });
+      attach({ token: result.token });
+      setEnabled(true);
       setOpen(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -103,13 +112,22 @@ export function EnableLanePilotAction() {
     }
   };
 
+  useEffect(() => composer.experimental_onSubmitted(() => setEnabled(false)), [composer.experimental_onSubmitted]);
+
+  const disable = () => {
+    (composer as typeof composer & { experimental_vkSetDispatchData?: (data: null) => void })
+      .experimental_vkSetDispatchData?.(null);
+    setEnabled(false);
+    setOpen(false);
+  };
+
   if (view.scope.kind !== "new-thread") return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="h-7 min-h-7 px-2 text-xs" disabled={disabled} aria-label={pending ? t("enabling") : t("enable")}>
-          <span className="whitespace-nowrap">{pending ? t("enabling") : error ? t("failed") : t("enable")}</span>
+        <Button type="button" variant="outline" size="sm" className="h-7 min-h-7 px-2 text-xs" disabled={disabled} aria-label={pending ? t("enabling") : enabled ? t("nativeComposerEnabled") : t("enable")}>
+          <span className="whitespace-nowrap">{pending ? t("enabling") : error ? t("failed") : enabled ? t("nativeComposerEnabled") : t("enable")}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 max-w-[min(20rem,calc(100vw-2rem))] min-w-0 space-y-3" data-testid="activation-popover">
@@ -132,6 +150,7 @@ export function EnableLanePilotAction() {
           </div>
         ) : null}
         {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+        {enabled ? <Button variant="outline" className={`${CONTROL_H} w-full`} onClick={disable}>{t("nativeComposerDisable")}</Button> : null}
         <Button className={`${CONTROL_H} w-full`} disabled={blocked} onClick={() => void prepare()}>
           {pending ? t("enabling") : t("prepareNativeComposer")}
         </Button>

@@ -144,10 +144,18 @@ export async function handleNativeDispatch(
     environmentIntent?: unknown;
     requestedExecution: { providerId: string };
     input: { blocks?: unknown };
+    experimental_submission?: { pluginId: string; data: unknown } | null;
   },
   db: LanePilotDatabase,
 ): Promise<{ action: "proceed" } | { action: "reject"; message: string }> {
-  const tokens = tokensFrom(ctx.input.blocks);
+  const hidden = ctx.experimental_submission?.pluginId === "lane-pilot"
+    ? z.object({ token: z.string().uuid() }).safeParse(ctx.experimental_submission.data)
+    : null;
+  if (hidden && !hidden.success) return { action: "reject", message: "Lane Pilot: Invalid profile selection. Enable Lane Pilot again." };
+  const tokens = [...new Set([
+    ...tokensFrom(ctx.input.blocks),
+    ...(hidden?.success ? [hidden.data.token] : []),
+  ])];
   const base = {
     thread: ctx.thread.id,
     project: ctx.project.id,

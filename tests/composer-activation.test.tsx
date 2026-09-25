@@ -1,8 +1,14 @@
 /** @vitest-environment jsdom */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "../i18n";
+
+const hiddenData = vi.hoisted(() => ({ value: null as null | { token: string } }));
+vi.mock("@get-bb/plugin-sdk/app", async (original) => {
+  const sdk = await original<typeof import("@get-bb/plugin-sdk/app")>();
+  return { ...sdk, useComposer: () => ({ ...sdk.useComposer(), experimental_vkSetDispatchData: (data: null | { token: string }) => { hiddenData.value = data; } }) };
+});
 
 async function mountComposer(input: {
   projectId: string | null;
@@ -24,7 +30,7 @@ async function mountComposer(input: {
   if (!action) throw new Error("missing composer action");
   return renderSlot({ component: action.component }, {}, {
     context: { projectId: input.projectId, threadId: input.threadId },
-    composer: { scope: input.scope },
+    composer: { scope: input.scope, text: "Please review this project" },
     rpc: {
       get_preferences: () => ({ locale: "en", preference: "en", lastProjectId: null }),
       activation_context: (args: { projectId: string | null }) => ({
@@ -53,7 +59,7 @@ async function mountComposer(input: {
   });
 }
 
-afterEach(() => { cleanup(); setLocaleOverride(null); });
+afterEach(() => { cleanup(); setLocaleOverride(null); hiddenData.value = null; });
 
 describe("Enable Lane Pilot composer action", () => {
   it("registers the launch action only on the new-thread composer", async () => {
@@ -96,7 +102,7 @@ describe("Enable Lane Pilot composer action", () => {
     slot.lifecycle.unmount();
   });
 
-  it("inserts a unique mention and does not spawn", async () => {
+  it("switches native pickers, attaches hidden selection and preserves the draft", async () => {
     const slot = await mountComposer({
       projectId: "proj_route",
       threadId: null,
@@ -106,9 +112,13 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
     await slot.findByTestId("activation-popover");
     fireEvent.click(slot.getByRole("button", { name: "Enable for this chat" }));
-    await waitFor(() => expect(slot.inspection.composer.mentions).toEqual([
-      { provider: "lane-pilot", id: "11111111-1111-1111-1111-111111111111", label: "Development coordinator" },
-    ]));
+    await waitFor(() => expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" }));
+    expect(slot.inspection.composer.mentions).toEqual([]);
+    expect(slot.inspection.composer.text).toBe("Please review this project");
+    expect(slot.inspection.composer.selections).toEqual([{ providerId: "claude-code", model: "claude-opus-5[1m]", permissionMode: "full-access" }]);
+    fireEvent.click(slot.getByRole("button", { name: "Lane Pilot enabled" }));
+    fireEvent.click(await slot.findByRole("button", { name: "Disable for this chat" }));
+    expect(hiddenData.value).toBeNull();
     expect(slot.inspection.navigateCalls).toEqual([]);
     slot.lifecycle.unmount();
   });
@@ -129,7 +139,8 @@ describe("Enable Lane Pilot composer action", () => {
     const start = slot.getByRole("button", { name: "Enable for this chat" }) as HTMLButtonElement;
     expect(start.disabled).toBe(false);
     fireEvent.click(start);
-    await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
+    await waitFor(() => expect(hiddenData.value?.token).toBeTruthy());
+    expect(slot.inspection.composer.mentions).toEqual([]);
     expect(slot.inspection.navigateCalls).toEqual([]);
     slot.lifecycle.unmount();
   });

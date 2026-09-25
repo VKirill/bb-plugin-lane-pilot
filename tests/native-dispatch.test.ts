@@ -402,3 +402,14 @@ it("prepares a host-only launcher for samepath before provision and keeps it if 
     { cwd: "/checkout/actual", agentId: "dev-orchestrator", agentsJson: null },
   ]);
 });
+
+it("binds hidden composer data on ordinary Send and ignores other plugins", async () => {
+  const fake = await setup();
+  const selected = await fake.harness.behavior.callRpc("prepare_native_session", { projectId: "project_a", agentId: "dev-orchestrator" }) as { token: string };
+  const hook = fake.harness.registrations.hooks["message.dispatch"]!;
+  expect(await hook({ ...context("thr_other", "Hello"), experimental_submission: { pluginId: "other", data: { token: selected.token } } })).toEqual({ action: "proceed" });
+  expect(fake.prepareCalls).toHaveLength(0);
+  expect(await hook({ ...context("thr_hidden", "Hello"), experimental_submission: { pluginId: "lane-pilot", data: { token: selected.token } } })).toEqual({ action: "proceed" });
+  expect(fake.prepareCalls).toHaveLength(1);
+  expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_hidden" })).toMatchObject({ token: selected.token });
+});
