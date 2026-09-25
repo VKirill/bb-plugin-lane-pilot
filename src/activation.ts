@@ -2,7 +2,7 @@ export type ComposerKind = "new-thread" | "thread" | "queued-message" | "side-ch
 export type SessionKind = "new-thread" | "unstarted-thread" | "ordinary-started" | "lp-active";
 
 export type ActivationBlock = {
-  code: "pending" | "need_project" | "need_binding" | "compiled_unsupported" | "no_projects";
+  code: "pending" | "need_project" | "need_binding" | "compiled_unsupported" | "no_projects" | "need_composer_selection";
   detail?: string;
 };
 
@@ -30,11 +30,15 @@ export function activationDisabledPredicate(input: {
   compiledRequested?: boolean;
   compiledSupported?: boolean;
   projectCount?: number;
+  nativeSelectionReady?: boolean;
 }): ActivationBlock[] {
   const blocks: ActivationBlock[] = [];
   if (input.pending) blocks.push({ code: "pending" });
   if (!input.projectId) {
     blocks.push({ code: input.projectCount === 0 ? "no_projects" : "need_project" });
+  }
+  if (input.nativeSelectionReady !== true) {
+    blocks.push({ code: "need_composer_selection" });
   }
   if (input.bindingStatus === "setup_required" || input.bindingStatus === "catalog_unavailable" || input.bindingStatus === "offline" || input.bindingStatus === "ambiguous") {
     blocks.push({ code: "need_binding", detail: input.bindingStatus });

@@ -36,9 +36,9 @@ export async function collectAgentInventory(input: {
   listMcp?: () => Promise<Array<{ name: string; sources?: string[] }>>;
 }): Promise<{ skills: InventoryGroup; mcpServers: InventoryGroup; tools: InventoryGroup; disallowedTools: InventoryGroup }> {
   const tools = emptyInventoryGroup("unavailable");
-  let skills = emptyInventoryGroup(input.projectId ? "ready" : "unavailable");
-  let mcpServers = emptyInventoryGroup("unavailable");
-  if (input.projectId && input.listSkills) {
+  let skills = emptyInventoryGroup(input.listSkills ? "ready" : "unavailable");
+  let mcpServers = emptyInventoryGroup(input.listMcp ? "ready" : "unavailable");
+  if (input.listSkills) {
     try {
       const listed = await input.listSkills(input.projectId);
       skills = {

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "../i18n";
 
@@ -83,11 +83,12 @@ describe("Enable Lane Pilot composer action", () => {
     expect(slot.queryByLabelText("Choose a project")).toBeNull();
     expect((slot.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
     expect(slot.getByText(/BB composer first/i)).toBeTruthy();
+    expect(slot.getByText(/waiting for a public BB composer selection read/i)).toBeTruthy();
     expect(slot.getByText(/Strict required session policy is unavailable/)).toBeTruthy();
     slot.lifecycle.unmount();
   });
 
-  it("starts a new-thread session with a selected project and null sourceThreadId", async () => {
+  it("does not start when native composer model and folder are unread", async () => {
     const calls: unknown[] = [];
     const slot = await mountComposer({
       projectId: "proj_route",
@@ -97,10 +98,14 @@ describe("Enable Lane Pilot composer action", () => {
       activate: async (args) => { calls.push(args); return { threadId: "thr_pm", runId: "run_1" }; },
     });
     fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
-    fireEvent.click(await slot.findByRole("button", { name: "Start" }));
-    await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]).toMatchObject({ projectId: "proj_a", sourceThreadId: null, agentId: "" });
-    expect(slot.inspection.navigateCalls).toEqual([{ method: "toThread", threadId: "thr_pm" }]);
+    await slot.findByTestId("activation-popover");
+    expect((slot.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(slot.getByText(/waiting for a public BB composer selection read/i)).toBeTruthy();
+    expect(slot.queryByText(/codex/)).toBeNull();
+    expect(slot.queryByText(/test-model/)).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Start" }));
+    expect(calls).toHaveLength(0);
+    expect(slot.inspection.navigateCalls).toEqual([]);
     slot.lifecycle.unmount();
   });
 });

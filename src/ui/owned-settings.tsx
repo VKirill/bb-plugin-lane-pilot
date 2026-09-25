@@ -15,7 +15,11 @@ import type { Locale } from "../../i18n";
 import { t } from "../../i18n";
 import type { LanePilotDefaults } from "../lp-defaults";
 
-type Agent = { id: string; prompt: string; description: string; sourceHash: string; sourceVersion: string; edited: boolean; tools?: string[]; disallowedTools?: string[]; skills?: string[]; mcpServers?: string[] };
+type Agent = {
+  id: string; prompt: string; description: string; sourceHash: string; sourceVersion: string; edited: boolean;
+  tools?: string[]; disallowedTools?: string[]; skills?: string[]; mcpServers?: string[];
+  resourceModes?: Partial<Record<ResourceKey, ResourceMode>>;
+};
 type HostOption = { id: string; name: string; status: string; connected: boolean };
 type Snapshot = { defaults: LanePilotDefaults; agents: Agent[]; revision: number; hosts?: HostOption[]; requiredSessionPolicy?: "required" | "none" };
 type Inventory = Record<ResourceKey, InventoryGroup>;
@@ -27,48 +31,70 @@ const RESOURCE_LABEL: Record<ResourceKey, "agentAllowedTools" | "agentDisallowed
   mcpServers: "agentMcp",
 };
 
+function noneLabel(resourceKey: ResourceKey): string {
+  if (resourceKey === "tools") return t("agentResourceNoneTools");
+  if (resourceKey === "disallowedTools") return t("agentResourceNoneDisallowed");
+  return t("agentResourceNone");
+}
+
 function ResourcePicker({
   resourceKey,
   value,
+  mode,
   group,
+  loading,
   disabled,
+  onRetry,
   onChange,
 }: {
   resourceKey: ResourceKey;
   value: string[] | undefined;
+  mode: ResourceMode;
   group: InventoryGroup | undefined;
+  loading: boolean;
   disabled: boolean;
-  onChange: (next: string[] | undefined) => void;
+  onRetry: () => void;
+  onChange: (next: string[] | undefined, nextMode: ResourceMode) => void;
 }) {
   const [query, setQuery] = useState("");
-  const mode = resourceModeOf(value);
   const names = value ?? [];
-  const status = group?.status ?? "unavailable";
+  const status = loading ? "loading" : group?.status ?? "unavailable";
+  const canSelect = status === "ready" || names.length > 0;
   const listed = mergeInventoryItems(group?.items ?? [], names).filter((item) => {
     const q = query.trim().toLowerCase();
     return q ? `${item.name} ${item.label}`.toLowerCase().includes(q) : true;
   });
   const known = new Set((group?.items ?? []).map((item) => item.name));
+  const errorTitle = resourceKey === "skills" ? t("agentSkillsLoadFailed") : resourceKey === "mcpServers" ? t("agentMcpLoadFailed") : t("agentInventoryError");
   return (
     <section className="space-y-2" data-testid={`agent-resource-${resourceKey}`}>
       <div className="flex items-center justify-between gap-2">
         <Label className="text-sm">{t(RESOURCE_LABEL[resourceKey])}</Label>
         <Select value={mode} disabled={disabled} onValueChange={(next) => {
           const selected = next as ResourceMode;
-          if (selected === "inherit") onChange(undefined);
-          else if (selected === "none") onChange([]);
-          else onChange(names);
+          if (selected === "selected" && !canSelect) return;
+          if (selected === "inherit") onChange(undefined, "inherit");
+          else if (selected === "none") onChange([], "none");
+          else onChange(names, "selected");
         }}>
           <SelectTrigger className="h-8 w-[11rem]" aria-label={t(RESOURCE_LABEL[resourceKey])}><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="inherit">{t("inheritChoice")}</SelectItem>
-            <SelectItem value="none">{t("agentResourceNone")}</SelectItem>
-            <SelectItem value="selected">{t("agentResourceSelected")}</SelectItem>
+            <SelectItem value="none">{noneLabel(resourceKey)}</SelectItem>
+            <SelectItem value="selected" disabled={!canSelect}>{t("agentResourceSelected")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
-      {status === "error" ? <p className="text-xs text-destructive">{t("agentInventoryError")}</p> : null}
+      {status === "loading" ? <p className="text-xs text-muted-foreground">{t("agentInventoryLoading")}</p> : null}
+      {status === "error" ? (
+        <div className="space-y-1">
+          <p className="text-xs text-destructive">{errorTitle}{group?.error ? `: ${group.error}` : ""}</p>
+          <Button type="button" size="sm" variant="outline" className="h-8" onClick={onRetry}>{t("agentInventoryRetry")}</Button>
+        </div>
+      ) : null}
       {status === "unavailable" ? <p className="text-xs text-muted-foreground">{resourceKey === "tools" || resourceKey === "disallowedTools" ? t("agentToolsUnavailable") : t("agentInventoryUnavailable")}</p> : null}
+      {status === "ready" && (group?.items.length ?? 0) === 0 && names.length === 0 ? <p className="text-xs text-muted-foreground">{t("agentInventoryEmpty")}</p> : null}
+      {!canSelect && !loading ? <p className="text-xs text-muted-foreground">{t("agentSelectedUnavailable")}</p> : null}
       {mode === "selected" ? (
         <div className="space-y-2">
           <Input value={query} placeholder={t("agentResourceSearch")} aria-label={t("agentResourceSearch")} onChange={(event) => setQuery(event.target.value)} />
@@ -81,16 +107,22 @@ function ResourcePicker({
                     className="size-4 accent-foreground"
                     checked={names.includes(item.name)}
                     disabled={disabled}
-                    onChange={(event) => onChange(event.target.checked ? [...names, item.name] : names.filter((name) => name !== item.name))}
+                    onChange={(event) => onChange(event.target.checked ? [...names, item.name] : names.filter((name) => name !== item.name), "selected")}
                   />
                   <span className="min-w-0 truncate">{item.label}</span>
                   {!known.has(item.name) ? <span className="text-xs text-muted-foreground">{t("agentSavedUnknown")}</span> : null}
                 </label>
               </li>
             ))}
-            {listed.length === 0 ? <li className="text-xs text-muted-foreground">{t("agentInventoryUnavailable")}</li> : null}
+            {listed.length === 0 ? <li className="text-xs text-muted-foreground">{t("agentInventoryEmpty")}</li> : null}
           </ul>
         </div>
+      ) : null}
+      {resourceKey === "tools" || resourceKey === "disallowedTools" ? (
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">{t("settingsAdvanced")}</summary>
+          <p className="mt-1">{t("agentToolsTechnical")}</p>
+        </details>
       ) : null}
     </section>
   );
@@ -112,25 +144,27 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const loadInventory = async (next: Snapshot) => {
+    const prefs = await rpc.call("get_preferences", { suggestedLocale: locale });
+    const hostId = next.defaults.qaHostId ?? next.hosts?.find((host) => host.connected)?.id ?? next.hosts?.[0]?.id ?? null;
+    try {
+      setInventory(await rpc.call("get_agent_inventory", { projectId: prefs.lastProjectId, hostId }));
+    } catch (cause) {
+      setInventory((current) => current ?? {
+        skills: { status: "error", items: [], error: String(cause) },
+        mcpServers: { status: "error", items: [], error: String(cause) },
+        tools: { status: "unavailable", items: [] },
+        disallowedTools: { status: "unavailable", items: [] },
+      });
+    }
+  };
   useEffect(() => {
     if (snapshot || scope === "projects") return;
     let current = true;
     void rpc.call("get_globals", {}).then(async (next) => {
       if (!current) return;
       setSnapshot(next); setDefaults(next.defaults); setAgents(next.agents); setHosts(next.hosts ?? []);
-      const prefs = await rpc.call("get_preferences", { suggestedLocale: locale });
-      if (!current) return;
-      const hostId = next.defaults.qaHostId ?? next.hosts?.[0]?.id ?? null;
-      try {
-        setInventory(await rpc.call("get_agent_inventory", { projectId: prefs.lastProjectId, hostId }));
-      } catch (cause) {
-        if (current) setInventory({
-          skills: { status: "error", items: [], error: String(cause) },
-          mcpServers: { status: "error", items: [], error: String(cause) },
-          tools: { status: "unavailable", items: [] },
-          disallowedTools: { status: "unavailable", items: [] },
-        });
-      }
+      await loadInventory(next);
     }).catch((cause) => { if (current) setError(String(cause)); });
     return () => { current = false; };
   }, [rpc, scope, snapshot, locale]);
@@ -159,10 +193,10 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           ...(agent.skills ? { skills: agent.skills } : {}),
           ...(agent.mcpServers ? { mcpServers: agent.mcpServers } : {}),
           resourceModes: {
-            tools: resourceModeOf(agent.tools),
-            disallowedTools: resourceModeOf(agent.disallowedTools),
-            skills: resourceModeOf(agent.skills),
-            mcpServers: resourceModeOf(agent.mcpServers),
+            tools: agent.resourceModes?.tools ?? resourceModeOf(agent.tools),
+            disallowedTools: agent.resourceModes?.disallowedTools ?? resourceModeOf(agent.disallowedTools),
+            skills: agent.resourceModes?.skills ?? resourceModeOf(agent.skills),
+            mcpServers: agent.resourceModes?.mcpServers ?? resourceModeOf(agent.mcpServers),
           },
         });
         if (!result.ok) throw new Error(ru ? "Профиль изменён в другом окне. Ваш черновик сохранён." : "Profile changed in another window. Your draft is retained.");
@@ -242,9 +276,19 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
               key={key}
               resourceKey={key}
               value={agent[key]}
+              mode={agent.resourceModes?.[key] ?? resourceModeOf(agent[key])}
               group={inventory?.[key]}
+              loading={inventory === null}
               disabled={busy}
-              onChange={(next) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, [key]: next } : item)); setSaved(false); }}
+              onRetry={() => { if (snapshot) void loadInventory(snapshot); }}
+              onChange={(next, mode) => {
+                setAgents((current) => current.map((item) => item.id === selected ? {
+                  ...item,
+                  [key]: next,
+                  resourceModes: { ...item.resourceModes, [key]: mode },
+                } : item));
+                setSaved(false);
+              }}
             />
           ))}
           <p className="text-xs text-muted-foreground">{t("agentResourcesHelp")}</p>

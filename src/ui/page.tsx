@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   experimental_Diff as Diff,
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -50,6 +50,7 @@ import {
 } from "../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
+import { Separator } from "../../components/ui/separator";
 import { Icon } from "../../components/ui/icon";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "../state-machine";
@@ -222,7 +223,7 @@ const PICKER_KEYS = new Set([
   CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_SERVICE_TIER,
 ]);
 const DEDICATED_KEYS = new Set([
-  "night_review.enabled", "night_review.auto_merge",
+  "night_review.enabled", "night_review.auto_merge", "night_review.max_fix_tasks",
   "pm_read.enabled", "pm_read.min_lines",
   "docs.enabled", "docs.maintain", "docs.page_cap", "docs.since", "docs.hour",
   "helper.placement", "helper.context_mode", "helper.skills", "helper.mcp_servers", "helper.bb_plugins", "helper.native_plugins",
@@ -322,6 +323,29 @@ function asBoolean(value: unknown, fallback: boolean): boolean {
   if (value === "1" || value === "on" || value === "true") return true;
   if (value === "0" || value === "off" || value === "false" || value === "no") return false;
   return fallback;
+}
+
+function HelpTip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label={label}>
+          <Icon name="CircleQuestion" className="size-4 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="max-w-sm text-xs text-muted-foreground">{children}</PopoverContent>
+    </Popover>
+  );
+}
+
+function SettingsGroup({ title, testId, children }: { title: string; testId: string; children: ReactNode }) {
+  return (
+    <section className="space-y-2" data-testid={testId}>
+      <h2 className="text-sm font-medium">{title}</h2>
+      <Separator />
+      <div className="space-y-5">{children}</div>
+    </section>
+  );
 }
 
 function FieldControl({
@@ -1268,8 +1292,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             <TabsTrigger value="diagnostics" data-testid="tab-diagnostics">{t("tabDiagnostics")}</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="settings" forceMount={true} className="space-y-5" hidden={tab !== "settings"} data-testid="settings-panel">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <TabsContent value="settings" forceMount={true} className="space-y-6" hidden={tab !== "settings"} data-testid="settings-panel">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <div className="min-w-0 flex-1 space-y-1">
                 <Label htmlFor="settings-search">{t("settingsSearch")}</Label>
                 <Input
@@ -1285,138 +1309,214 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 <Button size="sm" variant={settingsDepth === "advanced" ? "default" : "outline"} aria-pressed={settingsDepth === "advanced"} onClick={() => setSettingsDepth("advanced")}>{t("settingsAdvanced")}</Button>
               </div>
             </div>
-            {cardVisible("writerPicker", "writerPickerHelp", "writerEffortMode", "writerEffortModeHelp") ? <section className="space-y-3" data-testid="writer-picker">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t("writerPicker")}</h2>
-                {inheritReset([WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER])}
-              </div>
-              <p className="text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
-              {modelPicker(pickerValue, (next) => { saveWriterSelection(next); })}
-              {(() => {
-                const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
-                const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
-                return effortRow ? <details className="space-y-2" data-testid="writer-effort-mode">
-                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
-                  <div className="flex items-center justify-between gap-3 pt-2">
-                    <Label className="text-sm" htmlFor="writer-effort-mode">{t("writerEffortMode")}</Label>
-                    <Select value={automaticEffort ? "automatic" : "manual"} onValueChange={(next) => void applySetting(effortRow, next === "automatic" ? "1" : "0")}>
-                      <SelectTrigger id="writer-effort-mode" aria-label={t("writerEffortMode")}><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="automatic">{t("writerEffortAutomatic")}</SelectItem>
-                        <SelectItem value="manual">{t("writerEffortManual")}</SelectItem>
-                      </SelectContent>
-                    </Select>
+            {cardVisible("writerPicker", "writerPickerHelp", "writerEffortMode", "jevSettings", "jevOpencode") ? <SettingsGroup title={t("sectionExecution")} testId="settings-execution">
+              <section className="space-y-2" data-testid="writer-picker">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <h3 className="text-sm font-medium">{t("writerPicker")}</h3>
+                    <HelpTip label={t("writerPickerTechnical")}><p>{t("writerPickerTechnical")}</p></HelpTip>
                   </div>
-                  <p className="text-xs text-muted-foreground">{automaticEffort ? t("writerEffortFallbackNote") : t("writerEffortManualNote")}</p>
-                </details> : null;
-              })()}
-            </section> : null}
+                  {inheritReset([WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER])}
+                </div>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
+                <div className="max-w-xl">{modelPicker(pickerValue, (next) => { saveWriterSelection(next); })}</div>
+                {(() => {
+                  const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
+                  const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
+                  return effortRow ? <details className="space-y-2" data-testid="writer-effort-mode">
+                    <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                    <div className="flex items-center justify-between gap-2 pt-2">
+                      <Label className="text-sm" htmlFor="writer-effort-mode">{t("writerEffortMode")}</Label>
+                      <Select value={automaticEffort ? "automatic" : "manual"} onValueChange={(next) => void applySetting(effortRow, next === "automatic" ? "1" : "0")}>
+                        <SelectTrigger id="writer-effort-mode" aria-label={t("writerEffortMode")} className="w-[11rem]"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="automatic">{t("writerEffortAutomatic")}</SelectItem>
+                          <SelectItem value="manual">{t("writerEffortManual")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="max-w-xl text-xs text-muted-foreground">{automaticEffort ? t("writerEffortFallbackNote") : t("writerEffortManualNote")}</p>
+                    <div className="space-y-2" data-testid="jev-settings">
+                      {jevRows.filter((row) => row.storageKey !== "jev.LANE_JEV_EFFORT").map((row) => {
+                        const label = t("jevOpencode");
+                        return <div key={row.storageKey} className="flex items-center justify-between gap-2">
+                          <Label className="text-sm" htmlFor={row.id}>{label}</Label>
+                          <Switch id={row.id} checked={asBoolean(displayedValue(row.storageKey), true)} aria-label={label}
+                            onCheckedChange={(next) => void applySetting(row, next ? "1" : "0")} />
+                        </div>;
+                      })}
+                    </div>
+                  </details> : null;
+                })()}
+              </section>
+            </SettingsGroup> : null}
 
-            {cardVisible("memoryPicker", "memoryPickerHelp") ? <section className="space-y-3" data-testid="memory-picker">
+            {cardVisible("memoryPicker", "docsPicker", "onboardingPicker", "largeFileRead", "groupDocs") ? <SettingsGroup title={t("sectionMemoryDocs")} testId="settings-memory-docs">
+              {cardVisible("memoryPicker", "memoryPickerHelp") ? <section className="space-y-2" data-testid="memory-picker">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <h3 className="text-sm font-medium">{t("memoryPicker")}</h3>
+                    <HelpTip label={t("memoryPickerTechnical")}><p>{t("memoryPickerTechnical")}</p></HelpTip>
+                  </div>
+                  {inheritReset([MEMORY_PROVIDER, MEMORY_MODEL, MEMORY_EFFORT, MEMORY_SERVICE_TIER])}
+                </div>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
+                <div className="max-w-xl">{modelPicker(memoryPickerValue, (next) => { void saveMemorySelection(next); })}</div>
+              </section> : null}
+              {cardVisible("docsPicker", "docsPickerHelp", "docsMaintain", "groupDocs") ? <section className="space-y-2" data-testid="docs-picker">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <h3 className="text-sm font-medium">{t("groupDocs")}</h3>
+                    <HelpTip label={t("docsPickerTechnical")}><p>{t("docsPickerTechnical")}</p></HelpTip>
+                  </div>
+                  {(() => { const row = catalogRow("docs.enabled"); return row ? <Switch checked={asBoolean(displayedValue("docs.enabled"), false)} aria-label={t("groupDocs")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+                </div>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
+                <div className="max-w-xl">{modelPicker(docsPickerValue, (next) => { void saveDocsSelection(next); })}</div>
+                <details className="space-y-2">
+                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                  {(["docs.maintain","docs.page_cap","docs.since","docs.hour"] as const).map((key) => {
+                    const row = catalogRow(key);
+                    return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                      onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                  })}
+                </details>
+              </section> : null}
+              {cardVisible("onboardingPicker", "onboardingPickerHelp") ? <section className="space-y-2" data-testid="onboarding-picker">
+                <div className="flex min-w-0 items-center gap-1">
+                  <h3 className="text-sm font-medium">{t("onboardingPicker")}</h3>
+                  <HelpTip label={t("onboardingPickerHelp")}><p>{t("onboardingConstraint")}</p></HelpTip>
+                </div>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("onboardingPickerHelp")}</p>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("onboardingConstraint")}</p>
+                <div className="max-w-xl">{modelPicker(onboardingPickerValue, (next) => { void saveOnboardingSelection(next); })}</div>
+              </section> : null}
+              {cardVisible("largeFileRead", "largeFileReadHelp", "largeFilePicker") ? <section className="space-y-2" data-testid="pm-read-settings">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <h3 className="text-sm font-medium">{t("largeFileRead")}</h3>
+                    <HelpTip label={t("largeFileReadTechnical")}><p>{t("largeFileReadTechnical")}</p></HelpTip>
+                  </div>
+                  {(() => { const row = catalogRow("pm_read.enabled"); return row ? <Switch checked={asBoolean(displayedValue("pm_read.enabled"), false)} aria-label={t("largeFileRead")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+                </div>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("largeFileReadHelp")}</p>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("largeFileReadConstraint")}</p>
+                <div className="max-w-xl">{modelPicker(pmReadPickerValue, (next) => { void savePmReadSelection(next); })}</div>
+                <details className="space-y-2">
+                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                  {(() => { const row = catalogRow("pm_read.min_lines"); return row ? <SettingField row={row} value={displayedValue("pm_read.min_lines")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("pm_read.min_lines", next)} /> : null; })()}
+                </details>
+              </section> : null}
+            </SettingsGroup> : null}
+
+            {cardVisible("helperContext", "helperContextHelp") ? <SettingsGroup title={t("sectionHelperContext")} testId="settings-helper-context">
+              <section className="space-y-2" data-testid="helper-context-settings">
+                <div className="flex min-w-0 items-center gap-1">
+                  <h3 className="text-sm font-medium">{t("helperContext")}</h3>
+                  <HelpTip label={t("helperContextTechnical")}><p>{t("helperContextTechnical")}</p><p className="mt-1">{t("helperContextNoneNote")}</p></HelpTip>
+                </div>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextHelp")}</p>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextConstraint")}</p>
+                {(() => { const row = catalogRow("helper.placement"); return row ? <SettingField row={row} value={displayedValue("helper.placement")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("helper.placement", next)} /> : null; })()}
+                <details className="space-y-2">
+                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                  {(["helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins"] as const).map((key) => {
+                    const row = catalogRow(key);
+                    return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                      onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                  })}
+                </details>
+              </section>
+            </SettingsGroup> : null}
+            {extrasGrouped.filter((group) => group.section !== "night-review" && group.section !== "browser-qa").map(({ section, rows }) => (
+              <section key={section} className="space-y-2" data-testid={`settings-group-${section}`}>
+                <h3 className="text-sm font-medium">{t(sectionKey(section))}</h3>
+                <div className="space-y-2">
+                  {rows.map((row) => (
+                    <SettingField
+                      key={row.storageKey}
+                      row={row}
+                      value={displayedValue(row.storageKey)}
+                      disabled={false}
+                      onChange={(next) => void applySetting(row, next)}
+                      onDraft={(next) => writeDraft(row.storageKey, next)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+            {settingsQuery.trim() && extrasGrouped.filter((group) => group.section !== "night-review" && group.section !== "browser-qa").length === 0 && !cardVisible("writerPicker", "memoryPicker", "jevSettings", "docsPicker", "onboardingPicker", "largeFileRead", "helperContext") ? (
+              <p className="text-sm text-muted-foreground">{t("noMatchingSettings")}</p>
+            ) : null}
+          </TabsContent>
+
+          <TabsContent value="checks" forceMount={true} className="space-y-6" hidden={tab !== "checks"} data-testid="checks-panel">
+            <section className="space-y-2" data-testid="plan-critique-settings">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t("memoryPicker")}</h2>
-                {inheritReset([MEMORY_PROVIDER, MEMORY_MODEL, MEMORY_EFFORT, MEMORY_SERVICE_TIER])}
+                <h2 className="text-sm font-medium">{t("stagePlanCritique")}</h2>
+                {(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
               </div>
-              <p className="text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
-              {modelPicker(memoryPickerValue, (next) => { void saveMemorySelection(next); })}
-            </section> : null}
-
-            {cardVisible("jevSettings", "jevOpencode") ? <section className="space-y-3" data-testid="jev-settings">
-              <h2 className="text-sm font-medium">{t("jevSettings")}</h2>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {jevRows.filter((row) => row.storageKey !== "jev.LANE_JEV_EFFORT").map((row) => {
-                  const label = t("jevOpencode");
-                  return <div key={row.storageKey} className="flex items-center justify-between gap-3">
-                    <Label className="text-sm" htmlFor={row.id}>{label}</Label>
-                    <Switch id={row.id} checked={asBoolean(displayedValue(row.storageKey), true)} aria-label={label}
-                      onCheckedChange={(next) => void applySetting(row, next ? "1" : "0")} />
-                  </div>;
+              <p className="max-w-xl text-xs text-muted-foreground">{t("planCritiqueHelp")}</p>
+              <div className="max-w-xl">{modelPicker(planCritiquePickerValue, (next) => { void savePlanCritiqueSelection(next); })}</div>
+              <details className="space-y-2">
+                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                {(["plan_critique.mode","plan_critique.min_score","plan_critique.min_write_tasks","plan_critique.on_high_risk"] as const).map((key) => {
+                  const row = catalogRow(key);
+                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
+              </details>
+            </section>
+            <section className="space-y-2" data-testid="code-critique-settings">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium">{t("stageCodeCritique")}</h2>
+                {(() => { const row = catalogRow("code_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("code_critique.enabled"), false)} aria-label={t("stageCodeCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
               </div>
-            </section> : null}
-
-          {cardVisible("nightReviewEnabled", "nightReviewAutoMerge", "stageNightReview") ? <section className="space-y-3" data-testid="night-review-settings">
+              <p className="max-w-xl text-xs text-muted-foreground">{t("codeCritiqueHelp")}</p>
+              <div className="max-w-xl">{modelPicker(codeCritiquePickerValue, (next) => { void saveCodeCritiqueSelection(next); })}</div>
+              <details className="space-y-2">
+                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                {(["code_critique.mode","code_critique.auto_fix","code_critique.max_rounds"] as const).map((key) => {
+                  const row = catalogRow(key);
+                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                })}
+              </details>
+            </section>
+            <section className="space-y-2" data-testid="night-review-settings">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-medium">{t(sectionKey("night-review"))}</h2>
                 <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}
                   onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void applySetting(row,next);}} />
               </div>
-              <p className="text-xs text-muted-foreground">{t("nightReviewEnabled")}</p>
-              {modelPicker(nightPickerValue, (next) => { void saveNightReviewSelection(next); })}
+              <p className="max-w-xl text-xs text-muted-foreground">{t("nightReviewEnabled")}</p>
+              <div className="max-w-xl">{modelPicker(nightPickerValue, (next) => { void saveNightReviewSelection(next); })}</div>
               <details className="space-y-2">
                 <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
                 <div className="flex items-center justify-between gap-2 pt-2">
                   <div className="flex min-w-0 items-center gap-1">
                     <Label className="text-sm" htmlFor="night-review-auto-merge">{t("nightReviewAutoMerge")}</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button type="button" size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label={t("nightReviewAutoMergeHelp")}><Icon name="CircleQuestion" className="size-4 text-muted-foreground" /></Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="text-xs text-muted-foreground">{t("nightReviewAutoMergeHelp")}</PopoverContent>
-                    </Popover>
+                    <HelpTip label={t("nightReviewAutoMergeHelp")}><p>{t("nightReviewAutoMergeHelp")}</p></HelpTip>
                   </div>
                   <Switch id="night-review-auto-merge" checked={asBoolean(displayedValue("night_review.auto_merge"),false)} aria-label={t("nightReviewAutoMerge")}
                     onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.auto_merge");if(row)void applySetting(row,next);}} />
                 </div>
+                {(() => { const row = catalogRow("night_review.max_fix_tasks"); return row ? <SettingField row={row} value={displayedValue("night_review.max_fix_tasks")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("night_review.max_fix_tasks", next)} /> : null; })()}
               </details>
-          </section> : null}
-            {cardVisible("docsPicker", "docsPickerHelp", "docsMaintain", "groupDocs") ? <section className="space-y-3" data-testid="docs-picker">
+            </section>
+            <section className="space-y-2" data-testid="browser-qa-host">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t("groupDocs")}</h2>
-                {(() => { const row = catalogRow("docs.enabled"); return row ? <Switch checked={asBoolean(displayedValue("docs.enabled"), false)} aria-label={t("groupDocs")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+                <h2 className="text-sm font-medium">{t("globalQaHost")}</h2>
+                {(() => { const row = catalogRow("browser_qa.enabled"); return row ? <Switch checked={asBoolean(displayedValue("browser_qa.enabled"), false)} aria-label={t("globalQaHost")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
               </div>
-              <p className="text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
-              {modelPicker(docsPickerValue, (next) => { void saveDocsSelection(next); })}
-              <details className="space-y-2">
-                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
-                {(["docs.maintain","docs.page_cap","docs.since","docs.hour"] as const).map((key) => {
-                  const row = catalogRow(key);
-                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
-                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
-                })}
-              </details>
-            </section> : null}
-            {cardVisible("onboardingPicker", "onboardingPickerHelp") ? <section className="space-y-3" data-testid="onboarding-picker">
-              <h2 className="text-sm font-medium">{t("onboardingPicker")}</h2>
-              <p className="text-xs text-muted-foreground">{t("onboardingPickerHelp")}</p>
-              {modelPicker(onboardingPickerValue, (next) => { void saveOnboardingSelection(next); })}
-            </section> : null}
-            {cardVisible("largeFileRead", "largeFileReadHelp", "largeFilePicker") ? <section className="space-y-3" data-testid="pm-read-settings">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t("largeFileRead")}</h2>
-                {(() => { const row = catalogRow("pm_read.enabled"); return row ? <Switch checked={asBoolean(displayedValue("pm_read.enabled"), false)} aria-label={t("largeFileRead")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
-              </div>
-              <p className="text-xs text-muted-foreground">{t("largeFileReadHelp")}</p>
-              {modelPicker(pmReadPickerValue, (next) => { void savePmReadSelection(next); })}
-              <details className="space-y-2">
-                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
-                {(() => { const row = catalogRow("pm_read.min_lines"); return row ? <SettingField row={row} value={displayedValue("pm_read.min_lines")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("pm_read.min_lines", next)} /> : null; })()}
-              </details>
-            </section> : null}
-            {cardVisible("helperContext", "helperContextHelp") ? <section className="space-y-3" data-testid="helper-context-settings">
-              <h2 className="text-sm font-medium">{t("helperContext")}</h2>
-              <p className="text-xs text-muted-foreground">{t("helperContextHelp")}</p>
-              {(() => { const row = catalogRow("helper.placement"); return row ? <SettingField row={row} value={displayedValue("helper.placement")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("helper.placement", next)} /> : null; })()}
-              <details className="space-y-2">
-                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
-                <p className="text-xs text-muted-foreground">{t("helperContextNoneNote")}</p>
-                {(["helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins"] as const).map((key) => {
-                  const row = catalogRow(key);
-                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
-                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
-                })}
-              </details>
-            </section> : null}
-            {cardVisible("browserQaHost", "browserQaHostHelp", "browserQaWorkspace") ? <section className="space-y-3" data-testid="browser-qa-host">
-              <h2 className="text-sm font-medium">{t("globalQaHost")}</h2>
-              <p className="text-xs text-muted-foreground">{t("browserQaHostHelp")}</p>
+              <p className="max-w-xl text-xs text-muted-foreground">{t("browserQaHostHelp")}</p>
               {(() => {
                 const options = data?.qaHosts ?? [];
                 const current = String(displayedValue(QA_HOST_KEY) ?? "");
                 const known = options.some((host) => host.id === current);
                 if (!options.length) return <p className="text-sm text-muted-foreground">{t("browserQaHostNone")}</p>;
                 return <Select value={known ? current : current ? current : "__inherit__"} onValueChange={(next) => { if (next === "__inherit__") void resetInherited([QA_HOST_KEY]); else void saveKey(QA_HOST_KEY, next); }}>
-                  <SelectTrigger aria-label={t("globalQaHost")} data-testid="browser-qa-host-select">
+                  <SelectTrigger aria-label={t("globalQaHost")} data-testid="browser-qa-host-select" className="max-w-xl">
                     <SelectValue placeholder={t("inheritChoice")} />
                   </SelectTrigger>
                   <SelectContent>
@@ -1439,61 +1539,16 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   onChange={(event) => writeDraft(QA_WORKSPACE_KEY, event.target.value)}
                   onBlur={(event) => void saveKey(QA_WORKSPACE_KEY, event.target.value)}
                 />
-              </details>
-            </section> : null}
-            {extrasGrouped.map(({ section, rows }) => (
-              <section key={section} className="space-y-3" data-testid={`settings-group-${section}`}>
-                <h2 className="text-sm font-medium">{t(sectionKey(section))}</h2>
-                <div className="space-y-2">
-                  {rows.map((row) => (
-                    <SettingField
-                      key={row.storageKey}
-                      row={row}
-                      value={displayedValue(row.storageKey)}
-                      disabled={false}
-                      onChange={(next) => void applySetting(row, next)}
-                      onDraft={(next) => writeDraft(row.storageKey, next)}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
-            {settingsQuery.trim() && extrasGrouped.length === 0 && !cardVisible("writerPicker", "memoryPicker", "jevSettings", "nightReviewEnabled", "docsPicker", "onboardingPicker", "largeFileRead", "helperContext", "browserQaHost") ? (
-              <p className="text-sm text-muted-foreground">{t("noMatchingSettings")}</p>
-            ) : null}
-          </TabsContent>
-
-          <TabsContent value="checks" forceMount={true} className="space-y-6" hidden={tab !== "checks"} data-testid="checks-panel">
-            <section className="space-y-3" data-testid="plan-critique-settings">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t("stagePlanCritique")}</h2>
-                {(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
-              </div>
-              <p className="text-xs text-muted-foreground">{t("planCritiqueHelp")}</p>
-              {modelPicker(planCritiquePickerValue, (next) => { void savePlanCritiqueSelection(next); })}
-              <details className="space-y-2">
-                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
-                {(["plan_critique.mode","plan_critique.min_score","plan_critique.min_write_tasks","plan_critique.on_high_risk"] as const).map((key) => {
-                  const row = catalogRow(key);
-                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
-                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
-                })}
-              </details>
-            </section>
-            <section className="space-y-3" data-testid="code-critique-settings">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{t("stageCodeCritique")}</h2>
-                {(() => { const row = catalogRow("code_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("code_critique.enabled"), false)} aria-label={t("stageCodeCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
-              </div>
-              <p className="text-xs text-muted-foreground">{t("codeCritiqueHelp")}</p>
-              {modelPicker(codeCritiquePickerValue, (next) => { void saveCodeCritiqueSelection(next); })}
-              <details className="space-y-2">
-                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
-                {(["code_critique.mode","code_critique.auto_fix","code_critique.max_rounds"] as const).map((key) => {
-                  const row = catalogRow(key);
-                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
-                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
-                })}
+                {extrasGrouped.filter((group) => group.section === "browser-qa").flatMap((group) => group.rows.filter((row) => row.storageKey !== "browser_qa.enabled")).map((row) => (
+                  <SettingField
+                    key={row.storageKey}
+                    row={row}
+                    value={displayedValue(row.storageKey)}
+                    disabled={false}
+                    onChange={(next) => void applySetting(row, next)}
+                    onDraft={(next) => writeDraft(row.storageKey, next)}
+                  />
+                ))}
               </details>
             </section>
           </TabsContent>
@@ -1623,7 +1678,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   <p>{t("importNight")}: {data.importSource.nightPath ?? "—"}</p>
                 </> : <p>{t("importNone")}</p>}
                 <p>{t("detectWorkspace")}: {data?.workspacePath ?? "—"}</p>
-                <p>{t("snapshotPath")}: {snapshotPath || data?.lastSnapshotPath || "—"}</p>
+                {data?.lastSnapshotPath ? <p>{t("snapshotBackupFolder")}: {data.lastSnapshotPath}</p> : null}
               </CardContent>
             </Card>
 
@@ -1643,13 +1698,12 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 : <p className="text-xs text-muted-foreground">{t("noDiagnosticData")}</p>}
             </section>
 
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t("snapshotPath")}</CardTitle></CardHeader>
-              <CardContent className="space-y-2">
-                <Label htmlFor="snapshot-path">{t("snapshotPath")}</Label>
-                <Input id="snapshot-path" value={snapshotPath} onChange={(event) => setSnapshotPath(event.target.value)} />
-              </CardContent>
-            </Card>
+            <details className="space-y-2" data-testid="restore-previous-install">
+              <summary className="cursor-pointer text-sm font-medium">{t("restorePreviousInstall")}</summary>
+              <p className="max-w-xl text-xs text-muted-foreground">{t("snapshotBackupHelp")}</p>
+              <Label htmlFor="snapshot-path">{t("snapshotBackupFolder")}</Label>
+              <Input id="snapshot-path" value={snapshotPath} onChange={(event) => setSnapshotPath(event.target.value)} />
+            </details>
 
             <section className="space-y-2">
               <h2 className="text-sm font-medium">{t("unapplied")}</h2>

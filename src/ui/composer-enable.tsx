@@ -12,6 +12,7 @@ import {
   startBlocked,
   type ActivationBlock,
 } from "../activation";
+import { nativeSelectionReady, readNativeComposerSelection } from "../composer-selection";
 
 type ContextPayload = {
   projectId: string | null;
@@ -30,6 +31,7 @@ function blockCopy(block: ActivationBlock): string {
   if (block.code === "pending") return t("enabling");
   if (block.code === "no_projects") return t("noProjects");
   if (block.code === "need_project") return t("activationNeedProject");
+  if (block.code === "need_composer_selection") return t("activationNeedComposerSelection");
   if (block.code === "need_binding") return t("noProjectBinding");
   return t("compiledMainUnavailable");
 }
@@ -70,6 +72,8 @@ export function EnableLanePilotAction() {
   }, [rpc, projectId]);
 
   const compiledRequested = agentId !== "__default__";
+  const nativeSelection = readNativeComposerSelection(view);
+  const selectionReady = nativeSelectionReady(nativeSelection);
   const blocks = activationDisabledPredicate({
     pending,
     projectId,
@@ -77,13 +81,13 @@ export function EnableLanePilotAction() {
     compiledRequested,
     compiledSupported: ctx?.compiledMainAgent === "supported",
     projectCount: ctx?.projects.length,
+    nativeSelectionReady: selectionReady,
   });
   const disabled = composerButtonDisabled(blocks);
   const blocked = startBlocked(blocks);
-  const writerLabel = [ctx?.writer.providerId, ctx?.writer.model, ctx?.writer.reasoningEffort].filter(Boolean).join(" · ") || t("inheritChoice");
 
   const activate = async () => {
-    if (blocked || pending || !projectId) return;
+    if (blocked || pending || !projectId || !nativeSelection) return;
     setPending(true);
     setError(null);
     try {
@@ -121,7 +125,6 @@ export function EnableLanePilotAction() {
             </SelectContent>
           </Select>
         </div>
-        <p className="text-xs text-muted-foreground">{t("globalWriterModel")}: {writerLabel}</p>
         <p className="text-xs text-muted-foreground">{t("runnerPreferenceNote")}</p>
         <p className="text-xs text-muted-foreground">{ctx?.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}</p>
         {blocks.filter((row) => row.code !== "pending").length ? (

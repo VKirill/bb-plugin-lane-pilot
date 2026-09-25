@@ -4540,17 +4540,40 @@ export default async function plugin(bb: BbPluginApi) {
       };
     },
     get_agent_inventory: async ({ projectId, hostId }) => {
+      let resolvedProject = projectId ?? await bb.storage.kv.get<string>("preferences:lastProjectId") ?? null;
+      if (!resolvedProject) {
+        try {
+          const listed = await bb.sdk.projects.list({ includePersonal: true });
+          resolvedProject = userVisibleProjects(listed.map((row) => ({
+            id: row.id,
+            name: row.name,
+            kind: row.kind === "personal" || row.kind === "standard" ? row.kind : undefined,
+          })))[0]?.id ?? null;
+        } catch {
+          resolvedProject = null;
+        }
+      }
+      let resolvedHost = hostId;
+      if (!resolvedHost) {
+        try {
+          const listed = await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.();
+          const hosts = mapListedQaHosts(listed ?? []);
+          resolvedHost = hosts.find((row) => row.connected)?.id ?? hosts[0]?.id ?? null;
+        } catch {
+          resolvedHost = null;
+        }
+      }
       return collectAgentInventory({
-        projectId,
-        listSkills: projectId
+        projectId: resolvedProject,
+        listSkills: resolvedProject
           ? async (id) => {
             const listed = await bb.sdk.skills.list({ projectId: id, environmentId: null });
             return listed.skills.map((skill) => ({ name: skill.name, pluginId: skill.pluginId }));
           }
           : undefined,
-        listMcp: hostId
+        listMcp: resolvedHost
           ? async () => {
-            const machine = await host.call("session_inventory", { cwd: null }, { hostId });
+            const machine = await host.call("session_inventory", { cwd: null }, { hostId: resolvedHost });
             return machine.mcpServers;
           }
           : undefined,

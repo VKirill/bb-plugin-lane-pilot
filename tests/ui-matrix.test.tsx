@@ -226,7 +226,10 @@ describe("Lane Pilot UI", () => {
     const settings = slot.container.querySelector("[data-testid='settings-panel']")!;
     expect(settings?.querySelector("[data-testid='writer-picker'] [data-testid='bb-provider-model-picker']")).not.toBeNull();
     expect(settings.querySelector("[data-testid='writer-effort-mode']")).not.toBeNull();
-    expect(settings.querySelector("[data-testid='browser-qa-host']")).not.toBeNull();
+    expect(settings.querySelector("[data-testid='browser-qa-host']")).toBeNull();
+    expect(slot.getByTestId("checks-panel").querySelector("[data-testid='browser-qa-host']")).not.toBeNull();
+    expect(slot.getByTestId("checks-panel").querySelector("[data-testid='night-review-settings']")).not.toBeNull();
+    expect(settings.querySelector("[data-testid='night-review-settings']")).toBeNull();
     expect(settings.querySelector("[data-testid='field-s004']")).toBeNull();
     expect(settings.querySelector("[data-testid='field-s022']")).toBeNull();
     expect(settings.querySelector("[data-testid='field-s023']")).toBeNull();
@@ -330,6 +333,8 @@ describe("Lane Pilot UI", () => {
       fireEvent.click(slot.getByTestId("tab-diagnostics"));
       expect(slot.getByTestId("import-diagnostics").textContent).toContain("/tmp/lane-pilot-ui");
       expect(slot.getByTestId("import-diagnostics").textContent).toContain("/tmp/snapshot");
+      expect(slot.getByTestId("restore-previous-install").textContent).toContain(locale === "ru" ? ru.restorePreviousInstall : en.restorePreviousInstall);
+      expect(slot.getByTestId("restore-previous-install").querySelectorAll("label").length).toBe(1);
       slot.lifecycle.unmount();
     }
   });
@@ -559,7 +564,7 @@ describe("Lane Pilot UI", () => {
       } }),
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const field = await slot.findByTestId("settings-panel").then((panel) => panel.querySelector("[data-testid='field-s006']") as HTMLElement);
+    const field = await slot.findByTestId("night-review-settings").then((panel) => panel.querySelector("[data-testid='field-s006']") as HTMLElement);
     expect(field).toBeTruthy();
     expect(field.querySelector("[role='slider']")).toBeNull();
     const input = field.querySelector("input[type='number']") as HTMLInputElement;
@@ -588,7 +593,7 @@ describe("Lane Pilot UI", () => {
       },
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const input = slot.getByTestId("settings-panel").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
+    const input = slot.getByTestId("night-review-settings").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "1" } });
     fireEvent.blur(input);
     await waitFor(() => expect(deferred.length).toBe(1));
@@ -610,7 +615,7 @@ describe("Lane Pilot UI", () => {
       save_setting: () => ({ ok: false, conflict: true, version: 9, value: 3 }),
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const input = slot.getByTestId("settings-panel").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
+    const input = slot.getByTestId("night-review-settings").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "10" } });
     fireEvent.blur(input);
     await slot.findByTestId("cas-conflict");
@@ -621,7 +626,8 @@ describe("Lane Pilot UI", () => {
   it("filters settings by search and keeps picker keys off the settings list", async () => {
     const slot = await mountPage();
     expect(slot.getByTestId("settings-panel").querySelector("[data-testid='field-s004']")).toBeNull();
-    expect(slot.getByTestId("settings-group-browser-qa")).toBeTruthy();
+    expect(slot.getByTestId("settings-execution")).toBeTruthy();
+    expect(slot.getByTestId("checks-panel").querySelector("[data-testid='browser-qa-host']")).toBeTruthy();
     fireEvent.change(slot.getByTestId("settings-search"), { target: { value: "zzzz-no-match" } });
     expect(slot.queryByTestId("writer-picker")).toBeNull();
     expect(slot.getByText(en.noMatchingSettings)).toBeTruthy();
