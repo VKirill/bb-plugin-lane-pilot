@@ -57,7 +57,7 @@ export default definePluginApp((app) => {
   app.slots.experimental_threadHeaderAction({ id: "lane-pilot-settings", title: t("panelTitle"), component: OpenLanePilotSettings });
   app.composer.customize({
     id: "lane-pilot-activation",
-    scopes: ["thread", "new-thread"],
+    scopes: ["new-thread"],
     actions: [{ id: "enable-lane-pilot", component: EnableLanePilotAction }],
   });
 });

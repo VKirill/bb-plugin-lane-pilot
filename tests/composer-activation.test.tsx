@@ -45,6 +45,29 @@ async function mountComposer(input: {
 afterEach(() => { cleanup(); setLocaleOverride(null); });
 
 describe("Enable Lane Pilot composer action", () => {
+  it("registers the launch action only on the new-thread composer", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    expect(app.composerCustomizations[0]?.scopes).toEqual(["new-thread"]);
+  });
+
+  it("renders no Lane Pilot action in an existing conversation, idle or with a live run", async () => {
+    for (const context of [
+      { bindingStatus: "resolved" as const, projects: [{ id: "proj_a", name: "Alpha" }], threadStatus: null, pluginRole: null },
+      { bindingStatus: "resolved" as const, projects: [{ id: "proj_a", name: "Alpha" }], threadStatus: "active", pluginRole: null, liveRun: { threadId: "thr_pm", runId: "run_1" } },
+    ]) {
+      const slot = await mountComposer({
+        projectId: "proj_a",
+        threadId: "thr_existing",
+        scope: { kind: "thread", threadId: "thr_existing" },
+        context,
+      });
+      expect(slot.queryByRole("button", { name: "Enable Lane Pilot" })).toBeNull();
+      expect(slot.queryByRole("button", { name: /New Lane Pilot session/ })).toBeNull();
+      expect(slot.queryByRole("button", { name: "Open Lane Pilot run" })).toBeNull();
+      slot.lifecycle.unmount();
+    }
+  });
+
   it("keeps Enable clickable with no project and requires a project before start", async () => {
     const slot = await mountComposer({
       projectId: null,

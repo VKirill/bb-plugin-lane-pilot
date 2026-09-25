@@ -8,7 +8,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/pop
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import {
   activationDisabledPredicate,
-  classifyComposerSession,
   composerButtonDisabled,
   startBlocked,
   type ActivationBlock,
@@ -46,14 +45,6 @@ export function EnableLanePilotAction() {
   const [projectId, setProjectId] = useState<string>(routeProjectId ?? "");
   const [agentId, setAgentId] = useState("__default__");
 
-  const kind = classifyComposerSession({
-    composerKind: view.scope.kind,
-    threadId,
-    pluginRole: ctx?.pluginRole,
-    threadStatus: ctx?.threadStatus,
-    composerRunning: view.run.isRunning,
-  });
-
   useEffect(() => {
     let current = true;
     void rpc.call("get_preferences", { suggestedLocale: detectLocale() }).then((result) => {
@@ -83,14 +74,14 @@ export function EnableLanePilotAction() {
   const blocked = startBlocked(blocks);
   const writerLabel = [ctx?.writer.providerId, ctx?.writer.model, ctx?.writer.reasoningEffort].filter(Boolean).join(" · ") || "—";
 
-  const activate = async (sourceThreadId: string | null) => {
+  const activate = async () => {
     if (blocked || pending) return;
     setPending(true);
     setError(null);
     try {
       const result = await rpc.call("activate_pm", {
         projectId,
-        sourceThreadId,
+        sourceThreadId: null,
         agentId: agentId === "__default__" ? "" : agentId,
       });
       setOpen(false);
@@ -102,32 +93,7 @@ export function EnableLanePilotAction() {
     }
   };
 
-  if (kind === "lp-active" || ctx?.pluginRole === "pm") {
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 min-h-7 px-2 text-xs"
-        onClick={() => ctx?.liveRun ? navigate.toThread(ctx.liveRun.threadId) : navigate.toPluginPanel("lane-pilot", { subPath: projectId || undefined })}
-      >{t("openLanePilotRun")}</Button>
-    );
-  }
-
-  if (kind === "ordinary-started") {
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 min-h-7 px-2 text-xs"
-        disabled={disabled}
-        onClick={() => void activate(threadId ?? null)}
-      >
-        <span className="whitespace-nowrap">{pending ? t("enabling") : error ?? t("newLanePilotSession")}</span>
-      </Button>
-    );
-  }
+  if (view.scope.kind !== "new-thread") return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -164,7 +130,7 @@ export function EnableLanePilotAction() {
           </div>
         ) : null}
         {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
-        <Button className="min-h-11 w-full" disabled={blocked} onClick={() => void activate(view.scope.kind === "new-thread" ? null : threadId ?? null)}>
+        <Button className="min-h-11 w-full" disabled={blocked} onClick={() => void activate()}>
           {pending ? t("enabling") : t("startLanePilot")}
         </Button>
       </PopoverContent>
