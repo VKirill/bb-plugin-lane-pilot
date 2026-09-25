@@ -22,6 +22,11 @@ import { parseReadFirstHints } from "./src/stages/read-first";
 import { buildExecutionPacket, renderExecutionPacket } from "./src/stages/execution-packet";
 import { emergencyFallbackDecision, sameWriterSelection } from "./src/stages/emergency-writer";
 import { resolveStageWriterSelection } from "./src/stage-writer-selection";
+import {
+  readyComposerSnapshot,
+  spawnEnvironmentFromSelection,
+  type ComposerSelectionSnapshot,
+} from "./src/composer-selection";
 import { decideThreadCompletion } from "./src/thread-completion";
 import { acceptanceArtifactDir, buildAcceptanceV2, bbWriterReportMarkdown, validateAcceptanceV2 } from "./src/acceptance-v2";
 import {
@@ -258,6 +263,7 @@ const NATIVE_ONBOARDING_KEYS = new Set(["onboarding.provider", "onboarding.model
 const NATIVE_PM_READ_KEYS = new Set(["pm_read.provider", "pm_read.model", "pm_read.reasoning_effort", "pm_read.service_tier"]);
 const NATIVE_PLAN_CRITIQUE_KEYS = new Set(["plan_critique.provider", "plan_critique.model", "plan_critique.reasoning_effort", "plan_critique.service_tier"]);
 const NATIVE_CODE_CRITIQUE_KEYS = new Set(["code_critique.provider", "code_critique.model", "code_critique.reasoning_effort", "code_critique.service_tier"]);
+const NATIVE_SPECIALIST_KEYS = new Set(["specialist.provider", "specialist.model", "specialist.reasoning_effort", "specialist.service_tier"]);
 
 function cancelRejection(db: ReturnType<typeof openDatabase>, attempt: NonNullable<ReturnType<typeof getAttempt>>): string | null {
   const run = getRun(db, attempt.run_id);
@@ -1096,7 +1102,8 @@ async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof op
   const modelId=selection.model;
   const effort = typeof settings["specialist.reasoning_effort"] === "string" && settings["specialist.reasoning_effort"]
     ? settings["specialist.reasoning_effort"] as string : "high";
-  const serviceTier = "standard";
+  const savedTier = settings["specialist.service_tier"];
+  const serviceTier = savedTier === "fast" ? "fast" : "standard";
   let threadId:string|null = null;
   recordStage(input.db,{...base,state:"running",providerId,model:modelId});
   try {
@@ -1484,7 +1491,46 @@ export default async function plugin(bb: BbPluginApi) {
     return settings;
   }
 
-  async function activate(projectId: string, sourceThreadId: string | null, kind: "bb"|"cli" = "bb", agentId?: string | null): Promise<{threadId:string; runId:string}> {
+  async function assertComposerEnvironment(projectId: string, snapshot: Extract<ComposerSelectionSnapshot, { status: "ready" }>) {
+    const env = snapshot.environment;
+    if (env.kind === "existing" && env.type === "project-default") {
+      throw new Error("composer_environment_project_default_unsupported");
+    }
+    if (env.kind === "existing" && env.type === "reuse") {
+      const row = await bb.sdk.environments.get({ environmentId: env.environmentId });
+      if (!row) throw new Error("composer_environment_missing");
+      const envProject = stringAt(row, "projectId");
+      if (envProject && envProject !== projectId) throw new Error("composer_environment_project_mismatch");
+      const envHost = stringAt(row, "hostId");
+      if (env.hostId && envHost && env.hostId !== envHost) throw new Error("composer_environment_host_mismatch");
+      const envPath = stringAt(row, "path");
+      if (env.path && envPath && env.path !== envPath) throw new Error("composer_environment_path_mismatch");
+      return;
+    }
+    const project = typeof bb.sdk.projects?.get === "function"
+      ? await bb.sdk.projects.get({ projectId }).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null
+      : null;
+    const sources = Array.isArray(project?.sources) ? project.sources : [];
+    if (env.kind === "existing" && env.type === "host") {
+      if (!env.hostId) throw new Error("composer_environment_host_missing");
+      if (sources.length && !sources.some((row) => row.hostId === env.hostId && (!env.path || !row.path || row.path === env.path))) {
+        throw new Error("composer_environment_host_not_in_project");
+      }
+      return;
+    }
+    if (env.kind === "provisioning" && env.type === "provider") {
+      const hostId = env.machine?.type === "existing" ? env.machine.hostId : undefined;
+      if (hostId && sources.length && !sources.some((row) => row.hostId === hostId)) {
+        throw new Error("composer_environment_host_not_in_project");
+      }
+      const listed = await bb.sdk.environments.listProviders({ projectId, ...(hostId ? { hostId } : {}) }).catch(() => null);
+      if (Array.isArray(listed) && !listed.some((row) => stringAt(row, "id") === env.environmentProviderId || stringAt(row, "environmentProviderId") === env.environmentProviderId)) {
+        throw new Error(`composer_environment_provider_unknown:${env.environmentProviderId}`);
+      }
+    }
+  }
+
+  async function activate(projectId: string, sourceThreadId: string | null, kind: "bb"|"cli" = "bb", agentId?: string | null, snapshot?: ComposerSelectionSnapshot): Promise<{threadId:string; runId:string}> {
     if (sourceThreadId) {
       const sourceMetadata = await bb.sdk.threads.getPluginMetadata({ threadId:sourceThreadId });
       if (valueAt(sourceMetadata, "role") === "writer") {
@@ -1493,30 +1539,34 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const config = loadPrototypeConfig(db, projectId);
     if (!config) throw new Error(`Lane Pilot prototype is not configured for ${projectId}`);
-    const detected = await host.call("detect", {
-      requestedHostId: config.hostId,
-      workspacePath: config.pmWorkspacePath,
-    }, { hostId: config.hostId, timeoutMs: 30_000 });
-    if (!detected.workspace.present) {
-      throw new Error(`Lane Pilot PM workspace is missing: ${detected.workspace.path}`);
+    const native = snapshot ? readyComposerSnapshot(snapshot, projectId) : null;
+    if (native) await assertComposerEnvironment(projectId, native);
+    if (!native) {
+      const detected = await host.call("detect", {
+        requestedHostId: config.hostId,
+        workspacePath: config.pmWorkspacePath,
+      }, { hostId: config.hostId, timeoutMs: 30_000 });
+      if (!detected.workspace.present) {
+        throw new Error(`Lane Pilot PM workspace is missing: ${detected.workspace.path}`);
+      }
+      const inventory = await host.call("coexistenceInventory", {
+        requestedHostId:config.hostId, projectId, targetSha:TARGET_SHA,
+      }, { hostId:config.hostId, timeoutMs:30_000 });
+      const compatibleEngine = inventory.managers.find((manager) =>
+        ["agents-marker", "managed-checkout", "claude-cache"].includes(manager.manager) && manager.compatible === true,
+      );
+      if (!compatibleEngine) {
+        const missing = [...new Set(inventory.managers.flatMap((manager) => manager.missingCapabilities))];
+        const detail = missing.length ? `Missing required interfaces: ${missing.join(", ")}.` : "No installed engine exposed a probeable set of required interfaces.";
+        throw new Error(`Lane Pilot PM cannot activate: no compatible engine was found. ${detail} Reference version ${TARGET_SHA} is provenance only; SHA/version mismatch does not decide compatibility.`);
+      }
+      const imported = await host.call("importConfig", {
+        requestedHostId: config.hostId,
+        workspacePath: config.pmWorkspacePath,
+        projectId,
+      }, { hostId: config.hostId, timeoutMs: 30_000 });
+      importSettingsOnce(db, projectId, imported.imported);
     }
-    const inventory = await host.call("coexistenceInventory", {
-      requestedHostId:config.hostId, projectId, targetSha:TARGET_SHA,
-    }, { hostId:config.hostId, timeoutMs:30_000 });
-    const compatibleEngine = inventory.managers.find((manager) =>
-      ["agents-marker", "managed-checkout", "claude-cache"].includes(manager.manager) && manager.compatible === true,
-    );
-    if (!compatibleEngine) {
-      const missing = [...new Set(inventory.managers.flatMap((manager) => manager.missingCapabilities))];
-      const detail = missing.length ? `Missing required interfaces: ${missing.join(", ")}.` : "No installed engine exposed a probeable set of required interfaces.";
-      throw new Error(`Lane Pilot PM cannot activate: no compatible engine was found. ${detail} Reference version ${TARGET_SHA} is provenance only; SHA/version mismatch does not decide compatibility.`);
-    }
-    const imported = await host.call("importConfig", {
-      requestedHostId: config.hostId,
-      workspacePath: config.pmWorkspacePath,
-      projectId,
-    }, { hostId: config.hostId, timeoutMs: 30_000 });
-    importSettingsOnce(db, projectId, imported.imported);
     const existing = getActivation(db, projectId);
     if (existing) refreshRun(existing.run_id);
     const settings = { ...(await effectiveProjectSettings(projectId)).values };
@@ -1541,13 +1591,21 @@ export default async function plugin(bb: BbPluginApi) {
     const runGate = configuredRunGate === "pre-merge" ? "pre-merge" : "none";
     const workspaceMode = parseWorkspaceMode(settings["adoc.040"]);
     const managedWorkspace = usesManagedWorktree(workspaceMode);
+    const snapshotEnv = native ? spawnEnvironmentFromSelection(native.environment) : null;
+    const snapshotHostId = native?.environment.kind === "existing" && "hostId" in native.environment
+      ? native.environment.hostId
+      : native?.environment.kind === "provisioning" && native.environment.machine?.type === "existing"
+        ? native.environment.machine.hostId
+        : undefined;
+    const runHostId = snapshotHostId ?? config.hostId;
+    const runWorkspacePath = native
+      ? (native.environment.kind === "existing" && native.environment.type === "host" && native.environment.workspaceType === "unmanaged"
+        ? native.environment.path ?? null
+        : null)
+      : (managedWorkspace ? null : config.writerWorkspacePath);
     const runId = id("lprun");
-    createRun(db, runId, projectId, kind, managedWorkspace ? null : config.writerWorkspacePath, runGate, buildRunPolicy(settings), config.hostId);
+    createRun(db, runId, projectId, kind, runWorkspacePath, runGate, buildRunPolicy(settings), runHostId);
     claimActivation(db, { projectId, pmThreadId:`pending:${sourceThreadId ?? "new"}`, runId });
-    await host.call("writePmSettings", {
-      requestedHostId: config.hostId,
-      pmWorkspacePath: config.pmWorkspacePath,
-    }, { hostId: config.hostId, timeoutMs: 15_000 }).catch(() => undefined);
     let lifecycleOwnerThreadId = sourceThreadId ?? undefined;
     if (sourceThreadId) {
       try {
@@ -1556,6 +1614,9 @@ export default async function plugin(bb: BbPluginApi) {
         lifecycleOwnerThreadId = sourceThreadId;
       }
     }
+    const spawnProviderId = native?.providerId ?? config.pmProviderId;
+    const spawnModel = native?.model ?? config.pmModel;
+    const spawnTier = native?.serviceTier === "fast" ? "fast" as const : native?.serviceTier === "default" ? "default" as const : null;
     let spawned:Awaited<ReturnType<typeof bb.sdk.threads.spawn>>;
     try {
       spawned = await bb.sdk.threads.spawn({
@@ -1565,15 +1626,15 @@ export default async function plugin(bb: BbPluginApi) {
           parentThreadId: sourceThreadId,
           ...(lifecycleOwnerThreadId ? { lifecycleOwnerThreadId } : {}),
         } : {}),
-        providerId: config.pmProviderId,
-        model: config.pmModel,
-        prompt: pmPrompt(runId, config, managedWorkspace),
-        environment: managedWorkspace
+        ...(native
+          ? writerExecutionSelection(spawnProviderId, spawnModel, native.reasoningLevel, spawnTier)
+          : { providerId: spawnProviderId, model: spawnModel, executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const } }),
+        prompt: pmPrompt(runId, config, !native && managedWorkspace),
+        environment: (snapshotEnv ?? (managedWorkspace
           ? { type:"host", hostId:config.hostId, workspace:{ type:"managed-worktree", baseBranch:{ kind:"default" } } }
-          : { type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.pmWorkspacePath } },
+          : { type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.pmWorkspacePath } })) as never,
         visibility:"visible",
         pluginMetadata:{ role:"pm", lanePilotRunId:runId },
-        executionInputSources:{ providerId:"explicit", model:"explicit" },
         ...compiledMainAgentSpawnBinding({
           capability: detectCompiledMainAgentCapability(
             (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
@@ -1583,7 +1644,7 @@ export default async function plugin(bb: BbPluginApi) {
             return profile ? Object.freeze(JSON.parse(JSON.stringify(profile)) as CompiledMainAgent) : null;
           })(),
         }),
-        ...requiredPolicyField(bb, requireHelperSpawn({ bb, db, projectId, runId }), config.pmProviderId),
+        ...requiredPolicyField(bb, requireHelperSpawn({ bb, db, projectId, runId }), spawnProviderId),
       });
     } catch (cause) {
       setRunState(db, runId, "blocked");
@@ -1592,20 +1653,24 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("threads.spawn returned no PM thread id");
-    if (managedWorkspace) {
+    const bindResolvedEnvironment = native || managedWorkspace;
+    if (bindResolvedEnvironment) {
       const environmentId = stringAt(spawned, "environmentId");
       try {
-        if (!environmentId) throw new Error("managed-worktree spawn returned no environmentId");
+        if (!environmentId) throw new Error("spawn returned no environmentId");
         const environment = await bb.sdk.environments.get({ environmentId });
-        const workspace = resolveManagedWorkspace(environment, config.hostId);
-        if (!setRunWorkspace(db, runId, workspace.path, workspace.environmentId)) {
+        const hostId = stringAt(environment, "hostId") ?? runHostId;
+        const workspace = native
+          ? { path: stringAt(environment, "path") ?? (native.environment.kind === "existing" && "path" in native.environment ? native.environment.path ?? null : null), environmentId }
+          : resolveManagedWorkspace(environment, hostId);
+        if (workspace.path && !setRunWorkspace(db, runId, workspace.path, workspace.environmentId ?? environmentId)) {
           throw new Error("managed workspace CAS failed; run is no longer pending or already has a workspace binding");
         }
       } catch (cause) {
         setRunState(db, runId, "blocked");
         releaseActivation(db, projectId, runId);
         await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-        throw new Error(`Lane Pilot failed closed while binding managed worktree: ${cause instanceof Error ? cause.message : String(cause)}`);
+        throw new Error(`Lane Pilot failed closed while binding environment: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
     }
     setRunThread(db, runId, threadId);
@@ -4623,8 +4688,8 @@ export default async function plugin(bb: BbPluginApi) {
       await finishRunSafely(bb, db, projectId, runId, "rpc");
       return { projectId, finishedRunIds: [runId], closed: true };
     },
-    activate_pm: ({ projectId, sourceThreadId, agentId }) => {
-      return activate(projectId, sourceThreadId, "bb", agentId);
+    activate_pm: ({ projectId, sourceThreadId, agentId, snapshot }) => {
+      return activate(projectId, sourceThreadId, "bb", agentId, snapshot);
     },
     activation_context: async ({ projectId, threadId }) => {
       const listed = await bb.sdk.projects.list({ includePersonal: true });
@@ -4820,6 +4885,7 @@ export default async function plugin(bb: BbPluginApi) {
       if (NATIVE_PM_READ_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic PM-read provider/model selection"]}};
       if (NATIVE_PLAN_CRITIQUE_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic plan-critique provider/model selection"]}};
       if (NATIVE_CODE_CRITIQUE_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic code-critique provider/model selection"]}};
+      if (NATIVE_SPECIALIST_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic specialist provider/model selection"]}};
       if (!NATIVE_WRITER_KEYS.has(key)) {
         const result = casUpsertSettings(db, { projectId, changes:[{ key, value, expectedVersion }] }, { nativeWriterSelection:true });
         const current = { version:result.versions[key] ?? 0, value:result.values[key] ?? null };
@@ -4841,7 +4907,7 @@ export default async function plugin(bb: BbPluginApi) {
       const editable = new Set(VISIBLE_CATALOG.filter((row) => row.uiStatus === "editable").map((row) => row.storageKey));
       const invalid = keys.find((key) => !editable.has(key) || expectedVersions[key] === undefined);
       if (invalid) return reject(invalid, "unknown or noneditable setting / missing CAS version");
-      const groups = ["writer", "memory", "night_review", "docs", "onboarding", "pm_read", "plan_critique", "code_critique"].map((prefix) => ["provider", "model", "reasoning_effort", "service_tier"].map((suffix) => `${prefix}.${suffix}`));
+      const groups = ["writer", "memory", "night_review", "docs", "onboarding", "pm_read", "plan_critique", "code_critique", "specialist"].map((prefix) => ["provider", "model", "reasoning_effort", "service_tier"].map((suffix) => `${prefix}.${suffix}`));
       const affected = groups.filter((group) => group.some((key) => keys.includes(key)));
       if (affected.some((group) => group.some((key) => !keys.includes(key)))) return reject(keys[0]!, "reset the complete provider/model/effort/tier group");
       const rows = listSettingRows(db, projectId);
@@ -4884,6 +4950,8 @@ export default async function plugin(bb: BbPluginApi) {
       if(planKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:planKey,params:[planKey,"use atomic plan-critique provider/model selection"]}};
       const codeKey=changes.find(({key})=>NATIVE_CODE_CRITIQUE_KEYS.has(key))?.key;
       if(codeKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:codeKey,params:[codeKey,"use atomic code-critique provider/model selection"]}};
+      const specialistKey=changes.find(({key})=>NATIVE_SPECIALIST_KEYS.has(key))?.key;
+      if(specialistKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:specialistKey,params:[specialistKey,"use atomic specialist provider/model selection"]}};
       return casUpsertSettings(db,{projectId,changes},{nativeWriterSelection:changes.every(({key})=>!NATIVE_WRITER_KEYS.has(key))});
     },
     save_writer_selection: async ({ projectId, threadId, selectedBinding, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
@@ -5105,6 +5173,29 @@ export default async function plugin(bb: BbPluginApi) {
         {key:"code_critique.model",value:modelId,expectedVersion:expectedVersions["code_critique.model"]},
         {key:"code_critique.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["code_critique.reasoning_effort"]},
         {key:"code_critique.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["code_critique.service_tier"]},
+      ]},{nativeWriterSelection:true});
+    },
+    save_specialist_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+      const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
+      const catalogHost=await selectionCatalogHost(projectId);
+      if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
+      let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
+      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      catch {return reject("catalog_unavailable","specialist.provider",catalogHost.hostId);}
+      const provider=providers.find((item)=>item.id===providerId&&item.available);
+      if(!provider) return reject("invalid_choice","specialist.provider",`provider ${providerId} is unavailable on this host`);
+      const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
+      if(!selectedModel) return reject("invalid_choice","specialist.model",`model ${modelId} is not in the live catalog for ${providerId}`);
+      const efforts=selectedModel.supportedReasoningEfforts.map((item)=>item.reasoningEffort);
+      if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","specialist.reasoning_effort",`model supports: ${efforts.join(", ")}`);
+      const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
+      const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
+      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","specialist.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      return casUpsertSettings(db,{projectId,changes:[
+        {key:"specialist.provider",value:providerId,expectedVersion:expectedVersions["specialist.provider"]},
+        {key:"specialist.model",value:modelId,expectedVersion:expectedVersions["specialist.model"]},
+        {key:"specialist.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["specialist.reasoning_effort"]},
+        {key:"specialist.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["specialist.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
     cancel_attempt: async ({ attemptId }) => {

@@ -111,6 +111,7 @@ export function EnableLanePilotAction() {
         projectId,
         sourceThreadId: null,
         agentId: agentId === "__default__" ? "" : agentId,
+        snapshot,
       });
       setOpen(false);
       navigate.toThread(result.threadId);

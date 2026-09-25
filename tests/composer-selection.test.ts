@@ -4,6 +4,7 @@ import {
   existingEnvironmentUsable,
   nativeSelectionProjectId,
   nativeSelectionReady,
+  spawnEnvironmentFromSelection,
   useNativeComposerSelection,
   type ComposerSelectionSnapshot,
 } from "../src/composer-selection";
@@ -34,7 +35,10 @@ describe("native composer selection", () => {
     expect(nativeSelectionReady({ status: "resolving", scope: { kind: "new-thread", projectId: "proj_a" } })).toBe(false);
     expect(composerSelectionBlock({ status: "resolving", scope: { kind: "new-thread", projectId: "proj_a" } })).toBe("resolving");
     expect(existingEnvironmentUsable({ kind: "existing", type: "project-default" })).toBe(false);
-    expect(existingEnvironmentUsable({ kind: "provisioning", type: "provider", environmentProviderId: "git-worktree" })).toBe(false);
+    expect(existingEnvironmentUsable({ kind: "provisioning", type: "provider", environmentProviderId: "project-checkout" })).toBe(false);
+    const request = { type: "provider", environmentProviderId: "project-checkout", machine: { type: "existing", hostId: "host_1" }, inputs: { sourceId: "src_1" } };
+    expect(existingEnvironmentUsable({ kind: "provisioning", type: "provider", environmentProviderId: "project-checkout", request })).toBe(true);
+    expect(spawnEnvironmentFromSelection({ kind: "provisioning", type: "provider", environmentProviderId: "project-checkout", request })).toBe(request);
     expect(existingEnvironmentUsable({ kind: "existing", type: "host", workspaceType: "unmanaged" })).toBe(false);
     expect(existingEnvironmentUsable({ kind: "existing", type: "host", workspaceType: "unmanaged", hostId: "host_1", path: "/tmp/proj" })).toBe(true);
   });

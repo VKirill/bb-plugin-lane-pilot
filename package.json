@@ -67,7 +67,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build": "bb plugin build",
+    "build": "env -u BB_CLI /Users/vechkasov/.local/share/bb-source-vk-composer-215/apps/cli/dist/index.js plugin build",
+    "check:composer-hook": "node scripts/check-composer-hook.mjs",
     "test:layout": "node tests/layout/run.mjs",
     "check": "npm test && npm run typecheck && npm run build && npm run test:layout"
   }

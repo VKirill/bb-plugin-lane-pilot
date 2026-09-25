@@ -192,6 +192,10 @@ const CODE_CRITIQUE_PROVIDER = "code_critique.provider";
 const CODE_CRITIQUE_MODEL = "code_critique.model";
 const CODE_CRITIQUE_EFFORT = "code_critique.reasoning_effort";
 const CODE_CRITIQUE_SERVICE_TIER = "code_critique.service_tier";
+const SPECIALIST_PROVIDER = "specialist.provider";
+const SPECIALIST_MODEL = "specialist.model";
+const SPECIALIST_EFFORT = "specialist.reasoning_effort";
+const SPECIALIST_SERVICE_TIER = "specialist.service_tier";
 
 function fieldKey(id: string): I18nKey {
   return `field_${id}` as I18nKey;
@@ -229,6 +233,7 @@ const PICKER_KEYS = new Set([
   PM_READ_PROVIDER, PM_READ_MODEL, PM_READ_EFFORT, PM_READ_SERVICE_TIER,
   PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_SERVICE_TIER,
   CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_SERVICE_TIER,
+  SPECIALIST_PROVIDER, SPECIALIST_MODEL, SPECIALIST_EFFORT, SPECIALIST_SERVICE_TIER,
 ]);
 const DEDICATED_KEYS = new Set([
   "night_review.enabled", "night_review.auto_merge", "night_review.max_fix_tasks",
@@ -239,11 +244,12 @@ const DEDICATED_KEYS = new Set([
   "plan_critique.min_score", "plan_critique.min_write_tasks", "plan_critique.on_high_risk",
   "code_critique.enabled", "code_critique.mode",
   "code_critique.auto_fix", "code_critique.max_rounds",
+  "specialist.enabled", "specialist.when",
 ]);
 const SECTIONED_SETTING_KEYS = new Set([
   "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.search_engine",
   "memory.personal_bot", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget",
-  "specialist.enabled", "specialist.when", "specialist.provider", "specialist.model", "specialist.reasoning_effort",
+  "specialist.enabled", "specialist.when",
   "onboarding.depth", "ops.max_tasks", "adoc.040", "adoc.041", "adoc.042", "sandbox.backend",
   "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
   "browser_qa.approve", "browser_qa.reasoning_effort",
@@ -1072,6 +1078,19 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     return true;
   };
 
+  const saveSpecialistSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
+    if(!projectId||!data)return false;
+    const result=await rpc.call("save_specialist_selection",{
+      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
+      expectedVersions:{[SPECIALIST_PROVIDER]:data.versions[SPECIALIST_PROVIDER]??0,[SPECIALIST_MODEL]:data.versions[SPECIALIST_MODEL]??0,[SPECIALIST_EFFORT]:data.versions[SPECIALIST_EFFORT]??0,[SPECIALIST_SERVICE_TIER]:data.versions[SPECIALIST_SERVICE_TIER]??0},
+    });
+    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
+    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
+
   const savedPickerValue: ExperimentalProviderModelPickerValue = {
     providerId: String(data?.values[WRITER_PROVIDER] ?? ""),
     model: String(data?.values[WRITER_MODEL] ?? ""),
@@ -1131,6 +1150,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     model:String(data?.values[CODE_CRITIQUE_MODEL]??data?.values[WRITER_MODEL]??""),
     reasoningLevel:(String(data?.values[CODE_CRITIQUE_EFFORT]??data?.values[WRITER_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
     ...(providers.providers?.find((provider)=>provider.id===codeCritiqueProviderId)?.serviceTiers?.length?{serviceTier:data?.values[CODE_CRITIQUE_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
+  };
+  const specialistProviderId=String(data?.values[SPECIALIST_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
+  const specialistPickerValue:ExperimentalProviderModelPickerValue={
+    providerId:specialistProviderId,
+    model:String(data?.values[SPECIALIST_MODEL]??data?.values[WRITER_MODEL]??""),
+    reasoningLevel:(String(data?.values[SPECIALIST_EFFORT]??"high")||"high") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider)=>provider.id===specialistProviderId)?.serviceTiers?.length?{serviceTier:data?.values[SPECIALIST_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
   };
 
   const catalogRow = (key: string) => VISIBLE_CATALOG.find((item) => item.storageKey === key);
@@ -1555,12 +1581,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </Disclosure>
             </CheckGroup>
             <CheckGroup testId="specialist-settings" title={t("specialistReview")} help={t("settingSpecialistEnabledHelp")} toggle={(() => { const row = catalogRow("specialist.enabled"); return row ? <Switch checked={asBoolean(displayedValue("specialist.enabled"), false)} aria-label={t("specialistReview")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
+              <div className="max-w-xl">{modelPicker(specialistPickerValue, (next) => { void saveSpecialistSelection(next); })}</div>
               <Disclosure summary={t("settingsAdvanced")} open={settingsDepth === "advanced"}>
-                {(["specialist.when","specialist.provider","specialist.model","specialist.reasoning_effort"] as const).map((key) => {
-                  const row = catalogRow(key);
-                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
-                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
-                })}
+                {(() => { const row = catalogRow("specialist.when"); return row ? <SettingField row={row} value={displayedValue("specialist.when")} disabled={false}
+                  onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("specialist.when", next)} /> : null; })()}
               </Disclosure>
             </CheckGroup>
             <CheckGroup testId="night-review-settings" title={t(sectionKey("night-review"))} help={t("nightReviewEnabled")} toggle={
