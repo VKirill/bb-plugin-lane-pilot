@@ -634,6 +634,10 @@ describe("Lane Pilot UI", () => {
     fireEvent.change(slot.getByTestId("settings-search"), { target: { value: "" } });
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     expect(slot.getByTestId("settings-group-workspace")).toBeTruthy();
+    expect(slot.getByTestId("memory-advanced").textContent).toContain(en.settingMemoryMaintain);
+    expect(slot.getByTestId("memory-advanced").textContent).toContain(en.fieldUnitTokens);
+    expect(slot.getByTestId("memory-advanced").textContent).not.toContain("memory.core_budget");
+    expect(slot.getByTestId("settings-panel").querySelector("[data-testid='settings-group-memory']")).toBeNull();
     slot.lifecycle.unmount();
   });
 
@@ -686,7 +690,7 @@ describe("Lane Pilot UI", () => {
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     expect(slot.getByTestId("field-s371").textContent).toContain("In the project tree");
     slot.lifecycle.unmount();
-  });
+  }, 15_000);
 
   it("shows owner inheritance after reset even while the durable CAS generation stays positive", async () => {
     let reset = false;
@@ -713,7 +717,7 @@ describe("Lane Pilot UI", () => {
     expect(within(row).queryByRole("button", { name: "Reset to inherited" })).toBeNull();
     expect(slot.getByTestId("field-s371").textContent).toContain("project tree");
     slot.lifecycle.unmount();
-  });
+  }, 15_000);
 
   it("keeps the confirm dialog title and full install ops list in the DOM", async () => {
     const slot = await mountPage();

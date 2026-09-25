@@ -16,6 +16,7 @@ import {
   type CatalogRow,
 } from "../ui-catalog";
 import { t, stateLabel, unappliedReason, validationMessage, setLocaleOverride, localeFromSources, detectLocale, detectLocaleHint, subscribeToLocaleHintChanges, type I18nKey, type Locale, type LocalePreference } from "../../i18n";
+import { settingHelp, settingLabel, settingUnitKey, settingUsesNumericControl } from "../setting-copy";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import {
   AlertDialog,
@@ -232,15 +233,17 @@ const DEDICATED_KEYS = new Set([
   "code_critique.enabled", "code_critique.mode",
   "code_critique.auto_fix", "code_critique.max_rounds",
 ]);
-const BASIC_SETTING_KEYS = new Set([
-  "night_review.max_fix_tasks", "writer.agent",
-  "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
-  "browser_qa.approve", "browser_qa.reasoning_effort",
+const SECTIONED_SETTING_KEYS = new Set([
   "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.search_engine",
   "memory.personal_bot", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget",
-  "ops.max_tasks", "onboarding.depth",
-  "adoc.040", "adoc.041", "adoc.042",
-  "specialist.enabled", "specialist.when",
+  "specialist.enabled", "specialist.when", "specialist.provider", "specialist.model", "specialist.reasoning_effort",
+  "onboarding.depth", "ops.max_tasks", "adoc.040", "adoc.041", "adoc.042", "sandbox.backend",
+  "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
+  "browser_qa.approve", "browser_qa.reasoning_effort",
+]);
+const BASIC_SETTING_KEYS = new Set([
+  "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
+  "browser_qa.approve", "browser_qa.reasoning_effort",
 ]);
 const HELP_BY_KEY: Record<string, I18nKey> = {
   "pm_read.enabled": "largeFileReadHelp",
@@ -290,10 +293,12 @@ function isCompatibilityAlias(row: CatalogRow): boolean {
 function diagnosticRows(): CatalogRow[] {
   const settingsKeys = new Set(extraSettingRows().map((row) => row.storageKey));
   return uniqueByStorage(VISIBLE_CATALOG.filter((row) => {
+    if (row.storageKey === "writer.agent") return false;
     if (row.storageKey.endsWith(".agent")) return true;
     if (row.section === "jev" || JEV_KEYS.has(row.storageKey)) return false;
     if (PICKER_KEYS.has(row.storageKey) && row.storageKey !== "writer.fast_mode") return false;
     if (DEDICATED_KEYS.has(row.storageKey)) return false;
+    if (SECTIONED_SETTING_KEYS.has(row.storageKey)) return false;
     if (settingsKeys.has(row.storageKey)) return false;
     if (isCompatibilityAlias(row)) return false;
     return true;
@@ -304,6 +309,13 @@ function compatibilityAliasRows(): CatalogRow[] {
   return uniqueByStorage(VISIBLE_CATALOG.filter((row) => isCompatibilityAlias(row)));
 }
 
+function isDiagnosticOnlySetting(row: CatalogRow): boolean {
+  return row.storageKey.startsWith("install.")
+    || row.storageKey === "ui.language"
+    || (row.storageKey.startsWith("ops.") && row.storageKey !== "ops.max_tasks")
+    || row.storageKey === "run.gate";
+}
+
 function extraSettingRows(): CatalogRow[] {
   return uniqueByStorage(VISIBLE_CATALOG.filter((row) => (
     row.uiStatus === "editable"
@@ -311,11 +323,13 @@ function extraSettingRows(): CatalogRow[] {
     && !PICKER_KEYS.has(row.storageKey)
     && !DEDICATED_KEYS.has(row.storageKey)
     && !row.storageKey.endsWith(".agent")
+    && !SECTIONED_SETTING_KEYS.has(row.storageKey)
+    && !isDiagnosticOnlySetting(row)
   )));
 }
 
 function numericUnit(row: CatalogRow): I18nKey {
-  return row.storageKey.includes("score") ? "fieldUnitScore" : "fieldUnitTasks";
+  return settingUnitKey(row) ?? (row.storageKey.includes("score") ? "fieldUnitScore" : "fieldUnitTasks");
 }
 
 function asBoolean(value: unknown, fallback: boolean): boolean {
@@ -364,7 +378,7 @@ function FieldControl({
   onDraft?: (next: unknown) => void;
 }) {
   const control = JEV_KEYS.has(row.storageKey) ? "switch" : row.control;
-  const label = t(fieldKey(row.id));
+  const label = settingLabel(row);
   if (control === "switch") {
     const checked = asBoolean(value, JEV_KEYS.has(row.storageKey) ? true : false);
     return (
@@ -395,7 +409,7 @@ function FieldControl({
       </Select>
     );
   }
-  if (control === "slider" || control === "number") {
+  if (control === "slider" || control === "number" || settingUsesNumericControl(row)) {
     const numeric = typeof value === "number" ? value : Number(value ?? row.min ?? 0);
     const parsed = (raw: string) => raw === "" ? "" : Number(raw);
     return (
@@ -435,11 +449,11 @@ function FieldControl({
 
 function settingHelpText(row: CatalogRow): string {
   const mapped = HELP_BY_KEY[row.storageKey];
-  return mapped ? t(mapped) : t("fieldHelpGeneric");
+  return settingHelp(row, mapped ? t(mapped) : t("fieldHelpGeneric"));
 }
 
 function SettingHelp({ row }: { row: CatalogRow }) {
-  const title = t(fieldKey(row.id));
+  const title = settingLabel(row);
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -447,7 +461,7 @@ function SettingHelp({ row }: { row: CatalogRow }) {
           type="button"
           size="icon"
           variant="ghost"
-          className="size-9 min-h-11 min-w-11"
+          className="size-7"
           aria-label={t("settingHelp")}
           data-testid={`help-${row.storageKey}`}
         >?</Button>
@@ -464,7 +478,7 @@ const InheritanceContext = createContext<{ locale: Locale; data: ScreenPayload |
 function inheritanceSummary(storageKey: string, locale: Locale, data: ScreenPayload | null): string {
   if (data?.explicitKeys?.includes(storageKey)) return locale === "ru" ? "Задано в этом проекте" : "Set on this project";
   if (data?.inheritedKeys?.includes(storageKey)) return t("inheritedFromGlobal");
-  return locale === "ru" ? "Значение по умолчанию" : "Factory default";
+  return t("inheritDefaultShort");
 }
 
 function SettingField({
@@ -489,25 +503,25 @@ function SettingField({
       data-testid={`field-${row.id}`}
       data-storage-key={row.storageKey}
       data-ui-status={row.uiStatus}
-      className="grid gap-2 border-b border-border py-3 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"
+      className="grid min-h-12 gap-1 border-b border-border py-1.5 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"
     >
-      <div className="min-w-0 space-y-1">
-        <div className="flex items-center gap-1">
-          <Label className="text-sm">{t(fieldKey(row.id))}</Label>
+      <div className="min-w-0">
+        <div className="flex min-h-8 items-center gap-1">
+          <Label className="text-sm">{settingLabel(row)}</Label>
           <SettingHelp row={row} />
+          {inheritance ? (
+            <span className="truncate text-xs text-muted-foreground">
+              {inheritanceSummary(row.storageKey, inheritance.locale, inheritance.data)}
+            </span>
+          ) : null}
+          {inheritance?.data?.explicitKeys?.includes(row.storageKey) ? (
+            <Button variant="ghost" size="sm" className="h-7 px-2" disabled={disabled} onClick={() => inheritance.reset([row.storageKey])}>
+              {inheritance.locale === "ru" ? "Наследовать" : "Reset to inherited"}
+            </Button>
+          ) : null}
         </div>
-        {inheritance ? (
-          <p className="text-xs text-muted-foreground">
-            {inheritanceSummary(row.storageKey, inheritance.locale, inheritance.data)}
-            {inheritance.data?.explicitKeys?.includes(row.storageKey) ? (
-              <Button variant="ghost" size="sm" className="ml-2 h-8 min-h-11" disabled={disabled} onClick={() => inheritance.reset([row.storageKey])}>
-                {inheritance.locale === "ru" ? "Наследовать" : "Reset to inherited"}
-              </Button>
-            ) : null}
-          </p>
-        ) : null}
         {row.min !== null && row.max !== null ? (
-          <p className="text-xs text-muted-foreground">{t("fieldLimits")}: {row.min}–{row.max} {t(numericUnit(row))}</p>
+          <p className="text-xs text-muted-foreground">{t("fieldLimits")} {row.min}–{row.max} {t(numericUnit(row))}</p>
         ) : null}
         {disabled ? <p className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</p> : null}
       </div>
@@ -689,7 +703,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     for (const row of extraSettingRows()) {
       if (!query && settingsDepth === "basic" && !BASIC_SETTING_KEYS.has(row.storageKey)) continue;
       if (query) {
-        const haystack = [t(fieldKey(row.id)), t(sectionKey(row.section)), row.storageKey].join(" ").toLowerCase();
+        const haystack = [settingLabel(row), t(sectionKey(row.section)), row.storageKey].join(" ").toLowerCase();
         if (!haystack.includes(query)) continue;
       }
       const list = map.get(row.section) ?? [];
@@ -1346,22 +1360,50 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                         </div>;
                       })}
                     </div>
+                    {(["writer.agent","sandbox.backend"] as const).map((key) => {
+                      const row = catalogRow(key);
+                      return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                        onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                    })}
                   </details> : null;
                 })()}
+              </section>
+              <section className="space-y-2" data-testid="settings-group-workspace">
+                {(() => { const row = catalogRow("adoc.040"); return row ? <SettingField row={row} value={displayedValue("adoc.040")} disabled={false}
+                  onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("adoc.040", next)} /> : null; })()}
+                <details className="space-y-2" open={settingsDepth === "advanced"}>
+                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                  {(["adoc.041","adoc.042","ops.max_tasks"] as const).map((key) => {
+                    const row = catalogRow(key);
+                    return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                      onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                  })}
+                </details>
               </section>
             </SettingsGroup> : null}
 
             {cardVisible("memoryPicker", "docsPicker", "onboardingPicker", "largeFileRead", "groupDocs") ? <SettingsGroup title={t("sectionMemoryDocs")} testId="settings-memory-docs">
-              {cardVisible("memoryPicker", "memoryPickerHelp") ? <section className="space-y-2" data-testid="memory-picker">
+              {cardVisible("memoryPicker", "memoryPickerHelp", "settingMemoryEnabled") ? <section className="space-y-2" data-testid="memory-picker">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1">
-                    <h3 className="text-sm font-medium">{t("memoryPicker")}</h3>
+                    <h3 className="text-sm font-medium">{t("settingMemoryEnabled")}</h3>
                     <HelpTip label={t("memoryPickerTechnical")}><p>{t("memoryPickerTechnical")}</p></HelpTip>
                   </div>
-                  {inheritReset([MEMORY_PROVIDER, MEMORY_MODEL, MEMORY_EFFORT, MEMORY_SERVICE_TIER])}
+                  <div className="flex items-center gap-2">
+                    {inheritReset([MEMORY_PROVIDER, MEMORY_MODEL, MEMORY_EFFORT, MEMORY_SERVICE_TIER])}
+                    {(() => { const row = catalogRow("memory.enabled"); return row ? <Switch checked={asBoolean(displayedValue("memory.enabled"), false)} aria-label={t("settingMemoryEnabled")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+                  </div>
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
                 <div className="max-w-xl">{modelPicker(memoryPickerValue, (next) => { void saveMemorySelection(next); })}</div>
+                <details className="space-y-2" data-testid="memory-advanced" open={settingsDepth === "advanced"}>
+                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                  {(["memory.maintain","memory.inject","memory.audience","memory.search_engine","memory.personal_bot","memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget"] as const).map((key) => {
+                    const row = catalogRow(key);
+                    return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                      onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                  })}
+                </details>
               </section> : null}
               {cardVisible("docsPicker", "docsPickerHelp", "docsMaintain", "groupDocs") ? <section className="space-y-2" data-testid="docs-picker">
                 <div className="flex items-center justify-between gap-2">
@@ -1390,6 +1432,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 <p className="max-w-xl text-xs text-muted-foreground">{t("onboardingPickerHelp")}</p>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("onboardingConstraint")}</p>
                 <div className="max-w-xl">{modelPicker(onboardingPickerValue, (next) => { void saveOnboardingSelection(next); })}</div>
+                <details className="space-y-2" open={settingsDepth === "advanced"}>
+                  <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                  {(() => { const row = catalogRow("onboarding.depth"); return row ? <SettingField row={row} value={displayedValue("onboarding.depth")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("onboarding.depth", next)} /> : null; })()}
+                </details>
               </section> : null}
               {cardVisible("largeFileRead", "largeFileReadHelp", "largeFilePicker") ? <section className="space-y-2" data-testid="pm-read-settings">
                 <div className="flex items-center justify-between gap-2">
@@ -1477,6 +1523,21 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               <details className="space-y-2">
                 <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
                 {(["code_critique.mode","code_critique.auto_fix","code_critique.max_rounds"] as const).map((key) => {
+                  const row = catalogRow(key);
+                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                })}
+              </details>
+            </section>
+            <section className="space-y-2" data-testid="specialist-settings">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-medium">{t("specialistReview")}</h2>
+                {(() => { const row = catalogRow("specialist.enabled"); return row ? <Switch checked={asBoolean(displayedValue("specialist.enabled"), false)} aria-label={t("specialistReview")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+              </div>
+              <p className="max-w-xl text-xs text-muted-foreground">{t("settingSpecialistEnabledHelp")}</p>
+              <details className="space-y-2" open={settingsDepth === "advanced"}>
+                <summary className="cursor-pointer text-sm">{t("settingsAdvanced")}</summary>
+                {(["specialist.when","specialist.provider","specialist.model","specialist.reasoning_effort"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
@@ -1721,7 +1782,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   return <div key={row.storageKey} data-testid={`field-${row.id}`} data-storage-key={row.storageKey}
                     data-ui-status={row.uiStatus} className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
                     <div className="space-y-1">
-                      <Label className="text-sm">{row.storageKey === "writer.fast_mode" ? t("legacyFastMode") : t(fieldKey(row.id))}</Label>
+                      <Label className="text-sm">{row.storageKey === "writer.fast_mode" ? t("legacyFastMode") : settingLabel(row)}</Label>
                       {row.storageKey === "writer.fast_mode" ? <p className="text-xs text-muted-foreground">{t("legacyFastModeExplanation")}</p> : (
                         disabled ? <p className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</p> : null
                       )}
