@@ -249,8 +249,13 @@ export function pageClaims(body:string):Array<{ claim:string; refs:ClaimRef[] }>
   for (const block of body.split(/\n(?=\s*[-*|]|\s*\n)|(?<=[.!?])\s+/)) {
     const text = block.replace(/\s+/g, " ").trim();
     if (!text || text.startsWith("#")) continue;
-    const refs = [...text.matchAll(CITATION)].map((match) => ({ file:match[1]!.replace(/^\.\//, ""), start:Number(match[2]), end:match[3] ? Number(match[3]) : Number(match[2]) }));
-    if (refs.length) claims.push({ claim:text.slice(0, 600), refs });
+    const refs = [...text.matchAll(CITATION)].map((match) => ({ file:match[1]!.replace(/^\.\//, ""), start:Number(match[2]), end:match[3] ? Number(match[3]) : Number(match[2]), at:match.index ?? 0 }));
+    // A bare `190-193` after a file citation means more lines of that file.
+    for (const bare of text.matchAll(/`(\d+)(?:-(\d+))?`/g)) {
+      const owner = refs.filter((ref) => ref.at < (bare.index ?? 0)).at(-1);
+      if (owner) refs.push({ file:owner.file, start:Number(bare[1]), end:bare[2] ? Number(bare[2]) : Number(bare[1]), at:bare.index ?? 0 });
+    }
+    if (refs.length) claims.push({ claim:text.slice(0, 600), refs:refs.sort((a, b) => a.at - b.at).map(({ file, start, end }) => ({ file, start, end })) });
   }
   return claims;
 }

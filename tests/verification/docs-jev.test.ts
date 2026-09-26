@@ -29,6 +29,8 @@ it("takes the sentence around each citation as its claim", () => {
   const claims = pageClaims("Checks run every minute (src/checker.ts:10-12). Monitors are validated and stored (src/db.ts:5-9, src/db.ts:20).\n");
   expect(claims.map((claim) => claim.refs)).toEqual([[{ file:"src/checker.ts", start:10, end:12 }],
     [{ file:"src/db.ts", start:5, end:9 }, { file:"src/db.ts", start:20, end:20 }]]);
+  expect(pageClaims("Old checks are deleted (`src/db.ts:146-179`, `190-193`).")[0]!.refs).toEqual([
+    { file:"src/db.ts", start:146, end:179 }, { file:"src/db.ts", start:190, end:193 }]);
   expect(claims[1]!.claim).toBe("Monitors are validated and stored (src/db.ts:5-9, src/db.ts:20).");
 });
 
