@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { hashBytes, planJson, transitionOwned, type NativeInstallManifest } from "../src/native-install-owned";
 import { nativeInstallOperation } from "../src/native-install-host";
-import { claudeLaneEnv, detectClaudeLane } from "../src/native-install-bootstrap";
+import { CLAUDE_LANE_SOURCE, claudeLaneEnv, detectClaudeLane, upgradeClaudeLane } from "../src/native-install-bootstrap";
+import { execFileSync } from "node:child_process";
 import { reconcileClaudeLane } from "../src/native-lane-reconcile";
 import { createNativeInstaller, experimental_vkLifecycle, registerNativeInstallHost } from "../src/native-install-lifecycle";
 const roots: string[] = [];
@@ -116,6 +117,15 @@ describe("Claude Lane on the host", () => {
     expect(text).toContain("// mine"); expect(text).toContain("./plugins/other.ts"); expect(text).toContain("./plugins/opencode-lane.ts");
     expect(await readFile(join(home, ".config/opencode/agents/lane-writer.md"), "utf8")).toBe("w");
     expect((await reconcileClaudeLane({ home, source, env })).openCode).toBe("registered");
+  });
+  it("leaves a user's own Claude Lane checkout alone", async () => {
+    const { home } = await laneHome(true);
+    expect(await upgradeClaudeLane({ home, source: join(home, "tools/claude-lane-stack") })).toBe(false);
+    const standard = join(home, CLAUDE_LANE_SOURCE);
+    await mkdir(standard, { recursive: true });
+    execFileSync("git", ["init", "-q", "-b", "main", standard]);
+    execFileSync("git", ["-C", standard, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x"]);
+    expect(await upgradeClaudeLane({ home, source: standard })).toBe(false);
   });
   it("reports a machine without Claude Lane as absent", async () => {
     const { root, home } = await laneHome(false);

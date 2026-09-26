@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { lstat, readFile } from "node:fs/promises";
 
-export const NATIVE_STACK_SHA = "a43826b97efd88313cd2cc03ada1f80465962e84";
+export const NATIVE_STACK_SHA = "61a45b1df2aa47e5da5b394e2c73a16b9b14b587";
 export const CLAUDE_LANE_REPO = "https://github.com/VKirill/claude-lane-stack";
 /** Where Claude Lane's own install keeps its checkout; installing here makes Lane Pilot's install the user's install. */
 export const CLAUDE_LANE_SOURCE = ".local/share/claude-lane-stack-installed";
@@ -75,4 +75,23 @@ export async function installClaudeLane(input: { home?: string; signal?: AbortSi
   const installed = await detectClaudeLane(home);
   if (!installed) throw new Error("Claude Lane install finished without the lane-stack Claude plugin.");
   return installed;
+}
+
+/**
+ * Moves Lane Pilot's standard Claude Lane checkout forward to the tested revision and reinstalls.
+ * A checkout the user develops in (another path, a branch, local changes, or ahead) is left alone.
+ */
+export async function upgradeClaudeLane(input: { home: string; source: string; signal?: AbortSignal; env?: NodeJS.ProcessEnv }): Promise<boolean> {
+  const { home, source, signal } = input;
+  if (source !== join(home, CLAUDE_LANE_SOURCE)) return false;
+  const env = claudeLaneEnv(home, input.env);
+  const git = (...args: string[]) => run("git", ["-C", source, ...args], env, signal);
+  if ((await git("rev-parse", "HEAD")).trim() === NATIVE_STACK_SHA) return false;
+  if ((await git("status", "--porcelain")).trim() || (await git("symbolic-ref", "-q", "HEAD").catch(() => "")).trim()) return false;
+  await git("fetch", "--quiet", "origin");
+  if (!await git("merge-base", "--is-ancestor", "HEAD", NATIVE_STACK_SHA).then(() => true, () => false)) return false;
+  await ensurePrerequisites(env, signal);
+  await git("checkout", "--quiet", "--detach", NATIVE_STACK_SHA);
+  await run("bash", [join(source, "install.sh")], env, signal, source);
+  return true;
 }

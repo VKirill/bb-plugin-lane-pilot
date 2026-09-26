@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import type { hostContract } from "./contracts";
-import { claudeLaneEnv, detectClaudeLane, installClaudeLane } from "./native-install-bootstrap";
+import { claudeLaneEnv, detectClaudeLane, installClaudeLane, upgradeClaudeLane } from "./native-install-bootstrap";
 import { reconcileClaudeLane } from "./native-lane-reconcile";
 import { transitionOwned } from "./native-install-owned";
 
@@ -37,7 +37,10 @@ export async function nativeInstallOperation(input: { root: string; home: string
     signal?.throwIfAborted();
     if (action === "install" || action === "enable") {
       const lane = await detectClaudeLane(home);
-      if (lane?.sourceRepo) await reconcileClaudeLane({ home, source: lane.sourceRepo, env: claudeLaneEnv(home), signal });
+      if (lane?.sourceRepo) {
+        await upgradeClaudeLane({ home, source: lane.sourceRepo, signal });
+        await reconcileClaudeLane({ home, source: lane.sourceRepo, env: claudeLaneEnv(home), signal });
+      }
     }
     if (!manifest) {
       // Claude Lane is the user's own install: use it when present, install it the standard way otherwise,
