@@ -84,7 +84,9 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
   if (!input.command.trim() || input.command.length > 32_000 || input.command.includes("\0")) throw new Error("sandbox_command_invalid_or_too_large");
   const timeoutSec = input.timeoutSec ?? 120;
   if (!Number.isInteger(timeoutSec) || timeoutSec < 1 || timeoutSec > 7200) throw new Error("sandbox_timeout_out_of_range");
-  const tempPath = await mkdtemp(resolve(tmpdir(),"lane-pilot-sandbox-"));
+  // macOS tmpdir() sits under the /var -> /private/var symlink and seatbelt matches real paths,
+  // so an unresolved temp path would leave the sandbox's own HOME unwritable.
+  const tempPath = await realpath(await mkdtemp(resolve(tmpdir(),"lane-pilot-sandbox-")));
   try {
     if (backend === "linux-bubblewrap") {
       const guardPaths:string[]=[];

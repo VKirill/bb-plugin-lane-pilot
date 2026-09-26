@@ -89,6 +89,12 @@ it("gives a repeated task id a fresh key and frees paths held by a dead task", a
   saveStageReceipt(db, { contractVersion: 1, runId: "lprun_r", taskId: "stopped", stageId: "plan-critique", state: "blocked",
     inputSha256: "a".repeat(64), outputSha256: null, attempt: 0, providerId: null, model: null, threadId: null, result: null, reason: "owns_overlap", updatedAt: 1 });
   expect(listLiveTasksForRun(db, "lprun_r").map((task) => task.id)).toEqual(["live"]);
+  createTask(db, { id: "empty", runId: "lprun_r", kind: "bb", contract: { owns_paths: ["src/d.mjs"] } });
+  createAttempt(db, { id: "att_2", runId: "lprun_r", taskId: "empty" });
+  db.prepare("UPDATE lane_pilot_attempt SET state='empty_output' WHERE id='att_2'").run();
+  expect(listLiveTasksForRun(db, "lprun_r").map((task) => task.id)).toEqual(["live"]);
+  db.prepare("UPDATE lane_pilot_attempt SET state='running' WHERE id='att_2'").run();
+  expect(listLiveTasksForRun(db, "lprun_r").map((task) => task.id).sort()).toEqual(["empty", "live"]);
 });
 
 it("accepts upstream task-v2 context fields a BB writer does not use", async () => {

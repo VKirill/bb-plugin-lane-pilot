@@ -2939,13 +2939,19 @@ export default async function plugin(bb: BbPluginApi) {
     return { projectId, hostId, pmWorkspacePath:workspace, writerWorkspacePath:workspace, pmProviderId:"claude-code", pmModel:"native", writerProviderId, writerModel };
   }
 
+  /** A native run's host, workspace and writer come from its binding and current settings, never from a stale prototype config. */
+  async function configForRun(projectId:string, run:ReturnType<typeof getRun>): Promise<PrototypeConfig|null> {
+    return run?.kind === "cli" ? await nativeRunConfig(projectId, run) : loadPrototypeConfig(db, projectId);
+  }
+
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
     if (!runId) throw new Error("PM thread has no lanePilotRunId");
     const run = getRun(db, runId);
-    const config = loadPrototypeConfig(db, args.projectId) ?? (run?.kind === "cli" ? await nativeRunConfig(args.projectId, run) : null);
+    // A native run's host, workspace and writer come from its binding and current settings, never from a stale prototype config.
+    const config = await configForRun(args.projectId, run);
     if (!config) throw new Error(`Lane Pilot prototype is not configured for ${args.projectId}`);
     const workspacePath = run?.writer_workspace_path;
     if (!run || !workspacePath) {
@@ -3100,7 +3106,7 @@ export default async function plugin(bb: BbPluginApi) {
         if (attempt.state !== "provider_error" || activeWriterTasks.has(key)) continue;
         const task = getTask(db, attempt.task_id);
         const currentRun = getRun(db, args.runId);
-        const config = loadPrototypeConfig(db, args.projectId);
+        const config = await configForRun(args.projectId, currentRun);
         const parsed = task?.kind === "bb" ? taskV2Schema.safeParse(task.contract) : null;
         if (currentRun?.writer_workspace_path && currentRun.pm_thread_id && config && parsed?.success) {
           const taskWorkspace=acceptedTaskWorkspace(args.runId,attempt.task_id,currentRun.writer_workspace_path,parsed.data,attempt.id);
@@ -3477,7 +3483,7 @@ export default async function plugin(bb: BbPluginApi) {
     :Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
-    const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
+    const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") {
       throw new Error("telemetry task does not belong to this PM run and project");
     }
@@ -3539,7 +3545,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function runDocsMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if (valueAt(metadata,"role") !== "pm" || stringAt(metadata,"lanePilotRunId") !== args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
-    const run = getRun(db,args.runId), config = loadPrototypeConfig(db,args.projectId), taskRow = getTask(db,args.taskId);
+    const run = getRun(db,args.runId), config = await configForRun(args.projectId, run), taskRow = getTask(db,args.taskId);
     if (!run || run.project_id !== args.projectId || run.pm_thread_id !== args.threadId || !config || !taskRow || taskRow.run_id !== args.runId || taskRow.kind !== "bb") throw new Error("task does not belong to this PM run and project");
     const taskContract = taskV2Schema.parse(taskRow.contract);
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
@@ -3718,7 +3724,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function runOnboardingPreview(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
-    const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
+    const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") throw new Error("task does not belong to this PM run and project");
     const taskContract=taskV2Schema.parse(taskRow.contract);
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
@@ -3874,7 +3880,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function applyOnboardingPreview(args:{threadId:string;projectId:string;runId:string;taskId:string;previewSha256:string;confirm:boolean}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
-    const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
+    const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") throw new Error("task does not belong to this PM run and project");
     const taskContract=taskV2Schema.parse(taskRow.contract);
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
@@ -3918,7 +3924,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function runMemoryMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
-    const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
+    const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") throw new Error("task does not belong to this PM run and project");
     const taskContract=taskV2Schema.parse(taskRow.contract);
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
@@ -4082,7 +4088,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function runNightReview(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
-    const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
+    const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") throw new Error("task does not belong to this PM run and project");
     const taskContract=taskV2Schema.parse(taskRow.contract);
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
@@ -4226,7 +4232,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function runGateTriage(args:{threadId:string;projectId:string;runId:string;taskId:string;days:number;providerId?:string;model?:string;reasoningEffort?:string}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
-    const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
+    const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") throw new Error("task does not belong to this PM run and project");
     const existing=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="gate-triage");
     if(existing) return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"gate triage already has a receipt for this task",stage:existing};
@@ -4275,7 +4281,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function runNightFix(args:{threadId:string;projectId:string;runId:string;taskId:string}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
-    const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
+    const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") throw new Error("task does not belong to this PM run and project");
     const taskContract=taskV2Schema.parse(taskRow.contract);
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
@@ -4379,7 +4385,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function runWorkspaceStatus(args:{threadId:string;projectId:string;runId:string;taskId:string}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
-    const run=getRun(db,args.runId),config=loadPrototypeConfig(db,args.projectId),taskRow=getTask(db,args.taskId);
+    const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") throw new Error("task does not belong to this PM run and project");
     const taskContract=taskV2Schema.parse(taskRow.contract);
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
@@ -5685,7 +5691,14 @@ export default async function plugin(bb: BbPluginApi) {
       });
     }
     const run = getRun(db, resolvedRunId);
-    const config = loadPrototypeConfig(db, context.project.id);
+    const nativeRun = run?.kind === "cli";
+    // A native run describes its own writer and workspace, never a stale prototype config.
+    const config = nativeRun ? null : loadPrototypeConfig(db, context.project.id);
+    const projectSettings = nativeRun ? loadProjectSettings(db, context.project.id) : {};
+    const settingText = (key:string) => typeof projectSettings[key] === "string" && projectSettings[key] ? projectSettings[key] as string : null;
+    const writerLabel = nativeRun
+      ? (settingText("writer.provider") && settingText("writer.model") ? `${settingText("writer.provider")}/${settingText("writer.model")}` : "the writer set in Lane Pilot settings")
+      : config ? `${config.writerProviderId}/${config.writerModel}` : "";
     const writerWorkspace = writerWorkspaceForPmInstructions(run, config?.writerWorkspacePath);
     const waiting = Boolean(native && run?.kind === "cli" && !nativeRunReady(db, resolvedRunId));
     return {
@@ -5693,8 +5706,8 @@ export default async function plugin(bb: BbPluginApi) {
       skills:[],
       instructions: waiting
         ? `Lane Pilot PM ${resolvedRunId} is waiting for the native environment to attach. Lane Pilot tools are already bound to this chat; do not dispatch writers until the workspace is frozen.`
-        : config
-        ? `Lane Pilot PM ${resolvedRunId}. Writer=${config.writerProviderId}/${config.writerModel}; writer workspace=${writerWorkspace}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread. To delegate: supply the complete canonical plan in the separate plan parameter of lane_pilot_dispatch_writer and the task-v2 contract in task; never put wrapper/system instructions into plan. If pm_read is enabled, task.read_first is read by the bounded native PM-read stage before critique; its receipt and summary are passed to critique and writer. Then immediately note its runId/attemptId; call lane_pilot_wait_writer with that runId (timeoutSec up to 240), repeating while running. After a passed writer receipt, onboarding_preview can return an explicit hash-bound Markdown proposal; present it for review and only call onboarding_apply after separate explicit user confirmation. Return every stage receipt verbatim.`
+        : writerLabel && writerWorkspace
+        ? `Lane Pilot PM ${resolvedRunId}. Writer=${writerLabel}; writer workspace=${writerWorkspace}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread. To delegate: supply the complete canonical plan in the separate plan parameter of lane_pilot_dispatch_writer and the task-v2 contract in task; never put wrapper/system instructions into plan. If pm_read is enabled, task.read_first is read by the bounded native PM-read stage before critique; its receipt and summary are passed to critique and writer. Then immediately note its runId/attemptId; call lane_pilot_wait_writer with that runId (timeoutSec up to 240), repeating while running. After a passed writer receipt, onboarding_preview can return an explicit hash-bound Markdown proposal; present it for review and only call onboarding_apply after separate explicit user confirmation. Return every stage receipt verbatim.`
         : `Lane Pilot PM ${resolvedRunId}, but project configuration is missing.`,
     };
   });
