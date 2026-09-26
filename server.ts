@@ -1202,6 +1202,9 @@ function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = fal
 
 export default async function plugin(bb: BbPluginApi) {
   const db = openDatabase(bb);
+  // Set before the database closes on reload (dispose hooks run LIFO); detached writer tasks check it.
+  let disposed = false;
+  bb.onDispose(() => { disposed = true; });
   const host = bb.hosts.experimental_client({ contract:hostContract });
   bb.ui.registerMentionProvider({
     id: NATIVE_MENTION_PROVIDER,
@@ -2866,32 +2869,39 @@ export default async function plugin(bb: BbPluginApi) {
       }
       refreshRun(input.runId);
     })().catch((cause: unknown) => {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      const reason = `internal_error: ${message}`;
-      bb.log.error(`Lane Pilot writer attempt ${attemptId} failed: ${message}`);
-      const attempt = getAttempt(db, attemptId);
-      if(attempt?.state==="canceled"){
-        markCanceledWriterStages(attempt,"writer attempt canceled before provider dispatch");
-        refreshRun(input.runId);
-        return;
-      }
-      if (attempt && ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "provider_error", "timeout", "empty_output", "validation_failed"].includes(attempt.state)) {
-        transitionAttempt(db, attemptId, "blocked", { threadId:writerThreadId, reason });
-      }
-      for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
-        const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
-        if (!current || current.state === "passed" || current.state === "failed" || current.state === "skipped") continue;
-        if (current.state === "pending") recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:"running", input:input.plan });
-        recordStage(db, { runId:input.runId, taskId:input.taskId, stageId,
-          state:"failed", input:input.plan,
-          attempt:Math.min(countAttempts(db, input.runId, input.taskId),MAIN_ATTEMPT_LIMIT),
-          providerId:stageId==="writer-agent"?writerSelection?.providerId:undefined,
-          model:stageId==="writer-agent"?writerSelection?.model:undefined,threadId:writerThreadId, reason });
-      }
+      // After a reload the database is closed: stop quietly, the next load reconciles the attempt.
+      if (disposed) return;
       try {
-        refreshRun(input.runId);
-      } catch (refreshCause) {
-        bb.log.error(`Lane Pilot failed to refresh run ${input.runId} after attempt ${attemptId} error: ${refreshCause instanceof Error ? refreshCause.message : String(refreshCause)}`);
+        const message = cause instanceof Error ? cause.message : String(cause);
+        const reason = `internal_error: ${message}`;
+        bb.log.error(`Lane Pilot writer attempt ${attemptId} failed: ${message}`);
+        const attempt = getAttempt(db, attemptId);
+        if(attempt?.state==="canceled"){
+          markCanceledWriterStages(attempt,"writer attempt canceled before provider dispatch");
+          refreshRun(input.runId);
+          return;
+        }
+        if (attempt && ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "provider_error", "timeout", "empty_output", "validation_failed"].includes(attempt.state)) {
+          transitionAttempt(db, attemptId, "blocked", { threadId:writerThreadId, reason });
+        }
+        for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
+          const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
+          if (!current || current.state === "passed" || current.state === "failed" || current.state === "skipped") continue;
+          if (current.state === "pending") recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:"running", input:input.plan });
+          recordStage(db, { runId:input.runId, taskId:input.taskId, stageId,
+            state:"failed", input:input.plan,
+            attempt:Math.min(countAttempts(db, input.runId, input.taskId),MAIN_ATTEMPT_LIMIT),
+            providerId:stageId==="writer-agent"?writerSelection?.providerId:undefined,
+            model:stageId==="writer-agent"?writerSelection?.model:undefined,threadId:writerThreadId, reason });
+        }
+        try {
+          refreshRun(input.runId);
+        } catch (refreshCause) {
+          bb.log.error(`Lane Pilot failed to refresh run ${input.runId} after attempt ${attemptId} error: ${refreshCause instanceof Error ? refreshCause.message : String(refreshCause)}`);
+        }
+      } catch (inner) {
+        // A failure while recording the failure must never escape a detached task and crash BB.
+        try { bb.log.error(`Lane Pilot writer attempt ${attemptId} could not record its failure: ${inner instanceof Error ? inner.message : String(inner)}`); } catch { /* disposed */ }
       }
     }).finally(() => {
       releaseWriterSlot?.();
