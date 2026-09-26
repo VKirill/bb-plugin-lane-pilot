@@ -165,6 +165,7 @@ export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["li
   const root = await lstat(input.projectCwd);
   if (!root.isDirectory() || root.isSymbolicLink()) throw new Error("docs project root must be a real directory");
   const pages:Array<{path:string;modifiedAt:number;sha256:string;content:string}> = [];
+  const oversized:string[] = [];
   const visit = async (dir:string):Promise<void> => {
     for (const entry of await readdir(dir,{withFileTypes:true})) {
       const path = join(dir,entry.name);
@@ -175,7 +176,8 @@ export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["li
       const info = await lstat(path);
       if (!info.isFile() || info.isSymbolicLink()) continue;
       const bytes = await readFile(path);
-      if (bytes.byteLength > 40_000) throw new Error(`docs page exceeds 40000 bytes: ${rel}`);
+      // The nightly pass reports an oversized page to the folder that owns it instead of failing every folder.
+      if (bytes.byteLength > 40_000) { if (input.skipOversized) { oversized.push(rel); continue; } throw new Error(`docs page exceeds 40000 bytes: ${rel}`); }
       pages.push({path:rel,modifiedAt:Math.trunc(info.mtimeMs),sha256:createHash("sha256").update(bytes).digest("hex"),content:bytes.toString("utf8")});
       if (pages.length > 5000) throw new Error("docs inventory exceeds 5000 markdown files; reduce the source tree before running maintenance");
     }
@@ -186,7 +188,7 @@ export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["li
     try { const info=await lstat(path); if(info.isDirectory()&&!info.isSymbolicLink()) await visit(path); }
     catch(cause) { if((cause as NodeJS.ErrnoException).code!=="ENOENT") throw cause; }
   }
-  return {hostId:input.requestedHostId,pages};
+  return {hostId:input.requestedHostId,pages,...(input.skipOversized?{oversized}:{})};
 };
 
 type MarkdownWrite = Parameters<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>[0];

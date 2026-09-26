@@ -4630,7 +4630,12 @@ export default async function plugin(bb: BbPluginApi) {
     const pending=before.dirty.some(writable);
     if(before.hasDocs&&changed.length===0&&!pending) return report("skipped",{reason:"no code changes"});
     // Every docs folder of the place, so links and contradictions across folders are seen; this unit writes only its own.
-    const allPages=async()=>(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:ctx.roots},{hostId:place.hostId,timeoutMs:120_000})).pages as Array<{path:string;sha256:string;content:string}>;
+    let oversized:string[]=[];
+    const allPages=async()=>{
+      const listed=await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:ctx.roots,skipOversized:true},{hostId:place.hostId,timeoutMs:120_000});
+      oversized=listed.oversized??[];
+      return listed.pages as Array<{path:string;sha256:string;content:string}>;
+    };
     const mine=(pages:Array<{path:string;sha256:string;content:string}>)=>pages.filter((page)=>page.path.startsWith(`${d}/`));
     const existing=before.hasDocs?mine(await allPages()):[];
     // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the root docs.
@@ -4686,7 +4691,8 @@ export default async function plugin(bb: BbPluginApi) {
       const pages=await allPages();
       const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(mine(pages))},{hostId:place.hostId,timeoutMs:60_000})).counts;
       const docsDirty=after.dirty.filter(writable);
-      const findings=lintDocsPages(pages,counts).filter((finding)=>writable(finding.path));
+      const findings=[...oversized.filter(writable).map((path)=>({path,rule:"size",detail:"page is over 40000 bytes; split it into pages under 30000 bytes (a large data model into data-model/<area>.md pages) and link them"})),
+        ...lintDocsPages(pages,counts).filter((finding)=>writable(finding.path))];
       let pageStats:Array<{path:string;checked:number;supported:number;partial:number}>=[];
       // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
       // and pairs of claims across all the docs that cite the same code for contradictions.
