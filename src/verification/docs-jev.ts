@@ -160,7 +160,7 @@ async function dependencies(projectCwd:string):Promise<string[]> {
  * Maps the project's code into anchors, has Jev mark business rules, entry points, importance and
  * page, and writes the brief the docs agent starts from under .git/, outside anything git tracks.
  */
-export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ path:string; title:string }> }):Promise<{ briefPath:string; anchors:number; jev:JevStatus }> {
+export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ path:string; title:string }> }):Promise<{ briefPath:string; anchors:number; jev:JevStatus; productFiles:string[] }> {
   const files = await trackedCode(input.projectCwd);
   const tests:string[] = [];
   let anchors:Anchor[] = [];
@@ -192,7 +192,9 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   const briefPath = join(isAbsolute(gitDir) ? gitDir : join(input.projectCwd, gitDir), "lane-pilot", "docs-anchors.md");
   await mkdir(dirname(briefPath), { recursive:true });
   await writeFile(briefPath, renderAnchorBrief(anchors, tests, await dependencies(input.projectCwd), key ? status(asked, answered) : "disabled"));
-  return { briefPath, anchors:anchors.length, jev:key ? status(asked, answered) : "disabled" };
+  // Files with code Jev judged specific to this product; generic kits and helpers do not call for docs.
+  const productFiles = [...new Set(anchors.filter((anchor) => anchor.kind !== "type" && (anchor.projectSpecific ?? 1) >= 0.5).map((anchor) => anchor.file))].sort();
+  return { briefPath, anchors:anchors.length, jev:key ? status(asked, answered) : "disabled", productFiles };
 }
 
 const pct = (value:number | undefined) => value === undefined ? "?" : `${Math.round(value * 100)}%`;

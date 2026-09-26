@@ -4568,19 +4568,20 @@ export default async function plugin(bb: BbPluginApi) {
           const existing=before.hasDocs?await docsPages():[];
           const pageInput=existing.filter((page)=>page.path!=="docs/index.md").map((page)=>({path:page.path,content:page.content}));
           // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
+          const anchors=await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,
+            pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
           let refresh=before.hasDocs?pagesToRefresh(existing,before.changed):[];
           if(before.hasDocs){
             const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),
               changed:before.changed,pages:pageInput},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
             if(stale&&stale.jev!=="disabled"){
               const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
-              const uncovered=before.changed.filter((file)=>!cited.has(file));
-              if(!stale.refresh.length&&!uncovered.length){ report("skipped",{reason:"Jev found no section the changes made wrong, and no changed file is undocumented"}); continue; }
+              const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:before.changed);
+              const uncovered=before.changed.filter((file)=>product.has(file)&&!cited.has(file));
+              if(!stale.refresh.length&&!uncovered.length){ report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"}); continue; }
               refresh=stale.refresh;
             }
           }
-          const anchors=await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,
-            pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
           const selection=resolveStageWriterSelection({settings,config:{writerProviderId:"codex",writerModel:"gpt-6-luna"},stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
           const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
           const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
