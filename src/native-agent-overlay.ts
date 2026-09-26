@@ -127,13 +127,30 @@ const PM_AGENT_IDS = new Set(["dev-orchestrator", "frontend-orchestrator", "mark
  * in the PM's own checkout, past plan critique, the writer model and worktrees, so a PM keeps
  * read-only Explore/Plan and the Lane specialists only.
  */
+const CLI_LANE_SUBAGENTS = new Set(["general-purpose", "lane-stack:run-supervisor", "lane-stack:lane-supervisor", "lane-stack:emergency-writer"]);
+
+export function isLanePmAgent(agentId: string): boolean {
+  return PM_AGENT_IDS.has(agentId.split(":").pop() ?? agentId);
+}
+
+/** Appended to a Lane PM's prompt in a BB chat: writer lanes are BB threads there, not run-controller processes. */
+export const LANE_PILOT_PM_SESSION = `## Lane Pilot session (BB)
+
+This chat runs inside BB with Lane Pilot, and writer lanes are BB threads, not run-controller processes.
+- Plan as usual: run-init, PLAN.md, SPEC.md, task files, plan-critique and run-validate stay available.
+- Dispatch every writer task with \`lane_pilot_dispatch_writer\`: \`task\` is the task-v2 contract with \`project_cwd\` equal to this checkout, \`plan\` is the canonical plan text for that task. Tasks without unmet \`depends_on\` may be dispatched together; dispatch a dependent task once its dependencies are accepted.
+- Poll with \`lane_pilot_wait_writer\` (runId) and repeat while it reports running, until every task is accepted or blocked.
+- Each writer works in its own BB worktree. On acceptance Lane Pilot merges that worktree into main; a merge conflict retries the task on the new main by itself.
+- Here, do not run run-controller, lane-ctl start/retry/fallback, lane-bg or lane-exec, and do not use run-supervisor, lane-supervisor or emergency-writer. Never write product code yourself.
+- When every task is accepted, check main, update docs and memory, then report.`;
+
 export function withoutCodeWritingSubagents(agentId: string, tools: string[]): string[] {
-  if (!PM_AGENT_IDS.has(agentId.split(":").pop() ?? agentId)) return tools;
+  if (!isLanePmAgent(agentId)) return tools;
   return tools.map((tool) => {
     if (tool === "Agent" || tool === "Task") return `${tool}(Explore, Plan)`;
     const match = /^(Agent|Task)\((.*)\)$/.exec(tool);
     if (!match) return tool;
-    const kept = match[2]!.split(",").map((name) => name.trim()).filter((name) => name && name !== "general-purpose");
+    const kept = match[2]!.split(",").map((name) => name.trim()).filter((name) => name && !CLI_LANE_SUBAGENTS.has(name));
     return `${match[1]}(${kept.join(", ")})`;
   });
 }
@@ -151,7 +168,7 @@ export function stockAgentsOverlayFromInstalled(input: {
     description: typeof parsed.frontmatter.description === "string" && parsed.frontmatter.description.trim()
       ? parsed.frontmatter.description
       : input.agentId,
-    prompt: parsed.prompt,
+    prompt: isLanePmAgent(input.agentId) ? `${parsed.prompt.trimEnd()}\n\n${LANE_PILOT_PM_SESSION}\n` : parsed.prompt,
     tools: unionLpBridgeTools(withoutCodeWritingSubagents(input.agentId, tools)),
   };
   for (const [key, value] of Object.entries(parsed.frontmatter)) {
@@ -181,6 +198,9 @@ export function unionLpBridgeToolsOnAgentsJson(agentId: string, agentsJson: stri
   const tools = definition.tools;
   if (Array.isArray(tools) && tools.every((item) => typeof item === "string") && !tools.includes("*")) {
     definition.tools = unionLpBridgeTools(withoutCodeWritingSubagents(agentId, tools));
+    if (isLanePmAgent(agentId) && typeof definition.prompt === "string" && !definition.prompt.includes(LANE_PILOT_PM_SESSION)) {
+      definition.prompt = `${definition.prompt.trimEnd()}\n\n${LANE_PILOT_PM_SESSION}\n`;
+    }
   }
   return { [agentId]: definition };
 }

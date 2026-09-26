@@ -90,3 +90,15 @@ it("gives a repeated task id a fresh key and frees paths held by a dead task", a
     inputSha256: "a".repeat(64), outputSha256: null, attempt: 0, providerId: null, model: null, threadId: null, result: null, reason: "owns_overlap", updatedAt: 1 });
   expect(listLiveTasksForRun(db, "lprun_r").map((task) => task.id)).toEqual(["live"]);
 });
+
+it("accepts upstream task-v2 context fields a BB writer does not use", async () => {
+  const { validateTaskV2 } = await import("../src/task-v2");
+  const task = {
+    schema_version: 2, id: "t1", title: "T", risk: "low", lane: "write", project_cwd: "/p", read_first: [], interfaces: [], invariants: [],
+    out_of_scope: [], expected_outputs: ["a.ts"], owns_paths: ["a.ts"], never_touch: [], depends_on: [], objective: "o", acceptance: ["a"],
+    verify: "none", verification: [],
+  };
+  const result = validateTaskV2({ ...task, context_selectors: [{ path: "a.ts", start_line: 1, end_line: 2 }], impact_receipt: "r.json" });
+  expect(result.ok).toBe(true);
+  expect(validateTaskV2({ ...task, surprise: 1 }).ok).toBe(false);
+});

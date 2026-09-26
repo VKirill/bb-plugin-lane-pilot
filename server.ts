@@ -1755,8 +1755,11 @@ export default async function plugin(bb: BbPluginApi) {
       const minScoreValue = settings["adoc.041"];
       const minScore = minScoreValue === undefined || minScoreValue === null || minScoreValue === "" ? 4 : Number(minScoreValue);
       const multiWriteEnabled = settings["adoc.042"] === undefined ? true : settings["adoc.042"] === true || settings["adoc.042"] === 1 || settings["adoc.042"] === "true";
+      // A native Lane chat gives every writer attempt its own worktree unless the project says in_place:
+      // parallel writers never share a checkout, and acceptance merges each one into main.
+      const nativeRun = getRun(db, input.runId)?.kind === "cli";
       const workspaceDecision = resolveAttemptWorkspace({mode:workspaceMode,risk:input.task.risk,
-        expectedOutputCount:input.task.expected_outputs.length,minScore,multiWriteEnabled});
+        expectedOutputCount:input.task.expected_outputs.length,minScore:nativeRun&&workspaceMode==="auto"?0:minScore,multiWriteEnabled});
       const sourcePreflight=await workspaceDirt(input.config,input.task.project_cwd);
       if(!sourcePreflight.ok) throw new WriterSelectionError(`attempt_workspace_snapshot_failed:${sourcePreflight.reason}`);
       let dirtBefore=sourcePreflight.snapshots;
@@ -1924,6 +1927,9 @@ export default async function plugin(bb: BbPluginApi) {
         if(holderStatus!=="idle"&&holderStatus!=="error") throw new WriterSelectionError(`attempt_worktree_provisioner_not_stopped:${holderStatus??"unknown"}`);
         const managed=resolveManagedWorkspace(await bb.sdk.environments.get({environmentId}),input.config.hostId);
         workspacePath=managed.path;
+        const basePath=getRun(db,input.runId)?.writer_workspace_path;
+        // Linking dependencies helps the writer's checks; a host without it still gets a clean worktree.
+        if(basePath) await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath,worktreePath:workspacePath},{hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>undefined);
         const prepared=await workspaceDirt(input.config,workspacePath);
         if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
         if(prepared.snapshots.length) throw new WriterSelectionError(`attempt_worktree_not_clean:${prepared.snapshots.map(row=>row.path).join(",")}`);
@@ -2597,8 +2603,30 @@ export default async function plugin(bb: BbPluginApi) {
         pmThreadId:input.pmThreadId, writerThreadId, output:candidate.output, verification:candidate.verification,
         emergencyFallback:input.emergencyFallback, review,
       });
+      // Work in the attempt's own worktree counts only once it is in the run's base checkout (main).
+      // A conflict fails the attempt, so the retry redoes the task on a fresh worktree of the new main.
+      const bound = getAttempt(db, input.attemptId);
+      const basePath = getRun(db, input.runId)?.writer_workspace_path;
+      let integration: { status:string; commit:string|null; conflicts:string[] } | null = null;
+      if (bound?.workspace_path && basePath && resolve(bound.workspace_path) !== resolve(basePath)) {
+        const merged = await host.call("gitIntegrate", {
+          requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path,
+          message:`${input.task.id}: ${input.task.title}`.slice(0, 500),
+        }, { hostId:input.config.hostId, timeoutMs:180_000 });
+        if (merged.status === "conflict" || merged.status === "failed") {
+          const reason = merged.status === "conflict"
+            ? `merge_conflict: main changed ${merged.conflicts.join(", ")} since this attempt started`
+            : `merge_failed: ${merged.reason ?? "unknown"}`;
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged}});
+          transitionAttempt(db, input.attemptId, "validation_failed", { reason });
+          return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification,
+            attemptId:input.attemptId, writerThreadId };
+        }
+        integration = { status:merged.status, commit:merged.commit, conflicts:[] };
+      }
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
-        attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true}});
+        attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration}});
       transitionAttempt(db, input.attemptId, "accepted");
       return { ...receipt, verification:candidate.verification, produced:candidate.produced };
     } catch (cause) {

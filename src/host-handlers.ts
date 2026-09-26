@@ -1,3 +1,4 @@
+import { integrateWorktree, prepareWorktree } from "./verification/git-integrate";
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -50,6 +51,16 @@ export const coexistenceInventory: ExperimentalHostRpcHandlers<typeof hostContra
 export const gitOwnershipBase: ExperimentalHostRpcHandlers<typeof hostContract>["gitOwnershipBase"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await resolveGitOwnershipBase({projectCwd:input.projectCwd,baseRef:input.baseRef}),
+});
+
+export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitPrepareWorktree"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await prepareWorktree({basePath:input.basePath,worktreePath:input.worktreePath}),
+});
+
+export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message}),
 });
 
 export const gitOwnershipChanges: ExperimentalHostRpcHandlers<typeof hostContract>["gitOwnershipChanges"] = async (input) => ({

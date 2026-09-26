@@ -30,7 +30,13 @@ export function loadTaskV2Schema(): Record<string, unknown> {
   return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
 }
 
+/** Optional upstream task-v2 fields a BB writer does not use; accepted and dropped. */
+const UPSTREAM_OPTIONAL = ["context_selectors", "impact_receipt"] as const;
+
 export function validateTaskV2(value: unknown): { ok:true; task:TaskV2 } | { ok:false; errors:string[] } {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    value = Object.fromEntries(Object.entries(value).filter(([key]) => !(UPSTREAM_OPTIONAL as readonly string[]).includes(key)));
+  }
   const parsed = taskV2Schema.safeParse(value);
   if (!parsed.success) {
     return { ok:false, errors:parsed.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`) };

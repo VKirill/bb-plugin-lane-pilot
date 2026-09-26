@@ -131,6 +131,14 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), baseRef:z.string().min(1).max(240).optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","invalid-ref","failed"]), branch:z.string().nullable(), headSha:z.string().nullable(), baseRef:z.string().nullable(), baseSha:z.string().nullable(), compareCommitted:z.boolean(), reason:z.string().nullable() }).strict(),
   },
+  gitPrepareWorktree: {
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/") }).strict(),
+    output: z.object({ hostId:z.string(), linked:z.array(z.string()) }).strict(),
+  },
+  gitIntegrate: {
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), message:z.string().min(1).max(500) }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["merged","up-to-date","conflict","failed"]), commit:z.string().nullable(), conflicts:z.array(z.string()), reason:z.string().nullable() }).strict(),
+  },
   gitOwnershipChanges: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), baseSha:z.string().regex(/^[a-f0-9]{40,64}$/).nullable(), compareCommitted:z.boolean() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), headSha:z.string().nullable(), paths:z.array(z.string()), reason:z.string().nullable() }).strict(),

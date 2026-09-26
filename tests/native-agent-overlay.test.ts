@@ -6,6 +6,7 @@ import {
   splitClaudeToolList,
   stockAgentsOverlayFromInstalled,
   unionLpBridgeToolsOnAgentsJson,
+  LANE_PILOT_PM_SESSION,
 } from "../src/native-agent-overlay";
 import { resolveInstalledAgentFile } from "../src/native-claude-host";
 
@@ -41,10 +42,10 @@ it("overlays plugin stock from the installed file without activating ignored or 
     markdown: PLUGIN_MD,
   });
   const body = overlay?.["dev-orchestrator"] as Record<string, unknown>;
-  expect(body.prompt).toBe("You are **dev-orchestrator**.\n");
+  expect(body.prompt).toBe(`You are **dev-orchestrator**.\n\n${LANE_PILOT_PM_SESSION}\n`);
   expect(body.description).toBe("Solo PM.");
   expect(body.tools).toEqual(expect.arrayContaining([
-    "Agent(lane-stack:run-supervisor, Explore)",
+    "Agent(Explore)",
     "Read",
     "Write",
     "Bash",
@@ -79,7 +80,7 @@ it("unions LP tools onto an edited --agents JSON without replacing the prompt", 
     "dev-orchestrator": { description: "Edited", prompt: "Edited prompt", tools: ["Read"] },
   }));
   const body = next["dev-orchestrator"] as Record<string, unknown>;
-  expect(body.prompt).toBe("Edited prompt");
+  expect(body.prompt).toBe(`Edited prompt\n\n${LANE_PILOT_PM_SESSION}\n`);
   expect(body.tools).toEqual(expect.arrayContaining(["Read", "mcp__bb-bridge__lane_pilot_read"]));
   expect(body.tools).not.toContain("Write");
   expect(body.tools).not.toContain("*");
@@ -110,7 +111,7 @@ it("resolves the installed markdown from the actual cwd, not a bundled copy", as
 it("keeps a Lane PM from delegating code to general-purpose subagents", async () => {
   const { withoutCodeWritingSubagents, stockAgentsOverlayFromInstalled } = await import("../src/native-agent-overlay");
   expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, Explore, Plan, general-purpose)", "Read"]))
-    .toEqual(["Agent(lane-stack:run-supervisor, Explore, Plan)", "Read"]);
+    .toEqual(["Agent(Explore, Plan)", "Read"]);
   expect(withoutCodeWritingSubagents("lane-stack:dev-orchestrator", ["Agent"])).toEqual(["Agent(Explore, Plan)"]);
   expect(withoutCodeWritingSubagents("copy-lead", ["Agent(Explore, general-purpose)"])).toEqual(["Agent(Explore, general-purpose)"]);
   const overlay = stockAgentsOverlayFromInstalled({
@@ -119,4 +120,6 @@ it("keeps a Lane PM from delegating code to general-purpose subagents", async ()
     markdown: "---\nname: dev-orchestrator\ndescription: PM\ntools: Agent(Explore, Plan, general-purpose), Read\n---\nBody",
   }) as Record<string, { tools: string[] }>;
   expect(overlay["dev-orchestrator"]!.tools[0]).toBe("Agent(Explore, Plan)");
+  expect((overlay["dev-orchestrator"] as unknown as { prompt: string }).prompt).toContain("lane_pilot_dispatch_writer");
+  expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, lane-stack:design-lead, Explore)"])).toEqual(["Agent(lane-stack:design-lead, Explore)"]);
 });

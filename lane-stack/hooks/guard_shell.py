@@ -664,6 +664,19 @@ def main() -> None:
 
     low = cmd.lower()
 
+    # A Lane Pilot BB chat (its launcher sets LANE_PILOT_AGENT_TYPE) runs writers as BB threads.
+    if key in PM_AGENTS and os.environ.get("LANE_PILOT_AGENT_TYPE") and re.search(
+        r"(?:^|[;&|(\n]\s*|\b(?:until|while|if|then|do|exec|command)\s+)(?:[^\s;&|()]+/)?"
+        r"(?:run-controller\b|lane-ctl\s+(?:start|retry|fallback)\b|lane-bg\b|lane-exec\b)",
+        cmd,
+    ):
+        emit_deny(
+            client,
+            "[lane-pilot-guard] In a Lane Pilot chat writer lanes are BB threads. Dispatch each "
+            "task with lane_pilot_dispatch_writer and poll lane_pilot_wait_writer; do not start "
+            "run-controller, lane-ctl, lane-bg or lane-exec.",
+        )
+
     if key == "dev-orchestrator" and re.search(
         r"(?:^|[;&|(\n]\s*|\b(?:until|while|if|then|do|exec|command)\s+)"
         r"(?:[^\s;&|()]+/)?run-controller\s+(?:start|watch|status)\b",

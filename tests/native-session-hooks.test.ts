@@ -183,3 +183,19 @@ it("lets the PM run bulk-reader and its other contract commands", () => {
     expect(result.stdout, command).not.toMatch(/deny/);
   }
 });
+
+it("sends a Lane PM in a BB chat to BB writer threads instead of CLI lanes", () => {
+  const inject = join(process.cwd(), "lane-stack/hooks/inject_agent_type.py");
+  const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+  const run = (command: string) => spawnSync("python3", [inject, "--", "python3", guard], {
+    input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command }, cwd: "/fixture" }),
+    encoding: "utf8",
+    env: { ...process.env, LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" },
+  }).stdout;
+  for (const command of [
+    "run-controller start --run-dir /fixture/.agents/runs/x --project-cwd /fixture",
+    "lane-ctl start --task /fixture/.agents/runs/x/tasks/001.yaml",
+    "/home/u/.agents/bin/lane-bg --dir /tmp/a -- sleep 1",
+  ]) expect(run(command), command).toMatch(/lane_pilot_dispatch_writer/);
+  expect(run("run-validate --run-dir /fixture/.agents/runs/x --phase pre-dispatch")).not.toMatch(/deny/);
+});
