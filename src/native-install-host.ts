@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import type { hostContract } from "./contracts";
-import { detectClaudeLane, installClaudeLane } from "./native-install-bootstrap";
+import { claudeLaneEnv, detectClaudeLane, installClaudeLane } from "./native-install-bootstrap";
+import { reconcileClaudeLane } from "./native-lane-reconcile";
 import { transitionOwned } from "./native-install-owned";
 
 const manifestSchema = z.object({
@@ -34,11 +35,18 @@ export async function nativeInstallOperation(input: { root: string; home: string
     let manifest = raw ? manifestSchema.parse(JSON.parse(raw)) : null;
     if (manifest && manifest.home !== home) throw new Error("Native installation belongs to a different home");
     signal?.throwIfAborted();
+    if (action === "install" || action === "enable") {
+      const lane = await detectClaudeLane(home);
+      if (lane?.sourceRepo) await reconcileClaudeLane({ home, source: lane.sourceRepo, env: claudeLaneEnv(home), signal });
+    }
     if (!manifest) {
       // Claude Lane is the user's own install: use it when present, install it the standard way otherwise,
       // and never take it away with Lane Pilot.
       let lane = await detectClaudeLane(home);
-      if (!lane && (action === "install" || action === "enable")) lane = await installClaudeLane({ home, signal });
+      if (!lane && (action === "install" || action === "enable")) {
+        lane = await installClaudeLane({ home, signal });
+        if (lane.sourceRepo) await reconcileClaudeLane({ home, source: lane.sourceRepo, env: claudeLaneEnv(home), signal });
+      }
       const kept = lane && action !== "disable" && action !== "remove";
       return { status: kept ? "enabled" as const : "absent" as const, sourceSha: lane?.sourceSha ?? null, ownedFiles: 0, preservedFiles: 0 };
     }

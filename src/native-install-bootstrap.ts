@@ -31,13 +31,16 @@ export function claudeLaneEnv(home: string, base: NodeJS.ProcessEnv = process.en
 }
 
 /** Claude Lane counts as installed when its host install and the Claude plugin are both present. */
-export async function detectClaudeLane(home: string): Promise<{ sourceSha: string | null } | null> {
+export async function detectClaudeLane(home: string): Promise<{ sourceSha: string | null; sourceRepo: string | null } | null> {
   const json = async (path: string) => JSON.parse(await readFile(join(home, path), "utf8").catch(() => "null")) as Record<string, unknown> | null;
   const install = await json(".agents/install.json");
   const plugins = (await json(".claude/plugins/installed_plugins.json"))?.plugins as Record<string, unknown> | undefined;
   const plugin = plugins?.["lane-stack@claude-lane-stack"];
   if (!install || !Array.isArray(plugin) || plugin.length === 0) return null;
-  return { sourceSha: typeof install.source_sha === "string" ? install.source_sha : null };
+  return {
+    sourceSha: typeof install.source_sha === "string" ? install.source_sha : null,
+    sourceRepo: typeof install.source_repo === "string" ? install.source_repo : null,
+  };
 }
 
 async function ensurePrerequisites(env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<void> {
@@ -57,7 +60,7 @@ async function ensurePrerequisites(env: NodeJS.ProcessEnv, signal?: AbortSignal)
 }
 
 /** Installs Claude Lane exactly as its own install.sh does, at the revision Lane Pilot is tested with. */
-export async function installClaudeLane(input: { home?: string; signal?: AbortSignal; env?: NodeJS.ProcessEnv }): Promise<{ sourceSha: string | null }> {
+export async function installClaudeLane(input: { home?: string; signal?: AbortSignal; env?: NodeJS.ProcessEnv }): Promise<{ sourceSha: string | null; sourceRepo: string | null }> {
   const home = input.home ?? homedir(), signal = input.signal;
   const env = claudeLaneEnv(home, input.env);
   await ensurePrerequisites(env, signal);

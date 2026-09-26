@@ -51,10 +51,9 @@ export function createNativeInstaller(input: {
   };
   return {
     install,
-    /** Starts installing ahead of the first send, e.g. when Lane Pilot is enabled in the composer. */
+    /** Installs or repairs Claude Lane ahead of the first send, e.g. when Lane Pilot is enabled in the composer. */
     async start(hostId: string) {
-      if (pending.has(hostId)) return;
-      if ((await input.call(hostId, "status")).status !== "enabled") void start(hostId);
+      if (!pending.has(hostId)) void start(hostId);
     },
     async ensure(hostId: string) {
       const running = pending.get(hostId);

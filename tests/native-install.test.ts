@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { hashBytes, planJson, transitionOwned, type NativeInstallManifest } from "../src/native-install-owned";
 import { nativeInstallOperation } from "../src/native-install-host";
-import { detectClaudeLane } from "../src/native-install-bootstrap";
+import { claudeLaneEnv, detectClaudeLane } from "../src/native-install-bootstrap";
+import { reconcileClaudeLane } from "../src/native-lane-reconcile";
 import { createNativeInstaller, experimental_vkLifecycle, registerNativeInstallHost } from "../src/native-install-lifecycle";
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
@@ -95,10 +96,26 @@ describe("Claude Lane on the host", () => {
   }
   it("uses the user's own Claude Lane install and never removes it", async () => {
     const { root, home } = await laneHome(true);
-    expect(await detectClaudeLane(home)).toEqual({ sourceSha: "b".repeat(40) });
+    expect(await detectClaudeLane(home)).toEqual({ sourceSha: "b".repeat(40), sourceRepo: null });
     expect(await nativeInstallOperation({ root, home, action: "install" })).toMatchObject({ status: "enabled", sourceSha: "b".repeat(40), ownedFiles: 0 });
     expect(await nativeInstallOperation({ root, home, action: "remove" })).toMatchObject({ status: "absent" });
     expect(await detectClaudeLane(home)).not.toBeNull();
+  });
+  it("registers the OpenCode Lane plugin in a commented opencode.jsonc once", async () => {
+    const { home } = await laneHome(true);
+    const source = join(home, "src"), profile = join(source, "profiles/opencode");
+    await mkdir(join(profile, "opencode-lane"), { recursive: true }); await mkdir(join(profile, "commands"), { recursive: true }); await mkdir(join(profile, "agents"), { recursive: true });
+    await writeFile(join(profile, "opencode-lane.ts"), "x"); await writeFile(join(profile, "opencode-lane/a.ts"), "a");
+    await writeFile(join(profile, "commands/opencode-lane.md"), "c"); await writeFile(join(profile, "agents/lane-writer.md"), "w");
+    await mkdir(join(home, ".config/opencode"), { recursive: true });
+    await writeFile(join(home, ".config/opencode/opencode.jsonc"), '{\n  // mine\n  "plugin": ["./plugins/other.ts"]\n}\n');
+    const env = { ...claudeLaneEnv(home), PATH: `${join(home, "bin")}:/usr/bin:/bin` };
+    await mkdir(join(home, "bin")); await writeFile(join(home, "bin/opencode"), "#!/bin/sh\n", { mode: 0o755 });
+    expect((await reconcileClaudeLane({ home, source, env })).openCode).toBe("newly-registered");
+    const text = await readFile(join(home, ".config/opencode/opencode.jsonc"), "utf8");
+    expect(text).toContain("// mine"); expect(text).toContain("./plugins/other.ts"); expect(text).toContain("./plugins/opencode-lane.ts");
+    expect(await readFile(join(home, ".config/opencode/agents/lane-writer.md"), "utf8")).toBe("w");
+    expect((await reconcileClaudeLane({ home, source, env })).openCode).toBe("registered");
   });
   it("reports a machine without Claude Lane as absent", async () => {
     const { root, home } = await laneHome(false);
