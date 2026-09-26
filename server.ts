@@ -1871,6 +1871,25 @@ export default async function plugin(bb: BbPluginApi) {
         if (bound?.workspace_path && bound.environment_id) {
           workspacePath=bound.workspace_path;
           environment={type:"reuse",environmentId:bound.environment_id};
+        } else if (nativeRun) {
+          // BB's managed worktree always forks the project root; a Lane chat works in a section's own
+          // repository, so Lane Pilot adds a git worktree of that repository and hosts the writer there.
+          if (bound?.workspace_path) workspacePath=bound.workspace_path;
+          else {
+            const created=await host.call("gitCreateWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,name:input.attemptId},
+              {hostId:input.config.hostId,timeoutMs:60_000});
+            if(created.status!=="ready"||!created.path) throw new WriterSelectionError(`attempt_worktree_failed:${created.reason??"unknown"}`);
+            workspacePath=created.path;
+            await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,worktreePath:workspacePath},
+              {hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>undefined);
+            const prepared=await workspaceDirt(input.config,workspacePath);
+            if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
+            dirtBefore=prepared.snapshots;
+            if(!setAttemptWorkspace(db,input.attemptId,{path:workspacePath,environmentId:null,decision:workspaceDecision})) {
+              throw new WriterSelectionError("attempt_workspace_cas_conflict");
+            }
+          }
+          environment={type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:workspacePath}};
         } else {
         try {
           requireManagedWorktreeProvider(await bb.sdk.environments.listProviders({
@@ -2612,6 +2631,8 @@ export default async function plugin(bb: BbPluginApi) {
         const merged = await host.call("gitIntegrate", {
           requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path,
           message:`${input.task.id}: ${input.task.title}`.slice(0, 500),
+          // Only Lane Pilot's own worktree (no BB environment) is removed; a BB managed one belongs to BB.
+          removeWorktree:bound.environment_id === null,
         }, { hostId:input.config.hostId, timeoutMs:180_000 });
         if (merged.status === "conflict" || merged.status === "failed") {
           const reason = merged.status === "conflict"

@@ -1,4 +1,4 @@
-import { integrateWorktree, prepareWorktree } from "./verification/git-integrate";
+import { createWorktree, integrateWorktree, prepareWorktree } from "./verification/git-integrate";
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -60,7 +60,13 @@ export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract
 
 export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message}),
+  ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message,removeWorktree:input.removeWorktree}),
+});
+
+export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitCreateWorktree"] = async (input, context) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await createWorktree({basePath:input.basePath,name:input.name,
+    targetPath:join(context.experimental_paths.dataDir,"worktrees",input.name,basename(input.basePath))}),
 });
 
 export const gitOwnershipChanges: ExperimentalHostRpcHandlers<typeof hostContract>["gitOwnershipChanges"] = async (input) => ({

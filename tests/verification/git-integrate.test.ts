@@ -58,3 +58,17 @@ it("links the base node_modules into a writer worktree and keeps the link out of
   expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "a" })).status).toBe("merged");
   expect(git(base, "show", "--stat", "--format=", "HEAD^2")).not.toContain("node_modules");
 });
+
+it("creates Lane Pilot's own worktree of a section repo and removes it once merged", async () => {
+  const { createWorktree } = await import("../../src/verification/git-integrate");
+  const { stat } = await import("node:fs/promises");
+  const { base } = await repo();
+  const target = join(base, "..", "own", "main");
+  const created = await createWorktree({ basePath: base, targetPath: target, name: "lpattempt_1" });
+  expect(created).toMatchObject({ status: "ready", path: target, branch: "lane/lpattempt_1" });
+  await writeFile(join(target, "feature.ts"), "export {};\n");
+  expect((await integrateWorktree({ basePath: base, worktreePath: target, message: "t", removeWorktree: true })).status).toBe("merged");
+  expect(await stat(target).catch(() => null)).toBeNull();
+  expect(git(base, "branch", "--list", "lane/*").trim()).toBe("");
+  expect(await readFile(join(base, "feature.ts"), "utf8")).toBe("export {};\n");
+});

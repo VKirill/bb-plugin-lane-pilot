@@ -135,8 +135,12 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/") }).strict(),
     output: z.object({ hostId:z.string(), linked:z.array(z.string()) }).strict(),
   },
+  gitCreateWorktree: {
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), name:z.string().regex(/^[A-Za-z0-9._-]{1,120}$/) }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["ready","failed"]), path:z.string().nullable(), branch:z.string().nullable(), reason:z.string().nullable() }).strict(),
+  },
   gitIntegrate: {
-    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), message:z.string().min(1).max(500) }).strict(),
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), message:z.string().min(1).max(500), removeWorktree:z.boolean().optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["merged","up-to-date","conflict","failed"]), commit:z.string().nullable(), conflicts:z.array(z.string()), reason:z.string().nullable() }).strict(),
   },
   gitOwnershipChanges: {

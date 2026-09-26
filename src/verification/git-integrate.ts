@@ -45,7 +45,7 @@ async function withBaseLock<T>(basePath:string,work:()=>T):Promise<T> {
  * Commits the writer's worktree and merges it into the run's base checkout (main).
  * A conflict leaves main untouched and names the files, so the task can be redone on the new main.
  */
-export async function integrateWorktree(input:{basePath:string;worktreePath:string;message:string}):Promise<GitIntegration> {
+export async function integrateWorktree(input:{basePath:string;worktreePath:string;message:string;removeWorktree?:boolean}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
   const dirty=git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
   if(!dirty.ok) return fail(`worktree status: ${dirty.reason}`);
@@ -58,17 +58,37 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   const head=git(input.worktreePath,["rev-parse","HEAD"]);
   if(!head.ok) return fail(`worktree head: ${head.reason}`);
   const sha=head.stdout.trim();
-  return withBaseLock(input.basePath,()=>{
-    if(git(input.basePath,["merge-base","--is-ancestor",sha,"HEAD"]).ok) {
-      return {status:"up-to-date",commit:git(input.basePath,["rev-parse","HEAD"]).stdout.trim()||null,conflicts:[],reason:null};
-    }
-    const merge=git(input.basePath,[...identity(input.basePath),"merge","--no-ff","--no-edit","-m",`Merge writer work: ${input.message}`,sha]);
-    if(merge.ok) return {status:"merged",commit:git(input.basePath,["rev-parse","HEAD"]).stdout.trim()||null,conflicts:[],reason:null};
-    const unmerged=git(input.basePath,["diff","--name-only","--diff-filter=U"]);
-    const conflicts=unmerged.ok?unmerged.stdout.split("\n").map((line)=>line.trim()).filter(Boolean):[];
-    git(input.basePath,["merge","--abort"]);
-    return {status:"conflict",commit:null,conflicts,reason:merge.reason.split("\n").slice(-4).join("\n")};
-  });
+  const branch=git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"]).stdout.trim();
+  const result=await withBaseLock(input.basePath,()=>merge(input.basePath,sha,input.message));
+  // Lane Pilot's own worktree is done once its work is in main, or once main moved past it (a conflict is redone fresh).
+  if(input.removeWorktree&&result.status!=="failed") {
+    git(input.basePath,["worktree","remove","--force",input.worktreePath]);
+    if(branch.startsWith("lane/")) git(input.basePath,["branch","-D",branch]);
+  }
+  return result;
+}
+
+/** Creates Lane Pilot's own worktree of a section repository on a fresh lane/<name> branch from its HEAD. */
+export async function createWorktree(input:{basePath:string;targetPath:string;name:string}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null}> {
+  const top=git(input.basePath,["rev-parse","--show-toplevel"]);
+  if(!top.ok) return {status:"failed",path:null,branch:null,reason:`not a git checkout: ${top.reason}`};
+  const branch=`lane/${input.name}`;
+  await mkdir(join(input.targetPath,".."),{recursive:true});
+  const added=git(input.basePath,["worktree","add","-q","-b",branch,input.targetPath,"HEAD"]);
+  if(!added.ok) return {status:"failed",path:null,branch:null,reason:added.reason};
+  return {status:"ready",path:input.targetPath,branch,reason:null};
+}
+
+function merge(basePath:string,sha:string,message:string):GitIntegration {
+  if(git(basePath,["merge-base","--is-ancestor",sha,"HEAD"]).ok) {
+    return {status:"up-to-date",commit:git(basePath,["rev-parse","HEAD"]).stdout.trim()||null,conflicts:[],reason:null};
+  }
+  const merged=git(basePath,[...identity(basePath),"merge","--no-ff","--no-edit","-m",`Merge writer work: ${message}`,sha]);
+  if(merged.ok) return {status:"merged",commit:git(basePath,["rev-parse","HEAD"]).stdout.trim()||null,conflicts:[],reason:null};
+  const unmerged=git(basePath,["diff","--name-only","--diff-filter=U"]);
+  const conflicts=unmerged.ok?unmerged.stdout.split("\n").map((line)=>line.trim()).filter(Boolean):[];
+  git(basePath,["merge","--abort"]);
+  return {status:"conflict",commit:null,conflicts,reason:merged.reason.split("\n").slice(-4).join("\n")};
 }
 
 /**
