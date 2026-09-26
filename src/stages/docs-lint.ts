@@ -74,10 +74,6 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
     if (h1.length !== 1) add("structure", `page needs exactly one H1, found ${h1.length}`);
     else if (typeof data.title === "string" && h1[0]!.slice(2).trim() !== data.title) add("structure", "H1 must match the frontmatter title");
     if (/^## Referenced by/m.test(withoutBacklinks(body))) add("builder", "do not write a Referenced by section; the backlinks builder owns it");
-    // sources must name every file the page cites, or staleness would miss the page when that file changes.
-    const listed = new Set((Array.isArray(data.sources) ? data.sources : []).map((source) => source.replace(/:\d+(-\d+)?$/, "")));
-    const unlisted = [...new Set(pageCitations(body).map((citation) => citation.file))].filter((file) => !listed.has(file));
-    if (unlisted.length) add("frontmatter", `sources must list every cited file; missing ${unlisted.join(", ")}`);
     const citations = pageCitations(body);
     if (citations.length < MIN_CITATIONS) add("evidence", `needs at least ${MIN_CITATIONS} file:line citations, found ${citations.length}`);
     for (const citation of citations) {
@@ -203,4 +199,14 @@ export function withVerifiedConfidence(content:string, verified:{ checked:number
   const share = verified.supported / verified.checked;
   const level = share >= 0.9 && verified.checked >= 10 ? "high" : share >= 0.7 ? "medium" : "low";
   return content.replace(/^(---\n[\s\S]*?^confidence:\s*)\S+/m, `$1${level}`);
+}
+
+/** sources with every cited file added, so staleness finds the page when any of them changes. */
+export function withCitedSources(content:string):string {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content;
+  const listed = new Set((Array.isArray(parsed.data.sources) ? parsed.data.sources : []).map((source) => source.replace(/:\d+(-\d+)?$/, "")));
+  const missing = [...new Set(pageCitations(withoutBacklinks(parsed.body)).map((citation) => citation.file))].filter((file) => !listed.has(file));
+  if (!missing.length) return content;
+  return content.replace(/^(---\n[\s\S]*?^sources:[^\n]*\n(?:\s+-\s+[^\n]*\n)*)/m, (block) => `${block}${missing.map((file) => `  - ${file}\n`).join("")}`);
 }

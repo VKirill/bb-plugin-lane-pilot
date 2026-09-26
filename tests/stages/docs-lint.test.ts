@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { BACKLINKS_MARK, buildBacklinks, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withVerifiedConfidence } from "../../src/stages/docs-lint";
+import { BACKLINKS_MARK, buildBacklinks, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/stages/docs-lint";
 import { commitDocs } from "../../src/verification/git-docs";
 
 const page = (fields: Record<string, string>, body: string) => [
@@ -68,10 +68,10 @@ it("lists missing required pages and core code no citation covers", () => {
   expect(docsCompletenessGaps(pages, { tables:[], core:[] }).missingPages).not.toContain("docs/data-model.md");
 });
 
-it("needs every cited file in sources and asks for deployment when the project builds", () => {
+it("adds cited files missing from sources and asks for deployment when the project builds", () => {
   const cites = page({}, "# Checks\n\nA (src/check.ts:1). B (src/other.ts:2). C (src/check.ts:3).\n");
-  expect(lintDocsPages([{ path:"docs/a.md", content:cites }], { "src/check.ts":9, "src/other.ts":9 }).map((f) => f.detail))
-    .toContain("sources must list every cited file; missing src/other.ts");
+  expect(withCitedSources(cites)).toContain("sources:\n  - src/check.ts\n  - src/other.ts\n---");
+  expect(withCitedSources(withCitedSources(cites))).toBe(withCitedSources(cites));
   expect(docsCompletenessGaps([], { tables:[], deploy:true, core:[] }).missingPages).toContain("docs/deployment.md");
 });
 

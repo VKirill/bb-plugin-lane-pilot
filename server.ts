@@ -163,7 +163,7 @@ import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./
 import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./src/workspace/routing";
 import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, localDateKey, NIGHTLY_DOCS_WRITABLE, nightlyDocsPrompt, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage } from "./src/stages/docs";
-import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withVerifiedConfidence } from "./src/stages/docs-lint";
+import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "./src/stages/docs-lint";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
 import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "./src/stages/night-fix";
@@ -4586,7 +4586,9 @@ export default async function plugin(bb: BbPluginApi) {
               const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
               const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:before.changed);
               const uncovered=before.changed.filter((file)=>product.has(file)&&!cited.has(file));
-              if(!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length){ report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"}); continue; }
+              // Docs an earlier pass left uncommitted still need checking and committing.
+              const pending=before.dirty.some((path)=>NIGHTLY_DOCS_WRITABLE(path));
+              if(!pending&&!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length){ report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"}); continue; }
               refresh=stale.refresh;
             }
           }
@@ -4644,7 +4646,8 @@ export default async function plugin(bb: BbPluginApi) {
             const stats=new Map(checked.pageStats.map((stat)=>[stat.path,stat]));
             const built=buildBacklinks(checked.pages).map((page)=>{
               const stat=stats.get(page.path);
-              return {path:page.path,content:stat?withVerifiedConfidence(page.content,stat):page.content};
+              const sourced=withCitedSources(page.content);
+              return {path:page.path,content:stat?withVerifiedConfidence(sourced,stat):sourced};
             });
             const current=checked.pages.find((page)=>page.path==="docs/index.md");
             const edits=[
