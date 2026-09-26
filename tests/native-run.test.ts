@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createRun, openDatabase, setRunThread } from "../src/database";
-import { ownedNativePmRun, projectCheckoutIntentPath, resolveNativeDispatchWorkspace, writerWorkspaceForPmInstructions } from "../src/native-run";
+import { closeRun, createRun, getActivation, openDatabase, setRunThread } from "../src/database";
+import { claimNativeLaneRun, ownedNativePmRun, projectCheckoutIntentPath, resolveNativeDispatchWorkspace, writerWorkspaceForPmInstructions } from "../src/native-run";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -55,4 +55,20 @@ it("accepts only a cli run that owns this thread and project", () => {
   expect(ownedNativePmRun(db, { runId: "lprun_own", threadId: "thread_a", projectId: "project_a", role: "writer" })).toBeNull();
   expect(writerWorkspaceForPmInstructions({ writer_workspace_path: "/checkout/actual" }, "/tmp/stale")).toBe("/checkout/actual");
   expect(writerWorkspaceForPmInstructions({ writer_workspace_path: null }, "/tmp/stale")).toBe("/tmp/stale");
+});
+
+it("claims one run per native chat without project setup or a project-wide lock", () => {
+  const fake = createFakePluginHost({ pluginId: "lane-pilot" });
+  cleanup.push(() => fake.harness.lifecycle.dispose());
+  const db = openDatabase(fake.bb);
+  const first = claimNativeLaneRun({ db, threadId: "thread_a", projectId: "project_unconfigured" });
+  expect(first.created).toBe(true);
+  setRunThread(db, first.runId, "thread_a");
+  const second = claimNativeLaneRun({ db, threadId: "thread_b", projectId: "project_unconfigured" });
+  expect(second.created).toBe(true);
+  expect(second.runId).not.toBe(first.runId);
+  expect(claimNativeLaneRun({ db, threadId: "thread_a", projectId: "project_unconfigured" })).toEqual({ runId: first.runId, created: false });
+  expect(getActivation(db, "project_unconfigured")).toBeUndefined();
+  closeRun(db, first.runId, "rpc");
+  expect(claimNativeLaneRun({ db, threadId: "thread_a", projectId: "project_unconfigured" }).created).toBe(true);
 });

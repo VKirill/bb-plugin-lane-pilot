@@ -1,12 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
-  claimActivation,
   createRun,
-  getActivation,
+  findOpenNativeRun,
   getRun,
-  loadPrototypeConfig,
-  releaseActivation,
   setRunState,
   setRunThread,
   type LanePilotDatabase,
@@ -95,30 +92,16 @@ export function resolveNativeDispatchWorkspace(ctx: {
   throw new Error("Native send needs the selected project-checkout host and path. Lane Pilot does not invent them.");
 }
 
+/** Each native chat owns its run: no project setup and no project-wide lock. */
 export function claimNativeLaneRun(input: {
   db: LanePilotDatabase;
   threadId: string;
   projectId: string;
 }): { runId: string; created: boolean } {
-  const pendingKey = `pending:${input.threadId}`;
-  const existing = getActivation(input.db, input.projectId);
-  if (existing && (existing.pm_thread_id === input.threadId || existing.pm_thread_id === pendingKey)) {
-    return { runId: existing.run_id, created: false };
-  }
-  if (existing && !existing.pm_thread_id.startsWith("pending:")) {
-    const run = getRun(input.db, existing.run_id);
-    if (run && (run.state === "pending" || run.state === "running")) {
-      throw new Error(
-        `Lane Pilot is already active in this project (thread ${existing.pm_thread_id}). A second activation is blocked.`,
-      );
-    }
-  }
-  if (!loadPrototypeConfig(input.db, input.projectId)) {
-    throw new Error(`Lane Pilot prototype is not configured for ${input.projectId}`);
-  }
+  const existing = findOpenNativeRun(input.db, input.projectId, input.threadId);
+  if (existing) return { runId: existing, created: false };
   const runId = `lprun_${randomUUID().replaceAll("-", "")}`;
   createRun(input.db, runId, input.projectId, "cli", null, "none", buildRunPolicy({}), null);
-  claimActivation(input.db, { projectId: input.projectId, pmThreadId: pendingKey, runId });
   return { runId, created: true };
 }
 
@@ -135,10 +118,8 @@ export async function attachNativeLaneClaim(input: {
       set: { role: "pm", lanePilotRunId: input.runId },
     });
     setRunThread(input.db, input.runId, input.threadId);
-    claimActivation(input.db, { projectId: input.projectId, pmThreadId: input.threadId, runId: input.runId });
   } catch (cause) {
     setRunState(input.db, input.runId, "blocked");
-    releaseActivation(input.db, input.projectId, input.runId);
     throw cause;
   }
 }

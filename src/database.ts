@@ -579,6 +579,13 @@ export function setRunThread(db: LanePilotDatabase, runId: string, threadId: str
     .run(threadId, Date.now(), runId);
 }
 
+export function findOpenNativeRun(db: LanePilotDatabase, projectId: string, threadId: string): string | null {
+  const row = db.prepare(`SELECT id FROM lane_pilot_run
+    WHERE kind='cli' AND project_id=? AND pm_thread_id=? AND closed_at IS NULL
+    ORDER BY created_at DESC LIMIT 1`).get(projectId, threadId) as { id: string } | undefined;
+  return row?.id ?? null;
+}
+
 export function createAttempt(db: LanePilotDatabase, ids: { id:string; runId:string; taskId:string }): void {
   const now = Date.now();
   const used = countAttempts(db, ids.runId, ids.taskId);

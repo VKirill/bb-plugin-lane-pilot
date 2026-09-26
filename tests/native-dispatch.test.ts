@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/database";
+import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/database";
 import { nativeSelectionMarker } from "../src/native-session";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -118,18 +118,19 @@ it("binds unique tokens per tab and never uses project pending", async () => {
   expect(first.token).not.toBe(second.token);
   const hook = fake.harness.registrations.hooks["message.dispatch"]!;
   expect(await hook(context("thr_a", nativeSelectionMarker(first.token)))).toEqual({ action: "proceed" });
-  const secondSend = await hook(context("thr_b", nativeSelectionMarker(second.token)));
-  expect(secondSend).toMatchObject({ action: "reject" });
-  expect((secondSend as { message: string }).message).toContain("already active");
+  expect(await hook(context("thr_b", nativeSelectionMarker(second.token)))).toEqual({ action: "proceed" });
   expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_a" })).toMatchObject({
     token: first.token,
     agentType: "dev-orchestrator",
   });
-  expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_b" })).toBeNull();
-  const activation = getActivation(openDatabase(fake.bb), "project_a");
-  expect(activation).toMatchObject({ pm_thread_id: "thr_a" });
-  expect(getRun(openDatabase(fake.bb), activation!.run_id)).toMatchObject({ kind: "cli", state: "running" });
-  expect(fake.metadata[0]).toMatchObject({ threadId: "thr_a", set: { role: "pm", lanePilotRunId: activation!.run_id } });
+  expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_b" })).toMatchObject({ token: second.token });
+  const db = openDatabase(fake.bb);
+  const runA = findOpenNativeRun(db, "project_a", "thr_a");
+  const runB = findOpenNativeRun(db, "project_a", "thr_b");
+  expect(runA).not.toBe(runB);
+  expect(getActivation(db, "project_a")).toBeUndefined();
+  expect(getRun(db, runA!)).toMatchObject({ kind: "cli", state: "running" });
+  expect(fake.metadata[0]).toMatchObject({ threadId: "thr_a", set: { role: "pm", lanePilotRunId: runA } });
   expect(fake.rpcCalls.some((row) => row.method === "clearPending")).toBe(false);
 });
 
@@ -324,14 +325,14 @@ it("prepares the launcher from project-checkout intent when environment is still
   const hook = fake.harness.registrations.hooks["message.dispatch"]!;
   expect(await hook(coldStart("thr_cold", nativeSelectionMarker(token)))).toEqual({ action: "proceed" });
   expect(fake.prepareCalls).toEqual([{ cwd: "/checkout/selected", agentId: "dev-orchestrator", agentsJson: null }]);
-  const activation = getActivation(openDatabase(fake.bb), "project_a");
-  expect(activation).toMatchObject({ pm_thread_id: "thr_cold" });
-  expect(getRun(openDatabase(fake.bb), activation!.run_id)).toMatchObject({
+  const runId = findOpenNativeRun(openDatabase(fake.bb), "project_a", "thr_cold");
+  expect(runId).not.toBeNull();
+  expect(getRun(openDatabase(fake.bb), runId!)).toMatchObject({
     kind: "cli",
     writer_environment_id: null,
   });
   expect(await hook(coldStart("thr_cold", nativeSelectionMarker(token)))).toEqual({ action: "proceed" });
-  expect(getActivation(openDatabase(fake.bb), "project_a")?.run_id).toBe(activation!.run_id);
+  expect(findOpenNativeRun(openDatabase(fake.bb), "project_a", "thr_cold")).toBe(runId);
   expect(
     await fake.harness.behavior.resolveProviderEnv("claude-code", {
       threadId: "thr_cold",
@@ -389,7 +390,7 @@ it("prepares a host-only launcher for samepath before provision and keeps it if 
   const hook = fake.harness.registrations.hooks["message.dispatch"]!;
   expect(await hook(samepathStart("thr_samepath", nativeSelectionMarker(token)))).toEqual({ action: "proceed" });
   expect(fake.prepareCalls).toEqual([{ cwd: null, agentId: "dev-orchestrator", agentsJson: null }]);
-  expect(getActivation(openDatabase(fake.bb), "project_a")).toMatchObject({ pm_thread_id: "thr_samepath" });
+  expect(findOpenNativeRun(openDatabase(fake.bb), "project_a", "thr_samepath")).not.toBeNull();
   const first = await fake.harness.behavior.resolveProviderEnv("claude-code", {
     threadId: "thr_samepath",
     hostId: "host_a",
