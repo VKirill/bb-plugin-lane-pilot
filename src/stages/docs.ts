@@ -120,21 +120,56 @@ function validPage(page:DocsPage):boolean {
 /** Most changed paths listed to the nightly agent; it reads the code itself. */
 const NIGHTLY_CHANGED_LIMIT = 200;
 
+/** Paths the nightly docs agent may write; anything else fails the pass. */
+export const NIGHTLY_DOCS_WRITABLE = (path:string):boolean => path.startsWith("docs/") || path === "README.md" || path === "PROJECT.md";
+
+const METHODOLOGY = [
+  "Method (docs-methodology skill from claude-lane; read ~/.agents/skills/docs-methodology/SKILL.md and its references/ first if the file exists):",
+  "- Every docs/ page starts with YAML frontmatter: title, type, created, updated (YYYY-MM-DD), status (draft|active|stale|deprecated), confidence (high|medium|low, honest: low under 5 sources, medium 5-15, high over 15), tags (kebab-case list), sources (list of files actually read, most relevant first).",
+  "- type is one of overview, architecture, data-model, decisions, deployment, gotchas, gaps, active-areas, active-tasks, component. One H1 equal to title, then a one-line TL;DR.",
+  "- Every non-trivial claim cites file:line or file:start-end that exists; at least 3 citations per page. No hedges (typically, usually, should) without a citation, no marketing words (powerful, seamless, robust, comprehensive, intuitive, leverage), no dates in prose.",
+  "- Link pages with relative paths. Never write docs/index.md or a 'Referenced by' section: Lane Pilot builds them.",
+  "- Wiki pages in English. Root README.md is for people, in plain Russian (Что это, Функции, Стек коротко, Запуск). Root PROJECT.md is for agents, dense English facts (Identity, Entry points, Critical invariants, Conventions, Common gotchas, Useful commands).",
+];
+
 /**
  * The nightly docs agent works in the project folder with file access, like claude-lane's
  * docs-maintain: no docs/ yet means onboarding, otherwise only pages about changed code.
  */
-export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; agent?:string}):string {
+export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; agent?:string}):string {
   const listed = input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
+  const refresh = input.refresh ?? [];
   return [
-    `${input.agent?.trim() || "Documentation maintainer"}: keep docs/ an honest description of this project's code. Follow the docs-methodology skill if you have it.`,
+    `${input.agent?.trim() || "Documentation maintainer"}: keep this project's documentation an honest, evidence-backed description of its code.`,
+    "",
+    ...METHODOLOGY,
+    "",
     input.hasDocs
-      ? `Update only the docs pages that describe these files changed since ${input.since}, and finish stub pages you find. Leave accurate pages alone.`
-      : "There is no docs/ yet: create docs/README.md (what the project is, how it is built and run, its main parts) and one docs/features/<name>.md per user-facing capability.",
-    "Read the code before writing about it; do not invent behaviour, names or line numbers.",
-    "Write only Markdown under docs/. Do not edit code, tests, settings or anything else, and do not commit.",
+      ? [
+        `Task: refresh the docs for code changed since ${input.since}. Update the pages below, set their updated date to today, keep created as is. Add a page only for a new capability; leave accurate pages alone.`,
+        ...(refresh.length ? ["Pages whose sources changed or that are drafts:", ...refresh.map((path) => `- ${path}`)] : ["No page lists a changed file among its sources: check whether a changed file needs a new or extended page."]),
+      ].join("\n")
+      : [
+        "Task: there is no docs/ yet, so onboard the project. Create:",
+        "- docs/overview.md (overview): what the project is, how it is built and run, its main parts.",
+        "- docs/architecture.md (architecture): parts and how they talk, with one mermaid C4 container or component diagram of at most 12 nodes.",
+        "- docs/features/<capability>.md (component), one per user-facing capability: Purpose, Business rules, Public API or commands, Gotchas.",
+        "- docs/gotchas.md (gotchas) with the traps you find in the code; docs/decisions.md (decisions, ADR: Context, Decision, Status, Consequences) only for decisions the code or history shows.",
+        "- README.md (Russian, for people) and PROJECT.md (English, for agents) at the project root; keep facts already in README.md.",
+      ].join("\n"),
+    "",
+    "Read the code before writing about it. Write only docs/**, README.md and PROJECT.md; do not edit code, tests or settings, and do not commit. Lane Pilot checks the pages, builds docs/index.md and commits.",
     "Finish with a short list of the pages you created or changed.",
     ...(listed.length ? ["", `Changed since ${input.since}:`, ...listed.map((path) => `- ${path}`)] : []),
     ...(input.changed.length > listed.length ? [`- …and ${input.changed.length - listed.length} more (see git log)`] : []),
+  ].join("\n");
+}
+
+/** One repair round: the checks the pages failed, to fix without touching anything else. */
+export function docsRepairPrompt(findings:Array<{ path:string; rule:string; detail:string }>):string {
+  return [
+    "Lane Pilot checked the docs and found these problems. Fix exactly these, following the same method; change nothing else.",
+    ...findings.slice(0, 80).map((finding) => `- ${finding.path} [${finding.rule}]: ${finding.detail}`),
+    ...(findings.length > 80 ? [`- …and ${findings.length - 80} more of the same kinds`] : []),
   ].join("\n");
 }

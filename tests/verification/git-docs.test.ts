@@ -35,8 +35,11 @@ it("reports a folder outside git", async () => {
 });
 
 it("asks for onboarding without docs/ and for changed-code pages otherwise", () => {
-  expect(nightlyDocsPrompt({ since: "yesterday", hasDocs: false, changed: [] })).toContain("There is no docs/ yet");
-  const prompt = nightlyDocsPrompt({ since: "yesterday", hasDocs: true, changed: ["lib/a.ts"] });
+  const onboarding = nightlyDocsPrompt({ since: "yesterday", hasDocs: false, changed: [] });
+  expect(onboarding).toContain("there is no docs/ yet");
+  expect(onboarding).toContain("docs/architecture.md");
+  const prompt = nightlyDocsPrompt({ since: "yesterday", hasDocs: true, changed: ["lib/a.ts"], refresh: ["docs/features/a.md"] });
   expect(prompt).toContain("- lib/a.ts");
-  expect(prompt).toContain("Write only Markdown under docs/");
+  expect(prompt).toContain("- docs/features/a.md");
+  expect(prompt).toContain("Write only docs/**, README.md and PROJECT.md");
 });

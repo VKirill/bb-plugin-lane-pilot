@@ -1,5 +1,5 @@
 import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree } from "./verification/git-integrate";
-import { gitDocsScope as readGitDocsScope } from "./verification/git-docs";
+import { commitDocs, docsLineCounts as readDocsLineCounts, gitDocsScope as readGitDocsScope } from "./verification/git-docs";
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -78,6 +78,16 @@ export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>
 export const gitDocsScope: ExperimentalHostRpcHandlers<typeof hostContract>["gitDocsScope"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await readGitDocsScope({projectCwd:input.projectCwd,sinceEpochMs:input.sinceEpochMs}),
+});
+
+export const docsLineCounts: ExperimentalHostRpcHandlers<typeof hostContract>["docsLineCounts"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  counts:await readDocsLineCounts({projectCwd:input.projectCwd,files:input.files}),
+});
+
+export const gitCommitDocs: ExperimentalHostRpcHandlers<typeof hostContract>["gitCommitDocs"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await commitDocs({projectCwd:input.projectCwd,paths:input.paths,message:input.message}),
 });
 
 export const gitOwnershipChanges: ExperimentalHostRpcHandlers<typeof hostContract>["gitOwnershipChanges"] = async (input) => ({

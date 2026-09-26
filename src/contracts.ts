@@ -151,6 +151,14 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), sinceEpochMs:z.number().int().nonnegative() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), isRepoRoot:z.boolean(), hasDocs:z.boolean(), changed:z.array(z.string()), dirty:z.array(z.string()), localDate:z.string(), localHour:z.number().int(), reason:z.string().nullable() }).strict(),
   },
+  docsLineCounts: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), files:z.array(z.string()).max(2000) }).strict(),
+    output: z.object({ hostId:z.string(), counts:z.record(z.string(), z.number().int().nullable()) }).strict(),
+  },
+  gitCommitDocs: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), paths:z.array(z.string()).max(2000), message:z.string().min(1).max(500) }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["committed","nothing","failed"]), commit:z.string().nullable(), reason:z.string().nullable() }).strict(),
+  },
   gitOwnershipChanges: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), baseSha:z.string().regex(/^[a-f0-9]{40,64}$/).nullable(), compareCommitted:z.boolean() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), headSha:z.string().nullable(), paths:z.array(z.string()), reason:z.string().nullable() }).strict(),

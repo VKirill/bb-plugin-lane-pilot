@@ -162,7 +162,8 @@ import { findTaskPlaceholderPaths } from "./src/stages/critique-coverage";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./src/stages/specialist";
 import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./src/workspace/routing";
-import { docsInputHash, docsMaintenancePrompt, docsScheduleDue, docsSinceEpoch, localDateKey, nightlyDocsPrompt, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage } from "./src/stages/docs";
+import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, localDateKey, NIGHTLY_DOCS_WRITABLE, nightlyDocsPrompt, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage } from "./src/stages/docs";
+import { buildDocsIndex, citedFiles, lintDocsPages, pagesToRefresh } from "./src/stages/docs-lint";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
 import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "./src/stages/night-fix";
@@ -4540,7 +4541,7 @@ export default async function plugin(bb: BbPluginApi) {
    * hidden docs agent. It sees the code changed since docs.since; no docs/ yet means onboarding;
    * nothing changed and docs present means no model call. `force` skips the hour for a manual run.
    */
-  async function runNightlyDocs(opts:{force?:boolean;projectId?:string}={}):Promise<Array<Record<string,unknown>>> {
+  async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string}={}):Promise<Array<Record<string,unknown>>> {
     const results:Array<Record<string,unknown>>=[];
     const projects=opts.projectId?[{id:opts.projectId}]:await bb.sdk.projects.list({includePersonal:true}).catch(()=>[] as Array<{id:string}>);
     for(const project of projects){
@@ -4550,6 +4551,7 @@ export default async function plugin(bb: BbPluginApi) {
       const sections=await listProjectSections(project.id);
       for(const section of sections) if(section.kind==="folder"&&section.path&&section.hostId) places.push({scopes:sectionChain(sections,section.id),hostId:section.hostId,path:section.path});
       for(const place of places){
+        if(opts.path&&resolve(place.path)!==resolve(opts.path)) continue;
         const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>{ const row={projectId:project.id,path:place.path,state,...extra}; results.push(row); return row; };
         try{
           const settings=loadProjectSettings(db,project.id,place.scopes);
@@ -4561,6 +4563,9 @@ export default async function plugin(bb: BbPluginApi) {
           const schedule=`docs-nightly-${sha256(place.path).slice(0,12)}`;
           if(!opts.force&&!claimDailySchedule(db,project.id,schedule,before.localDate)) continue;
           if(before.hasDocs&&before.changed.length===0){ report("skipped",{reason:"no code changes"}); continue; }
+          const docsPages=async()=>(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path},{hostId:place.hostId,timeoutMs:60_000})).pages
+            .filter((page)=>page.path.startsWith("docs/")) as Array<{path:string;sha256:string;content:string}>;
+          const refresh=before.hasDocs?pagesToRefresh(await docsPages(),before.changed):[];
           const selection=resolveStageWriterSelection({settings,config:{writerProviderId:"codex",writerModel:"gpt-6-luna"},stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
           const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
           const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
@@ -4570,15 +4575,43 @@ export default async function plugin(bb: BbPluginApi) {
           const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
           const spawned=await bb.sdk.threads.spawn({projectId:project.id,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}`,
             ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
-            prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed:before.changed,agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined}),
+            prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed:before.changed,refresh,agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined}),
             environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
             pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
           const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
           await waitThreadIdle(bb,threadId,"docs_nightly");
-          const after=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date())},{hostId:place.hostId,timeoutMs:60_000});
-          const touched=after.dirty.filter((path)=>!before.dirty.includes(path));
-          const outside=touched.filter((path)=>!path.startsWith("docs/"));
-          const row=report(outside.length?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:before.changed.length,docsWritten:touched.filter((path)=>path.startsWith("docs/")),...(outside.length?{reason:`docs agent changed files outside docs/: ${outside.join(", ")}`}:{})});
+          // Check the pages the way the methodology asks, give the agent one round to fix, then index and commit.
+          const inspect=async()=>{
+            const after=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date())},{hostId:place.hostId,timeoutMs:60_000});
+            const touched=after.dirty.filter((path)=>!before.dirty.includes(path));
+            const pages=await docsPages();
+            const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(pages)},{hostId:place.hostId,timeoutMs:60_000})).counts;
+            return {touched,pages,docsDirty:after.dirty.filter((path)=>NIGHTLY_DOCS_WRITABLE(path)),outside:touched.filter((path)=>!NIGHTLY_DOCS_WRITABLE(path)),findings:lintDocsPages(pages,counts)};
+          };
+          let checked=await inspect();
+          if(!checked.outside.length&&checked.findings.length){
+            await bb.sdk.threads.send({threadId,mode:"queue-if-active",input:[{type:"text",text:docsRepairPrompt(checked.findings),mentions:[]}]});
+            await waitThreadIdle(bb,threadId,"docs_nightly_repair");
+            checked=await inspect();
+          }
+          let commit:string|null=null;
+          // Every docs page passed the checks, so docs left uncommitted by an earlier pass go in too; code never does.
+          if(!checked.outside.length&&!checked.findings.length&&checked.docsDirty.length){
+            const current=checked.pages.find((page)=>page.path==="docs/index.md");
+            const edits=[{path:"docs/index.md",expectedSha256:current?.sha256??null,content:buildDocsIndex(checked.pages)}];
+            if(current?.content!==edits[0]!.content){
+              await host.call("applyOnboardingPages",{requestedHostId:place.hostId,projectCwd:place.path,confirmed:true,
+                previewSha256:sha256(JSON.stringify(edits)),edits},{hostId:place.hostId,timeoutMs:60_000});
+            }
+            const committed=await host.call("gitCommitDocs",{requestedHostId:place.hostId,projectCwd:place.path,
+              paths:[...new Set([...checked.docsDirty,"docs/index.md"])],message:`docs: ${before.hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
+            if(committed.status==="failed") throw new Error(`docs commit failed: ${committed.reason}`);
+            commit=committed.commit;
+          }
+          const failure=checked.outside.length?`docs agent changed files outside docs/, README.md and PROJECT.md: ${checked.outside.join(", ")}`
+            :checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
+          const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:before.changed.length,refreshed:refresh,
+            docsWritten:checked.touched.filter((path)=>NIGHTLY_DOCS_WRITABLE(path)),commit,...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
           await bb.storage.kv.set(`docs-nightly:${project.id}:${sha256(place.path).slice(0,12)}`,{...row,at:Date.now()});
           bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path}`);
         }catch(cause){
@@ -5920,7 +5953,7 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"configure", summary:"Save prototype project settings", usage:"bb lane-pilot configure '<json>'" },
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
-      { name:"docs-nightly", summary:"Run the nightly docs pass now for docs-enabled folders of a project", usage:"bb lane-pilot docs-nightly <project-id>" },
+      { name:"docs-nightly", summary:"Run the nightly docs pass now for docs-enabled folders of a project", usage:"bb lane-pilot docs-nightly <project-id> [folder-path]" },
       { name:"finish", summary:"Close a PM run after observing it idle and release activation", usage:"bb lane-pilot finish <project-id> [run-id]" },
       { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id> [run-id]" },
       { name:"cancel", summary:"Stop a writer and persist canceled after observing idle", usage:"bb lane-pilot cancel <attempt-id>" },
@@ -6110,8 +6143,8 @@ export default async function plugin(bb: BbPluginApi) {
             baseRef:args[3]||undefined,
           }), null, 2) };
         }
-        if (command === "docs-nightly" && args.length === 1) {
-          return { exitCode:0, stdout:JSON.stringify(await runNightlyDocs({force:true,projectId:args[0]!}), null, 2) };
+        if (command === "docs-nightly" && (args.length === 1 || args.length === 2)) {
+          return { exitCode:0, stdout:JSON.stringify(await runNightlyDocs({force:true,projectId:args[0]!,path:args[1]}), null, 2) };
         }
         if (command === "wait-thread" && args.length === 1) {
           const threadId = args[0]!;

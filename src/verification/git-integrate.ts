@@ -25,7 +25,7 @@ function identity(cwd:string):string[] {
 }
 
 /** One integration at a time per base checkout; a lock older than 10 minutes is stale. */
-async function withBaseLock<T>(basePath:string,work:()=>T):Promise<T> {
+export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>):Promise<T> {
   const lock=join(basePath,".git","lane-pilot-integrate.lock");
   const deadline=Date.now()+120_000;
   for(;;) {
@@ -38,7 +38,8 @@ async function withBaseLock<T>(basePath:string,work:()=>T):Promise<T> {
       await new Promise((resolve)=>setTimeout(resolve,500));
     }
   }
-  try { return work(); } finally { await rm(lock,{recursive:true,force:true}); }
+  // Awaited, so an async task keeps the lock until it finishes.
+  try { return await work(); } finally { await rm(lock,{recursive:true,force:true}); }
 }
 
 /**
