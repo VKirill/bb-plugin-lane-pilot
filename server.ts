@@ -4539,7 +4539,7 @@ export default async function plugin(bb: BbPluginApi) {
   /** A workspace with at least this many product code files keeps its own docs folder; smaller ones belong to the root docs. */
   const WORKSPACE_DOCS_MIN_FILES=15;
   /** Docs folders of one monorepo written at once. */
-  const DOCS_UNIT_CONCURRENCY=3;
+  const DOCS_UNIT_CONCURRENCY=4;
   /**
    * BB refuses to provision a thread on a checkout while another one is being provisioned there, so docs
    * agents are spawned one at a time: the next starts once the last has left "starting".
