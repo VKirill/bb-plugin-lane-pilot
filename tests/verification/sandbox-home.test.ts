@@ -18,3 +18,9 @@ it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))
     expect(result.stdout.trim()).toBe("ok");
   },
 );
+
+it("finds the bb CLI folder from BB_CLI or PATH so sandboxed checks can run bb plugin build", async () => {
+  const { bbCliDir } = await import("../../src/verification/sandbox");
+  expect(bbCliDir({ BB_CLI: "/opt/bb/dist/bb" })).toBe("/opt/bb/dist");
+  expect(bbCliDir({ PATH: "relative:/nonexistent-dir" })).toBeNull();
+});

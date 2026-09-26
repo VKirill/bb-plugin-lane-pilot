@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
+import { accessSync, constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
 import { access, lstat, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export type SandboxedCommandInput = {
   requestedHostId:string; workspacePath:string; cwd:string; command:string; backend?:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec?:number;
@@ -56,11 +57,27 @@ export function buildSeatbeltProfile(workspacePath:string, tempPath:string):stri
 }
 
 /** Build an argv-only bubblewrap policy. Sensitive workspace entries must exist so they can be bind-mounted read-only. */
+/** The folder of the bb CLI, so checks like `bb plugin build` run inside the sandbox; null when absent. */
+export function bbCliDir(env:NodeJS.ProcessEnv = process.env):string|null {
+  const pinned = env.BB_CLI?.trim();
+  if (pinned && isAbsolute(pinned)) return dirname(pinned);
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
+    if (!isAbsolute(dir)) continue;
+    try { accessSync(join(dir,"bb"),fsConstants.X_OK); return dir; } catch { /* keep looking */ }
+  }
+  return null;
+}
+
+function sandboxPath(base:string):string {
+  const bb = bbCliDir();
+  return bb ? `${base}:${bb}` : base;
+}
+
 export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempPath:string;guardPaths:string[]}):string[] {
   const args=["--die-with-parent","--new-session","--unshare-all","--ro-bind","/","/","--bind",input.workspacePath,input.workspacePath];
   for (const guardPath of input.guardPaths) args.push("--ro-bind",guardPath,guardPath);
   args.push("--bind",input.tempPath,input.tempPath,"--proc","/proc","--dev","/dev","--chdir",input.cwd,
-    "--clearenv","--setenv","PATH","/usr/local/bin:/usr/bin:/bin","--setenv","HOME",input.tempPath,
+    "--clearenv","--setenv","PATH",sandboxPath("/usr/local/bin:/usr/bin:/bin"),"--setenv","HOME",input.tempPath,
     "--setenv","TMPDIR",input.tempPath,"--setenv","TMP",input.tempPath,"--setenv","TEMP",input.tempPath,
     "--setenv","LANG","C","--setenv","LC_ALL","C","--","/bin/bash","--noprofile","--norc","-c");
   return args;
@@ -113,7 +130,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     const child = spawnSync(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],{
       cwd,
       env:{
-        PATH:"/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin",
+        PATH:sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"),
         HOME:tempPath,TMPDIR:tempPath,TMP:tempPath,TEMP:tempPath,
         LANG:"C",LC_ALL:"C",
       },
