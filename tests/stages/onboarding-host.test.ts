@@ -20,6 +20,16 @@ describe("host-bound onboarding CAS apply",()=>{
     }finally{await rm(root,{recursive:true,force:true});}
   });
 
+  it("creates docs/ and nested folders in a project that has no documentation yet",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"lane-onboarding-"));
+    try{
+      const edits=[{path:"docs/features/rename.md",expectedSha256:null,content:"# Rename\n"}],previewSha256=hash(JSON.stringify(edits));
+      const receipt=await call({requestedHostId:"host-test",projectCwd:root,confirmed:true,previewSha256,edits});
+      expect(receipt.status).toBe("applied");
+      expect(await readFile(join(root,"docs/features/rename.md"),"utf8")).toBe("# Rename\n");
+    }finally{await rm(root,{recursive:true,force:true});}
+  });
+
   it("fails stale CAS without changing any file",async()=>{
     const root=await mkdtemp(join(tmpdir(),"lane-onboarding-"));
     try{

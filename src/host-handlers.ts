@@ -2,7 +2,7 @@ import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree 
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { chmod, lstat, open, readFile, readlink, readdir, realpath, rename, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, readFile, readlink, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
@@ -170,16 +170,24 @@ export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContra
       ||!((normalized.startsWith("docs/")||normalized.startsWith("apps/"))&&/\.md$/i.test(normalized))) {
       throw new Error(`onboarding path is outside Markdown docs scope: ${normalized}`);
     }
-    let cursor=root;
+    // Onboarding creates docs/ in a project that has none: missing parents are made at write time;
+    // the ones that exist must be real directories inside the project.
+    let cursor=root, parentMissing=false;
     for(const segment of segments.slice(0,-1)){
       cursor=join(cursor,segment);
-      const info=await lstat(cursor);
+      const info=await lstat(cursor).catch((cause)=>{
+        if((cause as NodeJS.ErrnoException).code==="ENOENT") return null;
+        throw cause;
+      });
+      if(!info){ parentMissing=true; break; }
       if(info.isSymbolicLink()||!info.isDirectory()) throw new Error(`onboarding parent must be a real directory: ${normalized}`);
     }
     const fullPath=join(root,...segments);
-    const parentReal=await realpath(dirname(fullPath));
-    const parentRelative=relative(root,parentReal);
-    if(parentRelative.startsWith("..")||isAbsolute(parentRelative)) throw new Error(`onboarding parent escaped the project: ${normalized}`);
+    if(!parentMissing){
+      const parentReal=await realpath(dirname(fullPath));
+      const parentRelative=relative(root,parentReal);
+      if(parentRelative.startsWith("..")||isAbsolute(parentRelative)) throw new Error(`onboarding parent escaped the project: ${normalized}`);
+    }
     let beforeMode:number|null=null;
     try{
       const info=await lstat(fullPath);
@@ -210,6 +218,7 @@ export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContra
         return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:writes.length===1?"conflict":"blocked",writes,reason:"onboarding compare-and-swap changed during apply"};
       }
       const bytes=Buffer.from(edit.content,"utf8");
+      await mkdir(dirname(target.fullPath),{recursive:true});
       tempPath=join(dirname(target.fullPath),`.${basename(target.fullPath)}.lane-pilot-${randomUUID()}.tmp`);
       const handle=await open(tempPath,"wx",target.beforeMode??0o600);
       try{await handle.writeFile(bytes);await handle.sync();}finally{await handle.close();}
