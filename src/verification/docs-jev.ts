@@ -304,10 +304,8 @@ export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array
 
 // ---- staleness ----------------------------------------------------------------------------
 
-async function diffSince(projectCwd:string, sinceEpochMs:number, files:string[]):Promise<Map<string, string>> {
+async function diffSince(projectCwd:string, base:string, files:string[]):Promise<Map<string, string>> {
   const git = (...args:string[]) => run("git", ["-c", "core.quotePath=false", "-C", projectCwd, ...args], { maxBuffer:32 << 20 });
-  const base = (await git("rev-list", "-1", `--before=@${Math.floor(sinceEpochMs / 1000)}`, "HEAD").catch(() => ({ stdout:"" }))).stdout.trim()
-    || "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
   const diffs = new Map<string, string>();
   for (const file of files) {
     const text = (await git("diff", base, "--", file).catch(() => ({ stdout:"" }))).stdout;
@@ -320,7 +318,7 @@ async function diffSince(projectCwd:string, sinceEpochMs:number, files:string[])
  * Pages whose sections describe code the diff actually changed in behaviour, as Jev judges it;
  * draft pages always. Without Jev the caller falls back to the sources intersection.
  */
-export async function docsStaleness(input:{ projectCwd:string; sinceEpochMs:number; changed:string[]; pages:Array<{ path:string; content:string }> }):Promise<{ jev:JevStatus; refresh:string[]; reasons:Array<{ path:string; section:string; p:number }> }> {
+export async function docsStaleness(input:{ projectCwd:string; base:string; changed:string[]; pages:Array<{ path:string; content:string }> }):Promise<{ jev:JevStatus; refresh:string[]; reasons:Array<{ path:string; section:string; p:number }> }> {
   const key = await jevApiKey();
   if (!key) return { jev:"disabled", refresh:[], reasons:[] };
   const changed = new Set(input.changed);
@@ -329,7 +327,7 @@ export async function docsStaleness(input:{ projectCwd:string; sinceEpochMs:numb
     return [head, ...rest].map((text) => ({ path:page.path, heading:(/^## (.+)$/m.exec(text)?.[1] ?? "(intro)").trim(), text,
       files:[...new Set([...text.matchAll(CITATION)].map((match) => match[1]!.replace(/^\.\//, "")))].filter((file) => changed.has(file)) }));
   }).filter((section) => section.files.length);
-  const diffs = await diffSince(input.projectCwd, input.sinceEpochMs, [...new Set(sections.flatMap((section) => section.files))]);
+  const diffs = await diffSince(input.projectCwd, input.base, [...new Set(sections.flatMap((section) => section.files))]);
   const reasons:Array<{ path:string; section:string; p:number }> = [];
   let answered = 0;
   const asked = sections.filter((section) => section.files.some((file) => diffs.has(file)));

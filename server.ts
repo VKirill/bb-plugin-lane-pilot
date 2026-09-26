@@ -4573,7 +4573,7 @@ export default async function plugin(bb: BbPluginApi) {
           const gaps=before.hasDocs?docsCompletenessGaps(existing,{tables:anchors?.tables??[],core:anchors?.core??[]}):{missingPages:[],uncoveredCore:[]};
           let refresh=before.hasDocs?pagesToRefresh(existing,before.changed):[];
           if(before.hasDocs){
-            const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),
+            const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
               changed:before.changed,pages:pageInput},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
             if(stale&&stale.jev!=="disabled"){
               const cited=new Set(existing.flatMap((page)=>citedFiles([page])));

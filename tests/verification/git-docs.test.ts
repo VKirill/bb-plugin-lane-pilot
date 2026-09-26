@@ -10,21 +10,33 @@ const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, 
 const gitAt = (date: string, cwd: string, ...args: string[]) =>
   execFileSync("git", ["-C", cwd, ...args], { stdio: "pipe", env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
 
-it("lists code changed since the window, not docs or tooling, and tells a repo root from a subfolder", async () => {
+it("lists code changed since the docs were last committed, not docs or tooling", async () => {
   const root = await mkdtemp(join(tmpdir(), "lane-docs-"));
   try {
     git(root, "init", "-q"); git(root, "config", "user.email", "t@t"); git(root, "config", "user.name", "t");
     await writeFile(join(root, "old.ts"), "1");
-    git(root, "add", "."); gitAt("2000-01-01T00:00:00", root, "commit", "-qm", "old");
-    const since = Date.now() - 60_000;
-    await mkdir(join(root, "lib")); await writeFile(join(root, "lib/new.ts"), "2");
     await mkdir(join(root, "docs")); await writeFile(join(root, "docs/a.md"), "# a");
-    git(root, "add", "."); git(root, "commit", "-qm", "new");
+    git(root, "add", "."); gitAt("2000-01-01T00:00:00", root, "commit", "-qm", "docs");
+    const docsCommit = git(root, "rev-parse", "HEAD").toString().trim();
+    await mkdir(join(root, "lib")); await writeFile(join(root, "lib/new.ts"), "2");
+    git(root, "add", "."); git(root, "commit", "-qm", "code");
     await writeFile(join(root, "draft.ts"), "3");
-    const scope = await gitDocsScope({ projectCwd: root, sinceEpochMs: since });
-    expect(scope).toMatchObject({ status: "ready", isRepoRoot: true, hasDocs: true, changed: ["draft.ts", "lib/new.ts"], dirty: ["draft.ts"] });
+    // The window says "since a minute ago", but the docs describe the code of 2000: that is the base.
+    const scope = await gitDocsScope({ projectCwd: root, sinceEpochMs: Date.now() - 60_000 });
+    expect(scope).toMatchObject({ status: "ready", isRepoRoot: true, hasDocs: true, base: docsCommit, changed: ["draft.ts", "lib/new.ts"], dirty: ["draft.ts"] });
     expect(scope.localDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect((await gitDocsScope({ projectCwd: join(root, "lib"), sinceEpochMs: since })).isRepoRoot).toBe(false);
+    expect((await gitDocsScope({ projectCwd: join(root, "lib"), sinceEpochMs: 0 })).isRepoRoot).toBe(false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("falls back to the time window when no commit has touched docs/", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lane-docs-"));
+  try {
+    git(root, "init", "-q"); git(root, "config", "user.email", "t@t"); git(root, "config", "user.name", "t");
+    await writeFile(join(root, "old.ts"), "1"); git(root, "add", "."); gitAt("2000-01-01T00:00:00", root, "commit", "-qm", "old");
+    const since = Date.now() - 60_000;
+    await writeFile(join(root, "new.ts"), "2"); git(root, "add", "."); git(root, "commit", "-qm", "new");
+    expect((await gitDocsScope({ projectCwd: root, sinceEpochMs: since })).changed).toEqual(["new.ts"]);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

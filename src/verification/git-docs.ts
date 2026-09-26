@@ -5,6 +5,8 @@ import { promisify } from "node:util";
 import { withBaseLock } from "./git-integrate";
 
 const run = promisify(execFile);
+/** git's empty tree: the base when the repository has no history before the window. */
+export const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /** Paths the nightly docs pass never counts as code changes. */
 const NOT_CODE = /^(docs\/|\.agents\/|\.bb\/|\.claude\/|dist\/|node_modules\/)/;
@@ -13,8 +15,10 @@ export type GitDocsScope = {
   status: "ready" | "not-git" | "failed";
   isRepoRoot: boolean;
   hasDocs: boolean;
-  /** Code files committed since the window start or uncommitted now, docs and tooling excluded. */
+  /** Code files changed since `base` or uncommitted now, docs and tooling excluded. */
   changed: string[];
+  /** The last commit that touched docs/, else the last one before the window: the docs describe this code. */
+  base: string | null;
   /** Every path `git status` reports, to tell afterwards what the docs agent touched. */
   dirty: string[];
   /** The machine's own calendar, so docs.hour means the owner's local hour, not the hub's. */
@@ -40,15 +44,18 @@ export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: nu
   const hasDocs = await stat(join(input.projectCwd, "docs")).then((info) => info.isDirectory(), () => false);
   let top: string;
   try { top = (await git("rev-parse", "--show-toplevel")).trim(); }
-  catch { return { status: "not-git", isRepoRoot: false, hasDocs, changed: [], dirty: [], ...local, reason: null }; }
+  catch { return { status: "not-git", isRepoRoot: false, hasDocs, changed: [], dirty: [], base: null, ...local, reason: null }; }
   try {
     const isRepoRoot = (await realpath(top)) === (await realpath(input.projectCwd));
-    const committed = (await git("log", `--since=@${Math.floor(input.sinceEpochMs / 1000)}`, "--name-only", "--pretty=format:")).split("\n");
+    const base = (await git("log", "-1", "--format=%H", "--", "docs")).trim()
+      || (await git("rev-list", "-1", `--before=@${Math.floor(input.sinceEpochMs / 1000)}`, "HEAD")).trim()
+      || EMPTY_TREE;
+    const committed = (await git("diff", "--name-only", base, "HEAD")).split("\n");
     const dirty = (await git("status", "--porcelain", "--untracked-files=all")).split("\n").filter(Boolean).map(statusPath);
     const changed = [...new Set([...committed, ...dirty].map((path) => path.trim()).filter((path) => path && !NOT_CODE.test(path)))].sort();
-    return { status: "ready", isRepoRoot, hasDocs, changed, dirty, ...local, reason: null };
+    return { status: "ready", isRepoRoot, hasDocs, changed, dirty, base, ...local, reason: null };
   } catch (cause) {
-    return { status: "failed", isRepoRoot: false, hasDocs, changed: [], dirty: [], ...local, reason: cause instanceof Error ? cause.message : String(cause) };
+    return { status: "failed", isRepoRoot: false, hasDocs, changed: [], dirty: [], base: null, ...local, reason: cause instanceof Error ? cause.message : String(cause) };
   }
 }
 

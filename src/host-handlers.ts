@@ -91,7 +91,7 @@ export const docsVerifyCitations: ExperimentalHostRpcHandlers<typeof hostContrac
 
 export const docsStalenessHandler: ExperimentalHostRpcHandlers<typeof hostContract>["docsStaleness"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await docsStaleness({projectCwd:input.projectCwd,sinceEpochMs:input.sinceEpochMs,changed:input.changed,pages:input.pages}),
+  ...await docsStaleness({projectCwd:input.projectCwd,base:input.base,changed:input.changed,pages:input.pages}),
 });
 
 export const docsLineCounts: ExperimentalHostRpcHandlers<typeof hostContract>["docsLineCounts"] = async (input) => ({
