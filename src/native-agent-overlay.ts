@@ -120,6 +120,24 @@ function normalizeToolList(value: unknown): string[] | undefined {
   return items;
 }
 
+const PM_AGENT_IDS = new Set(["dev-orchestrator", "frontend-orchestrator", "marketing-orchestrator"]);
+
+/**
+ * A Lane PM delegates code only to Lane writers. A general-purpose subagent would write product code
+ * in the PM's own checkout, past plan critique, the writer model and worktrees, so a PM keeps
+ * read-only Explore/Plan and the Lane specialists only.
+ */
+export function withoutCodeWritingSubagents(agentId: string, tools: string[]): string[] {
+  if (!PM_AGENT_IDS.has(agentId.split(":").pop() ?? agentId)) return tools;
+  return tools.map((tool) => {
+    if (tool === "Agent" || tool === "Task") return `${tool}(Explore, Plan)`;
+    const match = /^(Agent|Task)\((.*)\)$/.exec(tool);
+    if (!match) return tool;
+    const kept = match[2]!.split(",").map((name) => name.trim()).filter((name) => name && name !== "general-purpose");
+    return `${match[1]}(${kept.join(", ")})`;
+  });
+}
+
 export function stockAgentsOverlayFromInstalled(input: {
   agentId: string;
   source: string;
@@ -134,7 +152,7 @@ export function stockAgentsOverlayFromInstalled(input: {
       ? parsed.frontmatter.description
       : input.agentId,
     prompt: parsed.prompt,
-    tools: unionLpBridgeTools(tools),
+    tools: unionLpBridgeTools(withoutCodeWritingSubagents(input.agentId, tools)),
   };
   for (const [key, value] of Object.entries(parsed.frontmatter)) {
     if (key === "description" || key === "tools" || key === "prompt") continue;
@@ -162,7 +180,7 @@ export function unionLpBridgeToolsOnAgentsJson(agentId: string, agentsJson: stri
   const definition = { ...raw as Record<string, unknown> };
   const tools = definition.tools;
   if (Array.isArray(tools) && tools.every((item) => typeof item === "string") && !tools.includes("*")) {
-    definition.tools = unionLpBridgeTools(tools);
+    definition.tools = unionLpBridgeTools(withoutCodeWritingSubagents(agentId, tools));
   }
   return { [agentId]: definition };
 }

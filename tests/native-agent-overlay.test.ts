@@ -106,3 +106,17 @@ it("resolves the installed markdown from the actual cwd, not a bundled copy", as
     else process.env.CLAUDE_CONFIG_DIR = previous;
   }
 });
+
+it("keeps a Lane PM from delegating code to general-purpose subagents", async () => {
+  const { withoutCodeWritingSubagents, stockAgentsOverlayFromInstalled } = await import("../src/native-agent-overlay");
+  expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, Explore, Plan, general-purpose)", "Read"]))
+    .toEqual(["Agent(lane-stack:run-supervisor, Explore, Plan)", "Read"]);
+  expect(withoutCodeWritingSubagents("lane-stack:dev-orchestrator", ["Agent"])).toEqual(["Agent(Explore, Plan)"]);
+  expect(withoutCodeWritingSubagents("copy-lead", ["Agent(Explore, general-purpose)"])).toEqual(["Agent(Explore, general-purpose)"]);
+  const overlay = stockAgentsOverlayFromInstalled({
+    agentId: "dev-orchestrator",
+    source: "plugin:lane-stack",
+    markdown: "---\nname: dev-orchestrator\ndescription: PM\ntools: Agent(Explore, Plan, general-purpose), Read\n---\nBody",
+  }) as Record<string, { tools: string[] }>;
+  expect(overlay["dev-orchestrator"]!.tools[0]).toBe("Agent(Explore, Plan)");
+});
