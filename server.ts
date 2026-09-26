@@ -4538,8 +4538,22 @@ export default async function plugin(bb: BbPluginApi) {
 
   /** A workspace with at least this many product code files keeps its own docs folder; smaller ones belong to the root docs. */
   const WORKSPACE_DOCS_MIN_FILES=15;
-  /** Docs folders of one monorepo written at once: BB lets only one thread use a project checkout at a time. */
-  const DOCS_UNIT_CONCURRENCY=1;
+  /** Docs folders of one monorepo written at once. */
+  const DOCS_UNIT_CONCURRENCY=3;
+  /**
+   * BB refuses to provision a thread on a checkout while another one is being provisioned there, so docs
+   * agents are spawned one at a time: the next starts once the last has left "starting".
+   */
+  let docsSpawnGate:Promise<unknown>=Promise.resolve();
+  function spawnDocsThread(args:Parameters<typeof bb.sdk.threads.spawn>[0]):Promise<string>{
+    const turn=docsSpawnGate.then(async()=>{
+      const threadId=stringAt(await bb.sdk.threads.spawn(args),"id"); if(!threadId) throw new Error("docs thread id missing");
+      while(stringAt(await bb.sdk.threads.get({threadId}).catch(()=>null),"status")==="starting") await new Promise((done)=>setTimeout(done,2_000));
+      return threadId;
+    });
+    docsSpawnGate=turn.catch(()=>undefined);
+    return turn;
+  }
   /** Tooling state that changes during a pass without the docs agent: never reverted, never a violation. */
   const DOCS_TOOLING=/^(\.agents|\.bb|\.claude|\.codex|\.gitnexus)\//;
 
@@ -4585,7 +4599,7 @@ export default async function plugin(bb: BbPluginApi) {
               bb.log.warn(`Lane Pilot nightly docs failed for ${place.path} ${unit.docsDir}: ${reason}`);
             }
           };
-          // Workspaces first, one after another; the root last, so its overview links to docs that exist.
+          // Workspaces first, a few at once; the root last, so its overview links to docs that exist.
           const queue=units.slice(0,-1);
           await Promise.all(Array.from({length:Math.min(DOCS_UNIT_CONCURRENCY,queue.length)},async()=>{ for(let unit=queue.shift();unit;unit=queue.shift()) await run(unit); }));
           await run(units.at(-1)!);
@@ -4650,13 +4664,12 @@ export default async function plugin(bb: BbPluginApi) {
     if(!provider||!model) throw new Error(`docs provider or model unavailable: ${selection.providerId}/${selection.model}`);
     const effort=typeof settings["docs.reasoning_effort"]==="string"&&settings["docs.reasoning_effort"]?settings["docs.reasoning_effort"] as string:"medium";
     const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
-    const spawned=await bb.sdk.threads.spawn({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:""}`,
+    const threadId=await spawnDocsThread({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:""}`,
       ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
       prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
         agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit}),
       environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
       pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
-    const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
     await waitThreadIdle(bb,threadId,"docs_nightly");
     const reverted:string[]=[];
     // Check the pages the way the methodology asks, give the agent one round to fix, then index and commit.
