@@ -24,3 +24,10 @@ describe("bounded execution packet", () => {
     expect(Buffer.byteLength(JSON.stringify(packet), "utf8")).toBeLessThan(25_000);
   });
 });
+
+it("gives pm-read the excerpt text itself", async () => {
+  const { renderPacketExcerpts } = await import("../../src/stages/execution-packet");
+  const text = renderPacketExcerpts({ sha256: "x", entries: [{ path: "a.ts", sha256: "abc", windows: [{ startLine: 1, endLine: 2, excerpt: "const a = 1;\nconst b = 2;" }] }] } as never);
+  expect(text).toContain("### a.ts L1-L2");
+  expect(text).toContain("const b = 2;");
+});

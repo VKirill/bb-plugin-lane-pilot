@@ -22,7 +22,7 @@ import { attemptProduced, classifyCliOutcome, parseDirtSnapshots, type DirtSnaps
 import { classifyWriterOutput, isOutputPath, type VerifyResult } from "./src/validate-output";
 import { findUnownedChanges, resolveRunOwnershipScope, validateOwnershipContract } from "./src/verification/ownership";
 import { parseReadFirstHints } from "./src/stages/read-first";
-import { buildExecutionPacket, renderExecutionPacket } from "./src/stages/execution-packet";
+import { buildExecutionPacket, renderExecutionPacket, renderPacketExcerpts } from "./src/stages/execution-packet";
 import { emergencyFallbackDecision, sameWriterSelection } from "./src/stages/emergency-writer";
 import { resolveStageWriterSelection } from "./src/stage-writer-selection";
 import {
@@ -732,13 +732,13 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId),
       ...writerExecutionSelection(providerId,modelId,parsedSettings.effort,serviceTier),
-      prompt:pmReadPrompt({agent:"pm-read",packet:renderExecutionPacket(packet),task:input.task}),
+      prompt:pmReadPrompt({agent:"pm-read",packet:renderPacketExcerpts(packet),task:input.task}),
       environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
       pluginMetadata:{role:"pm-reader",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,stageId:"pm-read",parentPmThreadId:input.pmThreadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
     threadId=stringAt(spawned,"id");
     if(!threadId) throw new Error("pm_read_thread_id_missing");
     recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
-    await waitThreadIdle(input.bb,threadId,90_000,"pm_read_timeout");
+    await waitThreadIdle(input.bb,threadId,300_000,"pm_read_timeout");
     const output=(await input.bb.sdk.threads.output({threadId})).output;
     if(typeof output!=="string"||!output.trim()) throw new Error("pm_read_output_empty");
     const parsed=parsePmReadResult(output);

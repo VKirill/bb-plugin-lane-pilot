@@ -142,7 +142,7 @@ This chat runs inside BB with Lane Pilot, and writer lanes are BB threads, not r
 - Poll with \`lane_pilot_wait_writer\` (runId) and repeat while it reports running, until every task is accepted or blocked.
 - Each writer works in its own BB worktree. On acceptance Lane Pilot merges that worktree into main; a merge conflict retries the task on the new main by itself.
 - Here, do not run run-controller, lane-ctl start/retry/fallback, lane-bg or lane-exec, and do not use run-supervisor, lane-supervisor or emergency-writer. Never write product code yourself.
-- When every task is accepted, check main, update docs and memory, then report.`;
+- After each accepted task call lane_pilot_memory_maintain and lane_pilot_docs_maintain with its runId and taskId, and poll each until it returns a final state; they skip themselves when the project turns them off. Then check main and report.`;
 
 export function withoutCodeWritingSubagents(agentId: string, tools: string[]): string[] {
   if (!isLanePmAgent(agentId)) return tools;

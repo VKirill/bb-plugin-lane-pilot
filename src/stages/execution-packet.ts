@@ -91,3 +91,9 @@ export function renderExecutionPacket(packet: ExecutionPacket): string {
   if (!lines.length) return "";
   return ["Read these before editing; they are the context for this task:", ...lines].join("\n");
 }
+
+/** pm-read has no file access: it gets the excerpts themselves, one fenced block per window. */
+export function renderPacketExcerpts(packet: ExecutionPacket): string {
+  return packet.entries.flatMap((entry) => entry.windows.map((w) =>
+    `### ${entry.path} L${w.startLine}-L${w.endLine}\n\`\`\`\n${w.excerpt}\n\`\`\``)).join("\n\n");
+}
