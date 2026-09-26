@@ -163,7 +163,8 @@ export const hostContract = defineRpcContract({
   docsFlows: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), workspaces:z.array(z.object({ path:z.string(), name:z.string() })).max(500) }).strict(),
     output: z.object({ hostId:z.string(), briefPath:z.string(), jev:z.enum(["ok","partial","disabled"]), routes:z.number().int(),
-      flows:z.array(z.object({ name:z.string(), slug:z.string(), entries:z.number().int(), modules:z.array(z.string()) })) }).strict(),
+      flows:z.array(z.object({ name:z.string(), slug:z.string(), entries:z.number().int(), modules:z.array(z.string()), briefPath:z.string(), files:z.array(z.string()),
+        calls:z.array(z.object({ name:z.string(), file:z.string(), line:z.number().int(), endLine:z.number().int() })) })) }).strict(),
   },
   docsDepth: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), pages:z.array(z.object({ path:z.string(), content:z.string() })).max(500),

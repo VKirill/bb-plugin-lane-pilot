@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { nightlyDocsPrompt } from "../../src/stages/docs";
+import { flowDocsWritable, nightlyDocsPrompt } from "../../src/stages/docs";
 import { gitDocsScope, revertPaths } from "../../src/verification/git-docs";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { stdio: "pipe" });
@@ -100,4 +100,16 @@ it("tells a workspace's docs agent to stay in its folder and link to the root do
   expect(rootPrompt).toContain("- @x/api: apps/api/docs/overview.md");
   expect(rootPrompt).toContain("docs/packages.md (component)");
   expect(rootPrompt).toContain("Write only docs/**, README.md and PROJECT.md;");
+});
+
+it("gives each flow its own agent, page and skeleton, and has the root link the flows", () => {
+  const flow = { slug:"generation", name:"generation", briefPath:"/repo/.git/lane-pilot/docs-flow-generation.md", files:[], calls:[] };
+  const prompt = nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[], unit:{ docsDir:"docs", flow } });
+  expect(prompt).toContain("Task: write docs/flows/generation.md.");
+  expect(prompt).toContain("/repo/.git/lane-pilot/docs-flow-generation.md");
+  expect(prompt).toContain("Write only docs/flows/generation.md and docs/flows/generation/**;");
+  expect(flowDocsWritable("generation")("docs/flows/generation/modes.md")).toBe(true);
+  expect(flowDocsWritable("generation")("docs/flows/payment.md")).toBe(false);
+  const root = nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[], unit:{ docsDir:"docs", flows:["generation"] } });
+  expect(root).toContain("do not write docs/flows/:\n- docs/flows/generation.md");
 });

@@ -76,7 +76,8 @@ export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: nu
   };
   const git = async (...args: string[]) =>
     (await run("git", ["-c", "core.quotePath=false", "-C", input.projectCwd, ...args], { maxBuffer: 8 << 20 })).stdout;
-  const hasDocs = await stat(join(input.projectCwd, docsDir)).then((info) => info.isDirectory(), () => false);
+  // A docs folder, or the single page of a flow.
+  const hasDocs = await stat(join(input.projectCwd, docsDir)).then((info) => info.isDirectory() || info.isFile(), () => false);
   let top: string;
   try { top = (await git("rev-parse", "--show-toplevel")).trim(); }
   catch { return { status: "not-git", isRepoRoot: false, hasDocs, changed: [], dirty: [], base: null, workspaces: [], ...local, reason: null }; }

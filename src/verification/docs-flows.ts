@@ -125,7 +125,8 @@ function head(text:string, lines:number):string {
 }
 
 export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowWorkspace[] }):Promise<{ briefPath:string; jev:JevStatus;
-  flows:Array<{ name:string; slug:string; entries:number; modules:string[] }>; routes:number }> {
+  flows:Array<{ name:string; slug:string; entries:number; modules:string[]; briefPath:string; files:string[];
+    calls:Array<{ name:string; file:string; line:number; endLine:number }> }>; routes:number }> {
   const listed = (await run("git", ["-c", "core.quotePath=false", "-C", input.projectCwd, "ls-files"], { maxBuffer:64 << 20 })).stdout.split("\n");
   const paths = listed.filter((path) => CODE_FILE.test(path) && !path.endsWith(".prisma") && !TEST_PATH.test(path) && !SKIP.test(path) && !/(^|\/)\.[^/]+\//.test(path));
   const files = new Map<string, string>();
@@ -236,14 +237,15 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
   const documented = flows.filter((flow) => flow.entries.length);
   const slug = (name:string) => name.replace(/([a-z])([A-Z])/g, "$1-$2").replace(/[^A-Za-z0-9]+/g, "-").toLowerCase().replace(/^-|-$/g, "");
 
-  const lines = ["# Flows for the root docs", "", `Built by Lane Pilot from the import graph; Jev judgments: ${key ? jevStatus(asked, answered) : "disabled"}.`,
-    "Each flow is a business process found in the shared modules, with the entry points in the apps that drive it and one import chain",
-    "from each entry into the process. Confirm every step in the code before you describe it; an entry listed here is a candidate, not a fact.", ""];
-  for (const flow of documented) {
-    lines.push(`## ${flow.candidate.name} -> docs/flows/${slug(flow.candidate.name)}.md`, "",
-      `Modules: ${flow.candidate.modules.map((dir) => `${dir}/`).join(", ")} (${flow.candidate.files.length} files). Importance ${flow.importance.toFixed(1)}.`, "", "Entry points:");
+  const header = [`Built by Lane Pilot from the import graph; Jev judgments: ${key ? jevStatus(asked, answered) : "disabled"}.`,
+    "The flow is a business process found in the shared modules, with the entry points in the apps that drive it, one import chain",
+    "from each entry into the process and what the entry calls there. Confirm every step in the code before you describe it; an entry listed here is a candidate, not a fact.", ""];
+  const sections = documented.map((flow) => {
+    const lines = [`## ${flow.candidate.name} -> docs/flows/${slug(flow.candidate.name)}.md`, "",
+      `Modules: ${flow.candidate.modules.map((dir) => `${dir}/`).join(", ")} (${flow.candidate.files.length} files). Importance ${flow.importance.toFixed(1)}.`, "", "Entry points:"];
     const byWorkspace = new Map<string, typeof flow.entries>();
     for (const item of flow.entries) byWorkspace.set(workspaceName(item.entry), [...(byWorkspace.get(workspaceName(item.entry)) ?? []), item]);
+    const calls = new Map<string, { name:string; file:string; line:number; endLine:number }>();
     for (const [name, items] of byWorkspace) {
       lines.push(`- ${name}:`);
       for (const item of items) {
@@ -252,14 +254,27 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
         lines.push(`    chain: ${describe(item.chain)}`);
         const called = uses(flow.candidate, item.chain);
         if (called.length) lines.push(`    calls: ${called.map((use) => `${use.name} (${use.file}:${use.line})`).join(", ")}`);
+        for (const use of called) calls.set(`${use.file}:${use.name}`, { ...use, endLine:use.line + 80 });
       }
     }
     lines.push("", "Process files:", ...flow.candidate.files.slice(0, 40).map((file) => `- ${file}`), ...(flow.candidate.files.length > 40 ? [`- …and ${flow.candidate.files.length - 40} more`] : []), "");
-  }
+    // The code the flow page describes: its modules, its entries and every file on the chains between them.
+    const files = [...new Set([...flow.candidate.files, ...flow.entries.flatMap((item) => item.chain)])].sort();
+    return { flow, lines, calls:[...calls.values()], files };
+  });
   const gitDir = (await run("git", ["-C", input.projectCwd, "rev-parse", "--git-dir"])).stdout.trim();
-  const briefPath = join(isAbsolute(gitDir) ? gitDir : join(input.projectCwd, gitDir), "lane-pilot", "docs-flows.md");
-  await mkdir(dirname(briefPath), { recursive:true });
-  await writeFile(briefPath, `${lines.join("\n")}\n`);
-  return { briefPath, jev:key ? jevStatus(asked, answered) : "disabled", routes:routes.length,
-    flows:documented.map((flow) => ({ name:flow.candidate.name, slug:slug(flow.candidate.name), entries:flow.entries.length, modules:flow.candidate.modules })) };
+  const dir = join(isAbsolute(gitDir) ? gitDir : join(input.projectCwd, gitDir), "lane-pilot");
+  await mkdir(dir, { recursive:true });
+  const briefPath = join(dir, "docs-flows.md");
+  await writeFile(briefPath, `${["# Flows", "", ...header, ...sections.flatMap((section) => section.lines)].join("\n")}\n`);
+  // Each flow is written by its own agent, which reads only its own skeleton.
+  const flowsOut = [];
+  for (const section of sections) {
+    const name = slug(section.flow.candidate.name);
+    const path = join(dir, `docs-flow-${name}.md`);
+    await writeFile(path, `${[`# Flow: ${section.flow.candidate.name}`, "", ...header, ...section.lines].join("\n")}\n`);
+    flowsOut.push({ name:section.flow.candidate.name, slug:name, entries:section.flow.entries.length, modules:section.flow.candidate.modules,
+      briefPath:path, files:section.files.slice(0, 2000), calls:section.calls.slice(0, 200) });
+  }
+  return { briefPath, jev:key ? jevStatus(asked, answered) : "disabled", routes:routes.length, flows:flowsOut };
 }

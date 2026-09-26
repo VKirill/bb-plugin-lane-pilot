@@ -134,7 +134,14 @@ export type DocsUnit = {
   workspace?:{ path:string; name:string };
   /** For the root docs of a monorepo: every workspace, and its docs folder when it keeps its own. */
   workspaces?:Array<{ path:string; name:string; docsDir:string | null }>;
+  /** Set for one business flow's page: its skeleton traced from the code, the files it covers and what its entries call. */
+  flow?:{ slug:string; name:string; briefPath:string; files:string[]; calls:Array<{ name:string; file:string; line:number; endLine:number }> };
+  /** For the root docs: the flow pages their own passes write, to link. */
+  flows?:string[];
 };
+
+/** A flow's own page and the part pages it splits into. */
+export const flowDocsWritable = (slug:string) => (path:string):boolean => path === `docs/flows/${slug}.md` || path.startsWith(`docs/flows/${slug}/`);
 
 const METHODOLOGY = [
   "Method (docs-methodology skill from claude-lane; read ~/.agents/skills/docs-methodology/SKILL.md and its references/ first if the file exists):",
@@ -153,7 +160,7 @@ const METHODOLOGY = [
  * docs-maintain: no docs/ yet means onboarding, otherwise only pages about changed code.
  */
 export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string; deploy?:boolean;
-  missingPages?:string[]; uncoveredCore?:string[]; agent?:string; unit?:DocsUnit; flowsPath?:string}):string {
+  missingPages?:string[]; uncoveredCore?:string[]; agent?:string; unit?:DocsUnit}):string {
   const listed = input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
   const refresh = input.refresh ?? [];
   const unit = input.unit ?? { docsDir:"docs" };
@@ -161,7 +168,12 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
   const ws = unit.workspace;
   const own = unit.workspaces?.filter((item) => item.docsDir) ?? [];
   const shared = unit.workspaces?.filter((item) => !item.docsDir) ?? [];
-  const scope = ws ? [
+  const flow = unit.flow;
+  const page = flow ? `docs/flows/${flow.slug}.md` : "";
+  const scope = flow ? [
+    `Scope: you write one page, ${page} (type flow), about the business process "${flow.name}" end to end across the whole monorepo. Other passes wrote the docs of each workspace (apps/*/docs, packages/*/docs): read the feature pages of the packages this process crosses for detail and link them, and do not repeat their internals beyond what the process needs.`,
+    `Skeleton: Lane Pilot traced this process through the code in ${flow.briefPath} - the entry points in every app (routes, bot commands, jobs, pages), an import chain from each into the process, and what each entry calls there. Follow every chain in the code; an entry that turns out not to drive the process is left out.`,
+  ] : ws ? [
     `Scope: this is the workspace ${ws.name} (${ws.path}/) of a monorepo. Document only this workspace, in ${d}/. The root docs/ describe the whole system (architecture, deployment, cross-cutting gotchas) and other workspaces have their own docs: link there (for example ${relativeFrom(d, "docs/architecture.md")}) instead of repeating them.`,
     `Cite files by their path from the repository root (${ws.path}/src/...:12), as every docs page in this repository does.`,
   ] : own.length || shared.length ? [
@@ -170,8 +182,9 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
     ...(shared.length ? ["These workspaces are small and belong to the root docs: describe each in docs/packages.md (component), one section per package with its purpose, public API and who uses it:", ...shared.map((item) => `- ${item.name} (${item.path}/)`)] : []),
     "The code map lists every workspace, which workspaces it uses, its build and run scripts, the compose services and the turbo tasks: docs/deployment.md explains how each app is built, configured, run and deployed, and docs/architecture.md has a mermaid graph of which apps use which packages.",
   ] : [];
-  const flows = input.flowsPath ? ["",
-    `Flows: Lane Pilot traced the business processes through the code for you in ${input.flowsPath} - each process, the entry points in the apps that drive it (routes, bot commands, jobs, pages) and an import chain from each entry into the process. Write docs/flows/<name>.md (flow) for every flow it lists: follow the chains in the code and describe the process end to end, step by step across the apps, with its modes and failures, linking to the feature pages of the packages it crosses. docs/overview.md links every flow.`] : [];
+  const flows = unit.flows?.length ? ["",
+    "Business flows have their own pages, written by their own passes - link each from docs/overview.md and from the architecture where it fits, and do not write docs/flows/:",
+    ...unit.flows.map((slug) => `- docs/flows/${slug}.md`)] : [];
   return [
     `${input.agent?.trim() || "Documentation maintainer"}: keep this project's documentation an honest, evidence-backed description of its code.`,
     "",
@@ -181,7 +194,15 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
     ...(input.anchorsPath ? ["",
       `Code map: Lane Pilot mapped this project for you in ${input.anchorsPath} - every declaration with its file:line, which ones Jev marked as business-rule candidates and entry points, the page each belongs to, dependencies and tests. Read it first, build pages around its anchors and cite them; confirm every business-rule candidate in the code before you describe it as a rule.`] : []),
     "",
-    input.hasDocs
+    flow && !input.hasDocs ? [
+      `Task: write ${page}. It must let an agent understand the whole process without opening the code:`,
+      "- Trigger: every way the process starts, grouped by app, with its route, command, job or page.",
+      "- How it works: numbered steps in order across apps and packages. Each step names the app or package and the function (file:line), what it checks, what state it changes (tables, balances, statuses, queues) and what it hands to the next step, HTTP calls and queued jobs included.",
+      "- Modes: a table of the variants the process branches on and what really differs between them - inputs, models, prices or costs, limits, outputs - taken from the code.",
+      "- Failures and compensation: each point where it can fail, what the user sees, retries, refunds and the jobs that reconcile it.",
+      "- Related pages: the workspace pages it crosses.",
+      `A process of this size needs a long page; past 30000 bytes split it into ${`docs/flows/${flow.slug}/<part>.md`} pages linked from the main one.`,
+    ].join("\n") : input.hasDocs
       ? [
         `Task: refresh the docs for code changed since ${input.since}. Update the pages below, set their updated date to today, keep created as is. Add a page only for a new capability; leave accurate pages alone.`,
         ...(refresh.length ? ["Pages whose sources changed or that are drafts:", ...refresh.map((path) => `- ${path}`)] : ["No page lists a changed file among its sources: check whether a changed file needs a new or extended page."]),
@@ -209,7 +230,7 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
         "- README.md (the short front page for people) and PROJECT.md (for agents) at the project root; keep facts already in README.md, but move detail into docs/ and link to it.",
       ].join("\n"),
     "",
-    `Read the code before writing about it. Write only ${ws ? `${d}/**` : "docs/**, README.md and PROJECT.md"}; do not edit code, tests, settings or other docs folders, and do not commit. Lane Pilot reverts changes anywhere else, checks the pages, builds ${d}/index.md and commits.`,
+    `Read the code before writing about it. Write only ${flow ? `${page} and docs/flows/${flow.slug}/**` : ws ? `${d}/**` : "docs/**, README.md and PROJECT.md"}; do not edit code, tests, settings or other docs folders, and do not commit. Lane Pilot reverts changes anywhere else, checks the pages, builds ${d}/index.md and commits.`,
     "Finish with a short list of the pages you created or changed.",
     ...(listed.length ? ["", `Changed since ${input.since}:`, ...listed.map((path) => `- ${path}`)] : []),
     ...(input.changed.length > listed.length ? [`- …and ${input.changed.length - listed.length} more (see git log)`] : []),

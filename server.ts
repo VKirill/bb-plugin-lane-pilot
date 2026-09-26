@@ -162,7 +162,7 @@ import { findTaskPlaceholderPaths } from "./src/stages/critique-coverage";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./src/stages/specialist";
 import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./src/workspace/routing";
-import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage, type DocsUnit } from "./src/stages/docs";
+import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage, type DocsUnit } from "./src/stages/docs";
 import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDocsIndex, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "./src/stages/docs-lint";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
@@ -4599,10 +4599,16 @@ export default async function plugin(bb: BbPluginApi) {
               bb.log.warn(`Lane Pilot nightly docs failed for ${place.path} ${unit.docsDir}: ${reason}`);
             }
           };
-          // Workspaces first, a few at once; the root last, so its overview links to docs that exist.
-          const queue=units.slice(0,-1);
-          await Promise.all(Array.from({length:Math.min(DOCS_UNIT_CONCURRENCY,queue.length)},async()=>{ for(let unit=queue.shift();unit;unit=queue.shift()) await run(unit); }));
-          await run(units.at(-1)!);
+          const pool=async(queue:DocsUnit[])=>{ await Promise.all(Array.from({length:Math.min(DOCS_UNIT_CONCURRENCY,queue.length)},async()=>{ for(let unit=queue.shift();unit;unit=queue.shift()) await run(unit); })); };
+          // Workspaces first, a few at once. Then the business flows, traced once across the repository, each written
+          // by its own agent on top of the workspace docs. The root last, so its overview links to docs that exist.
+          await pool(units.slice(0,-1));
+          const traced=await host.call("docsFlows",{requestedHostId:place.hostId,projectCwd:place.path,workspaces:workspaces.map((workspace)=>({path:workspace.path,name:workspace.name}))},
+            {hostId:place.hostId,timeoutMs:1_800_000}).catch((cause)=>{ bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
+          const flowUnits:DocsUnit[]=(traced?.flows??[]).map((flow)=>({docsDir:"docs",flow}));
+          await pool([...flowUnits]);
+          const root=units.at(-1)!;
+          await run(flowUnits.length?{...root,flows:flowUnits.map((unit)=>unit.flow!.slug)}:root);
         }catch(cause){
           const reason=cause instanceof Error?cause.message:String(cause);
           results.push({projectId:project.id,path:place.path,state:"failed",reason});
@@ -4617,11 +4623,15 @@ export default async function plugin(bb: BbPluginApi) {
   async function runDocsUnit(ctx:{projectId:string;place:{hostId:string;path:string};settings:Record<string,unknown>;docs:ReturnType<typeof parseDocsSettings>;base?:string;
     roots:string[];exclude:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;placeWritable:(path:string)=>boolean},unit:DocsUnit):Promise<Record<string,unknown>> {
     const {place,settings,docs}=ctx;
-    const d=unit.docsDir, writable=nightlyDocsWritable(d);
+    const d=unit.docsDir, flow=unit.flow;
+    // A flow writes only its own page; the root leaves docs/flows/ to the flow passes.
+    const writable=flow?flowDocsWritable(flow.slug):unit.flows?.length?(path:string)=>nightlyDocsWritable(d)(path)&&!path.startsWith("docs/flows/"):nightlyDocsWritable(d);
     const prefix=unit.workspace?`${unit.workspace.path}/`:"";
-    const inUnit=(path:string)=>prefix?path.startsWith(prefix):!ctx.exclude.some((dir)=>path.startsWith(`${dir}/`));
-    const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:ctx.projectId,path:place.path,docsDir:d,state,...extra});
-    const gitScope=(base?:string)=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),docsDir:d,
+    const flowFiles=new Set(flow?.files??[]);
+    const inUnit=(path:string)=>flow?flowFiles.has(path):prefix?path.startsWith(prefix):!ctx.exclude.some((dir)=>path.startsWith(`${dir}/`));
+    const label=flow?`docs/flows/${flow.slug}.md`:d;
+    const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:ctx.projectId,path:place.path,docsDir:label,state,...extra});
+    const gitScope=(base?:string)=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),docsDir:label,
       ...(base?{base}:{})},{hostId:place.hostId,timeoutMs:120_000});
     const before=await gitScope(ctx.base);
     if(before.status!=="ready") throw new Error(`git scope failed: ${before.reason}`);
@@ -4636,26 +4646,23 @@ export default async function plugin(bb: BbPluginApi) {
       oversized=listed.oversized??[];
       return listed.pages as Array<{path:string;sha256:string;content:string}>;
     };
-    const mine=(pages:Array<{path:string;sha256:string;content:string}>)=>pages.filter((page)=>page.path.startsWith(`${d}/`));
+    const mine=(pages:Array<{path:string;sha256:string;content:string}>)=>pages.filter((page)=>flow?writable(page.path):page.path.startsWith(`${d}/`));
     const existing=before.hasDocs?mine(await allPages()):[];
     // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the root docs.
-    const readRootPages=async()=>unit.workspace?[]:(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
+    const readRootPages=async()=>unit.workspace||flow?[]:(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
       const file=await bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}).catch(()=>null);
       return file&&typeof file.content==="string"?{path,content:file.content}:null;
     }))).filter((page):page is {path:string;content:string}=>page!==null);
     const rootPages=before.hasDocs?await readRootPages():[];
     const pageInput=existing.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content}));
     // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
-    const anchors=await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
+    const anchors=flow?null:await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
       ...(unit.workspace?{}:{exclude:ctx.exclude,...(ctx.workspaces.length?{workspaces:ctx.workspaces}:{})}),
       pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null);
-    // The root traces business processes across the whole repository first, so its agent writes one page per flow.
-    const flows=unit.workspace?null:await host.call("docsFlows",{requestedHostId:place.hostId,projectCwd:place.path,
-      workspaces:ctx.workspaces.map((workspace)=>({path:workspace.path,name:workspace.name}))},{hostId:place.hostId,timeoutMs:1_800_000}).catch((cause)=>{
-      bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
-    const usableFlows=flows&&flows.flows.length?flows:null;
-    const gaps=before.hasDocs?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace),
-      flows:usableFlows?.flows.map((flow)=>flow.slug)}):{missingPages:[],uncoveredCore:[]};
+    const gaps=before.hasDocs&&!flow?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace),
+      flows:unit.flows}):{missingPages:[],uncoveredCore:[]};
+    // What the depth check holds the pages to: the core code of the folder, or what the flow's entries call.
+    const core=anchors?.core??flow?.calls??[];
     let refresh=before.hasDocs?pagesToRefresh(existing,changed):[];
     if(before.hasDocs){
       const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
@@ -4675,10 +4682,10 @@ export default async function plugin(bb: BbPluginApi) {
     if(!provider||!model) throw new Error(`docs provider or model unavailable: ${selection.providerId}/${selection.model}`);
     const effort=typeof settings["docs.reasoning_effort"]==="string"&&settings["docs.reasoning_effort"]?settings["docs.reasoning_effort"] as string:"medium";
     const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
-    const threadId=await spawnDocsThread({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:""}`,
+    const threadId=await spawnDocsThread({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:flow?` · flow ${flow.slug}`:""}`,
       ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
       prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
-        agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,flowsPath:usableFlows?.briefPath}),
+        agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit}),
       environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
       pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
     await waitThreadIdle(bb,threadId,"docs_nightly");
@@ -4710,8 +4717,8 @@ export default async function plugin(bb: BbPluginApi) {
         findings.push(...(cited?.findings??[]));
         pageStats=cited?.pageStats??[];
         // And whether the written pages explain the core code well enough that nobody has to open it.
-        const depth=written.length&&anchors?.core.length?await host.call("docsDepth",{requestedHostId:place.hostId,projectCwd:place.path,
-          pages:written.slice(0,500),core:anchors.core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
+        const depth=written.length&&core.length?await host.call("docsDepth",{requestedHostId:place.hostId,projectCwd:place.path,
+          pages:written.slice(0,500),core:core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
         findings.push(...(depth?.findings??[]));
       }
       return {touched,docsDirty,pageStats,findings};
@@ -4739,6 +4746,7 @@ export default async function plugin(bb: BbPluginApi) {
       const linked=unit.workspace?[]:ctx.workspaces.flatMap((workspace)=>workspace.docsDir?[{name:workspace.name,docsDir:workspace.docsDir}]:[]);
       for(let attempt=0;;attempt++){
         const fresh=await allPages();
+        // Builders rewrite only this unit's pages; the index lists every page of the folder.
         const built=buildBacklinks(fresh).filter((page)=>page.path.startsWith(`${d}/`)).map((page)=>{
           const stat=stats.get(page.path);
           const sourced=withCitedSources(page.content);
@@ -4746,11 +4754,11 @@ export default async function plugin(bb: BbPluginApi) {
         });
         const current=fresh.find((page)=>page.path===index);
         const edits=[
-          ...built.flatMap((page)=>{
+          ...built.filter((page)=>writable(page.path)).flatMap((page)=>{
             const original=fresh.find((row)=>row.path===page.path)!;
             return original.content===page.content?[]:[{path:page.path,expectedSha256:original.sha256,content:page.content}];
           }),
-          {path:index,expectedSha256:current?.sha256??null,content:buildDocsIndex(built,d,linked)},
+          ...(flow?[]:[{path:index,expectedSha256:current?.sha256??null,content:buildDocsIndex(built,d,linked)}]),
         ].filter((edit)=>edit.path!==index||current?.content!==edit.content);
         if(!edits.length) break;
         const applied=await host.call("writeDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,
@@ -4759,16 +4767,15 @@ export default async function plugin(bb: BbPluginApi) {
         if(attempt>=1) throw new Error(`docs builders could not write pages: ${applied.reason??applied.status}`);
       }
       const committed=await host.call("gitCommitDocs",{requestedHostId:place.hostId,projectCwd:place.path,
-        paths:[...new Set([...checked.docsDirty,index])],message:`docs${unit.workspace?`(${unit.workspace.path})`:""}: ${before.hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
+        paths:[...new Set([...checked.docsDirty,...(flow?[]:[index])])],message:`docs${unit.workspace?`(${unit.workspace.path})`:flow?`(flow ${flow.slug})`:""}: ${before.hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
       if(committed.status==="failed") throw new Error(`docs commit failed: ${committed.reason}`);
       commit=committed.commit;
     }
     const failure=checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
     const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:changed.length,refreshed:refresh,gaps,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
-      ...(usableFlows?{flows:usableFlows.flows.map((flow)=>`${flow.slug} (${flow.entries} entries)`),routes:usableFlows.routes}:{}),
       docsWritten:checked.touched.filter(writable),commit,...(reverted.length?{reverted}:{}),...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
-    await bb.storage.kv.set(`docs-nightly:${ctx.projectId}:${sha256(`${place.path}\n${d}`).slice(0,12)}`,{...row,at:Date.now()});
-    bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path} ${d}`);
+    await bb.storage.kv.set(`docs-nightly:${ctx.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}`,{...row,at:Date.now()});
+    bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path} ${label}`);
     return row;
   }
 
