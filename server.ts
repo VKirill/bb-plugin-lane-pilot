@@ -4620,6 +4620,10 @@ export default async function plugin(bb: BbPluginApi) {
             await waitThreadIdle(bb,threadId,"docs_nightly_repair");
             checked=await inspect();
           }
+          // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
+          // what Jev alone still doubts goes to the report as a warning; the deterministic checks keep blocking.
+          const warnings=checked.findings.filter((finding)=>finding.rule==="evidence-check");
+          checked={...checked,findings:checked.findings.filter((finding)=>finding.rule!=="evidence-check")};
           let commit:string|null=null;
           // Every docs page passed the checks, so docs left uncommitted by an earlier pass go in too; code never does.
           if(!checked.outside.length&&!checked.findings.length&&checked.docsDirty.length){
@@ -4637,7 +4641,7 @@ export default async function plugin(bb: BbPluginApi) {
           const failure=checked.outside.length?`docs agent changed files outside docs/, README.md and PROJECT.md: ${checked.outside.join(", ")}`
             :checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
           const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:before.changed.length,refreshed:refresh,gaps,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
-            docsWritten:checked.touched.filter((path)=>NIGHTLY_DOCS_WRITABLE(path)),commit,...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
+            docsWritten:checked.touched.filter((path)=>NIGHTLY_DOCS_WRITABLE(path)),commit,...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
           await bb.storage.kv.set(`docs-nightly:${project.id}:${sha256(place.path).slice(0,12)}`,{...row,at:Date.now()});
           bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path}`);
         }catch(cause){
