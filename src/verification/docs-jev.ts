@@ -319,13 +319,15 @@ const refLabel = (ref:ClaimRef) => `${ref.file}:${ref.start}${ref.end !== ref.st
 
 /** Asks Jev whether the cited code backs each claim; an unsupported one becomes a lint finding. */
 export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array<{ path:string; content:string }>; related?:Array<{ path:string; content:string }> }):Promise<{ jev:JevStatus; checked:number;
-  findings:Array<{ path:string; rule:string; detail:string }>; pageStats:Array<{ path:string; checked:number; supported:number }> }> {
+  findings:Array<{ path:string; rule:string; detail:string }>; pageStats:Array<{ path:string; checked:number; supported:number; partial:number }> }> {
   const key = await jevApiKey();
   if (!key) return { jev:"disabled", checked:0, findings:[], pageStats:[] };
-  const checks = input.pages.flatMap((page) => {
-    const body = page.content.replace(/^---\n[\s\S]*?\n---\n?/, "");
-    return pageClaims(body).map((claim) => ({ path:page.path, ...claim }));
-  }).slice(0, MAX_CITATION_CHECKS);
+  // The check budget is shared round-robin, so every written page gets its claims sampled, not just the first ones.
+  const perPage = input.pages.map((page) => pageClaims(page.content.replace(/^---\n[\s\S]*?\n---\n?/, "")).map((claim) => ({ path:page.path, ...claim })));
+  const checks:Array<{ path:string; claim:string; refs:ClaimRef[] }> = [];
+  for (let round = 0; checks.length < MAX_CITATION_CHECKS && perPage.some((claims) => claims.length > round); round++) {
+    for (const claims of perPage) if (claims[round] && checks.length < MAX_CITATION_CHECKS) checks.push(claims[round]!);
+  }
   const files = new Map<string, string[] | null>();
   for (const ref of checks.flatMap((check) => check.refs)) if (!files.has(ref.file)) {
     const text = ref.file.split("/").includes("..") ? null : await readFile(join(input.projectCwd, ref.file), "utf8").catch(() => null);
@@ -333,7 +335,7 @@ export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array
   }
   const findings:Array<{ path:string; rule:string; detail:string }> = [];
   let answered = 0;
-  const stats = new Map<string, { checked:number; supported:number }>();
+  const stats = new Map<string, { checked:number; supported:number; partial:number }>();
   const criteria = { supported:"Together the cited code shows the behaviour, values or names the claim attributes to it.",
     partial:"The cited code is related and shows part of the claim; the rest is not in these lines.",
     unsupported:"The cited code does not show what the claim says, or contradicts it." };
@@ -350,9 +352,10 @@ export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array
       { support:{ type:"choice", instructions:{ claim:check.claim, question:"Does the cited code in `excerpts` show what `claim` says it shows?" }, criteria } });
     if (!answers) return;
     answered++;
-    const stat = stats.get(check.path) ?? { checked:0, supported:0 };
+    const stat = stats.get(check.path) ?? { checked:0, supported:0, partial:0 };
     stat.checked++;
     if (answers.support?.choice === "supported") stat.supported++;
+    if (answers.support?.choice === "partial") stat.partial++;
     stats.set(check.path, stat);
     const unsupported = answers.support?.probabilities?.unsupported ?? 0;
     if (answers.support?.choice === "unsupported" && unsupported >= 0.6) {

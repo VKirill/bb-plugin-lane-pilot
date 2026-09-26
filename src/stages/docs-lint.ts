@@ -207,14 +207,16 @@ function relativeLink(from:string, to:string):string {
 }
 
 /**
- * confidence from what was verified, not from a source count: the share of a page's claims Jev
- * found backed by the cited code.
+ * confidence from what was verified, not from a source count: the share of a page's claims Jev found
+ * backed by the cited code, a claim the code backs in part counting half. A draft verified to at least
+ * medium becomes active; a low one stays a draft, so the next pass rewrites it.
  */
-export function withVerifiedConfidence(content:string, verified:{ checked:number; supported:number }):string {
+export function withVerifiedConfidence(content:string, verified:{ checked:number; supported:number; partial?:number }):string {
   if (verified.checked === 0) return content;
-  const share = verified.supported / verified.checked;
-  const level = share >= 0.9 && verified.checked >= 10 ? "high" : share >= 0.7 ? "medium" : "low";
-  return content.replace(/^(---\n[\s\S]*?^confidence:\s*)\S+/m, `$1${level}`);
+  const share = (verified.supported + (verified.partial ?? 0) / 2) / verified.checked;
+  const level = share >= 0.85 && verified.checked >= 10 ? "high" : share >= 0.6 ? "medium" : "low";
+  const rated = content.replace(/^(---\n[\s\S]*?^confidence:\s*)\S+/m, `$1${level}`);
+  return level === "low" ? rated : rated.replace(/^(---\n[\s\S]*?^status:\s*)draft\b/m, "$1active");
 }
 
 /** sources with every cited file added, so staleness finds the page when any of them changes. */

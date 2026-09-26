@@ -4687,7 +4687,7 @@ export default async function plugin(bb: BbPluginApi) {
       const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(mine(pages))},{hostId:place.hostId,timeoutMs:60_000})).counts;
       const docsDirty=after.dirty.filter(writable);
       const findings=lintDocsPages(pages,counts).filter((finding)=>writable(finding.path));
-      let pageStats:Array<{path:string;checked:number;supported:number}>=[];
+      let pageStats:Array<{path:string;checked:number;supported:number;partial:number}>=[];
       // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
       // and pairs of claims across all the docs that cite the same code for contradictions.
       if(!findings.length){

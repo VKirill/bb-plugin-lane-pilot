@@ -92,6 +92,11 @@ it("sets confidence from the verified share of claims", () => {
   const content = page({}, good);
   expect(withVerifiedConfidence(content, { checked:12, supported:12 })).toMatch(/^confidence: high$/m);
   expect(withVerifiedConfidence(content, { checked:10, supported:5 })).toMatch(/^confidence: low$/m);
+  const draft = page({ status:"draft", confidence:"low" }, good);
+  const verified = withVerifiedConfidence(draft, { checked:10, supported:5, partial:4 });
+  expect(verified).toMatch(/^confidence: medium$/m);
+  expect(verified).toMatch(/^status: active$/m);
+  expect(withVerifiedConfidence(draft, { checked:10, supported:2, partial:4 })).toMatch(/^status: draft$/m);
   expect(withVerifiedConfidence(content, { checked:0, supported:0 })).toBe(content);
 });
 

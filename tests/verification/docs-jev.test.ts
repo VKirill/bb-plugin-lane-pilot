@@ -81,7 +81,7 @@ it("turns a citation Jev finds unsupported into a lint finding, and does nothing
         probabilities:{ supported:unsupported ? 0.1 : 0.9, partial:0, unsupported:unsupported ? 0.9 : 0.1 } } } }));
     }));
     const result = await verifyDocsCitations({ projectCwd:root, pages });
-    expect(result).toMatchObject({ jev:"ok", checked:2, pageStats:[{ path:"docs/a.md", checked:2, supported:1 }] });
+    expect(result).toMatchObject({ jev:"ok", checked:2, pageStats:[{ path:"docs/a.md", checked:2, supported:1, partial:0 }] });
     expect(result.findings).toEqual([{ path:"docs/a.md", rule:"evidence-check", detail:expect.stringContaining("a.ts:2 do not back") }]);
     const conflict = await verifyDocsCitations({ projectCwd:root, pages:[{ path:"docs/b.md", content:"# B\n\nThe limit is 7 (a.ts:1).\n" }], related:pages });
     expect(conflict.findings.filter((f) => f.rule === "contradiction")).toEqual([{ path:"docs/b.md", rule:"contradiction", detail:expect.stringContaining("contradicts docs/a.md") }]);
