@@ -1,4 +1,5 @@
 import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree } from "./verification/git-integrate";
+import { buildDocsAnchors, docsStaleness, verifyDocsCitations } from "./verification/docs-jev";
 import { commitDocs, docsLineCounts as readDocsLineCounts, gitDocsScope as readGitDocsScope } from "./verification/git-docs";
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
@@ -78,6 +79,19 @@ export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>
 export const gitDocsScope: ExperimentalHostRpcHandlers<typeof hostContract>["gitDocsScope"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await readGitDocsScope({projectCwd:input.projectCwd,sinceEpochMs:input.sinceEpochMs}),
+});
+
+export const docsAnchors: ExperimentalHostRpcHandlers<typeof hostContract>["docsAnchors"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await buildDocsAnchors({projectCwd:input.projectCwd,pages:input.pages}),
+});
+
+export const docsVerifyCitations: ExperimentalHostRpcHandlers<typeof hostContract>["docsVerifyCitations"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await verifyDocsCitations({projectCwd:input.projectCwd,pages:input.pages}),
+});
+
+export const docsStalenessHandler: ExperimentalHostRpcHandlers<typeof hostContract>["docsStaleness"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await docsStaleness({projectCwd:input.projectCwd,sinceEpochMs:input.sinceEpochMs,changed:input.changed,pages:input.pages}),
 });
 
 export const docsLineCounts: ExperimentalHostRpcHandlers<typeof hostContract>["docsLineCounts"] = async (input) => ({

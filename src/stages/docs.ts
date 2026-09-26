@@ -136,13 +136,15 @@ const METHODOLOGY = [
  * The nightly docs agent works in the project folder with file access, like claude-lane's
  * docs-maintain: no docs/ yet means onboarding, otherwise only pages about changed code.
  */
-export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; agent?:string}):string {
+export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string; agent?:string}):string {
   const listed = input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
   const refresh = input.refresh ?? [];
   return [
     `${input.agent?.trim() || "Documentation maintainer"}: keep this project's documentation an honest, evidence-backed description of its code.`,
     "",
     ...METHODOLOGY,
+    ...(input.anchorsPath ? ["",
+      `Code map: Lane Pilot mapped this project for you in ${input.anchorsPath} - every declaration with its file:line, which ones Jev marked as business-rule candidates and entry points, the page each belongs to, dependencies and tests. Read it first, build pages around its anchors and cite them; confirm every business-rule candidate in the code before you describe it as a rule.`] : []),
     "",
     input.hasDocs
       ? [

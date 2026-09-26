@@ -14,6 +14,9 @@ import {
   applyOnboardingPages,
   gitDocsScope,
   docsLineCounts,
+  docsAnchors,
+  docsVerifyCitations,
+  docsStalenessHandler,
   gitCommitDocs,
   listDocsPages,
   detect,
@@ -41,7 +44,7 @@ export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     nativeInstall: nativeInstallHost,
-    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsLineCounts, gitCommitDocs, gitIntegrate, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
+    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsLineCounts, gitCommitDocs, docsAnchors, docsVerifyCitations, docsStaleness: docsStalenessHandler, gitIntegrate, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
     runCli, runCommand, runSandboxedCommand, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
   },

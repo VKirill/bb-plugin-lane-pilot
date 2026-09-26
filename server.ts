@@ -4565,7 +4565,22 @@ export default async function plugin(bb: BbPluginApi) {
           if(before.hasDocs&&before.changed.length===0){ report("skipped",{reason:"no code changes"}); continue; }
           const docsPages=async()=>(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path},{hostId:place.hostId,timeoutMs:60_000})).pages
             .filter((page)=>page.path.startsWith("docs/")) as Array<{path:string;sha256:string;content:string}>;
-          const refresh=before.hasDocs?pagesToRefresh(await docsPages(),before.changed):[];
+          const existing=before.hasDocs?await docsPages():[];
+          const pageInput=existing.filter((page)=>page.path!=="docs/index.md").map((page)=>({path:page.path,content:page.content}));
+          // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
+          let refresh=before.hasDocs?pagesToRefresh(existing,before.changed):[];
+          if(before.hasDocs){
+            const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),
+              changed:before.changed,pages:pageInput},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
+            if(stale&&stale.jev!=="disabled"){
+              const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
+              const uncovered=before.changed.filter((file)=>!cited.has(file));
+              if(!stale.refresh.length&&!uncovered.length){ report("skipped",{reason:"Jev found no section the changes made wrong, and no changed file is undocumented"}); continue; }
+              refresh=stale.refresh;
+            }
+          }
+          const anchors=await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,
+            pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
           const selection=resolveStageWriterSelection({settings,config:{writerProviderId:"codex",writerModel:"gpt-6-luna"},stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
           const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
           const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
@@ -4575,7 +4590,7 @@ export default async function plugin(bb: BbPluginApi) {
           const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
           const spawned=await bb.sdk.threads.spawn({projectId:project.id,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}`,
             ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
-            prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed:before.changed,refresh,agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined}),
+            prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed:before.changed,refresh,anchorsPath:anchors?.briefPath,agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined}),
             environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
             pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
           const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
@@ -4586,7 +4601,16 @@ export default async function plugin(bb: BbPluginApi) {
             const touched=after.dirty.filter((path)=>!before.dirty.includes(path));
             const pages=await docsPages();
             const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(pages)},{hostId:place.hostId,timeoutMs:60_000})).counts;
-            return {touched,pages,docsDirty:after.dirty.filter((path)=>NIGHTLY_DOCS_WRITABLE(path)),outside:touched.filter((path)=>!NIGHTLY_DOCS_WRITABLE(path)),findings:lintDocsPages(pages,counts)};
+            const docsDirty=after.dirty.filter((path)=>NIGHTLY_DOCS_WRITABLE(path));
+            const findings=lintDocsPages(pages,counts);
+            // Structure first; once it holds, Jev checks that each cited line backs its claim on the pages written now.
+            if(!findings.length){
+              const written=pages.filter((page)=>docsDirty.includes(page.path)&&page.path!=="docs/index.md");
+              const cited=written.length?await host.call("docsVerifyCitations",{requestedHostId:place.hostId,projectCwd:place.path,
+                pages:written.map((page)=>({path:page.path,content:page.content}))},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null):null;
+              findings.push(...(cited?.findings??[]));
+            }
+            return {touched,pages,docsDirty,outside:touched.filter((path)=>!NIGHTLY_DOCS_WRITABLE(path)),findings};
           };
           let checked=await inspect();
           if(!checked.outside.length&&checked.findings.length){
@@ -4610,7 +4634,7 @@ export default async function plugin(bb: BbPluginApi) {
           }
           const failure=checked.outside.length?`docs agent changed files outside docs/, README.md and PROJECT.md: ${checked.outside.join(", ")}`
             :checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
-          const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:before.changed.length,refreshed:refresh,
+          const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:before.changed.length,refreshed:refresh,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
             docsWritten:checked.touched.filter((path)=>NIGHTLY_DOCS_WRITABLE(path)),commit,...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
           await bb.storage.kv.set(`docs-nightly:${project.id}:${sha256(place.path).slice(0,12)}`,{...row,at:Date.now()});
           bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path}`);

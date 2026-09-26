@@ -151,6 +151,18 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), sinceEpochMs:z.number().int().nonnegative() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), isRepoRoot:z.boolean(), hasDocs:z.boolean(), changed:z.array(z.string()), dirty:z.array(z.string()), localDate:z.string(), localHour:z.number().int(), reason:z.string().nullable() }).strict(),
   },
+  docsAnchors: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), pages:z.array(z.object({ path:z.string(), title:z.string() })).max(500) }).strict(),
+    output: z.object({ hostId:z.string(), briefPath:z.string(), anchors:z.number().int(), jev:z.enum(["ok","partial","disabled"]) }).strict(),
+  },
+  docsVerifyCitations: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), pages:z.array(z.object({ path:z.string(), content:z.string() })).max(500) }).strict(),
+    output: z.object({ hostId:z.string(), jev:z.enum(["ok","partial","disabled"]), checked:z.number().int(), findings:z.array(z.object({ path:z.string(), rule:z.string(), detail:z.string() })) }).strict(),
+  },
+  docsStaleness: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), sinceEpochMs:z.number().int().nonnegative(), changed:z.array(z.string()).max(5000), pages:z.array(z.object({ path:z.string(), content:z.string() })).max(500) }).strict(),
+    output: z.object({ hostId:z.string(), jev:z.enum(["ok","partial","disabled"]), refresh:z.array(z.string()), reasons:z.array(z.object({ path:z.string(), section:z.string(), p:z.number() })) }).strict(),
+  },
   docsLineCounts: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), files:z.array(z.string()).max(2000) }).strict(),
     output: z.object({ hostId:z.string(), counts:z.record(z.string(), z.number().int().nullable()) }).strict(),
