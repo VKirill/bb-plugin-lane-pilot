@@ -120,15 +120,28 @@ function validPage(page:DocsPage):boolean {
 /** Most changed paths listed to the nightly agent; it reads the code itself. */
 const NIGHTLY_CHANGED_LIMIT = 200;
 
-/** Paths the nightly docs agent may write; anything else fails the pass. */
-export const NIGHTLY_DOCS_WRITABLE = (path:string):boolean => path.startsWith("docs/") || path === "README.md" || path === "PROJECT.md";
+/**
+ * Paths the nightly docs agent may write for one docs folder: the root docs/ with README.md and PROJECT.md,
+ * or only its own <workspace>/docs/ in a monorepo. Lane Pilot reverts anything else it changes.
+ */
+export const nightlyDocsWritable = (docsDir = "docs") => (path:string):boolean =>
+  path.startsWith(`${docsDir}/`) || (docsDir === "docs" && (path === "README.md" || path === "PROJECT.md"));
+
+/** One docs folder of a project: the root docs/, or a monorepo workspace's own docs. */
+export type DocsUnit = {
+  docsDir:string;
+  /** Set for a workspace's docs: its folder and package name. */
+  workspace?:{ path:string; name:string };
+  /** For the root docs of a monorepo: every workspace, and its docs folder when it keeps its own. */
+  workspaces?:Array<{ path:string; name:string; docsDir:string | null }>;
+};
 
 const METHODOLOGY = [
   "Method (docs-methodology skill from claude-lane; read ~/.agents/skills/docs-methodology/SKILL.md and its references/ first if the file exists):",
-  "- Every docs/ page starts with YAML frontmatter: title, type, created, updated (YYYY-MM-DD), status (draft|active|stale|deprecated), confidence (high|medium|low, honest: low under 5 sources, medium 5-15, high over 15), tags (kebab-case list), sources (list of files actually read, most relevant first).",
+  "- Every docs page starts with YAML frontmatter: title, type, created, updated (YYYY-MM-DD), status (draft|active|stale|deprecated), confidence (high|medium|low, honest: low under 5 sources, medium 5-15, high over 15), tags (kebab-case list), sources (list of files actually read, most relevant first).",
   "- type is one of overview, architecture, data-model, decisions, deployment, gotchas, gaps, active-areas, active-tasks, component. One H1 equal to title, then a one-line TL;DR.",
   "- Every non-trivial claim cites file:line or file:start-end that exists; at least 3 citations per page. No hedges (typically, usually, should) without a citation, no marketing words (powerful, seamless, robust, comprehensive, intuitive, leverage), no dates in prose.",
-  "- Link pages with relative paths. Never write docs/index.md or a 'Referenced by' section: Lane Pilot builds them.",
+  "- Link pages with relative paths. Never write an index.md in a docs folder or a 'Referenced by' section: Lane Pilot builds them.",
   "- Everything in English. Root README.md is the short front page for people: what it is, what it does, quick start, and links into docs/ - no detail that docs/ already holds. Root PROJECT.md is for agents: dense facts (Identity, Entry points, Critical invariants, Conventions, Common gotchas, Useful commands), each linking to the page that owns it.",
   "- One owner per fact: a value, limit, rule or command is stated on the one page that owns it (a table in data-model, a limit in its feature page) and other pages link there instead of repeating it. Lane Pilot checks claims that cite the same code across pages for contradictions.",
 ];
@@ -138,13 +151,28 @@ const METHODOLOGY = [
  * docs-maintain: no docs/ yet means onboarding, otherwise only pages about changed code.
  */
 export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string; deploy?:boolean;
-  missingPages?:string[]; uncoveredCore?:string[]; agent?:string}):string {
+  missingPages?:string[]; uncoveredCore?:string[]; agent?:string; unit?:DocsUnit}):string {
   const listed = input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
   const refresh = input.refresh ?? [];
+  const unit = input.unit ?? { docsDir:"docs" };
+  const d = unit.docsDir;
+  const ws = unit.workspace;
+  const own = unit.workspaces?.filter((item) => item.docsDir) ?? [];
+  const shared = unit.workspaces?.filter((item) => !item.docsDir) ?? [];
+  const scope = ws ? [
+    `Scope: this is the workspace ${ws.name} (${ws.path}/) of a monorepo. Document only this workspace, in ${d}/. The root docs/ describe the whole system (architecture, deployment, cross-cutting gotchas) and other workspaces have their own docs: link there (for example ${relativeFrom(d, "docs/architecture.md")}) instead of repeating them.`,
+    `Cite files by their path from the repository root (${ws.path}/src/...:12), as every docs page in this repository does.`,
+  ] : own.length || shared.length ? [
+    "Scope: this is the root of a monorepo. docs/ describes the system as a whole: what each app and package is for, how they talk, the data they share, how it is built and deployed, and cross-cutting gotchas.",
+    ...(own.length ? ["These workspaces keep their own docs, written by their own passes - link to their overview and do not repeat their internals:", ...own.map((item) => `- ${item.name}: ${item.docsDir}/overview.md`)] : []),
+    ...(shared.length ? ["These workspaces are small and belong to the root docs: describe each in docs/packages.md (component), one section per package with its purpose, public API and who uses it:", ...shared.map((item) => `- ${item.name} (${item.path}/)`)] : []),
+    "The code map lists every workspace and which workspaces it uses.",
+  ] : [];
   return [
     `${input.agent?.trim() || "Documentation maintainer"}: keep this project's documentation an honest, evidence-backed description of its code.`,
     "",
     ...METHODOLOGY,
+    ...(scope.length ? ["", ...scope] : []),
     ...(input.anchorsPath ? ["",
       `Code map: Lane Pilot mapped this project for you in ${input.anchorsPath} - every declaration with its file:line, which ones Jev marked as business-rule candidates and entry points, the page each belongs to, dependencies and tests. Read it first, build pages around its anchors and cite them; confirm every business-rule candidate in the code before you describe it as a rule.`] : []),
     "",
@@ -154,6 +182,13 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
         ...(refresh.length ? ["Pages whose sources changed or that are drafts:", ...refresh.map((path) => `- ${path}`)] : ["No page lists a changed file among its sources: check whether a changed file needs a new or extended page."]),
         ...(input.missingPages?.length ? ["Pages the method requires that do not exist yet - add them (data-model documents every table and its columns; architecture has one mermaid C4 diagram):", ...input.missingPages.map((path) => `- ${path}`)] : []),
         ...(input.uncoveredCore?.length ? ["Core behaviour no page cites yet - describe it on the page it belongs to, with citations:", ...input.uncoveredCore.map((item) => `- ${item}`)] : []),
+      ].join("\n")
+      : ws ? [
+        `Task: there is no ${d}/ yet, so onboard this workspace. Create:`,
+        `- ${d}/overview.md (overview): what the workspace does, how it starts or is used, its public API or entry points, its configuration, and which workspaces depend on it.`,
+        `- ${d}/features/<capability>.md (component), one per capability it provides: Purpose, Business rules, Public API or commands, Gotchas. A small library may need none beyond the overview.`,
+        `- ${d}/data-model.md (data-model) when this workspace defines stored data: every table or collection with its fields, keys and who writes it.`,
+        `- ${d}/gotchas.md (gotchas) with the traps you find in this workspace's code, if there are any.`,
       ].join("\n")
       : [
         "Task: there is no docs/ yet, so onboard the project. Create:",
@@ -166,7 +201,7 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
         "- README.md (the short front page for people) and PROJECT.md (for agents) at the project root; keep facts already in README.md, but move detail into docs/ and link to it.",
       ].join("\n"),
     "",
-    "Read the code before writing about it. Write only docs/**, README.md and PROJECT.md; do not edit code, tests or settings, and do not commit. Lane Pilot checks the pages, builds docs/index.md and commits.",
+    `Read the code before writing about it. Write only ${ws ? `${d}/**` : "docs/**, README.md and PROJECT.md"}; do not edit code, tests, settings or other docs folders, and do not commit. Lane Pilot reverts changes anywhere else, checks the pages, builds ${d}/index.md and commits.`,
     "Finish with a short list of the pages you created or changed.",
     ...(listed.length ? ["", `Changed since ${input.since}:`, ...listed.map((path) => `- ${path}`)] : []),
     ...(input.changed.length > listed.length ? [`- …and ${input.changed.length - listed.length} more (see git log)`] : []),
@@ -180,4 +215,8 @@ export function docsRepairPrompt(findings:Array<{ path:string; rule:string; deta
     ...findings.slice(0, 80).map((finding) => `- ${finding.path} [${finding.rule}]: ${finding.detail}`),
     ...(findings.length > 80 ? [`- …and ${findings.length - 80} more of the same kinds`] : []),
   ].join("\n");
+}
+
+function relativeFrom(docsDir:string, target:string):string {
+  return `${docsDir.split("/").map(() => "..").join("/")}/${target}`;
 }

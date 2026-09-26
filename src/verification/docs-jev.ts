@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 
 /**
@@ -16,9 +16,9 @@ const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 /** Jev takes about 32k tokens of state; English code is roughly 4 characters a token. */
 const JEV_STATE_CHARS = 100_000;
 const JEV_CONCURRENCY = 8;
-const CODE_FILE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|py)$/;
-const SKIP_PATH = /^(docs\/|dist\/|build\/|node_modules\/|\.agents\/|\.bb\/|\.claude\/|vendor\/)/;
-const TEST_PATH = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[a-z]+$/;
+export const CODE_FILE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|py|vue|prisma)$/;
+const SKIP_PATH = /(^|\/)(docs|dist|build|node_modules|vendor|\.nuxt|\.output)\/|^(\.agents|\.bb|\.claude)\//;
+export const TEST_PATH = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[a-z]+$/;
 const MAX_ANCHORS = 300;
 const SNIPPET_LINES = 60;
 const MAX_CITATION_CHECKS = 250;
@@ -97,7 +97,7 @@ const status = (asked:number, answered:number):JevStatus => answered === asked ?
 // ---- anchors ------------------------------------------------------------------------------
 
 export type Anchor = {
-  name:string; kind:"function" | "class" | "type" | "const" | "table"; exported:boolean;
+  name:string; kind:"function" | "class" | "type" | "const" | "table" | "component"; exported:boolean;
   file:string; line:number; endLine:number; snippet:string;
   businessRule?:number; userFacing?:number; projectSpecific?:number; importance?:number; page?:string;
 };
@@ -114,11 +114,20 @@ const DECLARATIONS:Array<{ re:RegExp; kind:Anchor["kind"]; exported:boolean }> =
   { re:/^class\s+([A-Za-z_]\w*)\s*[(:]/, kind:"class", exported:true },
 ];
 
-/** Declarations found line by line: a start is a top-level line matching a declaration, the body runs to the next one. */
+/**
+ * Declarations found line by line: a start is a top-level line matching a declaration, the body runs to the next one.
+ * A Vue single-file component is itself an anchor; Prisma models are tables and its enums types.
+ */
 export function scanDeclarations(file:string, text:string):Anchor[] {
   const lines = text.split("\n");
   const starts:Array<{ line:number; name:string; kind:Anchor["kind"]; exported:boolean }> = [];
+  if (file.endsWith(".vue")) starts.push({ line:1, name:basename(file, ".vue"), kind:"component", exported:true });
   lines.forEach((line, index) => {
+    if (file.endsWith(".prisma")) {
+      const model = /^(model|enum)\s+([A-Za-z_]\w*)\s*\{/.exec(line);
+      if (model?.[2]) starts.push({ line:index + 1, name:model[2], kind:model[1] === "model" ? "table" : "type", exported:true });
+      return;
+    }
     for (const decl of DECLARATIONS) {
       const match = decl.re.exec(line);
       if (match?.[1]) { starts.push({ line:index + 1, name:match[1], kind:decl.kind, exported:decl.exported }); break; }
@@ -127,16 +136,34 @@ export function scanDeclarations(file:string, text:string):Anchor[] {
     if (table?.[1]) starts.push({ line:index + 1, name:table[1], kind:"table", exported:true });
   });
   return starts.map((start, index) => {
-    const nextStart = starts.slice(index + 1).find((other) => other.kind !== "table" && other.line > start.line)?.line ?? lines.length + 1;
+    const nextStart = starts.slice(index + 1).find((other) => (other.kind !== "table" || file.endsWith(".prisma")) && other.kind !== "component" && other.line > start.line)?.line ?? lines.length + 1;
     const endLine = Math.min(nextStart - 1, start.line + SNIPPET_LINES - 1, lines.length);
     return { name:start.name, kind:start.kind, exported:start.exported, file, line:start.line, endLine,
       snippet:lines.slice(start.line - 1, endLine).join("\n").slice(0, 4000) };
   });
 }
 
-async function trackedCode(projectCwd:string):Promise<string[]> {
-  const listed = (await run("git", ["-c", "core.quotePath=false", "-C", projectCwd, "ls-files"], { maxBuffer:32 << 20 })).stdout.split("\n");
-  return listed.filter((path) => CODE_FILE.test(path) && !SKIP_PATH.test(path));
+/** Tracked code under `prefix`, without the folders in `exclude` (workspaces that keep their own docs). */
+async function trackedCode(projectCwd:string, prefix = "", exclude:string[] = []):Promise<string[]> {
+  const listed = (await run("git", ["-c", "core.quotePath=false", "-C", projectCwd, "ls-files"], { maxBuffer:64 << 20 })).stdout.split("\n");
+  return listed.filter((path) => CODE_FILE.test(path) && !SKIP_PATH.test(path) && path.startsWith(prefix)
+    && !exclude.some((dir) => path.startsWith(`${dir}/`)));
+}
+
+/**
+ * At most `max` anchors taken round-robin across files, best first within each file, so a large codebase
+ * is mapped across all its files rather than the first few hundred declarations; tables always stay.
+ */
+export function spreadAnchors(all:Anchor[], max:number):Anchor[] {
+  const rank = (anchor:Anchor) => Number(!anchor.exported) * 2 + Number(anchor.kind === "type");
+  const picked = all.filter((anchor) => anchor.kind === "table").slice(0, max);
+  const byFile = new Map<string, Anchor[]>();
+  for (const anchor of all) if (anchor.kind !== "table") byFile.set(anchor.file, [...(byFile.get(anchor.file) ?? []), anchor]);
+  const lists = [...byFile.values()].map((list) => [...list].sort((a, b) => rank(a) - rank(b)));
+  for (let round = 0; picked.length < max && lists.some((list) => list.length > round); round++) {
+    for (const list of lists) if (list[round] && picked.length < max) picked.push(list[round]!);
+  }
+  return picked;
 }
 
 const ANCHOR_QUESTIONS = (pages:Array<{ path:string; title:string }>):Record<string, JevQuestion> => ({
@@ -149,8 +176,8 @@ const ANCHOR_QUESTIONS = (pages:Array<{ path:string; title:string }>):Record<str
     criteria:{ ...Object.fromEntries(pages.slice(0, 250).map((page) => [page.path, page.title])), none:"No existing page covers it" } } } : {}),
 });
 
-async function dependencies(projectCwd:string):Promise<string[]> {
-  const pkg = await readFile(join(projectCwd, "package.json"), "utf8").then((text) => JSON.parse(text) as Record<string, Record<string, string>>).catch(() => null);
+async function dependencies(projectCwd:string, prefix = ""):Promise<string[]> {
+  const pkg = await readFile(join(projectCwd, prefix, "package.json"), "utf8").then((text) => JSON.parse(text) as Record<string, Record<string, string>>).catch(() => null);
   if (!pkg) return [];
   return [...Object.entries(pkg.dependencies ?? {}).map(([name, version]) => `${name}@${version}`),
     ...Object.entries(pkg.devDependencies ?? {}).map(([name, version]) => `${name}@${version} (dev)`)];
@@ -160,8 +187,15 @@ async function dependencies(projectCwd:string):Promise<string[]> {
  * Maps the project's code into anchors, has Jev mark business rules, entry points, importance and
  * page, and writes the brief the docs agent starts from under .git/, outside anything git tracks.
  */
-export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ path:string; title:string }> }):Promise<{ briefPath:string; anchors:number; jev:JevStatus; productFiles:string[]; core:Array<{ name:string; file:string; line:number; endLine:number }>; tables:string[]; deploy:boolean }> {
-  const files = await trackedCode(input.projectCwd);
+export type DocsWorkspaceRef = { path:string; name:string; docsDir:string | null };
+
+/**
+ * One docs folder's code: `prefix` narrows it to a monorepo workspace, `exclude` takes the workspaces with their
+ * own docs out of the root's share, and `workspaces` gives the root brief its map of the monorepo.
+ */
+export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ path:string; title:string }>; prefix?:string; exclude?:string[]; workspaces?:DocsWorkspaceRef[] }):Promise<{ briefPath:string; anchors:number; jev:JevStatus; productFiles:string[]; core:Array<{ name:string; file:string; line:number; endLine:number }>; tables:string[]; deploy:boolean }> {
+  const prefix = input.prefix ?? "";
+  const files = await trackedCode(input.projectCwd, prefix, input.exclude);
   const tests:string[] = [];
   let anchors:Anchor[] = [];
   for (const file of files) {
@@ -171,7 +205,7 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
     if (TEST_PATH.test(file)) { for (const match of text.matchAll(/\b(?:it|test)\(\s*["'`](.+?)["'`]/g)) tests.push(`${file}: ${match[1]}`); continue; }
     anchors.push(...scanDeclarations(file, text));
   }
-  anchors = anchors.sort((a, b) => Number(b.exported) - Number(a.exported) || Number(a.kind === "type") - Number(b.kind === "type")).slice(0, MAX_ANCHORS);
+  anchors = spreadAnchors(anchors, MAX_ANCHORS);
   const key = await jevApiKey();
   let answered = 0;
   if (key) {
@@ -189,9 +223,11 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   }
   const asked = key ? anchors.filter((anchor) => anchor.kind !== "type").length : 1;
   const gitDir = (await run("git", ["-C", input.projectCwd, "rev-parse", "--git-dir"])).stdout.trim();
-  const briefPath = join(isAbsolute(gitDir) ? gitDir : join(input.projectCwd, gitDir), "lane-pilot", "docs-anchors.md");
+  const briefName = prefix ? `docs-anchors-${prefix.replace(/[^A-Za-z0-9]+/g, "-").replace(/-+$/, "")}.md` : "docs-anchors.md";
+  const briefPath = join(isAbsolute(gitDir) ? gitDir : join(input.projectCwd, gitDir), "lane-pilot", briefName);
   await mkdir(dirname(briefPath), { recursive:true });
-  await writeFile(briefPath, renderAnchorBrief(anchors, tests, await dependencies(input.projectCwd), key ? status(asked, answered) : "disabled"));
+  const workspaceMap = input.workspaces?.length ? await renderWorkspaceMap(input.projectCwd, input.workspaces) : [];
+  await writeFile(briefPath, renderAnchorBrief(anchors, tests, await dependencies(input.projectCwd, prefix), key ? status(asked, answered) : "disabled") + workspaceMap.join("\n"));
   // Files with code Jev judged specific to this product; generic kits and helpers do not call for docs.
   const productFiles = [...new Set(anchors.filter((anchor) => anchor.kind !== "type" && (anchor.projectSpecific ?? 1) >= 0.5).map((anchor) => anchor.file))].sort();
   // Core product behaviour the docs must cover: Jev's top importance on product code.
@@ -199,9 +235,23 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
     .map(({ name, file, line, endLine }) => ({ name, file, line, endLine }));
   const tables = [...new Set(anchors.filter((anchor) => anchor.kind === "table").map((anchor) => anchor.name))].sort();
   // A project with a build or install script needs a how-to page for building, installing and running it.
-  const scripts = await readFile(join(input.projectCwd, "package.json"), "utf8").then((text) => (JSON.parse(text) as { scripts?:Record<string, string> }).scripts ?? {}).catch(() => ({} as Record<string, string>));
+  // A monorepo is built and deployed from its root, so only the root docs get the page.
+  const scripts = prefix ? {} : await readFile(join(input.projectCwd, "package.json"), "utf8").then((text) => (JSON.parse(text) as { scripts?:Record<string, string> }).scripts ?? {}).catch(() => ({} as Record<string, string>));
   const deploy = Boolean(scripts.build || scripts.install || scripts.start || scripts.deploy);
   return { briefPath, anchors:anchors.length, jev:key ? status(asked, answered) : "disabled", productFiles, core, tables, deploy };
+}
+
+/** The monorepo map for the root docs: each workspace, where its docs live and which workspaces it uses. */
+async function renderWorkspaceMap(projectCwd:string, workspaces:DocsWorkspaceRef[]):Promise<string[]> {
+  const names = new Set(workspaces.map((workspace) => workspace.name));
+  const lines = ["", "## Workspaces", "", "Workspaces with a docs folder are documented there by their own pass; link to them. The others belong to the root docs.", ""];
+  for (const workspace of workspaces) {
+    const pkg = await readFile(join(projectCwd, workspace.path, "package.json"), "utf8").then((text) => JSON.parse(text) as Record<string, unknown>, () => ({} as Record<string, unknown>));
+    const uses = Object.keys({ ...(pkg.dependencies as object ?? {}), ...(pkg.devDependencies as object ?? {}) }).filter((name) => names.has(name));
+    const description = typeof pkg.description === "string" && pkg.description ? ` - ${pkg.description}` : "";
+    lines.push(`- \`${workspace.name}\` ${workspace.path}${description}. Docs: ${workspace.docsDir ? `${workspace.docsDir}/` : "root docs"}.${uses.length ? ` Uses: ${uses.join(", ")}.` : ""}`);
+  }
+  return [...lines, ""];
 }
 
 const pct = (value:number | undefined) => value === undefined ? "?" : `${Math.round(value * 100)}%`;

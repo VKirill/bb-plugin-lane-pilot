@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { boundJevState, pageClaims, renderAnchorBrief, scanDeclarations, verifyDocsCitations, type Anchor } from "../../src/verification/docs-jev";
+import { boundJevState, pageClaims, renderAnchorBrief, scanDeclarations, spreadAnchors, verifyDocsCitations, type Anchor } from "../../src/verification/docs-jev";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
@@ -16,6 +16,16 @@ it("finds exported and internal declarations with their line spans", () => {
     ["LIMIT", "const", true, 6, 7],
     ["monitors", "table", true, 7, 7],
   ]);
+});
+
+it("maps Vue components and Prisma models, and spreads a capped map across files", () => {
+  const vue = scanDeclarations("app/pages/Order.vue", ["<template><div/></template>", "<script setup lang=\"ts\">", "const total = (items) => items.length;", "</script>"].join("\n"));
+  expect(vue.map((anchor) => [anchor.name, anchor.kind, anchor.line])).toEqual([["Order", "component", 1], ["total", "function", 3]]);
+  const prisma = scanDeclarations("prisma/models/user.prisma", ["model User {", "  id String @id", "}", "enum Role {", "  ADMIN", "}", "model Order {", "}"].join("\n"));
+  expect(prisma.map((anchor) => [anchor.name, anchor.kind, anchor.line, anchor.endLine])).toEqual([["User", "table", 1, 3], ["Role", "type", 4, 6], ["Order", "table", 7, 8]]);
+  const anchor = (file:string, name:string, fields:Partial<Anchor> = {}):Anchor => ({ name, kind:"function", exported:true, file, line:1, endLine:1, snippet:"", ...fields });
+  const picked = spreadAnchors([anchor("a.ts", "a1"), anchor("a.ts", "a2"), anchor("a.ts", "a3"), anchor("b.ts", "b1", { exported:false }), anchor("b.ts", "b2"), anchor("c.prisma", "T", { kind:"table" })], 4);
+  expect(picked.map((item) => item.name)).toEqual(["T", "a1", "b2", "a2"]);
 });
 
 it("shrinks the longest text so a state fits Jev's window", () => {

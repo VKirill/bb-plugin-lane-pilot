@@ -162,8 +162,8 @@ import { findTaskPlaceholderPaths } from "./src/stages/critique-coverage";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./src/stages/specialist";
 import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./src/workspace/routing";
-import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, localDateKey, NIGHTLY_DOCS_WRITABLE, nightlyDocsPrompt, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage } from "./src/stages/docs";
-import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "./src/stages/docs-lint";
+import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage, type DocsUnit } from "./src/stages/docs";
+import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDocsIndex, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "./src/stages/docs-lint";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
 import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "./src/stages/night-fix";
@@ -4536,11 +4536,20 @@ export default async function plugin(bb: BbPluginApi) {
       recordIds:selected.records.map((item)=>item.id),estimatedTokens:selected.estimatedTokens,context:selected.text};
   }
 
+  /** A workspace with at least this many product code files keeps its own docs folder; smaller ones belong to the root docs. */
+  const WORKSPACE_DOCS_MIN_FILES=15;
+  /** Docs folders of one monorepo written at once. */
+  const DOCS_UNIT_CONCURRENCY=3;
+  /** Tooling state that changes during a pass without the docs agent: never reverted, never a violation. */
+  const DOCS_TOOLING=/^(\.agents|\.bb|\.claude|\.codex|\.gitnexus)\//;
+
   /**
    * claude-lane's nightly docs for native projects: once a day at docs.hour of the folder's own
-   * machine, every project root and section that is a git repository with docs enabled gets a
-   * hidden docs agent. It sees the code changed since docs.since; no docs/ yet means onboarding;
-   * nothing changed and docs present means no model call. `force` skips the hour for a manual run.
+   * machine, every project root and section that is a git repository with docs enabled gets hidden
+   * docs agents. A monorepo gets one per workspace big enough to keep its own <workspace>/docs, a few
+   * at once, and then one for the root docs/ that describe the system and link to them. Each sees
+   * the code changed since its folder's docs; no folder yet means onboarding; nothing changed and
+   * docs present means no model call. `force` skips the hour for a manual run.
    */
   async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string}={}):Promise<Array<Record<string,unknown>>> {
     const results:Array<Record<string,unknown>>=[];
@@ -4553,140 +4562,184 @@ export default async function plugin(bb: BbPluginApi) {
       for(const section of sections) if(section.kind==="folder"&&section.path&&section.hostId) places.push({scopes:sectionChain(sections,section.id),hostId:section.hostId,path:section.path});
       for(const place of places){
         if(opts.path&&resolve(place.path)!==resolve(opts.path)) continue;
-        const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>{ const row={projectId:project.id,path:place.path,state,...extra}; results.push(row); return row; };
         try{
           const settings=loadProjectSettings(db,project.id,place.scopes);
           const docs=parseDocsSettings(Object.fromEntries(["docs.enabled","docs.maintain","docs.since","docs.page_cap","docs.hour"].map((key)=>[key,configuredSetting(settings,key)])));
           if(!docs.enabled||!docs.maintain) continue;
-          const before=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),
-            ...(opts.base?{base:opts.base}:{})},{hostId:place.hostId,timeoutMs:60_000});
-          if(before.status!=="ready"||!before.isRepoRoot) continue;
-          if(!opts.force&&before.localHour!==docs.hour) continue;
+          const scope=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date())},{hostId:place.hostId,timeoutMs:120_000});
+          if(scope.status!=="ready"||!scope.isRepoRoot) continue;
+          if(!opts.force&&scope.localHour!==docs.hour) continue;
           const schedule=`docs-nightly-${sha256(place.path).slice(0,12)}`;
-          if(!opts.force&&!claimDailySchedule(db,project.id,schedule,before.localDate)) continue;
-          if(before.hasDocs&&before.changed.length===0){ report("skipped",{reason:"no code changes"}); continue; }
-          const docsPages=async()=>(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path},{hostId:place.hostId,timeoutMs:60_000})).pages
-            .filter((page)=>page.path.startsWith("docs/")) as Array<{path:string;sha256:string;content:string}>;
-          const existing=before.hasDocs?await docsPages():[];
-          // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the docs.
-          const readRootPages=async()=>(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
-            const file=await bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}).catch(()=>null);
-            return file&&typeof file.content==="string"?{path,content:file.content}:null;
-          }))).filter((page):page is {path:string;content:string}=>page!==null);
-          const rootPages=before.hasDocs?await readRootPages():[];
-          const pageInput=existing.filter((page)=>page.path!=="docs/index.md").map((page)=>({path:page.path,content:page.content}));
-          // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
-          const anchors=await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,
-            pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
-          const gaps=before.hasDocs?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[]}):{missingPages:[],uncoveredCore:[]};
-          let refresh=before.hasDocs?pagesToRefresh(existing,before.changed):[];
-          if(before.hasDocs){
-            const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
-              changed:before.changed,pages:[...pageInput,...rootPages]},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
-            if(stale&&stale.jev!=="disabled"){
-              const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
-              const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:before.changed);
-              const uncovered=before.changed.filter((file)=>product.has(file)&&!cited.has(file));
-              // Docs an earlier pass left uncommitted still need checking and committing.
-              const pending=before.dirty.some((path)=>NIGHTLY_DOCS_WRITABLE(path));
-              if(!pending&&!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length){ report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"}); continue; }
-              refresh=stale.refresh;
+          if(!opts.force&&!claimDailySchedule(db,project.id,schedule,scope.localDate)) continue;
+          const own=scope.workspaces.filter((workspace)=>workspace.codeFiles>=WORKSPACE_DOCS_MIN_FILES);
+          const workspaces=scope.workspaces.map((workspace)=>({path:workspace.path,name:workspace.name,docsDir:own.includes(workspace)?`${workspace.path}/docs`:null}));
+          const units:DocsUnit[]=[...own.map((workspace)=>({docsDir:`${workspace.path}/docs`,workspace:{path:workspace.path,name:workspace.name}})),
+            {docsDir:"docs",...(workspaces.length?{workspaces}:{})}];
+          const context={projectId:project.id,place,settings,docs,base:opts.base,roots:units.map((unit)=>unit.docsDir),exclude:own.map((workspace)=>workspace.path),workspaces,
+            placeWritable:(path:string)=>units.some((unit)=>nightlyDocsWritable(unit.docsDir)(path))};
+          const run=async(unit:DocsUnit)=>{
+            try{ results.push(await runDocsUnit(context,unit)); }
+            catch(cause){
+              const reason=cause instanceof Error?cause.message:String(cause);
+              results.push({projectId:project.id,path:place.path,docsDir:unit.docsDir,state:"failed",reason});
+              bb.log.warn(`Lane Pilot nightly docs failed for ${place.path} ${unit.docsDir}: ${reason}`);
             }
-          }
-          const selection=resolveStageWriterSelection({settings,config:{writerProviderId:"codex",writerModel:"gpt-6-luna"},stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
-          const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
-          const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
-          const model=catalog.models.find((item)=>item.id===selection.model||item.model===selection.model);
-          if(!provider||!model) throw new Error(`docs provider or model unavailable: ${selection.providerId}/${selection.model}`);
-          const effort=typeof settings["docs.reasoning_effort"]==="string"&&settings["docs.reasoning_effort"]?settings["docs.reasoning_effort"] as string:"medium";
-          const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
-          const spawned=await bb.sdk.threads.spawn({projectId:project.id,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}`,
-            ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
-            prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed:before.changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined}),
-            environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
-            pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
-          const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
-          await waitThreadIdle(bb,threadId,"docs_nightly");
-          // Check the pages the way the methodology asks, give the agent one round to fix, then index and commit.
-          const inspect=async()=>{
-            const after=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date())},{hostId:place.hostId,timeoutMs:60_000});
-            const touched=after.dirty.filter((path)=>!before.dirty.includes(path));
-            const pages=await docsPages();
-            const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(pages)},{hostId:place.hostId,timeoutMs:60_000})).counts;
-            const docsDirty=after.dirty.filter((path)=>NIGHTLY_DOCS_WRITABLE(path));
-            const findings=lintDocsPages(pages,counts);
-            let pageStats:Array<{path:string;checked:number;supported:number}>=[];
-            // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
-            // and pairs of claims across all the docs that cite the same code for contradictions.
-            if(!findings.length){
-              const roots=await readRootPages();
-              const all=[...pages.filter((page)=>page.path!=="docs/index.md").map((page)=>({path:page.path,content:page.content})),...roots];
-              const written=all.filter((page)=>docsDirty.includes(page.path));
-              const cited=written.length?await host.call("docsVerifyCitations",{requestedHostId:place.hostId,projectCwd:place.path,
-                pages:written,related:all.filter((page)=>!docsDirty.includes(page.path))},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
-              findings.push(...(cited?.findings??[]));
-              pageStats=cited?.pageStats??[];
-            }
-            return {touched,pages,docsDirty,pageStats,outside:touched.filter((path)=>!NIGHTLY_DOCS_WRITABLE(path)),findings};
           };
-          let checked=await inspect();
-          if(!checked.outside.length&&checked.findings.length){
-            // The repair counts only once its own turn completes, not the turn the agent already finished.
-            const sentAt=Date.now()-2_000;
-            await bb.sdk.threads.send({threadId,mode:"queue-if-active",input:[{type:"text",text:docsRepairPrompt(checked.findings),mentions:[]}]});
-            await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,sentAt);
-            checked=await inspect();
-          }
-          // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
-          // what Jev alone still doubts goes to the report as a warning; the deterministic checks keep blocking.
-          const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction";
-          const warnings=checked.findings.filter(judged);
-          checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};
-          let commit:string|null=null;
-          // Every docs page passed the checks, so docs left uncommitted by an earlier pass go in too; code never does.
-          if(!checked.outside.length&&!checked.findings.length&&checked.docsDirty.length){
-            // Builders own what the model must not write: Referenced by blocks, verified confidence, the index.
-            // They work on the pages as they are on disk now, and rebuild once if a page moved under them.
-            const stats=new Map(checked.pageStats.map((stat)=>[stat.path,stat]));
-            for(let attempt=0;;attempt++){
-              const fresh=await docsPages();
-              const built=buildBacklinks(fresh).map((page)=>{
-                const stat=stats.get(page.path);
-                const sourced=withCitedSources(page.content);
-                return {path:page.path,content:stat?withVerifiedConfidence(sourced,stat):sourced};
-              });
-              const current=fresh.find((page)=>page.path==="docs/index.md");
-              const edits=[
-                ...built.flatMap((page)=>{
-                  const original=fresh.find((row)=>row.path===page.path)!;
-                  return original.content===page.content?[]:[{path:page.path,expectedSha256:original.sha256,content:page.content}];
-                }),
-                {path:"docs/index.md",expectedSha256:current?.sha256??null,content:buildDocsIndex(built)},
-              ].filter((edit)=>edit.path!=="docs/index.md"||current?.content!==edit.content);
-              if(!edits.length) break;
-              const applied=await host.call("writeDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,
-                previewSha256:sha256(JSON.stringify(edits)),edits},{hostId:place.hostId,timeoutMs:120_000});
-              if(applied.status==="applied") break;
-              if(attempt>=1) throw new Error(`docs builders could not write pages: ${applied.reason??applied.status}`);
-            }
-            const committed=await host.call("gitCommitDocs",{requestedHostId:place.hostId,projectCwd:place.path,
-              paths:[...new Set([...checked.docsDirty,"docs/index.md"])],message:`docs: ${before.hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
-            if(committed.status==="failed") throw new Error(`docs commit failed: ${committed.reason}`);
-            commit=committed.commit;
-          }
-          const failure=checked.outside.length?`docs agent changed files outside docs/, README.md and PROJECT.md: ${checked.outside.join(", ")}`
-            :checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
-          const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:before.changed.length,refreshed:refresh,gaps,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
-            docsWritten:checked.touched.filter((path)=>NIGHTLY_DOCS_WRITABLE(path)),commit,...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
-          await bb.storage.kv.set(`docs-nightly:${project.id}:${sha256(place.path).slice(0,12)}`,{...row,at:Date.now()});
-          bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path}`);
+          // Workspaces first, a few at once; the root last, so its overview links to docs that exist.
+          const queue=units.slice(0,-1);
+          await Promise.all(Array.from({length:Math.min(DOCS_UNIT_CONCURRENCY,queue.length)},async()=>{ for(let unit=queue.shift();unit;unit=queue.shift()) await run(unit); }));
+          await run(units.at(-1)!);
         }catch(cause){
-          const row=report("failed",{reason:cause instanceof Error?cause.message:String(cause)});
-          bb.log.warn(`Lane Pilot nightly docs failed for ${place.path}: ${String(row.reason)}`);
+          const reason=cause instanceof Error?cause.message:String(cause);
+          results.push({projectId:project.id,path:place.path,state:"failed",reason});
+          bb.log.warn(`Lane Pilot nightly docs failed for ${place.path}: ${reason}`);
         }
       }
     }
     return results;
+  }
+
+  /** One docs folder of a place: its own git scope, code map, agent, checks, builders and commit. */
+  async function runDocsUnit(ctx:{projectId:string;place:{hostId:string;path:string};settings:Record<string,unknown>;docs:ReturnType<typeof parseDocsSettings>;base?:string;
+    roots:string[];exclude:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;placeWritable:(path:string)=>boolean},unit:DocsUnit):Promise<Record<string,unknown>> {
+    const {place,settings,docs}=ctx;
+    const d=unit.docsDir, writable=nightlyDocsWritable(d);
+    const prefix=unit.workspace?`${unit.workspace.path}/`:"";
+    const inUnit=(path:string)=>prefix?path.startsWith(prefix):!ctx.exclude.some((dir)=>path.startsWith(`${dir}/`));
+    const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:ctx.projectId,path:place.path,docsDir:d,state,...extra});
+    const gitScope=(base?:string)=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),docsDir:d,
+      ...(base?{base}:{})},{hostId:place.hostId,timeoutMs:120_000});
+    const before=await gitScope(ctx.base);
+    if(before.status!=="ready") throw new Error(`git scope failed: ${before.reason}`);
+    const changed=before.changed.filter(inUnit);
+    // Docs an earlier pass left uncommitted still need checking and committing.
+    const pending=before.dirty.some(writable);
+    if(before.hasDocs&&changed.length===0&&!pending) return report("skipped",{reason:"no code changes"});
+    // Every docs folder of the place, so links and contradictions across folders are seen; this unit writes only its own.
+    const allPages=async()=>(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:ctx.roots},{hostId:place.hostId,timeoutMs:120_000})).pages as Array<{path:string;sha256:string;content:string}>;
+    const mine=(pages:Array<{path:string;sha256:string;content:string}>)=>pages.filter((page)=>page.path.startsWith(`${d}/`));
+    const existing=before.hasDocs?mine(await allPages()):[];
+    // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the root docs.
+    const readRootPages=async()=>unit.workspace?[]:(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
+      const file=await bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}).catch(()=>null);
+      return file&&typeof file.content==="string"?{path,content:file.content}:null;
+    }))).filter((page):page is {path:string;content:string}=>page!==null);
+    const rootPages=before.hasDocs?await readRootPages():[];
+    const pageInput=existing.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content}));
+    // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
+    const anchors=await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
+      ...(unit.workspace?{}:{exclude:ctx.exclude,...(ctx.workspaces.length?{workspaces:ctx.workspaces}:{})}),
+      pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null);
+    const gaps=before.hasDocs?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace)}):{missingPages:[],uncoveredCore:[]};
+    let refresh=before.hasDocs?pagesToRefresh(existing,changed):[];
+    if(before.hasDocs){
+      const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
+        changed,pages:[...pageInput,...rootPages]},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
+      if(stale&&stale.jev!=="disabled"){
+        const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
+        const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:changed);
+        const uncovered=changed.filter((file)=>product.has(file)&&!cited.has(file));
+        if(!pending&&!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length) return report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"});
+        refresh=stale.refresh;
+      }
+    }
+    const selection=resolveStageWriterSelection({settings,config:{writerProviderId:"codex",writerModel:"gpt-6-luna"},stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
+    const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
+    const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
+    const model=catalog.models.find((item)=>item.id===selection.model||item.model===selection.model);
+    if(!provider||!model) throw new Error(`docs provider or model unavailable: ${selection.providerId}/${selection.model}`);
+    const effort=typeof settings["docs.reasoning_effort"]==="string"&&settings["docs.reasoning_effort"]?settings["docs.reasoning_effort"] as string:"medium";
+    const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
+    const spawned=await bb.sdk.threads.spawn({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:""}`,
+      ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
+      prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
+        agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit}),
+      environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
+      pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
+    const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
+    await waitThreadIdle(bb,threadId,"docs_nightly");
+    const reverted:string[]=[];
+    // Check the pages the way the methodology asks, give the agent one round to fix, then index and commit.
+    // What the agent changed outside every docs folder is put back first; other folders' passes may be writing theirs.
+    const inspect=async()=>{
+      const after=await gitScope();
+      const touched=after.dirty.filter((path)=>!before.dirty.includes(path));
+      const outside=touched.filter((path)=>!ctx.placeWritable(path)&&!DOCS_TOOLING.test(path));
+      if(outside.length){
+        const undone=await host.call("gitRevertPaths",{requestedHostId:place.hostId,projectCwd:place.path,paths:outside},{hostId:place.hostId,timeoutMs:120_000});
+        reverted.push(...undone.reverted);
+        if(undone.failed.length) throw new Error(`could not revert files the docs agent changed outside docs: ${undone.failed.join(", ")}`);
+      }
+      const pages=await allPages();
+      const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(mine(pages))},{hostId:place.hostId,timeoutMs:60_000})).counts;
+      const docsDirty=after.dirty.filter(writable);
+      const findings=lintDocsPages(pages,counts).filter((finding)=>writable(finding.path));
+      let pageStats:Array<{path:string;checked:number;supported:number}>=[];
+      // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
+      // and pairs of claims across all the docs that cite the same code for contradictions.
+      if(!findings.length){
+        const all=[...pages.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content})),...await readRootPages()];
+        const written=all.filter((page)=>docsDirty.includes(page.path));
+        const cited=written.length?await host.call("docsVerifyCitations",{requestedHostId:place.hostId,projectCwd:place.path,
+          pages:written.slice(0,500),related:all.filter((page)=>!docsDirty.includes(page.path)).slice(0,500)},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null):null;
+        findings.push(...(cited?.findings??[]));
+        pageStats=cited?.pageStats??[];
+      }
+      return {touched,docsDirty,pageStats,findings};
+    };
+    let checked=await inspect();
+    if(checked.findings.length){
+      // The repair counts only once its own turn completes, not the turn the agent already finished.
+      const sentAt=Date.now()-2_000;
+      await bb.sdk.threads.send({threadId,mode:"queue-if-active",input:[{type:"text",text:docsRepairPrompt(checked.findings),mentions:[]}]});
+      await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,sentAt);
+      checked=await inspect();
+    }
+    // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
+    // what Jev alone still doubts goes to the report as a warning; the deterministic checks keep blocking.
+    const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction";
+    const warnings=checked.findings.filter(judged);
+    checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};
+    let commit:string|null=null;
+    // Every page of this folder passed the checks, so pages an earlier pass left uncommitted go in too; code never does.
+    if(!checked.findings.length&&checked.docsDirty.length){
+      // Builders own what the model must not write: Referenced by blocks, verified confidence, the index.
+      // They work on the pages as they are on disk now, and rebuild once if a page moved under them.
+      const stats=new Map(checked.pageStats.map((stat)=>[stat.path,stat]));
+      const index=`${d}/index.md`;
+      const linked=unit.workspace?[]:ctx.workspaces.flatMap((workspace)=>workspace.docsDir?[{name:workspace.name,docsDir:workspace.docsDir}]:[]);
+      for(let attempt=0;;attempt++){
+        const fresh=await allPages();
+        const built=buildBacklinks(fresh).filter((page)=>page.path.startsWith(`${d}/`)).map((page)=>{
+          const stat=stats.get(page.path);
+          const sourced=withCitedSources(page.content);
+          return {path:page.path,content:stat?withVerifiedConfidence(sourced,stat):sourced};
+        });
+        const current=fresh.find((page)=>page.path===index);
+        const edits=[
+          ...built.flatMap((page)=>{
+            const original=fresh.find((row)=>row.path===page.path)!;
+            return original.content===page.content?[]:[{path:page.path,expectedSha256:original.sha256,content:page.content}];
+          }),
+          {path:index,expectedSha256:current?.sha256??null,content:buildDocsIndex(built,d,linked)},
+        ].filter((edit)=>edit.path!==index||current?.content!==edit.content);
+        if(!edits.length) break;
+        const applied=await host.call("writeDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,
+          previewSha256:sha256(JSON.stringify(edits)),edits},{hostId:place.hostId,timeoutMs:120_000});
+        if(applied.status==="applied") break;
+        if(attempt>=1) throw new Error(`docs builders could not write pages: ${applied.reason??applied.status}`);
+      }
+      const committed=await host.call("gitCommitDocs",{requestedHostId:place.hostId,projectCwd:place.path,
+        paths:[...new Set([...checked.docsDirty,index])],message:`docs${unit.workspace?`(${unit.workspace.path})`:""}: ${before.hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
+      if(committed.status==="failed") throw new Error(`docs commit failed: ${committed.reason}`);
+      commit=committed.commit;
+    }
+    const failure=checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
+    const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:changed.length,refreshed:refresh,gaps,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
+      docsWritten:checked.touched.filter(writable),commit,...(reverted.length?{reverted}:{}),...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
+    await bb.storage.kv.set(`docs-nightly:${ctx.projectId}:${sha256(`${place.path}\n${d}`).slice(0,12)}`,{...row,at:Date.now()});
+    bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path} ${d}`);
+    return row;
   }
 
   async function runScheduledDocsMaintenance():Promise<void> {

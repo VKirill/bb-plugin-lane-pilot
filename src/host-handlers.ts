@@ -1,6 +1,6 @@
 import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree } from "./verification/git-integrate";
 import { buildDocsAnchors, docsStaleness, verifyDocsCitations } from "./verification/docs-jev";
-import { commitDocs, docsLineCounts as readDocsLineCounts, gitDocsScope as readGitDocsScope } from "./verification/git-docs";
+import { commitDocs, docsLineCounts as readDocsLineCounts, gitDocsScope as readGitDocsScope, revertPaths } from "./verification/git-docs";
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -78,11 +78,15 @@ export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>
 
 export const gitDocsScope: ExperimentalHostRpcHandlers<typeof hostContract>["gitDocsScope"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await readGitDocsScope({projectCwd:input.projectCwd,sinceEpochMs:input.sinceEpochMs,base:input.base}),
+  ...await readGitDocsScope({projectCwd:input.projectCwd,sinceEpochMs:input.sinceEpochMs,base:input.base,docsDir:input.docsDir}),
+});
+
+export const gitRevertPaths: ExperimentalHostRpcHandlers<typeof hostContract>["gitRevertPaths"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await revertPaths({projectCwd:input.projectCwd,paths:input.paths}),
 });
 
 export const docsAnchors: ExperimentalHostRpcHandlers<typeof hostContract>["docsAnchors"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await buildDocsAnchors({projectCwd:input.projectCwd,pages:input.pages}),
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await buildDocsAnchors({projectCwd:input.projectCwd,pages:input.pages,prefix:input.prefix,exclude:input.exclude,workspaces:input.workspaces}),
 });
 
 export const docsVerifyCitations: ExperimentalHostRpcHandlers<typeof hostContract>["docsVerifyCitations"] = async (input) => ({
@@ -176,7 +180,8 @@ export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["li
       if (pages.length > 5000) throw new Error("docs inventory exceeds 5000 markdown files; reduce the source tree before running maintenance");
     }
   };
-  for (const name of ["docs","apps"]) {
+  // The root docs and apps/ by default; the nightly pass names every docs folder of a monorepo.
+  for (const name of input.roots ?? ["docs","apps"]) {
     const path=join(input.projectCwd,name);
     try { const info=await lstat(path); if(info.isDirectory()&&!info.isSymbolicLink()) await visit(path); }
     catch(cause) { if((cause as NodeJS.ErrnoException).code!=="ENOENT") throw cause; }
@@ -187,12 +192,14 @@ export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["li
 type MarkdownWrite = Parameters<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>[0];
 
 /** Onboarding previews stay small; the docs builders rewrite whole pages of up to 40000 bytes. */
-export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"] = async (input) => casWriteMarkdown(input, 32_000);
+export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"] = async (input) =>
+  casWriteMarkdown(input, 32_000, (path) => path.startsWith("docs/") || path.startsWith("apps/"));
 
+/** The builders write into any docs folder: the root docs/ or a monorepo workspace's own docs/. */
 export const writeDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["writeDocsPages"] = async (input) =>
-  casWriteMarkdown({ ...input, confirmed:true }, 2_000_000);
+  casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => /(^|\/)docs\//.test(path));
 
-async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number):Promise<Awaited<ReturnType<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>>> {
+async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inScope:(path:string) => boolean):Promise<Awaited<ReturnType<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>>> {
   const suppliedPreviewSha256=createHash("sha256").update(JSON.stringify(input.edits),"utf8").digest("hex");
   if(suppliedPreviewSha256!==input.previewSha256) return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:"blocked",writes:[],reason:"onboarding preview hash did not match supplied edits"};
   const rootInfo=await lstat(input.projectCwd);
@@ -205,7 +212,7 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number):Promi
     const normalized=edit.path;
     const segments=normalized.split("/");
     if(normalized.includes("\\")||isAbsolute(normalized)||segments.some((part)=>!part||part==="."||part==="..")
-      ||!((normalized.startsWith("docs/")||normalized.startsWith("apps/"))&&/\.md$/i.test(normalized))) {
+      ||!(inScope(normalized)&&/\.md$/i.test(normalized))) {
       throw new Error(`onboarding path is outside Markdown docs scope: ${normalized}`);
     }
     // Onboarding creates docs/ in a project that has none: missing parents are made at write time;

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { nightlyDocsPrompt } from "../../src/stages/docs";
-import { gitDocsScope } from "../../src/verification/git-docs";
+import { gitDocsScope, revertPaths } from "../../src/verification/git-docs";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { stdio: "pipe" });
 const gitAt = (date: string, cwd: string, ...args: string[]) =>
@@ -54,4 +54,50 @@ it("asks for onboarding without docs/ and for changed-code pages otherwise", () 
   expect(prompt).toContain("- lib/a.ts");
   expect(prompt).toContain("- docs/features/a.md");
   expect(prompt).toContain("Write only docs/**, README.md and PROJECT.md");
+});
+
+it("finds a monorepo's workspaces and scopes a workspace's own docs folder", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lane-docs-mono-"));
+  try {
+    git(root, "init", "-q"); git(root, "config", "user.email", "t@t"); git(root, "config", "user.name", "t");
+    await writeFile(join(root, "package.json"), JSON.stringify({ workspaces:["apps/*", "packages/infra/*"] }));
+    for (const [dir, files] of [["apps/api", 3], ["apps/web", 1], ["packages/infra/db", 2], ["packages/loose", 4]] as const) {
+      await mkdir(join(root, dir, "src"), { recursive:true });
+      await writeFile(join(root, dir, "package.json"), JSON.stringify({ name:`@x/${dir.split("/").pop()}` }));
+      for (let i = 0; i < files; i++) await writeFile(join(root, dir, "src", `f${i}.ts`), "1");
+    }
+    await writeFile(join(root, "apps/api/src/f0.test.ts"), "1");
+    await mkdir(join(root, "apps/api/docs")); await writeFile(join(root, "apps/api/docs/overview.md"), "# a");
+    git(root, "add", "."); git(root, "commit", "-qm", "base");
+    await writeFile(join(root, "apps/api/src/f1.ts"), "2"); await writeFile(join(root, "apps/api/docs/overview.md"), "# b");
+    const scope = await gitDocsScope({ projectCwd:root, sinceEpochMs:0, docsDir:"apps/api/docs" });
+    expect(scope.workspaces).toEqual([
+      { path:"apps/api", name:"@x/api", codeFiles:3 }, { path:"apps/web", name:"@x/web", codeFiles:1 }, { path:"packages/infra/db", name:"@x/db", codeFiles:2 },
+    ]);
+    expect(scope).toMatchObject({ hasDocs:true, changed:["apps/api/src/f1.ts"] });
+    expect((await gitDocsScope({ projectCwd:root, sinceEpochMs:0 })).hasDocs).toBe(false);
+  } finally { await rm(root, { recursive:true, force:true }); }
+});
+
+it("puts back files changed outside docs and removes files created there", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lane-docs-revert-"));
+  try {
+    git(root, "init", "-q"); git(root, "config", "user.email", "t@t"); git(root, "config", "user.name", "t");
+    await writeFile(join(root, "AGENTS.md"), "rules"); git(root, "add", "."); git(root, "commit", "-qm", "base");
+    await writeFile(join(root, "AGENTS.md"), "rewritten"); await writeFile(join(root, "stray.ts"), "x");
+    expect(await revertPaths({ projectCwd:root, paths:["AGENTS.md", "stray.ts", "../escape"] })).toEqual({ reverted:["AGENTS.md", "stray.ts"], failed:["../escape"] });
+    expect(git(root, "status", "--porcelain").toString()).toBe("");
+  } finally { await rm(root, { recursive:true, force:true }); }
+});
+
+it("tells a workspace's docs agent to stay in its folder and link to the root docs", () => {
+  const prompt = nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[], unit:{ docsDir:"apps/api/docs", workspace:{ path:"apps/api", name:"@x/api" } } });
+  expect(prompt).toContain("Create:\n- apps/api/docs/overview.md (overview)");
+  expect(prompt).toContain("../../../docs/architecture.md");
+  expect(prompt).toContain("Write only apps/api/docs/**;");
+  const rootPrompt = nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[], unit:{ docsDir:"docs", workspaces:[
+    { path:"apps/api", name:"@x/api", docsDir:"apps/api/docs" }, { path:"packages/result", name:"@x/result", docsDir:null }] } });
+  expect(rootPrompt).toContain("- @x/api: apps/api/docs/overview.md");
+  expect(rootPrompt).toContain("docs/packages.md (component)");
+  expect(rootPrompt).toContain("Write only docs/**, README.md and PROJECT.md;");
 });

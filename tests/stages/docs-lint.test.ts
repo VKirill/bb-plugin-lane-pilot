@@ -94,3 +94,16 @@ it("sets confidence from the verified share of claims", () => {
   expect(withVerifiedConfidence(content, { checked:10, supported:5 })).toMatch(/^confidence: low$/m);
   expect(withVerifiedConfidence(content, { checked:0, supported:0 })).toBe(content);
 });
+
+it("checks and indexes a workspace's own docs folder, and links the workspaces from the root index", () => {
+  const pages = [
+    { path:"apps/api/docs/overview.md", content:page({ title:"API", type:"overview" }, "# API\n\nServes (src/check.ts:1, src/check.ts:2, src/check.ts:3). See [architecture](../../../docs/architecture.md) and [gone](missing.md).\n") },
+    { path:"docs/architecture.md", content:page({ title:"Architecture", type:"architecture" }, "# Architecture\n\nParts (src/check.ts:1-3). API: [overview](../apps/api/docs/overview.md). A (src/check.ts:4). B (src/check.ts:5).\n") },
+  ];
+  expect(lintDocsPages(pages, { "src/check.ts": 9 }).map((finding) => `${finding.path} ${finding.rule}`)).toEqual(["apps/api/docs/overview.md links"]);
+  expect(buildDocsIndex(pages, "apps/api/docs")).toContain("| [API](overview.md) | overview |");
+  expect(buildDocsIndex(pages, "apps/api/docs")).not.toContain("Architecture");
+  expect(buildDocsIndex(pages, "docs", [{ name:"@x/api", docsDir:"apps/api/docs" }])).toContain("| @x/api | [apps/api/docs/](../apps/api/docs/index.md) |");
+  expect(buildBacklinks(pages).find((p) => p.path === "docs/architecture.md")!.content).toContain("- [API](../apps/api/docs/overview.md)");
+  expect(docsCompletenessGaps([], { tables:[], core:[], docsDir:"apps/api/docs", workspace:true }).missingPages).toEqual(["apps/api/docs/overview.md"]);
+});

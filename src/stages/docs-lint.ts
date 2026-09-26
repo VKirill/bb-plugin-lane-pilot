@@ -16,6 +16,12 @@ const MARKETING = ["leverage", "leverages", "powerful", "seamless", "seamlessly"
 const CITATION = /([A-Za-z0-9_@.\/-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?/g;
 
 export type DocPage = { path:string; content:string };
+
+/** A page in a docs folder: the project's docs/ or a monorepo workspace's own <workspace>/docs/. */
+export const isDocsPage = (path:string):boolean => /(^|\/)docs\/.+\.md$/.test(path);
+/** The builder-owned index of a docs folder. */
+export const isDocsIndex = (path:string):boolean => /(^|\/)docs\/index\.md$/.test(path);
+const isDocsContent = (path:string):boolean => isDocsPage(path) && !isDocsIndex(path);
 export type Frontmatter = Record<string, string | string[]>;
 export type DocsFinding = { path:string; rule:string; detail:string };
 
@@ -61,7 +67,7 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
   const findings:DocsFinding[] = [];
   const paths = new Set(pages.map((page) => page.path));
   for (const page of pages) {
-    if (!page.path.startsWith("docs/") || page.path === "docs/index.md") continue;
+    if (!isDocsContent(page.path)) continue;
     const add = (rule:string, detail:string) => findings.push({ path:page.path, rule, detail });
     const parsed = parseFrontmatter(page.content);
     if (!parsed) { add("frontmatter", "page must start with a YAML frontmatter block"); continue; }
@@ -87,7 +93,7 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
       const target = link[1]!;
       if (/^[a-z]+:\/\//i.test(target)) continue;
       const resolved = resolveRelative(page.path, target);
-      if (resolved.startsWith("docs/") && !paths.has(resolved)) add("links", `link ${target} points at a page that does not exist`);
+      if (isDocsPage(resolved) && !paths.has(resolved)) add("links", `link ${target} points at a page that does not exist`);
     }
   }
   return findings;
@@ -111,7 +117,7 @@ export function citedFiles(pages:DocPage[]):string[] {
 export function pagesToRefresh(pages:DocPage[], changed:string[]):string[] {
   const touched = new Set(changed);
   return pages.filter((page) => {
-    if (!page.path.startsWith("docs/") || page.path === "docs/index.md") return false;
+    if (!isDocsContent(page.path)) return false;
     const data = parseFrontmatter(page.content)?.data;
     if (!data) return true;
     const sources = Array.isArray(data.sources) ? data.sources : [];
@@ -119,10 +125,13 @@ export function pagesToRefresh(pages:DocPage[], changed:string[]):string[] {
   }).map((page) => page.path).sort();
 }
 
-/** docs/index.md, built from the frontmatter of every other page; the model never writes it. */
-export function buildDocsIndex(pages:DocPage[]):string {
+/**
+ * <docsDir>/index.md, built from the frontmatter of every other page in that folder; the model never writes it.
+ * The root index of a monorepo also links each workspace's own docs index.
+ */
+export function buildDocsIndex(pages:DocPage[], docsDir = "docs", workspaces:Array<{ name:string; docsDir:string }> = []):string {
   const rows = pages
-    .filter((page) => page.path.startsWith("docs/") && page.path !== "docs/index.md")
+    .filter((page) => page.path.startsWith(`${docsDir}/`) && isDocsContent(page.path))
     .map((page) => ({ path:page.path, data:parseFrontmatter(page.content)?.data ?? {} }))
     .sort((a, b) => a.path.localeCompare(b.path));
   const lines = ["---", "title: Documentation index", "type: index", "status: active", "---", "", "# Documentation index", "",
@@ -130,7 +139,11 @@ export function buildDocsIndex(pages:DocPage[]):string {
   for (const row of rows) {
     const title = typeof row.data.title === "string" ? row.data.title : row.path;
     const cell = (key:string) => typeof row.data[key] === "string" ? row.data[key] as string : "—";
-    lines.push(`| [${title.replace(/\|/g, "\\|")}](${row.path.slice("docs/".length)}) | ${cell("type")} | ${cell("status")} | ${cell("updated")} |`);
+    lines.push(`| [${title.replace(/\|/g, "\\|")}](${row.path.slice(docsDir.length + 1)}) | ${cell("type")} | ${cell("status")} | ${cell("updated")} |`);
+  }
+  if (workspaces.length) {
+    lines.push("", "## Workspace docs", "", "| Workspace | Docs |", "|---|---|");
+    for (const workspace of workspaces) lines.push(`| ${workspace.name} | [${workspace.docsDir}/](${relativeLink(`${docsDir}/index.md`, `${workspace.docsDir}/index.md`)}) |`);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -139,11 +152,14 @@ export function buildDocsIndex(pages:DocPage[]):string {
  * What keeps the docs from being complete: pages the methodology requires that no page's type fills,
  * and core code no citation covers. The nightly agent gets both as its task list.
  */
-export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; deploy?:boolean; core:Array<{ name:string; file:string; line:number; endLine:number }> }):{ missingPages:string[]; uncoveredCore:string[] } {
+export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; deploy?:boolean; core:Array<{ name:string; file:string; line:number; endLine:number }>; docsDir?:string; workspace?:boolean }):{ missingPages:string[]; uncoveredCore:string[] } {
+  const docsDir = input.docsDir ?? "docs";
   const types = new Set(pages.map((page) => parseFrontmatter(page.content)?.data.type).filter((type):type is string => typeof type === "string"));
-  const required:Array<[string, string]> = [["overview", "docs/overview.md"], ["architecture", "docs/architecture.md"], ["gotchas", "docs/gotchas.md"]];
-  if (input.tables.length) required.push(["data-model", "docs/data-model.md"]);
-  if (input.deploy) required.push(["deployment", "docs/deployment.md"]);
+  // A workspace inherits architecture, gotchas and deployment from the root docs and needs only its own overview.
+  const required:Array<[string, string]> = input.workspace ? [["overview", `${docsDir}/overview.md`]]
+    : [["overview", `${docsDir}/overview.md`], ["architecture", `${docsDir}/architecture.md`], ["gotchas", `${docsDir}/gotchas.md`]];
+  if (input.tables.length) required.push(["data-model", `${docsDir}/data-model.md`]);
+  if (input.deploy) required.push(["deployment", `${docsDir}/deployment.md`]);
   const missingPages = required.filter(([type]) => !types.has(type)).map(([, path]) => path);
   const citations = pages.flatMap((page) => pageCitations(page.content));
   const uncoveredCore = input.core.filter((anchor) => !citations.some((citation) => citation.file === anchor.file
@@ -161,7 +177,7 @@ export function withoutBacklinks(text:string):string {
 
 /** Every docs page with its Referenced by block rebuilt from the relative links of the other pages. */
 export function buildBacklinks(pages:DocPage[]):Array<{ path:string; content:string }> {
-  const docs = pages.filter((page) => page.path.startsWith("docs/") && page.path !== "docs/index.md");
+  const docs = pages.filter((page) => isDocsContent(page.path));
   const inbound = new Map<string, Set<string>>();
   for (const page of docs) {
     for (const link of withoutBacklinks(page.content).matchAll(/\]\(([^)#\s]+\.md)(?:#[^)]*)?\)/g)) {
