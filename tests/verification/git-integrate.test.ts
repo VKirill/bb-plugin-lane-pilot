@@ -72,3 +72,15 @@ it("creates Lane Pilot's own worktree of a section repo and removes it once merg
   expect(git(base, "branch", "--list", "lane/*").trim()).toBe("");
   expect(await readFile(join(base, "feature.ts"), "utf8")).toBe("export {};\n");
 });
+
+it("removes only Lane Pilot's own worktree of a failed attempt", async () => {
+  const { createWorktree, removeLaneWorktree } = await import("../../src/verification/git-integrate");
+  const { stat } = await import("node:fs/promises");
+  const { base, worktree } = await repo();
+  const own = join(base, "..", "own2", "main");
+  await createWorktree({ basePath: base, targetPath: own, name: "lpattempt_2" });
+  expect(await removeLaneWorktree({ basePath: base, worktreePath: own })).toEqual({ removed: true });
+  expect(await stat(own).catch(() => null)).toBeNull();
+  const foreign = await worktree("bb-owned");
+  expect(await removeLaneWorktree({ basePath: base, worktreePath: foreign })).toEqual({ removed: false });
+});

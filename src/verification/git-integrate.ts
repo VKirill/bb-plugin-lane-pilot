@@ -110,3 +110,12 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   await symlink(base,target,"dir");
   return {linked:["node_modules"]};
 }
+
+/** Removes Lane Pilot's own worktree and its lane/ branch; other worktrees are left alone. */
+export async function removeLaneWorktree(input:{basePath:string;worktreePath:string}):Promise<{removed:boolean}> {
+  const branch=git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"]).stdout.trim();
+  if(!branch.startsWith("lane/")) return {removed:false};
+  const removed=git(input.basePath,["worktree","remove","--force",input.worktreePath]).ok;
+  if(removed) git(input.basePath,["branch","-D",branch]);
+  return {removed};
+}

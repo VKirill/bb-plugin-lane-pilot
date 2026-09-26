@@ -23,6 +23,11 @@ export function parseGitChangedPaths(stdout: string): string[] {
   return [...paths];
 }
 
+export function isOutputPath(entry: string): boolean {
+  const text = entry.trim();
+  return Boolean(text) && !/\s/.test(text) && (text.includes("/") || /\.[A-Za-z0-9]{1,8}$/.test(text));
+}
+
 export function classifyWriterOutput(input: {
   task: TaskV2;
   produced: string[];
@@ -37,11 +42,16 @@ export function classifyWriterOutput(input: {
       return { ok:false, state:"validation_failed", reason:`owns_paths rejected ${file}` };
     }
   }
-  const missing = input.task.expected_outputs.filter((path) => {
+  // A Lane PM may describe an output in prose; only path-like entries name a file to check.
+  const fileOutputs = input.task.expected_outputs.filter(isOutputPath);
+  if (!fileOutputs.length && !input.produced.length) {
+    return { ok:false, state:"empty_output", reason:"writer changed no files" };
+  }
+  const missing = fileOutputs.filter((path) => {
     const content = input.contents[path];
     return !input.produced.includes(path) || content === null || content === undefined;
   });
-  if (missing.length === input.task.expected_outputs.length) {
+  if (fileOutputs.length && missing.length === fileOutputs.length) {
     return { ok:false, state:"empty_output", reason:`missing expected_outputs: ${missing.join(", ")}` };
   }
   if (missing.length > 0) {

@@ -1,4 +1,4 @@
-import { createWorktree, integrateWorktree, prepareWorktree } from "./verification/git-integrate";
+import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree } from "./verification/git-integrate";
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -61,6 +61,11 @@ export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract
 export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message,removeWorktree:input.removeWorktree}),
+});
+
+export const gitRemoveWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitRemoveWorktree"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await removeLaneWorktree({basePath:input.basePath,worktreePath:input.worktreePath}),
 });
 
 export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitCreateWorktree"] = async (input, context) => ({

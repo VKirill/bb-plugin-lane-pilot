@@ -2734,6 +2734,13 @@ export default async function plugin(bb: BbPluginApi) {
             environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision}};
         }
         if (last.status === "accepted") break;
+        // A failed attempt's own worktree is never merged; the next attempt starts from a fresh one.
+        const failedBinding=getAttempt(db,attemptId);
+        const failedBase=getRun(db,input.runId)?.writer_workspace_path;
+        if(failedBinding?.workspace_path&&failedBinding.environment_id===null&&failedBase&&resolve(failedBinding.workspace_path)!==resolve(failedBase)) {
+          await host.call("gitRemoveWorktree",{requestedHostId:input.config.hostId,basePath:failedBase,worktreePath:failedBinding.workspace_path},
+            {hostId:input.config.hostId,timeoutMs:60_000}).catch(()=>undefined);
+        }
         if (last.status === "spawn_rejected" && typeof last.reason === "string"
           && (last.reason.startsWith("execution_packet_failed:") || last.reason.startsWith("attempt_worktree_")
             || last.reason.startsWith("attempt_workspace_"))) {

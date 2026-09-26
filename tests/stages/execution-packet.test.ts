@@ -8,7 +8,7 @@ describe("bounded execution packet", () => {
       return { content:"one\ntwo\nthree\nfour", sha256:"a".repeat(64), sizeBytes:18 };
     });
     expect(packet.entries).toEqual([{ path:"docs/guide.md", sha256:"a".repeat(64), windows:[{ startLine:2, endLine:3, excerpt:"two\nthree" }] }]);
-    expect(renderExecutionPacket(packet)).toContain("two\\nthree");
+    expect(renderExecutionPacket(packet)).toBe("Read these before editing; they are the context for this task:\n- docs/guide.md L2-L3 (sha256 aaaaaaaa)");
     expect(packet.truncated).toBe(false);
     expect(packet.sha256).toMatch(/^[a-f0-9]{64}$/);
   });

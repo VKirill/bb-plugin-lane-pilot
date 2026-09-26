@@ -559,3 +559,14 @@ describe("PM tool gating", () => {
     await harness.lifecycle.dispose();
   });
 });
+
+describe("prose expected outputs", () => {
+  it("checks only path-like outputs and needs some change when none are paths", async () => {
+    const { classifyWriterOutput, isOutputPath } = await import("../src/validate-output");
+    expect(isOutputPath("lib/monitor-store.ts")).toBe(true);
+    expect(isOutputPath("checkHttp enforces the keyword when one is set")).toBe(false);
+    const task = { expected_outputs:["checkHttp enforces the keyword"], owns_paths:["lib/**"], never_touch:[], verify:"none", verification:[] } as never;
+    expect(classifyWriterOutput({ task, produced:["lib/http-check.ts"], contents:{} }).ok).toBe(true);
+    expect(classifyWriterOutput({ task, produced:[], contents:{} })).toMatchObject({ ok:false, state:"empty_output" });
+  });
+});

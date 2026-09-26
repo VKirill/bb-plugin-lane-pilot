@@ -10,6 +10,7 @@ import {
   gitIntegrate,
   gitPrepareWorktree,
   gitCreateWorktree,
+  gitRemoveWorktree,
   applyOnboardingPages,
   listDocsPages,
   detect,
@@ -37,7 +38,7 @@ export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     nativeInstall: nativeInstallHost,
-    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitIntegrate, gitPrepareWorktree, gitCreateWorktree, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
+    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitIntegrate, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
     runCli, runCommand, runSandboxedCommand, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
   },
