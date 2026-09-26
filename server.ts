@@ -19,7 +19,7 @@ import { aggregateRun } from "./src/aggregation";
 import { buildCliInvocation } from "./src/argv-builder";
 import { requiredCliFlags } from "./src/cli-flags";
 import { attemptProduced, classifyCliOutcome, parseDirtSnapshots, type DirtSnapshot } from "./src/cli-outcome";
-import { classifyWriterOutput, type VerifyResult } from "./src/validate-output";
+import { classifyWriterOutput, isOutputPath, type VerifyResult } from "./src/validate-output";
 import { findUnownedChanges, resolveRunOwnershipScope, validateOwnershipContract } from "./src/verification/ownership";
 import { parseReadFirstHints } from "./src/stages/read-first";
 import { buildExecutionPacket, renderExecutionPacket } from "./src/stages/execution-packet";
@@ -2225,7 +2225,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
     recordGateEvaluation(db,{...input,gate:"owns-paths",status:"passed",input:JSON.stringify(input.task),summary:{changedPathCount:checkedPaths.length,branchChangedPathCount:branchChanges.length,scope:"run",taskCount:ownershipScope.taskIds.length,gitBase:gitBase?{ref:gitBase.base_ref,sha:gitBase.base_sha,branch:gitBase.branch,compareCommitted:!!gitBase.compare_committed,pathsSha256:sha256(branchChanges.join("\0"))}:null}});
     const contents: Record<string, string | null> = {};
-    for (const rel of new Set([...input.task.expected_outputs, ...produced])) {
+    for (const rel of new Set([...input.task.expected_outputs.filter(isOutputPath), ...produced])) {
       const absolute = rel.startsWith("/") ? rel : `${input.task.project_cwd}/${rel}`;
       const read = await bb.sdk.files.read({
         hostId:input.config.hostId,
@@ -2267,7 +2267,8 @@ export default async function plugin(bb: BbPluginApi) {
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
   }): Promise<Record<string,unknown>> {
     try {
-      const deadline = Date.now() + 600_000;
+      // A writer reworking a feature with tests, after a slow BB provisioning, needs more than ten minutes.
+      const deadline = Date.now() + 1_800_000;
       let completedThread: unknown;
       while (Date.now() < deadline) {
         const pollStarted = Date.now();
@@ -2739,7 +2740,7 @@ export default async function plugin(bb: BbPluginApi) {
         const failedBase=getRun(db,input.runId)?.writer_workspace_path;
         if(failedBinding?.workspace_path&&failedBinding.environment_id===null&&failedBase&&resolve(failedBinding.workspace_path)!==resolve(failedBase)) {
           await host.call("gitRemoveWorktree",{requestedHostId:input.config.hostId,basePath:failedBase,worktreePath:failedBinding.workspace_path},
-            {hostId:input.config.hostId,timeoutMs:60_000}).catch(()=>undefined);
+            {hostId:input.config.hostId,timeoutMs:60_000}).catch((cause)=>bb.log.warn(`Lane Pilot could not remove worktree of ${attemptId}: ${cause instanceof Error?cause.message:String(cause)}`));
         }
         if (last.status === "spawn_rejected" && typeof last.reason === "string"
           && (last.reason.startsWith("execution_packet_failed:") || last.reason.startsWith("attempt_worktree_")
