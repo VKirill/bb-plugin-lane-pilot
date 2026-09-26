@@ -73,7 +73,11 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
     const h1 = body.split("\n").filter((line) => /^# /.test(line));
     if (h1.length !== 1) add("structure", `page needs exactly one H1, found ${h1.length}`);
     else if (typeof data.title === "string" && h1[0]!.slice(2).trim() !== data.title) add("structure", "H1 must match the frontmatter title");
-    if (/^## Referenced by/m.test(body)) add("builder", "do not write a Referenced by section; the backlinks builder owns it");
+    if (/^## Referenced by/m.test(withoutBacklinks(body))) add("builder", "do not write a Referenced by section; the backlinks builder owns it");
+    // sources must name every file the page cites, or staleness would miss the page when that file changes.
+    const listed = new Set((Array.isArray(data.sources) ? data.sources : []).map((source) => source.replace(/:\d+(-\d+)?$/, "")));
+    const unlisted = [...new Set(pageCitations(body).map((citation) => citation.file))].filter((file) => !listed.has(file));
+    if (unlisted.length) add("frontmatter", `sources must list every cited file; missing ${unlisted.join(", ")}`);
     const citations = pageCitations(body);
     if (citations.length < MIN_CITATIONS) add("evidence", `needs at least ${MIN_CITATIONS} file:line citations, found ${citations.length}`);
     for (const citation of citations) {
@@ -139,13 +143,64 @@ export function buildDocsIndex(pages:DocPage[]):string {
  * What keeps the docs from being complete: pages the methodology requires that no page's type fills,
  * and core code no citation covers. The nightly agent gets both as its task list.
  */
-export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; core:Array<{ name:string; file:string; line:number; endLine:number }> }):{ missingPages:string[]; uncoveredCore:string[] } {
+export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; deploy?:boolean; core:Array<{ name:string; file:string; line:number; endLine:number }> }):{ missingPages:string[]; uncoveredCore:string[] } {
   const types = new Set(pages.map((page) => parseFrontmatter(page.content)?.data.type).filter((type):type is string => typeof type === "string"));
   const required:Array<[string, string]> = [["overview", "docs/overview.md"], ["architecture", "docs/architecture.md"], ["gotchas", "docs/gotchas.md"]];
   if (input.tables.length) required.push(["data-model", "docs/data-model.md"]);
+  if (input.deploy) required.push(["deployment", "docs/deployment.md"]);
   const missingPages = required.filter(([type]) => !types.has(type)).map(([, path]) => path);
   const citations = pages.flatMap((page) => pageCitations(page.content));
   const uncoveredCore = input.core.filter((anchor) => !citations.some((citation) => citation.file === anchor.file
     && citation.start <= anchor.endLine && citation.end >= anchor.line)).map((anchor) => `${anchor.name} (${anchor.file}:${anchor.line}-${anchor.endLine})`);
   return { missingPages, uncoveredCore };
+}
+
+/** Marks the Referenced by block Lane Pilot writes, so the lint can tell it from one an agent wrote. */
+export const BACKLINKS_MARK = "<!-- lane-pilot:backlinks -->";
+
+export function withoutBacklinks(text:string):string {
+  const at = text.indexOf(BACKLINKS_MARK);
+  return at < 0 ? text : text.slice(0, at).replace(/\s+$/, "\n");
+}
+
+/** Every docs page with its Referenced by block rebuilt from the relative links of the other pages. */
+export function buildBacklinks(pages:DocPage[]):Array<{ path:string; content:string }> {
+  const docs = pages.filter((page) => page.path.startsWith("docs/") && page.path !== "docs/index.md");
+  const inbound = new Map<string, Set<string>>();
+  for (const page of docs) {
+    for (const link of withoutBacklinks(page.content).matchAll(/\]\(([^)#\s]+\.md)(?:#[^)]*)?\)/g)) {
+      if (/^[a-z]+:\/\//i.test(link[1]!)) continue;
+      const target = resolveRelative(page.path, link[1]!);
+      if (target !== page.path) inbound.set(target, new Set([...(inbound.get(target) ?? []), page.path]));
+    }
+  }
+  const title = (path:string) => {
+    const data = parseFrontmatter(docs.find((page) => page.path === path)?.content ?? "")?.data;
+    return typeof data?.title === "string" ? data.title : path;
+  };
+  return docs.map((page) => {
+    const from = [...(inbound.get(page.path) ?? [])].sort();
+    const base = withoutBacklinks(page.content);
+    if (!from.length) return { path:page.path, content:base };
+    const links = from.map((source) => `- [${title(source)}](${relativeLink(page.path, source)})`);
+    return { path:page.path, content:`${base.replace(/\n*$/, "\n")}\n${BACKLINKS_MARK}\n## Referenced by\n\n${links.join("\n")}\n` };
+  });
+}
+
+function relativeLink(from:string, to:string):string {
+  const a = from.split("/").slice(0, -1), b = to.split("/");
+  let shared = 0;
+  while (shared < a.length && shared < b.length - 1 && a[shared] === b[shared]) shared++;
+  return [...a.slice(shared).map(() => ".."), ...b.slice(shared)].join("/");
+}
+
+/**
+ * confidence from what was verified, not from a source count: the share of a page's claims Jev
+ * found backed by the cited code.
+ */
+export function withVerifiedConfidence(content:string, verified:{ checked:number; supported:number }):string {
+  if (verified.checked === 0) return content;
+  const share = verified.supported / verified.checked;
+  const level = share >= 0.9 && verified.checked >= 10 ? "high" : share >= 0.7 ? "medium" : "low";
+  return content.replace(/^(---\n[\s\S]*?^confidence:\s*)\S+/m, `$1${level}`);
 }

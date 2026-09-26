@@ -86,7 +86,7 @@ export const docsAnchors: ExperimentalHostRpcHandlers<typeof hostContract>["docs
 });
 
 export const docsVerifyCitations: ExperimentalHostRpcHandlers<typeof hostContract>["docsVerifyCitations"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await verifyDocsCitations({projectCwd:input.projectCwd,pages:input.pages}),
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await verifyDocsCitations({projectCwd:input.projectCwd,pages:input.pages,related:input.related}),
 });
 
 export const docsStalenessHandler: ExperimentalHostRpcHandlers<typeof hostContract>["docsStaleness"] = async (input) => ({

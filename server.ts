@@ -163,7 +163,7 @@ import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./
 import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./src/workspace/routing";
 import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, localDateKey, NIGHTLY_DOCS_WRITABLE, nightlyDocsPrompt, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage } from "./src/stages/docs";
-import { buildDocsIndex, citedFiles, docsCompletenessGaps, lintDocsPages, pagesToRefresh } from "./src/stages/docs-lint";
+import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withVerifiedConfidence } from "./src/stages/docs-lint";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
 import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "./src/stages/night-fix";
@@ -4568,15 +4568,16 @@ export default async function plugin(bb: BbPluginApi) {
             .filter((page)=>page.path.startsWith("docs/")) as Array<{path:string;sha256:string;content:string}>;
           const existing=before.hasDocs?await docsPages():[];
           // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the docs.
-          const rootPages=before.hasDocs?(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
+          const readRootPages=async()=>(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
             const file=await bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}).catch(()=>null);
             return file&&typeof file.content==="string"?{path,content:file.content}:null;
-          }))).filter((page):page is {path:string;content:string}=>page!==null):[];
+          }))).filter((page):page is {path:string;content:string}=>page!==null);
+          const rootPages=before.hasDocs?await readRootPages():[];
           const pageInput=existing.filter((page)=>page.path!=="docs/index.md").map((page)=>({path:page.path,content:page.content}));
           // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
           const anchors=await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,
             pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
-          const gaps=before.hasDocs?docsCompletenessGaps(existing,{tables:anchors?.tables??[],core:anchors?.core??[]}):{missingPages:[],uncoveredCore:[]};
+          const gaps=before.hasDocs?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[]}):{missingPages:[],uncoveredCore:[]};
           let refresh=before.hasDocs?pagesToRefresh(existing,before.changed):[];
           if(before.hasDocs){
             const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
@@ -4598,7 +4599,7 @@ export default async function plugin(bb: BbPluginApi) {
           const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
           const spawned=await bb.sdk.threads.spawn({projectId:project.id,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}`,
             ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
-            prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed:before.changed,refresh,anchorsPath:anchors?.briefPath,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined}),
+            prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed:before.changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined}),
             environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
             pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
           const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
@@ -4611,14 +4612,19 @@ export default async function plugin(bb: BbPluginApi) {
             const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(pages)},{hostId:place.hostId,timeoutMs:60_000})).counts;
             const docsDirty=after.dirty.filter((path)=>NIGHTLY_DOCS_WRITABLE(path));
             const findings=lintDocsPages(pages,counts);
-            // Structure first; once it holds, Jev checks that each cited line backs its claim on the pages written now.
+            let pageStats:Array<{path:string;checked:number;supported:number}>=[];
+            // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
+            // and pairs of claims across all the docs that cite the same code for contradictions.
             if(!findings.length){
-              const written=pages.filter((page)=>docsDirty.includes(page.path)&&page.path!=="docs/index.md");
+              const roots=await readRootPages();
+              const all=[...pages.filter((page)=>page.path!=="docs/index.md").map((page)=>({path:page.path,content:page.content})),...roots];
+              const written=all.filter((page)=>docsDirty.includes(page.path));
               const cited=written.length?await host.call("docsVerifyCitations",{requestedHostId:place.hostId,projectCwd:place.path,
-                pages:written.map((page)=>({path:page.path,content:page.content}))},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null):null;
+                pages:written,related:all.filter((page)=>!docsDirty.includes(page.path))},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
               findings.push(...(cited?.findings??[]));
+              pageStats=cited?.pageStats??[];
             }
-            return {touched,pages,docsDirty,outside:touched.filter((path)=>!NIGHTLY_DOCS_WRITABLE(path)),findings};
+            return {touched,pages,docsDirty,pageStats,outside:touched.filter((path)=>!NIGHTLY_DOCS_WRITABLE(path)),findings};
           };
           let checked=await inspect();
           if(!checked.outside.length&&checked.findings.length){
@@ -4628,14 +4634,27 @@ export default async function plugin(bb: BbPluginApi) {
           }
           // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
           // what Jev alone still doubts goes to the report as a warning; the deterministic checks keep blocking.
-          const warnings=checked.findings.filter((finding)=>finding.rule==="evidence-check");
-          checked={...checked,findings:checked.findings.filter((finding)=>finding.rule!=="evidence-check")};
+          const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction";
+          const warnings=checked.findings.filter(judged);
+          checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};
           let commit:string|null=null;
           // Every docs page passed the checks, so docs left uncommitted by an earlier pass go in too; code never does.
           if(!checked.outside.length&&!checked.findings.length&&checked.docsDirty.length){
+            // Builders own what the model must not write: Referenced by blocks, verified confidence, the index.
+            const stats=new Map(checked.pageStats.map((stat)=>[stat.path,stat]));
+            const built=buildBacklinks(checked.pages).map((page)=>{
+              const stat=stats.get(page.path);
+              return {path:page.path,content:stat?withVerifiedConfidence(page.content,stat):page.content};
+            });
             const current=checked.pages.find((page)=>page.path==="docs/index.md");
-            const edits=[{path:"docs/index.md",expectedSha256:current?.sha256??null,content:buildDocsIndex(checked.pages)}];
-            if(current?.content!==edits[0]!.content){
+            const edits=[
+              ...built.flatMap((page)=>{
+                const original=checked.pages.find((row)=>row.path===page.path)!;
+                return original.content===page.content?[]:[{path:page.path,expectedSha256:original.sha256,content:page.content}];
+              }),
+              {path:"docs/index.md",expectedSha256:current?.sha256??null,content:buildDocsIndex(built)},
+            ].filter((edit)=>edit.path!=="docs/index.md"||current?.content!==edit.content);
+            if(edits.length){
               await host.call("applyOnboardingPages",{requestedHostId:place.hostId,projectCwd:place.path,confirmed:true,
                 previewSha256:sha256(JSON.stringify(edits)),edits},{hostId:place.hostId,timeoutMs:60_000});
             }

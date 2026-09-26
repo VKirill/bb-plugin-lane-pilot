@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh } from "../../src/stages/docs-lint";
+import { BACKLINKS_MARK, buildBacklinks, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withVerifiedConfidence } from "../../src/stages/docs-lint";
 import { commitDocs } from "../../src/verification/git-docs";
 
 const page = (fields: Record<string, string>, body: string) => [
@@ -66,4 +66,31 @@ it("lists missing required pages and core code no citation covers", () => {
   ] });
   expect(gaps).toEqual({ missingPages:["docs/architecture.md", "docs/gotchas.md", "docs/data-model.md"], uncoveredCore:["parseArgv (src/cli.ts:10-30)"] });
   expect(docsCompletenessGaps(pages, { tables:[], core:[] }).missingPages).not.toContain("docs/data-model.md");
+});
+
+it("needs every cited file in sources and asks for deployment when the project builds", () => {
+  const cites = page({}, "# Checks\n\nA (src/check.ts:1). B (src/other.ts:2). C (src/check.ts:3).\n");
+  expect(lintDocsPages([{ path:"docs/a.md", content:cites }], { "src/check.ts":9, "src/other.ts":9 }).map((f) => f.detail))
+    .toContain("sources must list every cited file; missing src/other.ts");
+  expect(docsCompletenessGaps([], { tables:[], deploy:true, core:[] }).missingPages).toContain("docs/deployment.md");
+});
+
+it("builds Referenced by blocks the lint accepts, and rebuilds them without duplicates", () => {
+  const pages = [
+    { path:"docs/features/checks.md", content:page({}, good) },
+    { path:"docs/features/cli.md", content:page({ title:"CLI" }, good.replace("# Checks", "# CLI").replace("[CLI](cli.md)", "[Checks](checks.md)")) },
+    { path:"docs/overview.md", content:page({ title:"Overview", type:"overview" }, "# Overview\n\nSee [checks](features/checks.md) (src/check.ts:1, src/check.ts:2, src/check.ts:3).\n") },
+  ];
+  const built = buildBacklinks(pages);
+  const checks = built.find((p) => p.path === "docs/features/checks.md")!.content;
+  expect(checks).toContain(`${BACKLINKS_MARK}\n## Referenced by\n\n- [CLI](cli.md)\n- [Overview](../overview.md)\n`);
+  expect(buildBacklinks(built).find((p) => p.path === "docs/features/checks.md")!.content).toBe(checks);
+  expect(lintDocsPages(built, { "src/check.ts": 9 })).toEqual([]);
+});
+
+it("sets confidence from the verified share of claims", () => {
+  const content = page({}, good);
+  expect(withVerifiedConfidence(content, { checked:12, supported:12 })).toMatch(/^confidence: high$/m);
+  expect(withVerifiedConfidence(content, { checked:10, supported:5 })).toMatch(/^confidence: low$/m);
+  expect(withVerifiedConfidence(content, { checked:0, supported:0 })).toBe(content);
 });

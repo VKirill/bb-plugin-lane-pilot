@@ -129,14 +129,15 @@ const METHODOLOGY = [
   "- type is one of overview, architecture, data-model, decisions, deployment, gotchas, gaps, active-areas, active-tasks, component. One H1 equal to title, then a one-line TL;DR.",
   "- Every non-trivial claim cites file:line or file:start-end that exists; at least 3 citations per page. No hedges (typically, usually, should) without a citation, no marketing words (powerful, seamless, robust, comprehensive, intuitive, leverage), no dates in prose.",
   "- Link pages with relative paths. Never write docs/index.md or a 'Referenced by' section: Lane Pilot builds them.",
-  "- Wiki pages in English. Root README.md is for people, in plain Russian (Что это, Функции, Стек коротко, Запуск). Root PROJECT.md is for agents, dense English facts (Identity, Entry points, Critical invariants, Conventions, Common gotchas, Useful commands).",
+  "- Everything in English. Root README.md is the short front page for people: what it is, what it does, quick start, and links into docs/ - no detail that docs/ already holds. Root PROJECT.md is for agents: dense facts (Identity, Entry points, Critical invariants, Conventions, Common gotchas, Useful commands), each linking to the page that owns it.",
+  "- One owner per fact: a value, limit, rule or command is stated on the one page that owns it (a table in data-model, a limit in its feature page) and other pages link there instead of repeating it. Lane Pilot checks claims that cite the same code across pages for contradictions.",
 ];
 
 /**
  * The nightly docs agent works in the project folder with file access, like claude-lane's
  * docs-maintain: no docs/ yet means onboarding, otherwise only pages about changed code.
  */
-export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string;
+export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string; deploy?:boolean;
   missingPages?:string[]; uncoveredCore?:string[]; agent?:string}):string {
   const listed = input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
   const refresh = input.refresh ?? [];
@@ -160,8 +161,9 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
         "- docs/architecture.md (architecture): parts and how they talk, with one mermaid C4 container or component diagram of at most 12 nodes.",
         "- docs/features/<capability>.md (component), one per user-facing capability: Purpose, Business rules, Public API or commands, Gotchas.",
         "- docs/data-model.md (data-model) when the code stores data: every table or collection with its fields, keys and who writes it.",
+        ...(input.deploy ? ["- docs/deployment.md (deployment): how to install dependencies, build, test, install and configure it, as runnable steps taken from the scripts."] : []),
         "- docs/gotchas.md (gotchas) with the traps you find in the code; docs/decisions.md (decisions, ADR: Context, Decision, Status, Consequences) only for decisions the code or history shows.",
-        "- README.md (Russian, for people) and PROJECT.md (English, for agents) at the project root; keep facts already in README.md.",
+        "- README.md (the short front page for people) and PROJECT.md (for agents) at the project root; keep facts already in README.md, but move detail into docs/ and link to it.",
       ].join("\n"),
     "",
     "Read the code before writing about it. Write only docs/**, README.md and PROJECT.md; do not edit code, tests or settings, and do not commit. Lane Pilot checks the pages, builds docs/index.md and commits.",

@@ -154,11 +154,13 @@ export const hostContract = defineRpcContract({
   docsAnchors: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), pages:z.array(z.object({ path:z.string(), title:z.string() })).max(500) }).strict(),
     output: z.object({ hostId:z.string(), briefPath:z.string(), anchors:z.number().int(), jev:z.enum(["ok","partial","disabled"]), productFiles:z.array(z.string()),
-      core:z.array(z.object({ name:z.string(), file:z.string(), line:z.number().int(), endLine:z.number().int() })), tables:z.array(z.string()) }).strict(),
+      core:z.array(z.object({ name:z.string(), file:z.string(), line:z.number().int(), endLine:z.number().int() })), tables:z.array(z.string()), deploy:z.boolean() }).strict(),
   },
   docsVerifyCitations: {
-    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), pages:z.array(z.object({ path:z.string(), content:z.string() })).max(500) }).strict(),
-    output: z.object({ hostId:z.string(), jev:z.enum(["ok","partial","disabled"]), checked:z.number().int(), findings:z.array(z.object({ path:z.string(), rule:z.string(), detail:z.string() })) }).strict(),
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), pages:z.array(z.object({ path:z.string(), content:z.string() })).max(500),
+      related:z.array(z.object({ path:z.string(), content:z.string() })).max(500).optional() }).strict(),
+    output: z.object({ hostId:z.string(), jev:z.enum(["ok","partial","disabled"]), checked:z.number().int(), findings:z.array(z.object({ path:z.string(), rule:z.string(), detail:z.string() })),
+      pageStats:z.array(z.object({ path:z.string(), checked:z.number().int(), supported:z.number().int() })) }).strict(),
   },
   docsStaleness: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), base:z.string().min(1), changed:z.array(z.string()).max(5000), pages:z.array(z.object({ path:z.string(), content:z.string() })).max(500) }).strict(),

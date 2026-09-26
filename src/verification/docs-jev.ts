@@ -160,7 +160,7 @@ async function dependencies(projectCwd:string):Promise<string[]> {
  * Maps the project's code into anchors, has Jev mark business rules, entry points, importance and
  * page, and writes the brief the docs agent starts from under .git/, outside anything git tracks.
  */
-export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ path:string; title:string }> }):Promise<{ briefPath:string; anchors:number; jev:JevStatus; productFiles:string[]; core:Array<{ name:string; file:string; line:number; endLine:number }>; tables:string[] }> {
+export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ path:string; title:string }> }):Promise<{ briefPath:string; anchors:number; jev:JevStatus; productFiles:string[]; core:Array<{ name:string; file:string; line:number; endLine:number }>; tables:string[]; deploy:boolean }> {
   const files = await trackedCode(input.projectCwd);
   const tests:string[] = [];
   let anchors:Anchor[] = [];
@@ -198,7 +198,10 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   const core = anchors.filter((anchor) => anchor.kind !== "type" && anchor.kind !== "table" && (anchor.projectSpecific ?? 0) >= 0.5 && (anchor.importance ?? 0) >= 1.5)
     .map(({ name, file, line, endLine }) => ({ name, file, line, endLine }));
   const tables = [...new Set(anchors.filter((anchor) => anchor.kind === "table").map((anchor) => anchor.name))].sort();
-  return { briefPath, anchors:anchors.length, jev:key ? status(asked, answered) : "disabled", productFiles, core, tables };
+  // A project with a build or install script needs a how-to page for building, installing and running it.
+  const scripts = await readFile(join(input.projectCwd, "package.json"), "utf8").then((text) => (JSON.parse(text) as { scripts?:Record<string, string> }).scripts ?? {}).catch(() => ({} as Record<string, string>));
+  const deploy = Boolean(scripts.build || scripts.install || scripts.start || scripts.deploy);
+  return { briefPath, anchors:anchors.length, jev:key ? status(asked, answered) : "disabled", productFiles, core, tables, deploy };
 }
 
 const pct = (value:number | undefined) => value === undefined ? "?" : `${Math.round(value * 100)}%`;
@@ -263,9 +266,10 @@ export function pageClaims(body:string):Array<{ claim:string; refs:ClaimRef[] }>
 const refLabel = (ref:ClaimRef) => `${ref.file}:${ref.start}${ref.end !== ref.start ? `-${ref.end}` : ""}`;
 
 /** Asks Jev whether the cited code backs each claim; an unsupported one becomes a lint finding. */
-export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array<{ path:string; content:string }> }):Promise<{ jev:JevStatus; checked:number; findings:Array<{ path:string; rule:string; detail:string }> }> {
+export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array<{ path:string; content:string }>; related?:Array<{ path:string; content:string }> }):Promise<{ jev:JevStatus; checked:number;
+  findings:Array<{ path:string; rule:string; detail:string }>; pageStats:Array<{ path:string; checked:number; supported:number }> }> {
   const key = await jevApiKey();
-  if (!key) return { jev:"disabled", checked:0, findings:[] };
+  if (!key) return { jev:"disabled", checked:0, findings:[], pageStats:[] };
   const checks = input.pages.flatMap((page) => {
     const body = page.content.replace(/^---\n[\s\S]*?\n---\n?/, "");
     return pageClaims(body).map((claim) => ({ path:page.path, ...claim }));
@@ -277,6 +281,7 @@ export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array
   }
   const findings:Array<{ path:string; rule:string; detail:string }> = [];
   let answered = 0;
+  const stats = new Map<string, { checked:number; supported:number }>();
   const criteria = { supported:"Together the cited code shows the behaviour, values or names the claim attributes to it.",
     partial:"The cited code is related and shows part of the claim; the rest is not in these lines.",
     unsupported:"The cited code does not show what the claim says, or contradicts it." };
@@ -293,13 +298,54 @@ export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array
       { support:{ type:"choice", instructions:{ claim:check.claim, question:"Does the cited code in `excerpts` show what `claim` says it shows?" }, criteria } });
     if (!answers) return;
     answered++;
+    const stat = stats.get(check.path) ?? { checked:0, supported:0 };
+    stat.checked++;
+    if (answers.support?.choice === "supported") stat.supported++;
+    stats.set(check.path, stat);
     const unsupported = answers.support?.probabilities?.unsupported ?? 0;
     if (answers.support?.choice === "unsupported" && unsupported >= 0.6) {
       findings.push({ path:check.path, rule:"evidence-check",
         detail:`${check.refs.map(refLabel).join(", ")} do not back "${check.claim.slice(0, 160)}" (Jev ${Math.round(unsupported * 100)}%)` });
     }
   });
-  return { jev:status(checks.length, answered), checked:checks.length, findings };
+  const contradictions = await findContradictions(key, [...input.pages, ...(input.related ?? [])], new Set(input.pages.map((page) => page.path)));
+  findings.push(...contradictions.findings);
+  return { jev:status(checks.length + contradictions.asked, answered + contradictions.answered), checked:checks.length, findings,
+    pageStats:[...stats].map(([path, stat]) => ({ path, ...stat })) };
+}
+
+const MAX_CONTRADICTION_PAIRS = 150;
+
+/**
+ * Two pages that cite the same lines describe the same code; Jev checks each such pair of claims
+ * for a contradiction. Pairs involve at least one page written now; the rest of the docs are context.
+ */
+async function findContradictions(key:string, pages:Array<{ path:string; content:string }>, written:Set<string>):Promise<{ asked:number; answered:number; findings:Array<{ path:string; rule:string; detail:string }> }> {
+  const claims = pages.flatMap((page) => pageClaims(page.content.replace(/^---\n[\s\S]*?\n---\n?/, "")).map((claim) => ({ path:page.path, ...claim })));
+  const overlaps = (a:ClaimRef, b:ClaimRef) => a.file === b.file && a.start <= b.end && b.start <= a.end;
+  const pairs:Array<[typeof claims[number], typeof claims[number]]> = [];
+  for (let i = 0; i < claims.length && pairs.length < MAX_CONTRADICTION_PAIRS; i++) for (let j = i + 1; j < claims.length && pairs.length < MAX_CONTRADICTION_PAIRS; j++) {
+    const a = claims[i]!, b = claims[j]!;
+    if (a.path === b.path || (!written.has(a.path) && !written.has(b.path)) || a.claim === b.claim) continue;
+    if (a.refs.some((ref) => b.refs.some((other) => overlaps(ref, other)))) pairs.push([a, b]);
+  }
+  const findings:Array<{ path:string; rule:string; detail:string }> = [];
+  let answered = 0;
+  await pool(pairs, async ([a, b]) => {
+    const answers = await jevAsk(key, { first:{ page:a.path, statement:a.claim }, second:{ page:b.path, statement:b.claim } }, { relation:{ type:"choice",
+      instructions:"Both statements describe the same lines of code. Can both be true at the same time?",
+      criteria:{ consistent:"Both can be true: they agree, or describe different aspects without conflict.",
+        contradict:"They state different values, behaviour or names for the same thing, so one of them must be wrong." } } });
+    if (!answers) return;
+    answered++;
+    const p = answers.relation?.probabilities?.contradict ?? 0;
+    if (answers.relation?.choice === "contradict" && p >= 0.6) {
+      const target = written.has(a.path) ? a : b, other = target === a ? b : a;
+      findings.push({ path:target.path, rule:"contradiction",
+        detail:`"${target.claim.slice(0, 140)}" contradicts ${other.path}: "${other.claim.slice(0, 140)}" (Jev ${Math.round(p * 100)}%)` });
+    }
+  });
+  return { asked:pairs.length, answered, findings };
 }
 
 // ---- staleness ----------------------------------------------------------------------------
