@@ -160,6 +160,16 @@ export const hostContract = defineRpcContract({
     output: z.object({ hostId:z.string(), briefPath:z.string(), anchors:z.number().int(), jev:z.enum(["ok","partial","disabled"]), productFiles:z.array(z.string()),
       core:z.array(z.object({ name:z.string(), file:z.string(), line:z.number().int(), endLine:z.number().int() })), tables:z.array(z.string()), deploy:z.boolean() }).strict(),
   },
+  docsFlows: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), workspaces:z.array(z.object({ path:z.string(), name:z.string() })).max(500) }).strict(),
+    output: z.object({ hostId:z.string(), briefPath:z.string(), jev:z.enum(["ok","partial","disabled"]), routes:z.number().int(),
+      flows:z.array(z.object({ name:z.string(), slug:z.string(), entries:z.number().int(), modules:z.array(z.string()) })) }).strict(),
+  },
+  docsDepth: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), pages:z.array(z.object({ path:z.string(), content:z.string() })).max(500),
+      core:z.array(z.object({ name:z.string(), file:z.string(), line:z.number().int(), endLine:z.number().int() })).max(2000) }).strict(),
+    output: z.object({ hostId:z.string(), jev:z.enum(["ok","partial","disabled"]), findings:z.array(z.object({ path:z.string(), rule:z.string(), detail:z.string() })) }).strict(),
+  },
   docsVerifyCitations: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), pages:z.array(z.object({ path:z.string(), content:z.string() })).max(500),
       related:z.array(z.object({ path:z.string(), content:z.string() })).max(500).optional() }).strict(),

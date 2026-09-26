@@ -5,7 +5,9 @@
  */
 
 export const DOC_PAGE_TYPES = ["overview", "architecture", "data-model", "decisions", "deployment", "gotchas", "gaps",
-  "active-areas", "active-tasks", "component", "index"] as const;
+  "active-areas", "active-tasks", "component", "flow", "index"] as const;
+/** Page types that describe behaviour and must say how it works, not only what exists. */
+const HOW_IT_WORKS_TYPES = ["component", "flow"];
 const STATUSES = ["draft", "active", "stale", "deprecated"];
 const CONFIDENCE = ["high", "medium", "low"];
 const REQUIRED = ["title", "type", "created", "updated", "status", "confidence", "tags", "sources"];
@@ -13,7 +15,8 @@ const MIN_CITATIONS = 3;
 /** English marketing words the methodology forbids in wiki pages. */
 const MARKETING = ["leverage", "leverages", "powerful", "seamless", "seamlessly", "robust", "comprehensive", "intuitive",
   "cutting-edge", "state-of-the-art", "enterprise-grade"];
-const CITATION = /([A-Za-z0-9_@.\/-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?/g;
+/** file:line or file:start-end; paths may hold Nuxt route brackets such as server/api/[slug].get.ts. */
+const CITATION = /([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?/g;
 
 export type DocPage = { path:string; content:string };
 
@@ -22,6 +25,7 @@ export const isDocsPage = (path:string):boolean => /(^|\/)docs\/.+\.md$/.test(pa
 /** The builder-owned index of a docs folder. */
 export const isDocsIndex = (path:string):boolean => /(^|\/)docs\/index\.md$/.test(path);
 const isDocsContent = (path:string):boolean => isDocsPage(path) && !isDocsIndex(path);
+const docsDirOf = (path:string):string => /^(.*?(?:^|\/)?docs)\//.exec(path)?.[1] ?? "";
 export type Frontmatter = Record<string, string | string[]>;
 export type DocsFinding = { path:string; rule:string; detail:string };
 
@@ -79,6 +83,7 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
     const h1 = body.split("\n").filter((line) => /^# /.test(line));
     if (h1.length !== 1) add("structure", `page needs exactly one H1, found ${h1.length}`);
     else if (typeof data.title === "string" && h1[0]!.slice(2).trim() !== data.title) add("structure", "H1 must match the frontmatter title");
+    if (typeof data.type === "string" && HOW_IT_WORKS_TYPES.includes(data.type) && !/^## How it works\b/m.test(body)) add("structure", "a component or flow page needs a '## How it works' section: the steps in order, the modes and states it branches on, and what happens on failure");
     if (/^## Referenced by/m.test(withoutBacklinks(body))) add("builder", "do not write a Referenced by section; the backlinks builder owns it");
     const citations = pageCitations(body);
     if (citations.length < MIN_CITATIONS) add("evidence", `needs at least ${MIN_CITATIONS} file:line citations, found ${citations.length}`);
@@ -93,7 +98,8 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
       const target = link[1]!;
       if (/^[a-z]+:\/\//i.test(target)) continue;
       const resolved = resolveRelative(page.path, target);
-      if (isDocsPage(resolved) && !paths.has(resolved)) add("links", `link ${target} points at a page that does not exist`);
+      // A link into another workspace's docs may point at a page that folder's own pass is still writing: a warning, not a block.
+      if (isDocsPage(resolved) && !paths.has(resolved)) add(docsDirOf(resolved) === docsDirOf(page.path) ? "links" : "links-external", `link ${target} points at a page that does not exist`);
     }
   }
   return findings;
@@ -152,7 +158,7 @@ export function buildDocsIndex(pages:DocPage[], docsDir = "docs", workspaces:Arr
  * What keeps the docs from being complete: pages the methodology requires that no page's type fills,
  * and core code no citation covers. The nightly agent gets both as its task list.
  */
-export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; deploy?:boolean; core:Array<{ name:string; file:string; line:number; endLine:number }>; docsDir?:string; workspace?:boolean }):{ missingPages:string[]; uncoveredCore:string[] } {
+export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; deploy?:boolean; core:Array<{ name:string; file:string; line:number; endLine:number }>; docsDir?:string; workspace?:boolean; flows?:string[] }):{ missingPages:string[]; uncoveredCore:string[] } {
   const docsDir = input.docsDir ?? "docs";
   const types = new Set(pages.map((page) => parseFrontmatter(page.content)?.data.type).filter((type):type is string => typeof type === "string"));
   // A workspace inherits architecture, gotchas and deployment from the root docs and needs only its own overview.
@@ -160,7 +166,9 @@ export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; d
     : [["overview", `${docsDir}/overview.md`], ["architecture", `${docsDir}/architecture.md`], ["gotchas", `${docsDir}/gotchas.md`]];
   if (input.tables.length) required.push(["data-model", `${docsDir}/data-model.md`]);
   if (input.deploy) required.push(["deployment", `${docsDir}/deployment.md`]);
-  const missingPages = required.filter(([type]) => !types.has(type)).map(([, path]) => path);
+  const paths = new Set(pages.map((page) => page.path));
+  const missingPages = [...required.filter(([type]) => !types.has(type)).map(([, path]) => path),
+    ...(input.flows ?? []).map((slug) => `${docsDir}/flows/${slug}.md`).filter((path) => !paths.has(path))];
   const citations = pages.flatMap((page) => pageCitations(page.content));
   const uncoveredCore = input.core.filter((anchor) => !citations.some((citation) => citation.file === anchor.file
     && citation.start <= anchor.endLine && citation.end >= anchor.line)).map((anchor) => `${anchor.name} (${anchor.file}:${anchor.line}-${anchor.endLine})`);

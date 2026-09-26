@@ -4649,7 +4649,13 @@ export default async function plugin(bb: BbPluginApi) {
     const anchors=await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
       ...(unit.workspace?{}:{exclude:ctx.exclude,...(ctx.workspaces.length?{workspaces:ctx.workspaces}:{})}),
       pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null);
-    const gaps=before.hasDocs?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace)}):{missingPages:[],uncoveredCore:[]};
+    // The root traces business processes across the whole repository first, so its agent writes one page per flow.
+    const flows=unit.workspace?null:await host.call("docsFlows",{requestedHostId:place.hostId,projectCwd:place.path,
+      workspaces:ctx.workspaces.map((workspace)=>({path:workspace.path,name:workspace.name}))},{hostId:place.hostId,timeoutMs:1_800_000}).catch((cause)=>{
+      bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
+    const usableFlows=flows&&flows.flows.length?flows:null;
+    const gaps=before.hasDocs?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace),
+      flows:usableFlows?.flows.map((flow)=>flow.slug)}):{missingPages:[],uncoveredCore:[]};
     let refresh=before.hasDocs?pagesToRefresh(existing,changed):[];
     if(before.hasDocs){
       const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
@@ -4672,7 +4678,7 @@ export default async function plugin(bb: BbPluginApi) {
     const threadId=await spawnDocsThread({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:""}`,
       ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
       prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
-        agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit}),
+        agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,flowsPath:usableFlows?.briefPath}),
       environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
       pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
     await waitThreadIdle(bb,threadId,"docs_nightly");
@@ -4703,6 +4709,10 @@ export default async function plugin(bb: BbPluginApi) {
           pages:written.slice(0,500),related:all.filter((page)=>!docsDirty.includes(page.path)).slice(0,500)},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null):null;
         findings.push(...(cited?.findings??[]));
         pageStats=cited?.pageStats??[];
+        // And whether the written pages explain the core code well enough that nobody has to open it.
+        const depth=written.length&&anchors?.core.length?await host.call("docsDepth",{requestedHostId:place.hostId,projectCwd:place.path,
+          pages:written.slice(0,500),core:anchors.core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
+        findings.push(...(depth?.findings??[]));
       }
       return {touched,docsDirty,pageStats,findings};
     };
@@ -4716,7 +4726,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
     // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
     // what Jev alone still doubts goes to the report as a warning; the deterministic checks keep blocking.
-    const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction";
+    const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction"||finding.rule==="depth"||finding.rule==="links-external";
     const warnings=checked.findings.filter(judged);
     checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};
     let commit:string|null=null;
@@ -4755,6 +4765,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const failure=checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
     const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:changed.length,refreshed:refresh,gaps,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
+      ...(usableFlows?{flows:usableFlows.flows.map((flow)=>`${flow.slug} (${flow.entries} entries)`),routes:usableFlows.routes}:{}),
       docsWritten:checked.touched.filter(writable),commit,...(reverted.length?{reverted}:{}),...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
     await bb.storage.kv.set(`docs-nightly:${ctx.projectId}:${sha256(`${place.path}\n${d}`).slice(0,12)}`,{...row,at:Date.now()});
     bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path} ${d}`);

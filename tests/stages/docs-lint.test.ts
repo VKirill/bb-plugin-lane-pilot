@@ -12,7 +12,7 @@ const page = (fields: Record<string, string>, body: string) => [
     confidence: "medium", tags: "[http]", ...fields }).map(([key, value]) => `${key}: ${value}`),
   "sources:", "  - src/check.ts", "---", "", body,
 ].join("\n");
-const good = "# Checks\n\nChecks run each minute (src/check.ts:1-3). Status is recorded (src/check.ts:5). Errors are kept (src/check.ts:7). See [CLI](cli.md).\n";
+const good = "# Checks\n\nChecks run each minute (src/check.ts:1-3).\n\n## How it works\n\nStatus is recorded (src/check.ts:5). Errors are kept (src/check.ts:7). See [CLI](cli.md).\n";
 
 it("passes a page that follows the methodology", () => {
   const pages = [{ path: "docs/features/checks.md", content: page({}, good) }, { path: "docs/features/cli.md", content: page({ title: "CLI" }, good.replace("# Checks", "# CLI")) }];
@@ -106,9 +106,21 @@ it("checks and indexes a workspace's own docs folder, and links the workspaces f
     { path:"docs/architecture.md", content:page({ title:"Architecture", type:"architecture" }, "# Architecture\n\nParts (src/check.ts:1-3). API: [overview](../apps/api/docs/overview.md). A (src/check.ts:4). B (src/check.ts:5).\n") },
   ];
   expect(lintDocsPages(pages, { "src/check.ts": 9 }).map((finding) => `${finding.path} ${finding.rule}`)).toEqual(["apps/api/docs/overview.md links"]);
+  expect(lintDocsPages([pages[1]!], { "src/check.ts": 9 }).map((finding) => finding.rule)).toEqual(["links-external"]);
   expect(buildDocsIndex(pages, "apps/api/docs")).toContain("| [API](overview.md) | overview |");
   expect(buildDocsIndex(pages, "apps/api/docs")).not.toContain("Architecture");
   expect(buildDocsIndex(pages, "docs", [{ name:"@x/api", docsDir:"apps/api/docs" }])).toContain("| @x/api | [apps/api/docs/](../apps/api/docs/index.md) |");
   expect(buildBacklinks(pages).find((p) => p.path === "docs/architecture.md")!.content).toContain("- [API](../apps/api/docs/overview.md)");
   expect(docsCompletenessGaps([], { tables:[], core:[], docsDir:"apps/api/docs", workspace:true }).missingPages).toEqual(["apps/api/docs/overview.md"]);
+});
+
+it("reads citations of Nuxt route files with brackets", () => {
+  const nuxt = page({}, "# Checks\n\n## How it works\n\nA (server/api/[slug].get.ts:1). B (server/api/[slug].get.ts:2). C (server/api/[slug].get.ts:3).\n");
+  expect(lintDocsPages([{ path:"docs/features/checks.md", content:nuxt }], { "server/api/[slug].get.ts":9 })).toEqual([]);
+});
+
+it("asks behaviour pages to say how it works and lists missing flow pages", () => {
+  const thin = page({}, "# Checks\n\nA (src/check.ts:1). B (src/check.ts:2). C (src/check.ts:3).\n");
+  expect(lintDocsPages([{ path:"docs/features/checks.md", content:thin }], { "src/check.ts":9 }).map((f) => f.detail)).toEqual([expect.stringContaining("'## How it works'")]);
+  expect(docsCompletenessGaps([], { tables:[], core:[], flows:["billing"] }).missingPages).toContain("docs/flows/billing.md");
 });

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
+import { extractRoutes, type RouteRef } from "./docs-flows";
 import { promisify } from "node:util";
 
 /**
@@ -67,7 +68,7 @@ function shorten(text:string, keep:number):string {
   return `${text.slice(0, head)}\n…[${text.length - keep} characters omitted]…\n${text.slice(text.length - tail)}`;
 }
 
-async function jevAsk(key:string, state:unknown, questions:Record<string, JevQuestion>, timeoutMs = 20_000):Promise<Record<string, JevAnswer> | null> {
+export async function jevAsk(key:string, state:unknown, questions:Record<string, JevQuestion>, timeoutMs = 20_000):Promise<Record<string, JevAnswer> | null> {
   try {
     const response = await fetch(JEV_URL, {
       method:"POST",
@@ -82,6 +83,8 @@ async function jevAsk(key:string, state:unknown, questions:Record<string, JevQue
     return null;
   }
 }
+
+export { pool as jevPool, status as jevStatus };
 
 async function pool<T, R>(items:T[], work:(item:T) => Promise<R>):Promise<R[]> {
   const results:R[] = new Array(items.length);
@@ -197,6 +200,7 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   const prefix = input.prefix ?? "";
   const files = await trackedCode(input.projectCwd, prefix, input.exclude);
   const tests:string[] = [];
+  const routes:RouteRef[] = [];
   let anchors:Anchor[] = [];
   for (const file of files) {
     const info = await stat(join(input.projectCwd, file)).catch(() => null);
@@ -204,6 +208,7 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
     const text = await readFile(join(input.projectCwd, file), "utf8").catch(() => "");
     if (TEST_PATH.test(file)) { for (const match of text.matchAll(/\b(?:it|test)\(\s*["'`](.+?)["'`]/g)) tests.push(`${file}: ${match[1]}`); continue; }
     anchors.push(...scanDeclarations(file, text));
+    routes.push(...extractRoutes(file, text));
   }
   anchors = spreadAnchors(anchors, MAX_ANCHORS);
   const key = await jevApiKey();
@@ -227,12 +232,21 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   const briefPath = join(isAbsolute(gitDir) ? gitDir : join(input.projectCwd, gitDir), "lane-pilot", briefName);
   await mkdir(dirname(briefPath), { recursive:true });
   const workspaceMap = input.workspaces?.length ? await renderWorkspaceMap(input.projectCwd, input.workspaces) : [];
-  await writeFile(briefPath, renderAnchorBrief(anchors, tests, await dependencies(input.projectCwd, prefix), key ? status(asked, answered) : "disabled") + workspaceMap.join("\n"));
+  const routeList = routes.length ? ["", "## Routes and bot commands", "", "Every one belongs on a page (api.md or the feature page): method, path, who calls it, what it does, auth.", "",
+    ...routes.slice(0, 600).map((route) => `- ${route.method} ${route.path} - ${route.file}:${route.line}`), ...(routes.length > 600 ? [`- …and ${routes.length - 600} more`] : []), ""] : [];
+  await writeFile(briefPath, renderAnchorBrief(anchors, tests, await dependencies(input.projectCwd, prefix), key ? status(asked, answered) : "disabled") + routeList.join("\n") + workspaceMap.join("\n"));
   // Files with code Jev judged specific to this product; generic kits and helpers do not call for docs.
   const productFiles = [...new Set(anchors.filter((anchor) => anchor.kind !== "type" && (anchor.projectSpecific ?? 1) >= 0.5).map((anchor) => anchor.file))].sort();
   // Core product behaviour the docs must cover: Jev's top importance on product code.
-  const core = anchors.filter((anchor) => anchor.kind !== "type" && anchor.kind !== "table" && (anchor.projectSpecific ?? 0) >= 0.5 && (anchor.importance ?? 0) >= 1.5)
-    .map(({ name, file, line, endLine }) => ({ name, file, line, endLine }));
+  // Core product behaviour the docs must cover: Jev's top importance on product code, and every file that declares routes.
+  const routeFiles = new Map<string, RouteRef[]>();
+  for (const route of routes) routeFiles.set(route.file, [...(routeFiles.get(route.file) ?? []), route]);
+  const core = [
+    ...anchors.filter((anchor) => anchor.kind !== "type" && anchor.kind !== "table" && (anchor.projectSpecific ?? 0) >= 0.5 && (anchor.importance ?? 0) >= 1.5)
+      .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0)).map(({ name, file, line, endLine }) => ({ name, file, line, endLine })),
+    ...[...routeFiles].map(([file, list]) => ({ name:`routes ${list.slice(0, 3).map((route) => `${route.method} ${route.path}`).join(", ")}${list.length > 3 ? ", …" : ""}`, file,
+      line:Math.min(...list.map((route) => route.line)), endLine:Math.max(...list.map((route) => route.line)) })),
+  ];
   const tables = [...new Set(anchors.filter((anchor) => anchor.kind === "table").map((anchor) => anchor.name))].sort();
   // A project with a build or install script needs a how-to page for building, installing and running it.
   // A monorepo is built and deployed from its root, so only the root docs get the page.
@@ -249,8 +263,18 @@ async function renderWorkspaceMap(projectCwd:string, workspaces:DocsWorkspaceRef
     const pkg = await readFile(join(projectCwd, workspace.path, "package.json"), "utf8").then((text) => JSON.parse(text) as Record<string, unknown>, () => ({} as Record<string, unknown>));
     const uses = Object.keys({ ...(pkg.dependencies as object ?? {}), ...(pkg.devDependencies as object ?? {}) }).filter((name) => names.has(name));
     const description = typeof pkg.description === "string" && pkg.description ? ` - ${pkg.description}` : "";
-    lines.push(`- \`${workspace.name}\` ${workspace.path}${description}. Docs: ${workspace.docsDir ? `${workspace.docsDir}/` : "root docs"}.${uses.length ? ` Uses: ${uses.join(", ")}.` : ""}`);
+    const scripts = Object.keys(pkg.scripts as object ?? {}).filter((name) => /^(build|dev|start|serve|preview|generate|deploy|migrate|worker)(:|$)/.test(name));
+    lines.push(`- \`${workspace.name}\` ${workspace.path}${description}. Docs: ${workspace.docsDir ? `${workspace.docsDir}/` : "root docs"}.${uses.length ? ` Uses: ${uses.join(", ")}.` : ""}${scripts.length ? ` Scripts: ${scripts.join(", ")} (${workspace.path}/package.json).` : ""}`);
   }
+  // How the system is built and run: compose services and the task pipeline, for deployment and architecture.
+  for (const name of ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"]) {
+    const text = await readFile(join(projectCwd, name), "utf8").catch(() => null);
+    if (text === null) continue;
+    const services = /^services:\s*\n([\s\S]*?)(?=^\S|$(?![\s\S]))/m.exec(text)?.[1] ?? "";
+    lines.push("", `## Services in ${name}`, "", ...[...services.matchAll(/^  ([A-Za-z0-9_.-]+):\s*$/gm)].map((match) => `- ${match[1]} - ${name}:${text.slice(0, text.indexOf(match[0])).split("\n").length}`));
+  }
+  const turbo = await readFile(join(projectCwd, "turbo.json"), "utf8").then((text) => JSON.parse(text) as { tasks?:object; pipeline?:object }, () => null);
+  if (turbo) lines.push("", "## Turbo tasks (turbo.json)", "", ...Object.keys(turbo.tasks ?? turbo.pipeline ?? {}).map((task) => `- ${task}`));
   return [...lines, ""];
 }
 
@@ -292,7 +316,8 @@ export function renderAnchorBrief(anchors:Anchor[], tests:string[], deps:string[
 
 // ---- citation check -----------------------------------------------------------------------
 
-const CITATION = /([A-Za-z0-9_@.\/-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?/g;
+/** file:line or file:start-end; paths may hold Nuxt route brackets such as server/api/[slug].get.ts. */
+const CITATION = /([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?/g;
 
 export type ClaimRef = { file:string; start:number; end:number };
 
@@ -446,4 +471,38 @@ export async function docsStaleness(input:{ projectCwd:string; base:string; chan
   });
   const drafts = input.pages.filter((page) => /^status:\s*draft\s*$/m.test(page.content.split("\n---")[0] ?? "")).map((page) => page.path);
   return { jev:status(asked.length, answered), refresh:[...new Set([...reasons.map((reason) => reason.path), ...drafts])].sort(), reasons };
+}
+
+// ---- depth check --------------------------------------------------------------------------
+
+const MAX_DEPTH_CHECKS = 40;
+
+/**
+ * Whether the docs explain the core code well enough that a reader need not open it: for each core anchor a
+ * written page cites, Jev reads the code and the page's sentences about it. A weak explanation becomes a finding.
+ */
+export async function docsDepth(input:{ projectCwd:string; pages:Array<{ path:string; content:string }>; core:Array<{ name:string; file:string; line:number; endLine:number }> }):Promise<{ jev:JevStatus;
+  findings:Array<{ path:string; rule:string; detail:string }> }> {
+  const key = await jevApiKey();
+  if (!key) return { jev:"disabled", findings:[] };
+  const claims = input.pages.flatMap((page) => pageClaims(page.content.replace(/^---\n[\s\S]*?\n---\n?/, "")).map((claim) => ({ path:page.path, ...claim })));
+  const checks = input.core.filter((anchor) => !anchor.name.startsWith("routes ")).flatMap((anchor) => {
+    const about = claims.filter((claim) => claim.refs.some((ref) => ref.file === anchor.file && ref.start <= anchor.endLine && ref.end >= anchor.line));
+    const page = about[0]?.path;
+    return page ? [{ anchor, page, text:about.filter((claim) => claim.path === page).map((claim) => claim.claim).join("\n").slice(0, 6000) }] : [];
+  }).slice(0, MAX_DEPTH_CHECKS);
+  const findings:Array<{ path:string; rule:string; detail:string }> = [];
+  let answered = 0;
+  await pool(checks, async (check) => {
+    const lines = (await readFile(join(input.projectCwd, check.anchor.file), "utf8").catch(() => "")).split("\n");
+    const code = lines.slice(check.anchor.line - 1, Math.min(check.anchor.endLine, check.anchor.line + 120)).join("\n");
+    const answers = await jevAsk(key, { code:{ file:check.anchor.file, symbol:check.anchor.name, code }, docs:{ page:check.page, text:check.text } }, {
+      explains:{ type:"noul", instructions:"Do the sentences in `docs` explain what `code` does - its steps, the conditions and modes it branches on, and its outcomes and failures - well enough that a reader would not need to open the code to understand it?" },
+    });
+    if (!answers) return;
+    answered++;
+    if ((answers.explains?.noul ?? 1) < 0.4) findings.push({ path:check.page, rule:"depth",
+      detail:`explain how ${check.anchor.name} (${check.anchor.file}:${check.anchor.line}-${check.anchor.endLine}) works: its steps, the conditions and modes it branches on, and its outcomes and failures (Jev ${Math.round((answers.explains?.noul ?? 0) * 100)}% explained)` });
+  });
+  return { jev:status(checks.length, answered), findings };
 }

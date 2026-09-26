@@ -139,7 +139,8 @@ export type DocsUnit = {
 const METHODOLOGY = [
   "Method (docs-methodology skill from claude-lane; read ~/.agents/skills/docs-methodology/SKILL.md and its references/ first if the file exists):",
   "- Every docs page starts with YAML frontmatter: title, type, created, updated (YYYY-MM-DD), status (draft|active|stale|deprecated), confidence (high|medium|low, honest: low under 5 sources, medium 5-15, high over 15), tags (kebab-case list), sources (list of files actually read, most relevant first).",
-  "- type is one of overview, architecture, data-model, decisions, deployment, gotchas, gaps, active-areas, active-tasks, component. One H1 equal to title, then a one-line TL;DR.",
+  "- type is one of overview, architecture, data-model, decisions, deployment, gotchas, gaps, active-areas, active-tasks, component, flow. One H1 equal to title, then a one-line TL;DR.",
+  "- Write so an agent can learn how the product works from the docs alone, without opening the code. A component page has: Purpose; How it works - the steps in order as a numbered list, a table of the modes, variants or states it branches on (what differs between them: inputs, limits, prices, outputs), and what happens on each failure; Business rules; Public API or commands; Gotchas. A flow page (docs/flows/) has: Trigger; How it works - each step across apps and packages in order, naming the app, the call and the state it changes; Modes; Failures and compensation; Related pages. Depth follows the code: a large capability gets a long page or several pages, not a summary.",
   "- Every non-trivial claim cites file:line or file:start-end that exists; at least 3 citations per page. No hedges (typically, usually, should) without a citation, no marketing words (powerful, seamless, robust, comprehensive, intuitive, leverage), no dates in prose.",
   "- Keep each page under 30000 bytes: split a large subject into linked pages (a data model with many tables into data-model/<area>.md, one page per area, with data-model.md as the overview).",
   "- Link pages with relative paths. Never write an index.md in a docs folder or a 'Referenced by' section: Lane Pilot builds them.",
@@ -152,7 +153,7 @@ const METHODOLOGY = [
  * docs-maintain: no docs/ yet means onboarding, otherwise only pages about changed code.
  */
 export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string; deploy?:boolean;
-  missingPages?:string[]; uncoveredCore?:string[]; agent?:string; unit?:DocsUnit}):string {
+  missingPages?:string[]; uncoveredCore?:string[]; agent?:string; unit?:DocsUnit; flowsPath?:string}):string {
   const listed = input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
   const refresh = input.refresh ?? [];
   const unit = input.unit ?? { docsDir:"docs" };
@@ -167,13 +168,16 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
     "Scope: this is the root of a monorepo. docs/ describes the system as a whole: what each app and package is for, how they talk, the data they share, how it is built and deployed, and cross-cutting gotchas.",
     ...(own.length ? ["These workspaces keep their own docs, written by their own passes - link to their overview and do not repeat their internals:", ...own.map((item) => `- ${item.name}: ${item.docsDir}/overview.md`)] : []),
     ...(shared.length ? ["These workspaces are small and belong to the root docs: describe each in docs/packages.md (component), one section per package with its purpose, public API and who uses it:", ...shared.map((item) => `- ${item.name} (${item.path}/)`)] : []),
-    "The code map lists every workspace and which workspaces it uses.",
+    "The code map lists every workspace, which workspaces it uses, its build and run scripts, the compose services and the turbo tasks: docs/deployment.md explains how each app is built, configured, run and deployed, and docs/architecture.md has a mermaid graph of which apps use which packages.",
   ] : [];
+  const flows = input.flowsPath ? ["",
+    `Flows: Lane Pilot traced the business processes through the code for you in ${input.flowsPath} - each process, the entry points in the apps that drive it (routes, bot commands, jobs, pages) and an import chain from each entry into the process. Write docs/flows/<name>.md (flow) for every flow it lists: follow the chains in the code and describe the process end to end, step by step across the apps, with its modes and failures, linking to the feature pages of the packages it crosses. docs/overview.md links every flow.`] : [];
   return [
     `${input.agent?.trim() || "Documentation maintainer"}: keep this project's documentation an honest, evidence-backed description of its code.`,
     "",
     ...METHODOLOGY,
     ...(scope.length ? ["", ...scope] : []),
+    ...flows,
     ...(input.anchorsPath ? ["",
       `Code map: Lane Pilot mapped this project for you in ${input.anchorsPath} - every declaration with its file:line, which ones Jev marked as business-rule candidates and entry points, the page each belongs to, dependencies and tests. Read it first, build pages around its anchors and cite them; confirm every business-rule candidate in the code before you describe it as a rule.`] : []),
     "",
@@ -182,12 +186,14 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
         `Task: refresh the docs for code changed since ${input.since}. Update the pages below, set their updated date to today, keep created as is. Add a page only for a new capability; leave accurate pages alone.`,
         ...(refresh.length ? ["Pages whose sources changed or that are drafts:", ...refresh.map((path) => `- ${path}`)] : ["No page lists a changed file among its sources: check whether a changed file needs a new or extended page."]),
         ...(input.missingPages?.length ? ["Pages the method requires that do not exist yet - add them (data-model documents every table and its columns; architecture has one mermaid C4 diagram):", ...input.missingPages.map((path) => `- ${path}`)] : []),
-        ...(input.uncoveredCore?.length ? ["Core behaviour no page cites yet - describe it on the page it belongs to, with citations:", ...input.uncoveredCore.map((item) => `- ${item}`)] : []),
+        ...(input.uncoveredCore?.length ? ["Core behaviour and routes no page cites yet - describe them on the page they belong to, with citations:", ...input.uncoveredCore.slice(0, 120).map((item) => `- ${item}`),
+          ...(input.uncoveredCore.length > 120 ? [`- …and ${input.uncoveredCore.length - 120} more; the next pass lists them`] : [])] : []),
       ].join("\n")
       : ws ? [
         `Task: there is no ${d}/ yet, so onboard this workspace. Create:`,
         `- ${d}/overview.md (overview): what the workspace does, how it starts or is used, its public API or entry points, its configuration, and which workspaces depend on it.`,
-        `- ${d}/features/<capability>.md (component), one per capability it provides: Purpose, Business rules, Public API or commands, Gotchas. A small library may need none beyond the overview.`,
+        `- ${d}/features/<capability>.md (component), one per capability it provides, with the sections the method lists (How it works with steps, modes and failures). A small library may need none beyond the overview.`,
+        `- ${d}/api.md (component) when the code map lists routes or bot commands: every route grouped by area - method, path, who calls it, what it does, auth - linking to the feature page that explains it.`,
         `- ${d}/data-model.md (data-model) when this workspace defines stored data: every table or collection with its fields, keys and who writes it.`,
         `- ${d}/gotchas.md (gotchas) with the traps you find in this workspace's code, if there are any.`,
       ].join("\n")
@@ -195,7 +201,8 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
         "Task: there is no docs/ yet, so onboard the project. Create:",
         "- docs/overview.md (overview): what the project is, how it is built and run, its main parts.",
         "- docs/architecture.md (architecture): parts and how they talk, with one mermaid C4 container or component diagram of at most 12 nodes.",
-        "- docs/features/<capability>.md (component), one per user-facing capability: Purpose, Business rules, Public API or commands, Gotchas.",
+        "- docs/features/<capability>.md (component), one per user-facing capability, with the sections the method lists (How it works with steps, modes and failures).",
+        "- docs/api.md (component) when the code map lists routes or commands: every route grouped by area, with method, path, caller, purpose and auth.",
         "- docs/data-model.md (data-model) when the code stores data: every table or collection with its fields, keys and who writes it.",
         ...(input.deploy ? ["- docs/deployment.md (deployment): how to install dependencies, build, test, install and configure it, as runnable steps taken from the scripts."] : []),
         "- docs/gotchas.md (gotchas) with the traps you find in the code; docs/decisions.md (decisions, ADR: Context, Decision, Status, Consequences) only for decisions the code or history shows.",
