@@ -31,6 +31,7 @@ it("takes the sentence around each citation as its claim", () => {
     [{ file:"src/db.ts", start:5, end:9 }, { file:"src/db.ts", start:20, end:20 }]]);
   expect(pageClaims("Old checks are deleted (`src/db.ts:146-179`, `190-193`).")[0]!.refs).toEqual([
     { file:"src/db.ts", start:146, end:179 }, { file:"src/db.ts", start:190, end:193 }]);
+  expect(pageClaims("| `src/cli.ts:198-223`, `src/cli.ts:240-253` |")).toEqual([]);
   expect(claims[1]!.claim).toBe("Monitors are validated and stored (src/db.ts:5-9, src/db.ts:20).");
 });
 

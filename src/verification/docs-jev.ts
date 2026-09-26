@@ -258,7 +258,9 @@ export function pageClaims(body:string):Array<{ claim:string; refs:ClaimRef[] }>
       const owner = refs.filter((ref) => ref.at < (bare.index ?? 0)).at(-1);
       if (owner) refs.push({ file:owner.file, start:Number(bare[1]), end:bare[2] ? Number(bare[2]) : Number(bare[1]), at:bare.index ?? 0 });
     }
-    if (refs.length) claims.push({ claim:text.slice(0, 600), refs:refs.sort((a, b) => a.at - b.at).map(({ file, start, end }) => ({ file, start, end })) });
+    // A fragment that is only citations (a table cell) states nothing to verify or compare.
+    const words = text.replace(CITATION, " ").replace(/`\d+(?:-\d+)?`/g, " ").match(/[A-Za-z\u0400-\u04FF]{2,}/g) ?? [];
+    if (refs.length && words.length >= 3) claims.push({ claim:text.slice(0, 600), refs:refs.sort((a, b) => a.at - b.at).map(({ file, start, end }) => ({ file, start, end })) });
   }
   return claims;
 }
@@ -339,7 +341,7 @@ async function findContradictions(key:string, pages:Array<{ path:string; content
     if (!answers) return;
     answered++;
     const p = answers.relation?.probabilities?.contradict ?? 0;
-    if (answers.relation?.choice === "contradict" && p >= 0.6) {
+    if (answers.relation?.choice === "contradict" && p >= 0.75) {
       const target = written.has(a.path) ? a : b, other = target === a ? b : a;
       findings.push({ path:target.path, rule:"contradiction",
         detail:`"${target.claim.slice(0, 140)}" contradicts ${other.path}: "${other.claim.slice(0, 140)}" (Jev ${Math.round(p * 100)}%)` });
