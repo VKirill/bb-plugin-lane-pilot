@@ -39,6 +39,8 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
   const allowed = allowedSettingChoices(key);
   if (!allowed || value === undefined || value === null || value === "") return null;
   if (typeof value === "string" && allowed.includes(value)) return null;
+  // UI switches send booleans for true/false settings; every consumer parses both forms.
+  if (typeof value === "boolean" && allowed.includes(String(value))) return null;
   return { code: "invalid_choice", key, params: [key, allowed.join(", ")] };
 }
 

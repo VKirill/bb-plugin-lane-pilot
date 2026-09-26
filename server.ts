@@ -66,6 +66,9 @@ import {
   listTaskTerminalStates,
   listAttemptsForTask,
   loadProjectSettings,
+  sectionBindingId,
+  getRunSettingsScopes,
+  setRunSettingsScopes,
   loadRunHelperPolicyJson,
   persistRunHelperPolicyJson,
   loadPrototypeConfig,
@@ -553,9 +556,9 @@ function runRoutingFromParsed(parsed: Record<string, unknown> | null): { helperP
   };
 }
 
-async function inheritedProjectSettings(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, projectId: string): Promise<Record<string, unknown>> {
+async function inheritedProjectSettings(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, projectId: string, scopes: readonly string[] = []): Promise<Record<string, unknown>> {
   return inheritProjectValues(
-    loadProjectSettings(db, projectId),
+    loadProjectSettings(db, projectId, scopes),
     parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)),
   ).values;
 }
@@ -612,7 +615,7 @@ function resolveHelperDispatch(input:{bb:BbPluginApi;db:ReturnType<typeof openDa
       return { ok: false, reason: "helper_context_snapshot_invalid" };
     }
   }
-  const parsed = parseHelperContextSettings(loadProjectSettings(input.db, input.projectId));
+  const parsed = parseHelperContextSettings(loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId)));
   if (!parsed.ok && !snapshot) return { ok: false, reason: parsed.reason };
   const settings = snapshot?.settings ?? (parsed.ok ? parsed.settings : { mode: "inherit" as const, skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] });
   const capability = detectVkCapability((input.bb as { agents?: { experimental_vkSessionPolicy?: unknown; experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {});
@@ -656,7 +659,7 @@ async function helperChildPlacement(input:{
   const sourceThreadId = stringAt(parentThread, "sourceThreadId") ?? (run?.kind === "cli" ? parentId : null);
   const lifecycleOwnerThreadId = stringAt(parentThread, "lifecycleOwnerThreadId") ?? (run?.kind === "cli" ? parentId : null);
   if (!sourceThreadId || !lifecycleOwnerThreadId) throw new Error("helper_parent_relation_missing");
-  const settings = await inheritedProjectSettings(input.bb, input.db, input.projectId);
+  const settings = await inheritedProjectSettings(input.bb,input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
   const routing = freezeRunRouting(input.db, input.runId, settings);
   const resolved = resolveHelperPlacement({
     mode: routing.helperPlacement,
@@ -678,7 +681,7 @@ async function helperChildPlacement(input:{
 
 async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2})
   :Promise<{state:"skipped"|"passed"|"failed";summary:string;reason?:string}> {
-  const settings=loadProjectSettings(input.db,input.projectId);
+  const settings=loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
   const parsedSettings=parsePmReadSettings(Object.fromEntries([
     "pm_read.enabled","pm_read.min_lines","pm_read.provider","pm_read.model","pm_read.reasoning_effort","pm_read.service_tier",
   ].map((key)=>[key,configuredSetting(settings,key)])));
@@ -756,7 +759,7 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
 
 async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string})
   : Promise<{allowed:boolean;reason?:string;critique?:unknown}> {
-  const settings = loadProjectSettings(input.db, input.projectId);
+  const settings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
   const selection=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
   const providerId=selection.providerId;
   const modelId=selection.model;
@@ -881,7 +884,7 @@ async function runCodeCritique(input:{
   bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;
   config:PrototypeConfig;task:TaskV2;evidence:CandidateEvidence;disputes?:unknown;frozenPolicy?:FrozenCritiquePolicy;
 }): Promise<{allowed:boolean;reason?:string;review:"passed"|"not_required";critique?:unknown;parsed?:ReturnType<typeof parseCodeCritique>;settings?:ReturnType<typeof parseCodeCritiqueSettings>;policy?:FrozenCritiquePolicy}> {
-  const settings = loadProjectSettings(input.db, input.projectId);
+  const settings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
   const existing = listStageReceipts(input.db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
   const frozen = input.frozenPolicy ?? critiquePolicyFromResult(existing?.result);
   let parsed:ReturnType<typeof parseCodeCritiqueSettings>;
@@ -1108,7 +1111,7 @@ async function runCodeCritique(input:{
 
 async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string})
   : Promise<{allowed:boolean;reason?:string;review?:unknown}> {
-  const settings = loadProjectSettings(input.db,input.projectId);
+  const settings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
   const policy = shouldRunSpecialist({enabled:settings["specialist.enabled"],when:settings["specialist.when"],risk:input.task.risk});
   const agent=boundedAgentName(settings["specialist.agent"],"specialist-reviewer");
   const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}`;
@@ -1244,9 +1247,9 @@ export default async function plugin(bb: BbPluginApi) {
   async function ownedAgents() {
     return parseOwnedAgents(await bb.storage.kv.get(LP_AGENT_OVERRIDES_KEY));
   }
-  async function effectiveProjectSettings(projectId: string) {
+  async function effectiveProjectSettings(projectId: string, scopes: readonly string[] = []) {
     return inheritProjectValues(
-      loadProjectSettings(db, projectId),
+      loadProjectSettings(db, projectId, scopes),
       parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)),
     );
   }
@@ -1757,7 +1760,7 @@ export default async function plugin(bb: BbPluginApi) {
     let lastExecution:{reasoningLevel:string;serviceTier:"default"|"fast"|null;selectionSource:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}}|null=null;
     transitionAttempt(db, input.attemptId, "spawn_requested");
     try {
-      const settings = (await effectiveProjectSettings(input.projectId)).values;
+      const settings = (await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
       const workspaceMode = parseWorkspaceMode(settings["adoc.040"]);
       const minScoreValue = settings["adoc.041"];
       const minScore = minScoreValue === undefined || minScoreValue === null || minScoreValue === "" ? 4 : Number(minScoreValue);
@@ -2086,13 +2089,14 @@ export default async function plugin(bb: BbPluginApi) {
     sandboxBackend:string|null; policySha256:string|null; workspacePath:string;
   }>> {
     const policy=runId?runPolicyFor(runId):buildRunPolicy(loadProjectSettings(db,config.projectId));
+    const verificationScopes=runId?getRunSettingsScopes(db,runId):[];
     return mapBounded(task.verification,policy.pools.verification,async(command)=>{
       const release=await runWriterPool.acquire(`verification:${runId??config.projectId}`,policy.pools.verification);
       try {
       const ran = await host.call("runSandboxedCommand", {
         requestedHostId: config.hostId,
         workspacePath:task.project_cwd,
-        backend:(loadProjectSettings(db,config.projectId)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto",
+        backend:(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto",
         command:command.command,
         cwd: command.cwd,
         timeoutSec: command.timeout_sec,
@@ -2326,7 +2330,7 @@ export default async function plugin(bb: BbPluginApi) {
       let lastArtifact = storedLedger?.artifactRevisionSha256 ?? "";
       let approvedArtifact = "";
       let frozenPolicy = storedLedger?.policy;
-      const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(loadProjectSettings(db, input.projectId));
+      const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId)));
       const baselineHashes = Object.fromEntries(input.dirtBefore.map((row) => [row.path, row.sha256 || null]));
       const captureEvidence = async () => {
         const dirt = await workspaceDirt(input.config, input.task.project_cwd);
@@ -2798,7 +2802,7 @@ export default async function plugin(bb: BbPluginApi) {
           stopConfirmed:primaryFailure.stopConfirmed === true,
         });
         if (decision.run) {
-          const settings=loadProjectSettings(db,input.projectId);
+          const settings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
           const primaryProvider=typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
           const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
           const emergencySelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
@@ -2946,7 +2950,7 @@ export default async function plugin(bb: BbPluginApi) {
     const hostId = getRunWriterHost(db, run.id);
     const workspace = run.writer_workspace_path;
     if (!hostId || !workspace) return null;
-    const settings = (await effectiveProjectSettings(projectId)).values;
+    const settings = (await effectiveProjectSettings(projectId, getRunSettingsScopes(db, run.id))).values;
     const text = (key:string) => typeof settings[key] === "string" && settings[key] ? settings[key] as string : null;
     const writerProviderId = text("writer.provider"), writerModel = text("writer.model");
     if (!writerProviderId || !writerModel) throw new Error("Choose the writer provider and model in Lane Pilot settings (project or defaults) before delegating.");
@@ -2956,6 +2960,46 @@ export default async function plugin(bb: BbPluginApi) {
     return { projectId, hostId, pmWorkspacePath:workspace, writerWorkspacePath:workspace,
       pmProviderId:pmProviderId && pmModel ? pmProviderId : writerProviderId, pmModel:pmProviderId && pmModel ? pmModel : writerModel,
       writerProviderId, writerModel };
+  }
+
+  const sectionRowSchema = z.object({ id:z.string(), projectId:z.string(), parentId:z.string().nullable(), name:z.string(), path:z.string(), hostId:z.string(), kind:z.enum(["folder","group"]) });
+  /** Sections come from Project Folders; without it a project simply has none. */
+  async function listProjectSections(projectId:string): Promise<Array<z.infer<typeof sectionRowSchema>>> {
+    const plugins = (bb.sdk as { plugins?: { callRpc?: (args:{pluginId:string;method:string;input?:unknown;outputSchema:z.ZodType<unknown>}) => Promise<unknown> } }).plugins;
+    if (!plugins?.callRpc) return [];
+    try {
+      const listed = await plugins.callRpc({ pluginId:"project-folders", method:"sections_list", input:{ projectId },
+        outputSchema:z.object({ sections:z.array(sectionRowSchema) }) }) as { sections:Array<z.infer<typeof sectionRowSchema>> };
+      return listed.sections;
+    } catch { return []; }
+  }
+
+  /** Settings scopes of a section, outermost first: its ancestors, then the section itself. */
+  function sectionChain(sections:Array<z.infer<typeof sectionRowSchema>>, sectionId:string): string[] {
+    const byId = new Map(sections.map((row) => [row.id, row]));
+    const chain:string[] = [];
+    for (let current = byId.get(sectionId); current && !chain.includes(sectionBindingId(current.id)); current = current.parentId ? byId.get(current.parentId) : undefined) {
+      chain.unshift(sectionBindingId(current.id));
+    }
+    return chain;
+  }
+
+  /** The deepest section whose folder holds this workspace decides a run's settings scopes. */
+  async function scopesForWorkspace(projectId:string, workspacePath:string): Promise<string[]> {
+    const sections = await listProjectSections(projectId);
+    const target = resolve(workspacePath);
+    const owner = sections
+      .filter((row) => row.kind === "folder" && row.path && (target === resolve(row.path) || target.startsWith(`${resolve(row.path)}/`)))
+      .sort((a, b) => b.path.length - a.path.length)[0];
+    return owner ? sectionChain(sections, owner.id) : [];
+  }
+
+  async function ensureRunScopes(runId:string): Promise<string[]> {
+    const run = getRun(db, runId);
+    if (!run || run.kind !== "cli" || !run.writer_workspace_path) return getRunSettingsScopes(db, runId);
+    const scopes = await scopesForWorkspace(run.project_id, run.writer_workspace_path);
+    setRunSettingsScopes(db, runId, scopes);
+    return scopes;
   }
 
   /** A native run's host, workspace and writer come from its binding and current settings, never from a stale prototype config. */
@@ -2968,6 +3012,8 @@ export default async function plugin(bb: BbPluginApi) {
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
     if (!runId) throw new Error("PM thread has no lanePilotRunId");
+    // Settings of the section this run works in, read by every stage below.
+    await ensureRunScopes(runId);
     const run = getRun(db, runId);
     // A native run's host, workspace and writer come from its binding and current settings, never from a stale prototype config.
     const config = await configForRun(args.projectId, run);
@@ -3153,7 +3199,7 @@ export default async function plugin(bb: BbPluginApi) {
           await new Promise((resolve) => setTimeout(resolve, 100));
           continue;
         }
-        const settings = loadProjectSettings(db, args.projectId);
+        const settings = loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
         const baseReceipt = valueAt(settings["writer.lastResult"], "lanePilotRunId") === args.runId ? settings["writer.lastResult"] : null;
         const reasoning = [...latestByTask.values()].map((attempt) => getReasoningTrace(db, attempt.id)).filter(Boolean);
         const receipt = baseReceipt && typeof baseReceipt === "object"
@@ -3298,7 +3344,7 @@ export default async function plugin(bb: BbPluginApi) {
     const task=workspace.task;
     const acceptance = listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "acceptance-receipt");
     if (acceptance?.state !== "passed") throw new Error("browser QA requires an accepted writer receipt first");
-    const settings = await inheritedProjectSettings(bb, db, args.projectId);
+    const settings = await inheritedProjectSettings(bb,db,args.projectId,getRunSettingsScopes(db,args.runId));
     const routing = freezeRunRouting(db, args.runId, settings);
     const enabled = configuredSetting(settings,"browser_qa.enabled");
     const providerValue = configuredSetting(settings,"browser_qa.provider");
@@ -3572,7 +3618,7 @@ export default async function plugin(bb: BbPluginApi) {
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
     const task=workspace.task;
     if (listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt")?.state !== "passed") throw new Error("docs maintenance requires an accepted writer receipt first");
-    const settings = loadProjectSettings(db,args.projectId);
+    const settings = loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
     const docsAgent=boundedAgentName(settings["docs.agent"],"docs-maintainer");
     const docsSelection=resolveStageWriterSelection({settings,config,stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
     const docsProviderId=docsSelection.providerId;
@@ -3752,7 +3798,7 @@ export default async function plugin(bb: BbPluginApi) {
     const task=workspace.task;
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed") throw new Error("onboarding preview requires an accepted writer receipt first");
-    const settings=loadProjectSettings(db,args.projectId);
+    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
     const agent=boundedAgentName(settings["onboarding.agent"],"project-onboarder");
     const depth=settings["onboarding.depth"]==="deep"?"deep":"fast";
     const selection=resolveStageWriterSelection({settings,config,stageProviderKey:"onboarding.provider",stageModelKey:"onboarding.model"});
@@ -3952,7 +3998,7 @@ export default async function plugin(bb: BbPluginApi) {
     const task=workspace.task;
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed"||!accepted.outputSha256) throw new Error("memory maintenance requires an accepted writer receipt first");
-    const settings=loadProjectSettings(db,args.projectId);
+    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
     const memoryAgent=boundedAgentName(settings["memory.agent"],"memory-maintainer");
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
@@ -4116,7 +4162,7 @@ export default async function plugin(bb: BbPluginApi) {
     const task=workspace.task;
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed"||!accepted.outputSha256) throw new Error("night review requires an accepted writer receipt first");
-    const settings=loadProjectSettings(db,args.projectId);
+    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
     const policy=shouldRunNightReview(settings["night_review.enabled"]);
     const selection=resolveStageWriterSelection({settings,config,stageProviderKey:"night_review.provider",stageModelKey:"night_review.model"});
     const providerId=selection.providerId;
@@ -4258,7 +4304,7 @@ export default async function plugin(bb: BbPluginApi) {
     const existing=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="gate-triage");
     if(existing) return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"gate triage already has a receipt for this task",stage:existing};
     const report=readGateReport(db,{projectId:args.projectId,days:args.days});
-    const settings=loadProjectSettings(db,args.projectId);
+    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
     const providerId=args.providerId??(typeof settings["plan_critique.provider"]==="string"&&settings["plan_critique.provider"]?settings["plan_critique.provider"]:config.pmProviderId);
     const modelId=args.model??(typeof settings["plan_critique.model"]==="string"&&settings["plan_critique.model"]?settings["plan_critique.model"]:config.pmModel);
     const effort=args.reasoningEffort??(typeof settings["plan_critique.reasoning_effort"]==="string"&&settings["plan_critique.reasoning_effort"]?settings["plan_critique.reasoning_effort"]:"medium");
@@ -4314,7 +4360,7 @@ export default async function plugin(bb: BbPluginApi) {
     if(!review||!review.result||!(review.state==="blocked"||review.state==="passed")) throw new Error("night fix requires a completed night review");
     const reviewValue=review.result&&typeof review.result==="object"?review.result as Record<string,unknown>:{};
     const parsed=parseNightReviewResult(JSON.stringify({decision:reviewValue.decision,summary:reviewValue.summary,findings:reviewValue.findings}));
-    const settings=loadProjectSettings(db,args.projectId);
+    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
     const configuredLimit=settings["night_review.max_fix_tasks"];
     const repairSelection=resolveStageWriterSelection({settings,config,stageProviderKey:"night_review.provider",stageModelKey:"night_review.model"});
     const repairProviderId=repairSelection.providerId;
@@ -4360,7 +4406,7 @@ export default async function plugin(bb: BbPluginApi) {
       if(outsideFinding.length||unowned.length) throw new Error(`night_fix_out_of_scope_changes:${[...new Set([...outsideFinding,...unowned])].join(",")}`);
       const verification=await runVerification(config,task,args.runId);
       const failed=task.verify==="none"||verification.length===0||verification.some((result)=>result.exitCode!==0);
-      const settings=loadProjectSettings(db,args.projectId);
+      const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
       let merge:{merge:boolean;reason:string;pullRequest?:unknown}={merge:false,reason:"merge_not_explicitly_authorized"};
       const environmentId=workspace.environmentId;
       if(settings["night_review.auto_merge"]===true&&environmentId) {
@@ -4449,7 +4495,7 @@ export default async function plugin(bb: BbPluginApi) {
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run=getRun(db,args.runId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||run.closed_at) throw new Error("run does not belong to this active PM thread and project");
-    const settings=loadProjectSettings(db,args.projectId);
+    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget",
@@ -4730,6 +4776,9 @@ export default async function plugin(bb: BbPluginApi) {
       await bb.storage.kv.set("preferences:lastProjectId", projectId);
       return { ok: true as const };
     },
+    list_sections: async ({ projectId }) => ({
+      sections: (await listProjectSections(projectId)).map((row) => ({ id:row.id, parentId:row.parentId, name:row.name, path:row.path, kind:row.kind })),
+    }),
     list_projects: async () => {
       const projects = await bb.sdk.projects.list({ includePersonal: true });
       return {
@@ -4931,18 +4980,27 @@ export default async function plugin(bb: BbPluginApi) {
         requiredSessionPolicy: detectRequiredSessionPolicyCapability((bb as { agents?: { experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {}) ? "required" : "none",
       };
     },
-    get_screen: async ({ projectId }) => {
+    get_screen: async ({ projectId, sectionId }) => {
+      // A section shows its own values over its parents', its project's and the global ones.
+      const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];
+      const bindingId = scopes.at(-1) ?? "";
       const config = loadPrototypeConfig(db, projectId);
-      const settings = loadProjectSettings(db, projectId);
-      const rows = listSettingRows(db, projectId);
-      const values: Record<string, unknown> = {};
+      const settings = loadProjectSettings(db, projectId, scopes);
+      const rows = listSettingRows(db, projectId, bindingId);
+      const values: Record<string, unknown> = bindingId ? loadProjectSettings(db, projectId, scopes.slice(0, -1)) : {};
+      const aboveKeys = Object.keys(values);
       const versions: Record<string, number> = {};
       for (const row of rows) {
         values[row.key] = row.value;
         versions[row.key] = row.version;
       }
-      Object.assign(versions, getSettingVersions(db, projectId, [...new Set(VISIBLE_CATALOG.map((row) => row.storageKey))]));
+      Object.assign(versions, getSettingVersions(db, projectId, [...new Set(VISIBLE_CATALOG.map((row) => row.storageKey))], bindingId));
       const inherited = inheritProjectValues(values, parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)));
+      if (bindingId) {
+        const own = new Set(rows.map((row) => row.key));
+        inherited.explicitKeys = [...own];
+        inherited.inherited = [...new Set([...inherited.inherited, ...aboveKeys.filter((key) => !own.has(key))])];
+      }
       Object.assign(values, inherited.values);
       const writerBinding = await resolveProjectWriterHost({ projectId });
       for (const row of VISIBLE_CATALOG) {
@@ -5003,6 +5061,7 @@ export default async function plugin(bb: BbPluginApi) {
         .find((text) => text != null) ?? null;
       return {
         projectId,
+        sectionId: sectionId ?? null,
         hostId: writerBinding.status === "resolved" ? writerBinding.hostId : writerBinding.status === "catalog_unavailable" ? null : config?.hostId ?? null,
         workspacePath: writerBinding.status === "resolved" ? writerBinding.path : writerBinding.status === "catalog_unavailable" ? null : config?.writerWorkspacePath ?? null,
         inheritedKeys: inherited.inherited,
@@ -5069,7 +5128,8 @@ export default async function plugin(bb: BbPluginApi) {
         })(),
       };
     },
-    save_setting: ({ projectId, key, value, expectedVersion }) => {
+    save_setting: ({ projectId, sectionId, key, value, expectedVersion }) => {
+      const bindingId = sectionId ? sectionBindingId(sectionId) : "";
       if (NATIVE_MEMORY_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic memory provider/model selection"]}};
       if (NATIVE_NIGHT_REVIEW_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic night-review provider/model selection"]}};
       if (NATIVE_DOCS_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic docs provider/model selection"]}};
@@ -5079,7 +5139,7 @@ export default async function plugin(bb: BbPluginApi) {
       if (NATIVE_CODE_CRITIQUE_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic code-critique provider/model selection"]}};
       if (NATIVE_SPECIALIST_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic specialist provider/model selection"]}};
       if (!NATIVE_WRITER_KEYS.has(key)) {
-        const result = casUpsertSettings(db, { projectId, changes:[{ key, value, expectedVersion }] }, { nativeWriterSelection:true });
+        const result = casUpsertSettings(db, { projectId, bindingId, changes:[{ key, value, expectedVersion }] }, { nativeWriterSelection:true });
         const current = { version:result.versions[key] ?? 0, value:result.values[key] ?? null };
         if (!result.ok) {
           if (result.validation) return { ok:false, conflict:false, ...current, validation:result.validation };
@@ -5087,14 +5147,15 @@ export default async function plugin(bb: BbPluginApi) {
         }
         return { ok:true, conflict:false, version:current.version, value };
       }
-      const result = casUpsertSetting(db, { projectId, key, value, expectedVersion });
+      const result = casUpsertSetting(db, { projectId, bindingId, key, value, expectedVersion });
       if (!result.ok) {
         if ("validation" in result) return result;
         return { ok: false, conflict: true, version: result.version, value: result.value };
       }
       return { ok: true, conflict: false, version: result.version, value };
     },
-    reset_project_settings: async ({ projectId, keys, expectedVersions }) => serializedKv(async () => {
+    reset_project_settings: async ({ projectId, sectionId, keys, expectedVersions }) => serializedKv(async () => {
+      const bindingId = sectionId ? sectionBindingId(sectionId) : "";
       const reject = (key: string, message: string) => ({ ok: false, conflict: false, values: {}, versions: {}, validation: { code: "incompatible_setting" as const, key, params: [key, message] } });
       const editable = new Set(VISIBLE_CATALOG.filter((row) => row.uiStatus === "editable").map((row) => row.storageKey));
       const invalid = keys.find((key) => !editable.has(key) || expectedVersions[key] === undefined);
@@ -5102,7 +5163,7 @@ export default async function plugin(bb: BbPluginApi) {
       const groups = ["writer", "memory", "night_review", "docs", "onboarding", "pm_read", "plan_critique", "code_critique", "specialist"].map((prefix) => ["provider", "model", "reasoning_effort", "service_tier"].map((suffix) => `${prefix}.${suffix}`));
       const affected = groups.filter((group) => group.some((key) => keys.includes(key)));
       if (affected.some((group) => group.some((key) => !keys.includes(key)))) return reject(keys[0]!, "reset the complete provider/model/effort/tier group");
-      const rows = listSettingRows(db, projectId);
+      const rows = listSettingRows(db, projectId, bindingId);
       const explicit = Object.fromEntries(rows.filter((row) => !keys.includes(row.key)).map((row) => [row.key, row.value]));
       const effective = inheritProjectValues(explicit, parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY))).values;
       if (affected.length) {
@@ -5125,9 +5186,10 @@ export default async function plugin(bb: BbPluginApi) {
           }
         } catch { return reject(keys[0]!, "inherited catalog is unavailable"); }
       }
-      return casResetSettings(db, { projectId, keys, expectedVersions, validationKeys: [...new Set([...keys, ...affected.flat()])], validatedRows: rows });
+      return casResetSettings(db, { projectId, bindingId, keys, expectedVersions, validationKeys: [...new Set([...keys, ...affected.flat()])], validatedRows: rows });
     }),
-    save_settings: ({ projectId, changes }) => {
+    save_settings: ({ projectId, sectionId, changes }) => {
+      const bindingId = sectionId ? sectionBindingId(sectionId) : "";
       const memoryKey=changes.find(({key})=>NATIVE_MEMORY_KEYS.has(key))?.key;
       if(memoryKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:memoryKey,params:[memoryKey,"use atomic memory provider/model selection"]}};
       const nightKey=changes.find(({key})=>NATIVE_NIGHT_REVIEW_KEYS.has(key))?.key;
@@ -5144,9 +5206,9 @@ export default async function plugin(bb: BbPluginApi) {
       if(codeKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:codeKey,params:[codeKey,"use atomic code-critique provider/model selection"]}};
       const specialistKey=changes.find(({key})=>NATIVE_SPECIALIST_KEYS.has(key))?.key;
       if(specialistKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:specialistKey,params:[specialistKey,"use atomic specialist provider/model selection"]}};
-      return casUpsertSettings(db,{projectId,changes},{nativeWriterSelection:changes.every(({key})=>!NATIVE_WRITER_KEYS.has(key))});
+      return casUpsertSettings(db,{projectId,bindingId,changes},{nativeWriterSelection:changes.every(({key})=>!NATIVE_WRITER_KEYS.has(key))});
     },
-    save_writer_selection: async ({ projectId, threadId, selectedBinding, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
+    save_writer_selection: async ({ projectId, sectionId, threadId, selectedBinding, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
       const reject = (code:"invalid_choice"|"incompatible_setting"|"setup_required"|"writer_binding_ambiguous"|"writer_host_offline"|"catalog_unavailable", key:string, message:string) => ({
         ok:false, conflict:false, values:{}, versions:{}, validation:{ code, key, params:[key, message] },
       });
@@ -5185,6 +5247,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
       return casUpsertSettings(db, {
         projectId,
+        bindingId: sectionId ? sectionBindingId(sectionId) : "",
         changes:[
           { key:"writer.provider", value:providerId, expectedVersion:expectedVersions["writer.provider"] },
           { key:"writer.model", value:modelId, expectedVersion:expectedVersions["writer.model"] },
@@ -5193,7 +5256,7 @@ export default async function plugin(bb: BbPluginApi) {
         ],
       }, { nativeWriterSelection:true });
     },
-    save_memory_selection: async ({ projectId, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
+    save_memory_selection: async ({projectId,sectionId, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
       const reject = (code:"invalid_choice"|"incompatible_setting"|"setup_required"|"writer_binding_ambiguous"|"writer_host_offline"|"catalog_unavailable", key:string, message:string) => ({
         ok:false, conflict:false, values:{}, versions:{}, validation:{code,key,params:[key,message]},
       });
@@ -5222,14 +5285,14 @@ export default async function plugin(bb: BbPluginApi) {
       const supportedTiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&supportedTiers.includes("default")?"default":null);
       if(selectedTier&&!supportedTiers.includes(selectedTier)) return reject("invalid_choice","memory.service_tier",`provider supports: ${supportedTiers.join(", ")||"no service tiers"}`);
-      return casUpsertSettings(db,{projectId,changes:[
+      return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"memory.provider",value:providerId,expectedVersion:expectedVersions["memory.provider"]},
         {key:"memory.model",value:modelId,expectedVersion:expectedVersions["memory.model"]},
         {key:"memory.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["memory.reasoning_effort"]},
         {key:"memory.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["memory.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
-    save_night_review_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+    save_night_review_selection: async ({projectId,sectionId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
       const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
       const catalogHost=await selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
@@ -5245,14 +5308,14 @@ export default async function plugin(bb: BbPluginApi) {
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
       if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","night_review.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
-      return casUpsertSettings(db,{projectId,changes:[
+      return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"night_review.provider",value:providerId,expectedVersion:expectedVersions["night_review.provider"]},
         {key:"night_review.model",value:modelId,expectedVersion:expectedVersions["night_review.model"]},
         {key:"night_review.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["night_review.reasoning_effort"]},
         {key:"night_review.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["night_review.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
-    save_docs_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+    save_docs_selection: async ({projectId,sectionId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
       const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
       const catalogHost=await selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
@@ -5268,14 +5331,14 @@ export default async function plugin(bb: BbPluginApi) {
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
       if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","docs.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
-      return casUpsertSettings(db,{projectId,changes:[
+      return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"docs.provider",value:providerId,expectedVersion:expectedVersions["docs.provider"]},
         {key:"docs.model",value:modelId,expectedVersion:expectedVersions["docs.model"]},
         {key:"docs.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["docs.reasoning_effort"]},
         {key:"docs.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["docs.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
-    save_pm_read_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+    save_pm_read_selection: async ({projectId,sectionId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
       const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
       const catalogHost=await selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
@@ -5291,14 +5354,14 @@ export default async function plugin(bb: BbPluginApi) {
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
       if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","pm_read.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
-      return casUpsertSettings(db,{projectId,changes:[
+      return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"pm_read.provider",value:providerId,expectedVersion:expectedVersions["pm_read.provider"]},
         {key:"pm_read.model",value:modelId,expectedVersion:expectedVersions["pm_read.model"]},
         {key:"pm_read.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["pm_read.reasoning_effort"]},
         {key:"pm_read.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["pm_read.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
-    save_onboarding_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+    save_onboarding_selection: async ({projectId,sectionId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
       const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
       const catalogHost=await selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
@@ -5314,14 +5377,14 @@ export default async function plugin(bb: BbPluginApi) {
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
       if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","onboarding.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
-      return casUpsertSettings(db,{projectId,changes:[
+      return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"onboarding.provider",value:providerId,expectedVersion:expectedVersions["onboarding.provider"]},
         {key:"onboarding.model",value:modelId,expectedVersion:expectedVersions["onboarding.model"]},
         {key:"onboarding.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["onboarding.reasoning_effort"]},
         {key:"onboarding.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["onboarding.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
-    save_plan_critique_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+    save_plan_critique_selection: async ({projectId,sectionId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
       const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
       const catalogHost=await selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
@@ -5337,14 +5400,14 @@ export default async function plugin(bb: BbPluginApi) {
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
       if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","plan_critique.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
-      return casUpsertSettings(db,{projectId,changes:[
+      return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"plan_critique.provider",value:providerId,expectedVersion:expectedVersions["plan_critique.provider"]},
         {key:"plan_critique.model",value:modelId,expectedVersion:expectedVersions["plan_critique.model"]},
         {key:"plan_critique.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["plan_critique.reasoning_effort"]},
         {key:"plan_critique.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["plan_critique.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
-    save_code_critique_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+    save_code_critique_selection: async ({projectId,sectionId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
       const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
       const catalogHost=await selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
@@ -5360,14 +5423,14 @@ export default async function plugin(bb: BbPluginApi) {
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
       if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","code_critique.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
-      return casUpsertSettings(db,{projectId,changes:[
+      return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"code_critique.provider",value:providerId,expectedVersion:expectedVersions["code_critique.provider"]},
         {key:"code_critique.model",value:modelId,expectedVersion:expectedVersions["code_critique.model"]},
         {key:"code_critique.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["code_critique.reasoning_effort"]},
         {key:"code_critique.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["code_critique.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
-    save_specialist_selection: async ({projectId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+    save_specialist_selection: async ({projectId,sectionId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
       const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
       const catalogHost=await selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
@@ -5383,7 +5446,7 @@ export default async function plugin(bb: BbPluginApi) {
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
       if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","specialist.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
-      return casUpsertSettings(db,{projectId,changes:[
+      return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"specialist.provider",value:providerId,expectedVersion:expectedVersions["specialist.provider"]},
         {key:"specialist.model",value:modelId,expectedVersion:expectedVersions["specialist.model"]},
         {key:"specialist.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["specialist.reasoning_effort"]},
@@ -5715,7 +5778,7 @@ export default async function plugin(bb: BbPluginApi) {
     const nativeRun = run?.kind === "cli";
     // A native run describes its own writer and workspace, never a stale prototype config.
     const config = nativeRun ? null : loadPrototypeConfig(db, context.project.id);
-    const projectSettings = nativeRun ? loadProjectSettings(db, context.project.id) : {};
+    const projectSettings = nativeRun && run ? loadProjectSettings(db, context.project.id, getRunSettingsScopes(db, run.id)) : {};
     const settingText = (key:string) => typeof projectSettings[key] === "string" && projectSettings[key] ? projectSettings[key] as string : null;
     const writerLabel = nativeRun
       ? (settingText("writer.provider") && settingText("writer.model") ? `${settingText("writer.provider")}/${settingText("writer.model")}` : "the writer set in Lane Pilot settings")

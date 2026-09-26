@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import {
   experimental_Diff as Diff,
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -71,6 +71,7 @@ const CARD_BODY = "px-3 pb-3 pt-0";
 
 type ScreenPayload = {
   projectId: string;
+  sectionId?: string | null;
   hostId: string | null;
   workspacePath: string | null;
   values: Record<string, unknown>;
@@ -618,6 +619,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const { projectId: routeProjectId, threadId: routeThreadId } = useBbContext();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const projectId = selectedProjectId ?? routeProjectId ?? (subPath || null);
+  // A section keeps its own settings over its project's; null edits the project itself.
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [sections, setSections] = useState<Array<{ id:string; parentId:string|null; name:string; path:string; kind:"folder"|"group" }>>([]);
+  const scoped = selectedSectionId ? { sectionId: selectedSectionId } : {};
+  const cacheKey = (id: string, section: string | null | undefined) => `${id}|${section ?? ""}`;
   const [projects, setProjects] = useState<Array<{ id:string; name:string; kind?:string }>>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectListError, setProjectListError] = useState(false);
@@ -713,7 +719,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const load = useCallback(async () => {
     if (!projectId) return;
     const generation = ++loadGeneration.current;
-    const cached = projectCache.current.get(projectId);
+    const cached = projectCache.current.get(cacheKey(projectId, selectedSectionId));
     if (cached) { setData(cached.data); dataRef.current = cached.data; setDrafts(cached.drafts); draftsRef.current = cached.drafts; setWriterDraft(cached.writer); writerDraftRef.current = cached.writer; return; }
     setError(null);
     setData(null);
@@ -722,7 +728,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     writerDraftRef.current = null;
     setWriterDraft(null);
     try {
-      const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
+      const next = await rpc.call("get_screen", { ...scoped, projectId }) as ScreenPayload;
       if (generation !== loadGeneration.current) return;
       setData(next);
       if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
@@ -731,9 +737,18 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
-  }, [projectId, rpc]);
+  }, [projectId, selectedSectionId, rpc]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    setSelectedSectionId(null);
+    setSections([]);
+    if (!projectId) return;
+    let current = true;
+    void rpc.call("list_sections", { projectId }).then((result) => { if (current) setSections(result.sections); }).catch(() => undefined);
+    return () => { current = false; };
+  }, [projectId, rpc]);
 
   const diagnosticsGrouped = useMemo(() => {
     const map = new Map<string, CatalogRow[]>();
@@ -772,9 +787,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   };
 
   const chooseProject = (next: string) => {
-    if (dataRef.current) projectCache.current.set(dataRef.current.projectId, { data: dataRef.current, drafts: { ...draftsRef.current }, writer: writerDraftRef.current });
+    if (dataRef.current) projectCache.current.set(cacheKey(dataRef.current.projectId, dataRef.current.sectionId), { data: dataRef.current, drafts: { ...draftsRef.current }, writer: writerDraftRef.current });
     setActiveScope("projects");
     setSelectedProjectId(next);
+    setSelectedSectionId(null);
     setProjectListError(false);
     void rpc.call("remember_project", { projectId: next }).catch(() => setProjectListError(true));
   };
@@ -788,7 +804,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     const snapshot = dataRef.current;
     if (!projectId || !snapshot) return false;
     const expectedVersion = snapshot.versions[row.storageKey] ?? 0;
-    const result = await rpc.call("save_setting", {
+    const result = await rpc.call("save_setting", { ...scoped,
       projectId,
       key: row.storageKey,
       value,
@@ -829,7 +845,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const saveKey = async (key: string, value: unknown) => {
     const snapshot = dataRef.current;
     if (!projectId || !snapshot) return false;
-    const result = await rpc.call("save_setting", {
+    const result = await rpc.call("save_setting", { ...scoped,
       projectId, key, value, expectedVersion: snapshot.versions[key] ?? 0,
     });
     if (result.conflict) {
@@ -892,10 +908,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     const snapshot = dataRef.current;
     if (!projectId || !snapshot || snapshot.projectId !== projectId) return;
     try {
-      const result = await rpc.call("reset_project_settings", { projectId, keys, expectedVersions: Object.fromEntries(keys.map((key) => [key, snapshot.versions[key] ?? 0])) });
+      const result = await rpc.call("reset_project_settings", { ...scoped, projectId, keys, expectedVersions: Object.fromEntries(keys.map((key) => [key, snapshot.versions[key] ?? 0])) });
       if (dataRef.current?.projectId !== projectId) return;
       if (!result.ok) { setSaveError(result.validation ? { kind: "validation", code: result.validation.code, params: result.validation.params } : { kind: "cas" }); return; }
-      const next = await rpc.call("get_screen", { projectId }) as ScreenPayload;
+      const next = await rpc.call("get_screen", { ...scoped, projectId }) as ScreenPayload;
       if (dataRef.current?.projectId !== projectId) return;
       setData(next); dataRef.current = next;
       const remaining = { ...draftsRef.current }; for (const key of keys) delete remaining[key];
@@ -912,7 +928,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const persistWriterSelection = async (selection: ExperimentalProviderModelPickerValue) => {
     const snapshot = dataRef.current;
     if (!projectId || !snapshot) return false;
-    const result = await rpc.call("save_writer_selection", {
+    const result = await rpc.call("save_writer_selection", { ...scoped,
       projectId,
       threadId: routeThreadId ?? null,
       ...(selectedBinding ? { selectedBinding } : {}),
@@ -975,7 +991,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   const saveMemorySelection = async (selection: ExperimentalProviderModelPickerValue) => {
     if (!projectId || !data) return false;
-    const result = await rpc.call("save_memory_selection", {
+    const result = await rpc.call("save_memory_selection", { ...scoped,
       projectId, providerId:selection.providerId, model:selection.model,
       reasoningLevel:selection.reasoningLevel, serviceTier:selection.serviceTier ?? null,
       expectedVersions:{
@@ -998,7 +1014,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   const saveNightReviewSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
-    const result=await rpc.call("save_night_review_selection",{
+    const result=await rpc.call("save_night_review_selection", { ...scoped,
       projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
       expectedVersions:{[NIGHT_PROVIDER]:data.versions[NIGHT_PROVIDER]??0,[NIGHT_MODEL]:data.versions[NIGHT_MODEL]??0,[NIGHT_EFFORT]:data.versions[NIGHT_EFFORT]??0,[NIGHT_SERVICE_TIER]:data.versions[NIGHT_SERVICE_TIER]??0},
     });
@@ -1011,7 +1027,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   const saveDocsSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
-    const result=await rpc.call("save_docs_selection",{
+    const result=await rpc.call("save_docs_selection", { ...scoped,
       projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
       expectedVersions:{[DOCS_PROVIDER]:data.versions[DOCS_PROVIDER]??0,[DOCS_MODEL]:data.versions[DOCS_MODEL]??0,[DOCS_EFFORT]:data.versions[DOCS_EFFORT]??0,[DOCS_SERVICE_TIER]:data.versions[DOCS_SERVICE_TIER]??0},
     });
@@ -1024,7 +1040,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   const savePmReadSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
-    const result=await rpc.call("save_pm_read_selection",{
+    const result=await rpc.call("save_pm_read_selection", { ...scoped,
       projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
       expectedVersions:{[PM_READ_PROVIDER]:data.versions[PM_READ_PROVIDER]??0,[PM_READ_MODEL]:data.versions[PM_READ_MODEL]??0,[PM_READ_EFFORT]:data.versions[PM_READ_EFFORT]??0,[PM_READ_SERVICE_TIER]:data.versions[PM_READ_SERVICE_TIER]??0},
     });
@@ -1041,7 +1057,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   const saveOnboardingSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
-    const result=await rpc.call("save_onboarding_selection",{
+    const result=await rpc.call("save_onboarding_selection", { ...scoped,
       projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
       expectedVersions:{[ONBOARDING_PROVIDER]:data.versions[ONBOARDING_PROVIDER]??0,[ONBOARDING_MODEL]:data.versions[ONBOARDING_MODEL]??0,[ONBOARDING_EFFORT]:data.versions[ONBOARDING_EFFORT]??0,[ONBOARDING_SERVICE_TIER]:data.versions[ONBOARDING_SERVICE_TIER]??0},
     });
@@ -1054,7 +1070,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   const savePlanCritiqueSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
-    const result=await rpc.call("save_plan_critique_selection",{
+    const result=await rpc.call("save_plan_critique_selection", { ...scoped,
       projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
       expectedVersions:{[PLAN_CRITIQUE_PROVIDER]:data.versions[PLAN_CRITIQUE_PROVIDER]??0,[PLAN_CRITIQUE_MODEL]:data.versions[PLAN_CRITIQUE_MODEL]??0,[PLAN_CRITIQUE_EFFORT]:data.versions[PLAN_CRITIQUE_EFFORT]??0,[PLAN_CRITIQUE_SERVICE_TIER]:data.versions[PLAN_CRITIQUE_SERVICE_TIER]??0},
     });
@@ -1067,7 +1083,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   const saveCodeCritiqueSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
-    const result=await rpc.call("save_code_critique_selection",{
+    const result=await rpc.call("save_code_critique_selection", { ...scoped,
       projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
       expectedVersions:{[CODE_CRITIQUE_PROVIDER]:data.versions[CODE_CRITIQUE_PROVIDER]??0,[CODE_CRITIQUE_MODEL]:data.versions[CODE_CRITIQUE_MODEL]??0,[CODE_CRITIQUE_EFFORT]:data.versions[CODE_CRITIQUE_EFFORT]??0,[CODE_CRITIQUE_SERVICE_TIER]:data.versions[CODE_CRITIQUE_SERVICE_TIER]??0},
     });
@@ -1080,7 +1096,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   const saveSpecialistSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
-    const result=await rpc.call("save_specialist_selection",{
+    const result=await rpc.call("save_specialist_selection", { ...scoped,
       projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
       expectedVersions:{[SPECIALIST_PROVIDER]:data.versions[SPECIALIST_PROVIDER]??0,[SPECIALIST_MODEL]:data.versions[SPECIALIST_MODEL]??0,[SPECIALIST_EFFORT]:data.versions[SPECIALIST_EFFORT]??0,[SPECIALIST_SERVICE_TIER]:data.versions[SPECIALIST_SERVICE_TIER]??0},
     });
@@ -1204,13 +1220,15 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     return VISIBLE_CATALOG.filter((row) => JEV_KEYS.has(row.storageKey) && !seen.has(row.storageKey) && Boolean(seen.add(row.storageKey)));
   }, []);
   const selectedProjectName = projects.find((item) => item.id === projectId)?.name ?? projectId;
+  const selectedSectionName = sections.find((item) => item.id === selectedSectionId)?.name ?? null;
   const applyGlobalDefaults = (defaults: LanePilotDefaults) => {
     const reconcile = (payload: ScreenPayload): ScreenPayload => {
       const explicit = { ...payload.values };
       for (const key of payload.inheritedKeys ?? []) delete explicit[key];
       const inherited = inheritProjectValues(explicit, defaults);
       const next = { ...payload, values: inherited.values, inheritedKeys: inherited.inherited };
-      projectCache.current.set(payload.projectId, { ...projectCache.current.get(payload.projectId), data: next, drafts: projectCache.current.get(payload.projectId)?.drafts ?? {}, writer: projectCache.current.get(payload.projectId)?.writer ?? null });
+      const key = cacheKey(payload.projectId, next.sectionId);
+      projectCache.current.set(key, { ...projectCache.current.get(key), data: next, drafts: projectCache.current.get(key)?.drafts ?? {}, writer: projectCache.current.get(key)?.writer ?? null });
       return next;
     };
     setData((current) => { const next = current ? reconcile(current) : current; dataRef.current = next; return next; });
@@ -1262,7 +1280,30 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               data-testid={`project-item-${project.id}`}
               className="h-auto w-full justify-start px-2 py-1.5 text-left"
               onClick={() => chooseProject(project.id)}
-            ><span className="min-w-0 truncate text-sm">{project.name}</span></Button>)}
+            ><span className="min-w-0 truncate text-sm">{project.name}</span></Button>).flatMap((button, index) => {
+              const project = projects[index]!;
+              if (activeScope !== "projects" || project.id !== projectId || !sections.length) return [button];
+              // The selected project's sections, nested as in Project Folders; each keeps its own settings.
+              const rows: ReactElement[] = [];
+              const walk = (parentId: string | null, depth: number) => {
+                for (const section of sections.filter((item) => item.parentId === parentId)) {
+                  rows.push(<Button
+                    key={section.id}
+                    type="button"
+                    size="sm"
+                    variant={section.id === selectedSectionId ? "secondary" : "ghost"}
+                    aria-current={section.id === selectedSectionId ? "page" : undefined}
+                    data-testid={`section-item-${section.id}`}
+                    className="h-auto w-full justify-start py-1 text-left"
+                    style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
+                    onClick={() => { setActiveScope("projects"); setSelectedSectionId(section.id); }}
+                  ><span className="min-w-0 truncate text-xs text-muted-foreground">{section.name}</span></Button>);
+                  walk(section.id, depth + 1);
+                }
+              };
+              walk(null, 1);
+              return [button, ...rows];
+            })}
           </div>
         </div>
       </nav>
@@ -1276,8 +1317,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         <main hidden={activeScope !== "projects"} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
         {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
         <div>
-          <p className="text-xs text-muted-foreground">{t("selectedProject")}</p>
-          <h1 className="break-words text-xl font-medium">{selectedProjectName}</h1>
+          <p className="text-xs text-muted-foreground">{selectedSectionName ? `${t("selectedSection")} · ${selectedProjectName}` : t("selectedProject")}</p>
+          <h1 className="break-words text-xl font-medium">{selectedSectionName ?? selectedProjectName}</h1>
+          {selectedSectionName ? <p className="text-xs text-muted-foreground">{t("sectionInheritsHint")}</p> : null}
         </div>
         <Surface testId="main-agent">
         <div className={stackControls ? "grid gap-2 px-3 py-3" : "grid gap-2 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}>
@@ -1291,7 +1333,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             onValueChange={(next) => {
               const value = next === "__default__" ? "" : next;
               writeDraft("main.agent", value);
-              void rpc.call("save_setting", { projectId: projectId!, key: "main.agent", value, expectedVersion: data?.versions["main.agent"] ?? 0 }).then((result) => {
+              void rpc.call("save_setting", { ...scoped, projectId: projectId!, key: "main.agent", value, expectedVersion: data?.versions["main.agent"] ?? 0 }).then((result) => {
                 if (!result.ok) { setSaveError(result.validation ? { kind: "validation", code: result.validation.code, params: result.validation.params } : { kind: "cas" }); return; }
                 setSaveError(null);
                 setData((current) => {

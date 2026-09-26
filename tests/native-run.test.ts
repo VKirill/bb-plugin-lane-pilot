@@ -108,3 +108,33 @@ it("accepts upstream task-v2 context fields a BB writer does not use", async () 
   expect(result.ok).toBe(true);
   expect(validateTaskV2({ ...task, surprise: 1 }).ok).toBe(false);
 });
+
+it("keeps section settings on top of the project's and resets a section back to them", async () => {
+  const { casUpsertSetting, casResetSettings, listSettingRows, loadProjectSettings, sectionBindingId, getRunSettingsScopes, setRunSettingsScopes } = await import("../src/database");
+  const fake = createFakePluginHost({ pluginId: "lane-pilot" });
+  cleanup.push(() => fake.harness.lifecycle.dispose());
+  const db = openDatabase(fake.bb);
+  expect(casUpsertSetting(db, { projectId: "p", key: "adoc.040", value: "in_place", expectedVersion: 0 }).ok).toBe(true);
+  const section = sectionBindingId("sec_a"), child = sectionBindingId("sec_b");
+  expect(casUpsertSetting(db, { projectId: "p", key: "adoc.040", value: "worktree", expectedVersion: 0, bindingId: section }).ok).toBe(true);
+  expect(casUpsertSetting(db, { projectId: "p", key: "adoc.042", value: false, expectedVersion: 0, bindingId: child }).ok).toBe(true);
+  expect(loadProjectSettings(db, "p")["adoc.040"]).toBe("in_place");
+  expect(loadProjectSettings(db, "p", [section])).toMatchObject({ "adoc.040": "worktree" });
+  expect(loadProjectSettings(db, "p", [section, child])).toMatchObject({ "adoc.040": "worktree", "adoc.042": false });
+  const rows = listSettingRows(db, "p", section);
+  expect(rows.map((row) => row.key)).toEqual(["adoc.040"]);
+  expect(casResetSettings(db, { projectId: "p", keys: ["adoc.040"], expectedVersions: { "adoc.040": 1 }, validationKeys: ["adoc.040"], validatedRows: rows, bindingId: section }).ok).toBe(true);
+  expect(loadProjectSettings(db, "p", [section, child])).toMatchObject({ "adoc.040": "in_place", "adoc.042": false });
+  createRun(db, "lprun_s", "p", "cli");
+  expect(getRunSettingsScopes(db, "lprun_s")).toEqual([]);
+  setRunSettingsScopes(db, "lprun_s", [section, child]);
+  expect(getRunSettingsScopes(db, "lprun_s")).toEqual([section, child]);
+});
+
+it("accepts a switch's boolean for a true/false setting", async () => {
+  const { validateSettingValue } = await import("../src/setting-validation");
+  expect(validateSettingValue("docs.enabled", true)).toBeNull();
+  expect(validateSettingValue("memory.enabled", false)).toBeNull();
+  expect(validateSettingValue("docs.enabled", "true")).toBeNull();
+  expect(validateSettingValue("docs.enabled", "maybe")).not.toBeNull();
+});
