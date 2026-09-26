@@ -95,7 +95,25 @@ function merge(basePath:string,sha:string,message:string):GitIntegration {
  * A git worktree has no ignored dependencies; link the base checkout's node_modules so the
  * writer's checks run, and keep the link out of git through the shared info/exclude.
  */
+const installing=new Map<string,Promise<void>>();
+
+/**
+ * Installs a project's npm dependencies once, in the main checkout, from its lockfile. `npm ci` never
+ * rewrites package-lock.json, so a writer no longer has to run `npm install` and trip the owns check,
+ * and the offline verification sandbox finds the packages already in place.
+ */
+async function installBaseDependencies(basePath:string):Promise<void> {
+  if((await stat(join(basePath,"node_modules")).catch(()=>null))?.isDirectory()) return;
+  if(!(await stat(join(basePath,"package-lock.json")).catch(()=>null))?.isFile()) return;
+  const running=installing.get(basePath)??Promise.resolve().then(()=>{
+    spawnSync("npm",["ci","--no-audit","--no-fund"],{cwd:basePath,encoding:"utf8",timeout:540_000,maxBuffer:16<<20});
+  }).finally(()=>installing.delete(basePath));
+  installing.set(basePath,running);
+  await running;
+}
+
 export async function prepareWorktree(input:{basePath:string;worktreePath:string}):Promise<{linked:string[]}> {
+  await installBaseDependencies(input.basePath);
   const base=join(input.basePath,"node_modules"), target=join(input.worktreePath,"node_modules");
   if(!(await stat(base).catch(()=>null))?.isDirectory()||await lstat(target).catch(()=>null)) return {linked:[]};
   const common=git(input.worktreePath,["rev-parse","--git-common-dir"]);

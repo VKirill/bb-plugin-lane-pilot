@@ -95,6 +95,12 @@ it("gives a repeated task id a fresh key and frees paths held by a dead task", a
   expect(listLiveTasksForRun(db, "lprun_r").map((task) => task.id)).toEqual(["live"]);
   db.prepare("UPDATE lane_pilot_attempt SET state='running' WHERE id='att_2'").run();
   expect(listLiveTasksForRun(db, "lprun_r").map((task) => task.id).sort()).toEqual(["empty", "live"]);
+  db.prepare("UPDATE lane_pilot_attempt SET state='accepted' WHERE id='att_2'").run();
+  createTask(db, { id: "preflight", runId: "lprun_r", kind: "bb", contract: { owns_paths: ["src/e.mjs"] } });
+  saveStageReceipt(db, { contractVersion: 1, runId: "lprun_r", taskId: "preflight", stageId: "pm-read", state: "failed",
+    inputSha256: "b".repeat(64), outputSha256: null, attempt: 0, providerId: null, model: null, threadId: null, result: null, reason: "x", updatedAt: 2 });
+  // Accepted work is already merged, and a failed preflight never started: neither holds its paths.
+  expect(listLiveTasksForRun(db, "lprun_r").map((task) => task.id)).toEqual(["live"]);
 });
 
 it("accepts upstream task-v2 context fields a BB writer does not use", async () => {

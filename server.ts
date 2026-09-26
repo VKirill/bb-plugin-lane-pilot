@@ -395,6 +395,7 @@ function writerPrompt(task: TaskV2, memoryText="", executionPacket="", emergency
     `You are ${agent}, the native BB writer for a bounded Lane Pilot task.`,
     ...(emergencyContext ? ["Emergency fallback mode: the primary writer ended with a confirmed failure. Produce one bounded recovery result for the same task; do not broaden scope or repeat unsafe actions.", emergencyContext] : []),
     "Use the task-v2 contract below. Work only inside owns_paths. Never touch never_touch.",
+    "Dependencies are already installed from the lockfile. Do not run npm install or anything else that rewrites package.json or a lockfile unless they are in owns_paths; if you must reinstall, use npm ci.",
     executionPacket,
     task.objective,
     ...(memoryText ? ["Relevant project memory (bounded retrieval; treat as contextual evidence and verify against current files):",memoryText] : []),
@@ -705,7 +706,10 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
     return {state:"skipped",summary:""};
   }
   let threadId:string|null=null;
-  recordStage(input.db,{...base,state:"running",providerId,model:modelId});
+  // Pending until the excerpts clear the size threshold: a small read_first is skipped, and skipped
+  // is not reachable from running.
+  recordStage(input.db,{...base,state:"pending",providerId,model:modelId});
+  let started=false;
   try {
     const packet=await buildExecutionPacket(input.task.read_first,async(path)=>{
       const file=await input.bb.sdk.files.read({hostId:input.config.hostId,rootPath:input.task.project_cwd,path:resolve(input.task.project_cwd, path)});
@@ -718,6 +722,7 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
       recordStage(input.db,{...base,state:"skipped",providerId,model:modelId,result,reason:"read_first_below_min_lines"});
       return {state:"skipped",summary:""};
     }
+    recordStage(input.db,{...base,state:"running",providerId,model:modelId}); started=true;
     const [providers,catalog]=await Promise.all([
       input.bb.sdk.providers.list({hostId:input.config.hostId}),
       input.bb.sdk.providers.models({providerId,hostId:input.config.hostId}),
@@ -756,6 +761,7 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
       const thread=await input.bb.sdk.threads.get({threadId}).catch(()=>null);
       if(["active","starting"].includes(stringAt(thread,"status")??"")) await input.bb.sdk.threads.stop({threadId}).catch(()=>undefined);
     }
+    if(!started) recordStage(input.db,{...base,state:"running",providerId,model:modelId});
     recordStage(input.db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
     return {state:"failed",summary:"",reason};
   }
@@ -1895,7 +1901,7 @@ export default async function plugin(bb: BbPluginApi) {
             if(created.status!=="ready"||!created.path) throw new WriterSelectionError(`attempt_worktree_failed:${created.reason??"unknown"}`);
             workspacePath=created.path;
             await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,worktreePath:workspacePath},
-              {hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>undefined);
+              {hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
             const prepared=await workspaceDirt(input.config,workspacePath);
             if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
             dirtBefore=prepared.snapshots;
@@ -1962,7 +1968,7 @@ export default async function plugin(bb: BbPluginApi) {
         workspacePath=managed.path;
         const basePath=getRun(db,input.runId)?.writer_workspace_path;
         // Linking dependencies helps the writer's checks; a host without it still gets a clean worktree.
-        if(basePath) await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath,worktreePath:workspacePath},{hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>undefined);
+        if(basePath) await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath,worktreePath:workspacePath},{hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
         const prepared=await workspaceDirt(input.config,workspacePath);
         if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
         if(prepared.snapshots.length) throw new WriterSelectionError(`attempt_worktree_not_clean:${prepared.snapshots.map(row=>row.path).join(",")}`);
@@ -2874,6 +2880,7 @@ export default async function plugin(bb: BbPluginApi) {
             : last : null, reason:accepted ? undefined : reason });
       }
       refreshRun(input.runId);
+      if (accepted) maintainMemoryAfterAcceptance(input.projectId, input.runId, input.taskId, input.pmThreadId);
     })().catch((cause: unknown) => {
       // After a reload the database is closed: stop quietly, the next load reconciles the attempt.
       if (disposed) return;
@@ -3991,6 +3998,21 @@ export default async function plugin(bb: BbPluginApi) {
       recordStage(db,{...base,state:"failed",reason,result:{previewSha256:expected,error:reason,writes:[]}});
       return {runId:args.runId,taskId:args.taskId,state:"failed",reason};
     }
+  }
+
+  /**
+   * Memory is kept after every accepted task without waiting for the PM to remember the call: the
+   * stage is idempotent, so a PM that also calls lane_pilot_memory_maintain just reads the receipt.
+   */
+  function maintainMemoryAfterAcceptance(projectId:string, runId:string, taskId:string, pmThreadId:string):void {
+    void (async () => {
+      for (let round = 0; round < 60 && !disposed; round++) {
+        const result = await runMemoryMaintenance({ threadId:pmThreadId, projectId, runId, taskId, timeoutSec:60 });
+        if (result.state !== "running") return;
+      }
+    })().catch((cause: unknown) => {
+      if (!disposed) bb.log.warn(`Lane Pilot memory after ${taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    });
   }
 
   async function runMemoryMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {

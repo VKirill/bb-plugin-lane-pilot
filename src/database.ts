@@ -445,16 +445,17 @@ export function listTasksForRun(db:LanePilotDatabase, runId:string):Array<{
   return rows.map((row) => ({ id:row.id, run_id:row.run_id, kind:row.kind, contract:JSON.parse(row.contract_json) }));
 }
 
-const HOLDING_ATTEMPT_STATES = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "accepted"];
+const HOLDING_ATTEMPT_STATES = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"];
 
-/** Tasks that still hold their owned paths: one with an attempt at work or accepted. A task whose
- * attempts all ended failed, or that stopped at preflight, holds none, so a retry may take its paths. */
+/** Tasks that still hold their owned paths: one with an attempt at work, or one still in preflight.
+ * Accepted work is already in the run's base checkout, and a task whose attempts ended or whose
+ * preflight failed or was blocked holds none, so a later task or a retry may take its paths. */
 export function listLiveTasksForRun(db:LanePilotDatabase, runId:string): ReturnType<typeof listTasksForRun> {
   return listTasksForRun(db, runId).filter((task) => {
     const states = (db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(runId, task.id) as Array<{state:string}>)
       .map((row) => row.state);
     if (states.length) return states.some((state) => HOLDING_ATTEMPT_STATES.includes(state));
-    return !db.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state='blocked' LIMIT 1").get(runId, task.id);
+    return !db.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('blocked','failed') LIMIT 1").get(runId, task.id);
   });
 }
 

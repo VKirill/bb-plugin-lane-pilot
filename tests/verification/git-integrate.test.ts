@@ -59,6 +59,22 @@ it("links the base node_modules into a writer worktree and keeps the link out of
   expect(git(base, "show", "--stat", "--format=", "HEAD^2")).not.toContain("node_modules");
 });
 
+it("installs dependencies from the lockfile before the first writer so nobody runs npm install", async () => {
+  const { prepareWorktree } = await import("../../src/verification/git-integrate");
+  const { base, worktree } = await repo();
+  const { mkdir, rm } = await import("node:fs/promises");
+  await mkdir(join(base, "dep"));
+  await writeFile(join(base, "dep", "package.json"), JSON.stringify({ name: "dep", version: "1.0.0" }) + "\n");
+  await writeFile(join(base, "package.json"), JSON.stringify({ name: "p", version: "1.0.0", dependencies: { dep: "file:./dep" } }) + "\n");
+  execFileSync("npm", ["install", "--no-audit", "--no-fund"], { cwd: base, stdio: "pipe" });
+  await rm(join(base, "node_modules"), { recursive: true, force: true });
+  const lock = await readFile(join(base, "package-lock.json"), "utf8");
+  git(base, "add", "."); git(base, "commit", "-qm", "deps");
+  const a = await worktree("a");
+  expect(await prepareWorktree({ basePath: base, worktreePath: a })).toEqual({ linked: ["node_modules"] });
+  expect(await readFile(join(base, "package-lock.json"), "utf8")).toBe(lock);
+}, 120_000);
+
 it("creates Lane Pilot's own worktree of a section repo and removes it once merged", async () => {
   const { createWorktree } = await import("../../src/verification/git-integrate");
   const { stat } = await import("node:fs/promises");

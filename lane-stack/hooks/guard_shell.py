@@ -43,6 +43,12 @@ PM_READ_COMMANDS = {
     "sha256sum", "sort", "stat", "tail", "test", "true", "false", "type",
     "uniq", "wc", "which", "yq",
 }
+# Read-only bb CLI calls the PM may use to look around; anything that changes state stays denied.
+PM_BB_READ_COMMANDS = {
+    ("status",), ("guide",), ("thread", "show"), ("thread", "log"), ("thread", "list"),
+    ("memory", "search"), ("memory", "get"), ("memory", "catalog"),
+    ("project", "list"), ("project", "show"),
+}
 # Typed control-plane CLIs the PM may run directly (not writer lifecycle).
 # lane-ctl / run-controller start|watch|status stay delegated to supervisors.
 PM_CONTROL_COMMANDS = {
@@ -289,6 +295,13 @@ def _pm_segment_error(segment: list[str]) -> str | None:
         return "unsupported export command"
     if executable in PM_CONTROL_COMMANDS or executable in PM_OPS_COMMANDS:
         return None
+    if executable == "bb":
+        words = [arg for arg in args if not arg.startswith("-")]
+        if any(arg in {"--help", "-h", "--version", "-V"} for arg in args):
+            return None
+        if tuple(words[:1]) in PM_BB_READ_COMMANDS or tuple(words[:2]) in PM_BB_READ_COMMANDS:
+            return None
+        return "bb command is not read-only; delegate it"
     if executable in PM_READ_COMMANDS:
         if executable == "find" and any(
             arg in {

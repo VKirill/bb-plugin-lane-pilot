@@ -174,6 +174,10 @@ it("lets the PM run bulk-reader and its other contract commands", () => {
     "plan-critique --run-dir /fixture/.agents/runs/demo",
     "check-owns-paths /fixture/.agents/runs/demo",
     "ls && cat README.md 2>/dev/null | head -80",
+    "bb --version",
+    "bb status",
+    "bb thread show thr_abc",
+    "bb uptime-monitor --help",
   ]) {
     const result = spawnSync("python3", [inject, "--", "python3", guard], {
       input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command }, cwd: "/fixture" }),
@@ -181,6 +185,19 @@ it("lets the PM run bulk-reader and its other contract commands", () => {
       env: { ...process.env, LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" },
     });
     expect(result.stdout, command).not.toMatch(/deny/);
+  }
+});
+
+it("keeps state-changing bb commands away from the PM", () => {
+  const inject = join(process.cwd(), "lane-stack/hooks/inject_agent_type.py");
+  const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+  for (const command of ["bb plugin build", "bb thread tell thr_abc hi", "bb thread spawn --prompt x"]) {
+    const result = spawnSync("python3", [inject, "--", "python3", guard], {
+      input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command }, cwd: "/fixture" }),
+      encoding: "utf8",
+      env: { ...process.env, LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" },
+    });
+    expect(result.stdout, command).toMatch(/deny/);
   }
 });
 
