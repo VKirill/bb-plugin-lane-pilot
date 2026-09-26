@@ -223,7 +223,7 @@ async function listThreadEventsRaw(
  * Waits for a child thread's turn with no overall deadline: BB's events say when it failed (see
  * threadFailure), so a slow but working model is never cut off. `probeMs` bounds a diagnostic probe only.
  */
-async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number): Promise<void> {
+async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number, requestedAfter?: number): Promise<void> {
   let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
   const deadline = probeMs === undefined ? Infinity : Date.now() + probeMs;
   while (Date.now() < deadline) {
@@ -237,6 +237,7 @@ async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage:
       status:stringAt(thread, "status"),
       queuedWork:stringAt(thread, "queuedWork"),
       events:listed.events,
+      requestedAfter,
     });
     if (decision.ok) return;
     if (decision.via === "error" || decision.via === "canceled") {
@@ -4630,8 +4631,10 @@ export default async function plugin(bb: BbPluginApi) {
           };
           let checked=await inspect();
           if(!checked.outside.length&&checked.findings.length){
+            // The repair counts only once its own turn completes, not the turn the agent already finished.
+            const sentAt=Date.now()-2_000;
             await bb.sdk.threads.send({threadId,mode:"queue-if-active",input:[{type:"text",text:docsRepairPrompt(checked.findings),mentions:[]}]});
-            await waitThreadIdle(bb,threadId,"docs_nightly_repair");
+            await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,sentAt);
             checked=await inspect();
           }
           // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
@@ -4643,24 +4646,28 @@ export default async function plugin(bb: BbPluginApi) {
           // Every docs page passed the checks, so docs left uncommitted by an earlier pass go in too; code never does.
           if(!checked.outside.length&&!checked.findings.length&&checked.docsDirty.length){
             // Builders own what the model must not write: Referenced by blocks, verified confidence, the index.
+            // They work on the pages as they are on disk now, and rebuild once if a page moved under them.
             const stats=new Map(checked.pageStats.map((stat)=>[stat.path,stat]));
-            const built=buildBacklinks(checked.pages).map((page)=>{
-              const stat=stats.get(page.path);
-              const sourced=withCitedSources(page.content);
-              return {path:page.path,content:stat?withVerifiedConfidence(sourced,stat):sourced};
-            });
-            const current=checked.pages.find((page)=>page.path==="docs/index.md");
-            const edits=[
-              ...built.flatMap((page)=>{
-                const original=checked.pages.find((row)=>row.path===page.path)!;
-                return original.content===page.content?[]:[{path:page.path,expectedSha256:original.sha256,content:page.content}];
-              }),
-              {path:"docs/index.md",expectedSha256:current?.sha256??null,content:buildDocsIndex(built)},
-            ].filter((edit)=>edit.path!=="docs/index.md"||current?.content!==edit.content);
-            if(edits.length){
+            for(let attempt=0;;attempt++){
+              const fresh=await docsPages();
+              const built=buildBacklinks(fresh).map((page)=>{
+                const stat=stats.get(page.path);
+                const sourced=withCitedSources(page.content);
+                return {path:page.path,content:stat?withVerifiedConfidence(sourced,stat):sourced};
+              });
+              const current=fresh.find((page)=>page.path==="docs/index.md");
+              const edits=[
+                ...built.flatMap((page)=>{
+                  const original=fresh.find((row)=>row.path===page.path)!;
+                  return original.content===page.content?[]:[{path:page.path,expectedSha256:original.sha256,content:page.content}];
+                }),
+                {path:"docs/index.md",expectedSha256:current?.sha256??null,content:buildDocsIndex(built)},
+              ].filter((edit)=>edit.path!=="docs/index.md"||current?.content!==edit.content);
+              if(!edits.length) break;
               const applied=await host.call("writeDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,
                 previewSha256:sha256(JSON.stringify(edits)),edits},{hostId:place.hostId,timeoutMs:120_000});
-              if(applied.status!=="applied") throw new Error(`docs builders could not write pages: ${applied.reason??applied.status}`);
+              if(applied.status==="applied") break;
+              if(attempt>=1) throw new Error(`docs builders could not write pages: ${applied.reason??applied.status}`);
             }
             const committed=await host.call("gitCommitDocs",{requestedHostId:place.hostId,projectCwd:place.path,
               paths:[...new Set([...checked.docsDirty,"docs/index.md"])],message:`docs: ${before.hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});

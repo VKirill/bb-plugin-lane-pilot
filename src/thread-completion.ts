@@ -71,8 +71,17 @@ export function decideThreadCompletion(input: {
   queuedWork?:string|null;
   events:unknown[];
   now?:number;
+  /** After sending a follow-up, only a turn requested at or after this time counts; the previous one is already done. */
+  requestedAfter?:number;
 }): ThreadCompletionDecision {
   if ((input.status ?? "") === "error") return { ok:false, via:"error", detail:"thread_status_error" };
+  if (input.requestedAfter !== undefined) {
+    const rows = input.events.map(readWatched).filter((row): row is NonNullable<typeof row> => row !== null);
+    const request = rows.filter((row) => row.type === "client/turn/requested").sort((a, b) => b.seq - a.seq)[0];
+    const started = rows.filter((row) => row.type === "turn/started").sort((a, b) => b.seq - a.seq)[0];
+    if (!request || request.createdAt === null || request.createdAt < input.requestedAfter) return { ok:false, via:"incomplete", detail:"follow_up_not_requested_yet" };
+    if (!started || started.seq < request.seq) return { ok:false, via:"incomplete", detail:"follow_up_not_started" };
+  }
   const current = currentSpawnTurn(input.threadId, input.events);
   if (current.kind === "canceled") return { ok:false, via:"canceled", detail:current.detail };
   if (current.kind === "completed") return { ok:true, via:"turn_completed" };

@@ -32,3 +32,13 @@ it("lets a completed turn win and turns a failure into an error decision", () =>
   expect(decideThreadCompletion({ threadId:"t", status:"starting", events:[request], now:PROVIDER_START_LIMIT_MS + 1 }))
     .toMatchObject({ ok:false, via:"error" });
 });
+
+it("after a follow-up, waits for the turn it requested rather than the finished one", () => {
+  const done = [ev(1, "client/turn/requested", {}, 1_000), ev(2, "turn/started", {}, 1_100), ev(3, "turn/completed", { status:"completed" }, 5_000)];
+  expect(decideThreadCompletion({ threadId:"t", status:"idle", events:done }).ok).toBe(true);
+  expect(decideThreadCompletion({ threadId:"t", status:"idle", events:done, requestedAfter:6_000 })).toMatchObject({ ok:false, detail:"follow_up_not_requested_yet" });
+  const asked = [...done, ev(4, "client/turn/requested", {}, 6_500)];
+  expect(decideThreadCompletion({ threadId:"t", status:"active", events:asked, requestedAfter:6_000 })).toMatchObject({ ok:false, detail:"follow_up_not_started" });
+  const finished = [...asked, ev(5, "turn/started", {}, 6_600), ev(6, "turn/completed", { status:"completed" }, 9_000)];
+  expect(decideThreadCompletion({ threadId:"t", status:"idle", events:finished, requestedAfter:6_000 }).ok).toBe(true);
+});
