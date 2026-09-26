@@ -4,6 +4,7 @@ import type { PrototypeConfig } from "./contracts";
 import type { StageId, StageState } from "./stages/contract";
 import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
 import { validateSettingValue, validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "./lp-defaults";
 import { memoryRecordId, type MemoryCandidate, type MemoryKind, type MemoryRecord, type MemorySearchEngine } from "./stages/memory";
 
 export type LanePilotDatabase = Database.Database;
@@ -676,9 +677,13 @@ export function sectionBindingId(sectionId: string): string {
 /** Project settings with each scope (outermost first) overriding the one above it. */
 export function loadProjectSettings(db: LanePilotDatabase, projectId: string, scopes: readonly string[] = []): Record<string, unknown> {
   const merged: Record<string, unknown> = {};
-  for (const bindingId of ["", ...scopes]) {
+  const layers: Array<[string, string]> = [
+    ...(projectId === GLOBAL_SETTINGS_PROJECT_ID ? [] : [[GLOBAL_SETTINGS_PROJECT_ID, ""] as [string, string]]),
+    ...["", ...scopes].map((bindingId): [string, string] => [projectId, bindingId]),
+  ];
+  for (const [layerProjectId, bindingId] of layers) {
     const rows = db.prepare(`SELECT key,value FROM lane_pilot_project_settings
-      WHERE project_id=? AND binding_id=?`).all(projectId, bindingId) as Array<{key:string; value:string}>;
+      WHERE project_id=? AND binding_id=?`).all(layerProjectId, bindingId) as Array<{key:string; value:string}>;
     for (const row of rows) {
       try { merged[row.key] = JSON.parse(row.value); } catch { merged[row.key] = row.value; }
     }
@@ -945,8 +950,8 @@ export function casUpsertSettings(
       WHERE project_id=? AND binding_id=?`).all(args.projectId, bindingId) as Array<{
         key:string; value:string; version:number;
       }>;
-    // A section's values are validated on top of its project's settings.
-    const settings: Record<string, unknown> = bindingId ? loadProjectSettings(db, args.projectId) : {};
+    // Values are validated on top of everything they inherit: global, project, then own rows.
+    const settings: Record<string, unknown> = loadProjectSettings(db, args.projectId);
     const generations = getSettingVersions(db,args.projectId,keys,bindingId);
     const stored = new Map<string, { value:unknown; version:number }>();
     for (const row of rows) {

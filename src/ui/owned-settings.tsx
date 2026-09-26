@@ -86,7 +86,7 @@ function ResourcePicker({
   const listed = mergeInventoryItems(group?.items ?? [], names).filter((item) => {
     const q = query.trim().toLowerCase();
     return q ? `${item.name} ${item.label}`.toLowerCase().includes(q) : true;
-  });
+  }).sort((a, b) => Number(names.includes(b.name)) - Number(names.includes(a.name)));
   const known = new Set((group?.items ?? []).map((item) => item.name));
   const errorTitle = resourceKey === "skills" ? t("agentSkillsLoadFailed") : resourceKey === "mcpServers" ? t("agentMcpLoadFailed") : t("agentInventoryError");
   const { stackControls } = usePanelLayout();

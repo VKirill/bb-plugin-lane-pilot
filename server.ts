@@ -114,7 +114,7 @@ import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writ
 import { QA_HOST_KEY, QA_WORKSPACE_KEY, mapListedQaHosts, qaCodexPreflight, qaHostUnreachableReason, qaSpawnClaimed, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "./src/qa-host";
 import { resolveWriterBinding, type ProjectSourceBinding, type WriterBindingResolution } from "./src/project-binding";
 import { userVisibleProjects } from "./src/project-scope";
-import { inheritProjectValues, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseHelperPlacement, parseLanePilotDefaults, type HelperPlacementMode } from "./src/lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID, inheritProjectValues, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseHelperPlacement, parseLanePilotDefaults, type HelperPlacementMode } from "./src/lp-defaults";
 import {
   DEFAULT_NATIVE_AGENT,
   NATIVE_MENTION_PROVIDER,
@@ -2984,6 +2984,12 @@ export default async function plugin(bb: BbPluginApi) {
     return chain;
   }
 
+  /** What a settings level inherits: a section its parents and project, a project the global level. */
+  function settingsAbove(projectId:string, scopes:readonly string[]): Record<string, unknown> {
+    if (scopes.length) return loadProjectSettings(db, projectId, scopes.slice(0, -1));
+    return projectId === GLOBAL_SETTINGS_PROJECT_ID ? {} : loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID);
+  }
+
   /** The deepest section whose folder holds this workspace decides a run's settings scopes. */
   async function scopesForWorkspace(projectId:string, workspacePath:string): Promise<string[]> {
     const sections = await listProjectSections(projectId);
@@ -4666,6 +4672,15 @@ export default async function plugin(bb: BbPluginApi) {
     threadId?: string | null;
     selected?: { hostId: string; path: string } | null;
   }) {
+    if (args.projectId === GLOBAL_SETTINGS_PROJECT_ID) {
+      // Global settings are not tied to a folder; any connected machine lists the model catalog.
+      const hosts = mapListedQaHosts(await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.().catch(() => []) ?? []);
+      const preferred = parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)).qaHostId;
+      const host = hosts.find((row) => row.connected && row.id === preferred) ?? hosts.find((row) => row.connected);
+      return host
+        ? { status: "resolved" as const, hostId: host.id, path: "", source: "explicit_override" as const }
+        : { status: "catalog_unavailable" as const, reason: "no connected machine" };
+    }
     let project: { sources?: ProjectSourceBinding[] } | null = null;
     const getProject = bb.sdk.projects?.get;
     const legacyAbsent = typeof getProject !== "function";
@@ -4987,7 +5002,7 @@ export default async function plugin(bb: BbPluginApi) {
       const config = loadPrototypeConfig(db, projectId);
       const settings = loadProjectSettings(db, projectId, scopes);
       const rows = listSettingRows(db, projectId, bindingId);
-      const values: Record<string, unknown> = bindingId ? loadProjectSettings(db, projectId, scopes.slice(0, -1)) : {};
+      const values = settingsAbove(projectId, scopes);
       const aboveKeys = Object.keys(values);
       const versions: Record<string, number> = {};
       for (const row of rows) {
@@ -4996,11 +5011,9 @@ export default async function plugin(bb: BbPluginApi) {
       }
       Object.assign(versions, getSettingVersions(db, projectId, [...new Set(VISIBLE_CATALOG.map((row) => row.storageKey))], bindingId));
       const inherited = inheritProjectValues(values, parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)));
-      if (bindingId) {
-        const own = new Set(rows.map((row) => row.key));
-        inherited.explicitKeys = [...own];
-        inherited.inherited = [...new Set([...inherited.inherited, ...aboveKeys.filter((key) => !own.has(key))])];
-      }
+      const own = new Set(rows.map((row) => row.key));
+      inherited.explicitKeys = [...own];
+      inherited.inherited = [...new Set([...inherited.inherited, ...aboveKeys.filter((key) => !own.has(key))])];
       Object.assign(values, inherited.values);
       const writerBinding = await resolveProjectWriterHost({ projectId });
       for (const row of VISIBLE_CATALOG) {
@@ -5164,7 +5177,8 @@ export default async function plugin(bb: BbPluginApi) {
       const affected = groups.filter((group) => group.some((key) => keys.includes(key)));
       if (affected.some((group) => group.some((key) => !keys.includes(key)))) return reject(keys[0]!, "reset the complete provider/model/effort/tier group");
       const rows = listSettingRows(db, projectId, bindingId);
-      const explicit = Object.fromEntries(rows.filter((row) => !keys.includes(row.key)).map((row) => [row.key, row.value]));
+      const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];
+      const explicit = { ...settingsAbove(projectId, scopes), ...Object.fromEntries(rows.filter((row) => !keys.includes(row.key)).map((row) => [row.key, row.value])) };
       const effective = inheritProjectValues(explicit, parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY))).values;
       if (affected.length) {
         const host = await selectionCatalogHost(projectId);

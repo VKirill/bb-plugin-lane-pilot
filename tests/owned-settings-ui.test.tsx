@@ -77,6 +77,10 @@ describe("owned settings source DOM", () => {
       fireEvent.click(slot.getByRole("option", { name: "Selected" }));
       expect(slot.getAllByLabelText("Search").length).toBeGreaterThan(0);
       expect(slot.getByRole("checkbox", { name: /copywriter/ })).toBeTruthy();
+      fireEvent.click(slot.getByRole("checkbox", { name: /gitnexus-exploring/ }));
+      const skillNames = () => [...slot.getByTestId("agent-resource-skills").querySelectorAll("li")].map((item) => item.textContent);
+      const order = skillNames();
+      expect(order.findIndex((name) => name?.includes("gitnexus-exploring"))).toBeLessThan(order.findIndex((name) => name?.includes("copywriter")));
       fireEvent.click(slot.getByRole("combobox", { name: "Allowed tools" }));
       fireEvent.click(slot.getByRole("option", { name: "Selected" }));
       expect(slot.getByRole("checkbox", { name: /^Read$/ })).toBeTruthy();

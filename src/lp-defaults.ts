@@ -1,5 +1,7 @@
 export const LP_DEFAULTS_KEY = "defaults:v1";
 export const LP_AGENT_OVERRIDES_KEY = "agents:v1";
+/** Settings saved on the «Общие настройки» page; every project inherits them. */
+export const GLOBAL_SETTINGS_PROJECT_ID = "*";
 
 export const HELPER_PLACEMENT_MODES = ["plugin", "project_tree"] as const;
 export type HelperPlacementMode = (typeof HELPER_PLACEMENT_MODES)[number];

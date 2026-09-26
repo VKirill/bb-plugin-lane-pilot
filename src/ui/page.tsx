@@ -64,7 +64,7 @@ import { userVisibleProjects } from "../project-scope";
 import { CONTROL_H } from "./control-row";
 import { Disclosure } from "./disclosure";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
-import { inheritProjectValues, type LanePilotDefaults } from "../lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
 
 const CARD_HEAD = "space-y-1 px-3 pb-2 pt-3";
 const CARD_BODY = "px-3 pb-3 pt-0";
@@ -618,7 +618,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const rpc = useRpc<typeof rpcContract>();
   const { projectId: routeProjectId, threadId: routeThreadId } = useBbContext();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const projectId = selectedProjectId ?? routeProjectId ?? (subPath || null);
+  // «Общие настройки» edit the global level every project inherits, with the same panel as a project.
+  const projectId = activeScope === "globals" ? GLOBAL_SETTINGS_PROJECT_ID : selectedProjectId ?? routeProjectId ?? (subPath || null);
+  const isGlobal = projectId === GLOBAL_SETTINGS_PROJECT_ID;
   // A section keeps its own settings over its project's; null edits the project itself.
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [sections, setSections] = useState<Array<{ id:string; parentId:string|null; name:string; path:string; kind:"folder"|"group" }>>([]);
@@ -744,11 +746,21 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   useEffect(() => {
     setSelectedSectionId(null);
     setSections([]);
-    if (!projectId) return;
+    if (!projectId || isGlobal) return;
     let current = true;
     void rpc.call("list_sections", { projectId }).then((result) => { if (current) setSections(result.sections); }).catch(() => undefined);
     return () => { current = false; };
   }, [projectId, rpc]);
+
+  // Leaving the global level drops cached project screens: their inherited values may have changed.
+  useEffect(() => {
+    if (!isGlobal) return;
+    return () => projectCache.current.clear();
+  }, [isGlobal]);
+
+  useEffect(() => {
+    if (isGlobal && tab !== "settings" && tab !== "checks") setTab("settings");
+  }, [isGlobal, tab]);
 
   const diagnosticsGrouped = useMemo(() => {
     const map = new Map<string, CatalogRow[]>();
@@ -1180,7 +1192,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const hostId = data?.hostId;
   const routing = hostId ? { kind: "host" as const, hostId } : undefined;
   const modelPicker = (value: ExperimentalProviderModelPickerValue, onChange: (next: ExperimentalProviderModelPickerValue) => void) => (
-    value.providerId || (providers.providers?.length ?? 0) > 0
+    // Before the screen loads the picker would fill in the catalog's first model and report it as a choice.
+    !data ? <p className="text-sm text-muted-foreground">{t("writerCatalogLoading")}</p>
+    : value.providerId || (providers.providers?.length ?? 0) > 0
       ? <ProviderModelPicker value={value.providerId ? value : { providerId: providers.providers?.[0]?.id ?? "none", model: "", reasoningLevel: "none" }} routing={routing} onChange={onChange} />
       : <p className="text-sm text-muted-foreground">{providers.status === "loading" ? t("writerCatalogLoading") : t("writerCatalogUnavailable")}</p>
   );
@@ -1221,20 +1235,6 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   }, []);
   const selectedProjectName = projects.find((item) => item.id === projectId)?.name ?? projectId;
   const selectedSectionName = sections.find((item) => item.id === selectedSectionId)?.name ?? null;
-  const applyGlobalDefaults = (defaults: LanePilotDefaults) => {
-    const reconcile = (payload: ScreenPayload): ScreenPayload => {
-      const explicit = { ...payload.values };
-      for (const key of payload.inheritedKeys ?? []) delete explicit[key];
-      const inherited = inheritProjectValues(explicit, defaults);
-      const next = { ...payload, values: inherited.values, inheritedKeys: inherited.inherited };
-      const key = cacheKey(payload.projectId, next.sectionId);
-      projectCache.current.set(key, { ...projectCache.current.get(key), data: next, drafts: projectCache.current.get(key)?.drafts ?? {}, writer: projectCache.current.get(key)?.writer ?? null });
-      return next;
-    };
-    setData((current) => { const next = current ? reconcile(current) : current; dataRef.current = next; return next; });
-    for (const [id, cached] of projectCache.current) projectCache.current.set(id, { ...cached, data: reconcile(cached.data) });
-  };
-
   const mobileNavValue = activeScope === "projects" ? (projectId ? `project:${projectId}` : "projects") : activeScope;
 
   return (
@@ -1313,15 +1313,20 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         </div>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <div ref={contentRef} className="mx-auto w-full min-w-0 max-w-5xl space-y-6 px-4 py-5">
-        <OwnedSettings scope={activeScope} locale={locale} onDefaultsSaved={applyGlobalDefaults} />
-        <main hidden={activeScope !== "projects"} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
+        <OwnedSettings scope={activeScope === "agents" ? "agents" : "projects"} locale={locale} />
+        <main hidden={activeScope === "agents"} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
         {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
         <div>
-          <p className="text-xs text-muted-foreground">{selectedSectionName ? `${t("selectedSection")} · ${selectedProjectName}` : t("selectedProject")}</p>
-          <h1 className="break-words text-xl font-medium">{selectedSectionName ?? selectedProjectName}</h1>
-          {selectedSectionName ? <p className="text-xs text-muted-foreground">{t("sectionInheritsHint")}</p> : null}
+          {isGlobal ? <>
+            <h1 className="break-words text-xl font-medium">{t("navGlobals")}</h1>
+            <p className="text-xs text-muted-foreground">{t("globalsHelp")}</p>
+          </> : <>
+            <p className="text-xs text-muted-foreground">{selectedSectionName ? `${t("selectedSection")} · ${selectedProjectName}` : t("selectedProject")}</p>
+            <h1 className="break-words text-xl font-medium">{selectedSectionName ?? selectedProjectName}</h1>
+            {selectedSectionName ? <p className="text-xs text-muted-foreground">{t("sectionInheritsHint")}</p> : null}
+          </>}
         </div>
-        <Surface testId="main-agent">
+        {isGlobal ? null : <Surface testId="main-agent">
         <div className={stackControls ? "grid gap-2 px-3 py-3" : "grid gap-2 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}>
           <div className="space-y-1">
             <Label className="text-sm">{t("mainAgent")}</Label>
@@ -1351,7 +1356,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             </SelectContent>
           </Select>
         </div>
-        </Surface>
+        </Surface>}
         {error ? (
           <Alert variant="destructive">
             <AlertTitle>{t("loadError")}</AlertTitle>
@@ -1373,7 +1378,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             </Alert>
           );
         })() : null}
-        {data?.writerBinding ? (
+        {data?.writerBinding && !isGlobal ? (
           <Card data-testid="writer-binding">
             <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("projectMachineFolder")}</CardTitle></CardHeader>
             <CardContent className={`${CARD_BODY} space-y-2 text-sm`}>
@@ -1417,9 +1422,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           <TabsList data-bb-ru-skip className="min-w-0 max-w-full">
             <TabsTrigger value="settings" data-testid="tab-settings">{t("tabSettings")}</TabsTrigger>
             <TabsTrigger value="checks" data-testid="tab-checks">{t("tabChecks")}</TabsTrigger>
-            <TabsTrigger value="monitor" data-testid="tab-monitor">{t("tabMonitor")}</TabsTrigger>
-            <TabsTrigger value="install" data-testid="tab-install">{t("tabInstall")}</TabsTrigger>
-            <TabsTrigger value="diagnostics" data-testid="tab-diagnostics">{t("tabDiagnostics")}</TabsTrigger>
+            {isGlobal ? null : <>
+              <TabsTrigger value="monitor" data-testid="tab-monitor">{t("tabMonitor")}</TabsTrigger>
+              <TabsTrigger value="install" data-testid="tab-install">{t("tabInstall")}</TabsTrigger>
+              <TabsTrigger value="diagnostics" data-testid="tab-diagnostics">{t("tabDiagnostics")}</TabsTrigger>
+            </>}
           </TabsList>
 
           <TabsContent value="settings" forceMount={true} className="space-y-6" hidden={tab !== "settings"} data-testid="settings-panel">

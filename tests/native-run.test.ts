@@ -138,3 +138,24 @@ it("accepts a switch's boolean for a true/false setting", async () => {
   expect(validateSettingValue("docs.enabled", "true")).toBeNull();
   expect(validateSettingValue("docs.enabled", "maybe")).not.toBeNull();
 });
+
+it("lets every project inherit the global level and override it per project or section", async () => {
+  const { casUpsertSettings, loadProjectSettings, sectionBindingId } = await import("../src/database");
+  const { GLOBAL_SETTINGS_PROJECT_ID } = await import("../src/lp-defaults");
+  const fake = createFakePluginHost({ pluginId: "lane-pilot" });
+  cleanup.push(() => fake.harness.lifecycle.dispose());
+  const db = openDatabase(fake.bb);
+  const writer = (projectId: string, model: string, bindingId = "") => casUpsertSettings(db, { projectId, bindingId, changes: [
+    { key: "writer.provider", value: "codex", expectedVersion: 0 },
+    { key: "writer.model", value: model, expectedVersion: 0 },
+  ] }, { nativeWriterSelection: true }).ok;
+  expect(writer(GLOBAL_SETTINGS_PROJECT_ID, "gpt-6-luna")).toBe(true);
+  expect(casUpsertSettings(db, { projectId: GLOBAL_SETTINGS_PROJECT_ID, changes: [{ key: "docs.enabled", value: true, expectedVersion: 0 }] }).ok).toBe(true);
+  expect(loadProjectSettings(db, "a")).toMatchObject({ "writer.model": "gpt-6-luna", "docs.enabled": true });
+  expect(writer("b", "gpt-6-astra")).toBe(true);
+  expect(loadProjectSettings(db, "b")).toMatchObject({ "writer.model": "gpt-6-astra", "docs.enabled": true });
+  const section = sectionBindingId("sec_a");
+  expect(casUpsertSettings(db, { projectId: "a", bindingId: section, changes: [{ key: "docs.enabled", value: false, expectedVersion: 0 }] }).ok).toBe(true);
+  expect(loadProjectSettings(db, "a", [section])).toMatchObject({ "writer.model": "gpt-6-luna", "docs.enabled": false });
+  expect(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)).toEqual({ "writer.provider": "codex", "writer.model": "gpt-6-luna", "docs.enabled": true });
+});

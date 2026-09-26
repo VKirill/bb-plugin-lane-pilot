@@ -162,7 +162,7 @@ describe("Lane Pilot UI", () => {
     const errors: unknown[] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((...args) => { errors.push(args); });
     const slot = await mountPage();
-    expect(slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy();
+    await waitFor(() => expect(slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy());
     fireEvent.click(slot.getByTestId("tab-diagnostics"));
     const joined = errors.map((item) => String(item)).join("\n");
     expect(joined).not.toMatch(/same key/i);
@@ -654,41 +654,33 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
-  it("refreshes active and cached project inheritance after saving global defaults without dropping drafts", async () => {
-    let revision = 0;
-    let defaults: Record<string, unknown> = { helperPlacement: "plugin" };
-    const screen = () => {
-      const payload = screenFixture();
-      return { ...payload, values: { ...payload.values, "helper.placement": "plugin" }, versions: { ...payload.versions, "helper.placement": 0 }, inheritedKeys: ["helper.placement"] };
-    };
+  it("edits the global level with the project panel and reloads projects after leaving it", async () => {
+    let globalPlacement = "plugin";
+    const saved: Array<{ projectId: string; key: string; value: unknown }> = [];
     const slot = await mountPage({
-      get_screen: screen,
-      get_globals: () => ({ defaults, revision, agents: [] }),
-      save_globals: ({ defaults: next, expectedRevision }: any) => {
-        if (expectedRevision !== revision) return { ok: false, revision, defaults };
-        defaults = next; revision += 1;
-        return { ok: true, revision, defaults };
+      get_screen: ({ projectId }: any) => {
+        const payload = screenFixture(), global = projectId === "*";
+        return { ...payload, projectId, values: { ...payload.values, "helper.placement": globalPlacement }, versions: { ...payload.versions, "helper.placement": global ? 1 : 0 }, inheritedKeys: global ? [] : ["helper.placement"] };
+      },
+      save_setting: (input: any) => {
+        saved.push(input);
+        if (input.projectId === "*" && input.key === "helper.placement") globalPlacement = input.value;
+        return { ok: true, conflict: false, version: input.expectedVersion + 1, value: input.value };
       },
     });
     await slot.findByTestId("settings-panel");
     fireEvent.click(slot.getAllByRole("tab", { name: "General settings" })[0]!);
-    const placement = await slot.findByRole("combobox", { name: "Default helper placement" });
-    fireEvent.click(placement);
-    fireEvent.click(await slot.findByRole("option", { name: "In the project tree" }));
-    fireEvent.click(slot.getByRole("button", { name: "Save" }));
-    await slot.findByRole("status");
-    fireEvent.click(slot.getByTestId("project-item-proj_ui"));
-    await waitFor(() => expect(slot.getByTestId("project-settings").hidden).toBe(false));
+    await waitFor(() => expect(slot.getByTestId("project-settings").querySelector("h1")?.textContent).toBe("General settings"));
+    expect(slot.queryByTestId("tab-monitor")).toBeNull();
+    expect(slot.queryByTestId("main-agent")).toBeNull();
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
-    const row = slot.getByTestId("field-s371");
-    expect(row.textContent).toContain("In the project tree");
-    expect(row.textContent).toContain("owner defaults");
-    // Reselecting this project takes the reconciled cache, never the pre-save value.
-    fireEvent.click(slot.getAllByRole("tab", { name: "General settings" })[0]!);
+    const field = await slot.findByTestId("field-s371");
+    fireEvent.click(field.querySelector("button[role='combobox']") as HTMLButtonElement);
+    fireEvent.click(await slot.findByRole("option", { name: /project tree/i }));
+    await waitFor(() => expect(saved).toContainEqual(expect.objectContaining({ projectId: "*", key: "helper.placement", value: "project_tree" })));
     fireEvent.click(slot.getByTestId("project-item-proj_ui"));
-    await waitFor(() => expect(slot.getByTestId("project-settings").hidden).toBe(false));
-    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
-    expect(slot.getByTestId("field-s371").textContent).toContain("In the project tree");
+    await waitFor(() => expect(slot.getByTestId("field-s371").textContent).toContain("project tree"));
+    expect(slot.getByTestId("field-s371").textContent).toContain("Inherited");
     slot.lifecycle.unmount();
   }, 15_000);
 
@@ -712,7 +704,7 @@ describe("Lane Pilot UI", () => {
     const row = slot.getByTestId("field-s371");
     await waitFor(() => expect(row.textContent).toContain("Set on this project"));
     fireEvent.click(within(row).getByRole("button", { name: "Reset to inherited" }));
-    await waitFor(() => expect(row.textContent).toContain("owner defaults"));
+    await waitFor(() => expect(row.textContent).toContain("Inherited"));
     expect(row.textContent).not.toContain("Set on this project");
     expect(within(row).queryByRole("button", { name: "Reset to inherited" })).toBeNull();
     expect(slot.getByTestId("field-s371").textContent).toContain("project tree");
