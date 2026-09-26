@@ -33,7 +33,7 @@ function statusPath(line: string): string {
   return arrow >= 0 ? path.slice(arrow + 4) : path;
 }
 
-export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: number }): Promise<GitDocsScope> {
+export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: number; base?: string }): Promise<GitDocsScope> {
   const now = new Date();
   const local = {
     localDate: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
@@ -47,7 +47,8 @@ export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: nu
   catch { return { status: "not-git", isRepoRoot: false, hasDocs, changed: [], dirty: [], base: null, ...local, reason: null }; }
   try {
     const isRepoRoot = (await realpath(top)) === (await realpath(input.projectCwd));
-    const base = (await git("log", "-1", "--format=%H", "--", "docs")).trim()
+    const base = (input.base ? (await git("rev-parse", "--verify", `${input.base}^{commit}`)).trim() : "")
+      || (await git("log", "-1", "--format=%H", "--", "docs")).trim()
       || (await git("rev-list", "-1", `--before=@${Math.floor(input.sinceEpochMs / 1000)}`, "HEAD")).trim()
       || EMPTY_TREE;
     const committed = (await git("diff", "--name-only", base, "HEAD")).split("\n");

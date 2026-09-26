@@ -148,7 +148,7 @@ export const hostContract = defineRpcContract({
     output: z.object({ hostId:z.string(), status:z.enum(["merged","up-to-date","conflict","failed"]), commit:z.string().nullable(), conflicts:z.array(z.string()), reason:z.string().nullable() }).strict(),
   },
   gitDocsScope: {
-    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), sinceEpochMs:z.number().int().nonnegative() }).strict(),
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), sinceEpochMs:z.number().int().nonnegative(), base:z.string().min(1).max(200).optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), isRepoRoot:z.boolean(), hasDocs:z.boolean(), changed:z.array(z.string()), dirty:z.array(z.string()), base:z.string().nullable(), localDate:z.string(), localHour:z.number().int(), reason:z.string().nullable() }).strict(),
   },
   docsAnchors: {

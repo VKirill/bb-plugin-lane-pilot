@@ -322,11 +322,14 @@ export async function docsStaleness(input:{ projectCwd:string; base:string; chan
   const key = await jevApiKey();
   if (!key) return { jev:"disabled", refresh:[], reasons:[] };
   const changed = new Set(input.changed);
-  const sections = input.pages.flatMap((page) => {
+  // A page with no citations at all (the people's README) is judged whole against the changed code.
+  const uncited = input.pages.filter((page) => ![...page.content.matchAll(CITATION)].length && input.changed.length)
+    .map((page) => ({ path:page.path, heading:"(whole page)", text:page.content, files:input.changed.slice(0, 8) }));
+  const sections = [...uncited, ...input.pages.filter((page) => [...page.content.matchAll(CITATION)].length).flatMap((page) => {
     const [head = "", ...rest] = page.content.split(/\n(?=## )/);
     return [head, ...rest].map((text) => ({ path:page.path, heading:(/^## (.+)$/m.exec(text)?.[1] ?? "(intro)").trim(), text,
       files:[...new Set([...text.matchAll(CITATION)].map((match) => match[1]!.replace(/^\.\//, "")))].filter((file) => changed.has(file)) }));
-  }).filter((section) => section.files.length);
+  })].filter((section) => section.files.length);
   const diffs = await diffSince(input.projectCwd, input.base, [...new Set(sections.flatMap((section) => section.files))]);
   const reasons:Array<{ path:string; section:string; p:number }> = [];
   let answered = 0;

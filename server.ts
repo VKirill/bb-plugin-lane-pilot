@@ -4541,7 +4541,7 @@ export default async function plugin(bb: BbPluginApi) {
    * hidden docs agent. It sees the code changed since docs.since; no docs/ yet means onboarding;
    * nothing changed and docs present means no model call. `force` skips the hour for a manual run.
    */
-  async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string}={}):Promise<Array<Record<string,unknown>>> {
+  async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string}={}):Promise<Array<Record<string,unknown>>> {
     const results:Array<Record<string,unknown>>=[];
     const projects=opts.projectId?[{id:opts.projectId}]:await bb.sdk.projects.list({includePersonal:true}).catch(()=>[] as Array<{id:string}>);
     for(const project of projects){
@@ -4557,7 +4557,8 @@ export default async function plugin(bb: BbPluginApi) {
           const settings=loadProjectSettings(db,project.id,place.scopes);
           const docs=parseDocsSettings(Object.fromEntries(["docs.enabled","docs.maintain","docs.since","docs.page_cap","docs.hour"].map((key)=>[key,configuredSetting(settings,key)])));
           if(!docs.enabled||!docs.maintain) continue;
-          const before=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date())},{hostId:place.hostId,timeoutMs:60_000});
+          const before=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),
+            ...(opts.base?{base:opts.base}:{})},{hostId:place.hostId,timeoutMs:60_000});
           if(before.status!=="ready"||!before.isRepoRoot) continue;
           if(!opts.force&&before.localHour!==docs.hour) continue;
           const schedule=`docs-nightly-${sha256(place.path).slice(0,12)}`;
@@ -4566,6 +4567,11 @@ export default async function plugin(bb: BbPluginApi) {
           const docsPages=async()=>(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path},{hostId:place.hostId,timeoutMs:60_000})).pages
             .filter((page)=>page.path.startsWith("docs/")) as Array<{path:string;sha256:string;content:string}>;
           const existing=before.hasDocs?await docsPages():[];
+          // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the docs.
+          const rootPages=before.hasDocs?(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
+            const file=await bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}).catch(()=>null);
+            return file&&typeof file.content==="string"?{path,content:file.content}:null;
+          }))).filter((page):page is {path:string;content:string}=>page!==null):[];
           const pageInput=existing.filter((page)=>page.path!=="docs/index.md").map((page)=>({path:page.path,content:page.content}));
           // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
           const anchors=await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,
@@ -4574,7 +4580,7 @@ export default async function plugin(bb: BbPluginApi) {
           let refresh=before.hasDocs?pagesToRefresh(existing,before.changed):[];
           if(before.hasDocs){
             const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
-              changed:before.changed,pages:pageInput},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
+              changed:before.changed,pages:[...pageInput,...rootPages]},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
             if(stale&&stale.jev!=="disabled"){
               const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
               const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:before.changed);
@@ -5983,7 +5989,7 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"configure", summary:"Save prototype project settings", usage:"bb lane-pilot configure '<json>'" },
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
-      { name:"docs-nightly", summary:"Run the nightly docs pass now for docs-enabled folders of a project", usage:"bb lane-pilot docs-nightly <project-id> [folder-path]" },
+      { name:"docs-nightly", summary:"Run the nightly docs pass now for docs-enabled folders of a project", usage:"bb lane-pilot docs-nightly <project-id> [folder-path] [since-commit]" },
       { name:"finish", summary:"Close a PM run after observing it idle and release activation", usage:"bb lane-pilot finish <project-id> [run-id]" },
       { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id> [run-id]" },
       { name:"cancel", summary:"Stop a writer and persist canceled after observing idle", usage:"bb lane-pilot cancel <attempt-id>" },
@@ -6173,8 +6179,8 @@ export default async function plugin(bb: BbPluginApi) {
             baseRef:args[3]||undefined,
           }), null, 2) };
         }
-        if (command === "docs-nightly" && (args.length === 1 || args.length === 2)) {
-          return { exitCode:0, stdout:JSON.stringify(await runNightlyDocs({force:true,projectId:args[0]!,path:args[1]}), null, 2) };
+        if (command === "docs-nightly" && args.length >= 1 && args.length <= 3) {
+          return { exitCode:0, stdout:JSON.stringify(await runNightlyDocs({force:true,projectId:args[0]!,path:args[1],base:args[2]}), null, 2) };
         }
         if (command === "wait-thread" && args.length === 1) {
           const threadId = args[0]!;
