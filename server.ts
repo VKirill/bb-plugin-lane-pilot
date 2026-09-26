@@ -4538,8 +4538,8 @@ export default async function plugin(bb: BbPluginApi) {
 
   /** A workspace with at least this many product code files keeps its own docs folder; smaller ones belong to the root docs. */
   const WORKSPACE_DOCS_MIN_FILES=15;
-  /** Docs folders of one monorepo written at once. */
-  const DOCS_UNIT_CONCURRENCY=3;
+  /** Docs folders of one monorepo written at once: BB lets only one thread use a project checkout at a time. */
+  const DOCS_UNIT_CONCURRENCY=1;
   /** Tooling state that changes during a pass without the docs agent: never reverted, never a violation. */
   const DOCS_TOOLING=/^(\.agents|\.bb|\.claude|\.codex|\.gitnexus)\//;
 
@@ -4585,7 +4585,7 @@ export default async function plugin(bb: BbPluginApi) {
               bb.log.warn(`Lane Pilot nightly docs failed for ${place.path} ${unit.docsDir}: ${reason}`);
             }
           };
-          // Workspaces first, a few at once; the root last, so its overview links to docs that exist.
+          // Workspaces first, one after another; the root last, so its overview links to docs that exist.
           const queue=units.slice(0,-1);
           await Promise.all(Array.from({length:Math.min(DOCS_UNIT_CONCURRENCY,queue.length)},async()=>{ for(let unit=queue.shift();unit;unit=queue.shift()) await run(unit); }));
           await run(units.at(-1)!);
