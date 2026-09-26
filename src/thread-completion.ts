@@ -70,14 +70,73 @@ export function decideThreadCompletion(input: {
   status:string|null;
   queuedWork?:string|null;
   events:unknown[];
+  now?:number;
 }): ThreadCompletionDecision {
   if ((input.status ?? "") === "error") return { ok:false, via:"error", detail:"thread_status_error" };
   const current = currentSpawnTurn(input.threadId, input.events);
   if (current.kind === "canceled") return { ok:false, via:"canceled", detail:current.detail };
   if (current.kind === "completed") return { ok:true, via:"turn_completed" };
+  const failure = threadFailure(input.events, input.now);
+  if (failure) return { ok:false, via:"error", detail:failure };
   return {
     ok:false,
     via:"incomplete",
     detail:`status=${input.status || "unknown"};queuedWork=${input.queuedWork ?? "unknown"};${current.detail}`,
   };
+}
+
+/** Everything BB reports about a child thread's request: its start, its turn and the ways it can fail. */
+export const THREAD_WATCH_EVENT_TYPES = [
+  "client/turn/requested", "client/turn/rejected", "system/thread-provisioning", "thread/identity",
+  "turn/started", "turn/completed", "provider/error", "system/error", "system/thread/interrupted",
+] as const;
+
+/** A provider that has not opened a session this long after the request is not going to. */
+export const PROVIDER_START_LIMIT_MS = 180_000;
+
+type WatchedEvent = { type:string; seq:number; createdAt:number|null; data:unknown };
+
+function readWatched(event: unknown): WatchedEvent | null {
+  const type = stringField(event, "type");
+  const seq = numberField(event, "seq");
+  if (!type || seq === null) return null;
+  return { type, seq, createdAt:numberField(event, "createdAt"), data:Reflect.get(event as object, "data") };
+}
+
+const clip = (text: string | null) => (text ?? "").replace(/\s+/g, " ").slice(0, 200);
+
+/**
+ * Reads BB's own verdict on the latest request instead of a stopwatch: a terminal provider or system
+ * error, an interrupted thread, a rejected turn or a failed provisioning ends the wait at once; a
+ * provider that never opened a session is the one silence BB cannot report, so it gets a start limit.
+ */
+export function threadFailure(events: unknown[], now = Date.now()): string | null {
+  const rows = events.map(readWatched).filter((row): row is WatchedEvent => row !== null).sort((a, b) => a.seq - b.seq);
+  const request = [...rows].reverse().find((row) => row.type === "client/turn/requested");
+  const current = rows.filter((row) => !request || row.seq > request.seq);
+  for (const row of current) {
+    if (row.type === "provider/error" && Reflect.get(row.data as object ?? {}, "willRetry") !== true) {
+      return `provider_error:${clip(stringField(row.data, "message"))}`;
+    }
+    if (row.type === "system/error") {
+      const attempt = numberField(row.data, "reconnectAttempt"), total = numberField(row.data, "reconnectTotal");
+      if (attempt !== null && total !== null && attempt < total) continue;
+      return `system_error:${stringField(row.data, "code") ?? "unknown"}:${clip(stringField(row.data, "message"))}`;
+    }
+    if (row.type === "system/thread/interrupted") {
+      const cause = stringField(row.data, "cause");
+      return `thread_interrupted:${stringField(row.data, "reason") ?? "unknown"}${cause ? `:${cause}` : ""}`;
+    }
+    if (row.type === "client/turn/rejected") {
+      return `turn_rejected:${stringField(row.data, "reason") ?? "unknown"}:${clip(stringField(row.data, "message"))}`;
+    }
+    if (row.type === "system/thread-provisioning" && ["failed", "cancelled"].includes(stringField(row.data, "status") ?? "")) {
+      return `provisioning_${stringField(row.data, "status")}`;
+    }
+  }
+  const started = current.some((row) => row.type === "thread/identity" || row.type === "turn/started");
+  if (request && request.createdAt !== null && !started && now - request.createdAt > PROVIDER_START_LIMIT_MS) {
+    return `provider_not_started:no session ${Math.round((now - request.createdAt) / 1000)}s after the request`;
+  }
+  return null;
 }

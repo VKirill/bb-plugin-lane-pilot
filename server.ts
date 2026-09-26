@@ -30,7 +30,7 @@ import {
   spawnEnvironmentFromSelection,
   type ComposerSelectionSnapshot,
 } from "./src/composer-selection";
-import { decideThreadCompletion } from "./src/thread-completion";
+import { decideThreadCompletion, THREAD_WATCH_EVENT_TYPES, threadFailure } from "./src/thread-completion";
 import { acceptanceArtifactDir, buildAcceptanceV2, bbWriterReportMarkdown, validateAcceptanceV2 } from "./src/acceptance-v2";
 import {
   claimActivation,
@@ -205,7 +205,7 @@ function eventsListQueryLabel(query: Record<string, unknown>): string {
 
 async function listThreadEventsRaw(
   bb: BbPluginApi,
-  query: { threadId:string; types?: readonly ["turn/started","turn/completed"]; order:"desc"; limit:"50" },
+  query: { threadId:string; types?: typeof THREAD_WATCH_EVENT_TYPES; order:"desc"; limit:"50" },
 ): Promise<{ ok:true; events:unknown[] } | { ok:false; kind:"error"|"invalid"; detail:string }> {
   try {
     const listed = await bb.sdk.threads.events.list(query);
@@ -218,13 +218,17 @@ async function listThreadEventsRaw(
   }
 }
 
-async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMs: number, timeoutMessage: string): Promise<void> {
+/**
+ * Waits for a child thread's turn with no overall deadline: BB's events say when it failed (see
+ * threadFailure), so a slow but working model is never cut off. `probeMs` bounds a diagnostic probe only.
+ */
+async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number): Promise<void> {
   let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
-  const deadline = Date.now() + timeoutMs;
+  const deadline = probeMs === undefined ? Infinity : Date.now() + probeMs;
   while (Date.now() < deadline) {
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const listed = await listThreadEventsRaw(bb, {
-      threadId, types:["turn/started","turn/completed"], order:"desc", limit:"50",
+      threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
     });
     if (!listed.ok) throw new Error(`${timeoutMessage}:${listed.detail}`);
     const decision = decideThreadCompletion({
@@ -253,7 +257,7 @@ async function observeStageChild(
   while (Date.now() < deadline) {
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const listed = await listThreadEventsRaw(bb, {
-      threadId, types:["turn/started","turn/completed"], order:"desc", limit:"50",
+      threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
     });
     if (!listed.ok) return { kind:"observing", detail:listed.detail };
     const decision = decideThreadCompletion({
@@ -738,7 +742,7 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
     threadId=stringAt(spawned,"id");
     if(!threadId) throw new Error("pm_read_thread_id_missing");
     recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
-    await waitThreadIdle(input.bb,threadId,300_000,"pm_read_timeout");
+    await waitThreadIdle(input.bb,threadId,"pm_read_timeout");
     const output=(await input.bb.sdk.threads.output({threadId})).output;
     if(typeof output!=="string"||!output.trim()) throw new Error("pm_read_output_empty");
     const parsed=parsePmReadResult(output);
@@ -857,7 +861,7 @@ async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDa
     threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("critique_thread_id_missing");
     recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId });
-    await waitThreadIdle(input.bb, threadId, 90_000, "critique_thread_timeout");
+    await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
     const raw = (await input.bb.sdk.threads.output({ threadId })).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
     const critique = parseCritique(raw);
@@ -914,7 +918,7 @@ async function runCodeCritique(input:{
     }
     if ((existing.state === "running" || existing.state === "pending") && existing.threadId) {
       try {
-        await waitThreadIdle(input.bb, existing.threadId, 90_000, "critique_thread_timeout");
+        await waitThreadIdle(input.bb,existing.threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId:existing.threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = parseCodeCritique(raw);
@@ -939,7 +943,7 @@ async function runCodeCritique(input:{
         recordStage(input.db, { ...base, state:"running", providerId:existing.providerId, model:existing.model,
           threadId:recovered.threadId, result:{ ...ledgerCarry, ...hashFields, spawnAttempted:true, policy:frozen ?? critiquePolicyFromResult(existing.result) } });
         try {
-          await waitThreadIdle(input.bb, recovered.threadId, 90_000, "critique_thread_timeout");
+          await waitThreadIdle(input.bb,recovered.threadId,"critique_thread_timeout");
           const raw = (await input.bb.sdk.threads.output({ threadId:recovered.threadId })).output;
           if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
           const critique = parseCodeCritique(raw);
@@ -1010,7 +1014,7 @@ async function runCodeCritique(input:{
       const current = listStageReceipts(input.db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
       if (current?.threadId) {
         threadId = current.threadId;
-        await waitThreadIdle(input.bb, threadId, 90_000, "critique_thread_timeout");
+        await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = parseCodeCritique(raw);
@@ -1028,7 +1032,7 @@ async function runCodeCritique(input:{
       if (recovered.kind === "found") {
         recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId:recovered.threadId, result:{ ...snapshot, spawnAttempted:true, threadId:recovered.threadId, policy } });
         threadId = recovered.threadId;
-        await waitThreadIdle(input.bb, threadId, 90_000, "critique_thread_timeout");
+        await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = parseCodeCritique(raw);
@@ -1085,7 +1089,7 @@ async function runCodeCritique(input:{
     threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("critique_thread_id_missing");
     recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId, result:{ ...snapshot, threadId, policy } });
-    await waitThreadIdle(input.bb, threadId, 90_000, "critique_thread_timeout");
+    await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
     const raw = (await input.bb.sdk.threads.output({ threadId })).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
     const critique = parseCodeCritique(raw);
@@ -1162,7 +1166,7 @@ async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof op
     threadId = stringAt(spawned,"id");
     if (!threadId) throw new Error("specialist_thread_id_missing");
     recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
-    await waitThreadIdle(input.bb,threadId,90_000,"specialist_thread_timeout");
+    await waitThreadIdle(input.bb,threadId,"specialist_thread_timeout");
     const raw = (await input.bb.sdk.threads.output({threadId})).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("specialist_output_empty");
     const review = parseSpecialistResult(raw);
@@ -2277,30 +2281,25 @@ export default async function plugin(bb: BbPluginApi) {
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
   }): Promise<Record<string,unknown>> {
     try {
-      // A writer reworking a feature with tests, after a slow BB provisioning, needs more than ten minutes.
-      const deadline = Date.now() + 1_800_000;
+      // No stopwatch: a writer runs as long as it works, and BB's events say when it has failed.
       let completedThread: unknown;
-      while (Date.now() < deadline) {
+      for (;;) {
+        if (disposed) throw new Error("Lane Pilot was reloaded while the writer ran");
         const pollStarted = Date.now();
         const currentThread = await getThreadBounded(input.writerThreadId);
         const currentStatus = stringAt(currentThread, "status");
-        if (currentStatus === "error") {
-          transitionAttempt(db, input.attemptId, "provider_error", { reason:"writer thread status error" });
-          return { status:"provider_error", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+        const listed = currentStatus === "idle" ? null : await listThreadEventsRaw(bb, { threadId:input.writerThreadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50" });
+        const failure = currentStatus === "error" ? "writer thread status error" : listed?.ok ? threadFailure(listed.events) : null;
+        if (failure) {
+          transitionAttempt(db, input.attemptId, "provider_error", { reason:failure });
+          if (["active", "starting"].includes(currentStatus ?? "")) await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
+          return { status:"provider_error", reason:failure, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
         }
         if (currentStatus === "idle") {
           completedThread = currentThread;
           break;
         }
-        await new Promise((resolve) => setTimeout(resolve, Math.min(
-          Math.max(0, 2_000 - (Date.now() - pollStarted)), Math.max(1, deadline - Date.now()),
-        )));
-      }
-      if (!completedThread) {
-        transitionAttempt(db, input.attemptId, "timeout", { reason:"writer thread did not reach idle before the deadline" });
-        let stopConfirmed=false;
-        try { await bb.sdk.threads.stop({ threadId:input.writerThreadId }); stopConfirmed=true; } catch { /* ambiguous stop: do not start a second writer */ }
-        return { status:"timeout", attemptId:input.attemptId, writerThreadId:input.writerThreadId, stopConfirmed };
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, 2_000 - (Date.now() - pollStarted))));
       }
       const currentAttempt = getAttempt(db, input.attemptId);
       if (currentAttempt?.state === "cancel_requested" || currentAttempt?.state === "canceled") {
@@ -2393,7 +2392,7 @@ export default async function plugin(bb: BbPluginApi) {
           writerThreadId = ledger.repairThreadId;
           repairRound = ledger.repairRound;
           lastArtifact = ledger.artifactRevisionSha256 || lastArtifact;
-          await waitThreadIdle(bb, ledger.repairThreadId, 600_000, "code_critique_repair_timeout");
+          await waitThreadIdle(bb,ledger.repairThreadId,"code_critique_repair_timeout");
           candidate = await validateWriterResult({
             config:input.config, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
             attempt:countAttempts(db,input.runId,input.taskId), task:input.task, writerThreadId:ledger.repairThreadId,
@@ -2599,7 +2598,7 @@ export default async function plugin(bb: BbPluginApi) {
         }
         writerThreadId = repairThreadId;
         repairRound = nextRound;
-        await waitThreadIdle(bb, repairThreadId, 600_000, "code_critique_repair_timeout");
+        await waitThreadIdle(bb,repairThreadId,"code_critique_repair_timeout");
         candidate = await validateWriterResult({
           config:input.config, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
           attempt:countAttempts(db,input.runId,input.taskId), task:input.task, writerThreadId:repairThreadId,
@@ -4333,7 +4332,7 @@ export default async function plugin(bb: BbPluginApi) {
         pluginMetadata:{role:"gate-triage",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"gate-triage",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("gate_triage_thread_id_missing");
       recordStage(db,{...base,state:"running",providerId,model:modelId,threadId});
-      await waitThreadIdle(bb,threadId,120_000,"gate_triage_timeout");
+      await waitThreadIdle(bb,threadId,"gate_triage_timeout");
       const output=(await bb.sdk.threads.output({threadId})).output;
       if(typeof output!=="string"||!output.trim()) throw new Error("gate_triage_output_empty");
       const result=parseGateTriageResult(output);
@@ -4401,7 +4400,7 @@ export default async function plugin(bb: BbPluginApi) {
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"night-fixer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-fix",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("night_fix_thread_id_missing");
-      await waitThreadIdle(bb,threadId,600_000,"night_fix_timeout");
+      await waitThreadIdle(bb,threadId,"night_fix_timeout");
       const output=(await bb.sdk.threads.output({threadId})).output;
       const after=await workspaceDirt(config,task.project_cwd);
       if(!after.ok) throw new Error(`night_fix_snapshot_failed:${after.reason}`);
@@ -6035,10 +6034,10 @@ export default async function plugin(bb: BbPluginApi) {
           const threadId = args[0]!;
           const startedAt = Date.now();
           try {
-            await waitThreadIdle(bb, threadId, 15_000, "wait_thread_probe_timeout");
+            await waitThreadIdle(bb,threadId,"wait_thread_probe_timeout", 15_000);
             const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
             const listed = await listThreadEventsRaw(bb, {
-              threadId, types:["turn/started","turn/completed"], order:"desc", limit:"50",
+              threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
             });
             const decision = listed.ok
               ? decideThreadCompletion({
@@ -6067,7 +6066,7 @@ export default async function plugin(bb: BbPluginApi) {
         }
         if (command === "events-list" && args.length === 1) {
           const threadId = args[0]!;
-          const filteredQuery = { threadId, types:["turn/started","turn/completed"] as const, order:"desc" as const, limit:"50" as const };
+          const filteredQuery = { threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc" as const, limit:"50" as const };
           const unfilteredQuery = { threadId, order:"desc" as const, limit:"50" as const };
           const summarize = (listed: unknown[]) => listed.map((row) => ({
             seq: row && typeof row === "object" ? Reflect.get(row, "seq") : null,
