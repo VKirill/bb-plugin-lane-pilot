@@ -109,3 +109,12 @@ export function nativeSelectionProjectId(snapshot: ComposerSelectionSnapshot): s
   if (snapshot.scope.kind === "new-thread") return snapshot.scope.projectId;
   return null;
 }
+
+/** The machine a new chat will run on, when the composer already knows it. */
+export function selectionHostId(snapshot: ComposerSelectionSnapshot): string | null {
+  if (snapshot.status !== "ready") return null;
+  const environment = snapshot.environment;
+  if (environment.kind === "provisioning") return environment.machine?.type === "existing" ? environment.machine.hostId : null;
+  if (environment.type === "reuse" || environment.type === "host") return environment.hostId ?? snapshot.environmentProvenance.hostId ?? null;
+  return snapshot.environmentProvenance.hostId ?? null;
+}

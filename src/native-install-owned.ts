@@ -76,11 +76,6 @@ export async function planJson(home: string, path: string, desired: Record<strin
   return edits;
 }
 
-export async function planFile(home: string, file: OwnedFile): Promise<boolean> {
-  const current = await fingerprint(await safeTarget(home, file.path));
-  return current === null;
-}
-
 export async function transitionOwned(root: string, manifest: NativeInstallManifest, action: "enable" | "disable" | "remove", signal?: AbortSignal): Promise<void> {
   const enabling = action === "enable";
   for (const file of manifest.files) {

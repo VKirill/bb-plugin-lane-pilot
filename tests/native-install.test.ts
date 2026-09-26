@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { hashBytes, planJson, transitionOwned, type NativeInstallManifest } from "../src/native-install-owned";
 import { nativeInstallOperation } from "../src/native-install-host";
+import { detectClaudeLane } from "../src/native-install-bootstrap";
 import { createNativeInstaller, experimental_vkLifecycle, registerNativeInstallHost } from "../src/native-install-lifecycle";
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
@@ -70,11 +71,37 @@ describe("BB lifecycle", () => {
     const installer = createNativeInstaller({ supported: false, kv: kvFixture(), call, log: () => {} });
     await expect(installer.install("mini")).rejects.toThrow("experimental_vkPluginLifecycle"); expect(call).not.toHaveBeenCalled();
   });
-  it("starts automatic installation and permits the next dispatch only after readiness", async () => {
+  it("lets a send through once a quick install finishes and asks to retry while a slow one runs", async () => {
     let enabled = false;
-    const installer = createNativeInstaller({ supported: true, kv: kvFixture(), call: async (_, action) => { if (action === "install") enabled = true; return { status: enabled ? "enabled" : "absent" }; }, log: () => {} });
-    await expect(installer.ensure("mini")).rejects.toThrow("Начата установка");
-    await new Promise(resolve => setTimeout(resolve, 0));
-    await expect(installer.ensure("mini")).resolves.toBeUndefined();
+    const quick = createNativeInstaller({ supported: true, kv: kvFixture(), waitMs: 50, call: async (_, action) => { if (action === "install") enabled = true; return { status: enabled ? "enabled" : "absent" }; }, log: () => {} });
+    await expect(quick.ensure("mini")).resolves.toBeUndefined();
+    const slow = createNativeInstaller({ supported: true, kv: kvFixture(), waitMs: 20, call: async (_, action) => action === "install" ? new Promise(() => {}) : { status: "absent" }, log: () => {} });
+    await expect(slow.ensure("mini")).rejects.toThrow("Начата установка");
+    await expect(slow.ensure("mini")).rejects.toThrow("устанавливаются");
+    const broken = createNativeInstaller({ supported: true, kv: kvFixture(), waitMs: 50, call: async (_, action) => { if (action === "install") throw new Error("flock missing"); return { status: "absent" }; }, log: () => {} });
+    await expect(broken.ensure("mini")).rejects.toThrow("Установка Claude Lane не удалась: flock missing");
+  });
+});
+describe("Claude Lane on the host", () => {
+  async function laneHome(installed: boolean) {
+    const root = await mkdtemp(join(tmpdir(), "lp-lane-")); roots.push(root);
+    const home = join(root, "home");
+    await mkdir(join(home, ".agents"), { recursive: true }); await mkdir(join(home, ".claude/plugins"), { recursive: true });
+    if (installed) {
+      await writeFile(join(home, ".agents/install.json"), JSON.stringify({ source_sha: "b".repeat(40) }));
+      await writeFile(join(home, ".claude/plugins/installed_plugins.json"), JSON.stringify({ plugins: { "lane-stack@claude-lane-stack": [{ scope: "user" }] } }));
+    }
+    return { root: join(root, "managed"), home };
+  }
+  it("uses the user's own Claude Lane install and never removes it", async () => {
+    const { root, home } = await laneHome(true);
+    expect(await detectClaudeLane(home)).toEqual({ sourceSha: "b".repeat(40) });
+    expect(await nativeInstallOperation({ root, home, action: "install" })).toMatchObject({ status: "enabled", sourceSha: "b".repeat(40), ownedFiles: 0 });
+    expect(await nativeInstallOperation({ root, home, action: "remove" })).toMatchObject({ status: "absent" });
+    expect(await detectClaudeLane(home)).not.toBeNull();
+  });
+  it("reports a machine without Claude Lane as absent", async () => {
+    const { root, home } = await laneHome(false);
+    expect(await nativeInstallOperation({ root, home, action: "status" })).toMatchObject({ status: "absent" });
   });
 });

@@ -4746,6 +4746,10 @@ export default async function plugin(bb: BbPluginApi) {
     activate_pm: ({ projectId, sourceThreadId, agentId, snapshot }) => {
       return activate(projectId, sourceThreadId, "bb", agentId, snapshot);
     },
+    native_install_start: async ({ hostId }) => {
+      await nativeInstaller.start(hostId);
+      return { started: true };
+    },
     prepare_native_session: async ({ projectId, agentId }) => {
       const shortId = nativeAgentCliId(agentId || DEFAULT_NATIVE_AGENT);
       const owned = await ownedAgents();

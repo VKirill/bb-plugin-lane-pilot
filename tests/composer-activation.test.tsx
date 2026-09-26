@@ -5,9 +5,18 @@ import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "../i18n";
 
 const hiddenData = vi.hoisted(() => ({ value: null as null | { token: string } }));
+const installStarts = vi.hoisted(() => [] as string[]);
 vi.mock("@get-bb/plugin-sdk/app", async (original) => {
   const sdk = await original<typeof import("@get-bb/plugin-sdk/app")>();
-  return { ...sdk, useComposer: () => ({ ...sdk.useComposer(), experimental_vkSetDispatchData: (data: null | { token: string }) => { hiddenData.value = data; } }) };
+  return {
+    ...sdk,
+    useComposer: () => ({ ...sdk.useComposer(), experimental_vkSetDispatchData: (data: null | { token: string }) => { hiddenData.value = data; } }),
+    experimental_useComposerSelection: () => ({
+      status: "ready", scope: { kind: "new-thread", projectId: "p1" }, projectId: "p1", providerId: "claude-code", model: "claude-opus-5[1m]", reasoningLevel: "medium",
+      environment: { kind: "provisioning", type: "provider", environmentProviderId: "project-checkout", machine: { type: "existing", hostId: "host_a" } },
+      environmentRequest: { type: "provider" }, environmentProvenance: { projectId: "p1", sectionId: null },
+    }),
+  };
 });
 
 async function mountComposer(input: {
@@ -48,6 +57,7 @@ async function mountComposer(input: {
         requiredSessionPolicy: "none",
       }),
       activate_pm: input.activate ?? (async () => ({ threadId: "thr_pm", runId: "run_1" })),
+      native_install_start: async (input: unknown) => { installStarts.push((input as { hostId: string }).hostId); return { started: true }; },
       prepare_native_session: async ({ agentId }: { agentId: string }) => ({
         token: "11111111-1111-1111-1111-111111111111",
         label: agentId === "copy-lead" ? "Night desk" : "Development coordinator",
@@ -59,7 +69,7 @@ async function mountComposer(input: {
   });
 }
 
-afterEach(() => { cleanup(); setLocaleOverride(null); hiddenData.value = null; });
+afterEach(() => { cleanup(); setLocaleOverride(null); hiddenData.value = null; installStarts.length = 0; });
 
 describe("Enable Lane Pilot composer action", () => {
   it("registers the launch action only on the new-thread composer", async () => {
@@ -113,6 +123,7 @@ describe("Enable Lane Pilot composer action", () => {
     await slot.findByTestId("activation-popover");
     fireEvent.click(slot.getByRole("button", { name: "Enable for this chat" }));
     await waitFor(() => expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" }));
+    await waitFor(() => expect(installStarts).toEqual(["host_a"]));
     expect(slot.inspection.composer.mentions).toEqual([]);
     expect(slot.inspection.composer.text).toBe("Please review this project");
     expect(slot.inspection.composer.selections).toEqual([{ providerId: "claude-code", model: "claude-opus-5[1m]", permissionMode: "full" }]);

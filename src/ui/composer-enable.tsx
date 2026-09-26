@@ -15,6 +15,8 @@ import {
   type ActivationBlock,
 } from "../activation";
 import { DEFAULT_NATIVE_AGENT } from "../native-session";
+import { selectionHostId } from "../composer-selection";
+import { useNativeComposerSelection } from "./composer-selection-hook";
 
 type ContextPayload = {
   projectId: string | null;
@@ -46,6 +48,7 @@ export function EnableLanePilotAction() {
   const composer = useComposer();
   const view = useComposerView();
   const projectId = nativeProjectId(view.scope);
+  const hostId = selectionHostId(useNativeComposerSelection());
   const [enabled, setEnabled] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +106,8 @@ export function EnableLanePilotAction() {
       }
       const result = await rpc.call("prepare_native_session", { projectId, agentId });
       attach({ token: result.token });
+      // Claude Lane may still need installing on that machine; start now so the first send does not wait.
+      if (hostId) void rpc.call("native_install_start", { hostId }).catch(() => undefined);
       setEnabled(true);
       setOpen(false);
     } catch (cause) {

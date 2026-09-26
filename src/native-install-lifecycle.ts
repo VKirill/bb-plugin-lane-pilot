@@ -26,6 +26,7 @@ export function createNativeInstaller(input: {
   supported: boolean; kv: PluginKvStorage;
   call: (hostId: string, action: "install" | "status") => Promise<{ status: string }>;
   log: (message: string) => void;
+  waitMs?: number;
 }) {
   const pending = new Map<string, Promise<unknown>>();
   const errors = new Map<string, string>();
@@ -38,14 +39,32 @@ export function createNativeInstaller(input: {
     catch (error) { errors.set(hostId, error instanceof Error ? error.message : String(error)); throw error; }
     finally { pending.delete(hostId); }
   }
+  /** A dispatch hook must decide within BB's 10 s box, so a send waits for a running install only briefly. */
+  const settled = (work: Promise<unknown>) => Promise.race([
+    work.then(() => true, () => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), input.waitMs ?? 5_000)),
+  ]);
+  const start = (hostId: string) => {
+    const work = install(hostId);
+    work.catch((error) => input.log(`Native installation failed on ${hostId}: ${error instanceof Error ? error.message : String(error)}`));
+    return work;
+  };
   return {
     install,
+    /** Starts installing ahead of the first send, e.g. when Lane Pilot is enabled in the composer. */
+    async start(hostId: string) {
+      if (pending.has(hostId)) return;
+      if ((await input.call(hostId, "status")).status !== "enabled") void start(hostId);
+    },
     async ensure(hostId: string) {
-      if (pending.has(hostId)) throw new Error("CLI-компоненты Lane Pilot устанавливаются. Повторите отправку после завершения установки.");
+      const running = pending.get(hostId);
+      if (running && !await settled(running)) throw new Error("CLI-компоненты Lane Pilot устанавливаются. Повторите отправку после завершения установки.");
       const status = await input.call(hostId, "status");
       if (status.status === "enabled") return;
       const previous = errors.get(hostId);
-      void install(hostId).catch((error) => input.log(`Native installation failed on ${hostId}: ${error instanceof Error ? error.message : String(error)}`));
+      if (await settled(start(hostId)) && (await input.call(hostId, "status")).status === "enabled") return;
+      const failed = errors.get(hostId);
+      if (failed && failed !== previous) throw new Error(`Установка Claude Lane не удалась: ${failed}`);
       throw new Error(previous ? `Повторная установка Lane Pilot начата. Предыдущая ошибка: ${previous}` : "Начата установка CLI-компонентов Lane Pilot. Повторите отправку после завершения установки.");
     },
   };

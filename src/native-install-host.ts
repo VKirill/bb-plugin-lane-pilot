@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import type { hostContract } from "./contracts";
-import { bootstrapNative } from "./native-install-bootstrap";
+import { detectClaudeLane, installClaudeLane } from "./native-install-bootstrap";
 import { transitionOwned } from "./native-install-owned";
 
 const manifestSchema = z.object({
@@ -34,9 +34,16 @@ export async function nativeInstallOperation(input: { root: string; home: string
     let manifest = raw ? manifestSchema.parse(JSON.parse(raw)) : null;
     if (manifest && manifest.home !== home) throw new Error("Native installation belongs to a different home");
     signal?.throwIfAborted();
+    if (!manifest) {
+      // Claude Lane is the user's own install: use it when present, install it the standard way otherwise,
+      // and never take it away with Lane Pilot.
+      let lane = await detectClaudeLane(home);
+      if (!lane && (action === "install" || action === "enable")) lane = await installClaudeLane({ home, signal });
+      const kept = lane && action !== "disable" && action !== "remove";
+      return { status: kept ? "enabled" as const : "absent" as const, sourceSha: lane?.sourceSha ?? null, ownedFiles: 0, preservedFiles: 0 };
+    }
     if (action !== "status") {
-      if (!manifest && (action === "install" || action === "enable")) manifest = await bootstrapNative({ root, home, signal });
-      else if (manifest) await transitionOwned(root, manifest, action === "install" ? "enable" : action, signal);
+      await transitionOwned(root, manifest, action === "install" ? "enable" : action, signal);
       if (action === "remove") await rm(root, { recursive: true, force: true });
     }
     return { status: action === "remove" || !manifest ? "absent" as const : manifest.state, sourceSha: manifest?.sourceSha ?? null, ownedFiles: manifest?.files.length ?? 0, preservedFiles: manifest?.preserved.length ?? 0 };

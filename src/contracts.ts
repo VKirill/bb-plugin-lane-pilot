@@ -565,6 +565,10 @@ export const rpcContract = defineRpcContract({
       requiredSessionPolicy: z.enum(["required", "none"]),
     }).strict(),
   },
+  native_install_start: {
+    input: z.object({ hostId: z.string().min(1) }).strict(),
+    output: z.object({ started: z.boolean() }).strict(),
+  },
   prepare_native_session: {
     input: z.object({
       projectId: z.string().min(1),
