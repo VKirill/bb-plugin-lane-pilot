@@ -163,7 +163,7 @@ import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./
 import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./src/workspace/routing";
 import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, localDateKey, NIGHTLY_DOCS_WRITABLE, nightlyDocsPrompt, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage } from "./src/stages/docs";
-import { buildDocsIndex, citedFiles, lintDocsPages, pagesToRefresh } from "./src/stages/docs-lint";
+import { buildDocsIndex, citedFiles, docsCompletenessGaps, lintDocsPages, pagesToRefresh } from "./src/stages/docs-lint";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
 import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "./src/stages/night-fix";
@@ -4570,6 +4570,7 @@ export default async function plugin(bb: BbPluginApi) {
           // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
           const anchors=await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,
             pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
+          const gaps=before.hasDocs?docsCompletenessGaps(existing,{tables:anchors?.tables??[],core:anchors?.core??[]}):{missingPages:[],uncoveredCore:[]};
           let refresh=before.hasDocs?pagesToRefresh(existing,before.changed):[];
           if(before.hasDocs){
             const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),
@@ -4578,7 +4579,7 @@ export default async function plugin(bb: BbPluginApi) {
               const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
               const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:before.changed);
               const uncovered=before.changed.filter((file)=>product.has(file)&&!cited.has(file));
-              if(!stale.refresh.length&&!uncovered.length){ report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"}); continue; }
+              if(!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length){ report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"}); continue; }
               refresh=stale.refresh;
             }
           }
@@ -4591,7 +4592,7 @@ export default async function plugin(bb: BbPluginApi) {
           const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
           const spawned=await bb.sdk.threads.spawn({projectId:project.id,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}`,
             ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
-            prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed:before.changed,refresh,anchorsPath:anchors?.briefPath,agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined}),
+            prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed:before.changed,refresh,anchorsPath:anchors?.briefPath,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined}),
             environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
             pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
           const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
@@ -4635,7 +4636,7 @@ export default async function plugin(bb: BbPluginApi) {
           }
           const failure=checked.outside.length?`docs agent changed files outside docs/, README.md and PROJECT.md: ${checked.outside.join(", ")}`
             :checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
-          const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:before.changed.length,refreshed:refresh,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
+          const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:before.changed.length,refreshed:refresh,gaps,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
             docsWritten:checked.touched.filter((path)=>NIGHTLY_DOCS_WRITABLE(path)),commit,...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
           await bb.storage.kv.set(`docs-nightly:${project.id}:${sha256(place.path).slice(0,12)}`,{...row,at:Date.now()});
           bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path}`);

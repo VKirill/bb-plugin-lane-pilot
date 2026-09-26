@@ -136,7 +136,8 @@ const METHODOLOGY = [
  * The nightly docs agent works in the project folder with file access, like claude-lane's
  * docs-maintain: no docs/ yet means onboarding, otherwise only pages about changed code.
  */
-export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string; agent?:string}):string {
+export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string;
+  missingPages?:string[]; uncoveredCore?:string[]; agent?:string}):string {
   const listed = input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
   const refresh = input.refresh ?? [];
   return [
@@ -150,12 +151,15 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
       ? [
         `Task: refresh the docs for code changed since ${input.since}. Update the pages below, set their updated date to today, keep created as is. Add a page only for a new capability; leave accurate pages alone.`,
         ...(refresh.length ? ["Pages whose sources changed or that are drafts:", ...refresh.map((path) => `- ${path}`)] : ["No page lists a changed file among its sources: check whether a changed file needs a new or extended page."]),
+        ...(input.missingPages?.length ? ["Pages the method requires that do not exist yet - add them (data-model documents every table and its columns; architecture has one mermaid C4 diagram):", ...input.missingPages.map((path) => `- ${path}`)] : []),
+        ...(input.uncoveredCore?.length ? ["Core behaviour no page cites yet - describe it on the page it belongs to, with citations:", ...input.uncoveredCore.map((item) => `- ${item}`)] : []),
       ].join("\n")
       : [
         "Task: there is no docs/ yet, so onboard the project. Create:",
         "- docs/overview.md (overview): what the project is, how it is built and run, its main parts.",
         "- docs/architecture.md (architecture): parts and how they talk, with one mermaid C4 container or component diagram of at most 12 nodes.",
         "- docs/features/<capability>.md (component), one per user-facing capability: Purpose, Business rules, Public API or commands, Gotchas.",
+        "- docs/data-model.md (data-model) when the code stores data: every table or collection with its fields, keys and who writes it.",
         "- docs/gotchas.md (gotchas) with the traps you find in the code; docs/decisions.md (decisions, ADR: Context, Decision, Status, Consequences) only for decisions the code or history shows.",
         "- README.md (Russian, for people) and PROJECT.md (English, for agents) at the project root; keep facts already in README.md.",
       ].join("\n"),

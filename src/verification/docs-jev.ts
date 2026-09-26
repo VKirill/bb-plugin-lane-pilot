@@ -160,7 +160,7 @@ async function dependencies(projectCwd:string):Promise<string[]> {
  * Maps the project's code into anchors, has Jev mark business rules, entry points, importance and
  * page, and writes the brief the docs agent starts from under .git/, outside anything git tracks.
  */
-export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ path:string; title:string }> }):Promise<{ briefPath:string; anchors:number; jev:JevStatus; productFiles:string[] }> {
+export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ path:string; title:string }> }):Promise<{ briefPath:string; anchors:number; jev:JevStatus; productFiles:string[]; core:Array<{ name:string; file:string; line:number; endLine:number }>; tables:string[] }> {
   const files = await trackedCode(input.projectCwd);
   const tests:string[] = [];
   let anchors:Anchor[] = [];
@@ -194,7 +194,11 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   await writeFile(briefPath, renderAnchorBrief(anchors, tests, await dependencies(input.projectCwd), key ? status(asked, answered) : "disabled"));
   // Files with code Jev judged specific to this product; generic kits and helpers do not call for docs.
   const productFiles = [...new Set(anchors.filter((anchor) => anchor.kind !== "type" && (anchor.projectSpecific ?? 1) >= 0.5).map((anchor) => anchor.file))].sort();
-  return { briefPath, anchors:anchors.length, jev:key ? status(asked, answered) : "disabled", productFiles };
+  // Core product behaviour the docs must cover: Jev's top importance on product code.
+  const core = anchors.filter((anchor) => anchor.kind !== "type" && anchor.kind !== "table" && (anchor.projectSpecific ?? 0) >= 0.5 && (anchor.importance ?? 0) >= 1.5)
+    .map(({ name, file, line, endLine }) => ({ name, file, line, endLine }));
+  const tables = [...new Set(anchors.filter((anchor) => anchor.kind === "table").map((anchor) => anchor.name))].sort();
+  return { briefPath, anchors:anchors.length, jev:key ? status(asked, answered) : "disabled", productFiles, core, tables };
 }
 
 const pct = (value:number | undefined) => value === undefined ? "?" : `${Math.round(value * 100)}%`;
@@ -237,19 +241,21 @@ export function renderAnchorBrief(anchors:Anchor[], tests:string[], deps:string[
 
 const CITATION = /([A-Za-z0-9_@.\/-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?/g;
 
-/** Claims in a page body - the sentence around each file:line citation. */
-export function pageClaims(body:string):Array<{ claim:string; file:string; start:number; end:number }> {
-  const claims:Array<{ claim:string; file:string; start:number; end:number }> = [];
+export type ClaimRef = { file:string; start:number; end:number };
+
+/** Claims in a page body - each sentence with all the file:line citations that back it together. */
+export function pageClaims(body:string):Array<{ claim:string; refs:ClaimRef[] }> {
+  const claims:Array<{ claim:string; refs:ClaimRef[] }> = [];
   for (const block of body.split(/\n(?=\s*[-*|]|\s*\n)|(?<=[.!?])\s+/)) {
     const text = block.replace(/\s+/g, " ").trim();
     if (!text || text.startsWith("#")) continue;
-    for (const match of text.matchAll(CITATION)) {
-      const start = Number(match[2]), end = match[3] ? Number(match[3]) : start;
-      claims.push({ claim:text.slice(0, 600), file:match[1]!.replace(/^\.\//, ""), start, end });
-    }
+    const refs = [...text.matchAll(CITATION)].map((match) => ({ file:match[1]!.replace(/^\.\//, ""), start:Number(match[2]), end:match[3] ? Number(match[3]) : Number(match[2]) }));
+    if (refs.length) claims.push({ claim:text.slice(0, 600), refs });
   }
   return claims;
 }
+
+const refLabel = (ref:ClaimRef) => `${ref.file}:${ref.start}${ref.end !== ref.start ? `-${ref.end}` : ""}`;
 
 /** Asks Jev whether the cited code backs each claim; an unsupported one becomes a lint finding. */
 export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array<{ path:string; content:string }> }):Promise<{ jev:JevStatus; checked:number; findings:Array<{ path:string; rule:string; detail:string }> }> {
@@ -260,27 +266,32 @@ export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array
     return pageClaims(body).map((claim) => ({ path:page.path, ...claim }));
   }).slice(0, MAX_CITATION_CHECKS);
   const files = new Map<string, string[] | null>();
-  for (const check of checks) if (!files.has(check.file)) {
-    const text = check.file.split("/").includes("..") ? null : await readFile(join(input.projectCwd, check.file), "utf8").catch(() => null);
-    files.set(check.file, text === null ? null : text.split("\n"));
+  for (const ref of checks.flatMap((check) => check.refs)) if (!files.has(ref.file)) {
+    const text = ref.file.split("/").includes("..") ? null : await readFile(join(input.projectCwd, ref.file), "utf8").catch(() => null);
+    files.set(ref.file, text === null ? null : text.split("\n"));
   }
   const findings:Array<{ path:string; rule:string; detail:string }> = [];
   let answered = 0;
-  const criteria = { supported:"The code shows the behaviour, value or name the claim attributes to it.",
-    partial:"The code is related and shows part of the claim; the rest is elsewhere.",
-    unsupported:"The code does not show what the claim says, or contradicts it." };
+  const criteria = { supported:"Together the cited code shows the behaviour, values or names the claim attributes to it.",
+    partial:"The cited code is related and shows part of the claim; the rest is not in these lines.",
+    unsupported:"The cited code does not show what the claim says, or contradicts it." };
   await pool(checks, async (check) => {
-    const lines = files.get(check.file);
-    if (!lines) return;
-    const from = Math.max(1, check.start - 2), to = Math.min(lines.length, Math.max(check.end, check.start) + 2, from + 80);
-    const answers = await jevAsk(key, { file:check.file, from, to, code:lines.slice(from - 1, to).join("\n") },
-      { support:{ type:"choice", instructions:{ claim:check.claim, question:"Does `code` (lines `from`-`to` of `file`) show what `claim` says it shows?" }, criteria } });
+    // All citations of one claim are judged together: "validates (a) and stores (b)" needs both.
+    const excerpts = check.refs.flatMap((ref) => {
+      const lines = files.get(ref.file);
+      if (!lines) return [];
+      const from = Math.max(1, ref.start - 2), to = Math.min(lines.length, Math.max(ref.end, ref.start) + 2, from + 80);
+      return [{ cited:refLabel(ref), from, to, code:lines.slice(from - 1, to).join("\n") }];
+    });
+    if (!excerpts.length) return;
+    const answers = await jevAsk(key, { excerpts },
+      { support:{ type:"choice", instructions:{ claim:check.claim, question:"Does the cited code in `excerpts` show what `claim` says it shows?" }, criteria } });
     if (!answers) return;
     answered++;
     const unsupported = answers.support?.probabilities?.unsupported ?? 0;
     if (answers.support?.choice === "unsupported" && unsupported >= 0.6) {
       findings.push({ path:check.path, rule:"evidence-check",
-        detail:`${check.file}:${check.start}${check.end !== check.start ? `-${check.end}` : ""} does not back "${check.claim.slice(0, 160)}" (Jev ${Math.round(unsupported * 100)}%)` });
+        detail:`${check.refs.map(refLabel).join(", ")} do not back "${check.claim.slice(0, 160)}" (Jev ${Math.round(unsupported * 100)}%)` });
     }
   });
   return { jev:status(checks.length, answered), checked:checks.length, findings };

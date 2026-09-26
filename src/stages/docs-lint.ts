@@ -134,3 +134,18 @@ export function buildDocsIndex(pages:DocPage[]):string {
   }
   return `${lines.join("\n")}\n`;
 }
+
+/**
+ * What keeps the docs from being complete: pages the methodology requires that no page's type fills,
+ * and core code no citation covers. The nightly agent gets both as its task list.
+ */
+export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; core:Array<{ name:string; file:string; line:number; endLine:number }> }):{ missingPages:string[]; uncoveredCore:string[] } {
+  const types = new Set(pages.map((page) => parseFrontmatter(page.content)?.data.type).filter((type):type is string => typeof type === "string"));
+  const required:Array<[string, string]> = [["overview", "docs/overview.md"], ["architecture", "docs/architecture.md"], ["gotchas", "docs/gotchas.md"]];
+  if (input.tables.length) required.push(["data-model", "docs/data-model.md"]);
+  const missingPages = required.filter(([type]) => !types.has(type)).map(([, path]) => path);
+  const citations = pages.flatMap((page) => pageCitations(page.content));
+  const uncoveredCore = input.core.filter((anchor) => !citations.some((citation) => citation.file === anchor.file
+    && citation.start <= anchor.endLine && citation.end >= anchor.line)).map((anchor) => `${anchor.name} (${anchor.file}:${anchor.line}-${anchor.endLine})`);
+  return { missingPages, uncoveredCore };
+}

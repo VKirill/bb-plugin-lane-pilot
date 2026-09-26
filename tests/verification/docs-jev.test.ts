@@ -26,9 +26,10 @@ it("shrinks the longest text so a state fits Jev's window", () => {
 });
 
 it("takes the sentence around each citation as its claim", () => {
-  const claims = pageClaims("Checks run every minute (src/checker.ts:10-12). Paused monitors are skipped (src/checker.ts:20).\n");
-  expect(claims.map((claim) => [claim.file, claim.start, claim.end])).toEqual([["src/checker.ts", 10, 12], ["src/checker.ts", 20, 20]]);
-  expect(claims[1]!.claim).toBe("Paused monitors are skipped (src/checker.ts:20).");
+  const claims = pageClaims("Checks run every minute (src/checker.ts:10-12). Monitors are validated and stored (src/db.ts:5-9, src/db.ts:20).\n");
+  expect(claims.map((claim) => claim.refs)).toEqual([[{ file:"src/checker.ts", start:10, end:12 }],
+    [{ file:"src/db.ts", start:5, end:9 }, { file:"src/db.ts", start:20, end:20 }]]);
+  expect(claims[1]!.claim).toBe("Monitors are validated and stored (src/db.ts:5-9, src/db.ts:20).");
 });
 
 it("lists only product code as rule and entry-point candidates", () => {
@@ -54,13 +55,14 @@ it("turns a citation Jev finds unsupported into a lint finding, and does nothing
     vi.stubEnv("TYPESAFE_API_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn(async (_url:string, init:{ body:string }) => {
       const claim = JSON.parse(init.body).questions.support.instructions.claim as string;
+      expect(JSON.parse(init.body).state.excerpts.length).toBe(1);
       const unsupported = claim.includes("9");
       return new Response(JSON.stringify({ answers:{ support:{ type:"choice", choice:unsupported ? "unsupported" : "supported",
         probabilities:{ supported:unsupported ? 0.1 : 0.9, partial:0, unsupported:unsupported ? 0.9 : 0.1 } } } }));
     }));
     const result = await verifyDocsCitations({ projectCwd:root, pages });
     expect(result).toMatchObject({ jev:"ok", checked:2 });
-    expect(result.findings).toEqual([{ path:"docs/a.md", rule:"evidence-check", detail:expect.stringContaining("a.ts:2 does not back") }]);
+    expect(result.findings).toEqual([{ path:"docs/a.md", rule:"evidence-check", detail:expect.stringContaining("a.ts:2 do not back") }]);
     vi.stubEnv("TYPESAFE_API_KEY", ""); vi.stubEnv("JEV_API_KEY", ""); vi.stubEnv("HOME", root);
     expect((await verifyDocsCitations({ projectCwd:root, pages })).jev).toBe("disabled");
   } finally { await rm(root, { recursive:true, force:true }); }

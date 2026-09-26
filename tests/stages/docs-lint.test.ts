@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { buildDocsIndex, lintDocsPages, pagesToRefresh } from "../../src/stages/docs-lint";
+import { buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh } from "../../src/stages/docs-lint";
 import { commitDocs } from "../../src/verification/git-docs";
 
 const page = (fields: Record<string, string>, body: string) => [
@@ -56,4 +56,14 @@ it("commits only the docs paths it is given", async () => {
     expect(await readFile(join(root, "a.ts"), "utf8")).toBe("2");
     expect((await commitDocs({ projectCwd: root, paths: ["docs/a.md"], message: "docs: again" })).status).toBe("nothing");
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("lists missing required pages and core code no citation covers", () => {
+  const pages = [{ path:"docs/overview.md", content:page({ type:"overview", title:"Overview" }, "# Overview\n\nRuns checks (src/check.ts:1-3).\n") }];
+  const gaps = docsCompletenessGaps(pages, { tables:["monitors"], core:[
+    { name:"runChecks", file:"src/check.ts", line:2, endLine:6 },
+    { name:"parseArgv", file:"src/cli.ts", line:10, endLine:30 },
+  ] });
+  expect(gaps).toEqual({ missingPages:["docs/architecture.md", "docs/gotchas.md", "docs/data-model.md"], uncoveredCore:["parseArgv (src/cli.ts:10-30)"] });
+  expect(docsCompletenessGaps(pages, { tables:[], core:[] }).missingPages).not.toContain("docs/data-model.md");
 });
