@@ -85,17 +85,16 @@ export function helperSpawnFields(placement: HelperSpawnPlacement): {
   visibility: "hidden" | "visible";
   projectId: string;
   parentThreadId: string;
-  sourceThreadId: string;
   lifecycleOwnerThreadId: string;
   title: string;
   sectionId?: string;
   environmentId?: string;
 } {
+  // BB accepts sourceThreadId only on forks (originKind); a helper is a child, not a fork.
   return {
     visibility: placement.visibility,
     projectId: placement.projectId,
     parentThreadId: placement.parentThreadId,
-    sourceThreadId: placement.sourceThreadId,
     lifecycleOwnerThreadId: placement.lifecycleOwnerThreadId,
     title: placement.title,
     ...(placement.sectionId ? { sectionId: placement.sectionId } : {}),

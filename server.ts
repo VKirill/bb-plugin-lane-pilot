@@ -652,8 +652,9 @@ async function helperChildPlacement(input:{
   const threadProject = stringAt(parentThread, "projectId");
   if (!threadProject) throw new Error("helper_parent_identity_unresolved");
   if (threadProject !== input.projectId) throw new Error("helper_parent_project_mismatch");
-  const sourceThreadId = stringAt(parentThread, "sourceThreadId");
-  const lifecycleOwnerThreadId = stringAt(parentThread, "lifecycleOwnerThreadId");
+  // A native Lane PM is a root chat the user opened: it is its own source and lifecycle owner.
+  const sourceThreadId = stringAt(parentThread, "sourceThreadId") ?? (run?.kind === "cli" ? parentId : null);
+  const lifecycleOwnerThreadId = stringAt(parentThread, "lifecycleOwnerThreadId") ?? (run?.kind === "cli" ? parentId : null);
   if (!sourceThreadId || !lifecycleOwnerThreadId) throw new Error("helper_parent_relation_missing");
   const settings = await inheritedProjectSettings(input.bb, input.db, input.projectId);
   const routing = freezeRunRouting(input.db, input.runId, settings);
@@ -2031,6 +2032,8 @@ export default async function plugin(bb: BbPluginApi) {
         return { ok:false, status:"spawn_rejected", reason, attemptId:input.attemptId };
       }
       transitionAttempt(db, input.attemptId, "spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });
+      // Reconcile overwrites this reason; keep the spawn error itself in the log.
+      bb.log.warn(`Lane Pilot writer spawn for ${input.attemptId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       const attempt = getAttempt(db, input.attemptId);
       if (!attempt) throw new Error(`persisted attempt disappeared after spawn_unknown: ${input.attemptId}`);
       return { ok:true, threadId: await reconcileAttemptThread(input.projectId, attempt), providerId:selectedProviderId, model:selectedModel, dirtBefore,

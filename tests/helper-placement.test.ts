@@ -9,9 +9,10 @@ describe("helper placement", () => {
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
     expect(helperSpawnFields(resolved.placement)).toMatchObject({
-      visibility:"hidden", projectId:"proj", parentThreadId:"thr_pm", sourceThreadId:"thr_source", lifecycleOwnerThreadId:"thr_owner",
+      visibility:"hidden", projectId:"proj", parentThreadId:"thr_pm", lifecycleOwnerThreadId:"thr_owner",
       sectionId:"sec_same",
     });
+    expect(helperSpawnFields(resolved.placement)).not.toHaveProperty("sourceThreadId");
     expect(resolved.placement.environmentId).toBeUndefined();
     expect(resolved.placement.title).toContain("code critique");
     const writerHidden = resolveHelperPlacement({ mode:"plugin", projectId:"proj", parent, role:"writer" });
@@ -34,7 +35,7 @@ describe("helper placement", () => {
     expect(moved.ok).toBe(true);
     if (!moved.ok) return;
     expect(helperSpawnFields(moved.placement)).toMatchObject({
-      parentThreadId:"thr_other", sourceThreadId:"thr_source", lifecycleOwnerThreadId:"thr_owner",
+      parentThreadId:"thr_other", lifecycleOwnerThreadId:"thr_owner",
     });
   });
 
