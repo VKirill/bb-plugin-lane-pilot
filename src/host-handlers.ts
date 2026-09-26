@@ -184,14 +184,22 @@ export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["li
   return {hostId:input.requestedHostId,pages};
 };
 
-export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"] = async (input) => {
+type MarkdownWrite = Parameters<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>[0];
+
+/** Onboarding previews stay small; the docs builders rewrite whole pages of up to 40000 bytes. */
+export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"] = async (input) => casWriteMarkdown(input, 32_000);
+
+export const writeDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["writeDocsPages"] = async (input) =>
+  casWriteMarkdown({ ...input, confirmed:true }, 2_000_000);
+
+async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number):Promise<Awaited<ReturnType<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>>> {
   const suppliedPreviewSha256=createHash("sha256").update(JSON.stringify(input.edits),"utf8").digest("hex");
   if(suppliedPreviewSha256!==input.previewSha256) return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:"blocked",writes:[],reason:"onboarding preview hash did not match supplied edits"};
   const rootInfo=await lstat(input.projectCwd);
   if(!rootInfo.isDirectory()||rootInfo.isSymbolicLink()) throw new Error("onboarding project root must be a real directory");
   const root=await realpath(input.projectCwd);
   const totalBytes=input.edits.reduce((sum,edit)=>sum+Buffer.byteLength(edit.content,"utf8"),0);
-  if(totalBytes>32_000) throw new Error("onboarding preview exceeds 32000 total bytes");
+  if(totalBytes>maxTotalBytes) throw new Error(`markdown write exceeds ${maxTotalBytes} total bytes`);
   const targets:Array<{path:string;fullPath:string;expectedSha256:string|null;beforeMode:number|null}> = [];
   for(const edit of input.edits){
     const normalized=edit.path;

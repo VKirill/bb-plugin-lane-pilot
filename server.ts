@@ -4658,8 +4658,9 @@ export default async function plugin(bb: BbPluginApi) {
               {path:"docs/index.md",expectedSha256:current?.sha256??null,content:buildDocsIndex(built)},
             ].filter((edit)=>edit.path!=="docs/index.md"||current?.content!==edit.content);
             if(edits.length){
-              await host.call("applyOnboardingPages",{requestedHostId:place.hostId,projectCwd:place.path,confirmed:true,
-                previewSha256:sha256(JSON.stringify(edits)),edits},{hostId:place.hostId,timeoutMs:60_000});
+              const applied=await host.call("writeDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,
+                previewSha256:sha256(JSON.stringify(edits)),edits},{hostId:place.hostId,timeoutMs:120_000});
+              if(applied.status!=="applied") throw new Error(`docs builders could not write pages: ${applied.reason??applied.status}`);
             }
             const committed=await host.call("gitCommitDocs",{requestedHostId:place.hostId,projectCwd:place.path,
               paths:[...new Set([...checked.docsDirty,"docs/index.md"])],message:`docs: ${before.hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
