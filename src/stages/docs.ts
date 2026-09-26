@@ -116,3 +116,25 @@ function validPage(page:DocsPage):boolean {
     && /^[a-f0-9]{64}$/.test(page.sha256) && typeof page.content === "string"
     && Buffer.byteLength(page.content, "utf8") <= MAX_PAGE_BYTES;
 }
+
+/** Most changed paths listed to the nightly agent; it reads the code itself. */
+const NIGHTLY_CHANGED_LIMIT = 200;
+
+/**
+ * The nightly docs agent works in the project folder with file access, like claude-lane's
+ * docs-maintain: no docs/ yet means onboarding, otherwise only pages about changed code.
+ */
+export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; agent?:string}):string {
+  const listed = input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
+  return [
+    `${input.agent?.trim() || "Documentation maintainer"}: keep docs/ an honest description of this project's code. Follow the docs-methodology skill if you have it.`,
+    input.hasDocs
+      ? `Update only the docs pages that describe these files changed since ${input.since}, and finish stub pages you find. Leave accurate pages alone.`
+      : "There is no docs/ yet: create docs/README.md (what the project is, how it is built and run, its main parts) and one docs/features/<name>.md per user-facing capability.",
+    "Read the code before writing about it; do not invent behaviour, names or line numbers.",
+    "Write only Markdown under docs/. Do not edit code, tests, settings or anything else, and do not commit.",
+    "Finish with a short list of the pages you created or changed.",
+    ...(listed.length ? ["", `Changed since ${input.since}:`, ...listed.map((path) => `- ${path}`)] : []),
+    ...(input.changed.length > listed.length ? [`- …and ${input.changed.length - listed.length} more (see git log)`] : []),
+  ].join("\n");
+}

@@ -1,4 +1,5 @@
 import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree } from "./verification/git-integrate";
+import { gitDocsScope as readGitDocsScope } from "./verification/git-docs";
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -72,6 +73,11 @@ export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await createWorktree({basePath:input.basePath,name:input.name,
     targetPath:join(context.experimental_paths.dataDir,"worktrees",input.name,basename(input.basePath))}),
+});
+
+export const gitDocsScope: ExperimentalHostRpcHandlers<typeof hostContract>["gitDocsScope"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await readGitDocsScope({projectCwd:input.projectCwd,sinceEpochMs:input.sinceEpochMs}),
 });
 
 export const gitOwnershipChanges: ExperimentalHostRpcHandlers<typeof hostContract>["gitOwnershipChanges"] = async (input) => ({

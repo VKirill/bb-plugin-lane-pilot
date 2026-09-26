@@ -147,6 +147,10 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), message:z.string().min(1).max(500), removeWorktree:z.boolean().optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["merged","up-to-date","conflict","failed"]), commit:z.string().nullable(), conflicts:z.array(z.string()), reason:z.string().nullable() }).strict(),
   },
+  gitDocsScope: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), sinceEpochMs:z.number().int().nonnegative() }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), isRepoRoot:z.boolean(), hasDocs:z.boolean(), changed:z.array(z.string()), dirty:z.array(z.string()), localDate:z.string(), localHour:z.number().int(), reason:z.string().nullable() }).strict(),
+  },
   gitOwnershipChanges: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), baseSha:z.string().regex(/^[a-f0-9]{40,64}$/).nullable(), compareCommitted:z.boolean() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), headSha:z.string().nullable(), paths:z.array(z.string()), reason:z.string().nullable() }).strict(),

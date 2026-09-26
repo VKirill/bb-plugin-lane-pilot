@@ -2,7 +2,7 @@ import { createNativeInstaller } from "./src/native-install-lifecycle";
 export { experimental_vkLifecycle } from "./src/native-install-lifecycle";
 import { createHash, randomUUID } from "node:crypto";
 import { t } from "./i18n";
-import { isAbsolute, relative, resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve } from "node:path";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
@@ -162,7 +162,7 @@ import { findTaskPlaceholderPaths } from "./src/stages/critique-coverage";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./src/stages/specialist";
 import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./src/workspace/routing";
-import { docsInputHash, docsMaintenancePrompt, docsScheduleDue, localDateKey, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage } from "./src/stages/docs";
+import { docsInputHash, docsMaintenancePrompt, docsScheduleDue, docsSinceEpoch, localDateKey, nightlyDocsPrompt, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage } from "./src/stages/docs";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
 import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "./src/stages/night-fix";
@@ -4512,6 +4512,62 @@ export default async function plugin(bb: BbPluginApi) {
       recordIds:selected.records.map((item)=>item.id),estimatedTokens:selected.estimatedTokens,context:selected.text};
   }
 
+  /**
+   * claude-lane's nightly docs for native projects: once a day at docs.hour of the folder's own
+   * machine, every project root and section that is a git repository with docs enabled gets a
+   * hidden docs agent. It sees the code changed since docs.since; no docs/ yet means onboarding;
+   * nothing changed and docs present means no model call. `force` skips the hour for a manual run.
+   */
+  async function runNightlyDocs(opts:{force?:boolean;projectId?:string}={}):Promise<Array<Record<string,unknown>>> {
+    const results:Array<Record<string,unknown>>=[];
+    const projects=opts.projectId?[{id:opts.projectId}]:await bb.sdk.projects.list({includePersonal:true}).catch(()=>[] as Array<{id:string}>);
+    for(const project of projects){
+      const places:Array<{scopes:string[];hostId:string;path:string}>=[];
+      const root=await resolveProjectWriterHost({projectId:project.id}).catch(()=>null);
+      if(root?.status==="resolved"&&root.path) places.push({scopes:[],hostId:root.hostId,path:root.path});
+      const sections=await listProjectSections(project.id);
+      for(const section of sections) if(section.kind==="folder"&&section.path&&section.hostId) places.push({scopes:sectionChain(sections,section.id),hostId:section.hostId,path:section.path});
+      for(const place of places){
+        const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>{ const row={projectId:project.id,path:place.path,state,...extra}; results.push(row); return row; };
+        try{
+          const settings=loadProjectSettings(db,project.id,place.scopes);
+          const docs=parseDocsSettings(Object.fromEntries(["docs.enabled","docs.maintain","docs.since","docs.page_cap","docs.hour"].map((key)=>[key,configuredSetting(settings,key)])));
+          if(!docs.enabled||!docs.maintain) continue;
+          const before=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date())},{hostId:place.hostId,timeoutMs:60_000});
+          if(before.status!=="ready"||!before.isRepoRoot) continue;
+          if(!opts.force&&before.localHour!==docs.hour) continue;
+          const schedule=`docs-nightly-${sha256(place.path).slice(0,12)}`;
+          if(!opts.force&&!claimDailySchedule(db,project.id,schedule,before.localDate)) continue;
+          if(before.hasDocs&&before.changed.length===0){ report("skipped",{reason:"no code changes"}); continue; }
+          const selection=resolveStageWriterSelection({settings,config:{writerProviderId:"codex",writerModel:"gpt-6-luna"},stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
+          const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
+          const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
+          const model=catalog.models.find((item)=>item.id===selection.model||item.model===selection.model);
+          if(!provider||!model) throw new Error(`docs provider or model unavailable: ${selection.providerId}/${selection.model}`);
+          const effort=typeof settings["docs.reasoning_effort"]==="string"&&settings["docs.reasoning_effort"]?settings["docs.reasoning_effort"] as string:"medium";
+          const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
+          const spawned=await bb.sdk.threads.spawn({projectId:project.id,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}`,
+            ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
+            prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed:before.changed,agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined}),
+            environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
+            pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
+          const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
+          await waitThreadIdle(bb,threadId,"docs_nightly");
+          const after=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date())},{hostId:place.hostId,timeoutMs:60_000});
+          const touched=after.dirty.filter((path)=>!before.dirty.includes(path));
+          const outside=touched.filter((path)=>!path.startsWith("docs/"));
+          const row=report(outside.length?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:before.changed.length,docsWritten:touched.filter((path)=>path.startsWith("docs/")),...(outside.length?{reason:`docs agent changed files outside docs/: ${outside.join(", ")}`}:{})});
+          await bb.storage.kv.set(`docs-nightly:${project.id}:${sha256(place.path).slice(0,12)}`,{...row,at:Date.now()});
+          bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path}`);
+        }catch(cause){
+          const row=report("failed",{reason:cause instanceof Error?cause.message:String(cause)});
+          bb.log.warn(`Lane Pilot nightly docs failed for ${place.path}: ${String(row.reason)}`);
+        }
+      }
+    }
+    return results;
+  }
+
   async function runScheduledDocsMaintenance():Promise<void> {
     const projectIds=(db.prepare("SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id=''").all() as Array<{project_id:string}>).map((row)=>row.project_id);
     const now=new Date(), today=localDateKey(now);
@@ -4540,6 +4596,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   bb.background.schedule("docs-maintenance-hourly","0 * * * *",runScheduledDocsMaintenance);
+  bb.background.schedule("docs-nightly-hourly","0 * * * *",async()=>{ await runNightlyDocs(); });
 
   async function startCancelProbe(projectId: string, pmThreadId: string): Promise<Record<string,unknown>> {
     const config = loadPrototypeConfig(db, projectId);
@@ -5841,6 +5898,7 @@ export default async function plugin(bb: BbPluginApi) {
       { name:"configure", summary:"Save prototype project settings", usage:"bb lane-pilot configure '<json>'" },
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
+      { name:"docs-nightly", summary:"Run the nightly docs pass now for docs-enabled folders of a project", usage:"bb lane-pilot docs-nightly <project-id>" },
       { name:"finish", summary:"Close a PM run after observing it idle and release activation", usage:"bb lane-pilot finish <project-id> [run-id]" },
       { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id> [run-id]" },
       { name:"cancel", summary:"Stop a writer and persist canceled after observing idle", usage:"bb lane-pilot cancel <attempt-id>" },
@@ -6029,6 +6087,9 @@ export default async function plugin(bb: BbPluginApi) {
             task,
             baseRef:args[3]||undefined,
           }), null, 2) };
+        }
+        if (command === "docs-nightly" && args.length === 1) {
+          return { exitCode:0, stdout:JSON.stringify(await runNightlyDocs({force:true,projectId:args[0]!}), null, 2) };
         }
         if (command === "wait-thread" && args.length === 1) {
           const threadId = args[0]!;
