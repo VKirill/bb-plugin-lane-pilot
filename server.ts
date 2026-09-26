@@ -2937,7 +2937,12 @@ export default async function plugin(bb: BbPluginApi) {
     const text = (key:string) => typeof settings[key] === "string" && settings[key] ? settings[key] as string : null;
     const writerProviderId = text("writer.provider"), writerModel = text("writer.model");
     if (!writerProviderId || !writerModel) throw new Error("Choose the writer provider and model in Lane Pilot settings (project or defaults) before delegating.");
-    return { projectId, hostId, pmWorkspacePath:workspace, writerWorkspacePath:workspace, pmProviderId:"claude-code", pmModel:"native", writerProviderId, writerModel };
+    // The emergency writer is the PM's own selection: the model this Lane chat runs on.
+    const pmExecution = run.pm_thread_id ? await bb.sdk.threads.defaultExecutionOptions({ threadId:run.pm_thread_id }).catch(() => null) : null;
+    const pmProviderId = stringAt(pmExecution, "providerId"), pmModel = stringAt(pmExecution, "model");
+    return { projectId, hostId, pmWorkspacePath:workspace, writerWorkspacePath:workspace,
+      pmProviderId:pmProviderId && pmModel ? pmProviderId : writerProviderId, pmModel:pmProviderId && pmModel ? pmModel : writerModel,
+      writerProviderId, writerModel };
   }
 
   /** A native run's host, workspace and writer come from its binding and current settings, never from a stale prototype config. */
