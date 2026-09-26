@@ -90,7 +90,7 @@ export async function waitManagedWorktreeReady(input:{
   timeoutMs?:number;
   intervalMs?:number;
 }): Promise<{environmentId:string}> {
-  const timeoutMs = input.timeoutMs ?? 45_000;
+  const timeoutMs = input.timeoutMs ?? 180_000;
   const intervalMs = input.intervalMs ?? 500;
   const now = input.now ?? Date.now;
   const sleep = input.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));

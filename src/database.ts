@@ -442,6 +442,25 @@ export function listTasksForRun(db:LanePilotDatabase, runId:string):Array<{
   return rows.map((row) => ({ id:row.id, run_id:row.run_id, kind:row.kind, contract:JSON.parse(row.contract_json) }));
 }
 
+const DEAD_ATTEMPT_STATES = new Set(["blocked", "canceled", "spawn_rejected"]);
+
+/** Tasks that still hold their owned paths; one stopped before or at its last attempt holds none. */
+export function listLiveTasksForRun(db:LanePilotDatabase, runId:string): ReturnType<typeof listTasksForRun> {
+  return listTasksForRun(db, runId).filter((task) => {
+    const latest = db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY attempt_no DESC LIMIT 1")
+      .get(runId, task.id) as {state:string}|undefined;
+    if (latest) return !DEAD_ATTEMPT_STATES.has(latest.state);
+    return !db.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state='blocked' LIMIT 1").get(runId, task.id);
+  });
+}
+
+/** Task ids are global keys; a repeated id gets the first free `id.N`, so a retry never collides. */
+export function freeTaskId(db:LanePilotDatabase, id:string): string {
+  const taken = (candidate:string) => Boolean(db.prepare("SELECT 1 FROM lane_pilot_task WHERE id=?").get(candidate));
+  if (!taken(id)) return id;
+  for (let n = 2; ; n++) if (!taken(`${id}.${n}`)) return `${id}.${n}`;
+}
+
 export function saveTaskPlan(db: LanePilotDatabase, taskId:string, plan:string): void {
   db.prepare(`INSERT INTO lane_pilot_task_plan(task_id,plan) VALUES(?,?)
     ON CONFLICT(task_id) DO UPDATE SET plan=excluded.plan`).run(taskId, plan);

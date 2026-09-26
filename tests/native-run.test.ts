@@ -72,3 +72,21 @@ it("claims one run per native chat without project setup or a project-wide lock"
   closeRun(db, first.runId, "rpc");
   expect(claimNativeLaneRun({ db, threadId: "thread_a", projectId: "project_unconfigured" }).created).toBe(true);
 });
+
+it("gives a repeated task id a fresh key and frees paths held by a dead task", async () => {
+  const { createTask, createAttempt, freeTaskId, listLiveTasksForRun, saveStageReceipt } = await import("../src/database");
+  const fake = createFakePluginHost({ pluginId: "lane-pilot" });
+  cleanup.push(() => fake.harness.lifecycle.dispose());
+  const db = openDatabase(fake.bb);
+  createRun(db, "lprun_r", "project_a", "cli");
+  expect(freeTaskId(db, "premium")).toBe("premium");
+  createTask(db, { id: "premium", runId: "lprun_r", kind: "bb", contract: { owns_paths: ["src/a.mjs"] } });
+  expect(freeTaskId(db, "premium")).toBe("premium.2");
+  createTask(db, { id: "live", runId: "lprun_r", kind: "bb", contract: { owns_paths: ["src/b.mjs"] } });
+  createTask(db, { id: "stopped", runId: "lprun_r", kind: "bb", contract: { owns_paths: ["src/c.mjs"] } });
+  createAttempt(db, { id: "att_1", runId: "lprun_r", taskId: "premium" });
+  db.prepare("UPDATE lane_pilot_attempt SET state='blocked' WHERE id='att_1'").run();
+  saveStageReceipt(db, { contractVersion: 1, runId: "lprun_r", taskId: "stopped", stageId: "plan-critique", state: "blocked",
+    inputSha256: "a".repeat(64), outputSha256: null, attempt: 0, providerId: null, model: null, threadId: null, result: null, reason: "owns_overlap", updatedAt: 1 });
+  expect(listLiveTasksForRun(db, "lprun_r").map((task) => task.id)).toEqual(["live"]);
+});

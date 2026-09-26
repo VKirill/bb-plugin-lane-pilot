@@ -46,6 +46,8 @@ import {
   getTask,
   getTaskGitBase,
   listTasksForRun,
+  listLiveTasksForRun,
+  freeTaskId,
   getTaskPlan,
   saveTaskPlan,
   saveTaskGitBase,
@@ -759,7 +761,7 @@ async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDa
   const modelId=selection.model;
   const mode = settings["plan_critique.mode"] === "advisory" ? "advisory" : "gate";
   const agent = boundedAgentName(settings["plan_critique.agent"],"plan-critic");
-  const runTasks = listTasksForRun(input.db,input.runId).map((row) => ({id:row.id,...row.contract as {lane?:string;owns_paths?:string[];verify?:TaskV2["verify"];verification?:TaskV2["verification"]}}));
+  const runTasks = listLiveTasksForRun(input.db,input.runId).map((row) => ({id:row.id,...row.contract as {lane?:string;owns_paths?:string[];verify?:TaskV2["verify"];verification?:TaskV2["verification"]}}));
   let coverageStatus:"complete"|"truncated"|"unavailable"="unavailable";
   let coveragePathCount=0;
   let structuralFindings:CoverageFinding[]=runTasks.flatMap((task)=>findTaskPlaceholderPaths(task).map((path)=>({code:"task_placeholder" as const,path:`tasks/${task.id}/${path}`,
@@ -2866,14 +2868,26 @@ export default async function plugin(bb: BbPluginApi) {
     return file;
   }
 
+  /** A native Lane chat needs no project setup: its run carries the writer host and workspace, and the writer model comes from project or global Lane Pilot settings. */
+  async function nativeRunConfig(projectId:string, run:NonNullable<ReturnType<typeof getRun>>): Promise<PrototypeConfig|null> {
+    const hostId = getRunWriterHost(db, run.id);
+    const workspace = run.writer_workspace_path;
+    if (!hostId || !workspace) return null;
+    const settings = (await effectiveProjectSettings(projectId)).values;
+    const text = (key:string) => typeof settings[key] === "string" && settings[key] ? settings[key] as string : null;
+    const writerProviderId = text("writer.provider"), writerModel = text("writer.model");
+    if (!writerProviderId || !writerModel) throw new Error("Choose the writer provider and model in Lane Pilot settings (project or defaults) before delegating.");
+    return { projectId, hostId, pmWorkspacePath:workspace, writerWorkspacePath:workspace, pmProviderId:"claude-code", pmModel:"native", writerProviderId, writerModel };
+  }
+
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
     if (!runId) throw new Error("PM thread has no lanePilotRunId");
-    const config = loadPrototypeConfig(db, args.projectId);
-    if (!config) throw new Error(`Lane Pilot prototype is not configured for ${args.projectId}`);
     const run = getRun(db, runId);
+    const config = loadPrototypeConfig(db, args.projectId) ?? (run?.kind === "cli" ? await nativeRunConfig(args.projectId, run) : null);
+    if (!config) throw new Error(`Lane Pilot prototype is not configured for ${args.projectId}`);
     const workspacePath = run?.writer_workspace_path;
     if (!run || !workspacePath) {
       const reason = "run has no persisted writerWorkspacePath; reactivate Lane Pilot to create a run with a workspace snapshot";
@@ -2883,8 +2897,8 @@ export default async function plugin(bb: BbPluginApi) {
     if (listTaskKinds(db, runId).includes("cli")) {
       throw new Error("V1: BB writer cannot join a CLI run-controller run");
     }
-    const taskId = args.task?.id ?? id("lptask");
-    const prepared = args.task ?? buildTask(runConfig, taskId);
+    const taskId = args.task ? freeTaskId(db, args.task.id) : id("lptask");
+    const prepared = args.task ? { ...args.task, id:taskId } : buildTask(runConfig, taskId);
     const canonicalPlan = args.plan ?? prepared.objective;
     if (canonicalPlan.trim().length === 0) throw new Error("canonical plan must be non-empty");
     const valid = validateTaskV2(prepared);
