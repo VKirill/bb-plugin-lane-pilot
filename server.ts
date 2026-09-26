@@ -3101,6 +3101,8 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const deadline = Date.now() + Math.min(240, Math.max(1, args.timeoutSec)) * 1000;
     while (Date.now() < deadline) {
+      // A plugin reload closes this instance's database; the writer keeps running, so ask for a fresh poll.
+      if (disposed) return { runId:args.runId, state:"running", reason:"Lane Pilot was reloaded; call lane_pilot_wait_writer again" };
       const listedRun = listRunsWithAttempts(db, args.projectId).find((item) => item.id === args.runId);
       const latestByTask = new Map<string, {id:string;state:string;attempt_no:number;thread_id:string|null;reason:string|null;task_id:string}>();
       for (const attempt of listedRun?.attempts ?? []) {
