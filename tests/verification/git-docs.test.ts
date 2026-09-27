@@ -126,3 +126,9 @@ it("keeps the root's base on its own pages when flow pages are committed after a
     expect((await gitDocsScope({ projectCwd:root, sinceEpochMs:0, exclude:["docs/flows"] })).changed).toEqual(["a.ts"]);
   } finally { await rm(root, { recursive:true, force:true }); }
 });
+
+it("asks the root to turn new decision drafts into ADRs", () => {
+  const prompt = nightlyDocsPrompt({ since:"yesterday", hasDocs:true, changed:[], unit:{ docsDir:"docs" }, decisionDrafts:[".agents/decisions/2026-09-27-refund-once.md"] });
+  expect(prompt).toContain("Add each draft below as an ADR");
+  expect(prompt).toContain("- .agents/decisions/2026-09-27-refund-once.md");
+});

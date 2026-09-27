@@ -157,3 +157,10 @@ it("lists the pages a catalogue does not link", () => {
 it("does not take a host and port for a file citation", () => {
   expect(pageCitations("Listens on 0.0.0.0:3000 (src/server.ts:12).")).toEqual([{ file:"src/server.ts", start:12, end:12 }]);
 });
+
+it("leaves the design canon alone", () => {
+  const pages = [{ path:"apps/web/docs/DESIGN.md", content:"# Design\n\nNo frontmatter here.\n" }, { path:"apps/web/docs/overview.md", content:page({ title:"Web", type:"overview" }, "# Web\n\nA (src/check.ts:1). B (src/check.ts:2). C (src/check.ts:3). See [design](DESIGN.md).\n") }];
+  expect(lintDocsPages(pages, { "src/check.ts":9 })).toEqual([]);
+  expect(buildBacklinks(pages).map((p) => p.path)).toEqual(["apps/web/docs/overview.md"]);
+  expect(buildDocsIndex(pages, "apps/web/docs")).not.toContain("DESIGN");
+});

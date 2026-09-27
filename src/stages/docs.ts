@@ -151,6 +151,7 @@ const METHODOLOGY = [
   "- Every non-trivial claim cites file:line or file:start-end that exists; at least 3 citations per page. No hedges (typically, usually, should) without a citation, no marketing words (powerful, seamless, robust, comprehensive, intuitive, leverage), no dates in prose.",
   "- data-model pages explain the data, they do not copy the schema: one page per domain area (not per schema file) with a mermaid erDiagram of its tables and keys; per table its purpose, a field table with a Meaning column (what the field means, allowed values and where they come from, units such as credits, kopecks or milliseconds - the type is secondary), the lifecycle of each status-like field as a table of transitions (from, to, which function at file:line, when), its invariants, and who writes and reads it by use case, retention and cleanup jobs included. Use the Data map of the code map when there is one.",
   "- Keep each page under 30000 bytes: split a large subject into linked pages (a data model with many tables into data-model/<area>.md, one page per area, with data-model.md as the overview).",
+  "- DESIGN.md files are the design canon the design lead keeps: read and link them, never edit them.",
   "- Link pages with relative paths. Never write an index.md in a docs folder or a 'Referenced by' section: Lane Pilot builds them.",
   "- Everything in English. Root README.md is the short front page for people: what it is, what it does, quick start, and links into docs/ - no detail that docs/ already holds. Root PROJECT.md is for agents: dense facts (Identity, Entry points, Critical invariants, Conventions, Common gotchas, Useful commands), each linking to the page that owns it.",
   "- One owner per fact: a value, limit, rule or command is stated on the one page that owns it (a table in data-model, a limit in its feature page) and other pages link there instead of repeating it. Lane Pilot checks claims that cite the same code across pages for contradictions.",
@@ -163,7 +164,9 @@ const METHODOLOGY = [
 export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string; deploy?:boolean;
   missingPages?:string[]; uncoveredCore?:string[]; agent?:string; unit?:DocsUnit;
   /** Claims Jev still doubted after the last pass, to recheck in the code. */
-  doubts?:Array<{ path:string; detail:string }>}):string {
+  doubts?:Array<{ path:string; detail:string }>;
+  /** Decision drafts agents recorded in .agents/decisions/ that docs/decisions.md does not hold yet. */
+  decisionDrafts?:string[]}):string {
   const listed = input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
   const refresh = input.refresh ?? [];
   const unit = input.unit ?? { docsDir:"docs" };
@@ -186,6 +189,9 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
     ...(shared.length ? ["These workspaces are small and belong to the root docs: describe each in docs/packages.md (component), one section per package with its purpose, public API and who uses it:", ...shared.map((item) => `- ${item.name} (${item.path}/)`)] : []),
     "The code map lists every workspace, which workspaces it uses, its build and run scripts, the compose services and the turbo tasks: docs/deployment.md explains how each app is built, configured, run and deployed, and docs/architecture.md has a mermaid graph of which apps use which packages.",
   ] : [];
+  const drafts = input.decisionDrafts?.length ? ["",
+    "Decision drafts: agents record decisions in .agents/decisions/, and docs/decisions.md holds them as ADRs. Add each draft below as an ADR (Context, Decision, Status, Consequences) with citations to the code that carries it out, keep the ADRs already there, and name the draft path in its ADR so the next pass knows it is in:",
+    ...input.decisionDrafts.slice(0, 40).map((path) => `- ${path}`)] : [];
   const flows = unit.flows?.length ? ["",
     "Business flows have their own pages, written by their own passes - link each from docs/overview.md and from the architecture where it fits, and do not write docs/flows/:",
     ...unit.flows.map((slug) => `- docs/flows/${slug}.md`),
@@ -197,6 +203,7 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
     ...METHODOLOGY,
     ...(scope.length ? ["", ...scope] : []),
     ...flows,
+    ...drafts,
     ...(input.anchorsPath ? ["",
       `Code map: Lane Pilot mapped this project for you in ${input.anchorsPath} - every declaration with its file:line, which ones Jev marked as business-rule candidates and entry points, the page each belongs to, dependencies and tests. Read it first, build pages around its anchors and cite them; confirm every business-rule candidate in the code before you describe it as a rule.`] : []),
     "",

@@ -165,7 +165,7 @@ import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./
 import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./src/workspace/routing";
 import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage, type DocsUnit } from "./src/stages/docs";
-import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDocsIndex, lintDocsPages, unlinkedPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "./src/stages/docs-lint";
+import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, unlinkedPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "./src/stages/docs-lint";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
 import { PROJECT_LIFE_DEFAULT_WRITER, projectLifeWriterSelection, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, shouldTriggerProjectLife, type ProjectLifeTaskSummary } from "./src/stages/project-life";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
@@ -4833,9 +4833,11 @@ export default async function plugin(bb: BbPluginApi) {
 
   /** What one docs unit may write: a flow its page, the root its docs/ outside docs/flows when flows exist, a workspace its folder. */
   function unitWritable(unit:DocsUnit):(path:string)=>boolean {
-    if(unit.flow) return flowDocsWritable(unit.flow.slug);
-    if(unit.flows?.length) return (path:string)=>nightlyDocsWritable(unit.docsDir)(path)&&!path.startsWith("docs/flows/");
-    return nightlyDocsWritable(unit.docsDir);
+    const own=unit.flow?flowDocsWritable(unit.flow.slug)
+      :unit.flows?.length?(path:string)=>nightlyDocsWritable(unit.docsDir)(path)&&!path.startsWith("docs/flows/")
+      :nightlyDocsWritable(unit.docsDir);
+    // The design canon is the design lead's page, not the docs agent's.
+    return (path:string)=>own(path)&&!isDesignCanon(path);
   }
 
   async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string;catchUp?:boolean}={}):Promise<Array<Record<string,unknown>>> {
@@ -4974,7 +4976,14 @@ export default async function plugin(bb: BbPluginApi) {
     const hasDocs=before.hasDocs&&(await allPages()).some((page)=>writable(page.path)&&!isDocsIndex(page.path));
     // Docs an earlier pass left uncommitted still need checking and committing.
     const pending=before.dirty.some(writable);
-    if(hasDocs&&changed.length===0&&!pending) return report("skipped",{reason:"no code changes"});
+    // The root turns the decision drafts agents recorded into ADRs; a draft its decisions page does not name is work.
+    const decisionDrafts=unit.workspace||flow?[]:await (async()=>{
+      const drafts=(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:[".agents/decisions"],skipOversized:true},{hostId:place.hostId,timeoutMs:60_000}).catch(()=>null))?.pages??[];
+      if(!drafts.length) return [];
+      const decisions=(await allPages()).find((page)=>page.path===`${d}/decisions.md`)?.content??"";
+      return drafts.map((page)=>page.path).filter((path)=>!decisions.includes(path)).sort();
+    })();
+    if(hasDocs&&changed.length===0&&!pending&&!decisionDrafts.length) return report("skipped",{reason:"no code changes"});
     const existing=hasDocs?mine(await allPages()):[];
     // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the root docs.
     const readRootPages=async()=>unit.workspace||flow?[]:(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
@@ -5000,7 +5009,7 @@ export default async function plugin(bb: BbPluginApi) {
         const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
         const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:changed);
         const uncovered=changed.filter((file)=>product.has(file)&&!cited.has(file));
-        if(!pending&&!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length) return report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"});
+        if(!pending&&!decisionDrafts.length&&!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length) return report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"});
         refresh=stale.refresh;
       }
     }
@@ -5019,7 +5028,7 @@ export default async function plugin(bb: BbPluginApi) {
     const threadId=await spawnDocsThread({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:flow?` · flow ${flow.slug}`:""}`,
       ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
       prompt:nightlyDocsPrompt({since:docs.since,hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
-        agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts}),
+        agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts,decisionDrafts}),
       environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
       pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
     // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.

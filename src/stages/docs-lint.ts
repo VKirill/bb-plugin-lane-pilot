@@ -26,7 +26,9 @@ export type DocPage = { path:string; content:string };
 export const isDocsPage = (path:string):boolean => /(^|\/)docs\/.+\.md$/.test(path);
 /** The builder-owned index of a docs folder. */
 export const isDocsIndex = (path:string):boolean => /(^|\/)docs\/index\.md$/.test(path);
-const isDocsContent = (path:string):boolean => isDocsPage(path) && !isDocsIndex(path);
+/** DESIGN.md is the design canon the design lead keeps; it lives among the docs but Lane Pilot neither checks nor rewrites it. */
+export const isDesignCanon = (path:string):boolean => /(^|\/)DESIGN\.md$/.test(path);
+const isDocsContent = (path:string):boolean => isDocsPage(path) && !isDocsIndex(path) && !isDesignCanon(path);
 const docsDirOf = (path:string):string => /^(.*?(?:^|\/)?docs)\//.exec(path)?.[1] ?? "";
 export type Frontmatter = Record<string, string | string[]>;
 export type DocsFinding = { path:string; rule:string; detail:string };
