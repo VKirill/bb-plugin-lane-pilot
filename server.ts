@@ -19,6 +19,7 @@ import { aggregateRun } from "./src/aggregation";
 import { buildCliInvocation } from "./src/argv-builder";
 import { requiredCliFlags } from "./src/cli-flags";
 import { attemptProduced, classifyCliOutcome, parseDirtSnapshots, type DirtSnapshot } from "./src/cli-outcome";
+import { WORKSPACE_DIRT_COMMAND } from "./src/workspace-dirt";
 import { classifyWriterOutput, isOutputPath, type VerifyResult } from "./src/validate-output";
 import { findUnownedChanges, resolveRunOwnershipScope, validateOwnershipContract } from "./src/verification/ownership";
 import { parseReadFirstHints } from "./src/stages/read-first";
@@ -1793,7 +1794,6 @@ export default async function plugin(bb: BbPluginApi) {
     | { ok:true; threadId:string; providerId:string|null; model:string|null; reasoningLevel?:string; serviceTier?:"default"|"fast"|null; selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}; dirtBefore:import("./src/cli-outcome").DirtSnapshot[]; workspacePath:string; executionPacketSha256?:string }
     | { ok:false; status:"spawn_rejected"; reason:string; attemptId:string }
   > {
-    let dirtBefore:DirtSnapshot[]=[];
     let selectedProviderId:string|null=null;
     let selectedModel:string|null=null;
     let lastExecution:{reasoningLevel:string;serviceTier:"default"|"fast"|null;selectionSource:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}}|null=null;
@@ -2084,7 +2084,7 @@ export default async function plugin(bb: BbPluginApi) {
       bb.log.warn(`Lane Pilot writer spawn for ${input.attemptId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       const attempt = getAttempt(db, input.attemptId);
       if (!attempt) throw new Error(`persisted attempt disappeared after spawn_unknown: ${input.attemptId}`);
-      return { ok:true, threadId: await reconcileAttemptThread(input.projectId, attempt), providerId:selectedProviderId, model:selectedModel, dirtBefore,
+      return { ok:true, threadId: await reconcileAttemptThread(input.projectId, attempt), providerId:selectedProviderId, model:selectedModel, dirtBefore:attempt.dirt_before,
         workspacePath:attempt.workspace_path ?? input.task.project_cwd };
     }
   }
@@ -2092,7 +2092,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function workspaceDirt(config: PrototypeConfig, workspacePath = config.writerWorkspacePath): Promise<{ ok:true; paths:string[]; snapshots:DirtSnapshot[] } | { ok:false; reason:string }> {
     const ran = await host.call("runCommand", {
       requestedHostId: config.hostId,
-      command: "python3 - <<'PY'\nimport hashlib, json, os, subprocess\nraw = subprocess.run([\"git\", \"status\", \"--porcelain\", \"-z\", \"-uall\"], check=True, stdout=subprocess.PIPE).stdout\nparts = raw.split(bytes([0]))\npaths = []\ni = 0\nwhile i < len(parts) and parts[i]:\n    item = parts[i]\n    i += 1\n    name = item[3:]\n    if not name:\n        raise ValueError(\"empty git path\")\n    paths.append(name)\n    if item[:2] in (b\"R \", b\"C \", b\" R\", b\" C\"):\n        if i >= len(parts) or not parts[i]:\n            raise ValueError(\"missing rename source\")\n        paths.append(parts[i])\n        i += 1\nrows = []\nfor raw_path in sorted(set(paths)):\n    path = os.fsdecode(raw_path)\n    if os.path.isfile(path):\n        with open(path, \"rb\") as stream:\n            digest = hashlib.sha256(stream.read()).hexdigest()\n    elif os.path.lexists(path):\n        raise ValueError(\"dirty path is not regular: \" + path)\n    else:\n        digest = \"\"\n    rows.append({\"path\": path, \"sha256\": digest})\nprint(json.dumps(rows, ensure_ascii=True))\nPY",
+      command: WORKSPACE_DIRT_COMMAND,
       cwd: workspacePath,
       timeoutSec: 30,
     }, { hostId:config.hostId, timeoutMs:30_000 }).catch((cause: unknown) => ({
