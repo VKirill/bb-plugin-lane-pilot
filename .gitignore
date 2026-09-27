@@ -8,3 +8,6 @@ coverage/
 AGENTS.md
 CLAUDE.md
 scripts/live-*.ts
+.cls/
+.agents/skills/
+__pycache__/

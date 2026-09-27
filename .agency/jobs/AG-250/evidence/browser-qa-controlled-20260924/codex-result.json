@@ -1,0 +1,15 @@
+{
+  "backend": "chrome-qa",
+  "verdict": "pass",
+  "cases": [
+    {
+      "id": "TC-001",
+      "status": "passed",
+      "evidence": "At 375px, the Run check button was visible. Output changed from Ready to Check passed at http://127.0.0.1:43127/.",
+      "shots": [
+        ".agents/qa/ag250-controlled-qa-20260924-retry/shots/TC-001-375.png"
+      ]
+    }
+  ],
+  "notes": "Report saved to .agents/qa/ag250-controlled-qa-20260924-retry/REPORT.md. The isolated QA tab was closed."
+}

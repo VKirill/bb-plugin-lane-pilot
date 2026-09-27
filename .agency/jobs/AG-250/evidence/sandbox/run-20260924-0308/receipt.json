@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "testedAt": "2026-09-24T01:10:36.221Z",
+  "scenario": "live macOS host sandbox: allowed workspace write; deny sibling and .agents writes; deny loopback network",
+  "outcomes": {
+    "allowedWorkspaceWrite": true,
+    "outsideWriteDenied": true,
+    "agentsWriteDenied": true,
+    "networkDenied": true,
+    "commandExitZero": true,
+    "stdout": "OUTSIDE_WRITE_DENIED\nAGENTS_WRITE_DENIED\nNETWORK_DENIED:True",
+    "stderr": "/bin/bash: /var/folders/gs/d9_6ywzs4nnftb23mkdfk6340000gn/T/lane-pilot-sandbox-live-zi6tE8/outside.txt: Operation not permitted\n/bin/bash: /var/folders/gs/d9_6ywzs4nnftb23mkdfk6340000gn/T/lane-pilot-sandbox-live-zi6tE8/workspace/.agents/probe.txt: Operation not permitted\npython3: error: couldn't create cache file '/var/folders/gs/d9_6ywzs4nnftb23mkdfk6340000gn/T/xcrun_db-tC2Rwm1g' (errno=Operation not permitted)",
+    "exitCode": 0,
+    "backend": "macos-seatbelt",
+    "hostId": "host_7sea4qaad8",
+    "policySha256": "0fbd2f7af4a966403cb54065b3dcfab767f2d31d68f4575918ac3797d588ef47"
+  },
+  "passed": true
+}

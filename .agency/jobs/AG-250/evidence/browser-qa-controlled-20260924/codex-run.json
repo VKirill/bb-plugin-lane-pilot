@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "slug": "ag250-controlled-qa-20260924-retry",
+  "url": "http://127.0.0.1:43127/",
+  "env_class": "local",
+  "provider": "codex",
+  "model": "gpt-6-sol",
+  "reasoning_effort": "low",
+  "backend": "headless",
+  "approve": "auto",
+  "argv": [
+    "codex",
+    "exec",
+    "-m",
+    "gpt-6-sol",
+    "-c",
+    "model_reasoning_effort=low",
+    "-C",
+    "/private/tmp/lane-pilot-browser-qa",
+    "--skip-git-repo-check",
+    "--output-schema",
+    "/private/tmp/lane-pilot-browser-qa/.agents/qa/ag250-controlled-qa-20260924-retry/codex-result.schema.json",
+    "-o",
+    "/private/tmp/lane-pilot-browser-qa/.agents/qa/ag250-controlled-qa-20260924-retry/codex-last.md",
+    "--approve-for-me",
+    "<prompt>"
+  ],
+  "started_at": "2026-09-24T03:36:48.306218+00:00",
+  "exit_code": 0,
+  "duration_sec": 127.3,
+  "finished_at": "2026-09-24T03:38:55.633175+00:00",
+  "verdict": "pass",
+  "report": ".agents/qa/ag250-controlled-qa-20260924-retry/REPORT.md",
+  "stderr_tail": "Reading additional input from stdin...\n2026-09-24T03:38:25.622169Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: \"Rejected(\\\"This action was rejected due to unacceptable risk.\\\\nReason: The retry invokes browser-qa-jev, which may transmit local page content and interaction state to its external model service; the user authorized local QA but not exporting potentially sensitive local data to that destination.\\\\nDo not bypass this rejection through a workaround or indirect execution. Continue with a safer alternative, or carry out checks to prove that the action is authorized or low risk before trying again. Complete unaffected work without asking for confirmation. Report anything that remains blocked, clarify why it was blocked by auto-review, inform the user of the risk and ask for approval.\\\")\" }\n",
+  "jev": {
+    "kind": "out_of_scope",
+    "confidence": 0.8
+  }
+}

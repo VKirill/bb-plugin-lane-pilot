@@ -1,0 +1,43 @@
+# AG-250 handoff — 2026-09-24 06:31 Europe/Madrid
+
+## Completed this checkpoint
+
+- Wired `gate-triage --repair-provider` to the existing `night_review` provider/model/reasoning/tier configuration. `runNightFix` validates the chosen provider, model, reasoning effort, and service tier against the live BB host catalog, then records that selection on its stage receipts.
+- Catalog s272 now reflects the read-only adapter to the append-only project event ledger and `lane_pilot_gate_report`; the old global path/off switch is not written or honored. s290 is a read-only alias to the native provider picker; s291 is a read-only alias to the sole auto-merge control. Full inventory is 366 rows: 141 editable, 80 read-only, 4 gap, 141 excluded. The original 355 source tuples still match exactly; blank decisions = 0.
+- Regression executes writer → night review → bounded night fix and asserts the selected provider/model/effort and receipt. Catalog/server-stage/night-fix tests: 57 passed, 1 skipped.
+- Full suite: 48 files passed, 1 skipped; 401 tests passed, 2 skipped. Typecheck, build, `bb plugin types --check .` (SDK/host 0.4.104), and `git diff --check` passed.
+- GitNexus was refreshed after source edits and reports up-to-date at the current shared tree (`0eea7ce`): 161 covered files, 6,289 nodes, 11,662 edges, 112 clusters, 289 flows. Traversal warning remains: 172/372 candidate entry points unranked, 1,141 callees skipped, 12 walks cut by budget.
+- Earlier Linux bubblewrap smoke evidence remains at `evidence/linux-bubblewrap-smoke-20260924.md` (workspace write passed; `.git/.agents/.cls` and network writes/access denied). This is OS policy proof, not deployed host-RPC proof.
+
+## Remaining before final AG-250 submission
+
+- Resolve the four remaining run-v2 catalog rows from concrete contracts: s331/s332 `pools.provider` / `pools.verification`; s334/s335 `score` / `risk`. Keep the interface and user configuration boundaries intact; do not mark them inapplicable without evidence.
+- Complete remaining plan12 functionality and durable execution receipts. Browser QA controlled runner proof exists; authenticated installed UI EN/RU/375 remains open until exact predeploy review.
+- Assemble exact combined predeploy packet and obtain the independent positive AG-252 review. No Hub deployment or q6 mutation has occurred; after authorization, perform the required single delivery/rollback and installed coexistence verification.
+- Preserve A-owned files and `.agents/.cls`. No source commit or final AG-250 artifact publication/submission was made in this checkpoint.
+
+## Next executable action
+
+Inspect the run-v2 pool/score/risk consumers in the pinned upstream/SDK contracts. `runVerification` impact is CRITICAL/exact (7 symbols, 8 processes); any concurrency change must preserve sequential-safe behavior and get targeted receipts/tests across its callsites. For each row either add a bounded native runtime adapter or record the exact unsupported interface; preserve TaskV2/acceptanceV2 strict schemas. Re-run affected tests, typecheck, build, catalog generator, and GitNexus after source changes.
+
+## Progress checkpoint — 2026-09-24 08:01 Europe/Madrid
+
+- Fixed the settings → actual writer spawn → durable `writer-agent` receipt correlation gap in `server.ts`: the receipt now records the provider/model returned by the actual primary or emergency spawn, while resumed attempts initialize from their persisted reasoning trace. The writer regression now compares receipt provider/model/thread to the observed spawn and accepted attempt. An emergency-fallback assertion checks the same provenance boundary.
+- The first targeted run exposed the real defect (`writer-agent` receipt had null provider/model despite the spawn request using `codex` / `gpt-6-luna`); after the fix, the focused writer test selection passed (2 passed, 37 skipped) and typecheck passed. The failed pre-fix run remains part of the evidence history.
+- Combined gates after that fix: `npm test` — 50 files passed, 1 skipped; 417 tests passed, 2 skipped. `npm run build`, `npm run typecheck`, `bb plugin types --check .` (SDK/host 0.4.104), `python3 scripts/generate-ui-catalog.py --check` (366 rows, all 355 original tuples exact, 0 gap), and `git diff --check` passed. Existing Node `module.register()` deprecation, shallow dd77 fixture checkout warnings, and malformed optional ACP `nativeSkillRoots` config warning remain nonfatal.
+- GitNexus initially hit an EPERM on the shared registry lock; the retry in the authorized shared index window rebuilt the interrupted index cleanly. Status is up-to-date at `0eea7ce` across all 164 covered files (6,441 nodes, 11,918 edges, 118 clusters, 290 flows). Combined `detect-changes --scope all` reports 32 files / 1,213 symbols / 133 processes / CRITICAL. Traversal caveat: 177/377 candidate entry points unranked, 1,150 callees skipped, 10 walks cut by budget. This is an impact-review input, not a clean-change/commit signal.
+- Run-v2 evidence currently comes from `src/stages/run-policy.ts`, strict TaskV2/RunPolicy schemas, the run snapshot in SQLite, bounded verification/provider pools, `runV2` fields in verification/writer receipts, and unit/integration regressions. The current focused path is bounded by those tests; verify against plan12 row mapping before classifying the remaining BB catalog and runtime acceptance as complete.
+- Controlled Browser QA has a real runner receipt for TC-001 at 375px (`browser-qa-jev`, `typesafe/jev-1.13`, `chrome-qa`, visible `Check complete`) plus screenshot/raw runner hashes recorded earlier in this handoff. This proves the controlled runner boundary only; installed Lane Pilot UI in EN/RU/375 and final installed coexistence are still open.
+
+## Next executable action
+
+Compare the exact plan12 stage and catalog tuples against the shipped runtime/tool inventory and receipt-producing callsites, starting with the run-v2 pool/score/risk consumer mappings. Identify any genuinely unexercised row and add a narrowly scoped proof before preparing the combined exact packet. Then repeat the combined candidate review with the independent AG-252 reviewer; no Hub deploy, q6 mutation, final report publication, or job submit until the full acceptance sequence and authorization are complete.
+
+## Bounded workspace critique scan checkpoint — 2026-09-24 09:36+02:00 Europe/Madrid
+
+- Added host-only `inspectCritiqueCoverage` RPC and `src/stages/critique-coverage.ts`. It walks the selected workspace read-only, rejects a symlink root, skips symlinks and ignored/vendor/cache dirs, enumerates at most 2,000 files, and examines at most 300 text files / 4 MiB / 64 KiB per file with `O_NOFOLLOW`. It reports existing unowned plan paths, conventional sibling tests, textual references from unowned files, and explicit truncation; findings are included in the critic input hash/prompt and persisted in the result. Aggregate host error is recorded as unavailable warning so output cannot imply a complete scan.
+- Unit cases use disposable temp workspaces to verify plan paths, sibling test, textual reference, docs demotion, nonexistent path suppression, external symlink omission, and fail-closed symlink root. Server integration test verifies the host finding flows to critic prompt and receipt.
+- Focused tests currently pass 49 / 1 skipped across critique coverage, policy and server-stage files. Full suite before the final O_NOFOLLOW and s071 wording refinements passed 51 files / 433 tests / 2 skipped; re-run full suite, typecheck, build, SDK/host and catalog/diff checks after those refinements.
+- Fresh GitNexus analyze succeeded after the prior lock failure: status up-to-date on 0eea7ce, 166 files / 6,522 nodes / 12,039 edges / 121 clusters / 293 flows. Combined dirty-tree detect: 32 files / 1,254 symbols / 136 affected processes / CRITICAL; traversal warning: 181/381 candidates unranked, 1,150 callees skipped, 10 walks budget-cut. This index predates the latest safe-scan/O_NOFOLLOW tweak and must be refreshed again after code stabilizes.
+- Remaining critique gap is specific: static GitNexus caller traversal and upstream PLAN/SPEC/task structural validations remain absent. Map/s071 rationale is updated to state this; do not mark whole critique group complete.
+- No commit, public push, install, q6 or Hub mutation. Full task remains running. Next: run final gates after the host scan tweaks; then continue independent uncovered plan12 stage/runtime groups. Exact PM-owned installed stage receipt, installed EN/RU/375/coexistence, positive exact AG-252 review, authorized Hub delivery/rollback, q6 restore, public provenance and final report/publish/submit remain open.
