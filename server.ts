@@ -63,6 +63,7 @@ import {
   inspectState,
   listOpenAttempts,
   listTaskKinds,
+  listUnfinishedStages,
   listTaskTerminalStates,
   listAttemptsForTask,
   loadProjectSettings,
@@ -4800,8 +4801,11 @@ export default async function plugin(bb: BbPluginApi) {
     docsSpawnGate=turn.catch(()=>undefined);
     return turn;
   }
-  /** Attempts a night gets: the pass at docs.hour, then catch-ups at the next hours when it broke off or a unit failed. */
+  /** Attempts a night gets: the pass at docs.hour, then catch-ups a few minutes later when it broke off or a unit failed. */
   const DOCS_NIGHT_ATTEMPTS=3;
+  /** Places whose pass today is not settled yet, so the catch-up tick reads one key instead of every project. */
+  const DOCS_OPEN_KEY="docs-nightly-open";
+  type DocsOpenPasses=Record<string,{projectId:string;path:string;date:string}>;
   /** Places whose pass is running in this plugin process; a catch-up never starts beside one. */
   const docsPassesRunning=new Set<string>();
   /** Tooling state that changes during a pass without the docs agent: never reverted, never a violation. */
@@ -4822,7 +4826,7 @@ export default async function plugin(bb: BbPluginApi) {
     return nightlyDocsWritable(unit.docsDir);
   }
 
-  async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string}={}):Promise<Array<Record<string,unknown>>> {
+  async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string;catchUp?:boolean}={}):Promise<Array<Record<string,unknown>>> {
     const results:Array<Record<string,unknown>>=[];
     const projects=opts.projectId?[{id:opts.projectId}]:await bb.sdk.projects.list({includePersonal:true}).catch(()=>[] as Array<{id:string}>);
     for(const project of projects){
@@ -4843,8 +4847,9 @@ export default async function plugin(bb: BbPluginApi) {
           // night; units already done have no changes left and skip at once.
           const stateKey=`docs-nightly-state:${project.id}:${sha256(place.path).slice(0,12)}`;
           const night=await bb.storage.kv.get(stateKey).catch(()=>null) as {date?:string;attempts?:number;finished?:boolean;failed?:number}|null;
-          const catchUp=!opts.force&&night?.date===scope.localDate&&(!night.finished||(night.failed??0)>0)&&(night.attempts??0)<DOCS_NIGHT_ATTEMPTS
-            &&scope.localHour>docs.hour&&scope.localHour<docs.hour+DOCS_NIGHT_ATTEMPTS&&!docsPassesRunning.has(place.path);
+          const unsettled=night?.date===scope.localDate&&(!night.finished||(night.failed??0)>0)&&(night.attempts??0)<DOCS_NIGHT_ATTEMPTS;
+          const catchUp=Boolean(opts.catchUp)&&!opts.force&&unsettled&&!docsPassesRunning.has(place.path);
+          if(opts.catchUp&&!catchUp) continue;
           if(!opts.force&&!catchUp&&scope.localHour!==docs.hour) continue;
           const schedule=`docs-nightly-${sha256(place.path).slice(0,12)}`;
           if(!opts.force&&!catchUp&&!claimDailySchedule(db,project.id,schedule,scope.localDate)) continue;
@@ -4853,6 +4858,8 @@ export default async function plugin(bb: BbPluginApi) {
           const firstResult=results.length;
           const attempts=(catchUp?night?.attempts??0:0)+1;
           await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:false,failed:0});
+          const open=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
+          await bb.storage.kv.set(DOCS_OPEN_KEY,{...open,[stateKey]:{projectId:project.id,path:place.path,date:scope.localDate}});
           try{
           const own=scope.workspaces.filter((workspace)=>workspace.codeFiles>=WORKSPACE_DOCS_MIN_FILES);
           const workspaces=scope.workspaces.map((workspace)=>({path:workspace.path,name:workspace.name,docsDir:own.includes(workspace)?`${workspace.path}/docs`:null}));
@@ -5127,6 +5134,29 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.background.schedule("docs-maintenance-hourly","0 * * * *",runScheduledDocsMaintenance);
   bb.background.schedule("docs-nightly-hourly","0 * * * *",async()=>{ await runNightlyDocs(); });
+
+  /**
+   * Every two minutes: a pass of today that broke off (a plugin reload, a crash) or left units failed runs again,
+   * once the docs agents it started have stopped - up to DOCS_NIGHT_ATTEMPTS a night. Settled passes leave the index.
+   */
+  async function runDocsCatchUps():Promise<void> {
+    const open=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
+    const keep:DocsOpenPasses={};
+    for(const [key,entry] of Object.entries(open)){
+      const night=await bb.storage.kv.get(key).catch(()=>null) as {date?:string;attempts?:number;finished?:boolean;failed?:number}|null;
+      const unsettled=night?.date===entry.date&&(!night.finished||(night.failed??0)>0)&&(night.attempts??0)<DOCS_NIGHT_ATTEMPTS;
+      if(!unsettled) continue;
+      keep[key]=entry;
+      if(docsPassesRunning.has(entry.path)) continue;
+      const threads=await bb.sdk.threads.list({projectId:entry.projectId,originPluginId:"lane-pilot",includeHidden:true,limit:200,offset:0}).catch(()=>null);
+      const busy=!threads||threads.some((thread)=>(thread.status==="active"||thread.status==="starting")&&(thread.title??"").startsWith(`Lane Pilot docs: ${basename(entry.path)}`));
+      if(busy) continue;
+      await runNightlyDocs({projectId:entry.projectId,path:entry.path,catchUp:true});
+    }
+    const latest=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
+    await bb.storage.kv.set(DOCS_OPEN_KEY,Object.fromEntries(Object.entries(latest).filter(([key])=>key in keep||!(key in open))));
+  }
+  bb.background.schedule("docs-nightly-catchup","*/2 * * * *",runDocsCatchUps);
 
   async function startCancelProbe(projectId: string, pmThreadId: string): Promise<Record<string,unknown>> {
     const config = loadPrototypeConfig(db, projectId);
@@ -6723,5 +6753,10 @@ export default async function plugin(bb: BbPluginApi) {
   await resumeOrphans().catch((cause) => {
     bb.log.warn(`Lane Pilot resume on start skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
   });
+  // A reload drops the loops that watch background helpers; the stages are idempotent and find their child thread again.
+  for (const stage of listUnfinishedStages(db, ["memory-maintenance", "project-life"])) {
+    if (stage.stageId === "memory-maintenance") maintainMemoryAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
+    else maintainProjectLifeAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
+  }
   bb.log.info("Lane Pilot PM-to-writer pipeline loaded");
 }

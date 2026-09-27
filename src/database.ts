@@ -593,6 +593,14 @@ export function listStageReceipts(db:LanePilotDatabase, runId:string, taskId?:st
   }));
 }
 
+/** Background stages a reload interrupted: still pending or running, with the PM thread that owns them. */
+export function listUnfinishedStages(db:LanePilotDatabase, stageIds:StageId[]): Array<{runId:string;taskId:string;stageId:StageId;projectId:string;pmThreadId:string}> {
+  if(!stageIds.length) return [];
+  const rows=db.prepare(`SELECT s.run_id,s.task_id,s.stage_id,r.project_id,r.pm_thread_id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+    WHERE s.state IN ('pending','running') AND r.pm_thread_id IS NOT NULL AND s.stage_id IN (${stageIds.map(()=>"?").join(",")}) ORDER BY s.updated_at`).all(...stageIds) as Array<Record<string,string>>;
+  return rows.map((row)=>({runId:row.run_id!,taskId:row.task_id!,stageId:row.stage_id as StageId,projectId:row.project_id!,pmThreadId:row.pm_thread_id!}));
+}
+
 export function listTaskKinds(db: LanePilotDatabase, runId: string): Array<"bb"|"cli"> {
   return (db.prepare("SELECT kind FROM lane_pilot_task WHERE run_id=?").all(runId) as Array<{kind:"bb"|"cli"}>)
     .map((row) => row.kind);

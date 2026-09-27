@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
+import { appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -59,6 +59,23 @@ describe("section 9 storage.database DDL", () => {
     createAttempt(db, { id:"attempt-open", runId:"run-open", taskId:"task-open" });
     expect(closeRun(db, "run-open", "rpc")).toBe(false);
     expect((db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id='run-open'").get() as {closed_at:number|null}).closed_at).toBeNull();
+    await harness.lifecycle.dispose();
+  });
+
+  it("lists background stages a reload left pending or running, with their PM thread", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "bg-run", "A");
+    setRunThread(db, "bg-run", "pm-1");
+    createTask(db, { id:"t1", runId:"bg-run", kind:"bb", contract:{} });
+    createTask(db, { id:"t2", runId:"bg-run", kind:"bb", contract:{} });
+    const row = (taskId:string, stageId:"project-life"|"memory-maintenance"|"plan-critique", state:"running"|"passed") => saveStageReceipt(db, {
+      contractVersion:1, runId:"bg-run", taskId, stageId, state, inputSha256:"a".repeat(64), outputSha256:null, attempt:1,
+      providerId:null, model:null, threadId:null, result:null, reason:null, updatedAt:1,
+    });
+    row("t1", "project-life", "running"); row("t1", "memory-maintenance", "passed"); row("t2", "memory-maintenance", "running"); row("t2", "plan-critique", "running");
+    expect(listUnfinishedStages(db, ["memory-maintenance", "project-life"]).map((item) => [item.taskId, item.stageId, item.projectId, item.pmThreadId]).sort())
+      .toEqual([["t1", "project-life", "A", "pm-1"], ["t2", "memory-maintenance", "A", "pm-1"]]);
     await harness.lifecycle.dispose();
   });
 
