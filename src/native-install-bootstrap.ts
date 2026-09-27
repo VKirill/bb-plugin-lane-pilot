@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { lstat, readFile } from "node:fs/promises";
 
-export const NATIVE_STACK_SHA = "7f2fcd22bcbb088c0412393a10e3c6d151703575";
+export const NATIVE_STACK_SHA = "587a2b01c96cf482c37a828e7a5615d964bebd1c";
 export const CLAUDE_LANE_REPO = "https://github.com/VKirill/claude-lane-stack";
 /** Where Claude Lane's own install keeps its checkout; installing here makes Lane Pilot's install the user's install. */
 export const CLAUDE_LANE_SOURCE = ".local/share/claude-lane-stack-installed";

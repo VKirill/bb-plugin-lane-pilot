@@ -29,7 +29,7 @@ export function parseProjectLifeSettings(raw: Record<string, unknown>): ProjectL
   return { enabled: parseBoolean(raw["project_life.enabled"], true, "project_life.enabled") };
 }
 
-/** Only files the helper is allowed to touch: living memory, not code, not LESSONS.md, not docs/decisions.md. */
+/** Only files the helper is allowed to touch: living memory, not code, not LESSONS.md, not docs/ or decision drafts. */
 export function isAllowedProjectLifePath(path: string): boolean {
   const clean = path.replace(/^\.\//, "");
   return ALLOWED_EXACT_PATHS.has(clean) || ALLOWED_PATH_PREFIXES.some((prefix) => clean.startsWith(prefix));
@@ -84,7 +84,7 @@ export function projectLifePrompt(input: {
     `Then append exactly one line to .agents/CHANGELOG.md (create it with a "# Changelog" heading if missing; never edit older lines): - ${input.nowIso.slice(0, 10)} ${input.runId}: <what changed, one sentence> (<task ids>; commit: see git log)`,
     "Tick the matching tasks in .agents/plans/items/*/PLAN.md and refresh .agents/plans/ROADMAP.md, but only if those already exist.",
     "Add this run id to related_runs of any .agents/todos meta.yaml item that this work clearly implements, only on a clear match, and refresh .agents/todos/INDEX.md statuses.",
-    "Write everything in English. You may write only .agents/PROGRESS.md, .agents/CHANGELOG.md, .agents/plans/** and .agents/todos/** — no application code, no LESSONS.md, no docs/decisions.md; those stay with the PM.",
+    "Write everything in English. You may write only .agents/PROGRESS.md, .agents/CHANGELOG.md, .agents/plans/** and .agents/todos/** — no application code, no LESSONS.md, no decision drafts in .agents/decisions/ (those stay with the PM), and nothing under docs/ (Lane Pilot writes the code documentation).",
     `When done, git add only the paths you changed under those allowed locations and, if anything changed, commit with message: chore(progress): update project memory after ${input.runId}`,
     "Accepted tasks:",
     JSON.stringify(input.tasks),

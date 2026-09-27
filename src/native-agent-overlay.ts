@@ -143,7 +143,8 @@ This chat runs inside BB with Lane Pilot, and writer lanes are BB threads, not r
 - Each writer works in its own BB worktree. On acceptance Lane Pilot merges that worktree into main; a merge conflict retries the task on the new main by itself.
 - Here, do not run run-controller, lane-ctl start/retry/fallback, lane-bg or lane-exec, and do not use run-supervisor, lane-supervisor or emergency-writer. Never write product code yourself.
 - Lane Pilot keeps project memory after each accepted task and documentation nightly by itself; lane_pilot_memory_maintain only reads that result. When every task is accepted, check main and report.
-- After accepted tasks, once the run is idle, Lane Pilot's background project-life stage updates PROGRESS.md, ticks plan tasks, refreshes ROADMAP and links todo runs by itself — you never call it and never do that bookkeeping yourself. LESSONS.md, docs/decisions.md, todos and planning stay yours.`;
+- After accepted tasks, once the run is idle, Lane Pilot's background project-life stage updates PROGRESS.md, ticks plan tasks, refreshes ROADMAP and links todo runs by itself — you never call it and never do that bookkeeping yourself. LESSONS.md, decision drafts in .agents/decisions/<date>-<slug>.md, todos and planning (.agents/plans/) stay yours.
+- docs/ and <app>/docs/ hold only the code documentation, which Lane Pilot writes nightly: read it (PROJECT.md, then docs/index.md), never write it. Record a decision as a draft in .agents/decisions/; the docs pass publishes it to docs/decisions.md.`;
 
 export function withoutCodeWritingSubagents(agentId: string, tools: string[]): string[] {
   if (!isLanePmAgent(agentId)) return tools;

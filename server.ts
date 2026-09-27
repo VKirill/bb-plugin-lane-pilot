@@ -4228,7 +4228,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   /**
    * Project life is a background stage the plugin itself runs after an accepted wave goes idle — the PM
-   * never calls it. It rewrites PROGRESS/plans/todos only; LESSONS.md and docs/decisions.md stay with the PM.
+   * never calls it. It rewrites PROGRESS/plans/todos only; LESSONS.md and decision drafts stay with the PM.
    */
   function maintainProjectLifeAfterAcceptance(projectId:string, runId:string, taskId:string, pmThreadId:string):void {
     if (!shouldTriggerProjectLife(listOpenAttempts(db).map((attempt) => attempt.run_id), runId)) return;
