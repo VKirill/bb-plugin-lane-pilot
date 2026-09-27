@@ -177,6 +177,10 @@ const DOCS_PROVIDER = "docs.provider";
 const DOCS_MODEL = "docs.model";
 const DOCS_EFFORT = "docs.reasoning_effort";
 const DOCS_SERVICE_TIER = "docs.service_tier";
+const PROJECT_LIFE_PROVIDER = "project_life.provider";
+const PROJECT_LIFE_MODEL = "project_life.model";
+const PROJECT_LIFE_EFFORT = "project_life.reasoning_effort";
+const PROJECT_LIFE_SERVICE_TIER = "project_life.service_tier";
 const ONBOARDING_PROVIDER = "onboarding.provider";
 const ONBOARDING_MODEL = "onboarding.model";
 const ONBOARDING_EFFORT = "onboarding.reasoning_effort";
@@ -230,6 +234,7 @@ const PICKER_KEYS = new Set([
   MEMORY_PROVIDER, MEMORY_MODEL, MEMORY_EFFORT, MEMORY_SERVICE_TIER,
   NIGHT_PROVIDER, NIGHT_MODEL, NIGHT_EFFORT, NIGHT_SERVICE_TIER,
   DOCS_PROVIDER, DOCS_MODEL, DOCS_EFFORT, DOCS_SERVICE_TIER,
+  PROJECT_LIFE_PROVIDER, PROJECT_LIFE_MODEL, PROJECT_LIFE_EFFORT, PROJECT_LIFE_SERVICE_TIER,
   ONBOARDING_PROVIDER, ONBOARDING_MODEL, ONBOARDING_EFFORT, ONBOARDING_SERVICE_TIER,
   PM_READ_PROVIDER, PM_READ_MODEL, PM_READ_EFFORT, PM_READ_SERVICE_TIER,
   PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_SERVICE_TIER,
@@ -240,6 +245,7 @@ const DEDICATED_KEYS = new Set([
   "night_review.enabled", "night_review.auto_merge", "night_review.max_fix_tasks",
   "pm_read.enabled", "pm_read.min_lines",
   "docs.enabled", "docs.maintain", "docs.page_cap", "docs.since", "docs.hour",
+  "project_life.enabled",
   "helper.placement", "helper.context_mode", "helper.skills", "helper.mcp_servers", "helper.bb_plugins", "helper.native_plugins",
   "plan_critique.enabled", "plan_critique.mode",
   "plan_critique.min_score", "plan_critique.min_write_tasks", "plan_critique.on_high_risk",
@@ -1050,6 +1056,19 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     return true;
   };
 
+  const saveProjectLifeSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
+    if(!projectId||!data)return false;
+    const result=await rpc.call("save_project_life_selection", { ...scoped,
+      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
+      expectedVersions:{[PROJECT_LIFE_PROVIDER]:data.versions[PROJECT_LIFE_PROVIDER]??0,[PROJECT_LIFE_MODEL]:data.versions[PROJECT_LIFE_MODEL]??0,[PROJECT_LIFE_EFFORT]:data.versions[PROJECT_LIFE_EFFORT]??0,[PROJECT_LIFE_SERVICE_TIER]:data.versions[PROJECT_LIFE_SERVICE_TIER]??0},
+    });
+    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
+    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
+
   const savePmReadSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
     const result=await rpc.call("save_pm_read_selection", { ...scoped,
@@ -1150,6 +1169,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     model:String(data?.values[DOCS_MODEL]??data?.values[WRITER_MODEL]??""),
     reasoningLevel:(String(data?.values[DOCS_EFFORT]??data?.values[WRITER_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
     ...(providers.providers?.find((provider)=>provider.id===docsProviderId)?.serviceTiers?.length?{serviceTier:data?.values[DOCS_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
+  };
+  const projectLifeProviderId=String(data?.values[PROJECT_LIFE_PROVIDER] ?? "codex");
+  const projectLifePickerValue:ExperimentalProviderModelPickerValue={
+    providerId:projectLifeProviderId,
+    model:String(data?.values[PROJECT_LIFE_MODEL] ?? "gpt-6-luna"),
+    reasoningLevel:(String(data?.values[PROJECT_LIFE_EFFORT] ?? "high")||"high") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider)=>provider.id===projectLifeProviderId)?.serviceTiers?.length?{serviceTier:data?.values[PROJECT_LIFE_SERVICE_TIER]==="standard"?"default":"fast"}:{}),
   };
   const onboardingProviderId=String(data?.values[ONBOARDING_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
   const onboardingPickerValue:ExperimentalProviderModelPickerValue={
@@ -1503,7 +1529,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </section>
             </SettingsGroup> : null}
 
-            {cardVisible("memoryPicker", "docsPicker", "onboardingPicker", "largeFileRead", "groupDocs") ? <SettingsGroup title={t("sectionMemoryDocs")} testId="settings-memory-docs">
+            {cardVisible("memoryPicker", "docsPicker", "onboardingPicker", "largeFileRead", "groupDocs", "groupProjectLife") ? <SettingsGroup title={t("sectionMemoryDocs")} testId="settings-memory-docs">
               {cardVisible("memoryPicker", "memoryPickerHelp", "settingMemoryEnabled") ? <section className="space-y-2" data-testid="memory-picker">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1">
@@ -1542,6 +1568,17 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                       onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                   })}
                 </Disclosure>
+              </section> : null}
+              {cardVisible("groupProjectLife", "projectLifePickerHelp") ? <section className="space-y-2" data-testid="project-life-picker">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <h3 className="text-sm font-medium">{t("groupProjectLife")}</h3>
+                    <HelpTip label={t("projectLifePickerTechnical")}><p>{t("projectLifePickerTechnical")}</p></HelpTip>
+                  </div>
+                  {(() => { const row = catalogRow("project_life.enabled"); return row ? <Switch checked={asBoolean(displayedValue("project_life.enabled"), true)} aria-label={t("groupProjectLife")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+                </div>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("projectLifePickerHelp")}</p>
+                <div className="max-w-xl">{modelPicker(projectLifePickerValue, (next) => { void saveProjectLifeSelection(next); })}</div>
               </section> : null}
               {cardVisible("onboardingPicker", "onboardingPickerHelp") ? <section className="space-y-2" data-testid="onboarding-picker">
                 <div className="flex min-w-0 items-center gap-1">

@@ -9,6 +9,7 @@ const PICKER_PREFIXES = [
   "memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier",
   "night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier",
   "docs.provider", "docs.model", "docs.reasoning_effort", "docs.service_tier",
+  "project_life.provider", "project_life.model", "project_life.reasoning_effort", "project_life.service_tier",
   "onboarding.provider", "onboarding.model", "onboarding.reasoning_effort", "onboarding.service_tier",
   "pm_read.provider", "pm_read.model", "pm_read.reasoning_effort", "pm_read.service_tier",
   "plan_critique.provider", "plan_critique.model", "plan_critique.reasoning_effort", "plan_critique.service_tier",

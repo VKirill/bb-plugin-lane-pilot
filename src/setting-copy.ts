@@ -23,6 +23,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "docs.page_cap": { label: "docsPageCap", help: "settingDocsPageCapHelp", unit: "fieldUnitPages" },
   "docs.since": { label: "docsSince", help: "settingDocsSinceHelp" },
   "docs.hour": { label: "docsHour", help: "settingDocsHourHelp", unit: "fieldUnitHours" },
+  "project_life.enabled": { label: "groupProjectLife", help: "projectLifePickerHelp" },
   "pm_read.enabled": { label: "largeFileRead", help: "largeFileReadHelp" },
   "pm_read.min_lines": { label: "largeFileThreshold", help: "largeFileThresholdHelp", unit: "fieldUnitLines" },
   "helper.placement": { label: "helperPlacement", help: "helperPlacementHelp" },

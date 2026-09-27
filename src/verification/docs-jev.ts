@@ -18,7 +18,7 @@ const run = promisify(execFile);
 const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 /** Jev takes about 32k tokens of state; English code is roughly 4 characters a token. */
 const JEV_STATE_CHARS = 100_000;
-const JEV_CONCURRENCY = 8;
+const JEV_CONCURRENCY = 16;
 export const CODE_FILE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|py|vue|prisma)$/;
 const SKIP_PATH = /(^|\/)(docs|dist|build|node_modules|vendor|\.nuxt|\.output)\/|^(\.agents|\.bb|\.claude)\//;
 export const TEST_PATH = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[a-z]+$/;
@@ -70,7 +70,17 @@ function shorten(text:string, keep:number):string {
   return `${text.slice(0, head)}\n…[${text.length - keep} characters omitted]…\n${text.slice(text.length - tail)}`;
 }
 
+/**
+ * Jev requests in flight on this machine across every docs folder at once; each folder's pool feeds this one.
+ * TypeSafe allows about 1200 requests a minute; at 2-3 s an answer, 48 in flight stays inside it.
+ */
+const JEV_MACHINE_LIMIT = 48;
+let jevInFlight = 0;
+const jevWaiting:Array<() => void> = [];
+
 export async function jevAsk(key:string, state:unknown, questions:Record<string, JevQuestion>, timeoutMs = 20_000):Promise<Record<string, JevAnswer> | null> {
+  if (jevInFlight >= JEV_MACHINE_LIMIT) await new Promise<void>((ready) => jevWaiting.push(ready));
+  jevInFlight++;
   try {
     const response = await fetch(JEV_URL, {
       method:"POST",
@@ -83,6 +93,9 @@ export async function jevAsk(key:string, state:unknown, questions:Record<string,
     return body.answers ?? null;
   } catch {
     return null;
+  } finally {
+    jevInFlight--;
+    jevWaiting.shift()?.();
   }
 }
 

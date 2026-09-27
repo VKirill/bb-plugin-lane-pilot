@@ -871,6 +871,16 @@ export const rpcContract = defineRpcContract({
     }).strict(),
     output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
   },
+  save_project_life_selection: {
+    input:z.object({
+      projectId:z.string().min(1),providerId:z.string().min(1),model:z.string().min(1),
+      sectionId: z.string().min(1).optional(),
+      reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]),
+      serviceTier:z.enum(["default","fast"]).nullable(),
+      expectedVersions:z.object({"project_life.provider":z.number().int().min(0),"project_life.model":z.number().int().min(0),"project_life.reasoning_effort":z.number().int().min(0),"project_life.service_tier":z.number().int().min(0)}).strict(),
+    }).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
+  },
   save_pm_read_selection: {
     input:z.object({
       projectId:z.string().min(1),providerId:z.string().min(1),model:z.string().min(1),

@@ -115,11 +115,12 @@ describe("UI storage keys feed runtime channels", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(160);
+    expect(editable).toHaveLength(165);
     const atomicPickerKeys = new Set([
       "memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier",
       "night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier",
       "docs.provider", "docs.model", "docs.reasoning_effort", "docs.service_tier",
+      "project_life.provider", "project_life.model", "project_life.reasoning_effort", "project_life.service_tier",
       "onboarding.provider", "onboarding.model", "onboarding.reasoning_effort", "onboarding.service_tier",
       "pm_read.provider", "pm_read.model", "pm_read.reasoning_effort", "pm_read.service_tier",
       "plan_critique.provider", "plan_critique.model", "plan_critique.reasoning_effort", "plan_critique.service_tier",
@@ -160,7 +161,7 @@ describe("UI storage keys feed runtime channels", () => {
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
     expect(booleanFlags.map((spec) => spec.key)).toEqual([]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(160);
+    expect(editable).toHaveLength(165);
     expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
     for (const row of editable) {
       if (row.storageKey === "ui.language") {

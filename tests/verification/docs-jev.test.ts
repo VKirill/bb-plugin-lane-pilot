@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { boundJevState, pageClaims, renderAnchorBrief, scanDeclarations, spreadAnchors, verifyDocsCitations, type Anchor } from "../../src/verification/docs-jev";
+import { boundJevState, jevAsk, pageClaims, renderAnchorBrief, scanDeclarations, spreadAnchors, verifyDocsCitations, type Anchor } from "../../src/verification/docs-jev";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
@@ -88,4 +88,17 @@ it("turns a citation Jev finds unsupported into a lint finding, and does nothing
     vi.stubEnv("TYPESAFE_API_KEY", ""); vi.stubEnv("JEV_API_KEY", ""); vi.stubEnv("HOME", root);
     expect((await verifyDocsCitations({ projectCwd:root, pages })).jev).toBe("disabled");
   } finally { await rm(root, { recursive:true, force:true }); }
+});
+
+it("keeps at most 48 Jev requests in flight on the machine", async () => {
+  let open = 0, peak = 0;
+  vi.stubGlobal("fetch", vi.fn(async () => {
+    open++; peak = Math.max(peak, open);
+    await new Promise((done) => setTimeout(done, 5));
+    open--;
+    return new Response(JSON.stringify({ answers:{ q:{ noul:1 } } }));
+  }));
+  const answers = await Promise.all(Array.from({ length:100 }, () => jevAsk("k", {}, { q:{ type:"noul", instructions:"?" } })));
+  expect(answers.every((answer) => answer?.q?.noul === 1)).toBe(true);
+  expect(peak).toBe(48);
 });

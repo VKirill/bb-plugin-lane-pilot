@@ -165,6 +165,7 @@ import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorks
 import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage, type DocsUnit } from "./src/stages/docs";
 import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDocsIndex, lintDocsPages, unlinkedPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "./src/stages/docs-lint";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
+import { PROJECT_LIFE_DEFAULT_WRITER, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, shouldTriggerProjectLife, type ProjectLifeTaskSummary } from "./src/stages/project-life";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
 import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "./src/stages/night-fix";
 import { parseOpenCodeToolTelemetry } from "./src/stages/opencode-telemetry";
@@ -290,6 +291,7 @@ const NATIVE_WRITER_KEYS = new Set(["writer.provider", "writer.model", "writer.r
 const NATIVE_MEMORY_KEYS = new Set(["memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier"]);
 const NATIVE_NIGHT_REVIEW_KEYS = new Set(["night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier"]);
 const NATIVE_DOCS_KEYS = new Set(["docs.provider", "docs.model", "docs.reasoning_effort", "docs.service_tier"]);
+const NATIVE_PROJECT_LIFE_KEYS = new Set(["project_life.provider", "project_life.model", "project_life.reasoning_effort", "project_life.service_tier"]);
 const NATIVE_ONBOARDING_KEYS = new Set(["onboarding.provider", "onboarding.model", "onboarding.reasoning_effort", "onboarding.service_tier"]);
 const NATIVE_PM_READ_KEYS = new Set(["pm_read.provider", "pm_read.model", "pm_read.reasoning_effort", "pm_read.service_tier"]);
 const NATIVE_PLAN_CRITIQUE_KEYS = new Set(["plan_critique.provider", "plan_critique.model", "plan_critique.reasoning_effort", "plan_critique.service_tier"]);
@@ -494,6 +496,21 @@ function memoryChildSnapshot(result:unknown): MemoryChildSnapshot|null {
   if (typeof settings.enabled !== "boolean" || typeof settings.coreBudget !== "number") return null;
   return {
     acceptanceSha256:row.acceptanceSha256, settings, agent:row.agent,
+    ...(row.dispatchInput !== undefined ? { dispatchInput:row.dispatchInput } : {}),
+  };
+}
+
+type ProjectLifeChildSnapshot = { coveredTaskIds:string[]; tasks:ProjectLifeTaskSummary[]; baseHeadSha:string|null; agent:string; dispatchInput?:unknown };
+
+function projectLifeChildSnapshot(result:unknown): ProjectLifeChildSnapshot|null {
+  const snapshot = childResultObject(result).snapshot;
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const row = snapshot as Record<string, unknown>;
+  if (!Array.isArray(row.coveredTaskIds) || row.coveredTaskIds.some((id) => typeof id !== "string")) return null;
+  if (!Array.isArray(row.tasks) || typeof row.agent !== "string") return null;
+  return {
+    coveredTaskIds:row.coveredTaskIds as string[], tasks:row.tasks as ProjectLifeTaskSummary[],
+    baseHeadSha:typeof row.baseHeadSha === "string" ? row.baseHeadSha : null, agent:row.agent,
     ...(row.dispatchInput !== undefined ? { dispatchInput:row.dispatchInput } : {}),
   };
 }
@@ -2883,6 +2900,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
       refreshRun(input.runId);
       if (accepted) maintainMemoryAfterAcceptance(input.projectId, input.runId, input.taskId, input.pmThreadId);
+      if (accepted) maintainProjectLifeAfterAcceptance(input.projectId, input.runId, input.taskId, input.pmThreadId);
     })().catch((cause: unknown) => {
       // After a reload the database is closed: stop quietly, the next load reconciles the attempt.
       if (disposed) return;
@@ -3623,6 +3641,23 @@ export default async function plugin(bb: BbPluginApi) {
     return reconcileStageChild(projectId, runId, taskId, "docs-maintenance", "docs-maintainer");
   }
 
+  async function reconcileProjectLifeChild(projectId:string, runId:string, taskId:string) {
+    return reconcileStageChild(projectId, runId, taskId, "project-life", "project-life-maintainer");
+  }
+
+  function projectLifeTaskSummary(runId:string, taskId:string): ProjectLifeTaskSummary {
+    const row = getTask(db, taskId);
+    const parsed = row ? taskV2Schema.safeParse(row.contract) : null;
+    const accepted = listStageReceipts(db, runId, taskId).find((item) => item.stageId === "acceptance-receipt");
+    const report = accepted?.result && typeof accepted.result === "object" ? (accepted.result as Record<string, unknown>).report : undefined;
+    return {
+      id:taskId,
+      title:parsed?.success ? parsed.data.title : taskId,
+      objective:parsed?.success ? parsed.data.objective : "",
+      acceptanceSummary:typeof report === "string" ? report.slice(0, 2000) : "",
+    };
+  }
+
   async function runDocsMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if (valueAt(metadata,"role") !== "pm" || stringAt(metadata,"lanePilotRunId") !== args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
@@ -4181,6 +4216,207 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
+  /**
+   * Project life is a background stage the plugin itself runs after an accepted wave goes idle — the PM
+   * never calls it. It rewrites PROGRESS/plans/todos only; LESSONS.md and docs/decisions.md stay with the PM.
+   */
+  function maintainProjectLifeAfterAcceptance(projectId:string, runId:string, taskId:string, pmThreadId:string):void {
+    if (!shouldTriggerProjectLife(listOpenAttempts(db).map((attempt) => attempt.run_id), runId)) return;
+    void (async () => {
+      for (let round = 0; round < 60 && !disposed; round++) {
+        const result = await runProjectLifeMaintenance({ threadId:pmThreadId, projectId, runId, taskId, timeoutSec:60 });
+        if (result.state !== "running") return;
+      }
+    })().catch((cause: unknown) => {
+      if (!disposed) bb.log.warn(`Lane Pilot project-life after ${taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    });
+  }
+
+  async function runProjectLifeMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
+    const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
+    if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
+    const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
+    if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") throw new Error("task does not belong to this PM run and project");
+    const taskContract=taskV2Schema.parse(taskRow.contract);
+    const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
+    const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
+    if(accepted?.state!=="passed") throw new Error("project-life maintenance requires an accepted writer receipt first");
+
+    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
+    const projectLifeSettings=parseProjectLifeSettings({"project_life.enabled":configuredSetting(settings,"project_life.enabled")});
+    const projectLifeSelection=resolveStageWriterSelection({settings,
+      config:{writerProviderId:PROJECT_LIFE_DEFAULT_WRITER.providerId,writerModel:PROJECT_LIFE_DEFAULT_WRITER.model},
+      stageProviderKey:"project_life.provider",stageModelKey:"project_life.model"});
+    const projectLifeProviderId=projectLifeSelection.providerId;
+    const projectLifeModel=projectLifeSelection.model;
+    const projectLifeEffort=typeof settings["project_life.reasoning_effort"]==="string"&&settings["project_life.reasoning_effort"]
+      ? settings["project_life.reasoning_effort"] as string : PROJECT_LIFE_DEFAULT_WRITER.reasoningEffort;
+    const projectLifeTier=settings["project_life.service_tier"]==="standard"?"standard":PROJECT_LIFE_DEFAULT_WRITER.serviceTier;
+
+    const runReceipts=listStageReceipts(db,args.runId);
+    const acceptedTaskIds=[...new Set(runReceipts.filter((row)=>row.stageId==="acceptance-receipt"&&row.state==="passed").map((row)=>row.taskId))];
+    if(!acceptedTaskIds.includes(args.taskId)) throw new Error("triggering task has not been accepted in this run");
+    const priorCovered=runReceipts.filter((row)=>row.stageId==="project-life"&&row.state==="passed")
+      .flatMap((row)=>projectLifeChildSnapshot(row.result)?.coveredTaskIds ?? []);
+    const coveredTaskIds=foldCoveredTaskIds(acceptedTaskIds,priorCovered);
+
+    const base={runId:args.runId,taskId:args.taskId,stageId:"project-life" as const,
+      input:JSON.stringify({coveredTaskIds,providerId:projectLifeProviderId,model:projectLifeModel,reasoningEffort:projectLifeEffort,serviceTier:projectLifeTier})};
+    const existing=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+    if(existing && !["pending","running"].includes(existing.state)) {
+      return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"project-life already has a receipt; create a new task for another run",stage:existing};
+    }
+    const inFlightElsewhere=runReceipts.find((row)=>row.stageId==="project-life"&&["pending","running"].includes(row.state)&&row.taskId!==args.taskId);
+    if(!existing){
+      if(inFlightElsewhere) return {runId:args.runId,taskId:args.taskId,state:"skipped",reason:"project_life_in_flight_elsewhere"};
+      recordStage(db,{...base,state:"pending"});
+    }
+    const liveChild=Boolean(existing?.threadId || projectLifeChildSnapshot(existing?.result));
+    if(!projectLifeSettings.enabled && !liveChild) {
+      recordStage(db,{...base,state:"skipped",reason:"disabled_by_project_setting",result:{coveredTaskIds}});
+      return {runId:args.runId,taskId:args.taskId,state:"skipped",reason:"disabled_by_project_setting"};
+    }
+    if(!coveredTaskIds.length && !liveChild) {
+      recordStage(db,{...base,state:"skipped",reason:"no_uncovered_tasks",result:{coveredTaskIds}});
+      return {runId:args.runId,taskId:args.taskId,state:"skipped",reason:"no_uncovered_tasks"};
+    }
+    const claimed=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+    if(claimed?.state==="pending") recordStage(db,{...base,state:"running",providerId:projectLifeProviderId,model:projectLifeModel,threadId:claimed.threadId,result:claimed.result,reason:"project_life_spawn_requested"});
+    let receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+    let threadId:string|null=receipt?.threadId??null;
+    const observeMs=Math.min(240, Math.max(1, args.timeoutSec ?? 60)) * 1000;
+    const persistRunning=(nextThreadId:string|null, result:unknown, reason?:string)=>{
+      const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+      if(current && !["pending","running"].includes(current.state)) return current;
+      recordStage(db,{...base,state:"running",providerId:projectLifeProviderId,model:projectLifeModel,
+        threadId:nextThreadId ?? current?.threadId ?? null,
+        result:{...childResultObject(current?.result),...childResultObject(result)},reason});
+      return undefined;
+    };
+    const finishObservation=async(childId:string, snapshot:ProjectLifeChildSnapshot|null):Promise<Record<string,unknown>>=>{
+      const already=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+      if(already && !["pending","running"].includes(already.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:already.state,reason:"project-life already has a receipt; create a new task for another run",stage:already};
+      }
+      const observed=await observeStageChild(bb,childId,observeMs);
+      const latest=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+      if(latest && !["pending","running"].includes(latest.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:latest.state,reason:"project-life already has a receipt; create a new task for another run",stage:latest};
+      }
+      const prior=childResultObject(latest?.result ?? receipt?.result);
+      if(observed.kind==="observing") {
+        persistRunning(childId,{...prior,...(snapshot?{snapshot}:{}),observing:observed.detail});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:observed.detail};
+      }
+      if(observed.kind==="product_failure") {
+        recordStage(db,{...base,state:"failed",providerId:projectLifeProviderId,model:projectLifeModel,threadId:childId,reason:`${observed.via}:${observed.detail}`,result:{error:`${observed.via}:${observed.detail}`}});
+        return {runId:args.runId,taskId:args.taskId,state:"failed",threadId:childId,reason:`${observed.via}:${observed.detail}`};
+      }
+      if(!snapshot) {
+        persistRunning(childId,{...prior,observing:"project_life_snapshot_missing"});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:"project_life_snapshot_missing"};
+      }
+      const raw=(await bb.sdk.threads.output({threadId:childId})).output;
+      if(typeof raw!=="string"||!raw.trim()) throw new Error("project_life_output_empty");
+      const final=parseProjectLifeFinalMessage(raw);
+      if(!final.commit) {
+        const result={...final,coveredTaskIds:snapshot.coveredTaskIds};
+        recordStage(db,{...base,state:"passed",providerId:projectLifeProviderId,model:projectLifeModel,threadId:childId,result});
+        return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+      }
+      const changes=await host.call("gitOwnershipChanges",{
+        requestedHostId:config.hostId,projectCwd:workspace.path,baseSha:snapshot.baseHeadSha,compareCommitted:true,
+      },{hostId:config.hostId,timeoutMs:30_000});
+      if(changes.status!=="ready") throw new Error(`project_life_commit_verification_unavailable:${changes.reason??changes.status}`);
+      if(changes.headSha!==final.commit) throw new Error("project_life_commit_head_mismatch");
+      const outOfScope=findOutOfScopeProjectLifeWrites(changes.paths);
+      if(outOfScope.length) {
+        recordStage(db,{...base,state:"failed",providerId:projectLifeProviderId,model:projectLifeModel,threadId:childId,reason:"project_life_out_of_scope_write",result:{...final,outOfScope}});
+        return {runId:args.runId,taskId:args.taskId,state:"failed",threadId:childId,reason:"project_life_out_of_scope_write"};
+      }
+      const result={...final,files:changes.paths,coveredTaskIds:snapshot.coveredTaskIds};
+      recordStage(db,{...base,state:"passed",providerId:projectLifeProviderId,model:projectLifeModel,threadId:childId,result});
+      return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+    };
+    try {
+      receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+      threadId=receipt?.threadId??null;
+      let snapshot=projectLifeChildSnapshot(receipt?.result);
+      if(!threadId){
+        const recovered=await reconcileProjectLifeChild(args.projectId,args.runId,args.taskId);
+        if(recovered.kind==="found"){
+          threadId=recovered.threadId;
+          persistRunning(threadId,{...childResultObject(receipt?.result),...(snapshot?{snapshot}:{})});
+          receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+        } else if(recovered.kind!=="not_found") {
+          persistRunning(null,{...childResultObject(receipt?.result),...(snapshot?{snapshot}:{}),observing:recovered.kind});
+          return {runId:args.runId,taskId:args.taskId,state:"running",reason:"observing",detail:recovered.kind};
+        }
+      }
+      if(threadId) return await finishObservation(threadId,snapshot);
+      if(!snapshot){
+        const gitBase=await host.call("gitOwnershipBase",{
+          requestedHostId:config.hostId,projectCwd:workspace.path,baseRef:"HEAD",
+        },{hostId:config.hostId,timeoutMs:30_000});
+        if(gitBase.status!=="ready") throw new Error(`project_life_git_base_unavailable:${gitBase.reason??gitBase.status}`);
+        const tasks=coveredTaskIds.map((id)=>projectLifeTaskSummary(args.runId,id));
+        snapshot={coveredTaskIds,tasks,baseHeadSha:gitBase.baseSha,agent:"project-life-maintainer",dispatchInput:JSON.parse(base.input)};
+        persistRunning(null,{snapshot},"project_life_spawn_requested");
+        receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+      }
+      if(!claimStageSpawn(db,args.runId,args.taskId,"project-life")){
+        receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+        if(receipt?.threadId) return await finishObservation(receipt.threadId,snapshot);
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"project_life_spawn_claimed"};
+      }
+      const [providers,catalog]=await Promise.all([
+        bb.sdk.providers.list({hostId:config.hostId}),
+        bb.sdk.providers.models({providerId:projectLifeProviderId,hostId:config.hostId}),
+      ]);
+      const provider=providers.find((item)=>item.id===projectLifeProviderId&&item.available);
+      const model=catalog.models.find((item)=>item.id===projectLifeModel||item.model===projectLifeModel);
+      if(!provider||!model) throw new Error("project_life_writer_provider_or_model_unavailable");
+      if(!model.supportedReasoningEfforts.some((item)=>item.reasoningEffort===projectLifeEffort)) throw new Error(`project_life_writer_reasoning_effort_unsupported:${projectLifeEffort}`);
+      const tier=provider.capabilities.supportsServiceTier?bbServiceTier(projectLifeTier):null;
+      if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`project_life_writer_service_tier_unsupported:${tier}`);
+      const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
+      const placement=await helperChildPlacement({
+        bb, db, projectId:args.projectId, runId:args.runId, role:"project-life-maintainer",
+      });
+      const artifactDirs=coveredTaskIds.map((id)=>acceptanceArtifactDir(workspace.path,args.runId,id));
+      const spawned=await bb.sdk.threads.spawn({...placement,...requiredPolicyField(bb, helperPolicy, projectLifeProviderId),
+        ...writerExecutionSelection(projectLifeProviderId,projectLifeModel,projectLifeEffort,tier),
+        prompt:projectLifePrompt({workspace:workspace.path,runId:args.runId,artifactDirs,tasks:snapshot.tasks,nowIso:new Date().toISOString()}),
+        environment:workspaceExecutionEnvironment(config.hostId,workspace),
+        pluginMetadata:{role:"project-life-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
+          stageId:"project-life",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
+      threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("project_life_maintainer_thread_id_missing");
+      persistRunning(threadId,{...childResultObject(receipt?.result),snapshot,spawnAttempted:true});
+      return await finishObservation(threadId,snapshot);
+    } catch(cause) {
+      const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
+      if(current && !["pending","running"].includes(current.state)) {
+        return {runId:args.runId,taskId:args.taskId,state:current.state,reason:"project-life already has a receipt; create a new task for another run",stage:current};
+      }
+      const reason=cause instanceof Error?cause.message:String(cause);
+      if(!threadId){
+        const recovered=await reconcileProjectLifeChild(args.projectId,args.runId,args.taskId).catch(()=>({kind:"error" as const,message:reason}));
+        if(recovered.kind==="found"){
+          persistRunning(recovered.threadId,{...childResultObject(receipt?.result),observing:reason});
+          return {runId:args.runId,taskId:args.taskId,state:"running",threadId:recovered.threadId,reason:"observing",detail:reason};
+        }
+        persistRunning(null,{...childResultObject(receipt?.result),observing:reason},"project_life_spawn_unknown");
+        return {runId:args.runId,taskId:args.taskId,state:"running",reason:"observing",detail:reason};
+      }
+      if(reason.includes("events_list_error")||reason.includes("host")||reason.includes("disconnect")||reason.includes("ECONN")||reason.includes("502")){
+        persistRunning(threadId,{...childResultObject(receipt?.result),observing:reason});
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId,reason:"observing",detail:reason};
+      }
+      recordStage(db,{...base,state:"failed",providerId:projectLifeProviderId,model:projectLifeModel,threadId,reason,result:{error:reason}});
+      return {runId:args.runId,taskId:args.taskId,state:"failed",reason};
+    }
+  }
+
   async function runNightReview(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
@@ -4539,7 +4775,7 @@ export default async function plugin(bb: BbPluginApi) {
   /** A workspace with at least this many product code files keeps its own docs folder; smaller ones belong to the root docs. */
   const WORKSPACE_DOCS_MIN_FILES=15;
   /** Docs folders of one monorepo written at once. */
-  const DOCS_UNIT_CONCURRENCY=4;
+  const DOCS_UNIT_CONCURRENCY=8;
   /**
    * BB refuses to provision a thread on a checkout while another one is being provisioned there, so docs
    * agents are spawned one at a time: the next starts once the last has left "starting".
@@ -5434,6 +5670,7 @@ export default async function plugin(bb: BbPluginApi) {
       if (NATIVE_MEMORY_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic memory provider/model selection"]}};
       if (NATIVE_NIGHT_REVIEW_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic night-review provider/model selection"]}};
       if (NATIVE_DOCS_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic docs provider/model selection"]}};
+      if (NATIVE_PROJECT_LIFE_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic project-life provider/model selection"]}};
       if (NATIVE_ONBOARDING_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic onboarding provider/model selection"]}};
       if (NATIVE_PM_READ_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic PM-read provider/model selection"]}};
       if (NATIVE_PLAN_CRITIQUE_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic plan-critique provider/model selection"]}};
@@ -5461,7 +5698,7 @@ export default async function plugin(bb: BbPluginApi) {
       const editable = new Set(VISIBLE_CATALOG.filter((row) => row.uiStatus === "editable").map((row) => row.storageKey));
       const invalid = keys.find((key) => !editable.has(key) || expectedVersions[key] === undefined);
       if (invalid) return reject(invalid, "unknown or noneditable setting / missing CAS version");
-      const groups = ["writer", "memory", "night_review", "docs", "onboarding", "pm_read", "plan_critique", "code_critique", "specialist"].map((prefix) => ["provider", "model", "reasoning_effort", "service_tier"].map((suffix) => `${prefix}.${suffix}`));
+      const groups = ["writer", "memory", "night_review", "docs", "project_life", "onboarding", "pm_read", "plan_critique", "code_critique", "specialist"].map((prefix) => ["provider", "model", "reasoning_effort", "service_tier"].map((suffix) => `${prefix}.${suffix}`));
       const affected = groups.filter((group) => group.some((key) => keys.includes(key)));
       if (affected.some((group) => group.some((key) => !keys.includes(key)))) return reject(keys[0]!, "reset the complete provider/model/effort/tier group");
       const rows = listSettingRows(db, projectId, bindingId);
@@ -5498,6 +5735,8 @@ export default async function plugin(bb: BbPluginApi) {
       if(nightKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:nightKey,params:[nightKey,"use atomic night-review provider/model selection"]}};
       const docsKey=changes.find(({key})=>NATIVE_DOCS_KEYS.has(key))?.key;
       if(docsKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:docsKey,params:[docsKey,"use atomic docs provider/model selection"]}};
+      const projectLifeKey=changes.find(({key})=>NATIVE_PROJECT_LIFE_KEYS.has(key))?.key;
+      if(projectLifeKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:projectLifeKey,params:[projectLifeKey,"use atomic project-life provider/model selection"]}};
       const onboardingKey=changes.find(({key})=>NATIVE_ONBOARDING_KEYS.has(key))?.key;
       if(onboardingKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:onboardingKey,params:[onboardingKey,"use atomic onboarding provider/model selection"]}};
       const pmReadKey=changes.find(({key})=>NATIVE_PM_READ_KEYS.has(key))?.key;
@@ -5638,6 +5877,29 @@ export default async function plugin(bb: BbPluginApi) {
         {key:"docs.model",value:modelId,expectedVersion:expectedVersions["docs.model"]},
         {key:"docs.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["docs.reasoning_effort"]},
         {key:"docs.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["docs.service_tier"]},
+      ]},{nativeWriterSelection:true});
+    },
+    save_project_life_selection: async ({projectId,sectionId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
+      const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
+      const catalogHost=await selectionCatalogHost(projectId);
+      if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
+      let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
+      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      catch {return reject("catalog_unavailable","project_life.provider",catalogHost.hostId);}
+      const provider=providers.find((item)=>item.id===providerId&&item.available);
+      if(!provider) return reject("invalid_choice","project_life.provider",`provider ${providerId} is unavailable on this host`);
+      const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
+      if(!selectedModel) return reject("invalid_choice","project_life.model",`model ${modelId} is not in the live catalog for ${providerId}`);
+      const efforts=selectedModel.supportedReasoningEfforts.map((item)=>item.reasoningEffort);
+      if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","project_life.reasoning_effort",`model supports: ${efforts.join(", ")}`);
+      const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
+      const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
+      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","project_life.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
+        {key:"project_life.provider",value:providerId,expectedVersion:expectedVersions["project_life.provider"]},
+        {key:"project_life.model",value:modelId,expectedVersion:expectedVersions["project_life.model"]},
+        {key:"project_life.reasoning_effort",value:reasoningLevel,expectedVersion:expectedVersions["project_life.reasoning_effort"]},
+        {key:"project_life.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["project_life.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
     save_pm_read_selection: async ({projectId,sectionId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
@@ -6044,7 +6306,7 @@ export default async function plugin(bb: BbPluginApi) {
     name:"lane_pilot_gate_report",
     description:"Read a bounded project-local report of Lane Pilot gate evaluations or stage history.",
     instructions:"Use only from the matching Lane Pilot PM thread. Gate categories are owns-paths, validate, accept, and verification, recorded as separate append-only events; this reads Lane Pilot's own ledgers and never reads or modifies upstream ~/.agents gate logs. Choose a period from 1 to 365 days and optionally one gate category or one exact stage ID. Results contain counts and receipt hashes, not task content.",
-    parameters:z.object({days:z.number().int().min(1).max(365).default(7),stageId:z.enum(["pm-read","plan-critique","specialist-review","writer-agent","verification","code-critique","acceptance-receipt","browser-qa","docs-maintenance","onboarding-preview","onboarding-apply","memory-maintenance","night-review","night-fix","workspace-status","opencode-telemetry","gate-triage"]).optional(),gate:z.enum(["owns-paths","validate","accept","verification"]).optional()}).strict(),
+    parameters:z.object({days:z.number().int().min(1).max(365).default(7),stageId:z.enum(["pm-read","plan-critique","specialist-review","writer-agent","verification","code-critique","acceptance-receipt","browser-qa","docs-maintenance","onboarding-preview","onboarding-apply","memory-maintenance","project-life","night-review","night-fix","workspace-status","opencode-telemetry","gate-triage"]).optional(),gate:z.enum(["owns-paths","validate","accept","verification"]).optional()}).strict(),
     execute:async(params,context)=>JSON.stringify(readGateReport(db,{projectId:context.projectId,days:params.days,stageId:params.stageId,gate:params.gate}),null,2),
   });
 
