@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { extractRoutes, type RouteRef } from "./docs-flows";
 import { parsePrisma, prismaAccess, renderDataMap } from "./docs-data";
+import { expandCitationLists } from "../stages/docs-lint";
 import { promisify } from "node:util";
 
 /**
@@ -340,7 +341,7 @@ export type ClaimRef = { file:string; start:number; end:number };
 /** Claims in a page body - each sentence with all the file:line citations that back it together. */
 export function pageClaims(body:string):Array<{ claim:string; refs:ClaimRef[] }> {
   const claims:Array<{ claim:string; refs:ClaimRef[] }> = [];
-  for (const block of body.split(/\n(?=\s*[-*|]|\s*\n)|(?<=[.!?])\s+/)) {
+  for (const block of expandCitationLists(body).split(/\n(?=\s*[-*|]|\s*\n)|(?<=[.!?])\s+/)) {
     const text = block.replace(/\s+/g, " ").trim();
     if (!text || text.startsWith("#")) continue;
     const refs = [...text.matchAll(CITATION)].map((match) => ({ file:match[1]!.replace(/^\.\//, ""), start:Number(match[2]), end:match[3] ? Number(match[3]) : Number(match[2]), at:match.index ?? 0 }));

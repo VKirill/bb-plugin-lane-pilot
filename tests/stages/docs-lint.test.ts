@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { BACKLINKS_MARK, buildBacklinks, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/stages/docs-lint";
+import { BACKLINKS_MARK, buildBacklinks, expandCitationLists, pageCitations, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/stages/docs-lint";
 import { commitDocs } from "../../src/verification/git-docs";
 
 const page = (fields: Record<string, string>, body: string) => [
@@ -139,4 +139,17 @@ it("asks data-model pages for relations and the meaning of fields", () => {
 it("holds only a flow's main page to the flow rules, not the part pages it splits into", () => {
   const part = page({ type:"flow" }, "# Checks\n\nA (src/check.ts:1). B (src/check.ts:2). C (src/check.ts:3).\n");
   expect(lintDocsPages([{ path:"docs/flows/vk-promo/details.md", content:part }], { "src/check.ts":9 })).toEqual([]);
+});
+
+it("reads a list of ranges after one file, and refuses docs and Lane Pilot files as evidence", () => {
+  expect(expandCitationLists("dim 0-0.9 (`schema.ts:19-25,125-143`)")).toBe("dim 0-0.9 (`schema.ts:19-25, schema.ts:125-143`)");
+  expect(pageCitations("A (a.ts:1-2, 7).").map((c) => `${c.start}-${c.end}`)).toEqual(["1-2", "7-7"]);
+  const cited = page({}, "# Checks\n\n## How it works\n\nA (.git/lane-pilot/docs-anchors.md:10). B (docs/flows/content.md:3). C (src/check.ts:3).\n");
+  expect(lintDocsPages([{ path:"docs/features/checks.md", content:cited }], { "src/check.ts":9 }).map((f) => f.detail)).toEqual([
+    "cites .git/lane-pilot/docs-anchors.md; cite the code itself and link docs pages instead", "cites docs/flows/content.md; cite the code itself and link docs pages instead"]);
+});
+
+it("lists the pages a catalogue does not link", () => {
+  const catalogue = { path:"docs/capabilities.md", content:"# C\n\nSee [wardrobe](../apps/cabinet/docs/features/wardrobe.md).\n" };
+  expect(unlinkedPages(catalogue, ["apps/cabinet/docs/features/wardrobe.md", "apps/cabinet/docs/features/profiles.md"])).toEqual(["apps/cabinet/docs/features/profiles.md"]);
 });

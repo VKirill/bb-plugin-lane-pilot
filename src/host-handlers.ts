@@ -91,7 +91,7 @@ export const docsAnchors: ExperimentalHostRpcHandlers<typeof hostContract>["docs
 });
 
 export const docsFlows: ExperimentalHostRpcHandlers<typeof hostContract>["docsFlows"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await buildDocsFlows({projectCwd:input.projectCwd,workspaces:input.workspaces}),
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await buildDocsFlows({projectCwd:input.projectCwd,workspaces:input.workspaces,keep:input.keep}),
 });
 
 export const docsDepth: ExperimentalHostRpcHandlers<typeof hostContract>["docsDepth"] = async (input) => ({

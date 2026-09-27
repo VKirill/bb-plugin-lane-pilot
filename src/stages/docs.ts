@@ -161,7 +161,9 @@ const METHODOLOGY = [
  * docs-maintain: no docs/ yet means onboarding, otherwise only pages about changed code.
  */
 export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string; deploy?:boolean;
-  missingPages?:string[]; uncoveredCore?:string[]; agent?:string; unit?:DocsUnit}):string {
+  missingPages?:string[]; uncoveredCore?:string[]; agent?:string; unit?:DocsUnit;
+  /** Claims Jev still doubted after the last pass, to recheck in the code. */
+  doubts?:Array<{ path:string; detail:string }>}):string {
   const listed = input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
   const refresh = input.refresh ?? [];
   const unit = input.unit ?? { docsDir:"docs" };
@@ -211,6 +213,8 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
       ? [
         `Task: refresh the docs for code changed since ${input.since}, following "Keeping docs current when code changes" in the method (references/maintenance.md): read the new code, edit only the sections the change made wrong in the style the page already has, and update every level that states the changed behaviour that you may write here. Set updated to today, keep created as is. Add a page only for a new capability; leave accurate pages alone.`,
         ...(refresh.length ? ["Pages whose sources changed or that are drafts:", ...refresh.map((path) => `- ${path}`)] : ["No page lists a changed file among its sources: check whether a changed file needs a new or extended page."]),
+        ...(input.doubts?.length ? ["Jev doubted these claims after the last pass. Recheck each in the code: fix the claim or its citation, or leave it if the code backs it:",
+          ...input.doubts.slice(0, 40).map((doubt) => `- ${doubt.path}: ${doubt.detail}`)] : []),
         ...(input.missingPages?.length ? ["Pages the method requires that do not exist yet - add them (data-model documents every table and its columns; architecture has one mermaid C4 diagram):", ...input.missingPages.map((path) => `- ${path}`)] : []),
         ...(input.uncoveredCore?.length ? ["Core behaviour and routes no page cites yet - describe them on the page they belong to, with citations:", ...input.uncoveredCore.slice(0, 120).map((item) => `- ${item}`),
           ...(input.uncoveredCore.length > 120 ? [`- …and ${input.uncoveredCore.length - 120} more; the next pass lists them`] : [])] : []),

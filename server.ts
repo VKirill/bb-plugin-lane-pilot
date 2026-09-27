@@ -163,7 +163,7 @@ import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "./
 import { sha256, stageTransition, validateStageReceipt, type StageId, type StageState } from "./src/stages/contract";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./src/workspace/routing";
 import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage, type DocsUnit } from "./src/stages/docs";
-import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDocsIndex, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "./src/stages/docs-lint";
+import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDocsIndex, lintDocsPages, unlinkedPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "./src/stages/docs-lint";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
 import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "./src/stages/night-fix";
@@ -4603,7 +4603,9 @@ export default async function plugin(bb: BbPluginApi) {
           // Workspaces first, a few at once. Then the business flows, traced once across the repository, each written
           // by its own agent on top of the workspace docs. The root last, so its overview links to docs that exist.
           await pool(units.slice(0,-1));
-          const traced=await host.call("docsFlows",{requestedHostId:place.hostId,projectCwd:place.path,workspaces:workspaces.map((workspace)=>({path:workspace.path,name:workspace.name}))},
+          const flowPages=(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:["docs/flows"],skipOversized:true},{hostId:place.hostId,timeoutMs:60_000}).catch(()=>null))?.pages??[];
+          const keep=[...new Set(flowPages.map((page)=>/^docs\/flows\/([^/]+)\.md$/.exec(page.path)?.[1]).filter((slug):slug is string=>Boolean(slug)))];
+          const traced=await host.call("docsFlows",{requestedHostId:place.hostId,projectCwd:place.path,workspaces:workspaces.map((workspace)=>({path:workspace.path,name:workspace.name})),keep},
             {hostId:place.hostId,timeoutMs:1_800_000}).catch((cause)=>{ bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
           const flowUnits:DocsUnit[]=(traced?.flows??[]).map((flow)=>({docsDir:"docs",flow}));
           await pool([...flowUnits]);
@@ -4679,6 +4681,11 @@ export default async function plugin(bb: BbPluginApi) {
         refresh=stale.refresh;
       }
     }
+    // What Jev still doubted after this unit's last pass goes back to the agent to recheck, while the page exists.
+    const kvKey=`docs-nightly:${ctx.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}`;
+    const last=hasDocs?await bb.storage.kv.get(kvKey).catch(()=>null) as {warnings?:Array<{path:string;rule:string;detail:string}>}|null:null;
+    const pagePaths=new Set(existing.map((page)=>page.path));
+    const doubts=(last?.warnings??[]).filter((warning)=>(warning.rule==="evidence-check"||warning.rule==="contradiction")&&pagePaths.has(warning.path));
     const selection=resolveStageWriterSelection({settings,config:{writerProviderId:"codex",writerModel:"gpt-6-luna"},stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
     const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
     const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
@@ -4689,7 +4696,7 @@ export default async function plugin(bb: BbPluginApi) {
     const threadId=await spawnDocsThread({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:flow?` · flow ${flow.slug}`:""}`,
       ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
       prompt:nightlyDocsPrompt({since:docs.since,hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
-        agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit}),
+        agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts}),
       environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
       pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
     await waitThreadIdle(bb,threadId,"docs_nightly");
@@ -4710,6 +4717,12 @@ export default async function plugin(bb: BbPluginApi) {
       const docsDirty=after.dirty.filter(writable);
       const findings=[...oversized.filter(writable).map((path)=>({path,rule:"size",detail:"page is over 40000 bytes; split it into pages under 30000 bytes (a large data model into data-model/<area>.md pages) and link them"})),
         ...lintDocsPages(pages,counts).filter((finding)=>writable(finding.path))];
+      // The capabilities catalogue covers every capability the apps document, not only the ones inside a flow.
+      const catalogue=unit.flows?.length?pages.find((page)=>page.path===`${d}/capabilities.md`):undefined;
+      if(catalogue){
+        const features=pages.map((page)=>page.path).filter((path)=>/^apps\/[^/]+\/docs\/features\/[^/]+\.md$/.test(path));
+        for(const path of unlinkedPages(catalogue,features)) findings.push({path:catalogue.path,rule:"coverage",detail:`does not link ${path}: add the capability that page describes, with its conditions and where it is available, and link it (operator tools under operator capabilities)`});
+      }
       let pageStats:Array<{path:string;checked:number;supported:number;partial:number}>=[];
       // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
       // and pairs of claims across all the docs that cite the same code for contradictions.
@@ -4721,8 +4734,10 @@ export default async function plugin(bb: BbPluginApi) {
         findings.push(...(cited?.findings??[]));
         pageStats=cited?.pageStats??[];
         // And whether the written pages explain the core code well enough that nobody has to open it.
-        const depth=written.length&&core.length?await host.call("docsDepth",{requestedHostId:place.hostId,projectCwd:place.path,
-          pages:written.slice(0,500),core:core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
+        // Only pages meant to explain behaviour are held to it; summaries and references link down instead.
+        const explaining=written.filter((page)=>/^type:\s*(component|flow)\s*$/m.test(page.content));
+        const depth=explaining.length&&core.length?await host.call("docsDepth",{requestedHostId:place.hostId,projectCwd:place.path,
+          pages:explaining.slice(0,500),core:core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
         findings.push(...(depth?.findings??[]));
       }
       return {touched,docsDirty,pageStats,findings};
@@ -4778,7 +4793,7 @@ export default async function plugin(bb: BbPluginApi) {
     const failure=checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
     const row=report(failure?"failed":"passed",{threadId,onboarding:!hasDocs,changedCode:changed.length,refreshed:refresh,gaps,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
       docsWritten:checked.touched.filter(writable),commit,...(reverted.length?{reverted}:{}),...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
-    await bb.storage.kv.set(`docs-nightly:${ctx.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}`,{...row,at:Date.now()});
+    await bb.storage.kv.set(kvKey,{...row,at:Date.now()});
     bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path} ${label}`);
     return row;
   }

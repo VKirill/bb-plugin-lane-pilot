@@ -17,7 +17,7 @@ const SKIP = /(^|\/)(docs|dist|build|node_modules|vendor|\.nuxt|\.output|__tests
 const GENERIC = new Set(["shared", "common", "utils", "util", "lib", "libs", "helpers", "types", "config", "constants", "core", "internal",
   "testing", "test", "tests", "mocks", "fixtures", "errors", "context", "index", "ports", "adapters", "infrastructure", "di", "composition"]);
 const ENTRY_DIR = /(^|\/)(handlers|jobs|workers|processors|commands|pages|routes|controllers|cron)\//;
-const MAX_FLOWS = 12;
+const MAX_FLOWS = 20;
 const MAX_ENTRIES_JUDGED = 25;
 const MAX_DEPTH = 8;
 
@@ -27,6 +27,12 @@ export type FlowWorkspace = { path:string; name:string };
 /** HTTP routes (Express/Fastify style calls, Nuxt/Nitro server files) and bot commands declared in one file. */
 export function extractRoutes(file:string, text:string):RouteRef[] {
   const routes:RouteRef[] = [];
+  // A file-based page (Nuxt, Next pages/) is a screen with a route.
+  const page = /(?:^|\/)pages\/(.+)\.vue$/.exec(file);
+  if (page && !page[1]!.includes("__tests__")) {
+    const path = `/${page[1]!}`.replace(/\/index$/, "").replace(/\[\.\.\.(\w+)\]/g, "*$1").replace(/\[(\w+)\]/g, ":$1");
+    routes.push({ method:"PAGE", path:path || "/", file, line:1 });
+  }
   const nitro = /(?:^|\/)server\/(api|routes)\/(.+?)(?:\.(get|post|put|patch|delete))?\.(?:ts|js|mjs)$/.exec(file);
   if (nitro) {
     const path = `${nitro[1] === "api" ? "/api/" : "/"}${nitro[2]!}`.replace(/\/index$/, "").replace(/\[\.\.\.(\w+)\]/g, "*$1").replace(/\[(\w+)\]/g, ":$1");
@@ -112,9 +118,17 @@ function moduleRoots(files:string[], workspaces:Array<FlowWorkspace & { app:bool
       const name = file.slice(base.length + 1).split("/")[0]!;
       if (!name.includes(".")) counts.set(name, (counts.get(name) ?? 0) + 1);
     }
+    let folders = 0;
     for (const [name, count] of counts) {
       if (count < 2 || GENERIC.has(name.toLowerCase())) continue;
+      folders++;
       roots.set(name, [...(roots.get(name) ?? []), `${base}/${name}`]);
+    }
+    // A small package that keeps its logic flat in src/ is one module, named after the package.
+    const flat = files.filter((file) => file.startsWith(`${base}/`) && !file.slice(base.length + 1).includes("/")).length;
+    if (!folders && flat >= 3) {
+      const name = posix.basename(posix.dirname(base));
+      if (!GENERIC.has(name.toLowerCase())) roots.set(name, [...(roots.get(name) ?? []), base]);
     }
   }
   return roots;
@@ -124,7 +138,7 @@ function head(text:string, lines:number):string {
   return text.split("\n").slice(0, lines).join("\n").slice(0, 4000);
 }
 
-export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowWorkspace[] }):Promise<{ briefPath:string; jev:JevStatus;
+export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowWorkspace[]; keep?:string[] }):Promise<{ briefPath:string; jev:JevStatus;
   flows:Array<{ name:string; slug:string; entries:number; modules:string[]; briefPath:string; files:string[];
     calls:Array<{ name:string; file:string; line:number; endLine:number }> }>; routes:number }> {
   const listed = (await run("git", ["-c", "core.quotePath=false", "-C", input.projectCwd, "ls-files"], { maxBuffer:64 << 20 })).stdout.split("\n");
@@ -199,13 +213,20 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
     if (answers) answered++;
     return { candidate, business:answers?.business?.noul ?? 0.5, importance:answers?.importance?.score ?? 1 };
   });
-  const chosen = judged.filter((item) => item.business >= 0.5).sort((a, b) => b.importance - a.importance || b.candidate.entries.size - a.candidate.entries.size || a.candidate.name.localeCompare(b.candidate.name)).slice(0, MAX_FLOWS);
+  const slug = (name:string) => name.replace(/([a-z])([A-Z])/g, "$1-$2").replace(/[^A-Za-z0-9]+/g, "-").toLowerCase().replace(/^-|-$/g, "");
+  // A flow that already has a page stays a flow, so its page keeps an owner that refreshes it; new ones fill the rest by importance.
+  const kept = new Set(input.keep ?? []);
+  const isKept = (item:typeof judged[number]) => kept.has(slug(item.candidate.name));
+  const ranked = judged.filter((item) => isKept(item) || item.business >= 0.5)
+    .sort((a, b) => Number(isKept(b)) - Number(isKept(a)) || b.importance - a.importance || b.candidate.entries.size - a.candidate.entries.size || a.candidate.name.localeCompare(b.candidate.name));
+  const chosen = ranked.slice(0, Math.max(MAX_FLOWS, ranked.filter(isKept).length));
 
   const workspaceName = (file:string) => workspaces.filter((ws) => file.startsWith(`${ws.path}/`)).sort((a, b) => b.path.length - a.path.length)[0]?.name ?? "(root)";
   // What an entry calls in the process: the names the last hop imports, found among the process's declarations.
-  const declared = new Map<string, Array<{ name:string; file:string; line:number }>>();
+  const declared = new Map<string, Array<{ name:string; file:string; line:number; endLine:number; kind:string }>>();
   const uses = (candidate:Candidate, chain:string[]) => {
-    if (!declared.has(candidate.name)) declared.set(candidate.name, candidate.files.flatMap((file) => scanDeclarations(file, files.get(file) ?? "").filter((anchor) => anchor.exported).map(({ name, file:at, line }) => ({ name, file:at, line }))));
+    if (!declared.has(candidate.name)) declared.set(candidate.name, candidate.files.flatMap((file) => scanDeclarations(file, files.get(file) ?? "").filter((anchor) => anchor.exported)
+      .map(({ name, file:at, line, endLine, kind }) => ({ name, file:at, line, endLine, kind }))));
     const hop = chain.length >= 2 ? graph.get(chain[chain.length - 2]!)?.get(chain[chain.length - 1]!) ?? [] : [];
     return hop.flatMap((name) => declared.get(candidate.name)!.filter((item) => item.name === name).slice(0, 1)).slice(0, 8);
   };
@@ -235,7 +256,6 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
     return { candidate, importance, entries:kept.filter((item) => item.drives >= 0.5) };
   }));
   const documented = flows.filter((flow) => flow.entries.length);
-  const slug = (name:string) => name.replace(/([a-z])([A-Z])/g, "$1-$2").replace(/[^A-Za-z0-9]+/g, "-").toLowerCase().replace(/^-|-$/g, "");
 
   const header = [`Built by Lane Pilot from the import graph; Jev judgments: ${key ? jevStatus(asked, answered) : "disabled"}.`,
     "The flow is a business process found in the shared modules, with the entry points in the apps that drive it, one import chain",
@@ -254,7 +274,8 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
         lines.push(`    chain: ${describe(item.chain)}`);
         const called = uses(flow.candidate, item.chain);
         if (called.length) lines.push(`    calls: ${called.map((use) => `${use.name} (${use.file}:${use.line})`).join(", ")}`);
-        for (const use of called) calls.set(`${use.file}:${use.name}`, { ...use, endLine:use.line + 80 });
+        // Behaviour the page must explain: functions and classes, with their real bounds; types and constants have no steps.
+        for (const use of called) if (use.kind === "function" || use.kind === "class") calls.set(`${use.file}:${use.name}`, { name:use.name, file:use.file, line:use.line, endLine:use.endLine });
       }
     }
     lines.push("", "Process files:", ...flow.candidate.files.slice(0, 40).map((file) => `- ${file}`), ...(flow.candidate.files.length > 40 ? [`- …and ${flow.candidate.files.length - 40} more`] : []), "");

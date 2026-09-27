@@ -13,6 +13,8 @@ it("finds HTTP routes, Nuxt server files and bot commands", () => {
     { method:"BOT /", path:"start", file:"apps/api/src/routes/pay.ts", line:3 },
   ]);
   expect(extractRoutes("apps/cabinet/server/api/cabinet/[id]/photos.get.ts", "")[0]).toMatchObject({ method:"GET", path:"/api/cabinet/:id/photos" });
+  expect(extractRoutes("apps/cabinet/app/pages/profiles/[id].vue", "")[0]).toMatchObject({ method:"PAGE", path:"/profiles/:id" });
+  expect(extractRoutes("apps/cabinet/app/pages/index.vue", "")[0]).toMatchObject({ method:"PAGE", path:"/" });
 });
 
 it("resolves relative imports, aliases and workspace subpaths", () => {
@@ -44,12 +46,15 @@ it("traces entries in the apps to the business modules of the shared packages", 
     vi.stubEnv("TYPESAFE_API_KEY", ""); vi.stubEnv("JEV_API_KEY", ""); vi.stubEnv("HOME", root);
     const result = await buildDocsFlows({ projectCwd:root, workspaces:[{ path:"apps/api", name:"@acme/api" }, { path:"apps/web", name:"@acme/web" }, { path:"packages/app", name:"@acme/app" }] });
     expect(result.flows.map((flow) => [flow.slug, flow.entries])).toEqual([["billing", 2], ["profile", 1]]);
-    expect(result.routes).toBe(2);
+    expect(result.routes).toBe(3);
+    const kept = await buildDocsFlows({ projectCwd:root, workspaces:[{ path:"apps/api", name:"@acme/api" }, { path:"apps/web", name:"@acme/web" }, { path:"packages/app", name:"@acme/app" }], keep:["profile"] });
+    expect(kept.flows[0]!.slug).toBe("profile");
     const brief = await readFile(result.briefPath, "utf8");
     expect(brief).toContain("## billing -> docs/flows/billing.md");
     expect(brief).toContain("apps/api/src/routes/pay.ts - POST /v1/pay (line 2)");
     expect(brief).toContain("chain: apps/api/src/routes/pay.ts -> packages/app/src/billing/index.ts");
     expect(brief).toContain("calls: charge (packages/app/src/billing/charge.ts:1)");
+    expect(result.flows.find((flow) => flow.slug === "billing")!.calls).toEqual([{ name:"charge", file:"packages/app/src/billing/charge.ts", line:1, endLine:2 }]);
     expect(brief).toContain("chain: apps/web/pages/checkout.vue -> (HTTP POST /v1/pay) apps/api/src/routes/pay.ts -> packages/app/src/billing/index.ts");
   } finally { await rm(root, { recursive:true, force:true }); }
 });

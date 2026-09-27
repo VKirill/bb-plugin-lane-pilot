@@ -55,10 +55,16 @@ function unquote(value:string):string {
   return value.replace(/^["']|["']$/g, "");
 }
 
+/** `file.ts:10-12,40-44` names two ranges of one file; written out, each is its own citation. */
+export function expandCitationLists(text:string):string {
+  return text.replace(/([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z0-9]+):(\d+(?:-\d+)?)((?:,\s*\d+(?:-\d+)?(?![\w.:\/-]))+)/g,
+    (_, file:string, first:string, rest:string) => [`${file}:${first}`, ...rest.split(",").map((part) => part.trim()).filter(Boolean).map((range) => `${file}:${range}`)].join(", "));
+}
+
 /** Citations in a page body that name a file and a line, with the file relative to the project root. */
 export function pageCitations(body:string): Array<{ file:string; start:number; end:number }> {
   const found:Array<{ file:string; start:number; end:number }> = [];
-  for (const match of body.matchAll(CITATION)) {
+  for (const match of expandCitationLists(body).matchAll(CITATION)) {
     const start = Number(match[2]), end = match[3] ? Number(match[3]) : start;
     found.push({ file:match[1]!.replace(/^\.\//, ""), start, end });
   }
@@ -95,6 +101,10 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
     if (data.type === "data-model" && !/erDiagram|^## Relations\b/m.test(body)) add("structure", "a data-model page needs a mermaid erDiagram or a '## Relations' section: which tables reference which, by which keys");
     if (data.type === "data-model" && /^\|/m.test(body) && !/^\|[^\n]*\bMeaning\b/m.test(body)) add("structure", "a data-model field table needs a Meaning column: what the field means, its allowed values and units - the schema already has the types");
     if (mainFlow && !/^## Capabilities\b/m.test(body)) add("structure", "a flow page needs a '## Capabilities' section: what a user or operator can do in this process - each mode and option, formats, limits, costs and where it is available - each cited");
+    // Evidence is the code: Lane Pilot's own working files and other docs pages are not.
+    for (const file of new Set(citations.map((citation) => citation.file))) {
+      if (/^\.git\//.test(file) || isDocsPage(file) || /(^|\/)(README|PROJECT)\.md$/.test(file)) add("evidence", `cites ${file}; cite the code itself and link docs pages instead`);
+    }
     for (const citation of citations) {
       const lines = lineCounts[citation.file];
       if (lines === undefined) continue;
@@ -120,6 +130,12 @@ function resolveRelative(from:string, target:string):string {
     else if (part !== ".") parts.push(part);
   }
   return parts.join("/");
+}
+
+/** The targets a page does not link to, by relative links resolved from its own path. */
+export function unlinkedPages(from:DocPage, targets:string[]):string[] {
+  const linked = new Set([...withoutBacklinks(from.content).matchAll(/\]\(([^)#\s]+\.md)(?:#[^)]*)?\)/g)].map((link) => resolveRelative(from.path, link[1]!)));
+  return targets.filter((target) => !linked.has(target));
 }
 
 /** Files cited anywhere in the pages, for the line-count lookup the lint needs. */
