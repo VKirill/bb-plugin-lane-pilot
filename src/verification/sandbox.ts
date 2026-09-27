@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { accessSync, constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
-import { access, lstat, mkdtemp, realpath, rm } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -56,7 +56,7 @@ export function buildSeatbeltProfile(workspacePath:string, tempPath:string):stri
   ].join("\n");
 }
 
-/** Build an argv-only bubblewrap policy. Sensitive workspace entries must exist so they can be bind-mounted read-only. */
+/** Build an argv-only bubblewrap policy. Sensitive workspace entries are bind-mounted read-only. */
 /** The folder of the bb CLI, so checks like `bb plugin build` run inside the sandbox; null when absent. */
 export function bbCliDir(env:NodeJS.ProcessEnv = process.env):string|null {
   const pinned = env.BB_CLI?.trim();
@@ -83,6 +83,30 @@ export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempP
   return args;
 }
 
+/**
+ * The workspace entries mounted read-only. One that is missing (a git-ignored cache a fresh worktree lacks) is
+ * created empty so the mount still covers it, and removed afterwards; a symlink is refused.
+ */
+export async function prepareGuardPaths(workspacePath:string):Promise<{guardPaths:string[];created:string[]}> {
+  const guardPaths:string[]=[], created:string[]=[];
+  for (const name of [".git",".agents",".cls"]) {
+    const guardPath=resolve(workspacePath,name);
+    const info=await lstat(guardPath).catch(()=>null);
+    if (info?.isSymbolicLink()) throw new Error(`sandbox_guard_path_symlink: ${name}; refusing to expose it writable`);
+    if (!info) {
+      await mkdir(guardPath);
+      created.push(guardPath);
+    }
+    guardPaths.push(guardPath);
+  }
+  return {guardPaths,created};
+}
+
+/** Removes the guard paths prepareGuardPaths created; rmdir leaves one that somehow gained content. */
+export async function releaseGuardPaths(created:string[]):Promise<void> {
+  for (const path of created) await rmdir(path).catch(()=>undefined);
+}
+
 async function realDirectory(path:string, label:string):Promise<string> {
   if (!isAbsolute(path)) throw new Error(`${label}_must_be_absolute`);
   const info = await lstat(path);
@@ -104,16 +128,11 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
   // macOS tmpdir() sits under the /var -> /private/var symlink and seatbelt matches real paths,
   // so an unresolved temp path would leave the sandbox's own HOME unwritable.
   const tempPath = await realpath(await mkdtemp(resolve(tmpdir(),"lane-pilot-sandbox-")));
+  let releaseGuards=async():Promise<void>=>{};
   try {
     if (backend === "linux-bubblewrap") {
-      const guardPaths:string[]=[];
-      for (const name of [".git",".agents",".cls"]) {
-        const guardPath=resolve(workspacePath,name);
-        let info;
-        try { info=await lstat(guardPath); } catch { throw new Error(`sandbox_guard_path_missing: ${name}; refusing to expose it writable`); }
-        if (info.isSymbolicLink()) throw new Error(`sandbox_guard_path_symlink: ${name}; refusing to expose it writable`);
-        guardPaths.push(guardPath);
-      }
+      const {guardPaths,created}=await prepareGuardPaths(workspacePath);
+      releaseGuards=()=>releaseGuardPaths(created);
       const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
       const policySha256=createHash("sha256").update(JSON.stringify(args),"utf8").digest("hex");
       const child=spawnSync(bubblewrapPath!,[...args,input.command],{
@@ -148,6 +167,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       stdout:(child.stdout ?? "").slice(0,200_000),stderr:(child.stderr ?? child.error?.message ?? "").slice(0,12_000),
     };
   } finally {
+    await releaseGuards();
     await rm(tempPath,{recursive:true,force:true});
   }
 }

@@ -87,10 +87,14 @@ export function resolveRunOwnershipScope(
   };
 }
 
+/** The receipt check-owns-paths writes for a task; running the check is not a change of the writer's. */
+const OWNS_CHECK_RECEIPT = /^\.agents\/runs\/[^/]+\/artifacts\/[^/]+\/owns-check\.json$/;
+
 export function findUnownedChanges(changedPaths:string[], task:OwnershipTask):string[] {
   const unowned:string[] = [];
   for (const rawPath of changedPaths) {
     const path = safeRelative(rawPath);
+    if (path && OWNS_CHECK_RECEIPT.test(path)) continue;
     if (!path || task.never_touch.some((pattern) => matches(pattern, path))
       || !task.owns_paths.some((pattern) => matches(pattern, path))) unowned.push(rawPath);
   }

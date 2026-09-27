@@ -15,6 +15,12 @@ describe("task ownership and workspace boundaries", () => {
       .toEqual([".git/config", "package.json", "src/secrets/key.txt"]);
   });
 
+  it("does not count the owns-check receipt check-owns-paths writes as a writer change", () => {
+    expect(findUnownedChanges([".agents/runs/r1/artifacts/001/owns-check.json", "src/index.ts"], task)).toEqual([]);
+    expect(findUnownedChanges([".agents/runs/r1/artifacts/001/outcome.json", ".agents/runs/r1/tasks/001.yaml"], task))
+      .toEqual([".agents/runs/r1/artifacts/001/outcome.json", ".agents/runs/r1/tasks/001.yaml"]);
+  });
+
   it("rejects traversal, absolute ownership patterns and verification outside workspace", () => {
     expect(validateOwnershipContract({ ...task, owns_paths:["../escape"] })).toContain("unsafe ownership path");
     expect(validateOwnershipContract({ ...task, verification:[{ cwd:"/work/other" }] })).toContain("verification cwd escapes");
