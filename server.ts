@@ -757,7 +757,7 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
     const placement=await helperChildPlacement({
       bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"pm-reader", taskTitle:input.task.title,
     });
-    const spawned=await input.bb.sdk.threads.spawn({permissionMode:"full",
+    const spawned=await fullAccessSpawn(input.bb, {
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId),
       ...writerExecutionSelection(providerId,modelId,parsedSettings.effort,serviceTier),
@@ -873,7 +873,7 @@ async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDa
     const placement = await helperChildPlacement({
       bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"plan-critic", taskTitle:input.task.title,
     });
-    const spawned = await input.bb.sdk.threads.spawn({permissionMode:"full",
+    const spawned = await fullAccessSpawn(input.bb, {
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId),
       ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
@@ -1100,7 +1100,7 @@ async function runCodeCritique(input:{
       providerId, model:modelId, reasoningEffort:configuredEffort,
       serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix,
     };
-    const spawned = await input.bb.sdk.threads.spawn({permissionMode:"full",
+    const spawned = await fullAccessSpawn(input.bb, {
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId),
       ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
@@ -1179,7 +1179,7 @@ async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof op
     const placement = await helperChildPlacement({
       bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"specialist-reviewer", taskTitle:input.task.title,
     });
-    const spawned = await input.bb.sdk.threads.spawn({permissionMode:"full",
+    const spawned = await fullAccessSpawn(input.bb, {
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId),
       ...writerExecutionSelection(providerId,modelId,effort,tier),
@@ -1231,6 +1231,15 @@ function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = fal
     "Delegate the safe fixture task with `lane_pilot_dispatch_writer`; it returns a runId and attemptId immediately, before the writer completes.",
     "Call `lane_pilot_wait_writer` with that runId (timeoutSec at most 240). If state is still running, call it again with the same runId. Return the final receipt to the user verbatim. Do not attempt to activate another PM.",
   ].join("\n");
+}
+
+/**
+ * Every thread Lane Pilot starts (PM, writers, helpers) runs with full access. BB honours the mode only when it is
+ * marked explicit; otherwise the project's remembered mode (often accept-edits) makes agents stop for approval.
+ */
+function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]) {
+  return bb.sdk.threads.spawn({ ...args, permissionMode:"full",
+    executionInputSources:{ ...args.executionInputSources, permissionMode:"explicit" } });
 }
 
 export default async function plugin(bb: BbPluginApi) {
@@ -1708,7 +1717,7 @@ export default async function plugin(bb: BbPluginApi) {
     const spawnTier = native?.serviceTier === "fast" ? "fast" as const : native?.serviceTier === "default" ? "default" as const : null;
     let spawned:Awaited<ReturnType<typeof bb.sdk.threads.spawn>>;
     try {
-      spawned = await bb.sdk.threads.spawn({permissionMode:"full",
+      spawned = await fullAccessSpawn(bb, {
         projectId,
         ...(sourceThreadId ? {
           sourceThreadId,
@@ -1948,7 +1957,7 @@ export default async function plugin(bb: BbPluginApi) {
           holderThreadId=await recoverLostHolderThread(input.projectId, current);
         }
         if(!holderThreadId) {
-          const holder = await spawnWithSeam(() => bb.sdk.threads.spawn({permissionMode:"full",
+          const holder = await spawnWithSeam(() => fullAccessSpawn(bb, {
             projectId:input.projectId, ...execution,
             prompt:"Prepare the assigned managed workspace and make no file changes. Return only WORKSPACE_READY.",
             environment:{type:"host",hostId:input.config.hostId,workspace:{type:"managed-worktree",baseBranch:{kind:"default"}}},
@@ -2039,11 +2048,10 @@ export default async function plugin(bb: BbPluginApi) {
         role:input.emergency ? "emergency-writer" : "writer",
         taskTitle:input.task.title,
       });
-      const spawned = await spawnWithSeam(() => bb.sdk.threads.spawn({
+      const spawned = await spawnWithSeam(() => fullAccessSpawn(bb, {
         ...placement,
         ...requiredPolicyField(bb, helperSnapshot, writerProviderId),
         ...execution,
-        permissionMode:"full",
         prompt: writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
           ? `Fallback reason: ${input.emergency.reason}. Primary provider/model: ${typeof settings["writer.provider"] === "string" ? settings["writer.provider"] : input.config.writerProviderId}/${typeof settings["writer.model"] === "string" ? settings["writer.model"] : input.config.writerModel}.`
           : undefined,writerAgent,input.pmReadContext ?? ""),
@@ -2575,7 +2583,7 @@ export default async function plugin(bb: BbPluginApi) {
           });
           let spawned: unknown;
           try {
-            spawned = await bb.sdk.threads.spawn({
+            spawned = await fullAccessSpawn(bb, {
               ...placement,
               ...requiredPolicyField(bb, helperPolicy, writerSnapshot.providerId),
               ...writerExecutionSelection(
@@ -2584,7 +2592,6 @@ export default async function plugin(bb: BbPluginApi) {
                 writerSnapshot.reasoningLevel,
                 writerSnapshot.serviceTier,
               ),
-              permissionMode:"full",
               prompt:repairPrompt,
               environment,
               pluginMetadata:{
@@ -3810,7 +3817,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"docs-maintainer",
       });
-      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, docsProviderId),...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, docsProviderId),...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs_maintainer_thread_id_missing");
       persistRunning(threadId, { ...docsResultObject(receipt?.result), snapshot, spawnAttempted:true });
       receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
@@ -3966,7 +3973,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"onboarder",
       });
-      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,tier),prompt,
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,tier),prompt,
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"onboarder",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"onboarding-preview",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("onboarding_thread_id_missing");
@@ -4186,7 +4193,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"memory-maintainer",
       });
-      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId),
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
         prompt:memoryMaintenancePrompt({task,acceptedResult:accepted.result,settings:snapshot.settings,agent:snapshot.agent}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
@@ -4385,9 +4392,8 @@ export default async function plugin(bb: BbPluginApi) {
         bb, db, projectId:args.projectId, runId:args.runId, role:"project-life-maintainer",
       });
       const artifactDirs=coveredTaskIds.map((id)=>acceptanceArtifactDir(workspace.path,args.runId,id));
-      const spawned=await bb.sdk.threads.spawn({...placement,...requiredPolicyField(bb, helperPolicy, projectLifeProviderId),
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, projectLifeProviderId),
         ...writerExecutionSelection(projectLifeProviderId,projectLifeModel,projectLifeEffort,tier),
-        permissionMode:"full",
         prompt:projectLifePrompt({workspace:workspace.path,runId:args.runId,artifactDirs,tasks:snapshot.tasks,nowIso:new Date().toISOString()}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"project-life-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
@@ -4532,7 +4538,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"night-reviewer",
       });
-      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,tier),
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,tier),
         prompt:nightReviewPrompt({agent:snapshot.agent,task,acceptedResult:accepted.result,workspace:task.project_cwd,maxFindings:20}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"night-reviewer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-review",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
@@ -4589,7 +4595,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"gate-triage",
       });
-      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,null),
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,null),
         prompt:gateTriagePrompt(report),environment:workspaceExecutionEnvironment(config.hostId,{path:run.writer_workspace_path??config.pmWorkspacePath,environmentId:null}),
         pluginMetadata:{role:"gate-triage",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"gate-triage",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("gate_triage_thread_id_missing");
@@ -4657,7 +4663,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"night-fixer",
       });
-      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, repairProviderId),...writerExecutionSelection(repairProviderId,repairModelId,repairEffort,tier),
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, repairProviderId),...writerExecutionSelection(repairProviderId,repairModelId,repairEffort,tier),
         prompt:nightFixPrompt({task,findings:plan.findings,paths:plan.paths}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"night-fixer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-fix",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
@@ -4788,7 +4794,7 @@ export default async function plugin(bb: BbPluginApi) {
       // BB may still report another thread provisioning this checkout; that clears in seconds.
       let spawned:unknown;
       for(let attempt=0;;attempt++){
-        try{ spawned=await bb.sdk.threads.spawn({...args,permissionMode:"full"}); break; }
+        try{ spawned=await fullAccessSpawn(bb, args); break; }
         catch(cause){
           if(attempt>=5||!/another thread is using this workspace/i.test(cause instanceof Error?cause.message:String(cause))) throw cause;
           await new Promise((done)=>setTimeout(done,5_000*(attempt+1)));
@@ -5169,7 +5175,7 @@ export default async function plugin(bb: BbPluginApi) {
     createAttempt(db, { id:attemptId, runId, taskId });
     transitionAttempt(db, attemptId, "spawn_requested");
     try {
-      const spawned = await bb.sdk.threads.spawn({permissionMode:"full",
+      const spawned = await fullAccessSpawn(bb, {
         projectId,
         providerId:config.writerProviderId,
         model:config.writerModel,
@@ -5199,7 +5205,7 @@ export default async function plugin(bb: BbPluginApi) {
     setRunThread(db, runId, pmThreadId);
     createAttempt(db, { id:attemptId, runId, taskId });
     transitionAttempt(db, attemptId, "spawn_requested");
-    const spawned = await bb.sdk.threads.spawn({permissionMode:"full",
+    const spawned = await fullAccessSpawn(bb, {
       projectId,
       providerId:config.writerProviderId,
       model:"__lane_pilot_missing_model__",
@@ -5234,7 +5240,7 @@ export default async function plugin(bb: BbPluginApi) {
     const threadIds: string[] = [];
     try {
       for (const ordinal of [1, 2]) {
-        const spawned = await bb.sdk.threads.spawn({permissionMode:"full",
+        const spawned = await fullAccessSpawn(bb, {
           projectId,
           providerId:config.writerProviderId,
           model:config.writerModel,
