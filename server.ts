@@ -4638,9 +4638,6 @@ export default async function plugin(bb: BbPluginApi) {
     const before=await gitScope(ctx.base);
     if(before.status!=="ready") throw new Error(`git scope failed: ${before.reason}`);
     const changed=before.changed.filter(inUnit);
-    // Docs an earlier pass left uncommitted still need checking and committing.
-    const pending=before.dirty.some(writable);
-    if(before.hasDocs&&changed.length===0&&!pending) return report("skipped",{reason:"no code changes"});
     // Every docs folder of the place, so links and contradictions across folders are seen; this unit writes only its own.
     let oversized:string[]=[];
     const allPages=async()=>{
@@ -4649,24 +4646,29 @@ export default async function plugin(bb: BbPluginApi) {
       return listed.pages as Array<{path:string;sha256:string;content:string}>;
     };
     const mine=(pages:Array<{path:string;sha256:string;content:string}>)=>pages.filter((page)=>flow?writable(page.path):page.path.startsWith(`${d}/`));
-    const existing=before.hasDocs?mine(await allPages()):[];
+    // A folder has docs when it has pages of its own: the root's docs/ may hold only flow pages other passes wrote.
+    const hasDocs=before.hasDocs&&(await allPages()).some((page)=>writable(page.path)&&!isDocsIndex(page.path));
+    // Docs an earlier pass left uncommitted still need checking and committing.
+    const pending=before.dirty.some(writable);
+    if(hasDocs&&changed.length===0&&!pending) return report("skipped",{reason:"no code changes"});
+    const existing=hasDocs?mine(await allPages()):[];
     // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the root docs.
     const readRootPages=async()=>unit.workspace||flow?[]:(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
       const file=await bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}).catch(()=>null);
       return file&&typeof file.content==="string"?{path,content:file.content}:null;
     }))).filter((page):page is {path:string;content:string}=>page!==null);
-    const rootPages=before.hasDocs?await readRootPages():[];
+    const rootPages=hasDocs?await readRootPages():[];
     const pageInput=existing.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content}));
     // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
     const anchors=flow?null:await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
       ...(unit.workspace?{}:{exclude:ctx.exclude,...(ctx.workspaces.length?{workspaces:ctx.workspaces}:{})}),
       pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null);
-    const gaps=before.hasDocs&&!flow?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace),
+    const gaps=hasDocs&&!flow?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace),
       flows:unit.flows}):{missingPages:[],uncoveredCore:[]};
     // What the depth check holds the pages to: the core code of the folder, or what the flow's entries call.
     const core=anchors?.core??flow?.calls??[];
-    let refresh=before.hasDocs?pagesToRefresh(existing,changed):[];
-    if(before.hasDocs){
+    let refresh=hasDocs?pagesToRefresh(existing,changed):[];
+    if(hasDocs){
       const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
         changed,pages:[...pageInput,...rootPages]},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
       if(stale&&stale.jev!=="disabled"){
@@ -4686,7 +4688,7 @@ export default async function plugin(bb: BbPluginApi) {
     const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
     const threadId=await spawnDocsThread({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:flow?` · flow ${flow.slug}`:""}`,
       ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
-      prompt:nightlyDocsPrompt({since:docs.since,hasDocs:before.hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
+      prompt:nightlyDocsPrompt({since:docs.since,hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
         agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit}),
       environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
       pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
@@ -4769,12 +4771,12 @@ export default async function plugin(bb: BbPluginApi) {
         if(attempt>=1) throw new Error(`docs builders could not write pages: ${applied.reason??applied.status}`);
       }
       const committed=await host.call("gitCommitDocs",{requestedHostId:place.hostId,projectCwd:place.path,
-        paths:[...new Set([...checked.docsDirty,...(flow?[]:[index])])],message:`docs${unit.workspace?`(${unit.workspace.path})`:flow?`(flow ${flow.slug})`:""}: ${before.hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
+        paths:[...new Set([...checked.docsDirty,...(flow?[]:[index])])],message:`docs${unit.workspace?`(${unit.workspace.path})`:flow?`(flow ${flow.slug})`:""}: ${hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
       if(committed.status==="failed") throw new Error(`docs commit failed: ${committed.reason}`);
       commit=committed.commit;
     }
     const failure=checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
-    const row=report(failure?"failed":"passed",{threadId,onboarding:!before.hasDocs,changedCode:changed.length,refreshed:refresh,gaps,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
+    const row=report(failure?"failed":"passed",{threadId,onboarding:!hasDocs,changedCode:changed.length,refreshed:refresh,gaps,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
       docsWritten:checked.touched.filter(writable),commit,...(reverted.length?{reverted}:{}),...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
     await bb.storage.kv.set(`docs-nightly:${ctx.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}`,{...row,at:Date.now()});
     bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path} ${label}`);

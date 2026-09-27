@@ -78,6 +78,8 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
     const parsed = parseFrontmatter(page.content);
     if (!parsed) { add("frontmatter", "page must start with a YAML frontmatter block"); continue; }
     const { data, body } = parsed;
+    // The main page of a flow carries the process; the part pages it splits into are held to the general rules.
+    const mainFlow = data.type === "flow" && /(^|\/)docs\/flows\/[^/]+\.md$/.test(page.path);
     for (const key of REQUIRED) if (data[key] === undefined || data[key] === "" || (Array.isArray(data[key]) && !data[key]!.length)) add("frontmatter", `missing ${key}`);
     if (typeof data.type === "string" && !(DOC_PAGE_TYPES as readonly string[]).includes(data.type)) add("frontmatter", `type must be one of ${DOC_PAGE_TYPES.join(", ")}`);
     if (typeof data.status === "string" && !STATUSES.includes(data.status)) add("frontmatter", `status must be one of ${STATUSES.join(", ")}`);
@@ -85,14 +87,14 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
     const h1 = body.split("\n").filter((line) => /^# /.test(line));
     if (h1.length !== 1) add("structure", `page needs exactly one H1, found ${h1.length}`);
     else if (typeof data.title === "string" && h1[0]!.slice(2).trim() !== data.title) add("structure", "H1 must match the frontmatter title");
-    if (typeof data.type === "string" && HOW_IT_WORKS_TYPES.includes(data.type) && !/^## How it works\b/m.test(body)) add("structure", "a component or flow page needs a '## How it works' section: the steps in order, the modes and states it branches on, and what happens on failure");
+    if (typeof data.type === "string" && HOW_IT_WORKS_TYPES.includes(data.type) && (data.type !== "flow" || mainFlow) && !/^## How it works\b/m.test(body)) add("structure", "a component or flow page needs a '## How it works' section: the steps in order, the modes and states it branches on, and what happens on failure");
     if (/^## Referenced by/m.test(withoutBacklinks(body))) add("builder", "do not write a Referenced by section; the backlinks builder owns it");
     const citations = pageCitations(body);
-    const least = data.type === "flow" ? MIN_FLOW_CITATIONS : MIN_CITATIONS;
+    const least = mainFlow ? MIN_FLOW_CITATIONS : MIN_CITATIONS;
     if (citations.length < least) add("evidence", `needs at least ${least} file:line citations, found ${citations.length}`);
     if (data.type === "data-model" && !/erDiagram|^## Relations\b/m.test(body)) add("structure", "a data-model page needs a mermaid erDiagram or a '## Relations' section: which tables reference which, by which keys");
     if (data.type === "data-model" && /^\|/m.test(body) && !/^\|[^\n]*\bMeaning\b/m.test(body)) add("structure", "a data-model field table needs a Meaning column: what the field means, its allowed values and units - the schema already has the types");
-    if (data.type === "flow" && !/^## Capabilities\b/m.test(body)) add("structure", "a flow page needs a '## Capabilities' section: what a user or operator can do in this process - each mode and option, formats, limits, costs and where it is available - each cited");
+    if (mainFlow && !/^## Capabilities\b/m.test(body)) add("structure", "a flow page needs a '## Capabilities' section: what a user or operator can do in this process - each mode and option, formats, limits, costs and where it is available - each cited");
     for (const citation of citations) {
       const lines = lineCounts[citation.file];
       if (lines === undefined) continue;

@@ -135,3 +135,8 @@ it("asks data-model pages for relations and the meaning of fields", () => {
   const explained = page({ type:"data-model" }, "# Checks\n\n```mermaid\nerDiagram\n```\n\n| Field | Meaning |\n|---|---|\n| id | Row key (src/check.ts:1) |\n\nB (src/check.ts:2). C (src/check.ts:3).\n");
   expect(lintDocsPages([{ path:"docs/data-model.md", content:explained }], { "src/check.ts":9 })).toEqual([]);
 });
+
+it("holds only a flow's main page to the flow rules, not the part pages it splits into", () => {
+  const part = page({ type:"flow" }, "# Checks\n\nA (src/check.ts:1). B (src/check.ts:2). C (src/check.ts:3).\n");
+  expect(lintDocsPages([{ path:"docs/flows/vk-promo/details.md", content:part }], { "src/check.ts":9 })).toEqual([]);
+});
