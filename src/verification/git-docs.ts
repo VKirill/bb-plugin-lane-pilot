@@ -67,7 +67,7 @@ async function listWorkspaces(projectCwd:string, tracked:string[]):Promise<DocsW
  * The state of one docs folder: `docsDir` is docs by default, or a monorepo workspace's own docs folder;
  * its base is the last commit that touched that folder.
  */
-export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: number; base?: string; docsDir?: string }): Promise<GitDocsScope> {
+export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: number; base?: string; docsDir?: string; exclude?: string[] }): Promise<GitDocsScope> {
   const docsDir = input.docsDir ?? "docs";
   const now = new Date();
   const local = {
@@ -84,7 +84,8 @@ export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: nu
   try {
     const isRepoRoot = (await realpath(top)) === (await realpath(input.projectCwd));
     const base = (input.base ? (await git("rev-parse", "--verify", `${input.base}^{commit}`)).trim() : "")
-      || (await git("log", "-1", "--format=%H", "--", docsDir)).trim()
+      // Sub-folders other passes own (docs/flows under the root) do not move this folder's base.
+      || (await git("log", "-1", "--format=%H", "--", docsDir, ...(input.exclude ?? []).map((dir) => `:(exclude)${dir}`))).trim()
       || (await git("rev-list", "-1", `--before=@${Math.floor(input.sinceEpochMs / 1000)}`, "HEAD")).trim()
       || EMPTY_TREE;
     const committed = (await git("diff", "--name-only", base, "HEAD")).split("\n");

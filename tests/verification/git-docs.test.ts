@@ -113,3 +113,16 @@ it("gives each flow its own agent, page and skeleton, and has the root link the 
   const root = nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[], unit:{ docsDir:"docs", flows:["generation"] } });
   expect(root).toContain("do not write docs/flows/:\n- docs/flows/generation.md");
 });
+
+it("keeps the root's base on its own pages when flow pages are committed after a code change", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lane-docs-base-"));
+  try {
+    git(root, "init", "-q"); git(root, "config", "user.email", "t@t"); git(root, "config", "user.name", "t");
+    await mkdir(join(root, "docs/flows"), { recursive:true }); await writeFile(join(root, "docs/overview.md"), "# o"); await writeFile(join(root, "a.ts"), "1");
+    git(root, "add", "."); git(root, "commit", "-qm", "root docs");
+    await writeFile(join(root, "a.ts"), "2"); git(root, "commit", "-qam", "code");
+    await writeFile(join(root, "docs/flows/x.md"), "# x"); git(root, "add", "."); git(root, "commit", "-qm", "flow docs");
+    expect((await gitDocsScope({ projectCwd:root, sinceEpochMs:0 })).changed).toEqual([]);
+    expect((await gitDocsScope({ projectCwd:root, sinceEpochMs:0, exclude:["docs/flows"] })).changed).toEqual(["a.ts"]);
+  } finally { await rm(root, { recursive:true, force:true }); }
+});

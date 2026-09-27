@@ -149,7 +149,7 @@ export const hostContract = defineRpcContract({
   },
   gitDocsScope: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), sinceEpochMs:z.number().int().nonnegative(), base:z.string().min(1).max(200).optional(),
-      docsDir:z.string().min(1).max(240).regex(/^(?!\/)(?!.*\.\.)[^\0]+$/).optional() }).strict(),
+      docsDir:z.string().min(1).max(240).regex(/^(?!\/)(?!.*\.\.)[^\0]+$/).optional(), exclude:z.array(z.string().min(1).max(240)).max(50).optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), isRepoRoot:z.boolean(), hasDocs:z.boolean(), changed:z.array(z.string()), dirty:z.array(z.string()), base:z.string().nullable(),
       workspaces:z.array(z.object({ path:z.string(), name:z.string(), codeFiles:z.number().int() })), localDate:z.string(), localHour:z.number().int(), reason:z.string().nullable() }).strict(),
   },

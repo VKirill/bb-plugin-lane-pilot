@@ -4636,7 +4636,7 @@ export default async function plugin(bb: BbPluginApi) {
     const label=flow?`docs/flows/${flow.slug}.md`:d;
     const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:ctx.projectId,path:place.path,docsDir:label,state,...extra});
     const gitScope=(base?:string)=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),docsDir:label,
-      ...(base?{base}:{})},{hostId:place.hostId,timeoutMs:120_000});
+      ...(unit.flows?.length?{exclude:["docs/flows"]}:{}),...(base?{base}:{})},{hostId:place.hostId,timeoutMs:120_000});
     const before=await gitScope(ctx.base);
     if(before.status!=="ready") throw new Error(`git scope failed: ${before.reason}`);
     const changed=before.changed.filter(inUnit);
@@ -4763,6 +4763,8 @@ export default async function plugin(bb: BbPluginApi) {
       const stats=new Map(checked.pageStats.map((stat)=>[stat.path,stat]));
       const index=`${d}/index.md`;
       const linked=unit.workspace?[]:ctx.workspaces.flatMap((workspace)=>workspace.docsDir?[{name:workspace.name,docsDir:workspace.docsDir}]:[]);
+      // Pages the builders rewrote (backlinks, confidence, the index) go into the commit with the agent's.
+      const rebuilt:string[]=[];
       for(let attempt=0;;attempt++){
         const fresh=await allPages();
         // Builders rewrite only this unit's pages; the index lists every page of the folder.
@@ -4782,11 +4784,11 @@ export default async function plugin(bb: BbPluginApi) {
         if(!edits.length) break;
         const applied=await host.call("writeDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,
           previewSha256:sha256(JSON.stringify(edits)),edits},{hostId:place.hostId,timeoutMs:120_000});
-        if(applied.status==="applied") break;
+        if(applied.status==="applied"){ rebuilt.push(...edits.map((edit)=>edit.path)); break; }
         if(attempt>=1) throw new Error(`docs builders could not write pages: ${applied.reason??applied.status}`);
       }
       const committed=await host.call("gitCommitDocs",{requestedHostId:place.hostId,projectCwd:place.path,
-        paths:[...new Set([...checked.docsDirty,...(flow?[]:[index])])],message:`docs${unit.workspace?`(${unit.workspace.path})`:flow?`(flow ${flow.slug})`:""}: ${hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
+        paths:[...new Set([...checked.docsDirty,...rebuilt,...(flow?[]:[index])])],message:`docs${unit.workspace?`(${unit.workspace.path})`:flow?`(flow ${flow.slug})`:""}: ${hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
       if(committed.status==="failed") throw new Error(`docs commit failed: ${committed.reason}`);
       commit=committed.commit;
     }
