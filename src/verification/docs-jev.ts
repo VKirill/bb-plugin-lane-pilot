@@ -3,6 +3,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { extractRoutes, type RouteRef } from "./docs-flows";
+import { parsePrisma, prismaAccess, renderDataMap } from "./docs-data";
 import { promisify } from "node:util";
 
 /**
@@ -232,9 +233,24 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   const briefPath = join(isAbsolute(gitDir) ? gitDir : join(input.projectCwd, gitDir), "lane-pilot", briefName);
   await mkdir(dirname(briefPath), { recursive:true });
   const workspaceMap = input.workspaces?.length ? await renderWorkspaceMap(input.projectCwd, input.workspaces) : [];
+  // A folder that defines a Prisma schema gets the data map: models, enums, and every write and read across the repository.
+  const schemaFiles = files.filter((file) => file.endsWith(".prisma"));
+  let dataMap:string[] = [];
+  if (schemaFiles.length) {
+    const parsed = await Promise.all(schemaFiles.map(async (file) => parsePrisma(file, await readFile(join(input.projectCwd, file), "utf8").catch(() => ""))));
+    const models = parsed.flatMap((item) => item.models), enums = parsed.flatMap((item) => item.enums);
+    const code = new Map<string, string>();
+    for (const file of await trackedCode(input.projectCwd)) {
+      if (file.endsWith(".prisma") || TEST_PATH.test(file)) continue;
+      const text = await readFile(join(input.projectCwd, file), "utf8").catch(() => "");
+      if (text.length < 400_000) code.set(file, text);
+    }
+    const tables = new Map(models.flatMap((model) => model.table ? [[model.table.toLowerCase(), model.name] as [string, string]] : []));
+    dataMap = renderDataMap(models, enums, prismaAccess(code, models.map((model) => model.name), tables));
+  }
   const routeList = routes.length ? ["", "## Routes and bot commands", "", "Every one belongs on a page (api.md or the feature page): method, path, who calls it, what it does, auth.", "",
     ...routes.slice(0, 600).map((route) => `- ${route.method} ${route.path} - ${route.file}:${route.line}`), ...(routes.length > 600 ? [`- …and ${routes.length - 600} more`] : []), ""] : [];
-  await writeFile(briefPath, renderAnchorBrief(anchors, tests, await dependencies(input.projectCwd, prefix), key ? status(asked, answered) : "disabled") + routeList.join("\n") + workspaceMap.join("\n"));
+  await writeFile(briefPath, renderAnchorBrief(anchors, tests, await dependencies(input.projectCwd, prefix), key ? status(asked, answered) : "disabled") + routeList.join("\n") + workspaceMap.join("\n") + dataMap.join("\n"));
   // Files with code Jev judged specific to this product; generic kits and helpers do not call for docs.
   const productFiles = [...new Set(anchors.filter((anchor) => anchor.kind !== "type" && (anchor.projectSpecific ?? 1) >= 0.5).map((anchor) => anchor.file))].sort();
   // Core product behaviour the docs must cover: Jev's top importance on product code.

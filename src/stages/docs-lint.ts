@@ -5,7 +5,7 @@
  */
 
 export const DOC_PAGE_TYPES = ["overview", "architecture", "data-model", "decisions", "deployment", "gotchas", "gaps",
-  "active-areas", "active-tasks", "component", "flow", "capabilities", "index"] as const;
+  "active-areas", "active-tasks", "component", "flow", "capabilities", "audience", "index"] as const;
 /** Page types that describe behaviour and must say how it works, not only what exists. */
 const HOW_IT_WORKS_TYPES = ["component", "flow"];
 const STATUSES = ["draft", "active", "stale", "deprecated"];
@@ -90,6 +90,8 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
     const citations = pageCitations(body);
     const least = data.type === "flow" ? MIN_FLOW_CITATIONS : MIN_CITATIONS;
     if (citations.length < least) add("evidence", `needs at least ${least} file:line citations, found ${citations.length}`);
+    if (data.type === "data-model" && !/erDiagram|^## Relations\b/m.test(body)) add("structure", "a data-model page needs a mermaid erDiagram or a '## Relations' section: which tables reference which, by which keys");
+    if (data.type === "data-model" && /^\|/m.test(body) && !/^\|[^\n]*\bMeaning\b/m.test(body)) add("structure", "a data-model field table needs a Meaning column: what the field means, its allowed values and units - the schema already has the types");
     if (data.type === "flow" && !/^## Capabilities\b/m.test(body)) add("structure", "a flow page needs a '## Capabilities' section: what a user or operator can do in this process - each mode and option, formats, limits, costs and where it is available - each cited");
     for (const citation of citations) {
       const lines = lineCounts[citation.file];
@@ -171,7 +173,10 @@ export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; d
   if (input.tables.length) required.push(["data-model", `${docsDir}/data-model.md`]);
   if (input.deploy) required.push(["deployment", `${docsDir}/deployment.md`]);
   if (input.flows?.length) required.push(["capabilities", `${docsDir}/capabilities.md`]);
-  const missingPages = required.filter(([type]) => !types.has(type)).map(([, path]) => path);
+  // The root of a product gets an entry page per role: what each reads, in which order, and the facts that matter to it.
+  if (!input.workspace && input.flows?.length) required.push(...["copy", "seo", "design"].map((role) => ["audience", `${docsDir}/audiences/${role}.md`] as [string, string]));
+  const paths = new Set(pages.map((page) => page.path));
+  const missingPages = required.filter(([type, path]) => type === "audience" ? !paths.has(path) : !types.has(type)).map(([, path]) => path);
   const citations = pages.flatMap((page) => pageCitations(page.content));
   const uncoveredCore = input.core.filter((anchor) => !citations.some((citation) => citation.file === anchor.file
     && citation.start <= anchor.endLine && citation.end >= anchor.line)).map((anchor) => `${anchor.name} (${anchor.file}:${anchor.line}-${anchor.endLine})`);

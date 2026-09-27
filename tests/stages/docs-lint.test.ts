@@ -122,8 +122,16 @@ it("reads citations of Nuxt route files with brackets", () => {
 it("asks behaviour pages to say how it works and lists missing flow pages", () => {
   const thin = page({}, "# Checks\n\nA (src/check.ts:1). B (src/check.ts:2). C (src/check.ts:3).\n");
   expect(lintDocsPages([{ path:"docs/features/checks.md", content:thin }], { "src/check.ts":9 }).map((f) => f.detail)).toEqual([expect.stringContaining("'## How it works'")]);
-  expect(docsCompletenessGaps([], { tables:[], core:[], flows:["billing"] }).missingPages).toContain("docs/capabilities.md");
+  expect(docsCompletenessGaps([], { tables:[], core:[], flows:["billing"] }).missingPages).toEqual(expect.arrayContaining(["docs/capabilities.md", "docs/audiences/copy.md", "docs/audiences/seo.md", "docs/audiences/design.md"]));
   const flow = page({ type:"flow" }, "# Checks\n\n## How it works\n\nA (src/check.ts:1). B (src/check.ts:2). C (src/check.ts:3).\n");
   expect(lintDocsPages([{ path:"docs/flows/checks.md", content:flow }], { "src/check.ts":9 }).map((f) => f.detail)).toEqual([
     "needs at least 15 file:line citations, found 3", expect.stringContaining("'## Capabilities'")]);
+});
+
+it("asks data-model pages for relations and the meaning of fields", () => {
+  const dump = page({ type:"data-model" }, "# Checks\n\n| Field | Type |\n|---|---|\n| id | String (src/check.ts:1) |\n\nB (src/check.ts:2). C (src/check.ts:3).\n");
+  expect(lintDocsPages([{ path:"docs/data-model.md", content:dump }], { "src/check.ts":9 }).map((f) => f.detail)).toEqual([
+    expect.stringContaining("erDiagram"), expect.stringContaining("Meaning column")]);
+  const explained = page({ type:"data-model" }, "# Checks\n\n```mermaid\nerDiagram\n```\n\n| Field | Meaning |\n|---|---|\n| id | Row key (src/check.ts:1) |\n\nB (src/check.ts:2). C (src/check.ts:3).\n");
+  expect(lintDocsPages([{ path:"docs/data-model.md", content:explained }], { "src/check.ts":9 })).toEqual([]);
 });

@@ -4628,7 +4628,9 @@ export default async function plugin(bb: BbPluginApi) {
     const writable=flow?flowDocsWritable(flow.slug):unit.flows?.length?(path:string)=>nightlyDocsWritable(d)(path)&&!path.startsWith("docs/flows/"):nightlyDocsWritable(d);
     const prefix=unit.workspace?`${unit.workspace.path}/`:"";
     const flowFiles=new Set(flow?.files??[]);
-    const inUnit=(path:string)=>flow?flowFiles.has(path):prefix?path.startsWith(prefix):!ctx.exclude.some((dir)=>path.startsWith(`${dir}/`));
+    // The root summarises every workspace (capabilities, role pages, architecture), so any change may concern it;
+    // Jev's staleness check picks the root pages a change actually makes wrong.
+    const inUnit=(path:string)=>flow?flowFiles.has(path):prefix?path.startsWith(prefix):true;
     const label=flow?`docs/flows/${flow.slug}.md`:d;
     const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:ctx.projectId,path:place.path,docsDir:label,state,...extra});
     const gitScope=(base?:string)=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),docsDir:label,
