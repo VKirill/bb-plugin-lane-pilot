@@ -4847,6 +4847,11 @@ export default async function plugin(bb: BbPluginApi) {
       const places:Array<{scopes:string[];hostId:string;path:string}>=[];
       const root=await resolveProjectWriterHost({projectId:project.id}).catch(()=>null);
       if(root?.status==="resolved"&&root.path) places.push({scopes:[],hostId:root.hostId,path:root.path});
+      // Every source of the project is a place too: a project may keep its code repository on another machine.
+      const described=await bb.sdk.projects.get({projectId:project.id}).catch(()=>null) as {sources?:Array<{hostId?:string;path?:string}>}|null;
+      for(const source of described?.sources??[]){
+        if(source.hostId&&source.path&&!places.some((place)=>place.hostId===source.hostId&&place.path===source.path)) places.push({scopes:[],hostId:source.hostId,path:source.path});
+      }
       const sections=await listProjectSections(project.id);
       for(const section of sections) if(section.kind==="folder"&&section.path&&section.hostId) places.push({scopes:sectionChain(sections,section.id),hostId:section.hostId,path:section.path});
       for(const place of places){
