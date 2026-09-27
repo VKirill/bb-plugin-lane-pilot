@@ -4825,6 +4825,12 @@ export default async function plugin(bb: BbPluginApi) {
    * the code changed since its folder's docs; no folder yet means onboarding; nothing changed and
    * docs present means no model call. `force` skips the hour for a manual run.
    */
+  /** A docs unit's saved progress after its agent started: everything the second half needs, across a plugin reload. */
+  type DocsUnitRecord={version:1;projectId:string;place:{hostId:string;path:string};label:string;unit:DocsUnit;threadId:string;phase:"writing"|"repairing";sentAt?:number;
+    beforeDirty:string[];localDate:string;since:ReturnType<typeof parseDocsSettings>["since"];roots:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;
+    hasDocs:boolean;changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};anchors:{count:number;jev:string}|null;
+    core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string};
+
   /** What one docs unit may write: a flow its page, the root its docs/ outside docs/flows when flows exist, a workspace its folder. */
   function unitWritable(unit:DocsUnit):(path:string)=>boolean {
     if(unit.flow) return flowDocsWritable(unit.flow.slug);
@@ -4885,6 +4891,8 @@ export default async function plugin(bb: BbPluginApi) {
             if(!unitScope||unitScope.status!=="ready") return;
             const changed=unitScope.changed.filter((path)=>workspace?path.startsWith(`${workspace.path}/`):true);
             if(unitScope.hasDocs&&!changed.length&&!unitScope.dirty.some(unitWritable(unit))) return;
+            // A unit resuming from saved progress already has its map.
+            if(await bb.storage.kv.get(docsUnitRecordKey(project.id,place.path,unit.docsDir)).catch(()=>null)) return;
             const pages=titled.filter((page)=>page.path.startsWith(`${unit.docsDir}/`)&&!isDocsIndex(page.path))
               .map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}));
             prefetch.set(unit.docsDir,host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix:workspace?`${workspace.path}/`:"",
@@ -4895,7 +4903,7 @@ export default async function plugin(bb: BbPluginApi) {
             keep:[...new Set(flowPagesAtStart.map((page)=>/^docs\/flows\/([^/]+)\.md$/.exec(page.path)?.[1]).filter((slug):slug is string=>Boolean(slug)))]},
             {hostId:place.hostId,timeoutMs:1_800_000}).catch((cause)=>{ bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
           const context={projectId:project.id,place,settings,docs,base:opts.base,roots:units.map((unit)=>unit.docsDir),exclude:own.map((workspace)=>workspace.path),workspaces,prefetch,
-            othersWritable:(path:string,self:DocsUnit)=>leftover.has(path)||[...running].some((unit)=>unit!==self&&unitWritable(unit)(path))};
+            othersWritable:(path:string,self:DocsUnit)=>leftover.has(path)||[...running,...docsUnitsFinishing.values()].some((unit)=>unit!==self&&unitWritable(unit)(path))};
           const run=async(unit:DocsUnit)=>{
             running.add(unit);
             try{
@@ -4937,6 +4945,10 @@ export default async function plugin(bb: BbPluginApi) {
     othersWritable:(path:string,self:DocsUnit)=>boolean},unit:DocsUnit):Promise<Record<string,unknown>> {
     const {place,settings,docs}=ctx;
     const d=unit.docsDir, flow=unit.flow;
+    // A unit whose agent an earlier plugin instance started is picked up where it stopped, not started again.
+    const label0=flow?`docs/flows/${flow.slug}.md`:d;
+    const open=await bb.storage.kv.get(docsUnitRecordKey(ctx.projectId,place.path,label0)).catch(()=>null) as DocsUnitRecord|null;
+    if(open) return finishDocsUnit(open,ctx.othersWritable);
     const writable=unitWritable(unit);
     const prefix=unit.workspace?`${unit.workspace.path}/`:"";
     const flowFiles=new Set(flow?.files??[]);
@@ -5010,105 +5022,180 @@ export default async function plugin(bb: BbPluginApi) {
         agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts}),
       environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
       pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
-    await waitThreadIdle(bb,threadId,"docs_nightly");
-    const reverted:string[]=[];
-    // Check the pages the way the methodology asks, give the agent one round to fix, then index and commit.
-    // What the agent changed outside every docs folder is put back first; other folders' passes may be writing theirs.
-    const inspect=async()=>{
-      const after=await gitScope();
-      const touched=after.dirty.filter((path)=>!before.dirty.includes(path));
-      const outside=touched.filter((path)=>!writable(path)&&!ctx.othersWritable(path,unit)&&!DOCS_TOOLING.test(path));
-      if(outside.length){
-        const undone=await host.call("gitRevertPaths",{requestedHostId:place.hostId,projectCwd:place.path,paths:outside},{hostId:place.hostId,timeoutMs:120_000});
-        reverted.push(...undone.reverted);
-        if(undone.failed.length) throw new Error(`could not revert files the docs agent changed outside docs: ${undone.failed.join(", ")}`);
+    // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
+    const record:DocsUnitRecord={version:1,projectId:ctx.projectId,place,label,unit,threadId,phase:"writing",beforeDirty:before.dirty,localDate:before.localDate,
+      since:docs.since,roots:ctx.roots,workspaces:ctx.workspaces,hasDocs,changedCount:changed.length,refresh,gaps,
+      anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,core:core.slice(0,2000),kvKey};
+    await saveDocsUnitRecord(record);
+    return finishDocsUnit(record,ctx.othersWritable);
+  }
+
+  /** The key a unit's saved progress lives under, and the index of units with progress not yet finished. */
+  function docsUnitRecordKey(projectId:string,placePath:string,label:string):string {
+    return `docs-unit:${projectId}:${sha256(`${placePath}\n${label}`).slice(0,12)}`;
+  }
+  const DOCS_UNITS_OPEN_KEY="docs-units-open";
+  let docsUnitsIndexChain:Promise<unknown>=Promise.resolve();
+  /** Index writes go one at a time: units of a pass save their progress side by side. */
+  function updateDocsUnitsIndex(change:(open:Record<string,true>)=>void):Promise<void> {
+    const next=docsUnitsIndexChain.then(async()=>{
+      const open=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
+      change(open);
+      await bb.storage.kv.set(DOCS_UNITS_OPEN_KEY,open);
+    });
+    docsUnitsIndexChain=next.catch(()=>undefined);
+    return next;
+  }
+  async function saveDocsUnitRecord(record:DocsUnitRecord):Promise<void> {
+    const key=docsUnitRecordKey(record.projectId,record.place.path,record.label);
+    await bb.storage.kv.set(key,record);
+    await updateDocsUnitsIndex((open)=>{ open[key]=true; });
+  }
+  async function dropDocsUnitRecord(record:DocsUnitRecord):Promise<void> {
+    const key=docsUnitRecordKey(record.projectId,record.place.path,record.label);
+    await bb.storage.kv.delete(key).catch(()=>undefined);
+    await updateDocsUnitsIndex((open)=>{ delete open[key]; });
+  }
+  /** Units finishing in this plugin process, by record key; resumption never runs one twice. */
+  const docsUnitsFinishing=new Map<string,DocsUnit>();
+  /** A reload or a retired host generation stops this instance, not the unit: its progress stays for the next one. */
+  const pluginStopped=(cause:unknown)=>/stale API handle|generation .* is retired|plugin .* (reloaded|disabled)/i.test(cause instanceof Error?cause.message:String(cause));
+
+  /**
+   * The second half of a docs unit, from saved progress: wait for the agent's thread, check the pages, send one repair
+   * round to the same thread, build backlinks, confidence and the index, commit, and report. Safe to run again after a
+   * reload: it waits for the same thread and repeats only what did not finish.
+   */
+  async function finishDocsUnit(record:DocsUnitRecord,othersWritable:(path:string,self:DocsUnit)=>boolean):Promise<Record<string,unknown>> {
+    const key=docsUnitRecordKey(record.projectId,record.place.path,record.label);
+    const {place,unit,threadId,label}=record;
+    if(docsUnitsFinishing.has(key)) return {projectId:record.projectId,path:place.path,docsDir:label,state:"skipped",reason:"already finishing"};
+    docsUnitsFinishing.set(key,unit);
+    try{
+      const d=unit.docsDir, flow=unit.flow, writable=unitWritable(unit);
+      const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:record.projectId,path:place.path,docsDir:label,state,...extra});
+      const gitScope=()=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(record.since,new Date()),docsDir:label,
+        ...(unit.flows?.length?{exclude:["docs/flows"]}:{})},{hostId:place.hostId,timeoutMs:120_000});
+      let oversized:string[]=[];
+      const allPages=async()=>{
+        const listed=await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:record.roots,skipOversized:true},{hostId:place.hostId,timeoutMs:120_000});
+        oversized=listed.oversized??[];
+        return listed.pages as Array<{path:string;sha256:string;content:string}>;
+      };
+      const mine=(pages:Array<{path:string;sha256:string;content:string}>)=>pages.filter((page)=>flow?writable(page.path):page.path.startsWith(`${d}/`));
+      const readRootPages=async()=>unit.workspace||flow?[]:(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
+        const file=await bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}).catch(()=>null);
+        return file&&typeof file.content==="string"?{path,content:file.content}:null;
+      }))).filter((page):page is {path:string;content:string}=>page!==null);
+      const core=record.core;
+      const before={dirty:record.beforeDirty};
+      if(record.phase==="writing") await waitThreadIdle(bb,threadId,"docs_nightly");
+      else await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,record.sentAt);
+      const reverted:string[]=[];
+      // Check the pages the way the methodology asks, give the agent one round to fix, then index and commit.
+      // What the agent changed outside every docs folder is put back first; other folders' passes may be writing theirs.
+      const inspect=async()=>{
+        const after=await gitScope();
+        const touched=after.dirty.filter((path)=>!before.dirty.includes(path));
+        const outside=touched.filter((path)=>!writable(path)&&!othersWritable(path,unit)&&!DOCS_TOOLING.test(path));
+        if(outside.length){
+          const undone=await host.call("gitRevertPaths",{requestedHostId:place.hostId,projectCwd:place.path,paths:outside},{hostId:place.hostId,timeoutMs:120_000});
+          reverted.push(...undone.reverted);
+          if(undone.failed.length) throw new Error(`could not revert files the docs agent changed outside docs: ${undone.failed.join(", ")}`);
+        }
+        const pages=await allPages();
+        const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(mine(pages))},{hostId:place.hostId,timeoutMs:60_000})).counts;
+        const docsDirty=after.dirty.filter(writable);
+        const findings=[...oversized.filter(writable).map((path)=>({path,rule:"size",detail:"page is over 40000 bytes; split it into pages under 30000 bytes (a large data model into data-model/<area>.md pages) and link them"})),
+          ...lintDocsPages(pages,counts).filter((finding)=>writable(finding.path))];
+        // The capabilities catalogue covers every capability the apps document, not only the ones inside a flow.
+        const catalogue=unit.flows?.length?pages.find((page)=>page.path===`${d}/capabilities.md`):undefined;
+        if(catalogue){
+          const features=pages.map((page)=>page.path).filter((path)=>/^apps\/[^/]+\/docs\/features\/[^/]+\.md$/.test(path));
+          for(const path of unlinkedPages(catalogue,features)) findings.push({path:catalogue.path,rule:"coverage",detail:`does not link ${path}: add the capability that page describes, with its conditions and where it is available, and link it (operator tools under operator capabilities)`});
+        }
+        let pageStats:Array<{path:string;checked:number;supported:number;partial:number}>=[];
+        // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
+        // and pairs of claims across all the docs that cite the same code for contradictions.
+        if(!findings.length){
+          const all=[...pages.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content})),...await readRootPages()];
+          const written=all.filter((page)=>docsDirty.includes(page.path));
+          const cited=written.length?await host.call("docsVerifyCitations",{requestedHostId:place.hostId,projectCwd:place.path,
+            pages:written.slice(0,500),related:all.filter((page)=>!docsDirty.includes(page.path)).slice(0,500)},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null):null;
+          findings.push(...(cited?.findings??[]));
+          pageStats=cited?.pageStats??[];
+          // And whether the written pages explain the core code well enough that nobody has to open it.
+          // Only pages meant to explain behaviour are held to it; summaries and references link down instead.
+          const explaining=written.filter((page)=>/^type:\s*(component|flow)\s*$/m.test(page.content));
+          const depth=explaining.length&&core.length?await host.call("docsDepth",{requestedHostId:place.hostId,projectCwd:place.path,
+            pages:explaining.slice(0,500),core:core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
+          findings.push(...(depth?.findings??[]));
+        }
+        return {touched,docsDirty,pageStats,findings};
+      };
+      let checked=await inspect();
+      if(record.phase==="writing"&&checked.findings.length){
+        // The repair counts only once its own turn completes, not the turn the agent already finished.
+        const sentAt=Date.now()-2_000;
+        await saveDocsUnitRecord({...record,phase:"repairing",sentAt});
+        await bb.sdk.threads.send({threadId,mode:"queue-if-active",input:[{type:"text",text:docsRepairPrompt(checked.findings),mentions:[]}]});
+        await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,sentAt);
+        checked=await inspect();
       }
-      const pages=await allPages();
-      const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(mine(pages))},{hostId:place.hostId,timeoutMs:60_000})).counts;
-      const docsDirty=after.dirty.filter(writable);
-      const findings=[...oversized.filter(writable).map((path)=>({path,rule:"size",detail:"page is over 40000 bytes; split it into pages under 30000 bytes (a large data model into data-model/<area>.md pages) and link them"})),
-        ...lintDocsPages(pages,counts).filter((finding)=>writable(finding.path))];
-      // The capabilities catalogue covers every capability the apps document, not only the ones inside a flow.
-      const catalogue=unit.flows?.length?pages.find((page)=>page.path===`${d}/capabilities.md`):undefined;
-      if(catalogue){
-        const features=pages.map((page)=>page.path).filter((path)=>/^apps\/[^/]+\/docs\/features\/[^/]+\.md$/.test(path));
-        for(const path of unlinkedPages(catalogue,features)) findings.push({path:catalogue.path,rule:"coverage",detail:`does not link ${path}: add the capability that page describes, with its conditions and where it is available, and link it (operator tools under operator capabilities)`});
+      // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
+      // what Jev alone still doubts goes to the report as a warning; the deterministic checks keep blocking.
+      const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction"||finding.rule==="depth"||finding.rule==="links-external";
+      const warnings=checked.findings.filter(judged);
+      checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};
+      let commit:string|null=null;
+      // Every page of this folder passed the checks, so pages an earlier pass left uncommitted go in too; code never does.
+      if(!checked.findings.length&&checked.docsDirty.length){
+        // Builders own what the model must not write: Referenced by blocks, verified confidence, the index.
+        // They work on the pages as they are on disk now, and rebuild once if a page moved under them.
+        const stats=new Map(checked.pageStats.map((stat)=>[stat.path,stat]));
+        const index=`${d}/index.md`;
+        const linked=unit.workspace?[]:record.workspaces.flatMap((workspace)=>workspace.docsDir?[{name:workspace.name,docsDir:workspace.docsDir}]:[]);
+        // Pages the builders rewrote (backlinks, confidence, the index) go into the commit with the agent's.
+        const rebuilt:string[]=[];
+        for(let attempt=0;;attempt++){
+          const fresh=await allPages();
+          // Builders rewrite only this unit's pages; the index lists every page of the folder.
+          const built=buildBacklinks(fresh).filter((page)=>page.path.startsWith(`${d}/`)).map((page)=>{
+            const stat=stats.get(page.path);
+            const sourced=withCitedSources(page.content);
+            return {path:page.path,content:stat?withVerifiedConfidence(sourced,stat):sourced};
+          });
+          const current=fresh.find((page)=>page.path===index);
+          const edits=[
+            ...built.filter((page)=>writable(page.path)).flatMap((page)=>{
+              const original=fresh.find((row)=>row.path===page.path)!;
+              return original.content===page.content?[]:[{path:page.path,expectedSha256:original.sha256,content:page.content}];
+            }),
+            ...(flow?[]:[{path:index,expectedSha256:current?.sha256??null,content:buildDocsIndex(built,d,linked)}]),
+          ].filter((edit)=>edit.path!==index||current?.content!==edit.content);
+          if(!edits.length) break;
+          const applied=await host.call("writeDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,
+            previewSha256:sha256(JSON.stringify(edits)),edits},{hostId:place.hostId,timeoutMs:120_000});
+          if(applied.status==="applied"){ rebuilt.push(...edits.map((edit)=>edit.path)); break; }
+          if(attempt>=1) throw new Error(`docs builders could not write pages: ${applied.reason??applied.status}`);
+        }
+        const committed=await host.call("gitCommitDocs",{requestedHostId:place.hostId,projectCwd:place.path,
+          paths:[...new Set([...checked.docsDirty,...rebuilt,...(flow?[]:[index])])],message:`docs${unit.workspace?`(${unit.workspace.path})`:flow?`(flow ${flow.slug})`:""}: ${record.hasDocs?"nightly refresh":"onboarding"} ${record.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
+        if(committed.status==="failed") throw new Error(`docs commit failed: ${committed.reason}`);
+        commit=committed.commit;
       }
-      let pageStats:Array<{path:string;checked:number;supported:number;partial:number}>=[];
-      // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
-      // and pairs of claims across all the docs that cite the same code for contradictions.
-      if(!findings.length){
-        const all=[...pages.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content})),...await readRootPages()];
-        const written=all.filter((page)=>docsDirty.includes(page.path));
-        const cited=written.length?await host.call("docsVerifyCitations",{requestedHostId:place.hostId,projectCwd:place.path,
-          pages:written.slice(0,500),related:all.filter((page)=>!docsDirty.includes(page.path)).slice(0,500)},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null):null;
-        findings.push(...(cited?.findings??[]));
-        pageStats=cited?.pageStats??[];
-        // And whether the written pages explain the core code well enough that nobody has to open it.
-        // Only pages meant to explain behaviour are held to it; summaries and references link down instead.
-        const explaining=written.filter((page)=>/^type:\s*(component|flow)\s*$/m.test(page.content));
-        const depth=explaining.length&&core.length?await host.call("docsDepth",{requestedHostId:place.hostId,projectCwd:place.path,
-          pages:explaining.slice(0,500),core:core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
-        findings.push(...(depth?.findings??[]));
-      }
-      return {touched,docsDirty,pageStats,findings};
-    };
-    let checked=await inspect();
-    if(checked.findings.length){
-      // The repair counts only once its own turn completes, not the turn the agent already finished.
-      const sentAt=Date.now()-2_000;
-      await bb.sdk.threads.send({threadId,mode:"queue-if-active",input:[{type:"text",text:docsRepairPrompt(checked.findings),mentions:[]}]});
-      await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,sentAt);
-      checked=await inspect();
-    }
-    // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
-    // what Jev alone still doubts goes to the report as a warning; the deterministic checks keep blocking.
-    const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction"||finding.rule==="depth"||finding.rule==="links-external";
-    const warnings=checked.findings.filter(judged);
-    checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};
-    let commit:string|null=null;
-    // Every page of this folder passed the checks, so pages an earlier pass left uncommitted go in too; code never does.
-    if(!checked.findings.length&&checked.docsDirty.length){
-      // Builders own what the model must not write: Referenced by blocks, verified confidence, the index.
-      // They work on the pages as they are on disk now, and rebuild once if a page moved under them.
-      const stats=new Map(checked.pageStats.map((stat)=>[stat.path,stat]));
-      const index=`${d}/index.md`;
-      const linked=unit.workspace?[]:ctx.workspaces.flatMap((workspace)=>workspace.docsDir?[{name:workspace.name,docsDir:workspace.docsDir}]:[]);
-      // Pages the builders rewrote (backlinks, confidence, the index) go into the commit with the agent's.
-      const rebuilt:string[]=[];
-      for(let attempt=0;;attempt++){
-        const fresh=await allPages();
-        // Builders rewrite only this unit's pages; the index lists every page of the folder.
-        const built=buildBacklinks(fresh).filter((page)=>page.path.startsWith(`${d}/`)).map((page)=>{
-          const stat=stats.get(page.path);
-          const sourced=withCitedSources(page.content);
-          return {path:page.path,content:stat?withVerifiedConfidence(sourced,stat):sourced};
-        });
-        const current=fresh.find((page)=>page.path===index);
-        const edits=[
-          ...built.filter((page)=>writable(page.path)).flatMap((page)=>{
-            const original=fresh.find((row)=>row.path===page.path)!;
-            return original.content===page.content?[]:[{path:page.path,expectedSha256:original.sha256,content:page.content}];
-          }),
-          ...(flow?[]:[{path:index,expectedSha256:current?.sha256??null,content:buildDocsIndex(built,d,linked)}]),
-        ].filter((edit)=>edit.path!==index||current?.content!==edit.content);
-        if(!edits.length) break;
-        const applied=await host.call("writeDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,
-          previewSha256:sha256(JSON.stringify(edits)),edits},{hostId:place.hostId,timeoutMs:120_000});
-        if(applied.status==="applied"){ rebuilt.push(...edits.map((edit)=>edit.path)); break; }
-        if(attempt>=1) throw new Error(`docs builders could not write pages: ${applied.reason??applied.status}`);
-      }
-      const committed=await host.call("gitCommitDocs",{requestedHostId:place.hostId,projectCwd:place.path,
-        paths:[...new Set([...checked.docsDirty,...rebuilt,...(flow?[]:[index])])],message:`docs${unit.workspace?`(${unit.workspace.path})`:flow?`(flow ${flow.slug})`:""}: ${hasDocs?"nightly refresh":"onboarding"} ${before.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
-      if(committed.status==="failed") throw new Error(`docs commit failed: ${committed.reason}`);
-      commit=committed.commit;
-    }
-    const failure=checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
-    const row=report(failure?"failed":"passed",{threadId,onboarding:!hasDocs,changedCode:changed.length,refreshed:refresh,gaps,anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,
-      docsWritten:checked.touched.filter(writable),commit,...(reverted.length?{reverted}:{}),...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
-    await bb.storage.kv.set(kvKey,{...row,at:Date.now()});
-    bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path} ${label}`);
-    return row;
+      const failure=checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
+      const row=report(failure?"failed":"passed",{threadId,onboarding:!record.hasDocs,changedCode:record.changedCount,refreshed:record.refresh,gaps:record.gaps,anchors:record.anchors,
+        docsWritten:checked.touched.filter(writable),commit,...(reverted.length?{reverted}:{}),...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
+      await bb.storage.kv.set(record.kvKey,{...row,at:Date.now()});
+      await dropDocsUnitRecord(record);
+      bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path} ${label}`);
+      return row;
+    }catch(cause){
+      // The agent's thread failed or its work cannot be checked: the unit is done for tonight, its pages stay pending.
+      if(!pluginStopped(cause)) await dropDocsUnitRecord(record).catch(()=>undefined);
+      throw cause;
+    }finally{ docsUnitsFinishing.delete(key); }
   }
 
   async function runScheduledDocsMaintenance():Promise<void> {
@@ -5142,10 +5229,19 @@ export default async function plugin(bb: BbPluginApi) {
   bb.background.schedule("docs-nightly-hourly","0 * * * *",async()=>{ await runNightlyDocs(); });
 
   /**
-   * Every two minutes: a pass of today that broke off (a plugin reload, a crash) or left units failed runs again,
-   * once the docs agents it started have stopped - up to DOCS_NIGHT_ATTEMPTS a night. Settled passes leave the index.
+   * Every two minutes: units a stopped plugin instance left mid-way are finished on their own agent thread, and a pass
+   * of today that broke off or left units failed runs again - up to DOCS_NIGHT_ATTEMPTS a night. Settled passes leave the index.
    */
   async function runDocsCatchUps():Promise<void> {
+    // First the units whose agent a stopped plugin instance left running or finished: same thread, from the saved step.
+    const units=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
+    for(const unitKey of Object.keys(units)){
+      if(docsUnitsFinishing.has(unitKey)) continue;
+      const record=await bb.storage.kv.get(unitKey).catch(()=>null) as DocsUnitRecord|null;
+      if(!record){ await updateDocsUnitsIndex((index)=>{ delete index[unitKey]; }); continue; }
+      void finishDocsUnit(record,(path,self)=>[...docsUnitsFinishing.values()].some((unit)=>unit!==self&&unitWritable(unit)(path)))
+        .catch((cause)=>bb.log.warn(`Lane Pilot docs resume failed for ${record.place.path} ${record.label}: ${cause instanceof Error?cause.message:String(cause)}`));
+    }
     const open=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
     const keep:DocsOpenPasses={};
     for(const [key,entry] of Object.entries(open)){
@@ -5154,9 +5250,7 @@ export default async function plugin(bb: BbPluginApi) {
       if(!unsettled) continue;
       keep[key]=entry;
       if(docsPassesRunning.has(entry.path)) continue;
-      const threads=await bb.sdk.threads.list({projectId:entry.projectId,originPluginId:"lane-pilot",includeHidden:true,limit:200,offset:0}).catch(()=>null);
-      const busy=!threads||threads.some((thread)=>(thread.status==="active"||thread.status==="starting")&&(thread.title??"").startsWith(`Lane Pilot docs: ${basename(entry.path)}`));
-      if(busy) continue;
+      // Units still finishing from saved progress are waited for inside the pass, not started again.
       await runNightlyDocs({projectId:entry.projectId,path:entry.path,catchUp:true});
     }
     const latest=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
