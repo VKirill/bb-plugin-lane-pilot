@@ -83,28 +83,54 @@ export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempP
   return args;
 }
 
-/**
- * The workspace entries mounted read-only. One that is missing (a git-ignored cache a fresh worktree lacks) is
- * created empty so the mount still covers it, and removed afterwards; a symlink is refused.
- */
-export async function prepareGuardPaths(workspacePath:string):Promise<{guardPaths:string[];created:string[]}> {
-  const guardPaths:string[]=[], created:string[]=[];
-  for (const name of [".git",".agents",".cls"]) {
-    const guardPath=resolve(workspacePath,name);
-    const info=await lstat(guardPath).catch(()=>null);
-    if (info?.isSymbolicLink()) throw new Error(`sandbox_guard_path_symlink: ${name}; refusing to expose it writable`);
-    if (!info) {
-      await mkdir(guardPath);
-      created.push(guardPath);
-    }
-    guardPaths.push(guardPath);
-  }
-  return {guardPaths,created};
+/** Guard paths the sandbox created, with how many running checks use each; checks of one attempt run at once. */
+const createdGuardUsers=new Map<string,number>();
+let guardLock:Promise<unknown>=Promise.resolve();
+
+function underGuardLock<T>(work:()=>Promise<T>):Promise<T> {
+  const turn=guardLock.then(work);
+  guardLock=turn.catch(()=>undefined);
+  return turn;
 }
 
-/** Removes the guard paths prepareGuardPaths created; rmdir leaves one that somehow gained content. */
-export async function releaseGuardPaths(created:string[]):Promise<void> {
-  for (const path of created) await rmdir(path).catch(()=>undefined);
+/**
+ * The workspace entries mounted read-only. One that is missing (a git-ignored cache a fresh worktree lacks) is
+ * created empty so the mount still covers it, and removed after the last check using it; a symlink is refused.
+ */
+export function prepareGuardPaths(workspacePath:string):Promise<{guardPaths:string[];created:string[]}> {
+  return underGuardLock(async()=>{
+    const guardPaths:string[]=[], created:string[]=[];
+    for (const name of [".git",".agents",".cls"]) {
+      const guardPath=resolve(workspacePath,name);
+      const users=createdGuardUsers.get(guardPath);
+      if (users) {
+        createdGuardUsers.set(guardPath,users+1);
+        created.push(guardPath);
+      } else {
+        const info=await lstat(guardPath).catch(()=>null);
+        if (info?.isSymbolicLink()) throw new Error(`sandbox_guard_path_symlink: ${name}; refusing to expose it writable`);
+        if (!info) {
+          await mkdir(guardPath);
+          createdGuardUsers.set(guardPath,1);
+          created.push(guardPath);
+        }
+      }
+      guardPaths.push(guardPath);
+    }
+    return {guardPaths,created};
+  });
+}
+
+/** Lets go of the guard paths prepareGuardPaths created; the last check using one removes it if still empty. */
+export function releaseGuardPaths(created:string[]):Promise<void> {
+  return underGuardLock(async()=>{
+    for (const path of created) {
+      const users=(createdGuardUsers.get(path) ?? 1)-1;
+      if (users>0) { createdGuardUsers.set(path,users); continue; }
+      createdGuardUsers.delete(path);
+      await rmdir(path).catch(()=>undefined);
+    }
+  });
 }
 
 async function realDirectory(path:string, label:string):Promise<string> {

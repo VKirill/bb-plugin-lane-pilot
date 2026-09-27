@@ -27,6 +27,19 @@ describe("sandbox guard paths", () => {
     expect(existsSync(join(root, ".agents"))).toBe(true);
   });
 
+  it("shares a created guard path between checks running at once and removes it after the last one", async () => {
+    const root = workspace();
+    mkdirSync(join(root, ".git"));
+    mkdirSync(join(root, ".agents"));
+    const [first, second] = await Promise.all([prepareGuardPaths(root), prepareGuardPaths(root)]);
+    expect(first.created).toEqual([join(root, ".cls")]);
+    expect(second.created).toEqual([join(root, ".cls")]);
+    await releaseGuardPaths(first.created);
+    expect(existsSync(join(root, ".cls"))).toBe(true);
+    await releaseGuardPaths(second.created);
+    expect(existsSync(join(root, ".cls"))).toBe(false);
+  });
+
   it("still refuses a guard path that is a symlink", async () => {
     const root = workspace();
     symlinkSync(tmpdir(), join(root, ".agents"));
