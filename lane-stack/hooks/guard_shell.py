@@ -45,10 +45,19 @@ PM_READ_COMMANDS = {
 }
 # Read-only bb CLI calls the PM may use to look around; anything that changes state stays denied.
 PM_BB_READ_COMMANDS = {
-    ("status",), ("guide",), ("thread", "show"), ("thread", "log"), ("thread", "list"),
+    ("status",), ("guide",), ("thread", "show"), ("thread", "get"), ("thread", "log"), ("thread", "messages"),
+    ("thread", "list"), ("thread", "output"), ("thread", "search"), ("thread", "wait"), ("thread", "history"),
+    ("thread", "context"), ("thread", "count"),
     ("memory", "search"), ("memory", "get"), ("memory", "catalog"),
     ("project", "list"), ("project", "show"),
 }
+# Agents coordinate by messaging each other's threads; starting, changing or archiving threads stays denied.
+PM_BB_MESSAGE_COMMANDS = {
+    ("thread", "tell"), ("thread", "message"),
+    ("thread", "queue", "create"), ("thread", "queue", "send"), ("thread", "queue", "list"),
+}
+# The bb CLI by name, by absolute path, or through the BB_CLI variable BB sets for agents.
+PM_BB_EXECUTABLES = {"bb", "$BB_CLI", "${BB_CLI}"}
 # Typed control-plane CLIs the PM may run directly (not writer lifecycle).
 # lane-ctl / run-controller start|watch|status stay delegated to supervisors.
 PM_CONTROL_COMMANDS = {
@@ -254,6 +263,16 @@ def _unwrap_sudo_args(args: list[str]) -> list[str] | None:
     return None
 
 
+def _pm_bb_error(args: list[str]) -> str | None:
+    words = [arg for arg in args if not arg.startswith("-")]
+    if any(arg in {"--help", "-h", "--version", "-V"} for arg in args):
+        return None
+    allowed = PM_BB_READ_COMMANDS | PM_BB_MESSAGE_COMMANDS
+    if any(tuple(words[:size]) in allowed for size in (1, 2, 3)):
+        return None
+    return "bb command neither reads nor messages a thread; delegate it"
+
+
 def _pm_segment_error(segment: list[str]) -> str | None:
     if not segment:
         return None
@@ -295,13 +314,8 @@ def _pm_segment_error(segment: list[str]) -> str | None:
         return "unsupported export command"
     if executable in PM_CONTROL_COMMANDS or executable in PM_OPS_COMMANDS:
         return None
-    if executable == "bb":
-        words = [arg for arg in args if not arg.startswith("-")]
-        if any(arg in {"--help", "-h", "--version", "-V"} for arg in args):
-            return None
-        if tuple(words[:1]) in PM_BB_READ_COMMANDS or tuple(words[:2]) in PM_BB_READ_COMMANDS:
-            return None
-        return "bb command is not read-only; delegate it"
+    if executable in PM_BB_EXECUTABLES:
+        return _pm_bb_error(args)
     if executable in PM_READ_COMMANDS:
         if executable == "find" and any(
             arg in {
@@ -542,6 +556,8 @@ def _lane_pilot_segment_error(segment: list[str]) -> str | None:
         if executable == "yq" and _lane_pilot_flag_present(args, {"-i", "--inplace", "--in-place"}):
             return "in-place yq is forbidden"
         return None
+    if executable in PM_BB_EXECUTABLES:
+        return _pm_bb_error(args)
     return f"command {segment[0]!r} is not allowlisted for lane-pilot-pm"
 
 
