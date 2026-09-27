@@ -103,6 +103,8 @@ describe("project-life prompt", () => {
     expect(prompt).toContain("task-1");
     expect(prompt).toContain(".agents/PROGRESS.md");
     expect(prompt).toContain("keep every line that is still true");
+    expect(prompt).toContain("by capability");
+    expect(prompt).toContain("Pointers is rebuilt from the files every time");
     expect(prompt).toContain("append exactly one line to .agents/CHANGELOG.md");
     expect(prompt).toContain("LESSONS.md");
     expect(prompt).toContain("docs/decisions.md");
