@@ -11,6 +11,20 @@ afterEach(async()=>{if(root) await rm(root,{recursive:true,force:true});root=und
 function git(cwd:string,...args:string[]) { execFileSync("git",args,{cwd,stdio:"ignore"}); }
 
 describe("git ownership base adapter",()=>{
+  it("unfiltered keeps .agents and memory files that the writer check treats as noise",async()=>{
+    root=await mkdtemp(join(tmpdir(),"lp-own-raw-"));
+    git(root,"init","-b","main");
+    git(root,"config","user.email","lane-pilot@example.invalid");
+    git(root,"config","user.name","Lane Pilot test");
+    await writeFile(join(root,"README.md"),"base\n");git(root,"add",".");git(root,"commit","-m","base");
+    const base=execFileSync("git",["rev-parse","HEAD"],{cwd:root}).toString().trim();
+    await mkdir(join(root,".agents"),{recursive:true});
+    await writeFile(join(root,".agents","PROGRESS.md"),"now\n");await writeFile(join(root,".agents","LESSONS.md"),"x\n");
+    git(root,"add",".");git(root,"commit","-m","memory");
+    expect((await gitOwnershipChangedPaths({projectCwd:root,baseSha:base,compareCommitted:true})).paths).toEqual([]);
+    expect((await gitOwnershipChangedPaths({projectCwd:root,baseSha:base,compareCommitted:true,unfiltered:true})).paths)
+      .toEqual([".agents/LESSONS.md",".agents/PROGRESS.md"]);
+  });
   it("captures upstream-style main defaults and checks feature changes from a frozen merge base",async()=>{
     root=await mkdtemp(join(tmpdir(),"lane-pilot-git-base-"));
     git(root,"init","-b","main");

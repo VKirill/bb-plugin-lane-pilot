@@ -72,7 +72,8 @@ export async function resolveGitOwnershipBase(input:{projectCwd:string;baseRef?:
   return {status:"ready",branch,headSha,baseRef:"HEAD",baseSha:headSha,compareCommitted:true,reason:null};
 }
 
-export async function gitOwnershipChangedPaths(input:{projectCwd:string;baseSha:string|null;compareCommitted:boolean}):Promise<{status:"ready"|"not-git"|"failed";headSha:string|null;paths:string[];reason:string|null}> {
+/** `unfiltered` keeps .agents/ and memory files: the project-life stage must see exactly those. */
+export async function gitOwnershipChangedPaths(input:{projectCwd:string;baseSha:string|null;compareCommitted:boolean;unfiltered?:boolean}):Promise<{status:"ready"|"not-git"|"failed";headSha:string|null;paths:string[];reason:string|null}> {
   const cwd=await checkedRoot(input.projectCwd);
   if(!cwd) return {status:"not-git",headSha:null,paths:[],reason:"ownership base requires a real git worktree root"};
   const head=git(cwd,["rev-parse","--verify","HEAD^{commit}"]);
@@ -85,5 +86,6 @@ export async function gitOwnershipChangedPaths(input:{projectCwd:string;baseSha:
   if(!mergeBase.ok) return {status:"failed",headSha,paths:[],reason:"git base and current HEAD have no merge base"};
   const diff=git(cwd,["diff","--name-only","-z","--no-renames",`${mergeBase.stdout.trim()}...${headSha}`]);
   if(!diff.ok) return {status:"failed",headSha,paths:[],reason:"could not compute committed ownership diff"};
-  return {status:"ready",headSha,paths:filterOwnershipNoise(diff.stdout.split("\0").filter(Boolean)),reason:null};
+  const paths=diff.stdout.split("\0").filter(Boolean);
+  return {status:"ready",headSha,paths:input.unfiltered?[...new Set(paths)].sort():filterOwnershipNoise(paths),reason:null};
 }

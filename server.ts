@@ -756,7 +756,7 @@ async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase
     const placement=await helperChildPlacement({
       bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"pm-reader", taskTitle:input.task.title,
     });
-    const spawned=await input.bb.sdk.threads.spawn({
+    const spawned=await input.bb.sdk.threads.spawn({permissionMode:"full",
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId),
       ...writerExecutionSelection(providerId,modelId,parsedSettings.effort,serviceTier),
@@ -872,7 +872,7 @@ async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDa
     const placement = await helperChildPlacement({
       bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"plan-critic", taskTitle:input.task.title,
     });
-    const spawned = await input.bb.sdk.threads.spawn({
+    const spawned = await input.bb.sdk.threads.spawn({permissionMode:"full",
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId),
       ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
@@ -1099,7 +1099,7 @@ async function runCodeCritique(input:{
       providerId, model:modelId, reasoningEffort:configuredEffort,
       serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix,
     };
-    const spawned = await input.bb.sdk.threads.spawn({
+    const spawned = await input.bb.sdk.threads.spawn({permissionMode:"full",
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId),
       ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
@@ -1178,7 +1178,7 @@ async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof op
     const placement = await helperChildPlacement({
       bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"specialist-reviewer", taskTitle:input.task.title,
     });
-    const spawned = await input.bb.sdk.threads.spawn({
+    const spawned = await input.bb.sdk.threads.spawn({permissionMode:"full",
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId),
       ...writerExecutionSelection(providerId,modelId,effort,tier),
@@ -1707,7 +1707,7 @@ export default async function plugin(bb: BbPluginApi) {
     const spawnTier = native?.serviceTier === "fast" ? "fast" as const : native?.serviceTier === "default" ? "default" as const : null;
     let spawned:Awaited<ReturnType<typeof bb.sdk.threads.spawn>>;
     try {
-      spawned = await bb.sdk.threads.spawn({
+      spawned = await bb.sdk.threads.spawn({permissionMode:"full",
         projectId,
         ...(sourceThreadId ? {
           sourceThreadId,
@@ -1947,7 +1947,7 @@ export default async function plugin(bb: BbPluginApi) {
           holderThreadId=await recoverLostHolderThread(input.projectId, current);
         }
         if(!holderThreadId) {
-          const holder = await spawnWithSeam(() => bb.sdk.threads.spawn({
+          const holder = await spawnWithSeam(() => bb.sdk.threads.spawn({permissionMode:"full",
             projectId:input.projectId, ...execution,
             prompt:"Prepare the assigned managed workspace and make no file changes. Return only WORKSPACE_READY.",
             environment:{type:"host",hostId:input.config.hostId,workspace:{type:"managed-worktree",baseBranch:{kind:"default"}}},
@@ -3809,7 +3809,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"docs-maintainer",
       });
-      const spawned=await bb.sdk.threads.spawn({...placement,...requiredPolicyField(bb, helperPolicy, docsProviderId),...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
+      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, docsProviderId),...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs_maintainer_thread_id_missing");
       persistRunning(threadId, { ...docsResultObject(receipt?.result), snapshot, spawnAttempted:true });
       receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
@@ -3965,7 +3965,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"onboarder",
       });
-      const spawned=await bb.sdk.threads.spawn({...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,tier),prompt,
+      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,tier),prompt,
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"onboarder",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"onboarding-preview",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("onboarding_thread_id_missing");
@@ -4185,7 +4185,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"memory-maintainer",
       });
-      const spawned=await bb.sdk.threads.spawn({...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId),
+      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
         prompt:memoryMaintenancePrompt({task,acceptedResult:accepted.result,settings:snapshot.settings,agent:snapshot.agent}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
@@ -4325,10 +4325,10 @@ export default async function plugin(bb: BbPluginApi) {
         return {runId:args.runId,taskId:args.taskId,state:"passed",result};
       }
       const changes=await host.call("gitOwnershipChanges",{
-        requestedHostId:config.hostId,projectCwd:workspace.path,baseSha:snapshot.baseHeadSha,compareCommitted:true,
+        requestedHostId:config.hostId,projectCwd:workspace.path,baseSha:snapshot.baseHeadSha,compareCommitted:true,unfiltered:true,
       },{hostId:config.hostId,timeoutMs:30_000});
       if(changes.status!=="ready") throw new Error(`project_life_commit_verification_unavailable:${changes.reason??changes.status}`);
-      if(changes.headSha!==final.commit) throw new Error("project_life_commit_head_mismatch");
+      if(final.commit.length<7||!changes.headSha?.startsWith(final.commit)) throw new Error("project_life_commit_head_mismatch");
       const outOfScope=findOutOfScopeProjectLifeWrites(changes.paths);
       if(outOfScope.length) {
         recordStage(db,{...base,state:"failed",providerId:projectLifeProviderId,model:projectLifeModel,threadId:childId,reason:"project_life_out_of_scope_write",result:{...final,outOfScope}});
@@ -4531,7 +4531,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"night-reviewer",
       });
-      const spawned=await bb.sdk.threads.spawn({...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,tier),
+      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,tier),
         prompt:nightReviewPrompt({agent:snapshot.agent,task,acceptedResult:accepted.result,workspace:task.project_cwd,maxFindings:20}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"night-reviewer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-review",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
@@ -4588,7 +4588,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"gate-triage",
       });
-      const spawned=await bb.sdk.threads.spawn({...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,null),
+      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,null),
         prompt:gateTriagePrompt(report),environment:workspaceExecutionEnvironment(config.hostId,{path:run.writer_workspace_path??config.pmWorkspacePath,environmentId:null}),
         pluginMetadata:{role:"gate-triage",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"gate-triage",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("gate_triage_thread_id_missing");
@@ -4656,7 +4656,7 @@ export default async function plugin(bb: BbPluginApi) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"night-fixer",
       });
-      const spawned=await bb.sdk.threads.spawn({...placement,...requiredPolicyField(bb, helperPolicy, repairProviderId),...writerExecutionSelection(repairProviderId,repairModelId,repairEffort,tier),
+      const spawned=await bb.sdk.threads.spawn({permissionMode:"full",...placement,...requiredPolicyField(bb, helperPolicy, repairProviderId),...writerExecutionSelection(repairProviderId,repairModelId,repairEffort,tier),
         prompt:nightFixPrompt({task,findings:plan.findings,paths:plan.paths}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"night-fixer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-fix",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
@@ -4787,7 +4787,7 @@ export default async function plugin(bb: BbPluginApi) {
       // BB may still report another thread provisioning this checkout; that clears in seconds.
       let spawned:unknown;
       for(let attempt=0;;attempt++){
-        try{ spawned=await bb.sdk.threads.spawn(args); break; }
+        try{ spawned=await bb.sdk.threads.spawn({...args,permissionMode:"full"}); break; }
         catch(cause){
           if(attempt>=5||!/another thread is using this workspace/i.test(cause instanceof Error?cause.message:String(cause))) throw cause;
           await new Promise((done)=>setTimeout(done,5_000*(attempt+1)));
@@ -4800,6 +4800,10 @@ export default async function plugin(bb: BbPluginApi) {
     docsSpawnGate=turn.catch(()=>undefined);
     return turn;
   }
+  /** Attempts a night gets: the pass at docs.hour, then catch-ups at the next hours when it broke off or a unit failed. */
+  const DOCS_NIGHT_ATTEMPTS=3;
+  /** Places whose pass is running in this plugin process; a catch-up never starts beside one. */
+  const docsPassesRunning=new Set<string>();
   /** Tooling state that changes during a pass without the docs agent: never reverted, never a violation. */
   const DOCS_TOOLING=/^(\.agents|\.bb|\.claude|\.codex|\.gitnexus)\//;
 
@@ -4835,9 +4839,21 @@ export default async function plugin(bb: BbPluginApi) {
           if(!docs.enabled||!docs.maintain) continue;
           const scope=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date())},{hostId:place.hostId,timeoutMs:120_000});
           if(scope.status!=="ready"||!scope.isRepoRoot) continue;
-          if(!opts.force&&scope.localHour!==docs.hour) continue;
+          // A pass that broke off (a reload, a crash) or left units failed is picked up at the next hours of the same
+          // night; units already done have no changes left and skip at once.
+          const stateKey=`docs-nightly-state:${project.id}:${sha256(place.path).slice(0,12)}`;
+          const night=await bb.storage.kv.get(stateKey).catch(()=>null) as {date?:string;attempts?:number;finished?:boolean;failed?:number}|null;
+          const catchUp=!opts.force&&night?.date===scope.localDate&&(!night.finished||(night.failed??0)>0)&&(night.attempts??0)<DOCS_NIGHT_ATTEMPTS
+            &&scope.localHour>docs.hour&&scope.localHour<docs.hour+DOCS_NIGHT_ATTEMPTS&&!docsPassesRunning.has(place.path);
+          if(!opts.force&&!catchUp&&scope.localHour!==docs.hour) continue;
           const schedule=`docs-nightly-${sha256(place.path).slice(0,12)}`;
-          if(!opts.force&&!claimDailySchedule(db,project.id,schedule,scope.localDate)) continue;
+          if(!opts.force&&!catchUp&&!claimDailySchedule(db,project.id,schedule,scope.localDate)) continue;
+          if(docsPassesRunning.has(place.path)) continue;
+          docsPassesRunning.add(place.path);
+          const firstResult=results.length;
+          const attempts=(catchUp?night?.attempts??0:0)+1;
+          await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:false,failed:0});
+          try{
           const own=scope.workspaces.filter((workspace)=>workspace.codeFiles>=WORKSPACE_DOCS_MIN_FILES);
           const workspaces=scope.workspaces.map((workspace)=>({path:workspace.path,name:workspace.name,docsDir:own.includes(workspace)?`${workspace.path}/docs`:null}));
           const units:DocsUnit[]=[...own.map((workspace)=>({docsDir:`${workspace.path}/docs`,workspace:{path:workspace.path,name:workspace.name}})),
@@ -4890,6 +4906,8 @@ export default async function plugin(bb: BbPluginApi) {
           await pool([...flowUnits]);
           const root=units.at(-1)!;
           await run(flowUnits.length?{...root,flows:flowUnits.map((unit)=>unit.flow!.slug)}:root);
+          await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:true,failed:results.slice(firstResult).filter((row)=>row.state==="failed").length});
+          } finally { docsPassesRunning.delete(place.path); }
         }catch(cause){
           const reason=cause instanceof Error?cause.message:String(cause);
           results.push({projectId:project.id,path:place.path,state:"failed",reason});
@@ -5121,7 +5139,7 @@ export default async function plugin(bb: BbPluginApi) {
     createAttempt(db, { id:attemptId, runId, taskId });
     transitionAttempt(db, attemptId, "spawn_requested");
     try {
-      const spawned = await bb.sdk.threads.spawn({
+      const spawned = await bb.sdk.threads.spawn({permissionMode:"full",
         projectId,
         providerId:config.writerProviderId,
         model:config.writerModel,
@@ -5151,7 +5169,7 @@ export default async function plugin(bb: BbPluginApi) {
     setRunThread(db, runId, pmThreadId);
     createAttempt(db, { id:attemptId, runId, taskId });
     transitionAttempt(db, attemptId, "spawn_requested");
-    const spawned = await bb.sdk.threads.spawn({
+    const spawned = await bb.sdk.threads.spawn({permissionMode:"full",
       projectId,
       providerId:config.writerProviderId,
       model:"__lane_pilot_missing_model__",
@@ -5186,7 +5204,7 @@ export default async function plugin(bb: BbPluginApi) {
     const threadIds: string[] = [];
     try {
       for (const ordinal of [1, 2]) {
-        const spawned = await bb.sdk.threads.spawn({
+        const spawned = await bb.sdk.threads.spawn({permissionMode:"full",
           projectId,
           providerId:config.writerProviderId,
           model:config.writerModel,
