@@ -122,5 +122,8 @@ it("reads citations of Nuxt route files with brackets", () => {
 it("asks behaviour pages to say how it works and lists missing flow pages", () => {
   const thin = page({}, "# Checks\n\nA (src/check.ts:1). B (src/check.ts:2). C (src/check.ts:3).\n");
   expect(lintDocsPages([{ path:"docs/features/checks.md", content:thin }], { "src/check.ts":9 }).map((f) => f.detail)).toEqual([expect.stringContaining("'## How it works'")]);
-  expect(docsCompletenessGaps([], { tables:[], core:[], flows:["billing"] }).missingPages).toContain("docs/flows/billing.md");
+  expect(docsCompletenessGaps([], { tables:[], core:[], flows:["billing"] }).missingPages).toContain("docs/capabilities.md");
+  const flow = page({ type:"flow" }, "# Checks\n\n## How it works\n\nA (src/check.ts:1). B (src/check.ts:2). C (src/check.ts:3).\n");
+  expect(lintDocsPages([{ path:"docs/flows/checks.md", content:flow }], { "src/check.ts":9 }).map((f) => f.detail)).toEqual([
+    "needs at least 15 file:line citations, found 3", expect.stringContaining("'## Capabilities'")]);
 });

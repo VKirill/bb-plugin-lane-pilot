@@ -146,7 +146,7 @@ export const flowDocsWritable = (slug:string) => (path:string):boolean => path =
 const METHODOLOGY = [
   "Method (docs-methodology skill from claude-lane; read ~/.agents/skills/docs-methodology/SKILL.md and its references/ first if the file exists):",
   "- Every docs page starts with YAML frontmatter: title, type, created, updated (YYYY-MM-DD), status (draft|active|stale|deprecated), confidence (high|medium|low, honest: low under 5 sources, medium 5-15, high over 15), tags (kebab-case list), sources (list of files actually read, most relevant first).",
-  "- type is one of overview, architecture, data-model, decisions, deployment, gotchas, gaps, active-areas, active-tasks, component, flow. One H1 equal to title, then a one-line TL;DR.",
+  "- type is one of overview, architecture, data-model, decisions, deployment, gotchas, gaps, active-areas, active-tasks, component, flow, capabilities. One H1 equal to title, then a one-line TL;DR.",
   "- Write so an agent can learn how the product works from the docs alone, without opening the code. A component page has: Purpose; How it works - the steps in order as a numbered list, a table of the modes, variants or states it branches on (what differs between them: inputs, limits, prices, outputs), and what happens on each failure; Business rules; Public API or commands; Gotchas. A flow page (docs/flows/) has: Trigger; How it works - each step across apps and packages in order, naming the app, the call and the state it changes; Modes; Failures and compensation; Related pages. Depth follows the code: a large capability gets a long page or several pages, not a summary.",
   "- Every non-trivial claim cites file:line or file:start-end that exists; at least 3 citations per page. No hedges (typically, usually, should) without a citation, no marketing words (powerful, seamless, robust, comprehensive, intuitive, leverage), no dates in prose.",
   "- Keep each page under 30000 bytes: split a large subject into linked pages (a data model with many tables into data-model/<area>.md, one page per area, with data-model.md as the overview).",
@@ -184,7 +184,8 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
   ] : [];
   const flows = unit.flows?.length ? ["",
     "Business flows have their own pages, written by their own passes - link each from docs/overview.md and from the architecture where it fits, and do not write docs/flows/:",
-    ...unit.flows.map((slug) => `- docs/flows/${slug}.md`)] : [];
+    ...unit.flows.map((slug) => `- docs/flows/${slug}.md`),
+    "Write docs/capabilities.md (capabilities): the catalogue of what the product can do for its users and operators, grouped by area, built from the flow pages and the workspace feature pages - for each capability what the user can do, its modes and options, formats, limits, prices or credit costs and where it is available, each item cited and linked to its flow. Copywriters and support rely on it: only what the code does, no promises."] : [];
   return [
     `${input.agent?.trim() || "Documentation maintainer"}: keep this project's documentation an honest, evidence-backed description of its code.`,
     "",
@@ -199,6 +200,7 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
       "- Trigger: every way the process starts, grouped by app, with its route, command, job or page.",
       "- How it works: numbered steps in order across apps and packages. Each step names the app or package and the function (file:line), what it checks, what state it changes (tables, balances, statuses, queues) and what it hands to the next step, HTTP calls and queued jobs included.",
       "- Modes: a table of the variants the process branches on and what really differs between them - inputs, models, prices or costs, limits, outputs - taken from the code.",
+      "- Capabilities: what a user or operator can do in this process, in plain product language - every mode and option, input and output formats, limits, prices or credit costs, and where it is available (which app, bot or channel). Copywriters and support rely on this list, so state only what the code does, each item cited.",
       "- Failures and compensation: each point where it can fail, what the user sees, retries, refunds and the jobs that reconcile it.",
       "- Related pages: the workspace pages it crosses.",
       `A process of this size needs a long page; past 30000 bytes split it into ${`docs/flows/${flow.slug}/<part>.md`} pages linked from the main one.`,

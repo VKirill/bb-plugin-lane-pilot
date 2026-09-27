@@ -5,13 +5,15 @@
  */
 
 export const DOC_PAGE_TYPES = ["overview", "architecture", "data-model", "decisions", "deployment", "gotchas", "gaps",
-  "active-areas", "active-tasks", "component", "flow", "index"] as const;
+  "active-areas", "active-tasks", "component", "flow", "capabilities", "index"] as const;
 /** Page types that describe behaviour and must say how it works, not only what exists. */
 const HOW_IT_WORKS_TYPES = ["component", "flow"];
 const STATUSES = ["draft", "active", "stale", "deprecated"];
 const CONFIDENCE = ["high", "medium", "low"];
 const REQUIRED = ["title", "type", "created", "updated", "status", "confidence", "tags", "sources"];
 const MIN_CITATIONS = 3;
+/** A flow crosses several apps and packages; fewer citations than this means a summary, not the process. */
+const MIN_FLOW_CITATIONS = 15;
 /** English marketing words the methodology forbids in wiki pages. */
 const MARKETING = ["leverage", "leverages", "powerful", "seamless", "seamlessly", "robust", "comprehensive", "intuitive",
   "cutting-edge", "state-of-the-art", "enterprise-grade"];
@@ -86,7 +88,9 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
     if (typeof data.type === "string" && HOW_IT_WORKS_TYPES.includes(data.type) && !/^## How it works\b/m.test(body)) add("structure", "a component or flow page needs a '## How it works' section: the steps in order, the modes and states it branches on, and what happens on failure");
     if (/^## Referenced by/m.test(withoutBacklinks(body))) add("builder", "do not write a Referenced by section; the backlinks builder owns it");
     const citations = pageCitations(body);
-    if (citations.length < MIN_CITATIONS) add("evidence", `needs at least ${MIN_CITATIONS} file:line citations, found ${citations.length}`);
+    const least = data.type === "flow" ? MIN_FLOW_CITATIONS : MIN_CITATIONS;
+    if (citations.length < least) add("evidence", `needs at least ${least} file:line citations, found ${citations.length}`);
+    if (data.type === "flow" && !/^## Capabilities\b/m.test(body)) add("structure", "a flow page needs a '## Capabilities' section: what a user or operator can do in this process - each mode and option, formats, limits, costs and where it is available - each cited");
     for (const citation of citations) {
       const lines = lineCounts[citation.file];
       if (lines === undefined) continue;
@@ -166,9 +170,8 @@ export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; d
     : [["overview", `${docsDir}/overview.md`], ["architecture", `${docsDir}/architecture.md`], ["gotchas", `${docsDir}/gotchas.md`]];
   if (input.tables.length) required.push(["data-model", `${docsDir}/data-model.md`]);
   if (input.deploy) required.push(["deployment", `${docsDir}/deployment.md`]);
-  const paths = new Set(pages.map((page) => page.path));
-  const missingPages = [...required.filter(([type]) => !types.has(type)).map(([, path]) => path),
-    ...(input.flows ?? []).map((slug) => `${docsDir}/flows/${slug}.md`).filter((path) => !paths.has(path))];
+  if (input.flows?.length) required.push(["capabilities", `${docsDir}/capabilities.md`]);
+  const missingPages = required.filter(([type]) => !types.has(type)).map(([, path]) => path);
   const citations = pages.flatMap((page) => pageCitations(page.content));
   const uncoveredCore = input.core.filter((anchor) => !citations.some((citation) => citation.file === anchor.file
     && citation.start <= anchor.endLine && citation.end >= anchor.line)).map((anchor) => `${anchor.name} (${anchor.file}:${anchor.line}-${anchor.endLine})`);
