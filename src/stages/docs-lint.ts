@@ -18,7 +18,7 @@ const MIN_FLOW_CITATIONS = 15;
 const MARKETING = ["leverage", "leverages", "powerful", "seamless", "seamlessly", "robust", "comprehensive", "intuitive",
   "cutting-edge", "state-of-the-art", "enterprise-grade"];
 /** file:line or file:start-end; paths may hold Nuxt route brackets such as server/api/[slug].get.ts. */
-const CITATION = /([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?/g;
+const CITATION = /([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z][A-Za-z0-9]*):(\d+)(?:-(\d+))?/g;
 
 export type DocPage = { path:string; content:string };
 

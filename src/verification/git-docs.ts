@@ -75,7 +75,8 @@ export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: nu
     localHour: now.getHours(),
   };
   const git = async (...args: string[]) =>
-    (await run("git", ["-c", "core.quotePath=false", "-C", input.projectCwd, ...args], { maxBuffer: 8 << 20 })).stdout;
+    // Reads never take the index lock, so parallel docs passes do not collide with each other's commits.
+    (await run("git", ["--no-optional-locks", "-c", "core.quotePath=false", "-C", input.projectCwd, ...args], { maxBuffer: 8 << 20 })).stdout;
   // A docs folder, or the single page of a flow.
   const hasDocs = await stat(join(input.projectCwd, docsDir)).then((info) => info.isDirectory() || info.isFile(), () => false);
   let top: string;
@@ -111,7 +112,16 @@ export async function docsLineCounts(input:{ projectCwd:string; files:string[] }
 
 /** Commits only the given docs paths, under the same lock as writer merges, so other work is never swept in. */
 export async function commitDocs(input:{ projectCwd:string; paths:string[]; message:string }):Promise<{ status:"committed" | "nothing" | "failed"; commit:string | null; reason:string | null }> {
-  const git = (...args:string[]) => run("git", ["-C", input.projectCwd, ...args], { maxBuffer: 8 << 20 });
+  // Another git process (an editor, a hook) may hold the index for a moment; wait and try again.
+  const git = async (...args:string[]) => {
+    for (let attempt = 0; ; attempt++) {
+      try { return await run("git", ["-C", input.projectCwd, ...args], { maxBuffer: 8 << 20 }); }
+      catch (cause) {
+        if (attempt >= 5 || !/index\.lock|Unable to create .*\.lock/.test(String((cause as { stderr?:string }).stderr ?? cause))) throw cause;
+        await new Promise((done) => setTimeout(done, 500 * (attempt + 1)));
+      }
+    }
+  };
   try {
     return await withBaseLock(input.projectCwd, async () => {
       if (!input.paths.length) return { status:"nothing" as const, commit:null, reason:null };

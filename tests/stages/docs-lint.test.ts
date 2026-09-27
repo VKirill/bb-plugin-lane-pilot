@@ -153,3 +153,7 @@ it("lists the pages a catalogue does not link", () => {
   const catalogue = { path:"docs/capabilities.md", content:"# C\n\nSee [wardrobe](../apps/cabinet/docs/features/wardrobe.md).\n" };
   expect(unlinkedPages(catalogue, ["apps/cabinet/docs/features/wardrobe.md", "apps/cabinet/docs/features/profiles.md"])).toEqual(["apps/cabinet/docs/features/profiles.md"]);
 });
+
+it("does not take a host and port for a file citation", () => {
+  expect(pageCitations("Listens on 0.0.0.0:3000 (src/server.ts:12).")).toEqual([{ file:"src/server.ts", start:12, end:12 }]);
+});

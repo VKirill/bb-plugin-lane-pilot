@@ -165,7 +165,7 @@ import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorks
 import { docsInputHash, docsMaintenancePrompt, docsRepairPrompt, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings, selectDocsPages, validateDocsEdits, type DocsPage, type DocsUnit } from "./src/stages/docs";
 import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDocsIndex, lintDocsPages, unlinkedPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "./src/stages/docs-lint";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, type MemorySettings } from "./src/stages/memory";
-import { PROJECT_LIFE_DEFAULT_WRITER, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, shouldTriggerProjectLife, type ProjectLifeTaskSummary } from "./src/stages/project-life";
+import { PROJECT_LIFE_DEFAULT_WRITER, projectLifeWriterSelection, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, shouldTriggerProjectLife, type ProjectLifeTaskSummary } from "./src/stages/project-life";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "./src/stages/night";
 import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "./src/stages/night-fix";
 import { parseOpenCodeToolTelemetry } from "./src/stages/opencode-telemetry";
@@ -2042,6 +2042,7 @@ export default async function plugin(bb: BbPluginApi) {
         ...placement,
         ...requiredPolicyField(bb, helperSnapshot, writerProviderId),
         ...execution,
+        permissionMode:"full",
         prompt: writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
           ? `Fallback reason: ${input.emergency.reason}. Primary provider/model: ${typeof settings["writer.provider"] === "string" ? settings["writer.provider"] : input.config.writerProviderId}/${typeof settings["writer.model"] === "string" ? settings["writer.model"] : input.config.writerModel}.`
           : undefined,writerAgent,input.pmReadContext ?? ""),
@@ -2582,6 +2583,7 @@ export default async function plugin(bb: BbPluginApi) {
                 writerSnapshot.reasoningLevel,
                 writerSnapshot.serviceTier,
               ),
+              permissionMode:"full",
               prompt:repairPrompt,
               environment,
               pluginMetadata:{
@@ -4244,9 +4246,7 @@ export default async function plugin(bb: BbPluginApi) {
 
     const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
     const projectLifeSettings=parseProjectLifeSettings({"project_life.enabled":configuredSetting(settings,"project_life.enabled")});
-    const projectLifeSelection=resolveStageWriterSelection({settings,
-      config:{writerProviderId:PROJECT_LIFE_DEFAULT_WRITER.providerId,writerModel:PROJECT_LIFE_DEFAULT_WRITER.model},
-      stageProviderKey:"project_life.provider",stageModelKey:"project_life.model"});
+    const projectLifeSelection=projectLifeWriterSelection(settings);
     const projectLifeProviderId=projectLifeSelection.providerId;
     const projectLifeModel=projectLifeSelection.model;
     const projectLifeEffort=typeof settings["project_life.reasoning_effort"]==="string"&&settings["project_life.reasoning_effort"]
@@ -4386,6 +4386,7 @@ export default async function plugin(bb: BbPluginApi) {
       const artifactDirs=coveredTaskIds.map((id)=>acceptanceArtifactDir(workspace.path,args.runId,id));
       const spawned=await bb.sdk.threads.spawn({...placement,...requiredPolicyField(bb, helperPolicy, projectLifeProviderId),
         ...writerExecutionSelection(projectLifeProviderId,projectLifeModel,projectLifeEffort,tier),
+        permissionMode:"full",
         prompt:projectLifePrompt({workspace:workspace.path,runId:args.runId,artifactDirs,tasks:snapshot.tasks,nowIso:new Date().toISOString()}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"project-life-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
@@ -4783,7 +4784,16 @@ export default async function plugin(bb: BbPluginApi) {
   let docsSpawnGate:Promise<unknown>=Promise.resolve();
   function spawnDocsThread(args:Parameters<typeof bb.sdk.threads.spawn>[0]):Promise<string>{
     const turn=docsSpawnGate.then(async()=>{
-      const threadId=stringAt(await bb.sdk.threads.spawn(args),"id"); if(!threadId) throw new Error("docs thread id missing");
+      // BB may still report another thread provisioning this checkout; that clears in seconds.
+      let spawned:unknown;
+      for(let attempt=0;;attempt++){
+        try{ spawned=await bb.sdk.threads.spawn(args); break; }
+        catch(cause){
+          if(attempt>=5||!/another thread is using this workspace/i.test(cause instanceof Error?cause.message:String(cause))) throw cause;
+          await new Promise((done)=>setTimeout(done,5_000*(attempt+1)));
+        }
+      }
+      const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
       while(stringAt(await bb.sdk.threads.get({threadId}).catch(()=>null),"status")==="starting") await new Promise((done)=>setTimeout(done,2_000));
       return threadId;
     });
@@ -4801,6 +4811,13 @@ export default async function plugin(bb: BbPluginApi) {
    * the code changed since its folder's docs; no folder yet means onboarding; nothing changed and
    * docs present means no model call. `force` skips the hour for a manual run.
    */
+  /** What one docs unit may write: a flow its page, the root its docs/ outside docs/flows when flows exist, a workspace its folder. */
+  function unitWritable(unit:DocsUnit):(path:string)=>boolean {
+    if(unit.flow) return flowDocsWritable(unit.flow.slug);
+    if(unit.flows?.length) return (path:string)=>nightlyDocsWritable(unit.docsDir)(path)&&!path.startsWith("docs/flows/");
+    return nightlyDocsWritable(unit.docsDir);
+  }
+
   async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string}={}):Promise<Array<Record<string,unknown>>> {
     const results:Array<Record<string,unknown>>=[];
     const projects=opts.projectId?[{id:opts.projectId}]:await bb.sdk.projects.list({includePersonal:true}).catch(()=>[] as Array<{id:string}>);
@@ -4825,24 +4842,50 @@ export default async function plugin(bb: BbPluginApi) {
           const workspaces=scope.workspaces.map((workspace)=>({path:workspace.path,name:workspace.name,docsDir:own.includes(workspace)?`${workspace.path}/docs`:null}));
           const units:DocsUnit[]=[...own.map((workspace)=>({docsDir:`${workspace.path}/docs`,workspace:{path:workspace.path,name:workspace.name}})),
             {docsDir:"docs",...(workspaces.length?{workspaces}:{})}];
-          const context={projectId:project.id,place,settings,docs,base:opts.base,roots:units.map((unit)=>unit.docsDir),exclude:own.map((workspace)=>workspace.path),workspaces,
-            placeWritable:(path:string)=>units.some((unit)=>nightlyDocsWritable(unit.docsDir)(path))};
+          // A unit may change only its own pages; what it changes elsewhere is reverted, except the folders of units
+          // running beside it (their agents write there now) and pages a failed unit left for its next pass.
+          const running=new Set<DocsUnit>(), leftover=new Set<string>();
+          const sinceEpochMs=docsSinceEpoch(docs.since,new Date());
+          // Scan first: every unit with work gets its code map built now, all at once, and the flows are traced beside
+          // them, so each agent starts on a finished map instead of waiting for Jev in turn.
+          const prefetch=new Map<string,Promise<unknown>>();
+          const titled=(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:units.map((unit)=>unit.docsDir),skipOversized:true},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null))?.pages??[];
+          await Promise.all(units.map(async(unit)=>{
+            const workspace=unit.workspace;
+            const unitScope=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs,docsDir:unit.docsDir,...(opts.base?{base:opts.base}:{})},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null);
+            if(!unitScope||unitScope.status!=="ready") return;
+            const changed=unitScope.changed.filter((path)=>workspace?path.startsWith(`${workspace.path}/`):true);
+            if(unitScope.hasDocs&&!changed.length&&!unitScope.dirty.some(unitWritable(unit))) return;
+            const pages=titled.filter((page)=>page.path.startsWith(`${unit.docsDir}/`)&&!isDocsIndex(page.path))
+              .map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}));
+            prefetch.set(unit.docsDir,host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix:workspace?`${workspace.path}/`:"",
+              ...(workspace?{}:{exclude:own.map((item)=>item.path),...(workspaces.length?{workspaces}:{})}),pages:pages.slice(0,500)},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null));
+          }));
+          const flowPagesAtStart=titled.filter((page)=>page.path.startsWith("docs/flows/"));
+          const tracing=host.call("docsFlows",{requestedHostId:place.hostId,projectCwd:place.path,workspaces:workspaces.map((workspace)=>({path:workspace.path,name:workspace.name})),
+            keep:[...new Set(flowPagesAtStart.map((page)=>/^docs\/flows\/([^/]+)\.md$/.exec(page.path)?.[1]).filter((slug):slug is string=>Boolean(slug)))]},
+            {hostId:place.hostId,timeoutMs:1_800_000}).catch((cause)=>{ bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
+          const context={projectId:project.id,place,settings,docs,base:opts.base,roots:units.map((unit)=>unit.docsDir),exclude:own.map((workspace)=>workspace.path),workspaces,prefetch,
+            othersWritable:(path:string,self:DocsUnit)=>leftover.has(path)||[...running].some((unit)=>unit!==self&&unitWritable(unit)(path))};
           const run=async(unit:DocsUnit)=>{
-            try{ results.push(await runDocsUnit(context,unit)); }
+            running.add(unit);
+            try{
+              const row=await runDocsUnit(context,unit);
+              results.push(row);
+              for(const path of (row.state==="failed"&&Array.isArray(row.docsWritten)?row.docsWritten as string[]:[])) leftover.add(path);
+            }
             catch(cause){
               const reason=cause instanceof Error?cause.message:String(cause);
               results.push({projectId:project.id,path:place.path,docsDir:unit.docsDir,state:"failed",reason});
               bb.log.warn(`Lane Pilot nightly docs failed for ${place.path} ${unit.docsDir}: ${reason}`);
             }
+            finally{ running.delete(unit); }
           };
           const pool=async(queue:DocsUnit[])=>{ await Promise.all(Array.from({length:Math.min(DOCS_UNIT_CONCURRENCY,queue.length)},async()=>{ for(let unit=queue.shift();unit;unit=queue.shift()) await run(unit); })); };
           // Workspaces first, a few at once. Then the business flows, traced once across the repository, each written
           // by its own agent on top of the workspace docs. The root last, so its overview links to docs that exist.
           await pool(units.slice(0,-1));
-          const flowPages=(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:["docs/flows"],skipOversized:true},{hostId:place.hostId,timeoutMs:60_000}).catch(()=>null))?.pages??[];
-          const keep=[...new Set(flowPages.map((page)=>/^docs\/flows\/([^/]+)\.md$/.exec(page.path)?.[1]).filter((slug):slug is string=>Boolean(slug)))];
-          const traced=await host.call("docsFlows",{requestedHostId:place.hostId,projectCwd:place.path,workspaces:workspaces.map((workspace)=>({path:workspace.path,name:workspace.name})),keep},
-            {hostId:place.hostId,timeoutMs:1_800_000}).catch((cause)=>{ bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
+          const traced=await tracing;
           const flowUnits:DocsUnit[]=(traced?.flows??[]).map((flow)=>({docsDir:"docs",flow}));
           await pool([...flowUnits]);
           const root=units.at(-1)!;
@@ -4859,11 +4902,11 @@ export default async function plugin(bb: BbPluginApi) {
 
   /** One docs folder of a place: its own git scope, code map, agent, checks, builders and commit. */
   async function runDocsUnit(ctx:{projectId:string;place:{hostId:string;path:string};settings:Record<string,unknown>;docs:ReturnType<typeof parseDocsSettings>;base?:string;
-    roots:string[];exclude:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;placeWritable:(path:string)=>boolean},unit:DocsUnit):Promise<Record<string,unknown>> {
+    roots:string[];exclude:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;prefetch:Map<string,Promise<unknown>>;
+    othersWritable:(path:string,self:DocsUnit)=>boolean},unit:DocsUnit):Promise<Record<string,unknown>> {
     const {place,settings,docs}=ctx;
     const d=unit.docsDir, flow=unit.flow;
-    // A flow writes only its own page; the root leaves docs/flows/ to the flow passes.
-    const writable=flow?flowDocsWritable(flow.slug):unit.flows?.length?(path:string)=>nightlyDocsWritable(d)(path)&&!path.startsWith("docs/flows/"):nightlyDocsWritable(d);
+    const writable=unitWritable(unit);
     const prefix=unit.workspace?`${unit.workspace.path}/`:"";
     const flowFiles=new Set(flow?.files??[]);
     // The root summarises every workspace (capabilities, role pages, architecture), so any change may concern it;
@@ -4898,7 +4941,8 @@ export default async function plugin(bb: BbPluginApi) {
     const rootPages=hasDocs?await readRootPages():[];
     const pageInput=existing.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content}));
     // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
-    const anchors=flow?null:await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
+    const prefetched=flow?undefined:ctx.prefetch.get(d) as Promise<Awaited<ReturnType<typeof host.call<"docsAnchors">>>|null>|undefined;
+    const anchors=flow?null:prefetched?await prefetched:await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
       ...(unit.workspace?{}:{exclude:ctx.exclude,...(ctx.workspaces.length?{workspaces:ctx.workspaces}:{})}),
       pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null);
     const gaps=hasDocs&&!flow?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace),
@@ -4942,7 +4986,7 @@ export default async function plugin(bb: BbPluginApi) {
     const inspect=async()=>{
       const after=await gitScope();
       const touched=after.dirty.filter((path)=>!before.dirty.includes(path));
-      const outside=touched.filter((path)=>!ctx.placeWritable(path)&&!DOCS_TOOLING.test(path));
+      const outside=touched.filter((path)=>!writable(path)&&!ctx.othersWritable(path,unit)&&!DOCS_TOOLING.test(path));
       if(outside.length){
         const undone=await host.call("gitRevertPaths",{requestedHostId:place.hostId,projectCwd:place.path,paths:outside},{hostId:place.hostId,timeoutMs:120_000});
         reverted.push(...undone.reverted);

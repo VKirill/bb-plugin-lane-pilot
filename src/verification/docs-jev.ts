@@ -347,7 +347,7 @@ export function renderAnchorBrief(anchors:Anchor[], tests:string[], deps:string[
 // ---- citation check -----------------------------------------------------------------------
 
 /** file:line or file:start-end; paths may hold Nuxt route brackets such as server/api/[slug].get.ts. */
-const CITATION = /([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?/g;
+const CITATION = /([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z][A-Za-z0-9]*):(\d+)(?:-(\d+))?/g;
 
 export type ClaimRef = { file:string; start:number; end:number };
 
