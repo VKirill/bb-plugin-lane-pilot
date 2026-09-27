@@ -83,12 +83,16 @@ export function runCommandOnHost(input: {
     cwd: input.cwd,
     encoding: "utf8",
     timeout: (input.timeoutSec ?? 30) * 1000,
+    // A dirty workspace snapshot runs to megabytes; the 1 MB default killed it with no message.
+    maxBuffer: 64 * 1024 * 1024,
   });
+  // A killed command has no status; say why instead of an empty stderr.
+  const killed = [result.error?.message, result.signal ? `killed by ${result.signal}` : null].filter(Boolean).join("; ");
   return {
     hostId: process.env.BB_HOST_ID ?? input.requestedHostId,
     exitCode: result.status ?? 1,
     stdout: result.stdout ?? "",
-    stderr: result.stderr ?? (result.error ? result.error.message : ""),
+    stderr: [result.stderr, killed].filter(Boolean).join("\n"),
   };
 }
 
