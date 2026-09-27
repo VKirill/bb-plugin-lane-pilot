@@ -17,25 +17,27 @@ const cases: Case[] = [
   bash("ls runs","ls -la .agents/runs",true),
   bash("adoc json","adoc . --json",true),
   bash("lane ctl status","lane-ctl status --run-dir .agents/runs/r1",true),
-  bash("controller watch","run-controller watch --run-dir .agents/runs/r1",true),
-  bash("bash c mutate","bash -c 'git add . && git commit -m x'",false),
-  bash("bash c read","bash -c 'ls .agents'",false),
-  bash("bash script","bash scripts/mutate-production.sh",false),
-  bash("sh script","sh ./deploy-overwrite.sh",false),
-  bash("python script","python3 scripts/mutate.py",false),
-  bash("node script","node scripts/mutate.js",false),
-  ...["add .","commit -m x","merge branch","push","rebase main","reset --hard","stash","cherry-pick abc","checkout -b x","apply x.patch","am x.patch","pull"].map((tail) => bash(`git ${tail}`,`git ${tail}`,false)),
-  bash("redirect production","echo x > src/production.ts",false),
+  // Writers are BB threads in a Lane Pilot chat, so the old lane controller stays closed.
+  bash("controller watch","run-controller watch --run-dir .agents/runs/r1",false),
+  // The PM's shell follows a plain claude-lane chat: project scripts, deploys and git work pass.
+  bash("bash c mutate","bash -c 'git add . && git commit -m x'",true),
+  bash("bash c read","bash -c 'ls .agents'",true),
+  bash("bash script","bash scripts/mutate-production.sh",true),
+  bash("sh script","sh ./deploy-overwrite.sh",true),
+  bash("python script","python3 scripts/mutate.py",true),
+  bash("node script","node scripts/mutate.js",true),
+  ...["add .","commit -m x","merge branch","push","rebase main","reset --hard","stash","cherry-pick abc","checkout -b x","apply x.patch","am x.patch","pull"].map((tail) => bash(`git ${tail}`,`git ${tail}`,true)),
+  bash("redirect production","echo x > src/production.ts",true),
   bash("redirect temp","echo x > /tmp/lane-pilot-test.log",true),
-  bash("tee production","git log | tee src/production.ts",false),
-  bash("tee temp","git log | tee /tmp/x.log",false),
+  bash("tee production","git log | tee src/production.ts",true),
+  bash("tee temp","git log | tee /tmp/x.log",true),
   ...["Edit","Write","MultiEdit","NotebookEdit"].map((tool) => edit(`${tool} production`,tool,"src/app.ts",false)),
   ...["Edit","Write","MultiEdit","NotebookEdit"].flatMap((tool) => [
     edit(`${tool} progress`,tool,".agents/PROGRESS.md",true),
     edit(`${tool} plan`,tool,"docs/plans/x.md",true),
   ]),
   ...["Edit","Write","MultiEdit","NotebookEdit"].map((tool) => edit(`${tool} receipt`,tool,".agents/runs/r1/controller.json",false)),
-  bash("adoc apply","adoc . --apply --writer-provider claude",false),
+  bash("adoc apply","adoc . --apply --writer-provider claude",true),
 ];
 
 function invoke(path:string, testCase:Case) {
@@ -61,22 +63,24 @@ describe("E2 Lane Pilot PM guard", () => {
     });
   }
 
-  it("denies all five E2 bypasses after realpath normalization", () => {
-    const link = "/tmp/ag190-lane-pilot-prod-link";
-    try { unlinkSync(link); } catch { /* absent */ }
-    symlinkSync(cwd, link);
+  it("still blocks the destructive commands a plain claude-lane chat blocks", () => {
     const probes = [
-      "agents-doctor setup . --yes --writer-provider codex --night-review off",
-      "yq -i '.x = 1' src/config.yml",
-      "git diff --output=src/production.patch",
-      `echo x > /tmp/../${cwd.replace(/^\//, "")}/production.txt`,
-      `echo x > ${link}/production.txt`,
+      "rm -rf src",
+      "git push " + "--" + "force origin main",
+      "git commit --no-verify -m x",
+      "psql -c 'DROP TABLE users'",
+      "./scripts/deploy.sh && run-controller start --run-dir .agents/runs/r1",
     ];
     for (const [index, command] of probes.entries()) {
-      const result = invoke(guard,bash(`E2-${index+1}`,command,false));
+      const result = invoke(guard,bash(`destructive-${index+1}`,command,false));
       expect(result.status, `${command}\n${result.stdout}${result.stderr}`).toBe(2);
     }
-    unlinkSync(link);
+  });
+
+  it("lets the PM deploy the way the user's own chat does", () => {
+    for (const command of ["cd /srv/app && ./scripts/deploy.sh --base abc", "docker compose up -d api", "npm run verify:api", "systemctl --user restart app"]) {
+      expect(invoke(guard,bash("ops",command,true)).status, command).toBe(0);
+    }
   });
 
   it("treats Claude agentSetting namespace as the same PM identity", () => {

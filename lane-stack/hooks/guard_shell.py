@@ -561,6 +561,28 @@ def _lane_pilot_segment_error(segment: list[str]) -> str | None:
     return f"command {segment[0]!r} is not allowlisted for lane-pilot-pm"
 
 
+def _lane_pilot_bb_error(command: str) -> str | None:
+    """bb in a Lane Pilot PM command: reading threads and messaging them, nothing that spawns, edits or reloads."""
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    segment: list[str] = []
+    for token in [*tokens, ";"]:
+        if token in {"&&", "||", ";", "|", "&"}:
+            if segment and (segment[0] in PM_BB_EXECUTABLES or Path(segment[0]).name == "bb"):
+                error = _pm_bb_error(segment[1:])
+                if error:
+                    return error
+            segment = []
+        else:
+            segment.append(token)
+    return None
+
+
 def _lane_pilot_shell_error(command: str, cwd: object) -> str | None:
     if "\0" in command or "\n" in command or "$(" in command or "`" in command:
         return "multiline shell or command substitution is forbidden"
@@ -674,10 +696,12 @@ def main() -> None:
         cmd = shell_command(p)
         if not cmd.strip():
             emit_deny(client, "[lane-pilot-guard] malformed shell tool payload blocked.")
-        error = _lane_pilot_shell_error(cmd, p.get("cwd") or p.get("workspaceRoot"))
+        # The Lane Pilot PM is the user's own chat: its shell runs under the same rules as a plain
+        # claude-lane chat (deploys, compose, npm scripts, systemctl pass; the destructive list below
+        # still blocks). Only BB thread control stays scoped, and writers are BB threads, not lanes.
+        error = _lane_pilot_bb_error(cmd)
         if error:
             _deny_pm(client, error)
-        emit_allow(client)
     if key in PM_AGENTS and is_edit_tool(name):
         path = file_path(p)
         if not path or not _pm_edit_allowed(path, p.get("cwd") or p.get("workspaceRoot")):
@@ -694,7 +718,7 @@ def main() -> None:
     low = cmd.lower()
 
     # A Lane Pilot BB chat (its launcher sets LANE_PILOT_AGENT_TYPE) runs writers as BB threads.
-    if key in PM_AGENTS and os.environ.get("LANE_PILOT_AGENT_TYPE") and re.search(
+    if (key in LANE_PILOT_PM_AGENT_TYPES or (key in PM_AGENTS and os.environ.get("LANE_PILOT_AGENT_TYPE"))) and re.search(
         r"(?:^|[;&|(\n]\s*|\b(?:until|while|if|then|do|exec|command)\s+)(?:[^\s;&|()]+/)?"
         r"(?:run-controller\b|lane-ctl\s+(?:start|retry|fallback)\b|lane-bg\b|lane-exec\b)",
         cmd,
