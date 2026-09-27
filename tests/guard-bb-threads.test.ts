@@ -45,3 +45,12 @@ describe("PM agents read and message BB threads", () => {
     }
   }
 });
+
+describe("PM agents run project scripts by path", () => {
+  for (const agentType of ["lane-pilot-pm", "dev-orchestrator"]) {
+    it(`${agentType}: ./scripts/deploy.sh is judged like bash scripts/deploy.sh`, () => {
+      expect(allowed(agentType, "cd /srv/app && ./scripts/deploy.sh --base abc")).toBe(0);
+      expect(allowed(agentType, "bash scripts/deploy.sh --base abc")).toBe(0);
+    });
+  }
+});
