@@ -40,7 +40,7 @@ describe("council page", () => {
     const view = await mountCouncilPage(said);
     await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Убрать шаг с аккаунтом."));
     expect(view.getByTestId("council-typing").textContent).toContain("Skeptic");
-    expect(view.getByTestId("council-list").textContent).toContain("discussion");
+    expect(view.getByTestId("council-list").textContent).toMatch(/in session|идёт/);
     const input = view.getByLabelText(/Say|Сказать/) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Скептик, что с ценами?" } });
     fireEvent.keyDown(input, { key: "Enter" });

@@ -197,6 +197,7 @@ const CODE_CRITIQUE_PROVIDER = "code_critique.provider";
 const CODE_CRITIQUE_MODEL = "code_critique.model";
 const CODE_CRITIQUE_EFFORT = "code_critique.reasoning_effort";
 const CODE_CRITIQUE_SERVICE_TIER = "code_critique.service_tier";
+const COUNCIL_SEATS = ["product", "demand", "audience", "skeptic", "growth", "ux", "chair"] as const;
 const SPECIALIST_PROVIDER = "specialist.provider";
 const SPECIALIST_MODEL = "specialist.model";
 const SPECIALIST_EFFORT = "specialist.reasoning_effort";
@@ -240,6 +241,7 @@ const PICKER_KEYS = new Set([
   PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_SERVICE_TIER,
   CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_SERVICE_TIER,
   SPECIALIST_PROVIDER, SPECIALIST_MODEL, SPECIALIST_EFFORT, SPECIALIST_SERVICE_TIER,
+  ...COUNCIL_SEATS.flatMap((seat) => [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`]),
 ]);
 const DEDICATED_KEYS = new Set([
   "night_review.enabled", "night_review.auto_merge", "night_review.max_fix_tasks",
@@ -1135,6 +1137,25 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     return true;
   };
 
+  const saveCouncilSeatSelection = async (seat:(typeof COUNCIL_SEATS)[number], selection:ExperimentalProviderModelPickerValue)=>{
+    if(!projectId||!data)return false;
+    const keys=[`council.${seat}.provider`,`council.${seat}.model`,`council.${seat}.reasoning_effort`];
+    const result=await rpc.call("save_council_seat_selection", { ...scoped,
+      projectId,seat,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,
+      expectedVersions:Object.fromEntries(keys.map((key)=>[key,data.versions[key]??0])),
+    });
+    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
+    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
+  const councilSeatPickerValue=(seat:(typeof COUNCIL_SEATS)[number]):ExperimentalProviderModelPickerValue=>({
+    providerId:String(data?.values[`council.${seat}.provider`]??""),
+    model:String(data?.values[`council.${seat}.model`]??""),
+    reasoningLevel:(String(data?.values[`council.${seat}.reasoning_effort`]??"high")||"high") as ExperimentalProviderModelPickerValue["reasoningLevel"],
+  });
+
   const saveSpecialistSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
     const result=await rpc.call("save_specialist_selection", { ...scoped,
@@ -1693,6 +1714,16 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 {(() => { const row = catalogRow("specialist.when"); return row ? <SettingField row={row} value={displayedValue("specialist.when")} disabled={false}
                   onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("specialist.when", next)} /> : null; })()}
               </Disclosure>
+            </CheckGroup>
+            <CheckGroup testId="council-settings" title={t("councilSettingsTitle")} help={t("councilSettingsHelp")} toggle={(() => { const row = catalogRow("council.judge"); return row ? <Switch checked={asBoolean(displayedValue("council.judge"), true)} aria-label={t("settingCouncilJudge")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
+              {COUNCIL_SEATS.map((seat) => (
+                <div key={seat} className="space-y-1">
+                  <div className="text-sm font-medium">{t(`settingCouncilSeat_${seat}` as I18nKey)}</div>
+                  <div className="max-w-xl">{modelPicker(councilSeatPickerValue(seat), (next) => { void saveCouncilSeatSelection(seat, next); })}</div>
+                </div>
+              ))}
+              {(() => { const row = catalogRow("council.max_rounds"); return row ? <SettingField row={row} value={displayedValue("council.max_rounds")} disabled={false}
+                onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("council.max_rounds", next)} /> : null; })()}
             </CheckGroup>
             <CheckGroup testId="night-review-settings" title={t(sectionKey("night-review"))} help={t("nightReviewEnabled")} toggle={
               <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}

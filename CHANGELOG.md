@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.29 — 2026-09-30
+
+- **Council seats in settings.** The «Совет директоров» group on the project settings panel has one provider/model/reasoning picker per seat (product, demand, audience, skeptic, growth, ux) and for the chair, drawn from the live BB catalog, so an OpenRouter model, a local one or any other configured provider can sit at the table. Empty seats keep taking distinct pairs from the stage selections. The group also holds «Jev судит совет» and the number of laps.
+- **The council page renders Markdown** (statements come with headings, code and lists) and shows session states in plain words.
+
 ## 0.1.28 — 2026-09-30
 
 - **The boardroom.** A council now runs as a room by default: after every seat's opening position, seats speak when they have something to add, not in turn. After each message every seat's impulse is judged (Jev through the host's `councilJudge`, or the built-in rule: an addressed seat must answer, the owner's words wake everyone, a seat silent for a full lap gets the floor, the last speaker waits), one seat gets the floor, and a moderator verdict ends the discussion when the room repeats itself. The owner joins at any time with `lane_pilot_council_say` (or the RPC behind the page), names a seat to make it answer next, and asks for the decision with `decide`. `mode: "rounds"` keeps the fixed-round debate.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
+import { Markdown, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t } from "../../i18n";
 import { Button } from "../../components/ui/button";
@@ -95,7 +95,7 @@ export function CouncilPage() {
           {!councils.length ? <p className="text-xs text-muted-foreground">{t("councilEmpty")}</p> : councils.map((row) => (
             <button key={row.id} type="button" onClick={() => setCouncilId(row.id)} className={`block w-full rounded px-2 py-1 text-left text-sm hover:bg-muted ${row.id === councilId ? "bg-muted" : ""}`}>
               <div className="line-clamp-2">{row.question}</div>
-              <div className="text-xs text-muted-foreground">{row.state} · {t("councilRound")} {row.round}/{row.maxRounds}</div>
+              <div className="text-xs text-muted-foreground">{t(`councilState_${row.state}` as never) || row.state} · {t("councilRound")} {row.round}</div>
             </button>
           ))}
         </aside>
@@ -110,12 +110,12 @@ export function CouncilPage() {
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3" data-testid="council-messages">
                 {detail.messages.map((message) => (
                   <div key={message.seq} className={`rounded p-2 ${message.seatId === "owner" ? "bg-primary/10" : message.seatId === "moderator" ? "text-muted-foreground" : "bg-muted/40"}`}>
-                    <div className="text-xs font-medium">{speakerName(detail, message.seatId)} · {t("councilRound")} {message.round} · {message.kind}</div>
-                    <div className="whitespace-pre-wrap text-sm">{message.text}</div>
+                    <div className="text-xs font-medium">{speakerName(detail, message.seatId)}{message.seatId === "owner" || message.round === 0 ? "" : ` · ${t("councilRound")} ${message.round}`}{message.kind === "status" ? ` · ${t("councilStatusKind")}` : ""}</div>
+                    <Markdown content={message.text} className="text-sm" />
                   </div>
                 ))}
                 {detail.speaking ? <div className="text-xs italic text-muted-foreground" data-testid="council-typing">{speakerName(detail, detail.speaking)} {t("councilTyping")}</div> : null}
-                {detail.recommendation ? <div className="rounded border p-2 text-sm"><span className="font-medium">{t("councilDecision")}: </span>{detail.recommendation}{detail.decisionPath ? ` (${detail.decisionPath})` : ""}</div> : null}
+                {detail.recommendation ? <div className="rounded border p-2 text-sm"><div className="font-medium">{t("councilDecision")}</div><Markdown content={detail.recommendation} className="text-sm" />{detail.decisionPath ? <div className="text-xs text-muted-foreground">{detail.decisionPath}</div> : null}</div> : null}
                 {detail.reason ? <div className="text-xs text-destructive">{detail.reason}</div> : null}
                 <div ref={feedEnd} />
               </div>

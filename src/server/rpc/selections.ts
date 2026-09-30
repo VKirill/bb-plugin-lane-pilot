@@ -253,6 +253,25 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
         {key:"code_critique.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["code_critique.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
+    save_council_seat_selection: async ({projectId,sectionId,seat,providerId,model:modelId,reasoningLevel,expectedVersions})=>{
+      const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
+      const keys={provider:`council.${seat}.provider`,model:`council.${seat}.model`,effort:`council.${seat}.reasoning_effort`};
+      const catalogHost=await services.selectionCatalogHost(projectId);
+      if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
+      let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
+      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      catch {return reject("catalog_unavailable",keys.provider,catalogHost.hostId);}
+      if(!providers.find((item)=>item.id===providerId&&item.available)) return reject("invalid_choice",keys.provider,`provider ${providerId} is unavailable on this host`);
+      const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
+      if(!selectedModel) return reject("invalid_choice",keys.model,`model ${modelId} is not in the live catalog for ${providerId}`);
+      const efforts=selectedModel.supportedReasoningEfforts.map((item)=>item.reasoningEffort);
+      if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting",keys.effort,`model supports: ${efforts.join(", ")}`);
+      return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
+        {key:keys.provider,value:providerId,expectedVersion:expectedVersions[keys.provider]??0},
+        {key:keys.model,value:modelId,expectedVersion:expectedVersions[keys.model]??0},
+        {key:keys.effort,value:reasoningLevel,expectedVersion:expectedVersions[keys.effort]??0},
+      ]},{nativeWriterSelection:true});
+    },
     save_specialist_selection: async ({projectId,sectionId,providerId,model:modelId,reasoningLevel,serviceTier,expectedVersions})=>{
       const reject=(code:"invalid_choice"|"incompatible_setting"|"catalog_unavailable",key:string,message:string)=>({ok:false,conflict:false,values:{},versions:{},validation:{code,key,params:[key,message]}});
       const catalogHost=await services.selectionCatalogHost(projectId);
@@ -276,5 +295,5 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
         {key:"specialist.service_tier",value:selectedTier==="fast"?"fast":"standard",expectedVersion:expectedVersions["specialist.service_tier"]},
       ]},{nativeWriterSelection:true});
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "save_writer_selection" | "save_memory_selection" | "save_night_review_selection" | "save_docs_selection" | "save_project_life_selection" | "save_pm_read_selection" | "save_onboarding_selection" | "save_plan_critique_selection" | "save_code_critique_selection" | "save_specialist_selection">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "save_council_seat_selection" | "save_writer_selection" | "save_memory_selection" | "save_night_review_selection" | "save_docs_selection" | "save_project_life_selection" | "save_pm_read_selection" | "save_onboarding_selection" | "save_plan_critique_selection" | "save_code_critique_selection" | "save_specialist_selection">;
 }

@@ -63,10 +63,24 @@ function selectionPairs(settings: Record<string, unknown>, fallback: { providerI
   return pairs;
 }
 
-export function seatsFor(roles: readonly string[] | undefined, pairs: Array<{ providerId: string; model: string }>): CouncilSeat[] {
-  return resolveRoles(roles).map((role, index) => {
-    const pair = pairs[index % Math.max(1, pairs.length)] ?? null;
-    return { id: role.role, role: role.role, title: role.title, instruction: role.instruction, aliases: role.aliases, providerId: pair?.providerId ?? null, model: pair?.model ?? null };
+/** A seat's own pair from settings (`council.<role>.provider/model`), or null when the seat is left to the stage selections. */
+export function configuredSeatPair(settings: Record<string, unknown>, role: string): { providerId: string; model: string; effort: string | null } | null {
+  const providerId = configuredSetting(settings, `council.${role}.provider`);
+  const model = configuredSetting(settings, `council.${role}.model`);
+  const effort = configuredSetting(settings, `council.${role}.reasoning_effort`);
+  if (typeof providerId !== "string" || typeof model !== "string" || !providerId || !model) return null;
+  return { providerId, model, effort: typeof effort === "string" && effort ? effort : null };
+}
+
+export function seatsFor(roles: readonly string[] | undefined, pairs: Array<{ providerId: string; model: string }>, settings: Record<string, unknown> = {}): CouncilSeat[] {
+  const resolved = resolveRoles(roles);
+  const own = resolved.map((role) => configuredSeatPair(settings, role.role));
+  const free = pairs.filter((pair) => !own.some((seat) => seat && seat.providerId === pair.providerId && seat.model === pair.model));
+  let next = 0;
+  return resolved.map((role, index) => {
+    const configured = own[index];
+    const pair = configured ?? (free.length ? free[next++ % free.length]! : pairs[index % Math.max(1, pairs.length)] ?? null);
+    return { id: role.role, role: role.role, title: role.title, instruction: role.instruction, aliases: role.aliases, providerId: pair?.providerId ?? null, model: pair?.model ?? null, ...(configured?.effort ? { effort: configured.effort } : {}) };
   });
 }
 
@@ -171,7 +185,7 @@ export function createCouncil(ctx: ServerCore) {
   async function spawnTurn(input: { session: CouncilSession; seat: CouncilSeat | null; round: number; prompt: string; pmThreadId: string; place: { hostId: string; workspace: string }; chair: { providerId: string; model: string } }): Promise<string> {
     const providerId = input.seat?.providerId ?? input.chair.providerId;
     const model = input.seat?.model ?? input.chair.model;
-    const effort = await effortFor(input.place.hostId, providerId, model);
+    const effort = (input.seat as { effort?: string } | null)?.effort ?? await effortFor(input.place.hostId, providerId, model);
     const helperPolicy = requireHelperSpawn({ bb, db, projectId: input.session.projectId, runId: input.session.runId });
     const placement = await helperChildPlacement({ bb, db, projectId: input.session.projectId, runId: input.session.runId, role: "council-seat", taskTitle: `${input.seat?.title ?? "Chair"}: ${input.session.question.slice(0, 60)}` });
     const spawned = await fullAccessSpawn(bb, {
@@ -256,11 +270,14 @@ export function createCouncil(ctx: ServerCore) {
     if (!config?.hostId || !config.writerWorkspacePath) throw new Error("the run has no writer host and workspace yet");
     const settings = (await ctx.effectiveProjectSettings(input.projectId)).values;
     const pairs = selectionPairs(settings, { providerId: config.writerProviderId, model: config.writerModel });
-    const seats = seatsFor(input.roles, pairs);
-    const chairPair = pairs.find((pair) => !seats.some((seat) => seat.providerId === pair.providerId && seat.model === pair.model)) ?? pairs[0]!;
-    const session = createCouncilSession(db, { id: `cncl_${randomUUID().replaceAll("-", "").slice(0, 16)}`, projectId: input.projectId, runId: input.runId, question: input.question, seats, maxRounds: input.maxRounds ?? 3 });
+    const seats = seatsFor(input.roles, pairs, settings);
+    const chairOwn = configuredSeatPair(settings, "chair");
+    const chairPair = chairOwn ?? pairs.find((pair) => !seats.some((seat) => seat.providerId === pair.providerId && seat.model === pair.model)) ?? pairs[0]!;
+    const judgeSetting = configuredSetting(settings, "council.judge");
+    const roundsSetting = configuredSetting(settings, "council.max_rounds");
+    const session = createCouncilSession(db, { id: `cncl_${randomUUID().replaceAll("-", "").slice(0, 16)}`, projectId: input.projectId, runId: input.runId, question: input.question, seats, maxRounds: input.maxRounds ?? (Number(roundsSetting) >= 1 && Number(roundsSetting) <= 6 ? Number(roundsSetting) : 3) });
     addCouncilMessage(db, { councilId: session.id, seatId: "owner", round: 0, kind: "owner", text: input.question });
-    runInBackground(session, { pmThreadId: input.pmThreadId, place: { hostId: config.hostId, workspace: config.writerWorkspacePath }, chair: chairPair, materials: input.materials ?? [], mode: input.mode ?? "room", judge: input.judge ?? true });
+    runInBackground(session, { pmThreadId: input.pmThreadId, place: { hostId: config.hostId, workspace: config.writerWorkspacePath }, chair: chairPair, materials: input.materials ?? [], mode: input.mode ?? "room", judge: input.judge ?? !(judgeSetting === false || judgeSetting === "false" || judgeSetting === "0") });
     return session;
   }
 

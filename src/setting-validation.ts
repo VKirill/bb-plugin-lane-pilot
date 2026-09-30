@@ -22,7 +22,8 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
   const minimum = key === "plan_critique.min_score" ? 0
     : key === "plan_critique.min_write_tasks" ? 1
     : key === "code_critique.max_rounds" ? 1
-    : key.startsWith("run.max_") ? 1 : null;
+    : key.startsWith("run.max_") ? 1
+    : key === "council.max_rounds" ? 1 : null;
   if (key === "code_critique.max_rounds" && value !== undefined && value !== null && value !== "") {
     const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
     if (typeof parsed !== "number" || !Number.isSafeInteger(parsed) || parsed < 1 || parsed > 3) {

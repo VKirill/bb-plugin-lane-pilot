@@ -944,6 +944,15 @@ export const rpcContract = defineRpcContract({
     }).strict(),
     output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
   },
+  save_council_seat_selection: {
+    input:z.object({
+      projectId:z.string().min(1),seat:z.enum(["product","demand","audience","skeptic","growth","ux","chair"]),providerId:z.string().min(1),model:z.string().min(1),
+      sectionId: z.string().min(1).optional(),
+      reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]),
+      expectedVersions:z.record(z.string(),z.number().int().min(0)),
+    }).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
+  },
   save_code_critique_selection: {
     input:z.object({
       projectId:z.string().min(1),providerId:z.string().min(1),model:z.string().min(1),

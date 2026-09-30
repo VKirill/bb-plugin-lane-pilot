@@ -67,13 +67,16 @@ describe("council tools", () => {
     savePrototypeConfig(db, { projectId, hostId: "host-1", pmWorkspacePath: workspace, writerWorkspacePath: workspace, pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
     saveProjectSetting(db, projectId, "plan_critique.provider", "codex");
     saveProjectSetting(db, projectId, "plan_critique.model", "m2");
+    saveProjectSetting(db, projectId, "council.skeptic.provider", "openrouter");
+    saveProjectSetting(db, projectId, "council.skeptic.model", "deepseek/deepseek-r2");
+    saveProjectSetting(db, projectId, "council.skeptic.reasoning_effort", "medium");
     createRun(db, runId, projectId);
     setRunThread(db, runId, pmThreadId);
     const call = async (name: string, params: Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
 
     const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки в кабинете?", roles: ["product", "skeptic"], materials: ["materials/direct.csv"], maxRounds: 3, mode: "rounds", judge: false });
     expect(started.state).toBe("agenda");
-    expect(started.seats.map((seat: { id: string; model: string }) => `${seat.id}:${seat.model}`)).toEqual(["product:m2", "skeptic:m"]);
+    expect(started.seats.map((seat: { id: string; model: string }) => `${seat.id}:${seat.model}`)).toEqual(["product:m2", "skeptic:deepseek/deepseek-r2"]);
 
     let view: Record<string, any> = started;
     for (let i = 0; i < 100 && !["done", "failed", "stopped"].includes(view.state); i++) {
