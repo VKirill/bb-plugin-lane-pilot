@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseReadFirstHints, renderReadFirstInstructions } from "../../src/stages/read-first";
+import { kindForReadFirstPath, parseReadFirstHints, readFirstKindError, renderReadFirstInstructions } from "../../src/stages/read-first";
 
 describe("task read_first execution hints", () => {
   it("preserves whole-file hints and parses 1-based inclusive windows", () => {
@@ -22,4 +22,14 @@ describe("task read_first execution hints", () => {
       expect(() => parseReadFirstHints([hint])).toThrow("project-relative");
     },
   );
+
+  it("rejects a read_first path that lists as a directory", () => {
+    expect(kindForReadFirstPath("src/ui", [
+      { path:"src/ui", kind:"directory" },
+      { path:"README.md", kind:"file" },
+    ])).toBe("directory");
+    expect(readFirstKindError("src/ui", "directory")).toBe("read_first is a directory, not a file: src/ui");
+    expect(readFirstKindError("missing.md", undefined)).toBe("read_first source is missing: missing.md");
+    expect(readFirstKindError("README.md", "file")).toBeUndefined();
+  });
 });

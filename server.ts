@@ -22,7 +22,7 @@ import { attemptProduced, classifyCliOutcome, parseDirtSnapshots, type DirtSnaps
 import { WORKSPACE_DIRT_COMMAND } from "./src/workspace-dirt";
 import { classifyWriterOutput, isOutputPath, type VerifyResult } from "./src/validate-output";
 import { findUnownedChanges, resolveRunOwnershipScope, validateOwnershipContract } from "./src/verification/ownership";
-import { parseReadFirstHints } from "./src/stages/read-first";
+import { parseReadFirstHints, readFirstKindError } from "./src/stages/read-first";
 import { buildExecutionPacket, renderExecutionPacket, renderPacketExcerpts } from "./src/stages/execution-packet";
 import { emergencyFallbackDecision, sameWriterSelection } from "./src/stages/emergency-writer";
 import { resolveStageWriterSelection } from "./src/stage-writer-selection";
@@ -3095,10 +3095,31 @@ export default async function plugin(bb: BbPluginApi) {
       refreshRun(runId);
       return { runId, taskId, state:"blocked", reason, stages:listStageReceipts(db, runId, taskId) };
     };
+    let readFirstHints: ReturnType<typeof parseReadFirstHints>;
     try {
-      parseReadFirstHints(valid.task.read_first);
+      readFirstHints = parseReadFirstHints(valid.task.read_first);
     } catch (cause) {
       return rejectPreflight(cause instanceof Error ? cause.message : String(cause));
+    }
+    if (readFirstHints.length) {
+      try {
+        const snapshot = await host.call("snapshotDryRun", {
+          requestedHostId:config.hostId,
+          paths:readFirstHints.map((hint) => resolve(workspacePath, hint.path)),
+        }, { hostId:config.hostId, timeoutMs:30_000 });
+        for (const hint of readFirstHints) {
+          const entry = snapshot.entries.find((row) => row.path === resolve(workspacePath, hint.path));
+          if (entry?.kind === "directory") {
+            const kindError = readFirstKindError(hint.path, "directory");
+            if (kindError) return rejectPreflight(kindError);
+          }
+          if (entry?.kind === "symlink" || entry?.kind === "other") {
+            return rejectPreflight(`read_first is not a regular file (${entry.kind}): ${hint.path}`);
+          }
+        }
+      } catch {
+        // Listing is best-effort; spawn still fail-closes if the source cannot be read.
+      }
     }
     const ownershipError = validateOwnershipContract(valid.task);
     if (ownershipError) return rejectPreflight(ownershipError);
@@ -3198,6 +3219,14 @@ export default async function plugin(bb: BbPluginApi) {
           latestByTask.set(attempt.task_id, attempt);
         }
       }
+      if (latestByTask.size === 0) {
+        const stages = listStageReceipts(db, args.runId);
+        const writerStage = stages.find((row) => row.stageId === "writer-agent");
+        if (writerStage?.state === "skipped" && writerStage.reason) {
+          const reason = stages.find((row) => row.stageId === "plan-critique")?.reason ?? writerStage.reason;
+          return { runId:args.runId, state:"blocked", receipt:null, stages, ...(reason ? { reason } : {}) };
+        }
+      }
       for (const attempt of latestByTask.values()) {
         if ((attempt.state !== "running" && attempt.state !== "cancel_requested") || !attempt.thread_id) continue;
         const thread = await getThreadBounded(attempt.thread_id);
@@ -3237,29 +3266,39 @@ export default async function plugin(bb: BbPluginApi) {
         ? (states.includes("accepted") ? "accepted" : states.includes("blocked") ? "blocked" : states.at(-1)!)
         : "running";
       if (state !== "running") {
-        if (state === "provider_error" && [...activeWriterTasks].some((key) => key.startsWith(`${args.runId}:`))) {
+        // A finished task records its stage receipts just before it leaves activeWriterTasks; wait for that.
+        if ([...activeWriterTasks].some((key) => key.startsWith(`${args.runId}:`))) {
           await new Promise((resolve) => setTimeout(resolve, 100));
           continue;
         }
+        // writer.lastResult is one project-wide slot that the last accepted task overwrites; read each task's own receipt.
         const settings = loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
-        const baseReceipt = valueAt(settings["writer.lastResult"], "lanePilotRunId") === args.runId ? settings["writer.lastResult"] : null;
-        const reasoning = [...latestByTask.values()].map((attempt) => getReasoningTrace(db, attempt.id)).filter(Boolean);
-        const receipt = baseReceipt && typeof baseReceipt === "object"
-          ? { ...baseReceipt as Record<string, unknown>, reasoning }
-          : baseReceipt;
+        const lastResult = settings["writer.lastResult"];
+        const taskReceipts = [...latestByTask.values()].flatMap((attempt) => {
+          const stage = listStageReceipts(db, args.runId, attempt.task_id).find((row) => row.stageId === "acceptance-receipt");
+          const base = stage?.state === "passed" && stage.result && typeof stage.result === "object" ? stage.result
+            : valueAt(lastResult, "lanePilotRunId") === args.runId && valueAt(lastResult, "lanePilotTaskId") === attempt.task_id ? lastResult : null;
+          if (!base || typeof base !== "object") return [];
+          const trace = getReasoningTrace(db, attempt.id);
+          return [{ ...base as Record<string, unknown>, reasoning:trace ? [trace] : [] }];
+        });
+        const receipt = taskReceipts.length > 1 ? { lanePilotRunId:args.runId, tasks:taskReceipts } : taskReceipts[0] ?? null;
         const reasons = [...latestByTask.values()].map((attempt) => attempt.reason).filter((reason): reason is string => Boolean(reason));
         return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), ...(reasons.length ? { reason:reasons.join("; ") } : {}) };
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
     const attempts = listOpenAttempts(db).filter((attempt) => attempt.run_id === args.runId);
+    const writerThreadId = attempts.at(-1)?.thread_id ?? null;
     return {
       runId:args.runId,
       attemptId:attempts.at(-1)?.id ?? null,
-      writerThreadId:attempts.at(-1)?.thread_id ?? null,
+      writerThreadId,
       state:"running",
       stages:listStageReceipts(db, args.runId),
-      message:"Писатель ещё работает. Вызови lane_pilot_wait_writer ещё раз с тем же runId.",
+      ...(writerThreadId
+        ? { message:"Писатель ещё работает. Вызови lane_pilot_wait_writer ещё раз с тем же runId." }
+        : { writerStarted:false, message:"Писатель ещё не создан. Старт не закончен или не прошёл. Вызови lane_pilot_wait_writer ещё раз с тем же runId." }),
     };
   }
 
@@ -5447,15 +5486,24 @@ export default async function plugin(bb: BbPluginApi) {
         }
       }
     }
-    return resolveWriterBinding({
+    const resolveWith = (selected: { hostId: string; path: string } | null) => resolveWriterBinding({
       projectId: args.projectId,
       sources,
       session,
       environment,
       explicit: config ? { hostId: config.hostId, path: config.writerWorkspacePath } : undefined,
-      selected: args.selected ?? null,
+      selected,
     });
+    const resolved = resolveWith(args.selected ?? null);
+    if (resolved.status !== "ambiguous" || args.selected) return resolved;
+    // The machine and folder the user picked on the settings page settle an ambiguous project.
+    const stored = await bb.storage.kv.get(writerBindingKey(args.projectId)) as { hostId?: unknown; path?: unknown } | null;
+    if (typeof stored?.hostId !== "string" || typeof stored.path !== "string") return resolved;
+    const chosen = resolveWith({ hostId: stored.hostId, path: stored.path });
+    return chosen.status === "resolved" ? chosen : resolved;
   }
+
+  const writerBindingKey = (projectId: string) => `writer-binding:${projectId}`;
 
   async function selectionCatalogHost(projectId: string, threadId?: string | null, selected?: { hostId: string; path: string } | null) {
     const binding = await resolveProjectWriterHost({ projectId, threadId, selected });
@@ -5655,7 +5703,7 @@ export default async function plugin(bb: BbPluginApi) {
       const edited = compiled && stock ? compiled.sourceHash !== stock.sourceHash : Boolean(compiled && !stock);
       if (!compiled && !stock) throw new Error(`Unknown Lane Pilot profile ${shortId}.`);
       const profileMode = edited ? "session-override" as const : "installed" as const;
-      const agentsJson = sessionOverrideAgentsJson({ agentId: shortId, edited, compiled });
+      const agentsJson = sessionOverrideAgentsJson({ agentId: shortId, edited: true, compiled: compiled ?? stock });
       const record = await prepareNativeSessionRecord({
         projectId,
         agentId: shortId,
@@ -5954,6 +6002,12 @@ export default async function plugin(bb: BbPluginApi) {
       const specialistKey=changes.find(({key})=>NATIVE_SPECIALIST_KEYS.has(key))?.key;
       if(specialistKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:specialistKey,params:[specialistKey,"use atomic specialist provider/model selection"]}};
       return casUpsertSettings(db,{projectId,bindingId,changes},{nativeWriterSelection:changes.every(({key})=>!NATIVE_WRITER_KEYS.has(key))});
+    },
+    save_writer_binding: async ({ projectId, hostId, path }) => {
+      const binding = await resolveProjectWriterHost({ projectId, selected: { hostId, path } });
+      if (binding.status !== "resolved") return { ok: false };
+      await bb.storage.kv.set(writerBindingKey(projectId), { hostId, path });
+      return { ok: true };
     },
     save_writer_selection: async ({ projectId, sectionId, threadId, selectedBinding, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
       const reject = (code:"invalid_choice"|"incompatible_setting"|"setup_required"|"writer_binding_ambiguous"|"writer_host_offline"|"catalog_unavailable", key:string, message:string) => ({
@@ -6421,8 +6475,8 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.agents.registerTool({
     name:"lane_pilot_browser_qa",
-    description:"Run configured live browser QA against an accepted task workspace and return its report and screenshot receipts.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. Supply concrete browser-ui cases and the exact target URL. Production, unknown, or stateful side-effect cases require authorized=true. A report without a complete all-passed summary is never reported as passed.",
+    description:"Run live browser QA on the project's Browser QA machine (Mac mini, visible Google Chrome) after an accepted writer, and return the report and screenshot receipts.",
+    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. Live visual QA runs on the configured Browser QA host — the Mac mini with a visible Google Chrome window; viewports (default 375,768,1280) are real CSS widths of that window. Do not click in the PM chat and do not spawn Agent browser-qa for this proof. Headless is not live visual QA. Supply concrete browser-ui cases and the exact target URL. Production, unknown, or stateful side-effect cases require authorized=true. A report without a complete all-passed summary is never reported as passed.",
     parameters:z.object({
       runId:z.string().min(1), taskId:z.string().min(1), url:z.string().url(),
       cases:z.array(z.string().min(1).max(2000)).min(1).max(30),

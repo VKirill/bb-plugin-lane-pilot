@@ -13,6 +13,23 @@ export function parseReadFirstHints(rawHints:string[]):ReadFirstHint[] {
   });
 }
 
+export function kindForReadFirstPath(
+  hintPath: string,
+  entries: Array<{ path: string; kind: "file" | "directory" }>,
+): "file" | "directory" | undefined {
+  const normalized = hintPath.replace(/^\.\//, "");
+  return entries.find((row) => row.path.replace(/^\.\//, "") === normalized)?.kind;
+}
+
+export function readFirstKindError(
+  path: string,
+  kind: "file" | "directory" | undefined,
+): string | undefined {
+  if (kind === "file") return undefined;
+  if (kind === "directory") return `read_first is a directory, not a file: ${path}`;
+  return `read_first source is missing: ${path}`;
+}
+
 export function renderReadFirstInstructions(rawHints:string[]):string {
   const hints = parseReadFirstHints(rawHints);
   return [
