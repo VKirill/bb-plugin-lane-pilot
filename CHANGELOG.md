@@ -2,6 +2,7 @@
 
 ## 0.1.33 — 2026-09-30
 
+- The chair's decision no longer fails on an over-long field: strings are clipped to the schema ceilings with an ellipsis. A live session had failed on a 300-character metric.
 - A council interrupted by a plugin reload is marked failed with the reason instead of staying «in session» forever; `bb lane-pilot council-seats <project>` shows the pair every seat would get and the pairs the stage selections offer.
 
 ## 0.1.32 — 2026-09-30

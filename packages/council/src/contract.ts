@@ -78,13 +78,29 @@ export const decisionRecordSchema = z.object({
 
 export type DecisionRecord = z.infer<typeof decisionRecordSchema>;
 
+/** Models overrun length limits; clip strings to the schema's ceilings instead of failing a whole session on one long field. */
+const CLIPS: Record<string, number> = { summary: 2000, title: 200, expectedImpact: 600, recommendation: 2000, seat: 120, point: 800, hypothesis: 500, metric: 300, objective: 1000, toAgent: 120 };
+const ARRAY_ITEM_CLIPS: Record<string, number> = { evidence: 500, acceptance: 400, agenda: 300, criteria: 200 };
+function clipStrings(value: unknown, key?: string): unknown {
+  if (typeof value === "string") {
+    const max = key ? CLIPS[key] : undefined;
+    return max && value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
+  }
+  if (Array.isArray(value)) {
+    const itemMax = key ? ARRAY_ITEM_CLIPS[key] : undefined;
+    return value.map((item) => typeof item === "string" && itemMax && item.length > itemMax ? `${item.slice(0, itemMax - 1).trimEnd()}…` : clipStrings(item));
+  }
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, inner]) => [name, clipStrings(inner, name)]));
+  return value;
+}
+
 function jsonFrom(raw: string): unknown {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const text = (fenced ? fenced[1] : raw).trim();
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end < start) throw new Error("no JSON object in the answer");
-  return JSON.parse(text.slice(start, end + 1));
+  return clipStrings(JSON.parse(text.slice(start, end + 1)));
 }
 
 export function parseAgenda(raw: string): Agenda {

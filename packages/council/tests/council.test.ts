@@ -121,5 +121,8 @@ describe("council protocol", () => {
     expect(failed).toBeNull();
     expect(getCouncilSession(db, "c3")).toMatchObject({ state: "failed", reason: expect.stringContaining("no JSON object") });
     expect(() => parseDecisionRecord("{\"summary\":\"x\"}")).toThrow();
+    const long = parseDecisionRecord(JSON.stringify({ summary: "s", options: [{ title: "t", expectedImpact: "i", effort: "low", confidence: "high" }], recommendation: "r", experiments: [{ hypothesis: "h", metric: "m".repeat(900) }] }));
+    expect(long.experiments[0]!.metric.length).toBe(300);
+    expect(long.experiments[0]!.metric.endsWith("…")).toBe(true);
   });
 });
