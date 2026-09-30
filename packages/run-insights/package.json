@@ -1,0 +1,19 @@
+{
+  "name": "@lane-pilot/run-insights",
+  "version": "0.1.0",
+  "description": "What runs teach: writer acceptance per model and risk, lessons from review findings and rejections, and golden checks for memory retrieval.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@lane-pilot/memory-core": "0.1.0"
+  },
+  "peerDependencies": {
+    "better-sqlite3": ">=12.0.0"
+  }
+}
