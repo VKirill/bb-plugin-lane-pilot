@@ -27,6 +27,12 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_workspace_status",
   "lane_pilot_gate_report",
   "lane_pilot_gate_triage",
+  "lane_pilot_handoff_create",
+  "lane_pilot_handoff_receipt",
+  "lane_pilot_handoff_list",
+  "lane_pilot_routing_stats",
+  "lane_pilot_lessons_sweep",
+  "lane_pilot_memory_golden",
 ] as const;
 
 export const NATIVE_LP_BRIDGE_PM_TOOLS = [
@@ -36,6 +42,12 @@ export const NATIVE_LP_BRIDGE_PM_TOOLS = [
   "lane_pilot_browser_qa",
   "lane_pilot_memory_context",
   "lane_pilot_workspace_status",
+  "lane_pilot_handoff_create",
+  "lane_pilot_handoff_receipt",
+  "lane_pilot_handoff_list",
+  "lane_pilot_routing_stats",
+  "lane_pilot_lessons_sweep",
+  "lane_pilot_memory_golden",
 ] as const;
 
 export function lpBridgeCatalogNames(tools: readonly string[] = NATIVE_LP_BRIDGE_TOOLS): string[] {

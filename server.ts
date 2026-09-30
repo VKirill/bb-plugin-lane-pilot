@@ -184,6 +184,10 @@ import { readGateReport } from "./src/stages/gate-report";
 import { gateTriagePrompt, parseGateTriageResult } from "./src/stages/gate-triage";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded, parseRunPolicy, RunWriterPool, shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "./src/stages/run-policy";
 
+import { configuredSetting, createServerContext } from "./src/server/context";
+import { mountHandoff } from "./src/server/handoff";
+import { mountInsights } from "./src/server/insights";
+
 export { rpcContract } from "./src/contracts";
 
 function id(prefix: string): string {
@@ -197,12 +201,6 @@ function valueAt(value: unknown, key: string): unknown {
 function stringAt(value: unknown, key: string): string | null {
   const found = valueAt(value, key);
   return typeof found === "string" && found.length > 0 ? found : null;
-}
-
-function configuredSetting(settings: Record<string, unknown>, setting: string): unknown {
-  if (Object.hasOwn(settings, setting)) return settings[setting];
-  const row = VISIBLE_CATALOG.find((item) => item.setting === setting);
-  return row ? settings[row.storageKey] : undefined;
 }
 
 class WriterSelectionError extends Error {}
@@ -6544,6 +6542,11 @@ export default async function plugin(bb: BbPluginApi) {
     parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),days:z.number().int().min(1).max(365).default(7),providerId:z.string().min(1).optional(),model:z.string().min(1).optional(),reasoningEffort:z.enum(["low","medium","high","xhigh","max"]).optional()}).strict(),
     execute:async(params,context)=>JSON.stringify(await runGateTriage({threadId:context.threadId,projectId:context.projectId,...params}),null,2),
   });
+
+  // Modules register their tools after the core ones so the PM tool order follows NATIVE_LP_BRIDGE_TOOLS.
+  const serverContext = createServerContext(bb, db);
+  mountHandoff(serverContext);
+  mountInsights(serverContext);
 
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;

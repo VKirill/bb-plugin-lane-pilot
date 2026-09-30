@@ -97,6 +97,12 @@ Matrix applicability: 366 rows — the 355 original upstream tuples plus 11 nati
 
 Does not call Agency RPC. Uses public Plugin SDK only.
 
+## Packages and server modules
+
+Reusable code lives in `packages/` as an npm workspace (`@lane-pilot/thread-observe`, `memory-core`, `handoff`, `resilience`, `run-insights`), server modules under `src/server/`. The map, the dependency rule and the phases of the split are in [docs/architecture.md](docs/architecture.md).
+
+PM tools added by those modules: `lane_pilot_handoff_create` / `lane_pilot_handoff_receipt` / `lane_pilot_handoff_list` (typed task cards between agents), `lane_pilot_routing_stats` (first-try acceptance per provider, model and risk), `lane_pilot_lessons_sweep` (recent findings and rejections into subagent memory), `lane_pilot_memory_golden` (retrieval score against a golden set).
+
 ## Commands
 
 ```sh

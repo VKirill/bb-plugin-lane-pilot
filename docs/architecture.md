@@ -20,14 +20,17 @@ bb-plugin-lane-pilot/
 ├── host.ts                   host worker entry (unchanged)
 ├── app.tsx                   UI entry (unchanged)
 ├── packages/                 reusable, plugin-agnostic; depend on SDK types + zod only
-│   ├── resilience/           stream retry, provider circuit breaker, run budgets
 │   ├── thread-observe/       bounded thread event listing, idle wait, child observation
-│   ├── memory-core/          memory records, guards, budgets, retrieval, lessons, golden evals
+│   ├── memory-core/          memory records, guards, budgets, retrieval over SQLite
 │   ├── handoff/              task cards between agents, receipts, capability registry, leases
-│   └── stage-kit/            stage receipt contract, child snapshot parsing, stage harness
+│   ├── resilience/           provider circuit breaker, run budgets (stream retry joins after merge)
+│   ├── run-insights/         writer statistics per model and risk, lessons from receipts, golden checks
+│   └── stage-kit/            stage receipt contract, child snapshot parsing, stage harness (planned)
 └── src/
-    ├── server/               plugin modules mounted on one context (phase 3)
-    │   ├── context.ts        db, bb, settings access, logging, disposed flag
+    ├── server/               plugin modules mounted on one context
+    │   ├── context.ts        db, bb, logging, disposed flag, PM-run guard, catalog setting lookup
+    │   ├── handoff.ts        handoff tools and expiry schedule (mounted)
+    │   ├── insights.ts       routing statistics, lessons sweep, golden checks (mounted)
     │   ├── activation.ts     PM activation and finish
     │   ├── writer-run.ts     dispatch, spawn, validate, accept, finish an attempt
     │   ├── reconcile.ts      orphan and holder-thread recovery
@@ -73,8 +76,8 @@ app.tsx / host.ts / server.ts
 | Phase | What | Verification | Status |
 |---|---|---|---|
 | 0 | This map; baseline of tests, typecheck, build on `main` | `npm run check` numbers recorded below | done |
-| 1 | `packages/` workspace; move stream retry, thread observation, memory logic out of `server.ts` and `src/stages/memory.ts` without behaviour change | same test count green, `bb plugin build` bundles | in progress |
-| 2 | New capabilities as packages with thin server wiring: handoff, lessons, routing statistics, provider breaker and run budgets | package tests plus one server stage test each | planned |
+| 1 | `packages/` workspace; thread observation and memory logic moved out of `server.ts` and `src/stages/memory.ts` without behaviour change | failing set identical to baseline, 710 passed, build passes | done (649b439) |
+| 2 | New capabilities as packages with thin server wiring: handoff, lessons, routing statistics, golden checks; provider breaker and run budgets as a package | 35 package and server tests; breaker and budget wiring waits for phase 3 because it sits in `spawnWriterAttempt` | done except wiring of resilience |
 | 3 | Split `server.ts` into `src/server/*` on the context object | `server.ts` under 300 lines, all tests green | after the parallel-lanes work on `main` is committed |
 | 4 | Council stage on the handoff and thread-observe packages | staged test with three seats | planned |
 

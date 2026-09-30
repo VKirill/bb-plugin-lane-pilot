@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — architecture foundation (branch `arch/foundation`)
+
+- **Packages.** An npm workspace under `packages/` holds code reusable beyond this plugin: `@lane-pilot/thread-observe` (when a child thread is done or failed), `@lane-pilot/memory-core` (guarded project memory over SQLite), `@lane-pilot/handoff` (typed task cards between agents with states, leases and receipts), `@lane-pilot/resilience` (provider circuit breaker, run budgets), `@lane-pilot/run-insights` (writer acceptance per model and risk, lessons from receipts, golden retrieval checks). The map and the rules are in [docs/architecture.md](docs/architecture.md).
+- **Handoffs.** PM tools `lane_pilot_handoff_create`, `lane_pilot_handoff_receipt`, `lane_pilot_handoff_list`: a task given to another agent is a card with objective, acceptance, inputs, budget and deadline; it is delivered into a named BB thread or carried to the caller's own subagent, and its receipt closes it. Overdue cards expire every five minutes.
+- **Learning loop.** `lane_pilot_lessons_sweep` and a quarter-hourly schedule turn night review findings, rejected acceptances and failed attempts into `subagent` memory notes that the next writer in the same area reads; `lane_pilot_memory_golden` scores retrieval against a golden set; `lane_pilot_routing_stats` shows which provider and model gets tasks accepted at the first try per risk and hints against the configured writer.
+- Server modules live under `src/server/` on one context object; `server.ts` no longer defines thread waiting, memory storage or the catalog setting lookup itself.
 ## 0.1.25 — 2026-09-30
 
 - **Parallel lanes never share a checkout.** «В папке проекта» (`adoc.040=in_place`) now runs writers one at a time in that folder, whatever the pool size says; `auto` and `worktree` give every attempt its own git worktree, so 5 or 10 lanes work at once without seeing each other's half-done edits.
