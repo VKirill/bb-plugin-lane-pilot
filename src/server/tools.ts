@@ -6,6 +6,7 @@ import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../native-session-hooks";
 import { readGateReport } from "../stages/gate-report";
 import { mountHandoff } from "./handoff";
 import { mountInsights } from "./insights";
+import { mountHealth } from "./health";
 import { z } from "zod";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
@@ -185,6 +186,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   // Modules register their tools after the core ones so the PM tool order follows NATIVE_LP_BRIDGE_TOOLS.
   mountHandoff(ctx);
   mountInsights(ctx);
+  mountHealth(ctx, services);
 
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;

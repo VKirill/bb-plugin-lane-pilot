@@ -1,10 +1,11 @@
 import { prototypeConfigSchema, taskV2Schema } from "../contracts";
-import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectState, listRunsWithAttempts, loadPrototypeConfig, savePrototypeConfig, transitionAttempt } from "../database";
+import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt } from "../database";
 import { cancelRejection, finishRunSafely } from "./run-finish";
 import { stringAt, valueAt } from "./values";
 import { outputText } from "./writer-task";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "./core";
+import { RUN_BUDGET_SETTINGS, runHealth } from "./health";
 import type { Services } from "./services";
 
 export function registerCli(ctx: ServerCore, services: Services) {
@@ -43,6 +44,8 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"configure", summary:"Save prototype project settings", usage:"bb lane-pilot configure '<json>'" },
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
+      { name:"budget", summary:"Set or show the run budget of a project (attempts, wall minutes, tokens, child threads; empty value clears)", usage:"bb lane-pilot budget <project-id> [run.max_attempts=N] [run.max_wall_minutes=N] [run.max_tokens=N] [run.max_children=N]" },
+      { name:"health", summary:"Provider breaker state and the budgets of open runs", usage:"bb lane-pilot health [run-id]" },
       { name:"docs-nightly", summary:"Run the nightly docs pass now for docs-enabled folders of a project", usage:"bb lane-pilot docs-nightly <project-id> [folder-path] [since-commit]" },
       { name:"finish", summary:"Close a PM run after observing it idle and release activation", usage:"bb lane-pilot finish <project-id> [run-id]" },
       { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id> [run-id]" },
@@ -75,6 +78,21 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "activate" && args.length >= 2) {
           return { exitCode:0, stdout:JSON.stringify(await services.activate(args[0]!, args[1]!, args[2] === "cli" ? "cli" : "bb")) };
+        }
+        if (command === "budget" && args.length >= 1) {
+          const projectId = args[0]!;
+          for (const pair of args.slice(1)) {
+            const [key, value = ""] = pair.split("=", 2) as [string, string?];
+            if (!(RUN_BUDGET_SETTINGS as readonly string[]).includes(key)) throw new Error(`unknown budget setting ${key}; use ${RUN_BUDGET_SETTINGS.join(", ")}`);
+            if (value !== "" && !/^\d+$/.test(value)) throw new Error(`${key} must be a positive integer or empty`);
+            saveProjectSetting(db, projectId, key, value);
+          }
+          const settings = loadProjectSettings(db, projectId);
+          return { exitCode:0, stdout:JSON.stringify({ projectId, budget:Object.fromEntries(RUN_BUDGET_SETTINGS.map((key) => [key, settings[key] ?? ""])) }, null, 2) };
+        }
+        if (command === "health" && args.length <= 1) {
+          const runIds = args[0] ? [args[0]] : [...services.runBudgets.keys()];
+          return { exitCode:0, stdout:JSON.stringify({ providers:services.providerBreaker.snapshot(), runs:runIds.map((runId) => runHealth(services, runId)) }, null, 2) };
         }
         if (command === "state" && args.length === 1) {
           return { exitCode:0, stdout:JSON.stringify(inspectState(db, args[0]!), null, 2) };

@@ -1,3 +1,4 @@
+import { breakerKey } from "@lane-pilot/resilience";
 import { parseDirtSnapshots } from "../../cli-outcome";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
@@ -58,6 +59,14 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         ? settings["writer.model"] as string : input.config.writerModel);
       selectedProviderId=writerProviderId;
       selectedModel=writerModel;
+      if (!input.emergency) {
+        const gate = services.providerBreaker.decide(breakerKey(writerProviderId, writerModel));
+        if (!gate.allow) {
+          const reason = `writer_provider_unavailable:breaker_open:${gate.reason}`;
+          transitionAttempt(db, input.attemptId, "spawn_rejected", { reason });
+          return { ok:false, status:"spawn_rejected", reason, attemptId:input.attemptId };
+        }
+      }
       const requestedServiceTier = input.emergency ? "default" as const : bbServiceTier(writerServiceTier(settings));
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
       let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;

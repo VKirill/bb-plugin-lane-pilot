@@ -117,6 +117,7 @@ it("gives specialists no bb-bridge tools and keeps the PM core plus browser QA",
     "mcp__bb-bridge__lane_pilot_routing_stats",
     "mcp__bb-bridge__lane_pilot_lessons_sweep",
     "mcp__bb-bridge__lane_pilot_memory_golden",
+    "mcp__bb-bridge__lane_pilot_run_health",
   ]);
   const overlay = stockAgentsOverlayFromInstalled({
     agentId: "dev-orchestrator",

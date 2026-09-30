@@ -1,3 +1,4 @@
+import { breakerKey, classifyFailure, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { countAttempts, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
@@ -14,6 +15,20 @@ import type { Services } from "../services";
 
 export function createWriterStart(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host, markCanceledWriterStages, refreshRun, runPolicyFor } = ctx;
+
+  /** The breaker learns from provider trouble only; the budget learns the thread's token total. */
+  async function noteAttemptOutcome(input:{ budget:RunBudget; writerThreadId:string; writerSelection?:{providerId:string;model:string}; status:string; reason:string|null }): Promise<void> {
+    if (input.writerSelection) {
+      const key = breakerKey(input.writerSelection.providerId, input.writerSelection.model);
+      const outcome = input.status === "accepted" || input.status === "validation_failed" || input.status === "empty_output"
+        ? "ok"
+        : classifyFailure(`${input.status}:${input.reason ?? ""}`);
+      services.providerBreaker.record(key, outcome === "product" ? "ok" : outcome);
+    }
+    const listed = await bb.sdk.threads.events.list({ threadId:input.writerThreadId, types:["thread/tokenUsage/updated"], order:"desc", limit:"1" }).catch(() => null);
+    const usage = Array.isArray(listed) ? tokenUsageFromEvent(listed[0]) : null;
+    if (usage) input.budget.noteTokens(usage.threadId, usage.totalTokens);
+  }
 
   function startWriterTask(input:{
     projectId:string; runId:string; taskId:string; firstAttemptId:string; pmThreadId:string;
@@ -44,7 +59,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const policy=runPolicyFor(input.runId);
       // "In the project folder" shares one checkout: writers there go one at a time, whatever the pool says,
       // because a parallel writer's half-done edits would land in this writer's diff and checks.
-      const inPlace=parseWorkspaceMode((await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values["adoc.040"])==="in_place";
+      const runSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
+      const inPlace=parseWorkspaceMode(runSettings["adoc.040"])==="in_place";
+      const budget=services.runBudgetFor(input.runId,runSettings);
       releaseWriterSlot=await services.runWriterPool.acquire(input.runId,inPlace?1:policy.pools.provider);
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){
@@ -58,6 +75,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         input:input.plan, attempt:countAttempts(db, input.runId, input.taskId) });
       while (countAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT) {
         if (!writerThreadId) {
+          budget.noteAttempt();
+          const budgetCheck=budget.check();
+          if (!budgetCheck.ok) {
+            const reason=`run_budget_exceeded:${budgetCheck.reason}`;
+            transitionAttempt(db, attemptId, "blocked", { reason });
+            last = { status:"blocked", reason, attemptId };
+            break;
+          }
           const spawned = await services.spawnWriterAttempt({
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
             config:input.config, task:input.task, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext,
@@ -87,6 +112,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           const workspaceBinding=getAttempt(db,attemptId);
           if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
             environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision}};
+          await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
         }
         if (last.status === "accepted") break;
         // A failed attempt's own worktree is never merged; the next attempt starts from a fresh one.

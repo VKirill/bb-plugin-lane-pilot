@@ -46,6 +46,9 @@ export interface Services {
   WORKSPACE_DOCS_MIN_FILES: DocsNightlyApi["WORKSPACE_DOCS_MIN_FILES"];
   activate: ActivationApi["activate"];
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  providerBreaker: WriterStateApi["providerBreaker"];
+  runBudgets: WriterStateApi["runBudgets"];
+  runBudgetFor: WriterStateApi["runBudgetFor"];
   applyOnboardingPreview: OnboardingStageApi["applyOnboardingPreview"];
   assertComposerEnvironment: ActivationApi["assertComposerEnvironment"];
   dispatchCli: WriterDispatchApi["dispatchCli"];
