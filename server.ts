@@ -32,7 +32,7 @@ import {
   spawnEnvironmentFromSelection,
   type ComposerSelectionSnapshot,
 } from "./src/composer-selection";
-import { decideThreadCompletion, THREAD_WATCH_EVENT_TYPES, threadFailure } from "./src/thread-completion";
+import { decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, observeStageChild, THREAD_WATCH_EVENT_TYPES, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { attachStreamRetry, droppedStreamDetail } from "./src/stream-retry";
 import { acceptanceArtifactDir, buildAcceptanceV2, bbWriterReportMarkdown, validateAcceptanceV2 } from "./src/acceptance-v2";
 import {
@@ -197,90 +197,6 @@ function valueAt(value: unknown, key: string): unknown {
 function stringAt(value: unknown, key: string): string | null {
   const found = valueAt(value, key);
   return typeof found === "string" && found.length > 0 ? found : null;
-}
-
-function sanitizeEventsListError(cause: unknown): string {
-  const text = cause instanceof Error ? cause.message : String(cause);
-  return text.replace(/\s+/g, " ").slice(0, 240);
-}
-
-function eventsListQueryLabel(query: Record<string, unknown>): string {
-  const types = Array.isArray(query.types) ? query.types.join(",") : "";
-  return `threadId=${String(query.threadId ?? "")};types=${types || "all"};order=${String(query.order ?? "")};limit=${String(query.limit ?? "")}`;
-}
-
-async function listThreadEventsRaw(
-  bb: BbPluginApi,
-  query: { threadId:string; types?: typeof THREAD_WATCH_EVENT_TYPES; order:"desc"; limit:"50" },
-): Promise<{ ok:true; events:unknown[] } | { ok:false; kind:"error"|"invalid"; detail:string }> {
-  try {
-    const listed = await bb.sdk.threads.events.list(query);
-    if (!Array.isArray(listed)) {
-      return { ok:false, kind:"invalid", detail:`events_list_invalid:${eventsListQueryLabel(query)};result=${listed === null ? "null" : typeof listed}` };
-    }
-    return { ok:true, events:listed };
-  } catch (cause) {
-    return { ok:false, kind:"error", detail:`events_list_error:${eventsListQueryLabel(query)};error=${sanitizeEventsListError(cause)}` };
-  }
-}
-
-/**
- * Waits for a child thread's turn with no overall deadline: BB's events say when it failed (see
- * threadFailure), so a slow but working model is never cut off. `probeMs` bounds a diagnostic probe only.
- */
-async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number, requestedAfter?: number): Promise<void> {
-  let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
-  const deadline = probeMs === undefined ? Infinity : Date.now() + probeMs;
-  while (Date.now() < deadline) {
-    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
-    const listed = await listThreadEventsRaw(bb, {
-      threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
-    });
-    if (!listed.ok) throw new Error(`${timeoutMessage}:${listed.detail}`);
-    const decision = decideThreadCompletion({
-      threadId,
-      status:stringAt(thread, "status"),
-      queuedWork:stringAt(thread, "queuedWork"),
-      events:listed.events,
-      requestedAfter,
-    });
-    if (decision.ok) return;
-    if (decision.via === "error" || decision.via === "canceled") {
-      throw new Error(`${timeoutMessage}:${decision.via}:${decision.detail}`);
-    }
-    lastDetail = decision.detail;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  throw new Error(`${timeoutMessage}:incomplete:${lastDetail}`);
-}
-
-async function observeStageChild(
-  bb: BbPluginApi,
-  threadId: string,
-  timeoutMs: number,
-): Promise<{ kind:"completed" } | { kind:"product_failure"; via:string; detail:string } | { kind:"observing"; detail:string }> {
-  let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
-  const deadline = Date.now() + Math.max(1, timeoutMs);
-  while (Date.now() < deadline) {
-    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
-    const listed = await listThreadEventsRaw(bb, {
-      threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
-    });
-    if (!listed.ok) return { kind:"observing", detail:listed.detail };
-    const decision = decideThreadCompletion({
-      threadId,
-      status:stringAt(thread, "status"),
-      queuedWork:stringAt(thread, "queuedWork"),
-      events:listed.events,
-    });
-    if (decision.ok) return { kind:"completed" };
-    if (decision.via === "error" || decision.via === "canceled") {
-      return { kind:"product_failure", via:decision.via, detail:decision.detail };
-    }
-    lastDetail = decision.detail;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  return { kind:"observing", detail:lastDetail };
 }
 
 function configuredSetting(settings: Record<string, unknown>, setting: string): unknown {

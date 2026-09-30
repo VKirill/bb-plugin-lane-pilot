@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   test: {
-    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx", "packages/*/tests/**/*.test.ts"],
     setupFiles: ["./tests/setup-jsdom.ts"],
   },
   resolve: {
