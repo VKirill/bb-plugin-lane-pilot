@@ -13,8 +13,14 @@ import {
   listCouncilSessions,
   resolveRoles,
   runCouncil,
+  runRoom,
+  IMPULSE_SCORES,
+  type Impulse,
+  type ImpulseJudge,
+  type Moderator,
   setCouncilAgenda,
   setCouncilState,
+  type CouncilMessage,
   type CouncilSeat,
   type CouncilSession,
 } from "@lane-pilot/council";
@@ -60,13 +66,66 @@ function selectionPairs(settings: Record<string, unknown>, fallback: { providerI
 export function seatsFor(roles: readonly string[] | undefined, pairs: Array<{ providerId: string; model: string }>): CouncilSeat[] {
   return resolveRoles(roles).map((role, index) => {
     const pair = pairs[index % Math.max(1, pairs.length)] ?? null;
-    return { id: role.role, role: role.role, title: role.title, instruction: role.instruction, providerId: pair?.providerId ?? null, model: pair?.model ?? null };
+    return { id: role.role, role: role.role, title: role.title, instruction: role.instruction, aliases: role.aliases, providerId: pair?.providerId ?? null, model: pair?.model ?? null };
   });
 }
 
 export function createCouncil(ctx: ServerCore) {
   const { bb, db, host, workspaceExecutionEnvironment } = ctx;
   const stopRequested = new Set<string>();
+  const decideRequested = new Set<string>();
+  /** Who has the floor right now, per session; not persisted, a reload starts quiet. */
+  const presence = new Map<string, { seatId: string | null; since: number }>();
+  const OWNER_WAIT_MS = 10 * 60_000;
+
+  /** One System One call through the run's host; null when the judge is off or fails, so the rule answers. */
+  async function judge(hostId: string, state: unknown, questions: Record<string, { instructions: string; criteria: Record<string, string> }>): Promise<Record<string, string> | null> {
+    try {
+      const result = await host.call("councilJudge", { requestedHostId: hostId, state: JSON.stringify(state).slice(0, 60_000), questions }, { hostId, timeoutMs: 8_000 });
+      return result.status === "ok" ? result.answers : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function jevModerator(hostId: string, session: CouncilSession): Moderator {
+    return async (state) => {
+      const answers = await judge(hostId, { question: session.question, agenda: session.agenda, ...state }, {
+        verdict: { instructions: "Should the council keep discussing or is it time for the chair to decide?", criteria: { continue: "the last messages still add new arguments, evidence or unresolved disagreement", synthesize: "the room repeats itself, agrees, or the remaining questions need data nobody has" } },
+      });
+      const verdict = answers?.verdict;
+      return verdict === "continue" || verdict === "synthesize" ? verdict : null;
+    };
+  }
+
+  function jevImpulse(hostId: string): ImpulseJudge {
+    return async ({ session, seat, last, ownStatements }) => {
+      if (last.seatId === seat.id) return { seatId: seat.id, score: 0, reason: "none" };
+      const answers = await judge(hostId, {
+        question: session.question, seat: { title: seat.title, role: seat.role, instruction: seat.instruction },
+        lastMessage: { from: last.seatId, kind: last.kind, text: last.text.slice(0, 4000) },
+        ownLastStatement: ownStatements.at(-1)?.text.slice(0, 2000) ?? null,
+      }, {
+        wants: { instructions: "Does this seat have something worth saying right now in reply to the last message?", criteria: {
+          addressed: "the last message asks this seat a question or names its role", disagreement: "this seat would object to a claim in the last message", evidence: "this seat can add a fact or example the room lacks",
+          turn: "this seat has been silent while the topic moved into its area", none: "this seat would only repeat itself or agree" } },
+      });
+      const reason = answers?.wants as Impulse["reason"] | undefined;
+      if (!reason || !(reason in IMPULSE_SCORES)) return null;
+      return { seatId: seat.id, score: IMPULSE_SCORES[reason], reason };
+    };
+  }
+
+  async function waitForOwner(councilId: string, afterSeq: number): Promise<CouncilMessage | null> {
+    const deadline = Date.now() + OWNER_WAIT_MS;
+    while (Date.now() < deadline) {
+      if (ctx.isDisposed() || stopRequested.has(councilId) || decideRequested.has(councilId)) return null;
+      const fresh = listCouncilMessages(db, councilId, afterSeq).filter((message) => message.kind === "owner");
+      if (fresh.length) return fresh[0]!;
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+    return null;
+  }
 
   async function readBounded(place: { hostId: string; workspace: string }, path: string, max: number): Promise<string | null> {
     const read = await bb.sdk.files.read({ hostId: place.hostId, rootPath: place.workspace, path: `${place.workspace}/${path}` }).catch(() => null);
@@ -140,20 +199,34 @@ export function createCouncil(ctx: ServerCore) {
   }
 
   /** The whole session in the background; the PM polls with lane_pilot_council_status. */
-  function runInBackground(session: CouncilSession, input: { pmThreadId: string; place: { hostId: string; workspace: string }; chair: { providerId: string; model: string }; materials: string[] }): void {
+  function runInBackground(session: CouncilSession, input: { pmThreadId: string; place: { hostId: string; workspace: string }; chair: { providerId: string; model: string }; materials: string[]; mode: "room" | "rounds"; judge: boolean }): void {
     void (async () => {
-      const decision = await runCouncil(session, {
-        spawnTurn: (turn) => spawnTurn({ ...turn, pmThreadId: input.pmThreadId, place: input.place, chair: input.chair }),
+      const io = {
+        spawnTurn: (turn: { session: CouncilSession; seat: CouncilSeat | null; round: number; prompt: string }) => spawnTurn({ ...turn, pmThreadId: input.pmThreadId, place: input.place, chair: input.chair }),
         evidence: () => evidencePack(session.projectId, input.place, session.question, input.materials),
         save: {
-          agenda: (agenda, criteria) => setCouncilAgenda(db, session.id, agenda, criteria),
-          message: (message) => addCouncilMessage(db, { councilId: session.id, ...message }),
-          state: (patch) => setCouncilState(db, session.id, patch),
+          agenda: (agenda: string[], criteria: string[]) => setCouncilAgenda(db, session.id, agenda, criteria),
+          message: (message: Omit<CouncilMessage, "seq" | "councilId" | "at">) => addCouncilMessage(db, { councilId: session.id, ...message }),
+          state: (patch: Parameters<typeof setCouncilState>[2]) => setCouncilState(db, session.id, patch),
         },
         isStopped: () => ctx.isDisposed() || stopRequested.has(session.id),
-        log: (message) => ctx.log(`Lane Pilot ${message}`),
-      });
+        moderator: input.judge ? jevModerator(input.place.hostId, session) : undefined,
+        log: (message: string) => ctx.log(`Lane Pilot ${message}`),
+      };
+      const decision = input.mode === "rounds"
+        ? await runCouncil(session, io)
+        : await runRoom(session, {
+          ...io,
+          impulse: input.judge ? jevImpulse(input.place.hostId) : undefined,
+          pollOwner: (afterSeq) => listCouncilMessages(db, session.id, afterSeq).filter((message) => message.kind === "owner"),
+          waitForOwner: (afterSeq) => waitForOwner(session.id, afterSeq),
+          decideRequested: () => decideRequested.has(session.id),
+          presence: (seatId) => presence.set(session.id, { seatId, since: Date.now() }),
+          maxTurns: session.maxRounds * session.seats.length,
+        });
       stopRequested.delete(session.id);
+      decideRequested.delete(session.id);
+      presence.delete(session.id);
       if (!decision) return;
       const final = getCouncilSession(db, session.id)!;
       const feed = listCouncilMessages(db, session.id);
@@ -177,7 +250,7 @@ export function createCouncil(ctx: ServerCore) {
     })().catch((cause: unknown) => ctx.log(`Lane Pilot council ${session.id} crashed: ${cause instanceof Error ? cause.message : String(cause)}`));
   }
 
-  async function startCouncil(input: { projectId: string; runId: string; pmThreadId: string; question: string; roles?: string[]; materials?: string[]; maxRounds?: number }): Promise<CouncilSession> {
+  async function startCouncil(input: { projectId: string; runId: string; pmThreadId: string; question: string; roles?: string[]; materials?: string[]; maxRounds?: number; mode?: "room" | "rounds"; judge?: boolean }): Promise<CouncilSession> {
     const run = getRun(db, input.runId);
     const config = await ctx.configForRun(input.projectId, run);
     if (!config?.hostId || !config.writerWorkspacePath) throw new Error("the run has no writer host and workspace yet");
@@ -187,12 +260,27 @@ export function createCouncil(ctx: ServerCore) {
     const chairPair = pairs.find((pair) => !seats.some((seat) => seat.providerId === pair.providerId && seat.model === pair.model)) ?? pairs[0]!;
     const session = createCouncilSession(db, { id: `cncl_${randomUUID().replaceAll("-", "").slice(0, 16)}`, projectId: input.projectId, runId: input.runId, question: input.question, seats, maxRounds: input.maxRounds ?? 3 });
     addCouncilMessage(db, { councilId: session.id, seatId: "owner", round: 0, kind: "owner", text: input.question });
-    runInBackground(session, { pmThreadId: input.pmThreadId, place: { hostId: config.hostId, workspace: config.writerWorkspacePath }, chair: chairPair, materials: input.materials ?? [] });
+    runInBackground(session, { pmThreadId: input.pmThreadId, place: { hostId: config.hostId, workspace: config.writerWorkspacePath }, chair: chairPair, materials: input.materials ?? [], mode: input.mode ?? "room", judge: input.judge ?? true });
     return session;
   }
 
   function councilView(session: CouncilSession, afterSeq = 0) {
-    return { ...session, messages: listCouncilMessages(db, session.id, afterSeq) };
+    const now = presence.get(session.id) ?? null;
+    return { ...session, speaking: now?.seatId ?? null, speakingSince: now?.seatId ? now.since : null, messages: listCouncilMessages(db, session.id, afterSeq) };
+  }
+
+  /** The owner's words go into the feed; the room picks them up before its next turn. */
+  function say(id: string, text: string): CouncilMessage | null {
+    const session = getCouncilSession(db, id);
+    if (!session || ["done", "failed", "stopped"].includes(session.state)) return null;
+    return addCouncilMessage(db, { councilId: id, seatId: "owner", round: session.round, kind: "owner", text });
+  }
+
+  function requestDecision(id: string): CouncilSession | null {
+    const session = getCouncilSession(db, id);
+    if (!session) return null;
+    if (!["done", "failed", "stopped"].includes(session.state)) decideRequested.add(id);
+    return session;
   }
 
   function requestStop(id: string): CouncilSession | null {
@@ -203,7 +291,7 @@ export function createCouncil(ctx: ServerCore) {
     return session;
   }
 
-  return { startCouncil, councilView, requestStop, listCouncils: (projectId: string, runId?: string) => listCouncilSessions(db, { projectId, runId }) };
+  return { startCouncil, councilView, requestStop, say, requestDecision, listCouncils: (projectId: string, runId?: string) => listCouncilSessions(db, { projectId, runId }) };
 }
 
 export type CouncilApi = ReturnType<typeof createCouncil>;
@@ -213,17 +301,19 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
   bb.agents.registerTool({
     name: "lane_pilot_council_start",
     description: "Convene a council of directors on a product or business question: role-bound seats on different models argue it through evidence and rounds; the chair writes a decision page under docs/decisions and hands next tasks over.",
-    instructions: "Use from the active Lane Pilot PM thread for open questions such as how to raise repeat purchases or which features the collected requests ask for. Put exports and notes into the workspace and name them in `materials`. Poll lane_pilot_council_status; a session takes tens of minutes.",
+    instructions: "Use from the active Lane Pilot PM thread for open questions such as how to raise repeat purchases or which features the collected requests ask for. Put exports and notes into the workspace and name them in `materials`. Default mode is `room`: seats speak when they have something to add and the owner may join at any time with lane_pilot_council_say; `rounds` is a fixed-round debate. `judge` (default on) asks Jev whether a seat wants the floor and whether the room is done; off means the built-in rule. Poll lane_pilot_council_status; a session takes tens of minutes.",
     parameters: z.object({
       runId: z.string().min(1),
       question: z.string().trim().min(8).max(2000),
       roles: z.array(z.string().min(1)).max(6).optional(),
       materials: z.array(z.string().min(1).max(400)).max(10).optional(),
       maxRounds: z.number().int().min(1).max(6).optional(),
+      mode: z.enum(["room", "rounds"]).optional(),
+      judge: z.boolean().optional(),
     }).strict(),
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
-      const session = await council.startCouncil({ projectId: context.projectId, runId: params.runId, pmThreadId: context.threadId, question: params.question, roles: params.roles, materials: params.materials, maxRounds: params.maxRounds });
+      const session = await council.startCouncil({ projectId: context.projectId, runId: params.runId, pmThreadId: context.threadId, question: params.question, roles: params.roles, materials: params.materials, maxRounds: params.maxRounds, mode: params.mode, judge: params.judge });
       return JSON.stringify(council.councilView(session), null, 2);
     },
   });
@@ -238,6 +328,20 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
       const session = getCouncilSession(db, params.councilId);
       if (!session || session.projectId !== context.projectId) throw new Error("council does not belong to this project");
       return JSON.stringify(council.councilView(session, params.afterSeq), null, 2);
+    },
+  });
+  bb.agents.registerTool({
+    name: "lane_pilot_council_say",
+    description: "Say something to a running council as the owner, or ask it to decide now.",
+    instructions: "Use from the active Lane Pilot PM thread. Name a seat (for example «Скептик, …») to make it answer next. `decide: true` asks the chair to write the decision after the current turn.",
+    parameters: z.object({ runId: z.string().min(1), councilId: z.string().min(1), text: z.string().trim().min(1).max(4000).optional(), decide: z.boolean().optional() }).strict(),
+    execute: async (params, context) => {
+      requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
+      const session = getCouncilSession(db, params.councilId);
+      if (!session || session.projectId !== context.projectId) throw new Error("council does not belong to this project");
+      const said = params.text ? council.say(params.councilId, params.text) : null;
+      const decided = params.decide ? council.requestDecision(params.councilId) : null;
+      return JSON.stringify({ id: session.id, state: session.state, said: said ? { seq: said.seq } : null, decideRequested: Boolean(decided) }, null, 2);
     },
   });
   bb.agents.registerTool({
@@ -256,6 +360,12 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
 
 export function councilRpc(db: LanePilotDatabase, council: CouncilApi) {
   return {
+    council_say: async ({ councilId, text, decide }: { councilId: string; text?: string; decide?: boolean }) => {
+      const said = text ? council.say(councilId, text) : null;
+      const decided = decide ? council.requestDecision(councilId) : null;
+      return { seq: said?.seq ?? null, decideRequested: Boolean(decided) };
+    },
+    council_stop: async ({ councilId }: { councilId: string }) => ({ stopRequested: Boolean(council.requestStop(councilId)) }),
     list_councils: async ({ projectId }: { projectId: string }) => ({
       councils: listCouncilSessions(db, { projectId }).map((session) => ({ id: session.id, runId: session.runId, question: session.question, state: session.state, round: session.round, maxRounds: session.maxRounds, decisionPath: session.decisionPath, updatedAt: session.updatedAt })),
     }),
@@ -265,6 +375,7 @@ export function councilRpc(db: LanePilotDatabase, council: CouncilApi) {
       const view = council.councilView(session);
       return {
         id: view.id, question: view.question, state: view.state, round: view.round, maxRounds: view.maxRounds, agenda: view.agenda, criteria: view.criteria, decisionPath: view.decisionPath, reason: view.reason,
+        speaking: view.speaking, speakingSince: view.speakingSince,
         seats: view.seats.map((seat) => ({ id: seat.id, title: seat.title, providerId: seat.providerId, model: seat.model })),
         recommendation: view.decision?.recommendation ?? null,
         messages: view.messages.map((message) => ({ seq: message.seq, seatId: message.seatId, round: message.round, kind: message.kind, text: message.text, at: message.at })),

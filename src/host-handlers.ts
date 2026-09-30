@@ -472,6 +472,36 @@ export const classifyPlan: ExperimentalHostRpcHandlers<typeof hostContract>["cla
   }
 };
 
+/** One System One call with several choice questions over a JSON state; the council's moderator and the seats' impulse to speak use it. */
+export const councilJudge: ExperimentalHostRpcHandlers<typeof hostContract>["councilJudge"] = async (input) => {
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const apiKey = await jevApiKey();
+  if (!apiKey) return { hostId, status:"disabled", answers:{}, reason:"missing_typesafe_api_key" };
+  let state: unknown = input.state;
+  try { state = JSON.parse(input.state); } catch { /* a plain text state is allowed */ }
+  const questions = Object.fromEntries(Object.entries(input.questions).map(([name, question]) => [name, { type:"choice", instructions:question.instructions, criteria:question.criteria }]));
+  try {
+    const response = await fetch("https://api.typesafe.ai/v1/systemone", {
+      method:"POST",
+      headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
+      body:JSON.stringify({ model:"jev-latest", state, questions }),
+      signal:AbortSignal.timeout(4000),
+    });
+    if (!response.ok) return { hostId, status:"error", answers:{}, reason:`http_${response.status}` };
+    const value: unknown = await response.json();
+    const raw = value && typeof value === "object" ? (value as { answers?: unknown }).answers : undefined;
+    if (!raw || typeof raw !== "object") return { hostId, status:"error", answers:{}, reason:"invalid_response" };
+    const answers: Record<string, string> = {};
+    for (const [name, answer] of Object.entries(raw as Record<string, { choice?: unknown }>)) {
+      if (answer && typeof answer === "object" && typeof answer.choice === "string") answers[name] = answer.choice;
+    }
+    return { hostId, status:"ok", answers, reason:null };
+  } catch (cause) {
+    const timeout = cause instanceof Error && cause.name === "TimeoutError";
+    return { hostId, status:timeout ? "timeout" : "error", answers:{}, reason:timeout ? "timeout" : "api_request_failed" };
+  }
+};
+
 export const inspectCritiqueCoverage: ExperimentalHostRpcHandlers<typeof hostContract>["inspectCritiqueCoverage"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await scanCritiqueCoverage({workspacePath:input.workspacePath,plan:input.plan,

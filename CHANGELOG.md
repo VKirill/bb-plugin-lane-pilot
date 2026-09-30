@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.28 — 2026-09-30
+
+- **The boardroom.** A council now runs as a room by default: after every seat's opening position, seats speak when they have something to add, not in turn. After each message every seat's impulse is judged (Jev through the host's `councilJudge`, or the built-in rule: an addressed seat must answer, the owner's words wake everyone, a seat silent for a full lap gets the floor, the last speaker waits), one seat gets the floor, and a moderator verdict ends the discussion when the room repeats itself. The owner joins at any time with `lane_pilot_council_say` (or the RPC behind the page), names a seat to make it answer next, and asks for the decision with `decide`. `mode: "rounds"` keeps the fixed-round debate.
+- **A council page in the sidebar.** «Совет» shows every council of a project as a chat: seats with their models, the agenda, the live feed with who is writing, the owner's composer, «Решать» and «Стоп».
+- **Jev is the judge.** The host handler `councilJudge` asks System One several choice questions over a JSON state; the council uses it for the moderator and the seats' impulse, and falls back to the rule when the key is missing or the call fails.
+- **Run budgets on the settings panel.** `run.max_attempts`, `run.max_wall_minutes`, `run.max_tokens`, `run.max_children` are catalog rows in the ops section with EN/RU labels; empty means no limit.
+
 ## 0.1.27 — 2026-09-30
 
 - **Council of directors.** `lane_pilot_council_start` convenes role-bound seats (product, demand, audience, skeptic; growth and ux on request) on distinct configured models as hidden threads. The chair turns the question into an agenda and criteria, seats give positions and reply only where they disagree or add evidence (PASS otherwise), a moderator rule ends the discussion on the round cap, on repetition or when most seats pass (an outside judge can override), and the chair writes a decision record: options ranked by the criteria, recommendation, dissent, experiments, next tasks. The record lands in `docs/decisions/` and each next task becomes a handoff card. `lane_pilot_council_status` and the run monitor show the feed; `lane_pilot_council_stop` ends a session. Package `@lane-pilot/council` holds the protocol.

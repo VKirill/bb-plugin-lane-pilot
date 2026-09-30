@@ -49,7 +49,7 @@ bb-plugin-lane-pilot/
     │   ├── rpc.ts, rpc/      RPC handlers by group: preferences, runs, settings, selections, stack, insights
     │   ├── memory-sync.ts    lane-memory files ↔ the hub corpus
     │   ├── health.ts         provider breaker and run budget for the PM and the CLI
-    │   ├── council.ts        council sessions on hidden seat threads, decision page, handoffs, RPC
+    │   ├── council.ts        council sessions on hidden seat threads: room or rounds, Jev judge, owner messages, presence, decision page, handoffs, RPC
     │   ├── tools.ts          agent tool registration and PM configuration
     │   └── cli.ts            bb lane-pilot commands
     ├── stages/               stage logic: prompts, parsers, policies (no SDK calls)
@@ -95,7 +95,7 @@ app.tsx / host.ts / server.ts
 | 3 | Split `server.ts` into `src/server/*` on one core and one services bag | `server.ts` is 50 lines; failing set identical to the main baseline; build passes | done |
 | 3b | `writer-run.ts` split into `writer/{state,spawn,verify,finish,start,dispatch}`; `rpc.ts` into `rpc/{preferences,runs,settings,selections,stack,insights}`; `@lane-pilot/resilience` guards every writer attempt (breaker before spawn, budget per run) | same check plus `tests/server/resilience-wiring.test.ts` | done |
 | 4 | One memory: lane-memory files import into the hub corpus and export back (`memory-sync.ts`); routing hint on the settings screen (`get_routing_hint`) | `tests/server/memory-sync.test.ts`, `insights-tools.test.ts` | done |
-| 5 | Council of directors: `@lane-pilot/council` (roles, prompts, moderator rule, protocol, storage, decision page) and `src/server/council.ts` (seats on hidden threads with distinct configured models, evidence pack from PROJECT.md, docs and materials, decision page under `docs/decisions/`, next tasks as handoffs, feed in the run monitor) | `packages/council/tests`, `tests/server/council-tools.test.ts` | done |
+| 5 | Council of directors (0.1.27) and the boardroom (0.1.28: room protocol with impulse and floor, Jev judge through `councilJudge`, owner messages, presence, a sidebar page): `@lane-pilot/council` (roles, prompts, moderator rule, protocol, storage, decision page) and `src/server/council.ts` (seats on hidden threads with distinct configured models, evidence pack from PROJECT.md, docs and materials, decision page under `docs/decisions/`, next tasks as handoffs, feed in the run monitor) | `packages/council/tests`, `tests/server/council-tools.test.ts` | done |
 
 ## Baseline on main (08d907a, 2026-09-30)
 

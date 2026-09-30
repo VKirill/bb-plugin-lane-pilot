@@ -11,6 +11,7 @@ export type CouncilSeat = {
   role: string;
   title: string;
   instruction: string;
+  aliases?: string[];
   providerId: string | null;
   model: string | null;
 };

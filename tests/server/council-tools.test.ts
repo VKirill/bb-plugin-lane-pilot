@@ -71,7 +71,7 @@ describe("council tools", () => {
     setRunThread(db, runId, pmThreadId);
     const call = async (name: string, params: Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
 
-    const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки в кабинете?", roles: ["product", "skeptic"], materials: ["materials/direct.csv"], maxRounds: 3 });
+    const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки в кабинете?", roles: ["product", "skeptic"], materials: ["materials/direct.csv"], maxRounds: 3, mode: "rounds", judge: false });
     expect(started.state).toBe("agenda");
     expect(started.seats.map((seat: { id: string; model: string }) => `${seat.id}:${seat.model}`)).toEqual(["product:m2", "skeptic:m"]);
 
@@ -106,5 +106,64 @@ describe("council tools", () => {
     const listed = await harness.behavior.callRpc("list_councils", { projectId }) as { councils: Array<{ id: string; state: string }> };
     expect(listed.councils).toEqual([expect.objectContaining({ id: started.id, state: "done" })]);
     expect(await call("lane_pilot_council_stop", { runId, councilId: started.id })).toMatchObject({ state: "done", stopRequested: false });
+  });
+
+  it("runs the boardroom: seats speak on impulse, the owner joins by tool and RPC, and the decision comes on request", async () => {
+    const meta = new Map<string, Record<string, unknown>>();
+    let spawns = 0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: {
+        threads: {
+          getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : meta.get(threadId) ?? {},
+          spawn: async (args) => { const request = args as unknown as Record<string, unknown>; const id = `room-${++spawns}`; meta.set(id, { ...(request.pluginMetadata as Record<string, unknown>), prompt: String(request.prompt) }); return { id }; },
+          get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
+          events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
+          output: async ({ threadId }) => {
+            const m = meta.get(threadId) ?? {};
+            const round = Number(m.round); const prompt = String(m.prompt);
+            if (m.seatId === "chair") return { output: round === 0 ? agendaJson : decisionJson };
+            if (round === 1) return { output: m.seatId === "skeptic" ? "Skeptic: opening. Product director, what evidence do you have?" : "Product director: opening position." };
+            if (m.seatId === "product" && prompt.includes("what evidence do you have")) return { output: "Here is the evidence: 12 of 40 queries." };
+            if (m.seatId === "skeptic" && prompt.includes("Что с ценами")) return { output: "On prices: thin evidence, agree with the owner." };
+            return { output: "PASS" };
+          },
+          stop: async () => ({ ok: true }) as never,
+          list: async () => [...meta.keys()].map((id) => ({ id })) as never,
+        },
+        providers: { list: async () => [] as never, models: async () => ({ models: [] }) as never },
+        files: { read: async () => ({ content: null }) as never, write: async () => ({ ok: true }) as never },
+      },
+    });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, { projectId, hostId: "host-1", pmWorkspacePath: workspace, writerWorkspacePath: workspace, pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
+    createRun(db, runId, projectId);
+    setRunThread(db, runId, pmThreadId);
+    const call = async (name: string, params: Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
+
+    const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки?", roles: ["product", "skeptic"], maxRounds: 3, judge: false });
+    const status = async () => call("lane_pilot_council_status", { runId, councilId: started.id });
+    let view: Record<string, any> = started;
+    for (let i = 0; i < 100 && !(view.messages ?? []).some((m: { seatId: string; kind: string }) => m.seatId === "product" && m.kind === "reply"); i++) { await new Promise((r) => setTimeout(r, 50)); view = await status(); }
+    expect(view.messages.map((m: { seatId: string; kind: string }) => `${m.seatId}:${m.kind}`).slice(0, 5)).toEqual(["owner:owner", "chair:agenda", "product:position", "skeptic:position", "product:reply"]);
+
+    // The room goes quiet and waits for the owner; the owner names the skeptic.
+    for (let i = 0; i < 100 && !(view.messages ?? []).some((m: { text: string }) => m.text.includes("waiting for the owner")); i++) { await new Promise((r) => setTimeout(r, 50)); view = await status(); }
+    const said = await call("lane_pilot_council_say", { runId, councilId: started.id, text: "Что с ценами? Скептик, ответь." });
+    expect(said.said.seq).toBeGreaterThan(0);
+    for (let i = 0; i < 100 && !(view.messages ?? []).some((m: { text: string }) => m.text.includes("On prices")); i++) { await new Promise((r) => setTimeout(r, 50)); view = await status(); }
+    const trail = view.messages.map((m: { seatId: string; kind: string }) => `${m.seatId}:${m.kind}`);
+    expect(trail[trail.indexOf("owner:owner", 1) + 1]).toBe("skeptic:reply");
+
+    const decided = await harness.behavior.callRpc("council_say", { councilId: started.id, decide: true }) as { decideRequested: boolean };
+    expect(decided.decideRequested).toBe(true);
+    for (let i = 0; i < 200 && view.state !== "done"; i++) { await new Promise((r) => setTimeout(r, 50)); view = await status(); }
+    expect(view.state).toBe("done");
+    expect(view.decision.recommendation).toBe("Ship guest checkout first.");
+    const detail = await harness.behavior.callRpc("get_council", { councilId: started.id }) as { speaking: string | null; messages: Array<{ seatId: string }> };
+    expect(detail.speaking).toBeNull();
+    expect(detail.messages.filter((m) => m.seatId === "owner")).toHaveLength(2);
   });
 });

@@ -390,6 +390,20 @@ export const hostContract = defineRpcContract({
       sourceLength:z.number().int().nonnegative(), sentLength:z.number().int().nonnegative().nullable(),
     }).strict(),
   },
+  councilJudge: {
+    input: z.object({
+      requestedHostId: z.string().min(1),
+      state: z.string().min(1).max(60_000),
+      questions: z.record(z.string().min(1).max(40), z.object({
+        instructions: z.string().min(1).max(2000),
+        criteria: z.record(z.string().min(1).max(40), z.string().min(1).max(500)),
+      }).strict()).refine((value) => Object.keys(value).length >= 1 && Object.keys(value).length <= 8, "1 to 8 questions"),
+    }).strict(),
+    output: z.object({
+      hostId: z.string(), status: z.enum(["ok", "disabled", "timeout", "error"]),
+      answers: z.record(z.string(), z.string()), reason: z.string().nullable(),
+    }).strict(),
+  },
   inspectCritiqueCoverage: {
     input:z.object({requestedHostId:z.string().min(1),workspacePath:z.string().startsWith("/"),plan:z.string().max(100_000),
       tasks:z.array(z.object({id:z.string().max(128),lane:z.string().max(64),ownsPaths:z.array(z.string()).max(128),hasVerification:z.boolean(),
@@ -976,11 +990,20 @@ export const rpcContract = defineRpcContract({
     input: z.object({ projectId: z.string().min(1) }).strict(),
     output: z.object({ councils: z.array(z.object({ id: z.string(), runId: z.string(), question: z.string(), state: z.string(), round: z.number().int(), maxRounds: z.number().int(), decisionPath: z.string().nullable(), updatedAt: z.number().int() })) }).strict(),
   },
+  council_say: {
+    input: z.object({ councilId: z.string().min(1), text: z.string().trim().min(1).max(4000).optional(), decide: z.boolean().optional() }).strict(),
+    output: z.object({ seq: z.number().int().nullable(), decideRequested: z.boolean() }).strict(),
+  },
+  council_stop: {
+    input: z.object({ councilId: z.string().min(1) }).strict(),
+    output: z.object({ stopRequested: z.boolean() }).strict(),
+  },
   get_council: {
     input: z.object({ councilId: z.string().min(1) }).strict(),
     output: z.object({
       id: z.string(), question: z.string(), state: z.string(), round: z.number().int(), maxRounds: z.number().int(), agenda: z.array(z.string()), criteria: z.array(z.string()),
       decisionPath: z.string().nullable(), reason: z.string().nullable(), recommendation: z.string().nullable(),
+      speaking: z.string().nullable(), speakingSince: z.number().int().nullable(),
       seats: z.array(z.object({ id: z.string(), title: z.string(), providerId: z.string().nullable(), model: z.string().nullable() })),
       messages: z.array(z.object({ seq: z.number().int(), seatId: z.string(), round: z.number().int(), kind: z.string(), text: z.string(), at: z.number().int() })),
     }).strict(),

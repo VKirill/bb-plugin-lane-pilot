@@ -6,6 +6,7 @@ import { outputText } from "./writer-task";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "./core";
 import { RUN_BUDGET_SETTINGS, runHealth } from "./health";
+import { getCouncilSession } from "@lane-pilot/council";
 import type { Services } from "./services";
 
 export function registerCli(ctx: ServerCore, services: Services) {
@@ -46,6 +47,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
       { name:"budget", summary:"Set or show the run budget of a project (attempts, wall minutes, tokens, child threads; empty value clears)", usage:"bb lane-pilot budget <project-id> [run.max_attempts=N] [run.max_wall_minutes=N] [run.max_tokens=N] [run.max_children=N]" },
       { name:"health", summary:"Provider breaker state and the budgets of open runs", usage:"bb lane-pilot health [run-id]" },
+      { name:"council", summary:"Convene a council of directors on a question in an open PM run", usage:"bb lane-pilot council <run-id> <question> [roles=product,skeptic] [rounds=N] [mode=room|rounds] [judge=on|off] [materials=a.md,b.csv]" },
+      { name:"council-say", summary:"Say something to a running council as the owner, or decide=1 to ask for the decision", usage:"bb lane-pilot council-say <council-id> [text] [decide=1]" },
+      { name:"council-status", summary:"A council session and its feed", usage:"bb lane-pilot council-status <council-id> [after-seq]" },
       { name:"docs-nightly", summary:"Run the nightly docs pass now for docs-enabled folders of a project", usage:"bb lane-pilot docs-nightly <project-id> [folder-path] [since-commit]" },
       { name:"finish", summary:"Close a PM run after observing it idle and release activation", usage:"bb lane-pilot finish <project-id> [run-id]" },
       { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id> [run-id]" },
@@ -89,6 +93,30 @@ export function registerCli(ctx: ServerCore, services: Services) {
           }
           const settings = loadProjectSettings(db, projectId);
           return { exitCode:0, stdout:JSON.stringify({ projectId, budget:Object.fromEntries(RUN_BUDGET_SETTINGS.map((key) => [key, settings[key] ?? ""])) }, null, 2) };
+        }
+        if (command === "council" && args.length >= 2) {
+          const run = getRun(db, args[0]!);
+          if (!run || !run.pm_thread_id || run.closed_at) throw new Error("run must be open and have a PM thread");
+          const options = Object.fromEntries(args.slice(2).filter((arg) => arg.includes("=")).map((arg) => arg.split("=", 2) as [string, string]));
+          const session = await services.council.startCouncil({
+            projectId: run.project_id, runId: run.id, pmThreadId: run.pm_thread_id, question: args[1]!,
+            roles: options.roles ? options.roles.split(",") : undefined, maxRounds: options.rounds ? Number(options.rounds) : undefined,
+            mode: options.mode === "rounds" ? "rounds" : options.mode === "room" ? "room" : undefined, judge: options.judge === "off" ? false : options.judge === "on" ? true : undefined,
+            materials: options.materials ? options.materials.split(",") : undefined,
+          });
+          return { exitCode:0, stdout:JSON.stringify({ id: session.id, state: session.state, seats: session.seats.map((seat) => `${seat.id}:${seat.providerId}/${seat.model}`) }, null, 2) };
+        }
+        if (command === "council-say" && args.length >= 1) {
+          const text = args.slice(1).filter((arg) => !/^decide=/.test(arg)).join(" ").trim();
+          const decide = args.some((arg) => /^decide=(1|true|yes)$/.test(arg));
+          const said = text ? services.council.say(args[0]!, text) : null;
+          const decided = decide ? services.council.requestDecision(args[0]!) : null;
+          return { exitCode:0, stdout:JSON.stringify({ said: said ? said.seq : null, decideRequested: Boolean(decided) }) };
+        }
+        if (command === "council-status" && args.length >= 1) {
+          const found = getCouncilSession(db, args[0]!);
+          if (!found) throw new Error("council not found");
+          return { exitCode:0, stdout:JSON.stringify(services.council.councilView(found, args[1] ? Number(args[1]) : 0), null, 2) };
         }
         if (command === "health" && args.length <= 1) {
           const runIds = args[0] ? [args[0]] : [...services.runBudgets.keys()];

@@ -3,6 +3,7 @@ import { hostContract } from "./src/contracts";
 import {
   connectOpencode,
   classifyPlan,
+  councilJudge,
   coexistenceInventory,
   coexistenceOperation,
   gitOwnershipBase,
@@ -49,7 +50,7 @@ export default experimental_defineHostEntry({
   handlers: {
     nativeInstall: nativeInstallHost,
     detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsLineCounts, gitCommitDocs, gitRevertPaths, docsAnchors, docsFlows, docsDepth, docsVerifyCitations, docsStaleness: docsStalenessHandler, gitIntegrate, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, writeDocsPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
-    runCli, runCommand, runSandboxedCommand, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
+    councilJudge, runCli, runCommand, runSandboxedCommand, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
   },
 });

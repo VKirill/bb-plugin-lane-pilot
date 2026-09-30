@@ -38,6 +38,7 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_memory_export",
   "lane_pilot_council_start",
   "lane_pilot_council_status",
+  "lane_pilot_council_say",
   "lane_pilot_council_stop",
 ] as const;
 
@@ -59,6 +60,7 @@ export const NATIVE_LP_BRIDGE_PM_TOOLS = [
   "lane_pilot_memory_export",
   "lane_pilot_council_start",
   "lane_pilot_council_status",
+  "lane_pilot_council_say",
   "lane_pilot_council_stop",
 ] as const;
 

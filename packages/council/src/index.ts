@@ -29,3 +29,4 @@ export {
 } from "./store";
 export { decisionFileName, decisionMarkdown, slugify } from "./render";
 export { CHAIR_SEAT_ID, MODERATOR_SEAT_ID, runCouncil, type CouncilIo } from "./run";
+export { FLOOR_THRESHOLD, IMPULSE_SCORES, chooseSpeaker, ruleImpulse, runRoom, type Impulse, type ImpulseJudge, type ImpulseReason, type RoomIo } from "./room";
