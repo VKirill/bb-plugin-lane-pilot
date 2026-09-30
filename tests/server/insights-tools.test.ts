@@ -39,6 +39,10 @@ describe("insights tools", () => {
     saveProjectSetting(db, projectId, "writer.provider", "agy");
     saveProjectSetting(db, projectId, "writer.model", "gemini-6-astra");
 
+    const viaRpc = await harness.behavior.callRpc("get_routing_hint", { projectId }) as { current: unknown; hints: Array<{ risk: string; hint: string }> };
+    expect(viaRpc.current).toEqual({ providerId: "agy", model: "gemini-6-astra" });
+    expect(viaRpc.hints).toEqual([{ risk: "medium", hint: expect.stringContaining("codex/gpt-6-luna reached 100%") }]);
+
     const result = await call("lane_pilot_routing_stats", { runId, risk: "medium" });
     expect(result.current).toEqual({ providerId: "agy", model: "gemini-6-astra" });
     expect(result.stats).toHaveLength(2);

@@ -101,7 +101,7 @@ Does not call Agency RPC. Uses public Plugin SDK only.
 
 Reusable code lives in `packages/` as an npm workspace (`@lane-pilot/thread-observe`, `memory-core`, `handoff`, `resilience`, `run-insights`), server modules under `src/server/`. The map, the dependency rule and the phases of the split are in [docs/architecture.md](docs/architecture.md).
 
-PM tools added by those modules: `lane_pilot_handoff_create` / `lane_pilot_handoff_receipt` / `lane_pilot_handoff_list` (typed task cards between agents), `lane_pilot_routing_stats` (first-try acceptance per provider, model and risk), `lane_pilot_lessons_sweep` (recent findings and rejections into subagent memory), `lane_pilot_memory_golden` (retrieval score against a golden set).
+PM tools added by those modules: `lane_pilot_handoff_create` / `lane_pilot_handoff_receipt` / `lane_pilot_handoff_list` (typed task cards between agents), `lane_pilot_routing_stats` (first-try acceptance per provider, model and risk), `lane_pilot_lessons_sweep` (recent findings and rejections into subagent memory), `lane_pilot_memory_golden` (retrieval score against a golden set), `lane_pilot_run_health` (provider breaker and run budget), `lane_pilot_memory_import` / `lane_pilot_memory_export` (lane-memory files ↔ the hub corpus). CLI: `bb lane-pilot budget`, `bb lane-pilot health`.
 
 ## Commands
 

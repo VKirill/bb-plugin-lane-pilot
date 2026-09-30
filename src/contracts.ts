@@ -972,4 +972,12 @@ export const rpcContract = defineRpcContract({
     input: z.object({ projectId: z.string().min(1), snapshotPath: z.string().startsWith("/").optional() }).strict(),
     output: z.unknown(),
   },
+  get_routing_hint: {
+    input: z.object({ projectId: z.string().min(1), days: z.number().int().min(1).max(365).optional() }).strict(),
+    output: z.object({
+      current: z.object({ providerId: z.string(), model: z.string() }).nullable(),
+      hints: z.array(z.object({ risk: z.string(), hint: z.string() })),
+      stats: z.array(z.object({ providerId: z.string(), model: z.string(), risk: z.string(), tasks: z.number().int(), acceptedFirstTry: z.number().int(), accepted: z.number().int(), failed: z.number().int() })),
+    }).strict(),
+  },
 });

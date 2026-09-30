@@ -33,7 +33,7 @@ bb-plugin-lane-pilot/
     │   ├── native-wiring.ts  mention provider, native dispatch hook, provider env, stream retry
     │   ├── reconcile.ts      orphan and holder-thread recovery
     │   ├── activation.ts     PM activation and composer environment checks
-    │   ├── writer-run.ts     spawn, verify, validate, accept, finish, dispatch, wait, CLI dispatch
+    │   ├── writer/           state (task set, pool, breaker, budgets), spawn, verify, finish, start, dispatch
     │   ├── writer-host.ts    project writer host resolution and agent profiles
     │   ├── stages/           qa, children, docs, onboarding, memory, project-life, night
     │   ├── docs-nightly.ts   nightly docs pass, units, catch-ups and their schedules
@@ -45,7 +45,9 @@ bb-plugin-lane-pilot/
     │   ├── child-snapshots.ts, stage-records.ts, values.ts, pm-spawn.ts
     │   ├── handoff.ts        handoff tools and expiry schedule
     │   ├── insights.ts       routing statistics, lessons sweep, golden checks
-    │   ├── rpc.ts            RPC handlers
+    │   ├── rpc.ts, rpc/      RPC handlers by group: preferences, runs, settings, selections, stack, insights
+    │   ├── memory-sync.ts    lane-memory files ↔ the hub corpus
+    │   ├── health.ts         provider breaker and run budget for the PM and the CLI
     │   ├── tools.ts          agent tool registration and PM configuration
     │   └── cli.ts            bb lane-pilot commands
     ├── stages/               stage logic: prompts, parsers, policies (no SDK calls)
@@ -89,8 +91,9 @@ app.tsx / host.ts / server.ts
 | 1 | `packages/` workspace; thread observation and memory logic moved out of `server.ts` and `src/stages/memory.ts` without behaviour change | failing set identical to baseline, 710 passed, build passes | done (649b439) |
 | 2 | New capabilities as packages with thin server wiring: handoff, lessons, routing statistics, golden checks; provider breaker and run budgets as a package | 35 package and server tests; breaker and budget wiring waits for phase 3 because it sits in `spawnWriterAttempt` | done except wiring of resilience |
 | 3 | Split `server.ts` into `src/server/*` on one core and one services bag | `server.ts` is 50 lines; failing set identical to the main baseline; build passes | done |
-| 3b | Split `writer-run.ts` (1 600 lines) and `rpc.ts` (900 lines) further; wire `@lane-pilot/resilience` into the writer spawn | same check | next |
-| 4 | Council stage on the handoff and thread-observe packages | staged test with three seats | planned |
+| 3b | `writer-run.ts` split into `writer/{state,spawn,verify,finish,start,dispatch}`; `rpc.ts` into `rpc/{preferences,runs,settings,selections,stack,insights}`; `@lane-pilot/resilience` guards every writer attempt (breaker before spawn, budget per run) | same check plus `tests/server/resilience-wiring.test.ts` | done |
+| 4 | One memory: lane-memory files import into the hub corpus and export back (`memory-sync.ts`); routing hint on the settings screen (`get_routing_hint`) | `tests/server/memory-sync.test.ts`, `insights-tools.test.ts` | done |
+| 5 | Council stage on the handoff and thread-observe packages | staged test with three seats | planned |
 
 ## Baseline on main (08d907a, 2026-09-30)
 

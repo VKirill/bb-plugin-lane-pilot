@@ -629,6 +629,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const isGlobal = projectId === GLOBAL_SETTINGS_PROJECT_ID;
   // A section keeps its own settings over its project's; null edits the project itself.
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [routingHints, setRoutingHints] = useState<Array<{ risk: string; hint: string }>>([]);
   const [sections, setSections] = useState<Array<{ id:string; parentId:string|null; name:string; path:string; kind:"folder"|"group" }>>([]);
   const scoped = selectedSectionId ? { sectionId: selectedSectionId } : {};
   const cacheKey = (id: string, section: string | null | undefined) => `${id}|${section ?? ""}`;
@@ -740,6 +741,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
       const next = await rpc.call("get_screen", { ...scoped, projectId }) as ScreenPayload;
       if (generation !== loadGeneration.current) return;
       setData(next);
+      void rpc.call("get_routing_hint", { projectId }).then((hint) => { if (generation === loadGeneration.current) setRoutingHints((hint as { hints: Array<{ risk: string; hint: string }> }).hints); }).catch(() => setRoutingHints([]));
       if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
       setResultSource(next.writerResultJson);
       setResultPatch(next.writerResultPatch);
@@ -1489,6 +1491,12 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
                 <div className="max-w-xl">{modelPicker(pickerValue, (next) => { saveWriterSelection(next); })}</div>
+                {routingHints.length > 0 ? (
+                  <div className="max-w-xl text-xs text-muted-foreground" data-testid="routing-hints">
+                    <div className="font-medium">{t("routingHintTitle")}</div>
+                    {routingHints.map((row) => <div key={row.risk}>{row.hint}</div>)}
+                  </div>
+                ) : null}
                 {writerRejected && saveError ? <p className="max-w-xl text-xs text-destructive" data-testid="writer-save-error">{saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}</p> : null}
                 {(() => {
                   const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
