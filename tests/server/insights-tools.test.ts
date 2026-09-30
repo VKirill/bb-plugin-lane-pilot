@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, createTask, openDatabase, saveProjectSetting, saveStageReceipt, searchMemoryRecords, setRunThread } from "../../src/database";
 import { sweepLessons } from "../../src/server/insights";
-import { createServerContext } from "../../src/server/context";
+import { createCore } from "../../src/server/core";
 
 const projectId = "insights-project";
 const pmThreadId = "insights-pm";
@@ -58,7 +58,7 @@ describe("insights tools", () => {
     saveProjectSetting(db, projectId, "memory.enabled", "true");
     const first = await call("lane_pilot_lessons_sweep", { runId });
     expect(first).toMatchObject({ state: "stored", sources: 2, candidates: 2, stored: 2 });
-    const again = await sweepLessons(createServerContext(bb, db), projectId);
+    const again = await sweepLessons(createCore(bb, db), projectId);
     expect(again.state).toBe("nothing_new");
 
     const records = searchMemoryRecords(db, projectId, "discount checkout retry", 10, "fts5", "subagent");

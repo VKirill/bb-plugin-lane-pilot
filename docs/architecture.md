@@ -27,17 +27,26 @@ bb-plugin-lane-pilot/
 │   ├── run-insights/         writer statistics per model and risk, lessons from receipts, golden checks
 │   └── stage-kit/            stage receipt contract, child snapshot parsing, stage harness (planned)
 └── src/
-    ├── server/               plugin modules mounted on one context
-    │   ├── context.ts        db, bb, logging, disposed flag, PM-run guard, catalog setting lookup
-    │   ├── handoff.ts        handoff tools and expiry schedule (mounted)
-    │   ├── insights.ts       routing statistics, lessons sweep, golden checks (mounted)
-    │   ├── activation.ts     PM activation and finish
-    │   ├── writer-run.ts     dispatch, spawn, validate, accept, finish an attempt
+    ├── server/               plugin modules on one core and one services bag
+    │   ├── core.ts           bb, db, host client, native installer, shared helpers (settings, sections, run scopes)
+    │   ├── services.ts       the interface of everything one module offers another
+    │   ├── native-wiring.ts  mention provider, native dispatch hook, provider env, stream retry
     │   ├── reconcile.ts      orphan and holder-thread recovery
-    │   ├── stages/           one file per StageId that needs server wiring
-    │   ├── docs-nightly.ts   nightly docs pass and catch-ups
-    │   ├── rpc/              RPC handlers grouped: settings, selections, runs, stack
-    │   ├── tools.ts          agent tool registration
+    │   ├── activation.ts     PM activation and composer environment checks
+    │   ├── writer-run.ts     spawn, verify, validate, accept, finish, dispatch, wait, CLI dispatch
+    │   ├── writer-host.ts    project writer host resolution and agent profiles
+    │   ├── stages/           qa, children, docs, onboarding, memory, project-life, night
+    │   ├── docs-nightly.ts   nightly docs pass, units, catch-ups and their schedules
+    │   ├── probes.ts         live probes for cancel, provider error and ambiguity
+    │   ├── critique-runs.ts  pm-read, plan critique, code critique, specialist review
+    │   ├── run-routing.ts    helper placement, run routing, native setting keys
+    │   ├── run-finish.ts     finish and cancel rules
+    │   ├── writer-task.ts    writer prompt and fixture task
+    │   ├── child-snapshots.ts, stage-records.ts, values.ts, pm-spawn.ts
+    │   ├── handoff.ts        handoff tools and expiry schedule
+    │   ├── insights.ts       routing statistics, lessons sweep, golden checks
+    │   ├── rpc.ts            RPC handlers
+    │   ├── tools.ts          agent tool registration and PM configuration
     │   └── cli.ts            bb lane-pilot commands
     ├── stages/               stage logic: prompts, parsers, policies (no SDK calls)
     ├── host/                 host worker: detect, install, snapshot, rollback, stack ops
@@ -52,6 +61,7 @@ bb-plugin-lane-pilot/
 app.tsx / host.ts / server.ts
         ↓
    src/server/* ──► src/stages, src/host, src/verification, src/workspace
+   (modules receive `ctx: ServerCore` and `services: Services`; cross-module calls go through `services`, read at call time)
         ↓                          ↓
    packages/*  ◄───────────────────┘
         ↓
@@ -78,7 +88,8 @@ app.tsx / host.ts / server.ts
 | 0 | This map; baseline of tests, typecheck, build on `main` | `npm run check` numbers recorded below | done |
 | 1 | `packages/` workspace; thread observation and memory logic moved out of `server.ts` and `src/stages/memory.ts` without behaviour change | failing set identical to baseline, 710 passed, build passes | done (649b439) |
 | 2 | New capabilities as packages with thin server wiring: handoff, lessons, routing statistics, golden checks; provider breaker and run budgets as a package | 35 package and server tests; breaker and budget wiring waits for phase 3 because it sits in `spawnWriterAttempt` | done except wiring of resilience |
-| 3 | Split `server.ts` into `src/server/*` on the context object | `server.ts` under 300 lines, all tests green | after the parallel-lanes work on `main` is committed |
+| 3 | Split `server.ts` into `src/server/*` on one core and one services bag | `server.ts` is 50 lines; failing set identical to the main baseline; build passes | done |
+| 3b | Split `writer-run.ts` (1 600 lines) and `rpc.ts` (900 lines) further; wire `@lane-pilot/resilience` into the writer spawn | same check | next |
 | 4 | Council stage on the handoff and thread-observe packages | staged test with three seats | planned |
 
 ## Baseline on main (08d907a, 2026-09-30)

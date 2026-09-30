@@ -10,12 +10,6 @@ export type ServerContext = {
   isDisposed: () => boolean;
 };
 
-export function createServerContext(bb: BbPluginApi, db: LanePilotDatabase): ServerContext {
-  let disposed = false;
-  bb.onDispose(() => { disposed = true; });
-  return { bb, db, log: (message) => bb.log.warn(message), isDisposed: () => disposed };
-}
-
 /** A setting by its catalog name, whether stored under that name or under its storage key. */
 export function configuredSetting(settings: Record<string, unknown>, setting: string): unknown {
   if (Object.hasOwn(settings, setting)) return settings[setting];
