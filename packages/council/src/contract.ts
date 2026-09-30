@@ -14,6 +14,7 @@ export type CouncilSeat = {
   aliases?: string[];
   /** A reasoning level the owner fixed for the seat; otherwise the model's best supported level. */
   effort?: string;
+  lens?: string;
   providerId: string | null;
   model: string | null;
 };

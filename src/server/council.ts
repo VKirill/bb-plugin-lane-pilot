@@ -80,7 +80,7 @@ export function seatsFor(roles: readonly string[] | undefined, pairs: Array<{ pr
   return resolved.map((role, index) => {
     const configured = own[index];
     const pair = configured ?? (free.length ? free[next++ % free.length]! : pairs[index % Math.max(1, pairs.length)] ?? null);
-    return { id: role.role, role: role.role, title: role.title, instruction: role.instruction, aliases: role.aliases, providerId: pair?.providerId ?? null, model: pair?.model ?? null, ...(configured?.effort ? { effort: configured.effort } : {}) };
+    return { id: role.role, role: role.role, title: role.title, instruction: role.instruction, aliases: role.aliases, lens: role.lens, providerId: pair?.providerId ?? null, model: pair?.model ?? null, ...(configured?.effort ? { effort: configured.effort } : {}) };
   });
 }
 
@@ -224,6 +224,7 @@ export function createCouncil(ctx: ServerCore) {
           state: (patch: Parameters<typeof setCouncilState>[2]) => setCouncilState(db, session.id, patch),
         },
         isStopped: () => ctx.isDisposed() || stopRequested.has(session.id),
+        workspace: input.place.workspace,
         moderator: input.judge ? jevModerator(input.place.hostId, session) : undefined,
         log: (message: string) => ctx.log(`Lane Pilot ${message}`),
       };

@@ -14,7 +14,7 @@ export {
   type DecisionRecord,
 } from "./contract";
 export { DEFAULT_ROLES, resolveRoles, type CouncilRole } from "./roles";
-export { agendaPrompt, chairPrompt, seatPrompt } from "./prompts";
+export { agendaPrompt, chairPrompt, seatPrompt, workspaceRules } from "./prompts";
 export { NOVELTY_FLOOR, moderate, moderatorDecision, roundNovelty, type Moderator, type ModeratorState, type ModeratorVerdict } from "./moderator";
 export {
   addCouncilMessage,

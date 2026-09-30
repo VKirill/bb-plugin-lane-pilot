@@ -25,7 +25,7 @@ function openDb() {
   return db;
 }
 
-const seats: CouncilSeat[] = resolveRoles(["skeptic", "product", "demand"]).map((role, index) => ({ id: role.role, role: role.role, title: role.title, instruction: role.instruction, providerId: index ? "agy" : "codex", model: `m${index}` }));
+const seats: CouncilSeat[] = resolveRoles(["skeptic", "product", "demand"]).map((role, index) => ({ id: role.role, role: role.role, title: role.title, instruction: role.instruction, lens: role.lens, providerId: index ? "agy" : "codex", model: `m${index}` }));
 
 const agendaJson = JSON.stringify({ agenda: ["Where do buyers stop?", "What do queries ask for that the cabinet lacks?"], criteria: ["effect on sales", "simplicity", "effort"] });
 const decisionJson = JSON.stringify({
@@ -44,6 +44,7 @@ function fakeIo(db: Database.Database, councilId: string, answers: (input: { sea
   const prompts: string[] = [];
   return {
     prompts,
+    workspace: "/srv/app",
     spawnTurn: async ({ seat, round, prompt }) => { prompts.push(prompt); return answers({ seat, round, prompt }); },
     evidence: async () => "PROJECT.md: a photo cabinet.\nDirect queries: 40 rows, 12 mention saving a project.",
     save: {
@@ -100,6 +101,9 @@ describe("council protocol", () => {
     expect(skepticRound2).toContain("What was said since your last turn");
     expect(skepticRound2).not.toContain("Product director (round 1, position)");
     expect(skepticRound2).toContain("PASS");
+    expect(skepticRound2).toContain("checkout at /srv/app");
+    expect(skepticRound2).toContain("Do not modify");
+    expect(skepticRound2).toContain("Look first at: Backend validation");
     const page = decisionMarkdown(after, after.decision!, feed);
     expect(decisionFileName(after)).toMatch(/^docs\/decisions\/\d{4}-\d{2}-\d{2}-council-как-поднять/);
     for (const part of ["## Options", "### 1. Save the project before payment", "## Dissent", "**Skeptic**", "## Next tasks", "Guest checkout", "<details>"]) expect(page).toContain(part);

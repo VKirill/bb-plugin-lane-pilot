@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.30 — 2026-09-30
+
+- **Directors read the code.** Every seat and the chair already ran inside the project checkout with tools; now their prompt says so: read files, grep, run read-only commands and cite path:line before claiming anything, and never modify, install, commit or start anything. Each role has a lens, where it looks first (product: screens and flows; demand: request data and analytics; audience: copy and onboarding; skeptic: validation, billing, tests; growth: funnel and payments; ux: components and states).
+
 ## 0.1.29 — 2026-09-30
 
 - **Council seats in settings.** The «Совет директоров» group on the project settings panel has one provider/model/reasoning picker per seat (product, demand, audience, skeptic, growth, ux) and for the chair, drawn from the live BB catalog, so an OpenRouter model, a local one or any other configured provider can sit at the table. Empty seats keep taking distinct pairs from the stage selections. The group also holds «Jev судит совет» and the number of laps.

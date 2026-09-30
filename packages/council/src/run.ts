@@ -13,6 +13,8 @@ export type CouncilIo = {
     state: (patch: { state?: CouncilSession["state"]; round?: number; decision?: DecisionRecord | null; reason?: string | null }) => void;
   };
   isStopped: () => boolean;
+  /** The project checkout the seats run in; named in every prompt with the read-only rules. */
+  workspace?: string;
   moderator?: Moderator;
   log?: (message: string) => void;
 };
@@ -44,7 +46,7 @@ export async function runCouncil(initial: CouncilSession, io: CouncilIo): Promis
   try {
     const evidence = await io.evidence();
     if (stopped()) return null;
-    const agendaRaw = await io.spawnTurn({ session, seat: null, round: 0, prompt: agendaPrompt({ session, evidence }) });
+    const agendaRaw = await io.spawnTurn({ session, seat: null, round: 0, prompt: agendaPrompt({ session, evidence, workspace: io.workspace }) });
     const agenda = parseAgenda(agendaRaw);
     io.save.agenda(agenda.agenda, agenda.criteria);
     session = { ...session, agenda: agenda.agenda, criteria: agenda.criteria };
@@ -60,7 +62,7 @@ export async function runCouncil(initial: CouncilSession, io: CouncilIo): Promis
       for (const seat of session.seats) {
         if (stopped()) return null;
         const since = lastSeen.get(seat.id) ?? 0;
-        const prompt = seatPrompt({ session, seat, round, evidence, feed, sinceSeq: since });
+        const prompt = seatPrompt({ session, seat, round, evidence, feed, sinceSeq: since, workspace: io.workspace });
         const text = (await io.spawnTurn({ session, seat, round, prompt })).trim();
         lastSeen.set(seat.id, feed.at(-1)?.seq ?? 0);
         if (round > 1 && PASS.test(text)) { passed += 1; note(seat.id, round, "status", "PASS"); continue; }
@@ -76,7 +78,7 @@ export async function runCouncil(initial: CouncilSession, io: CouncilIo): Promis
     }
     if (stopped()) return null;
     io.save.state({ state: "synthesis" });
-    const decisionRaw = await io.spawnTurn({ session, seat: null, round: session.maxRounds + 1, prompt: chairPrompt({ session, evidence, feed }) });
+    const decisionRaw = await io.spawnTurn({ session, seat: null, round: session.maxRounds + 1, prompt: chairPrompt({ session, evidence, feed, workspace: io.workspace }) });
     const decision = parseDecisionRecord(decisionRaw);
     note(CHAIR_SEAT_ID, session.maxRounds + 1, "decision", decision.recommendation);
     io.save.state({ state: "done", decision, reason: null });

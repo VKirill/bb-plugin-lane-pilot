@@ -89,7 +89,7 @@ export async function runRoom(initial: CouncilSession, io: RoomIo): Promise<Deci
     const evidence = await io.evidence();
     absorbOwner();
     if (stopped()) return null;
-    const agenda = parseAgenda(await io.spawnTurn({ session, seat: null, round: 0, prompt: agendaPrompt({ session, evidence }) }));
+    const agenda = parseAgenda(await io.spawnTurn({ session, seat: null, round: 0, prompt: agendaPrompt({ session, evidence, workspace: io.workspace }) }));
     io.save.agenda(agenda.agenda, agenda.criteria);
     session = { ...session, agenda: agenda.agenda, criteria: agenda.criteria };
     note(CHAIR_SEAT_ID, 0, "agenda", `Agenda:\n${agenda.agenda.map((item, index) => `${index + 1}. ${item}`).join("\n")}\n\nCriteria: ${agenda.criteria.join("; ")}`);
@@ -100,7 +100,7 @@ export async function runRoom(initial: CouncilSession, io: RoomIo): Promise<Deci
       if (stopped()) return null;
       absorbOwner();
       io.presence?.(seat.id);
-      const text = (await io.spawnTurn({ session, seat, round: 1, prompt: seatPrompt({ session, seat, round: 1, evidence, feed, sinceSeq: 0 }) })).trim();
+      const text = (await io.spawnTurn({ session, seat, round: 1, prompt: seatPrompt({ session, seat, round: 1, evidence, feed, sinceSeq: 0, workspace: io.workspace }) })).trim();
       io.presence?.(null);
       const saved = note(seat.id, 1, "position", text);
       lastSeen.set(seat.id, saved.seq);
@@ -132,7 +132,7 @@ export async function runRoom(initial: CouncilSession, io: RoomIo): Promise<Deci
       }
       const seat = session.seats.find((item) => item.id === speaker.seatId)!;
       io.presence?.(seat.id);
-      const text = (await io.spawnTurn({ session, seat, round: lap, prompt: seatPrompt({ session, seat, round: lap, evidence, feed, sinceSeq: lastSeen.get(seat.id) ?? 0 }) })).trim();
+      const text = (await io.spawnTurn({ session, seat, round: lap, prompt: seatPrompt({ session, seat, round: lap, evidence, feed, sinceSeq: lastSeen.get(seat.id) ?? 0, workspace: io.workspace }) })).trim();
       io.presence?.(null);
       turns += 1;
       lastSeen.set(seat.id, feed.at(-1)?.seq ?? 0);
@@ -158,7 +158,7 @@ export async function runRoom(initial: CouncilSession, io: RoomIo): Promise<Deci
     if (stopped()) return null;
     io.save.state({ state: "synthesis" });
     io.presence?.(CHAIR_SEAT_ID);
-    const decision = parseDecisionRecord(await io.spawnTurn({ session, seat: null, round: lap, prompt: chairPrompt({ session, evidence, feed }) }));
+    const decision = parseDecisionRecord(await io.spawnTurn({ session, seat: null, round: lap, prompt: chairPrompt({ session, evidence, feed, workspace: io.workspace }) }));
     io.presence?.(null);
     note(CHAIR_SEAT_ID, lap, "decision", decision.recommendation);
     io.save.state({ state: "done", decision, reason: null });
