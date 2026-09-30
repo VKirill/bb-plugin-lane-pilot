@@ -10,7 +10,7 @@ export type OwnershipTask = {
 export type RunOwnershipTask = OwnershipTask & { id:string };
 
 export type RunOwnershipScope =
-  | { ok:true; task:OwnershipTask; taskIds:string[] }
+  | { ok:true; task:OwnershipTask; tasks:OwnershipTask[]; taskIds:string[] }
   | { ok:false; reason:string };
 
 function safeRelative(value:string):string|null {
@@ -83,6 +83,7 @@ export function resolveRunOwnershipScope(
       never_touch:[...never].sort(),
       verification:tasks.find((task) => task.id === requestedTaskId)?.verification ?? [],
     },
+    tasks:tasks.map((task) => ({ project_cwd:projectCwd, owns_paths:task.owns_paths, never_touch:task.never_touch, verification:task.verification })),
     taskIds:[...ids].sort(),
   };
 }
@@ -98,5 +99,15 @@ export function findUnownedChanges(changedPaths:string[], task:OwnershipTask):st
     if (!path || task.never_touch.some((pattern) => matches(pattern, path))
       || !task.owns_paths.some((pattern) => matches(pattern, path))) unowned.push(rawPath);
   }
+  return [...new Set(unowned)].sort();
+}
+
+/**
+ * Sibling tasks of one run workspace: a changed path is owned when some task of the run owns it
+ * and that same task does not never_touch it. A sibling's never_touch does not veto the owner's files.
+ */
+export function findUnownedRunChanges(changedPaths:string[], tasks:OwnershipTask[]):string[] {
+  if (!tasks.length) return [...new Set(changedPaths)].sort();
+  const unowned = changedPaths.filter((path) => tasks.every((task) => findUnownedChanges([path], task).length > 0));
   return [...new Set(unowned)].sort();
 }

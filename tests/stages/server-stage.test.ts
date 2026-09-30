@@ -18,6 +18,8 @@ const config = {
 };
 const defaultEnvironmentProviders=[{id:"git-worktree",pluginId:"environment-git-worktree",displayName:"Worktree",acceptsEmptyInputs:true,availability:null,description:null,icon:null,logoUrl:null,machineProviderId:null,requires:{gitCheckout:true,gitRemote:false,projectCheckout:true,projectless:false}}];
 let listedEnvironmentProviders:unknown[]=defaultEnvironmentProviders;
+const defaultListPaths:Array<{kind:"file"|"directory";name:string;path:string;positions:never[];score:number}>=[{kind:"file",name:"unowned.ts",path:"src/unowned.ts",positions:[],score:1},{kind:"file",name:"guide.md",path:"docs/guide.md",positions:[],score:1},{kind:"file",name:"README.md",path:"README.md",positions:[],score:1}];
+let extraListPaths:typeof defaultListPaths=[];
 let holderThreadGets=0;
 let holderEnvGets=0;
 let holderBindAfterGets=0;
@@ -52,6 +54,7 @@ const task:TaskV2 = {
 };
 
 async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[], codeCritiqueOutputs?:string[], codeRepairOutput?:string) {
+  extraListPaths=[];
   writerControl = writerControl ?? {hold:false,states:new Map()};
   const spawned:Array<Record<string,unknown>> = [];
   const threadMeta=new Map<string,Record<string,unknown>>();
@@ -123,12 +126,13 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           return { matched:true, thread:{ status:"idle" } };
         },
         get:async ({ threadId }) => {
+          const parentIdentity={projectId,sourceThreadId:pmThreadId,lifecycleOwnerThreadId:pmThreadId};
           if(startingTurnCompletedThreadId && threadId===startingTurnCompletedThreadId) {
-            return { id:threadId, status:"starting", queuedWork:"none" };
+            return { id:threadId, status:"starting", queuedWork:"none", ...parentIdentity };
           }
           if(idleWaitThrowThreadId && threadId===idleWaitThrowThreadId) {
             idleWaitGets+=1;
-            return { id:threadId, status:idleWaitGets===1 ? "stopping" : "idle" };
+            return { id:threadId, status:idleWaitGets===1 ? "stopping" : "idle", ...parentIdentity };
           }
           if(threadId==="workspace-provisioner-thread") {
             holderThreadGets+=1;
@@ -137,11 +141,13 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
               id:threadId,
               status:failedThreadIds.has(threadId) ? "error" : writerControl.states.get(threadId)??"idle",
               ...(bound ? {environmentId:"attempt-env"} : {}),
+              ...parentIdentity,
             };
           }
           return {
             id:threadId,
             status:failedThreadIds.has(threadId) ? "error" : writerControl.states.get(threadId)??"idle",
+            ...parentIdentity,
           };
         },
         events:{
@@ -204,11 +210,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
         list:async () => [{ id:projectId, name:projectId, sources:[] }],
       },
       files:{
-        listPaths:async()=>({truncated:false,paths:[
-          {kind:"file",name:"unowned.ts",path:"src/unowned.ts",positions:[],score:1},
-          {kind:"file",name:"guide.md",path:"docs/guide.md",positions:[],score:1},
-          {kind:"file",name:"README.md",path:"README.md",positions:[],score:1},
-        ]}) as never,
+        listPaths:async()=>({truncated:false,paths:[...defaultListPaths,...extraListPaths]}) as never,
         read:async ({ path, rootPath }) => {
           fileReads.push({ rootPath, path });
           return path.endsWith("README.md") ? readFirstUnavailable ? { content:null } : { content:"stage fixture heading\nread-first fixture excerpt\n"+Array.from({length:60},(_,index)=>`bounded PM context line ${index+1}`).join("\n") }
@@ -236,6 +238,14 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           ...(plan.includes("src/unowned.ts")?[{code:"plan_path_unowned",path:"src/unowned.ts",severity:"warning",finding:"Plan names existing path src/unowned.ts, but no TaskV2 lane owns it"}]:[]),
           ...(plan.includes("docs/guide.md")?[{code:"plan_path_unowned",path:"docs/guide.md",severity:"info",finding:"Plan names existing path docs/guide.md, but no TaskV2 lane owns it"}]:[]),
         ]};
+      }
+      if(call.method==="snapshotDryRun") {
+        const paths=(call.input as {paths?:string[]}).paths??[];
+        return {hostId:config.hostId,entries:paths.map((path)=>{
+          const rel=path.startsWith(`${config.writerWorkspacePath}/`) ? path.slice(config.writerWorkspacePath.length+1) : path;
+          const extra=extraListPaths.find((row)=>row.path===rel);
+          return {path,kind:extra?.kind ?? "file",sha256:null,symlinkTarget:null};
+        })};
       }
       if(call.method==="gitOwnershipBase") {
         const baseRef=(call.input as {baseRef?:string}).baseRef;
@@ -1156,14 +1166,14 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("fails closed before writer spawn when a read_first file is unavailable",async()=>{
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false},undefined,undefined,undefined,undefined,undefined,undefined,true);
+  it("still spawns the writer when a read_first file is unavailable and names the gap in the packet",async()=>{
+    const {harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false},undefined,undefined,undefined,undefined,undefined,undefined,true);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
-    expect(result.state).toBe("blocked");
-    expect(result.reason).toContain("execution_packet_failed");
-    expect(spawned.some((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer")).toBe(false);
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="writer-agent")?.state).toBe("failed");
+    expect(result.reason??"").not.toContain("execution_packet_failed");
+    const writer=spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer");
+    expect(writer).toBeDefined();
+    expect(writer?.prompt).toContain("(not in the workspace; skip it)");
     await harness.lifecycle.dispose();
   });
 
@@ -1521,6 +1531,23 @@ describe("stage → native writer → receipt", () => {
     expect(spawned).toHaveLength(0);
     expect(listStageReceipts(db, "stage-run", task.id).map((row) => [row.stageId,row.state]))
       .toEqual([["acceptance-receipt","skipped"],["plan-critique","blocked"],["pm-read","skipped"],["specialist-review","skipped"],["verification","skipped"],["writer-agent","skipped"]]);
+    await harness.lifecycle.dispose();
+  });
+
+  it("blocks dispatch before spawn when read_first is a directory", async () => {
+    const { db, harness, spawned } = await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    extraListPaths=[{kind:"directory",name:"src",path:"src",positions:[],score:1}];
+    const directoryTask = { ...task, read_first:["src"] };
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
+      { confirm:true, plan:"Create the fixture", task:directoryTask }, { threadId:pmThreadId, projectId })));
+    expect(dispatched.state).toBe("blocked");
+    expect(dispatched.reason).toContain("directory, not a file");
+    expect(spawned).toHaveLength(0);
+    const waited = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",
+      { runId:"stage-run", timeoutSec:1 }, { threadId:pmThreadId, projectId })));
+    expect(waited.state).toBe("blocked");
+    expect(waited.reason).toContain("directory, not a file");
+    expect(listStageReceipts(db, "stage-run", String(dispatched.taskId)).find((row)=>row.stageId==="writer-agent")?.state).toBe("skipped");
     await harness.lifecycle.dispose();
   });
 

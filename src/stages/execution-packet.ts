@@ -12,6 +12,8 @@ export type ExecutionPacketEntry = {
   path: string;
   sha256: string;
   windows: Array<{ startLine: number; endLine: number; excerpt: string }>;
+  /** The hint named a path the workspace does not have (or a directory); the writer is told so. */
+  missing?: true;
 };
 
 export type ExecutionPacket = {
@@ -56,8 +58,11 @@ export async function buildExecutionPacket(
   let remaining = MAX_PACKET_BYTES;
   let truncated = false;
   for (const hint of hints) {
-    const file = await read(hint.path);
-    if (!file || typeof file.content !== "string") throw new Error(`read_first source is unavailable: ${hint.path}`);
+    const file = await read(hint.path).catch(() => null);
+    if (!file || typeof file.content !== "string") {
+      entries.push({ path:hint.path, sha256:"", windows:[], missing:true });
+      continue;
+    }
     const source = decodeFile(file, hint.path);
     const selections = selectLines(hint, source);
     const sourceSha256 = file.sha256 && /^[a-f0-9]{64}$/.test(file.sha256) ? file.sha256 : sha256(source);
@@ -85,7 +90,9 @@ export async function buildExecutionPacket(
  * hashes stay in the receipt; the short prefix lets the writer notice a file that changed since.
  */
 export function renderExecutionPacket(packet: ExecutionPacket): string {
-  const lines = packet.entries.flatMap((entry) => entry.windows.length
+  const lines = packet.entries.flatMap((entry) => entry.missing
+    ? [`- ${entry.path} (not in the workspace; skip it)`]
+    : entry.windows.length
     ? entry.windows.map((w) => `- ${entry.path} L${w.startLine}-L${w.endLine} (sha256 ${entry.sha256.slice(0, 8)})`)
     : [`- ${entry.path} (sha256 ${entry.sha256.slice(0, 8)})`]);
   if (!lines.length) return "";

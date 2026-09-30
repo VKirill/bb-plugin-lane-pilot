@@ -13,8 +13,19 @@ describe("bounded execution packet", () => {
     expect(packet.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it("fails closed when a requested file or line window is unavailable", async () => {
-    await expect(buildExecutionPacket(["README.md"], async () => null)).rejects.toThrow("source is unavailable");
+  it("notes a missing or unreadable source instead of blocking the attempt", async () => {
+    const packet = await buildExecutionPacket(["README.md", "docs/"], async (path) => {
+      if (path === "docs/") throw new Error("HTTP 400: Path is a directory, not a file");
+      return null;
+    });
+    expect(packet.entries).toEqual([
+      { path:"README.md", sha256:"", windows:[], missing:true },
+      { path:"docs/", sha256:"", windows:[], missing:true },
+    ]);
+    expect(renderExecutionPacket(packet)).toContain("- README.md (not in the workspace; skip it)");
+  });
+
+  it("fails closed when a requested line window is outside the file", async () => {
     await expect(buildExecutionPacket(["README.md L9-L10"], async () => ({ content:"short" }))).rejects.toThrow("outside README.md");
   });
 

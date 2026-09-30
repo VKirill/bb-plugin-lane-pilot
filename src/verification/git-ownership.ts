@@ -39,8 +39,9 @@ function resolveCommit(cwd:string,ref:string) {
   return {ok:true as const,sha};
 }
 
-function filterOwnershipNoise(paths:string[]):string[] {
-  const prefixes=[".agents/",".repowise/",".worktrees/",".claude/worktrees/","node_modules/",".npm-cache/","npm-cache/",".npm/",".pnpm-store/","pnpm-store/",".yarn/cache/",".yarn/unplugged/",".cache/",".turbo/",".next/cache/","coverage/",".git/"];
+/** Bookkeeping the harness, hooks and sibling agents write into a workspace; never a writer's change. */
+export function filterOwnershipNoise(paths:string[]):string[] {
+  const prefixes=[".agents/",".bb/",".repowise/",".worktrees/",".claude/worktrees/","node_modules/",".npm-cache/","npm-cache/",".npm/",".pnpm-store/","pnpm-store/",".yarn/cache/",".yarn/unplugged/",".cache/",".turbo/",".next/cache/","coverage/",".git/"];
   const files=new Set(["PROGRESS.md","LESSONS.md","AGENTS.md","CLAUDE.md"]);
   return [...new Set(paths.map((path)=>path.replace(/^\.\//, "")).filter((path)=>{
     if(prefixes.some((prefix)=>path.startsWith(prefix))||files.has(path)) return false;

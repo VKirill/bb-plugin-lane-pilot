@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findUnownedChanges, resolveRunOwnershipScope, validateOwnershipContract } from "../../src/verification/ownership";
+import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope, validateOwnershipContract } from "../../src/verification/ownership";
 
 const task = {
   project_cwd:"/work/project",
@@ -41,6 +41,20 @@ describe("task ownership and workspace boundaries", () => {
     expect(result.taskIds).toEqual(["task-a", "task-b"]);
     expect(findUnownedChanges(["docs/readme.md"], result.task)).toEqual([]);
     expect(findUnownedChanges(["docs/private/secret.md"], result.task)).toEqual(["docs/private/secret.md"]);
+  });
+
+  it("lets a sibling's never_touch veto only the sibling, never the owner of a path", () => {
+    // The PM lists everything a task must not touch, which is exactly what its siblings own.
+    const result = resolveRunOwnershipScope([
+      { id:"api", ...task, owns_paths:["apps/api/**"], never_touch:["apps/marketing/**", "packages/**"] },
+      { id:"ui", ...task, owns_paths:["apps/marketing/app/**"], never_touch:["apps/api/**", "packages/**"] },
+    ], "api", task.project_cwd);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(findUnownedRunChanges(["apps/api/src/route.ts", "apps/marketing/app/Page.vue"], result.tasks)).toEqual([]);
+    expect(findUnownedRunChanges(["packages/contracts/index.ts", "apps/marketing/server/x.ts"], result.tasks))
+      .toEqual(["apps/marketing/server/x.ts", "packages/contracts/index.ts"]);
+    expect(findUnownedRunChanges(["apps/api/src/route.ts"], [])).toEqual(["apps/api/src/route.ts"]);
   });
 
   it.each([

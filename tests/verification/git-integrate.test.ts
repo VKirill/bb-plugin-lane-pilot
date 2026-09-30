@@ -100,3 +100,54 @@ it("removes only Lane Pilot's own worktree of a failed attempt", async () => {
   const foreign = await worktree("bb-owned");
   expect(await removeLaneWorktree({ basePath: base, worktreePath: foreign })).toEqual({ removed: false });
 });
+
+it("re-points workspace package links at the worktree so checks import the writer's edits", async () => {
+  const { prepareWorktree } = await import("../../src/verification/git-integrate");
+  const { mkdir, lstat, readlink, realpath } = await import("node:fs/promises");
+  const { base, worktree } = await repo();
+  await writeFile(join(base, "package.json"), JSON.stringify({ name: "mono", workspaces: ["packages/*", "apps/api"] }) + "\n");
+  await mkdir(join(base, "packages", "contracts"), { recursive: true });
+  await writeFile(join(base, "packages", "contracts", "package.json"), JSON.stringify({ name: "@mono/contracts" }) + "\n");
+  await writeFile(join(base, "packages", "contracts", "index.js"), "module.exports = 'base';\n");
+  await mkdir(join(base, "apps", "api"), { recursive: true });
+  await writeFile(join(base, "apps", "api", "package.json"), JSON.stringify({ name: "@mono/api" }) + "\n");
+  git(base, "add", "-A"); git(base, "commit", "-qm", "mono");
+  // npm's layout: third-party packages, workspace links back into the repo, a nested node_modules in one app.
+  await mkdir(join(base, "node_modules", "vitest"), { recursive: true });
+  await writeFile(join(base, "node_modules", ".package-lock.json"), "{}\n");
+  await mkdir(join(base, "node_modules", "@mono"));
+  await mkdir(join(base, "node_modules", ".bin"));
+  const { symlink } = await import("node:fs/promises");
+  await symlink("../../packages/contracts", join(base, "node_modules", "@mono", "contracts"), "dir");
+  await symlink("../../apps/api", join(base, "node_modules", "@mono", "api"), "dir");
+  await mkdir(join(base, "apps", "api", "node_modules", "left-pad"), { recursive: true });
+  await writeFile(join(base, ".gitignore"), "node_modules\ndist\n");
+  git(base, "add", ".gitignore"); git(base, "commit", "-qm", "ignore");
+  await mkdir(join(base, "packages", "contracts", "dist"));
+  await writeFile(join(base, "packages", "contracts", "dist", "index.d.ts"), "export {};\n");
+  const a = await worktree("a");
+  expect(await prepareWorktree({ basePath: base, worktreePath: a })).toEqual({ linked: ["node_modules", "apps/api/node_modules", "packages/contracts/dist"] });
+  expect((await lstat(join(a, "packages", "contracts", "dist"))).isSymbolicLink()).toBe(false);
+  expect(await readFile(join(a, "packages", "contracts", "dist", "index.d.ts"), "utf8")).toBe("export {};\n");
+  expect(await realpath(join(a, "node_modules", "vitest"))).toBe(await realpath(join(base, "node_modules", "vitest")));
+  expect(await realpath(join(a, "node_modules", "@mono", "contracts"))).toBe(await realpath(join(a, "packages", "contracts")));
+  expect(await readlink(join(a, "node_modules", ".package-lock.json"))).toBe(join(await realpath(base), "node_modules", ".package-lock.json"));
+  expect(await realpath(join(a, "apps", "api", "node_modules", "left-pad"))).toBe(await realpath(join(base, "apps", "api", "node_modules", "left-pad")));
+  await writeFile(join(a, "packages", "contracts", "index.js"), "module.exports = 'worktree';\n");
+  const { execFileSync: run } = await import("node:child_process");
+  expect(run("node", ["-e", "console.log(require('@mono/contracts'))"], { cwd: join(a, "apps", "api"), encoding: "utf8" }).trim()).toBe("worktree");
+  expect(git(a, "status", "--porcelain").trim()).toBe("M packages/contracts/index.js");
+  expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "a" })).status).toBe("merged");
+  expect(git(base, "show", "--stat", "--format=", "HEAD^2")).not.toContain("node_modules");
+});
+
+it("names the files when main has uncommitted edits the merge would overwrite", async () => {
+  const { base, worktree } = await repo();
+  const a = await worktree("a");
+  await writeFile(join(a, "server.ts"), "line1 from a\nline2\nline3\n");
+  await writeFile(join(base, "server.ts"), "line1\nline2 edited in main\nline3\n");
+  const blocked = await integrateWorktree({ basePath: base, worktreePath: a, message: "a" });
+  expect(blocked).toMatchObject({ status: "conflict", conflicts: ["server.ts"] });
+  expect(blocked.reason).toContain("base checkout has uncommitted changes");
+  expect(await readFile(join(base, "server.ts"), "utf8")).toBe("line1\nline2 edited in main\nline3\n");
+});

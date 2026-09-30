@@ -1,11 +1,11 @@
 {
   "name": "bb-plugin-lane-pilot",
-  "version": "0.1.13",
+  "version": "0.1.25",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || ^24.0.0 || ^26.0.0",
-    "bb": ">=0.43.3 <0.44",
-    "bbPluginSdk": ">=0.4.104 <0.5"
+    "bb": ">=0.43.3",
+    "bbPluginSdk": ">=0.4.104"
   },
   "bb": {
     "name": "Lane Pilot",

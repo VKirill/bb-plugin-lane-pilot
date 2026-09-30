@@ -21,7 +21,8 @@ import { requiredCliFlags } from "./src/cli-flags";
 import { attemptProduced, classifyCliOutcome, parseDirtSnapshots, type DirtSnapshot } from "./src/cli-outcome";
 import { WORKSPACE_DIRT_COMMAND } from "./src/workspace-dirt";
 import { classifyWriterOutput, isOutputPath, type VerifyResult } from "./src/validate-output";
-import { findUnownedChanges, resolveRunOwnershipScope, validateOwnershipContract } from "./src/verification/ownership";
+import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope, validateOwnershipContract } from "./src/verification/ownership";
+import { filterOwnershipNoise } from "./src/verification/git-ownership";
 import { parseReadFirstHints, readFirstKindError } from "./src/stages/read-first";
 import { buildExecutionPacket, renderExecutionPacket, renderPacketExcerpts } from "./src/stages/execution-packet";
 import { emergencyFallbackDecision, sameWriterSelection } from "./src/stages/emergency-writer";
@@ -32,6 +33,7 @@ import {
   type ComposerSelectionSnapshot,
 } from "./src/composer-selection";
 import { decideThreadCompletion, THREAD_WATCH_EVENT_TYPES, threadFailure } from "./src/thread-completion";
+import { attachStreamRetry, droppedStreamDetail } from "./src/stream-retry";
 import { acceptanceArtifactDir, buildAcceptanceV2, bbWriterReportMarkdown, validateAcceptanceV2 } from "./src/acceptance-v2";
 import {
   claimActivation,
@@ -132,7 +134,7 @@ import {
   prepareNativeSessionRecord,
 } from "./src/native-dispatch";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "./src/native-run";
-import { NATIVE_LP_BRIDGE_TOOLS } from "./src/native-session-hooks";
+import { NATIVE_LP_BRIDGE_PM_TOOLS } from "./src/native-session-hooks";
 import { helperSpawnFields, resolveHelperPlacement } from "./src/helper-placement";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "./src/stages/critique";
 import {
@@ -332,15 +334,20 @@ async function finishRunSafely(
       listRunning?: (query?: Record<string, unknown>) => Promise<Array<{ id: string }>>;
     };
     if (typeof threads.listRunning !== "function") throw new Error("cannot verify PM status: threads.listRunning is unavailable");
-    await threads.stop({ threadId: run.pm_thread_id });
-    const info = await threads.get({ threadId: run.pm_thread_id });
-    const status = stringAt(info, "status");
-    if (status !== "idle" && status !== "error") {
-      throw new Error(`cannot finish PM run: PM thread status is ${status ?? "unknown"}`);
-    }
-    const running = await threads.listRunning({});
-    if (running.some((thread) => thread.id === run.pm_thread_id)) {
-      throw new Error("cannot finish PM run: PM thread is still listed as running");
+    // A PM thread the user deleted has nothing left to observe; the run must still be closable.
+    const isGone = (cause: unknown) => /\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause));
+    const existing = await threads.get({ threadId: run.pm_thread_id }).catch((cause: unknown) => { if (isGone(cause)) return null; throw cause; });
+    if (existing !== null) {
+      await threads.stop({ threadId: run.pm_thread_id });
+      const info = await threads.get({ threadId: run.pm_thread_id });
+      const status = stringAt(info, "status");
+      if (status !== "idle" && status !== "error") {
+        throw new Error(`cannot finish PM run: PM thread status is ${status ?? "unknown"}`);
+      }
+      const running = await threads.listRunning({});
+      if (running.some((thread) => thread.id === run.pm_thread_id)) {
+        throw new Error("cannot finish PM run: PM thread is still listed as running");
+      }
     }
   }
   if (!closeRun(db, runId, closedBy)) throw new Error("running attempts remain; cancel them before finishing the run");
@@ -1278,6 +1285,30 @@ export default async function plugin(bb: BbPluginApi) {
   };
   bb.experimental_hooks.on("message.dispatch", (ctx) => handleNativeDispatch(bb, nativeHost, ctx, db));
   bb.providers.experimental_contributeEnv("claude-code", (ctx) => nativeContributedEnv(bb, nativeHost, ctx));
+  attachStreamRetry({
+    events: bb.events,
+    retry: (args) => bb.sdk.threads.retry(args),
+    isDisposed: () => disposed,
+    log: (message) => bb.log.warn(message),
+    failureDetail: async (threadId) => {
+      const listed = await listThreadEventsRaw(bb, {
+        threadId, types: THREAD_WATCH_EVENT_TYPES, order: "desc", limit: "50",
+      });
+      return listed.ok ? droppedStreamDetail(listed.events) : null;
+    },
+    owned: async (threadId) => {
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null);
+      const role = metadata && typeof metadata === "object" ? Reflect.get(metadata, "role") : null;
+      const runId = metadata && typeof metadata === "object" ? Reflect.get(metadata, "lanePilotRunId") : null;
+      const attemptId = metadata && typeof metadata === "object" ? Reflect.get(metadata, "attemptId") : null;
+      if (typeof attemptId === "string" && attemptId) {
+        const attempt = getAttempt(db, attemptId);
+        if (attempt && (attempt.state === "cancel_requested" || attempt.state === "canceled")) return false;
+      }
+      if ((typeof role === "string" && role) || (typeof runId === "string" && runId)) return true;
+      return Boolean(await bb.storage.kv.get(`native-thread:${threadId}`));
+    },
+  });
   let kvChain = Promise.resolve();
   function serializedKv<T>(work: () => Promise<T>): Promise<T> {
     const next = kvChain.then(work, work);
@@ -2264,8 +2295,12 @@ export default async function plugin(bb: BbPluginApi) {
       }
       branchChanges=gitResult.paths;
     }
-    const checkedPaths=[...new Set([...produced,...branchChanges])].sort();
-    const unowned = findUnownedChanges(checkedPaths, ownershipScope.task);
+    // The working tree of a shared checkout also holds what hooks and sibling agents wrote meanwhile
+    // (.agents/memory episodes, PROGRESS.md, design probes); only paths this task owns stay attributed to it.
+    const noiseFree=new Set(filterOwnershipNoise(produced));
+    const attributed=produced.filter((path)=>noiseFree.has(path)||findUnownedChanges([path],input.task).length===0);
+    const checkedPaths=[...new Set([...attributed,...branchChanges])].sort();
+    const unowned = findUnownedRunChanges(checkedPaths, ownershipScope.tasks);
     if (unowned.length) {
       recordGateEvaluation(db,{...input,gate:"owns-paths",status:"rejected",input:JSON.stringify(input.task),summary:{unownedCount:unowned.length}});
       recordGateEvaluation(db,{...input,gate:"validate",status:"skipped",input:JSON.stringify(input.task),summary:{reason:"ownership_rejected"}});
@@ -2684,7 +2719,7 @@ export default async function plugin(bb: BbPluginApi) {
         }, { hostId:input.config.hostId, timeoutMs:180_000 });
         if (merged.status === "conflict" || merged.status === "failed") {
           const reason = merged.status === "conflict"
-            ? `merge_conflict: main changed ${merged.conflicts.join(", ")} since this attempt started`
+            ? `merge_conflict: ${merged.reason?.startsWith("base checkout") ? merged.reason : "main changed since this attempt started"}: ${merged.conflicts.join(", ")}`
             : `merge_failed: ${merged.reason ?? "unknown"}`;
           recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged}});
@@ -2735,7 +2770,10 @@ export default async function plugin(bb: BbPluginApi) {
     let releaseWriterSlot:(()=>void)|undefined;
     void (async () => {
       const policy=runPolicyFor(input.runId);
-      releaseWriterSlot=await runWriterPool.acquire(input.runId,policy.pools.provider);
+      // "In the project folder" shares one checkout: writers there go one at a time, whatever the pool says,
+      // because a parallel writer's half-done edits would land in this writer's diff and checks.
+      const inPlace=parseWorkspaceMode((await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values["adoc.040"])==="in_place";
+      releaseWriterSlot=await runWriterPool.acquire(input.runId,inPlace?1:policy.pools.provider);
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){
         if(latestAttempt?.state==="canceled"){
@@ -2816,8 +2854,9 @@ export default async function plugin(bb: BbPluginApi) {
         if (countAttempts(db, input.runId, input.taskId) >= MAIN_ATTEMPT_LIMIT) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) {
-            transitionAttempt(db, latest.id, "blocked", { reason:"retry limit 2 exhausted" });
-            last = { ...last, status:"blocked", reason:"retry limit 2 exhausted" };
+            const exhausted = `retry limit 2 exhausted${typeof last.reason === "string" && last.reason ? `: ${last.reason}` : ""}`;
+            transitionAttempt(db, latest.id, "blocked", { reason:exhausted });
+            last = { ...last, status:"blocked", reason:exhausted };
           }
           break;
         }
@@ -5723,7 +5762,18 @@ export default async function plugin(bb: BbPluginApi) {
       if (!selected) return null;
       const parsed = nativeSelectionSchema.parse(selected);
       const agentType = await bb.storage.kv.get<string>(`native-agent-type:${threadId}`) ?? parsed.agentId;
-      return { token: parsed.token, agentId: parsed.agentId, agentType, projectId: parsed.projectId };
+      let shortId = parsed.agentId;
+      try { shortId = nativeAgentCliId(agentType); } catch { shortId = parsed.agentId; }
+      const stored = (await ownedAgents())[shortId];
+      let compiled = null;
+      try { compiled = compileEffectiveMainAgent(shortId, stored); } catch { compiled = null; }
+      return {
+        token: parsed.token,
+        agentId: parsed.agentId,
+        agentType,
+        projectId: parsed.projectId,
+        description: compiled?.description ?? shortId,
+      };
     },
     activation_context: async ({ projectId, threadId }) => {
       const listed = await bb.sdk.projects.list({ includePersonal: true });
@@ -6312,8 +6362,9 @@ export default async function plugin(bb: BbPluginApi) {
         return { ok: false, state: attempt.state, attemptId, reason: `retry is not legal from ${attempt.state}` };
       }
       if (used >= MAIN_ATTEMPT_LIMIT) {
-        transitionAttempt(db, attempt.id, "blocked", { reason: "retry limit 2 exhausted" });
-        return { ok: false, state: "blocked", attemptId, reason: "retry limit 2 exhausted" };
+        const exhausted = `retry limit 2 exhausted${attempt.reason ? `: ${attempt.reason}` : ""}`;
+        transitionAttempt(db, attempt.id, "blocked", { reason: exhausted });
+        return { ok: false, state: "blocked", attemptId, reason: exhausted };
       }
       const nextId = id("lpattempt");
       createAttempt(db, { id: nextId, runId: attempt.run_id, taskId: attempt.task_id });
@@ -6610,7 +6661,7 @@ export default async function plugin(bb: BbPluginApi) {
     const writerWorkspace = writerWorkspaceForPmInstructions(run, config?.writerWorkspacePath);
     const waiting = Boolean(native && run?.kind === "cli" && !nativeRunReady(db, resolvedRunId));
     return {
-      tools: [...NATIVE_LP_BRIDGE_TOOLS],
+      tools: [...NATIVE_LP_BRIDGE_PM_TOOLS],
       skills:[],
       instructions: waiting
         ? `Lane Pilot PM ${resolvedRunId} is waiting for the native environment to attach. Lane Pilot tools are already bound to this chat; do not dispatch writers until the workspace is frozen.`

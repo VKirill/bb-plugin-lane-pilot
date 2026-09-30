@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.25 — 2026-09-30
+
+- **Parallel lanes never share a checkout.** «В папке проекта» (`adoc.040=in_place`) now runs writers one at a time in that folder, whatever the pool size says; `auto` and `worktree` give every attempt its own git worktree, so 5 or 10 lanes work at once without seeing each other's half-done edits.
+- **Checks inside a worktree see the writer's own edits.** `node_modules` is mirrored entry by entry: third-party packages link to the base copy, monorepo workspace packages point back into the worktree, nested `<workspace>/node_modules` are mirrored too, and each workspace package's ignored `dist/` is copied so `exports → dist` resolves. Before, one symlink sent every `@scope/*` import to the base checkout.
+- **A merge blocked by uncommitted edits in main is named as such**, with the files, instead of a bare merge failure.
+
+## 0.1.24 — 2026-09-30
+
+- **Ownership is checked per task of a run, not against the union of every task's never_touch.** In a shared in-place checkout a sibling's changes appear in every attempt's diff; a path now passes when some task of the run owns it and does not never_touch it. Before, a sibling listing `apps/**` as never_touch rejected the owner's own files, and the whole run ended blocked.
+- **Bookkeeping in the working tree is not the writer's change.** `.agents/**` (memory episodes, PROGRESS.md, design probes, run locks), `.bb/**` chat exports and cache folders that hooks and sibling agents write during an attempt are left out of the ownership check unless the task owns them.
+- **A missing read_first path no longer blocks the task.** The packet names the path as absent and the writer is still dispatched; a line window outside a file still fails closed.
+- «retry limit 2 exhausted» keeps the reason of the last failed attempt after the colon.
+
 ## 0.1.13 — 2026-09-26
 
 - **Every native Lane chat is its own run.** A project needs no Lane Pilot setup, and several Lane chats can run in one project; only the legacy PM pipeline keeps one PM per project.

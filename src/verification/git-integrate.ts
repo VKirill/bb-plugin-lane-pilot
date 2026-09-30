@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { appendFile, lstat, mkdir, readFile, rm, stat, symlink } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rm, stat, symlink } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative } from "node:path";
 
 export type GitIntegration = {
   status:"merged"|"up-to-date"|"conflict"|"failed";
@@ -89,6 +89,12 @@ function merge(basePath:string,sha:string,message:string):GitIntegration {
   const unmerged=git(basePath,["diff","--name-only","--diff-filter=U"]);
   const conflicts=unmerged.ok?unmerged.stdout.split("\n").map((line)=>line.trim()).filter(Boolean):[];
   git(basePath,["merge","--abort"]);
+  // Git refuses to merge over uncommitted edits of the same files in main (another agent or the PM
+  // works there); name those files so the retry is understood, instead of a bare "merge failed".
+  if(!conflicts.length&&/would be overwritten by merge/.test(merged.reason)) {
+    const overwritten=merged.reason.split("\n").filter((line)=>/^\t/.test(line)).map((line)=>line.trim()).filter(Boolean);
+    if(overwritten.length) return {status:"conflict",commit:null,conflicts:overwritten,reason:"base checkout has uncommitted changes in files this attempt also changes"};
+  }
   return {status:"conflict",commit:null,conflicts,reason:merged.reason.split("\n").slice(-4).join("\n")};
 }
 
@@ -113,21 +119,85 @@ async function installBaseDependencies(basePath:string):Promise<void> {
   await running;
 }
 
+/** The workspace folders of a monorepo (`apps/*`, a literal path), from the base package.json; [] when none. */
+async function workspaceDirs(basePath:string):Promise<string[]> {
+  const manifest=await readFile(join(basePath,"package.json"),"utf8").then((text)=>JSON.parse(text) as {workspaces?:string[]|{packages?:string[]}}).catch(()=>null);
+  const patterns=Array.isArray(manifest?.workspaces)?manifest.workspaces:manifest?.workspaces?.packages??[];
+  const dirs:string[]=[];
+  for(const pattern of patterns) {
+    if(typeof pattern!=="string"||pattern.startsWith("/")||pattern.includes("..")) continue;
+    if(pattern.endsWith("/*")) {
+      const parent=pattern.slice(0,-2);
+      for(const name of await readdir(join(basePath,parent)).catch(()=>[] as string[])) {
+        if(!name.startsWith(".")&&(await stat(join(basePath,parent,name,"package.json")).catch(()=>null))?.isFile()) dirs.push(join(parent,name));
+      }
+    } else if(!pattern.includes("*")&&(await stat(join(basePath,pattern,"package.json")).catch(()=>null))?.isFile()) dirs.push(pattern);
+  }
+  return [...new Set(dirs)].sort();
+}
+
+/**
+ * Mirrors one node_modules folder entry by entry. A third-party package is a link to the base copy;
+ * a workspace package (npm links it back into the repository) is re-pointed at the worktree's own
+ * copy, so checks in the worktree import the writer's edits and not the base checkout's sources.
+ */
+async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:string}):Promise<boolean> {
+  const base=join(input.baseReal,input.dir,"node_modules"), target=join(input.worktreePath,input.dir,"node_modules");
+  if(!(await stat(base).catch(()=>null))?.isDirectory()) return false;
+  if(!(await stat(dirname(target)).catch(()=>null))?.isDirectory()||await lstat(target).catch(()=>null)) return false;
+  const inRepo=(path:string)=>(path===input.baseReal||path.startsWith(`${input.baseReal}/`))&&!path.startsWith(`${base}/`);
+  await mkdir(target);
+  const linkEntry=async(rel:string[])=>{
+    const source=join(base,...rel), destination=join(target,...rel);
+    const info=await lstat(source);
+    if(info.isSymbolicLink()) {
+      const real=await realpath(source).catch(()=>null);
+      if(real&&inRepo(real)) { await symlink(join(input.worktreePath,relative(input.baseReal,real)),destination,"dir"); return; }
+    }
+    const followed=await stat(source).catch(()=>null);
+    await symlink(source,destination,followed?.isDirectory()?"dir":"file");
+  };
+  for(const name of await readdir(base)) {
+    if(name.startsWith("@")&&!(await lstat(join(base,name))).isSymbolicLink()&&(await stat(join(base,name))).isDirectory()) {
+      await mkdir(join(target,name));
+      for(const child of await readdir(join(base,name))) await linkEntry([name,child]);
+    } else {
+      await linkEntry([name]);
+    }
+  }
+  return true;
+}
+
 export async function prepareWorktree(input:{basePath:string;worktreePath:string}):Promise<{linked:string[]}> {
   await installBaseDependencies(input.basePath);
-  const base=join(input.basePath,"node_modules"), target=join(input.worktreePath,"node_modules");
-  if(!(await stat(base).catch(()=>null))?.isDirectory()||await lstat(target).catch(()=>null)) return {linked:[]};
+  const baseReal=await realpath(input.basePath).catch(()=>input.basePath);
+  if(!(await stat(join(baseReal,"node_modules")).catch(()=>null))?.isDirectory()||await lstat(join(input.worktreePath,"node_modules")).catch(()=>null)) return {linked:[]};
   const common=git(input.worktreePath,["rev-parse","--git-common-dir"]);
   if(!common.ok) return {linked:[]};
   const dir=common.stdout.trim();
   const exclude=join(isAbsolute(dir)?dir:join(input.worktreePath,dir),"info","exclude");
   const current=await readFile(exclude,"utf8").catch(()=>"");
-  if(!current.split("\n").includes("/node_modules")) {
+  const missing=["/node_modules","node_modules/"].filter((line)=>!current.split("\n").includes(line));
+  if(missing.length) {
     await mkdir(join(exclude,".."),{recursive:true});
-    await appendFile(exclude,`${current&&!current.endsWith("\n")?"\n":""}/node_modules\n`);
+    await appendFile(exclude,`${current&&!current.endsWith("\n")?"\n":""}${missing.join("\n")}\n`);
   }
-  await symlink(base,target,"dir");
-  return {linked:["node_modules"]};
+  const linked:string[]=[];
+  const workspaces=await workspaceDirs(baseReal);
+  for(const workspace of ["",...workspaces]) {
+    if(await mirrorNodeModules({baseReal,worktreePath:input.worktreePath,dir:workspace})) linked.push(workspace?join(workspace,"node_modules"):"node_modules");
+  }
+  // Workspace packages are consumed through their ignored build output (exports → dist/). A fresh
+  // worktree has none, so every check importing a sibling package would fail; each worktree gets its
+  // own copy, and a build inside the worktree never writes into the base checkout or another lane.
+  for(const workspace of workspaces) {
+    const dist=join(workspace,"dist");
+    if(!(await stat(join(baseReal,dist)).catch(()=>null))?.isDirectory()||await lstat(join(input.worktreePath,dist)).catch(()=>null)) continue;
+    if(!git(baseReal,["check-ignore","-q",dist]).ok) continue;
+    await cp(join(baseReal,dist),join(input.worktreePath,dist),{recursive:true,dereference:false,errorOnExist:false,force:true});
+    linked.push(dist);
+  }
+  return {linked};
 }
 
 /** Removes Lane Pilot's own worktree and its lane/ branch; other worktrees are left alone. */
