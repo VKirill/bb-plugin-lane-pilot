@@ -463,7 +463,9 @@ describe("BB writer validation on the server path", () => {
             : { role:"writer" },
           spawn: async () => ({ id:"writer-accepted" }),
           wait: async () => ({ matched:true, thread:{ status:"idle" } }),
-          get: async () => ({ id:"writer-accepted", status:"idle" }),
+          get: async ({ threadId }) => threadId === pmThreadId
+            ? { id:pmThreadId, status:"idle", projectId, sourceThreadId:pmThreadId, lifecycleOwnerThreadId:pmThreadId }
+            : { id:"writer-accepted", status:"idle" },
           output: async () => ({ text:"writer output" }),
           list: async () => [] as never,
         },
@@ -485,7 +487,7 @@ describe("BB writer validation on the server path", () => {
           snapshots += 1;
           return {
             hostId:"host-test", exitCode:0,
-            stdout:JSON.stringify(snapshots === 1 ? [] : [{ path:"hello.txt", sha256:"new-content" }]),
+            stdout:JSON.stringify(snapshots % 2 === 1 ? [] : [{ path:"hello.txt", sha256:"new-content" }]),
             stderr:"",
           };
         }
@@ -514,6 +516,20 @@ describe("BB writer validation on the server path", () => {
     expect(validateAcceptanceV2(acceptance)).toEqual({ ok:true });
     expect(written.has("/tmp/writer/.agents/runs/run-accepted/artifacts/accepted-task/lane-pilot-receipt.json")).toBe(true);
     expect(written.has("/tmp/writer/acceptance.json")).toBe(false);
+
+    // A second task in the same run must not replace the first task's receipt in the PM's answer.
+    await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, plan:"Second accepted writer plan", task:{ ...task, id:"accepted-task-2", verify:"none", verification:[] } },
+      { threadId:pmThreadId, projectId },
+    );
+    const both = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:"run-accepted", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+    )));
+    expect(both.state).toBe("accepted");
+    expect(both.receipt.tasks.map((item:{lanePilotTaskId:string}) => item.lanePilotTaskId).sort()).toEqual(
+      (db.prepare("SELECT id FROM lane_pilot_task WHERE run_id='run-accepted'").all() as {id:string}[]).map((row) => row.id).sort(),
+    );
     await harness.lifecycle.dispose();
   });
 

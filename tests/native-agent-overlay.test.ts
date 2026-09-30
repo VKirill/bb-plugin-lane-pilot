@@ -2,11 +2,18 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+import bundledAgents from "../src/bundled-agents.json";
+import { compileMainAgentProfile } from "../src/agent-profile";
 import {
   splitClaudeToolList,
   stockAgentsOverlayFromInstalled,
   unionLpBridgeToolsOnAgentsJson,
   LANE_PILOT_PM_SESSION,
+  lanePmOverlayPrompt,
+  overlayLanePmPrompt,
+  overlayLaneAgentPrompt,
+  overlaySessionTools,
+  laneSessionOverlayPrompt,
 } from "../src/native-agent-overlay";
 import { resolveInstalledAgentFile } from "../src/native-claude-host";
 
@@ -50,7 +57,14 @@ it("overlays plugin stock from the installed file without activating ignored or 
     "Write",
     "Bash",
     "mcp__bb-bridge__lane_pilot_read",
+    "mcp__bb-bridge__lane_pilot_dispatch_writer",
+    "mcp__bb-bridge__lane_pilot_wait_writer",
+    "mcp__bb-bridge__lane_pilot_browser_qa",
+    "mcp__bb-bridge__lane_pilot_memory_context",
+    "mcp__bb-bridge__lane_pilot_workspace_status",
   ]));
+  expect(body.tools).not.toContain("mcp__bb-bridge__lane_pilot_dispatch_cli");
+  expect(body.tools).not.toContain("mcp__bb-bridge__lane_pilot_night_review");
   expect(body.tools).not.toContain("*");
   expect(body.skills).toEqual(["lane-contract"]);
   expect(body.maxTurns).toBe(120);
@@ -75,15 +89,48 @@ it("keeps project-agent permissionMode because that loader honors it", () => {
   expect(body).not.toHaveProperty("effort");
 });
 
-it("unions LP tools onto an edited --agents JSON without replacing the prompt", () => {
+it("unions LP tools onto an edited --agents JSON without replacing a custom prompt", () => {
   const next = unionLpBridgeToolsOnAgentsJson("dev-orchestrator", JSON.stringify({
     "dev-orchestrator": { description: "Edited", prompt: "Edited prompt", tools: ["Read"] },
   }));
   const body = next["dev-orchestrator"] as Record<string, unknown>;
-  expect(body.prompt).toBe(`Edited prompt\n\n${LANE_PILOT_PM_SESSION}\n`);
+  expect(body.prompt).toBe("Edited prompt");
   expect(body.tools).toEqual(expect.arrayContaining(["Read", "mcp__bb-bridge__lane_pilot_read"]));
   expect(body.tools).not.toContain("Write");
+  expect(body.tools).not.toContain("mcp__bb-bridge__lane_pilot_dispatch_cli");
   expect(body.tools).not.toContain("*");
+});
+
+it("gives specialists no bb-bridge tools and keeps the PM core plus browser QA", () => {
+  expect(overlaySessionTools("copy-lead", ["Read", "mcp__bb-bridge__lane_pilot_read"])).toEqual(["Read"]);
+  expect(overlaySessionTools("dev-orchestrator", ["Read", "mcp__bb-bridge__lane_pilot_night_review"])).toEqual([
+    "Read",
+    "mcp__bb-bridge__lane_pilot_read",
+    "mcp__bb-bridge__lane_pilot_dispatch_writer",
+    "mcp__bb-bridge__lane_pilot_wait_writer",
+    "mcp__bb-bridge__lane_pilot_browser_qa",
+    "mcp__bb-bridge__lane_pilot_memory_context",
+    "mcp__bb-bridge__lane_pilot_workspace_status",
+  ]);
+  const overlay = stockAgentsOverlayFromInstalled({
+    agentId: "dev-orchestrator",
+    source: "plugin:lane-stack",
+    markdown: PLUGIN_MD,
+  }) as Record<string, { tools: string[] }>;
+  expect(JSON.stringify(overlay["copy-lead"]!.tools)).not.toMatch(/mcp__bb-bridge__/);
+});
+
+it("does not rewrite a custom --agents prompt", () => {
+  const next = unionLpBridgeToolsOnAgentsJson("dev-orchestrator", JSON.stringify({
+    "dev-orchestrator": {
+      description: "PM",
+      prompt: "Dispatch run-controller then project-onboarder for docs/llm. lane-ctl accept.",
+      tools: ["Read"],
+    },
+  }));
+  expect((next["dev-orchestrator"] as { prompt: string }).prompt).toBe(
+    "Dispatch run-controller then project-onboarder for docs/llm. lane-ctl accept.",
+  );
 });
 
 it("resolves the installed markdown from the actual cwd, not a bundled copy", async () => {
@@ -108,6 +155,65 @@ it("resolves the installed markdown from the actual cwd, not a bundled copy", as
   }
 });
 
+it("is a unified BB PM instruction, not a CLI orchestrator patch", () => {
+  expect(LANE_PILOT_PM_SESSION).toMatch(/делай правки/);
+  expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_dispatch_writer");
+  expect(LANE_PILOT_PM_SESSION).toContain("design-lead");
+  expect(LANE_PILOT_PM_SESSION).toContain("copy-lead");
+  expect(LANE_PILOT_PM_SESSION).toContain("seo-specialist");
+  expect(LANE_PILOT_PM_SESSION).toContain("browser-qa");
+  expect(LANE_PILOT_PM_SESSION).toContain("Mac mini");
+  expect(LANE_PILOT_PM_SESSION).toContain("Google Chrome");
+  expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_browser_qa");
+  expect(LANE_PILOT_PM_SESSION).toContain("PROJECT.md");
+  expect(LANE_PILOT_PM_SESSION).toContain("docs/audiences/");
+  expect(LANE_PILOT_PM_SESSION).toContain("specialized agents");
+  expect(LANE_PILOT_PM_SESSION).toMatch(/Do not call run-init/);
+  expect(LANE_PILOT_PM_SESSION).toContain("scripts/deploy.sh");
+  expect(LANE_PILOT_PM_SESSION).toContain("что будем делать");
+  expect(LANE_PILOT_PM_SESSION).not.toContain("docs/llm");
+  expect(LANE_PILOT_PM_SESSION).not.toContain("stages.docs");
+  expect(LANE_PILOT_PM_SESSION).not.toContain("stages.onboard");
+});
+
+it("stock plugin compile is a BB session, not a CLI dump", () => {
+  const stock = bundledAgents["dev-orchestrator"].prompt;
+  expect(compileMainAgentProfile("dev-orchestrator").prompt).toBe(lanePmOverlayPrompt("dev-orchestrator"));
+  expect(overlayLanePmPrompt("dev-orchestrator", stock)).not.toContain("Boot solo");
+});
+
+it("replaces bundled specialist dumps with BB sessions", () => {
+  expect(overlayLaneAgentPrompt("copy-lead", bundledAgents["copy-lead"].prompt)).toBe(laneSessionOverlayPrompt("copy-lead"));
+  expect(overlayLaneAgentPrompt("seo-specialist", bundledAgents["seo-specialist"].prompt)).toContain("docs/audiences/seo.md");
+  expect(overlayLaneAgentPrompt("design-lead", bundledAgents["design-lead"].prompt)).toContain("docs/audiences/design.md");
+  expect(overlayLaneAgentPrompt("tavily", bundledAgents["tavily"].prompt)).toContain(".agents/research/inbox");
+  expect(overlayLaneAgentPrompt("tavily", bundledAgents["tavily"].prompt)).not.toContain("Boot **tavily**");
+  expect(overlayLaneAgentPrompt("project-onboarder", bundledAgents["project-onboarder"].prompt)).not.toContain("docs/llm");
+});
+
+it("replaces a stock CLI orchestrator body instead of appending it", () => {
+  const overlay = stockAgentsOverlayFromInstalled({
+    agentId: "dev-orchestrator",
+    source: "plugin:lane-stack",
+    markdown: `---
+name: dev-orchestrator
+description: Solo PM.
+tools: Agent(lane-stack:run-supervisor, lane-stack:project-onboarder, lane-stack:docs-maintainer, lane-stack:design-lead, Explore), Read
+---
+You are **dev-orchestrator**. Dispatch run-controller. Then spawn project-onboarder for CLAUDE / docs/llm. Use lane-ctl accept.
+`,
+  });
+  const body = overlay?.["dev-orchestrator"] as { prompt: string; tools: string[] };
+  expect(body.prompt).toBe(lanePmOverlayPrompt("dev-orchestrator"));
+  expect(body.prompt).not.toContain("docs/llm");
+  expect(body.tools[0]).toBe("Agent(lane-stack:design-lead, Explore)");
+  expect(overlay).not.toHaveProperty("project-onboarder");
+  expect(overlay?.["copy-lead"]).toEqual(expect.objectContaining({
+    prompt: laneSessionOverlayPrompt("copy-lead"),
+  }));
+  expect(overlay).not.toHaveProperty("browser-qa");
+});
+
 it("keeps a Lane PM from delegating code to general-purpose subagents", async () => {
   const { withoutCodeWritingSubagents, stockAgentsOverlayFromInstalled } = await import("../src/native-agent-overlay");
   expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, Explore, Plan, general-purpose)", "Read"]))
@@ -122,4 +228,7 @@ it("keeps a Lane PM from delegating code to general-purpose subagents", async ()
   expect(overlay["dev-orchestrator"]!.tools[0]).toBe("Agent(Explore, Plan)");
   expect((overlay["dev-orchestrator"] as unknown as { prompt: string }).prompt).toContain("lane_pilot_dispatch_writer");
   expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, lane-stack:design-lead, Explore)"])).toEqual(["Agent(lane-stack:design-lead, Explore)"]);
+  expect(withoutCodeWritingSubagents("dev-orchestrator", [
+    "Agent(lane-stack:project-onboarder, lane-stack:docs-maintainer, lane-stack:night-reviewer, lane-stack:copy-lead, Explore)",
+  ])).toEqual(["Agent(lane-stack:copy-lead, Explore)"]);
 });

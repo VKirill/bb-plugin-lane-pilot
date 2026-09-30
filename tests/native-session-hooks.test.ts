@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
 import { NATIVE_HOOK_SOURCES } from "../src/native-hook-sources";
-import { lpBridgeCatalogNames, materializeNativeHookSession, NATIVE_LP_BRIDGE_TOOLS, unionLpBridgeTools } from "../src/native-session-hooks";
+import { lpBridgeCatalogNames, materializeNativeHookSession, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS, unionLpBridgeTools } from "../src/native-session-hooks";
 
 it("names only bb-bridge LP tools and does not invent a full allowlist", () => {
   const names = lpBridgeCatalogNames();
@@ -17,7 +17,8 @@ it("names only bb-bridge LP tools and does not invent a full allowlist", () => {
 it("unions LP bridge names onto an existing allowlist without a wildcard", () => {
   const next = unionLpBridgeTools(["Read", "Write", "Bash"]);
   expect(next.slice(0, 3)).toEqual(["Read", "Write", "Bash"]);
-  expect(next).toContain("mcp__bb-bridge__lane_pilot_read");
+  expect(next.slice(3)).toEqual(lpBridgeCatalogNames(NATIVE_LP_BRIDGE_PM_TOOLS));
+  expect(next).not.toContain("mcp__bb-bridge__lane_pilot_night_review");
   expect(next).not.toContain("*");
 });
 
@@ -178,6 +179,9 @@ it("lets the PM run bulk-reader and its other contract commands", () => {
     "bb status",
     "bb thread show thr_abc",
     "bb uptime-monitor --help",
+    "node scripts/collect-release-evidence.mjs migration --receipt /tmp/r.json",
+    "sudo -n node --env-file=.env scripts/collect-release-evidence.mjs",
+    "cd /home/ubuntu/apps/selfystudio && ./scripts/deploy.sh --base abc",
   ]) {
     const result = spawnSync("python3", [inject, "--", "python3", guard], {
       input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command }, cwd: "/fixture" }),

@@ -104,9 +104,10 @@ describe("main-agent spawn payload", () => {
     expect(first.threadId).toBe("pm-main");
     expect(spawns[0]?.experimental_vkCompiledMainAgent).toMatchObject({
       id: "copy-lead",
-      prompt: "Write only the headline.",
-      sourceHash: saved.sourceHash,
     });
+    const spawned = spawns[0]?.experimental_vkCompiledMainAgent as { prompt: string; sourceHash: string };
+    expect(spawned.prompt).toBe("Write only the headline.");
+    expect(spawned.sourceHash).toBe(saved.sourceHash);
     expect(spawns[0]?.experimental_vkCompiledMainAgent).not.toHaveProperty("model");
     expect(spawns[0]?.experimental_vkCompiledMainAgent).not.toHaveProperty("permissionMode");
     await harness.behavior.callRpc("finish_run", { projectId, runId: first.runId });

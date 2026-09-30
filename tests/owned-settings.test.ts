@@ -37,6 +37,10 @@ describe("owned settings persistence and optimistic concurrency", () => {
       expect(editedResources.sourceHash).not.toBe(seeded.sourceHash);
       const before: any = await harness.behavior.callRpc("get_globals", {});
       expect(before.agents.map((item: any) => item.id)).toEqual(["dev-orchestrator", "copy-lead", "seo-specialist", "design-lead", "project-onboarder", "tavily"]);
+      const coordinator = before.agents.find((item: any) => item.id === "dev-orchestrator");
+      expect(coordinator.prompt).toContain("Lane Pilot PM");
+      expect(coordinator.prompt).not.toContain("Boot solo dev-orchestrator");
+      expect(JSON.stringify(coordinator.tools ?? [])).not.toMatch(/run-supervisor|project-onboarder/);
       const prototypeNamed: any = await harness.behavior.callRpc("save_agent_profile", { id: "constructor", prompt: "Treat as user profile.", description: "Constructor copy profile", expectedSourceHash: "" });
       expect(prototypeNamed.ok).toBe(true);
       const saved: any = await harness.behavior.callRpc("save_agent_profile", { id: "my-editor", prompt: "Write the agreed headline.", description: "My editor", expectedSourceHash: "" });

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "../i18n";
+import { setPendingNativeAgent } from "../src/ui/pending-native-agent";
 
 const hiddenData = vi.hoisted(() => ({ value: null as null | { token: string } }));
 const installStarts = vi.hoisted(() => [] as string[]);
@@ -12,7 +13,7 @@ vi.mock("@get-bb/plugin-sdk/app", async (original) => {
     ...sdk,
     useComposer: () => ({ ...sdk.useComposer(), experimental_vkSetDispatchData: (data: null | { token: string }) => { hiddenData.value = data; } }),
     experimental_useComposerSelection: () => ({
-      status: "ready", scope: { kind: "new-thread", projectId: "p1" }, projectId: "p1", providerId: "claude-code", model: "claude-opus-5[1m]", reasoningLevel: "medium",
+      status: "ready", scope: { kind: "new-thread", projectId: "p1" }, projectId: "p1", providerId: "claude-code", model: "claude-opus-5-5[1m]", reasoningLevel: "medium",
       environment: { kind: "provisioning", type: "provider", environmentProviderId: "project-checkout", machine: { type: "existing", hostId: "host_a" } },
       environmentRequest: { type: "provider" }, environmentProvenance: { projectId: "p1", sectionId: null },
     }),
@@ -69,7 +70,13 @@ async function mountComposer(input: {
   });
 }
 
-afterEach(() => { cleanup(); setLocaleOverride(null); hiddenData.value = null; installStarts.length = 0; });
+afterEach(() => {
+  cleanup();
+  setLocaleOverride(null);
+  hiddenData.value = null;
+  installStarts.length = 0;
+  setPendingNativeAgent(null);
+});
 
 describe("Enable Lane Pilot composer action", () => {
   it("registers the launch action only on the new-thread composer", async () => {
@@ -126,7 +133,7 @@ describe("Enable Lane Pilot composer action", () => {
     await waitFor(() => expect(installStarts).toEqual(["host_a"]));
     expect(slot.inspection.composer.mentions).toEqual([]);
     expect(slot.inspection.composer.text).toBe("Please review this project");
-    expect(slot.inspection.composer.selections).toEqual([{ providerId: "claude-code", model: "claude-opus-5[1m]", permissionMode: "full" }]);
+    expect(slot.inspection.composer.selections).toEqual([{ providerId: "claude-code", model: "claude-opus-5-5[1m]", permissionMode: "full" }]);
     fireEvent.click(slot.getByRole("button", { name: "Lane Pilot enabled" }));
     fireEvent.click(await slot.findByRole("button", { name: "Disable for this chat" }));
     expect(hiddenData.value).toBeNull();

@@ -1,8 +1,16 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
+import { compileMainAgentProfile } from "../src/agent-profile";
 import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/database";
+import { sessionOverrideAgentsJson } from "../src/native-agent-definition";
 import { nativeSelectionMarker } from "../src/native-session";
+
+const stockNativeAgentsJson = () => sessionOverrideAgentsJson({
+  agentId: "dev-orchestrator",
+  edited: false,
+  compiled: compileMainAgentProfile("dev-orchestrator"),
+});
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -122,6 +130,7 @@ it("binds unique tokens per tab and never uses project pending", async () => {
   expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_a" })).toMatchObject({
     token: first.token,
     agentType: "dev-orchestrator",
+    description: "Development coordinator",
   });
   expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_b" })).toMatchObject({ token: second.token });
   const db = openDatabase(fake.bb);
@@ -144,7 +153,7 @@ it("uses the real host path and leaves an ordinary thread without env", async ()
   expect(await hook(context("thr_path", nativeSelectionMarker(token), "host_a", "/real/checkout"))).toEqual({
     action: "proceed",
   });
-  expect(fake.prepareCalls).toEqual([{ cwd: "/real/checkout", agentId: "dev-orchestrator", agentsJson: null }]);
+  expect(fake.prepareCalls).toEqual([{ cwd: "/real/checkout", agentId: "dev-orchestrator", agentsJson: stockNativeAgentsJson() }]);
   expect(await hook(context("thr_plain", "hello"))).toEqual({ action: "proceed" });
   expect(
     await fake.harness.behavior.resolveProviderEnv("claude-code", {
@@ -324,7 +333,7 @@ it("prepares the launcher from project-checkout intent when environment is still
   }) as { token: string };
   const hook = fake.harness.registrations.hooks["message.dispatch"]!;
   expect(await hook(coldStart("thr_cold", nativeSelectionMarker(token)))).toEqual({ action: "proceed" });
-  expect(fake.prepareCalls).toEqual([{ cwd: "/checkout/selected", agentId: "dev-orchestrator", agentsJson: null }]);
+  expect(fake.prepareCalls).toEqual([{ cwd: "/checkout/selected", agentId: "dev-orchestrator", agentsJson: stockNativeAgentsJson() }]);
   const runId = findOpenNativeRun(openDatabase(fake.bb), "project_a", "thr_cold");
   expect(runId).not.toBeNull();
   expect(getRun(openDatabase(fake.bb), runId!)).toMatchObject({
@@ -389,7 +398,7 @@ it("prepares a host-only launcher for samepath before provision and keeps it if 
   }) as { token: string };
   const hook = fake.harness.registrations.hooks["message.dispatch"]!;
   expect(await hook(samepathStart("thr_samepath", nativeSelectionMarker(token)))).toEqual({ action: "proceed" });
-  expect(fake.prepareCalls).toEqual([{ cwd: null, agentId: "dev-orchestrator", agentsJson: null }]);
+  expect(fake.prepareCalls).toEqual([{ cwd: null, agentId: "dev-orchestrator", agentsJson: stockNativeAgentsJson() }]);
   expect(findOpenNativeRun(openDatabase(fake.bb), "project_a", "thr_samepath")).not.toBeNull();
   const first = await fake.harness.behavior.resolveProviderEnv("claude-code", {
     threadId: "thr_samepath",
@@ -399,8 +408,8 @@ it("prepares a host-only launcher for samepath before provision and keeps it if 
   expect(first.some((row) => row.name === "BB_CLAUDE_CODE_EXECUTABLE")).toBe(true);
   expect(first[0]?.value).toBe("/launcher");
   expect(fake.prepareCalls).toEqual([
-    { cwd: null, agentId: "dev-orchestrator", agentsJson: null },
-    { cwd: "/checkout/actual", agentId: "dev-orchestrator", agentsJson: null },
+    { cwd: null, agentId: "dev-orchestrator", agentsJson: stockNativeAgentsJson() },
+    { cwd: "/checkout/actual", agentId: "dev-orchestrator", agentsJson: stockNativeAgentsJson() },
   ]);
 });
 

@@ -29,12 +29,29 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_gate_triage",
 ] as const;
 
+export const NATIVE_LP_BRIDGE_PM_TOOLS = [
+  "lane_pilot_read",
+  "lane_pilot_dispatch_writer",
+  "lane_pilot_wait_writer",
+  "lane_pilot_browser_qa",
+  "lane_pilot_memory_context",
+  "lane_pilot_workspace_status",
+] as const;
+
 export function lpBridgeCatalogNames(tools: readonly string[] = NATIVE_LP_BRIDGE_TOOLS): string[] {
   return tools.map((name) => `mcp__${BB_BRIDGE_MCP_SERVER}__${name}`);
 }
 
-export function unionLpBridgeTools(tools: readonly string[]): string[] {
-  const extra = lpBridgeCatalogNames();
+export function withoutLpBridgeTools(tools: readonly string[]): string[] {
+  const prefix = `mcp__${BB_BRIDGE_MCP_SERVER}__`;
+  return tools.filter((tool) => !tool.startsWith(prefix));
+}
+
+export function unionLpBridgeTools(
+  tools: readonly string[],
+  catalog: readonly string[] = NATIVE_LP_BRIDGE_PM_TOOLS,
+): string[] {
+  const extra = lpBridgeCatalogNames(catalog);
   const seen = new Set(tools);
   const next = [...tools];
   for (const name of extra) {

@@ -16,6 +16,7 @@ import {
 } from "../activation";
 import { DEFAULT_NATIVE_AGENT } from "../native-session";
 import { selectionHostId } from "../composer-selection";
+import { setPendingNativeAgent } from "./pending-native-agent";
 import { useNativeComposerSelection } from "./composer-selection-hook";
 
 type ContextPayload = {
@@ -69,6 +70,7 @@ export function EnableLanePilotAction() {
     let current = true;
     setCtx(null);
     setEnabled(false);
+    setPendingNativeAgent(null);
     void rpc.call("activation_context", { projectId, threadId: null }).then((next) => {
       if (current) setCtx(next);
     }).catch((cause) => {
@@ -98,16 +100,18 @@ export function EnableLanePilotAction() {
         experimental_vkSetDispatchData?: (data: { token: string } | null) => void;
       }).experimental_vkSetDispatchData;
       if (!attach) throw new Error(t("nativeComposerUpgrade"));
-      const selection = await composer.experimental_setSelection({
-        providerId: "claude-code", model: "claude-opus-5[1m]", permissionMode: "full",
-      });
-      if (selection.providerId !== "claude-code" || selection.model !== "claude-opus-5[1m]") {
-        throw new Error(t("nativeComposerModelUnavailable"));
+      // Opus 5.5 with the 1M context when the machine offers it, the standard context otherwise.
+      let selected = false;
+      for (const model of ["claude-opus-5-5[1m]", "claude-opus-5-5"]) {
+        const selection = await composer.experimental_setSelection({ providerId: "claude-code", model, permissionMode: "full" });
+        if (selection.providerId === "claude-code" && selection.model === model) { selected = true; break; }
       }
+      if (!selected) throw new Error(t("nativeComposerModelUnavailable"));
       const result = await rpc.call("prepare_native_session", { projectId, agentId });
       attach({ token: result.token });
       // Claude Lane may still need installing on that machine; start now so the first send does not wait.
       if (hostId) void rpc.call("native_install_start", { hostId }).catch(() => undefined);
+      setPendingNativeAgent({ agentId: result.agentId, description: result.label });
       setEnabled(true);
       setOpen(false);
     } catch (cause) {
@@ -117,11 +121,15 @@ export function EnableLanePilotAction() {
     }
   };
 
-  useEffect(() => composer.experimental_onSubmitted(() => setEnabled(false)), [composer.experimental_onSubmitted]);
+  useEffect(() => composer.experimental_onSubmitted(() => {
+    setEnabled(false);
+    setPendingNativeAgent(null);
+  }), [composer.experimental_onSubmitted]);
 
   const disable = () => {
     (composer as typeof composer & { experimental_vkSetDispatchData?: (data: null) => void })
       .experimental_vkSetDispatchData?.(null);
+    setPendingNativeAgent(null);
     setEnabled(false);
     setOpen(false);
   };

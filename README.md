@@ -19,7 +19,7 @@ Based on [VKirill/claude-lane-stack](https://github.com/VKirill/claude-lane-stac
 | GitNexus | indexed from this checkout; name `bb-plugin-lane-pilot` |
 | Install | `git:` URL or a `path:` checkout the hub can read |
 | Data | plugin SQLite via BB storage (per project) |
-| Dependencies | BB ≥0.43.3 `<0.44`, Plugin SDK 0.4.104, compatible Lane Stack (newer/custom reused), Node 22/24/26 |
+| Dependencies | BB ≥0.43.3 (без верхнего потолка), Plugin SDK ≥0.4.104, compatible Lane Stack (newer/custom reused), Node 22/24/26 |
 
 ## Modes
 
@@ -38,8 +38,8 @@ Technical fields, including argv/environment previews, unapplied settings, stora
 
 ## Requirements
 
-- BB `>=0.43.3 <0.44`
-- `@get-bb/plugin-sdk` `0.4.104`
+- BB `>=0.43.3`
+- `@get-bb/plugin-sdk` `>=0.4.104`
 - A Lane Stack (or compatible newer/custom engine) on the project host whose required interfaces pass the probe. CLI writers use that reused engine; an incompatible host gets an isolated managed checkout instead of overwriting the user install.
 
 ## Install, update, rollback

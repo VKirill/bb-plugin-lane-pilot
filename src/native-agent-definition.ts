@@ -34,8 +34,10 @@ export function sessionOverrideAgentsJson(input: {
   compiled: CompiledMainAgent | null;
   extraFields?: Record<string, unknown>;
 }): string | null {
-  if (!input.edited) return null;
-  if (!input.compiled) throw new Error("edited_profile_missing_compiled");
+  if (!input.compiled) {
+    if (input.edited) throw new Error("edited_profile_missing_compiled");
+    return null;
+  }
   const extra = input.extraFields ?? {};
   assertCliAgentDefinitionFields([
     ...SESSION_RESOURCE_FIELDS.filter((field) => input.compiled?.[field] !== undefined),

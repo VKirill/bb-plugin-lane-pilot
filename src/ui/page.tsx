@@ -664,6 +664,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const writerDraftRef = useRef<ExperimentalProviderModelPickerValue | null>(null);
   const [writerDraft, setWriterDraft] = useState<ExperimentalProviderModelPickerValue | null>(null);
   const [selectedBinding, setSelectedBinding] = useState<{ hostId: string; path: string } | null>(null);
+  const [writerRejected, setWriterRejected] = useState(false);
   const writerSaveTail = useRef(Promise.resolve());
   const projectCache = useRef(new Map<string, { data: ScreenPayload; drafts: Record<string, unknown>; writer: ExperimentalProviderModelPickerValue | null }>());
   const loadGeneration = useRef(0);
@@ -999,6 +1000,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         const latest = writerDraftRef.current;
         if (!latest) return;
         const ok = await persistWriterSelection(latest);
+        setWriterRejected(!ok);
         if (ok && writerDraftRef.current === latest) {
           writerDraftRef.current = null;
           setWriterDraft(null);
@@ -1421,7 +1423,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               {data.writerBinding.status === "ambiguous" ? (
                 <Select onValueChange={(next) => {
                   const [hostId, path] = next.split("\u0000");
-                  if (hostId && path) setSelectedBinding({ hostId, path });
+                  if (!hostId || !path || !projectId) return;
+                  setSelectedBinding({ hostId, path });
+                  void rpc.call("save_writer_binding", { projectId, hostId, path }).then((result) => {
+                    if (result.ok) { setSaveError(null); setWriterRejected(false); void load(); }
+                  });
                 }}>
                   <SelectTrigger data-testid="writer-binding-select" aria-label={t("projectMachineFolder")}>
                     <SelectValue placeholder={t("bindingAmbiguous")} />
@@ -1483,6 +1489,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
                 <div className="max-w-xl">{modelPicker(pickerValue, (next) => { saveWriterSelection(next); })}</div>
+                {writerRejected && saveError ? <p className="max-w-xl text-xs text-destructive" data-testid="writer-save-error">{saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}</p> : null}
                 {(() => {
                   const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
                   const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);

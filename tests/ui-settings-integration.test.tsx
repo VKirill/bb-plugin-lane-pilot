@@ -448,6 +448,7 @@ describe("native writer settings against the registered SQLite backend", () => {
     const { harness, slot } = await mountWithBackend();
     await choosePickerValue({ providerId:"acp-cursor", model:"not-in-catalog", reasoningLevel:"medium" });
     await waitFor(() => expect(slot.getByTestId("setting-validation-error")).toBeTruthy());
+    expect(slot.getByTestId("writer-save-error")).toBeTruthy();
     expect(writerPicker(slot).getAttribute("data-provider")).toBe("acp-cursor");
     expect(writerPicker(slot).getAttribute("data-model")).toBe("not-in-catalog");
     const persisted = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown> };

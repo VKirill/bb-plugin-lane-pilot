@@ -666,6 +666,7 @@ export const rpcContract = defineRpcContract({
       agentId: z.string(),
       agentType: z.string(),
       projectId: z.string(),
+      description: z.string().min(1),
     }).strict().nullable(),
   },
   get_screen: {
@@ -802,6 +803,14 @@ export const rpcContract = defineRpcContract({
       versions: z.record(z.string(), z.number().int()),
       validation: settingValidationSchema.optional(),
     }).strict(),
+  },
+  save_writer_binding: {
+    input: z.object({
+      projectId: z.string().min(1),
+      hostId: z.string().min(1),
+      path: z.string().min(1),
+    }).strict(),
+    output: z.object({ ok: z.boolean() }).strict(),
   },
   save_writer_selection: {
     input: z.object({

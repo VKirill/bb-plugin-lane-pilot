@@ -89,6 +89,11 @@ _SUDO_VALUE_OPTS = {
     "-R", "--chroot", "-T", "--command-timeout", "-C", "--close-from",
     "-D", "--chdir",
 }
+_ENV_VALUE_OPTS = {
+    "-u", "--unset",
+    "-C", "--chdir",
+    "-S", "--split-string",
+}
 _DOCKER_MUTATING = {"restart", "start", "stop", "kill", "pause", "unpause"}
 _DOCKER_COMPOSE_OPS = {
     "config", "images", "logs", "ps", "top",
@@ -263,6 +268,32 @@ def _unwrap_sudo_args(args: list[str]) -> list[str] | None:
     return None
 
 
+def _unwrap_env_args(args: list[str]) -> list[str] | None:
+    """Strip env(1) flags and NAME=VALUE assignments; return the inner command."""
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token in {"--", "-"}:
+            rest = args[index + 1 :]
+            return rest or None
+        if token in _ENV_VALUE_OPTS:
+            if index + 1 >= len(args):
+                return None
+            index += 2
+            continue
+        if token.startswith("--unset=") or token.startswith("--chdir="):
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", token):
+            index += 1
+            continue
+        return args[index:]
+    return None
+
+
 def _pm_bb_error(args: list[str]) -> str | None:
     words = [arg for arg in args if not arg.startswith("-")]
     if any(arg in {"--help", "-h", "--version", "-V"} for arg in args):
@@ -289,6 +320,11 @@ def _pm_segment_error(segment: list[str]) -> str | None:
         if not args:
             return "nohup requires a command"
         return _pm_segment_error(args)
+    if executable == "env":
+        inner = _unwrap_env_args(args)
+        if not inner:
+            return "env requires a command"
+        return _pm_segment_error(inner)
     # A shell script run by its path (./scripts/deploy.sh) is the same as `bash scripts/deploy.sh`,
     # which the PM may already run: judge them alike instead of by the bare command name.
     if "/" in segment[0] and segment[0].endswith(".sh"):
@@ -749,9 +785,17 @@ def main() -> None:
         )
 
     if key in PM_AGENTS:
-        error = _pm_shell_error(cmd)
-        if error:
-            _deny_pm(client, error)
+        # BB native PM (launcher sets LANE_PILOT_AGENT_TYPE): same shell as a
+        # plain claude-lane chat — deploys and project node scripts pass. CLI
+        # orchestrators without that env stay on the allowlist.
+        if os.environ.get("LANE_PILOT_AGENT_TYPE"):
+            error = _lane_pilot_bb_error(cmd)
+            if error:
+                _deny_pm(client, error)
+        else:
+            error = _pm_shell_error(cmd)
+            if error:
+                _deny_pm(client, error)
 
     # git hook skip
     if re.search(r"\bgit\s+(commit|push|merge)\b", low) and (

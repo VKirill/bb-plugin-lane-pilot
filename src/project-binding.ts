@@ -72,6 +72,14 @@ export function resolveWriterBinding(input: {
     const only = sources[0]!;
     return { status: "resolved", hostId: only.hostId, path: only.path, source: "unique_source", bindingId: only.id };
   }
-  if (sources.length > 1) return { status: "ambiguous", bindings: sources };
+  if (sources.length > 1) {
+    // The folder marked default in Project Folders settles a project with several folders.
+    const defaults = sources.filter((row) => row.isDefault);
+    if (defaults.length === 1) {
+      const main = defaults[0]!;
+      return { status: "resolved", hostId: main.hostId, path: main.path, source: "unique_source", bindingId: main.id };
+    }
+    return { status: "ambiguous", bindings: sources };
+  }
   return { status: "setup_required" };
 }

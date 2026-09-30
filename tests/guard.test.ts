@@ -78,7 +78,13 @@ describe("E2 Lane Pilot PM guard", () => {
   });
 
   it("lets the PM deploy the way the user's own chat does", () => {
-    for (const command of ["cd /srv/app && ./scripts/deploy.sh --base abc", "docker compose up -d api", "npm run verify:api", "systemctl --user restart app"]) {
+    for (const command of [
+      "cd /srv/app && ./scripts/deploy.sh --base abc",
+      "sudo -n env PATH=/usr/bin:/bin ./scripts/deploy.sh --base abc",
+      "docker compose up -d api",
+      "npm run verify:api",
+      "systemctl --user restart app",
+    ]) {
       expect(invoke(guard,bash("ops",command,true)).status, command).toBe(0);
     }
   });

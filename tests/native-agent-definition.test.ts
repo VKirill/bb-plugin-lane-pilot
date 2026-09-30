@@ -2,9 +2,17 @@ import { expect, it } from "vitest";
 import { compileMainAgentProfile } from "../src/agent-profile";
 import { sessionOverrideAgentsJson } from "../src/native-agent-definition";
 
-it("keeps stock installed profile without --agents override", () => {
+it("emits --agents JSON from the plugin profile, including unedited stock", () => {
   const compiled = compileMainAgentProfile("dev-orchestrator");
-  expect(sessionOverrideAgentsJson({ agentId: "dev-orchestrator", edited: false, compiled })).toBeNull();
+  expect(JSON.parse(sessionOverrideAgentsJson({ agentId: "dev-orchestrator", edited: false, compiled })!)).toEqual({
+    "dev-orchestrator": {
+      description: compiled.description,
+      prompt: compiled.prompt,
+      ...(compiled.tools ? { tools: compiled.tools } : {}),
+      ...(compiled.skills ? { skills: compiled.skills } : {}),
+      ...(compiled.mcpServers ? { mcpServers: compiled.mcpServers } : {}),
+    },
+  });
 });
 
 it("forwards every CLI AgentDefinition resource on an edited profile", () => {

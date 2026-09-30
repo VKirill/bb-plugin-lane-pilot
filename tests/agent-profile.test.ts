@@ -21,8 +21,24 @@ describe("Lane Pilot owned main-agent profiles", () => {
       expect(first.sourceHash).toMatch(/^[a-f0-9]{64}$/);
       expect(first).not.toHaveProperty("model");
       expect(first).not.toHaveProperty("permissionMode");
-      expect(compiledMainAgentSpawnField(first).experimental_vkCompiledMainAgent.sourceHash)
-        .toBe(first.sourceHash);
+      const spawned = compiledMainAgentSpawnField(first).experimental_vkCompiledMainAgent;
+      expect(spawned.prompt).toBe(first.prompt);
+      expect(spawned.prompt).not.toContain("Imported from Claude Lane");
+      expect(spawned.prompt).not.toContain("docs/llm");
+      expect(spawned.sourceHash).toBe(first.sourceHash);
+      expect(JSON.stringify(spawned.tools ?? [])).not.toMatch(/SendMessage|ListAgents|TaskStop/);
+      if (id === "dev-orchestrator") {
+        expect(spawned.prompt).toContain("Lane Pilot PM");
+        expect(spawned.prompt).toContain("PROJECT.md");
+        expect(spawned.prompt).toContain("docs/audiences/");
+        expect(JSON.stringify(spawned.tools ?? [])).not.toMatch(/project-onboarder/);
+        expect(JSON.stringify(spawned.tools ?? [])).not.toMatch(/lane-stack:browser-qa|Agent\([^)]*browser-qa/);
+      }
+      if (id === "copy-lead") {
+        expect(spawned.prompt).toContain("docs/audiences/copy.md");
+        expect(JSON.stringify(spawned.tools ?? [])).not.toMatch(/mcp__bb-bridge__/);
+      }
+      if (id === "seo-specialist") expect(spawned.prompt).toContain("docs/audiences/seo.md");
     }
   });
 

@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
-import { stockAgentsOverlayFromInstalled, unionLpBridgeToolsOnAgentsJson } from "./native-agent-overlay";
+import { unionLpBridgeToolsOnAgentsJson } from "./native-agent-overlay";
 import { nativeAgentCliId, nativeAgentSettingId } from "./native-session";
 import { materializeNativeHookSession } from "./native-session-hooks";
 
@@ -264,25 +264,10 @@ export async function prepareNativeClaude(input: {
     if (sessionAgentsJson && !catalog.sessionAgents) {
       throw new Error("edited_profile_session_override_unavailable");
     }
-    if (!input.agentsJson) {
-      const installed = await resolveInstalledAgentFile(cwd, agentId);
-      if (!installed) throw new Error(`Agent ${agentId} source file is missing in ${cwd}.`);
-      const markdown = await readFile(installed.path, "utf8");
-      const overlay = stockAgentsOverlayFromInstalled({
-        agentId,
-        source: installed.source,
-        markdown,
-      });
-      if (overlay) {
-        if (!catalog.sessionAgents) throw new Error("stock_tools_overlay_unavailable");
-        sessionAgentsJson = JSON.stringify(overlay);
-        sourceStamp = createHash("sha256").update(`${installed.source}\n${markdown}`).digest("hex");
-      }
-    }
   }
   const command = await installedClaudeExecutable();
   const digest = createHash("sha256").update(JSON.stringify({
-    agentId, command, agentsJson: sessionAgentsJson, settingId, sourceStamp, version: 5,
+    agentId, command, agentsJson: sessionAgentsJson, settingId, sourceStamp, version: 7,
   })).digest("hex").slice(0, 24);
   const dir = join(input.dataDir, "native-launchers", digest);
   await mkdir(dir, { recursive: true, mode: 0o700 });

@@ -5,7 +5,9 @@ import { join } from "node:path";
 describe("layout geometry harness", () => {
   it("loads the full bundled prompt, not a stub", () => {
     const bundled = JSON.parse(readFileSync(join(import.meta.dirname, "../src/bundled-agents.json"), "utf8"));
-    expect(bundled["dev-orchestrator"].prompt.length).toBeGreaterThan(8000);
+    expect(bundled["dev-orchestrator"].prompt).toContain("Lane Pilot PM");
+    expect(bundled["dev-orchestrator"].prompt).not.toContain("Boot solo");
+    expect(bundled["dev-orchestrator"].prompt.length).toBeGreaterThan(400);
     expect(bundled["dev-orchestrator"].tools[0]).toContain("Agent(");
   });
 

@@ -52,5 +52,47 @@ describe("PM agents run project scripts by path", () => {
       expect(allowed(agentType, "cd /srv/app && ./scripts/deploy.sh --base abc")).toBe(0);
       expect(allowed(agentType, "bash scripts/deploy.sh --base abc")).toBe(0);
     });
+    it(`${agentType}: env PATH=… wrappers unwrap like sudo`, () => {
+      expect(allowed(agentType, "sudo -n env PATH=/usr/bin:/bin ./scripts/deploy.sh --base abc")).toBe(0);
+      expect(allowed(agentType, "env PATH=/usr/bin:/bin ./scripts/deploy.sh")).toBe(0);
+    });
   }
+});
+
+describe("dev-orchestrator env wrappers still judge the inner command", () => {
+  it("does not launder npm ci through env", () => {
+    expect(allowed("dev-orchestrator", "env npm ci")).toBe(2);
+  });
+  it("CLI orchestrator still denies node scripts", () => {
+    expect(allowed("dev-orchestrator", "node scripts/collect-release-evidence.mjs")).toBe(2);
+  });
+});
+
+function allowedNative(command: string): number | null {
+  return spawnSync("python3", [guard], {
+    input: JSON.stringify({
+      agent_type: "lane-stack:dev-orchestrator",
+      tool_name: "Bash",
+      tool_input: { command },
+      cwd: process.cwd(),
+    }),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      AGENT_HOOK_CLIENT: "claude",
+      LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator",
+    },
+  }).status;
+}
+
+describe("BB native PM can run project node scripts", () => {
+  it("allows node scripts/*.mjs", () => {
+    expect(allowedNative("node scripts/collect-release-evidence.mjs migration --receipt /tmp/r.json")).toBe(0);
+  });
+  it("allows sudo -n node --env-file=.env scripts/…", () => {
+    expect(allowedNative("sudo -n node --env-file=.env scripts/collect-release-evidence.mjs")).toBe(0);
+  });
+  it("still denies bb plugin reload", () => {
+    expect(allowedNative("bb plugin reload lane-pilot")).toBe(2);
+  });
 });

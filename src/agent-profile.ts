@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import bundledAgents from "./bundled-agents.json";
+import { isCliLaneAgentPrompt, laneSessionOverlayPrompt, overlaySessionTools } from "./native-agent-overlay";
 
 export const MAIN_AGENT_ID = /^[a-z][a-z0-9-]{0,63}$/;
 export const MAIN_AGENT_PROFILE_IDS = [
@@ -25,7 +26,7 @@ export const compiledMainAgentSchema = z.object({
 }).strict();
 export type CompiledMainAgent = z.infer<typeof compiledMainAgentSchema>;
 
-export const PROFILE_SOURCE_VERSION = "lane-stack-1.60.0";
+export const PROFILE_SOURCE_VERSION = "bb-session-1";
 export type ProfileResources = Pick<CompiledMainAgent, "tools" | "disallowedTools" | "skills" | "mcpServers">;
 
 export type StoredAgentRow = {
@@ -144,7 +145,10 @@ export function isUnchangedStockStub(id: string, stored?: StoredAgentRow): boole
   const descriptionStock = !description
     || description === legacy.description
     || description === bundled?.displayName;
-  const promptStock = !prompt || prompt === legacy.prompt;
+  const promptStock = !prompt
+    || prompt === legacy.prompt
+    || prompt === bundled?.prompt
+    || isCliLaneAgentPrompt(id, prompt);
   return descriptionStock && promptStock;
 }
 
@@ -168,10 +172,12 @@ export function compileMainAgentProfile(
     throw new Error(`invalid_main_agent_profile_id:${id}`);
   }
   const template = bundledTemplate(id);
+  const overlayPrompt = laneSessionOverlayPrompt(id);
   const description = overrides?.description?.trim() || template?.description || "";
-  const prompt = overrides?.prompt?.trim() || template?.prompt || "";
+  const prompt = overrides?.prompt?.trim() || overlayPrompt || template?.prompt || "";
   if (!description || !prompt) throw new Error(`incomplete_main_agent_profile:${id}`);
-  const tools = pickResource(overrides?.tools, template?.tools);
+  const stockTools = template?.tools?.length ? overlaySessionTools(id, template.tools) : undefined;
+  const tools = pickResource(overrides?.tools, stockTools);
   const disallowedTools = pickResource(overrides?.disallowedTools, template?.disallowedTools);
   const skills = pickResource(overrides?.skills, template?.skills);
   const mcpServers = pickResource(overrides?.mcpServers, template?.mcpServers);
@@ -191,8 +197,14 @@ export function compileMainAgentProfile(
   });
 }
 
+function isCliLaneResidue(id: string, stored?: StoredAgentRow): boolean {
+  const prompt = (stored?.compiled?.prompt ?? stored?.prompt ?? "").trim();
+  return Boolean(prompt) && isCliLaneAgentPrompt(id, prompt);
+}
+
 export function compileEffectiveMainAgent(id: string, stored?: StoredAgentRow): CompiledMainAgent {
   if (stored?.compiledCorrupt) throw new Error(`compiled_main_agent_corrupt:${id}`);
+  if (isCliLaneResidue(id, stored)) return compileMainAgentProfile(id);
   if (stored?.compiled && !isUnchangedStockStub(id, stored)) {
     const profile = validateCompiledMainAgent(stored.compiled);
     if (profile.id !== id) throw new Error("main_agent_id_mismatch");

@@ -43,3 +43,20 @@ export function agentPickerLabel(
   }
   return agent.description;
 }
+
+const STOCK_CHART: Readonly<Record<string, 1 | 2 | 3 | 4 | 5>> = {
+  "dev-orchestrator": 1,
+  "copy-lead": 2,
+  "seo-specialist": 3,
+  "design-lead": 4,
+  "project-onboarder": 5,
+  tavily: 3,
+};
+
+export function agentBadgeChart(id: string): 1 | 2 | 3 | 4 | 5 {
+  const stock = STOCK_CHART[id];
+  if (stock) return stock;
+  let sum = 0;
+  for (let i = 0; i < id.length; i += 1) sum += id.charCodeAt(i);
+  return ((sum % 5) + 1) as 1 | 2 | 3 | 4 | 5;
+}
