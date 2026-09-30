@@ -24,7 +24,7 @@ import {
   type CouncilSeat,
   type CouncilSession,
 } from "@lane-pilot/council";
-import { getRun, type LanePilotDatabase } from "../database";
+import { getRun, loadPrototypeConfig, type LanePilotDatabase } from "../database";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { configuredSetting, requirePmRun } from "./context";
 import type { ServerCore } from "./core";
@@ -59,7 +59,7 @@ function selectionPairs(settings: Record<string, unknown>, fallback: { providerI
     if (!pairs.some((pair) => pair.providerId === providerId && pair.model === model)) pairs.push({ providerId, model });
   };
   for (const [providerKey, modelKey] of SEAT_SELECTION_KEYS) push(configuredSetting(settings, providerKey), configuredSetting(settings, modelKey));
-  push(fallback.providerId, fallback.model);
+  if (fallback.providerId && fallback.model) push(fallback.providerId, fallback.model);
   return pairs;
 }
 
@@ -313,7 +313,12 @@ export function createCouncil(ctx: ServerCore) {
     return session;
   }
 
-  return { startCouncil, councilView, requestStop, say, requestDecision, listCouncils: (projectId: string, runId?: string) => listCouncilSessions(db, { projectId, runId }) };
+  return {
+    startCouncil, councilView, requestStop, say, requestDecision,
+    listCouncils: (projectId: string, runId?: string) => listCouncilSessions(db, { projectId, runId }),
+    effectiveSettings: (projectId: string) => ctx.effectiveProjectSettings(projectId),
+    projectWriter: (projectId: string) => { const config = loadPrototypeConfig(db, projectId); return { providerId: config?.writerProviderId ?? "", model: config?.writerModel ?? "" }; },
+  };
 }
 
 export type CouncilApi = ReturnType<typeof createCouncil>;
@@ -382,6 +387,18 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
 
 export function councilRpc(db: LanePilotDatabase, council: CouncilApi) {
   return {
+    get_council_defaults: async ({ projectId }: { projectId: string }) => {
+      const settings = (await council.effectiveSettings(projectId)).values;
+      const config = council.projectWriter(projectId);
+      const pairs = selectionPairs(settings, config);
+      const seats = seatsFor(["product", "demand", "audience", "skeptic", "growth", "ux"], pairs, settings);
+      const chairOwn = configuredSeatPair(settings, "chair");
+      const chair = chairOwn ?? pairs.find((pair) => !seats.some((seat) => seat.providerId === pair.providerId && seat.model === pair.model)) ?? pairs[0] ?? null;
+      return { seats: [
+        ...seats.map((seat) => ({ id: seat.id, title: seat.title, providerId: seat.providerId, model: seat.model, configured: Boolean(configuredSeatPair(settings, seat.id)) })),
+        { id: "chair", title: "Chair", providerId: chair?.providerId ?? null, model: chair?.model ?? null, configured: Boolean(chairOwn) },
+      ] };
+    },
     council_say: async ({ councilId, text, decide }: { councilId: string; text?: string; decide?: boolean }) => {
       const said = text ? council.say(councilId, text) : null;
       const decided = decide ? council.requestDecision(councilId) : null;

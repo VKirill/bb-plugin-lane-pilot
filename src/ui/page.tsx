@@ -632,6 +632,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   // A section keeps its own settings over its project's; null edits the project itself.
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [routingHints, setRoutingHints] = useState<Array<{ risk: string; hint: string }>>([]);
+  const [councilDefaults, setCouncilDefaults] = useState<Array<{ id: string; title: string; providerId: string | null; model: string | null; configured: boolean }>>([]);
+  const [councilEditing, setCouncilEditing] = useState<Set<string>>(new Set());
   type CouncilRow = { id: string; runId: string; question: string; state: string; round: number; maxRounds: number; decisionPath: string | null; updatedAt: number };
   type CouncilDetail = { id: string; question: string; state: string; round: number; maxRounds: number; agenda: string[]; criteria: string[]; decisionPath: string | null; reason: string | null; recommendation: string | null; seats: Array<{ id: string; title: string; providerId: string | null; model: string | null }>; messages: Array<{ seq: number; seatId: string; round: number; kind: string; text: string; at: number }> };
   const [councils, setCouncils] = useState<CouncilRow[]>([]);
@@ -748,6 +750,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
       const next = await rpc.call("get_screen", { ...scoped, projectId }) as ScreenPayload;
       if (generation !== loadGeneration.current) return;
       setData(next);
+      void rpc.call("get_council_defaults", { projectId }).then((defaults) => { if (generation === loadGeneration.current) setCouncilDefaults((defaults as { seats: typeof councilDefaults }).seats); }).catch(() => setCouncilDefaults([]));
       void rpc.call("list_councils", { projectId }).then((listed) => { if (generation === loadGeneration.current) setCouncils((listed as { councils: CouncilRow[] }).councils); }).catch(() => setCouncils([]));
       void rpc.call("get_routing_hint", { projectId }).then((hint) => { if (generation === loadGeneration.current) setRoutingHints((hint as { hints: Array<{ risk: string; hint: string }> }).hints); }).catch(() => setRoutingHints([]));
       if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
@@ -1716,12 +1719,26 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </Disclosure>
             </CheckGroup>
             <CheckGroup testId="council-settings" title={t("councilSettingsTitle")} help={t("councilSettingsHelp")} toggle={(() => { const row = catalogRow("council.judge"); return row ? <Switch checked={asBoolean(displayedValue("council.judge"), true)} aria-label={t("settingCouncilJudge")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
-              {COUNCIL_SEATS.map((seat) => (
-                <div key={seat} className="space-y-1">
-                  <div className="text-sm font-medium">{t(`settingCouncilSeat_${seat}` as I18nKey)}</div>
-                  <div className="max-w-xl">{modelPicker(councilSeatPickerValue(seat), (next) => { void saveCouncilSeatSelection(seat, next); })}</div>
-                </div>
-              ))}
+              {COUNCIL_SEATS.map((seat) => {
+                const fallback = councilDefaults.find((row) => row.id === seat);
+                const configured = Boolean(data?.values[`council.${seat}.provider`] && data?.values[`council.${seat}.model`]);
+                const editing = configured || councilEditing.has(seat);
+                const keys = [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`];
+                const startValue: ExperimentalProviderModelPickerValue = configured ? councilSeatPickerValue(seat)
+                  : { providerId: fallback?.providerId ?? "", model: fallback?.model ?? "", reasoningLevel: "high" };
+                return (
+                  <div key={seat} className="space-y-1" data-testid={`council-seat-${seat}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">{t(`settingCouncilSeat_${seat}` as I18nKey)}</span>
+                      {!editing ? <span className="text-xs text-muted-foreground">{fallback?.providerId && fallback.model ? `${t("councilSeatFromStages")}: ${fallback.providerId}/${fallback.model}` : t("councilSeatNoPair")}</span> : null}
+                      {!editing
+                        ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2" onClick={() => setCouncilEditing((current) => new Set([...current, seat]))}>{t("councilSeatOwn")}</Button>
+                        : <Button type="button" size="sm" variant="ghost" className="h-7 px-2" onClick={() => { setCouncilEditing((current) => { const next = new Set(current); next.delete(seat); return next; }); if (configured) void resetInherited(keys); }}>{t("councilSeatInherit")}</Button>}
+                    </div>
+                    {editing ? <div className="max-w-xl">{modelPicker(startValue, (next) => { void saveCouncilSeatSelection(seat, next); })}</div> : null}
+                  </div>
+                );
+              })}
               {(() => { const row = catalogRow("council.max_rounds"); return row ? <SettingField row={row} value={displayedValue("council.max_rounds")} disabled={false}
                 onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("council.max_rounds", next)} /> : null; })()}
             </CheckGroup>

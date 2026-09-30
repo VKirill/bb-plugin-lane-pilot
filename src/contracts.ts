@@ -999,6 +999,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ projectId: z.string().min(1) }).strict(),
     output: z.object({ councils: z.array(z.object({ id: z.string(), runId: z.string(), question: z.string(), state: z.string(), round: z.number().int(), maxRounds: z.number().int(), decisionPath: z.string().nullable(), updatedAt: z.number().int() })) }).strict(),
   },
+  get_council_defaults: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.object({ seats: z.array(z.object({ id: z.string(), title: z.string(), providerId: z.string().nullable(), model: z.string().nullable(), configured: z.boolean() })) }).strict(),
+  },
   council_say: {
     input: z.object({ councilId: z.string().min(1), text: z.string().trim().min(1).max(4000).optional(), decide: z.boolean().optional() }).strict(),
     output: z.object({ seq: z.number().int().nullable(), decideRequested: z.boolean() }).strict(),

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.32 — 2026-09-30
+
+- **Council seats no longer save a model by themselves.** The settings panel shows which pair each seat would take from the stage selections; a picker appears only after «Задать свою модель», and «Вернуть наследование» drops the seat back. The earlier version let the picker report the catalog's first model as a choice for every empty seat.
+
 ## 0.1.31 — 2026-09-30
 
 - **The judge is visible and weighed.** Every time a seat gets the floor the feed records why and by whom (Jev or the rule) with every seat's impulse score. Jev's confidence now weighs the impulse: a hesitant «evidence» stays below the floor threshold, a sure «addressed» passes. Verified against System One from the OVH host with real council states.
