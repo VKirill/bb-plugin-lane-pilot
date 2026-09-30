@@ -401,7 +401,7 @@ export const hostContract = defineRpcContract({
     }).strict(),
     output: z.object({
       hostId: z.string(), status: z.enum(["ok", "disabled", "timeout", "error"]),
-      answers: z.record(z.string(), z.string()), reason: z.string().nullable(),
+      answers: z.record(z.string(), z.string()), confidence: z.record(z.string(), z.number()).optional(), reason: z.string().nullable(),
     }).strict(),
   },
   inspectCritiqueCoverage: {

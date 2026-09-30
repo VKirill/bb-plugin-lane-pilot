@@ -93,10 +93,10 @@ export function createCouncil(ctx: ServerCore) {
   const OWNER_WAIT_MS = 10 * 60_000;
 
   /** One System One call through the run's host; null when the judge is off or fails, so the rule answers. */
-  async function judge(hostId: string, state: unknown, questions: Record<string, { instructions: string; criteria: Record<string, string> }>): Promise<Record<string, string> | null> {
+  async function judge(hostId: string, state: unknown, questions: Record<string, { instructions: string; criteria: Record<string, string> }>): Promise<{ answers: Record<string, string>; confidence: Record<string, number> } | null> {
     try {
       const result = await host.call("councilJudge", { requestedHostId: hostId, state: JSON.stringify(state).slice(0, 60_000), questions }, { hostId, timeoutMs: 8_000 });
-      return result.status === "ok" ? result.answers : null;
+      return result.status === "ok" ? { answers: result.answers, confidence: result.confidence ?? {} } : null;
     } catch {
       return null;
     }
@@ -107,7 +107,7 @@ export function createCouncil(ctx: ServerCore) {
       const answers = await judge(hostId, { question: session.question, agenda: session.agenda, ...state }, {
         verdict: { instructions: "Should the council keep discussing or is it time for the chair to decide?", criteria: { continue: "the last messages still add new arguments, evidence or unresolved disagreement", synthesize: "the room repeats itself, agrees, or the remaining questions need data nobody has" } },
       });
-      const verdict = answers?.verdict;
+      const verdict = answers?.answers.verdict;
       return verdict === "continue" || verdict === "synthesize" ? verdict : null;
     };
   }
@@ -124,9 +124,13 @@ export function createCouncil(ctx: ServerCore) {
           addressed: "the last message asks this seat a question or names its role", disagreement: "this seat would object to a claim in the last message", evidence: "this seat can add a fact or example the room lacks",
           turn: "this seat has been silent while the topic moved into its area", none: "this seat would only repeat itself or agree" } },
       });
-      const reason = answers?.wants as Impulse["reason"] | undefined;
+      const reason = answers?.answers.wants as Impulse["reason"] | undefined;
       if (!reason || !(reason in IMPULSE_SCORES)) return null;
-      return { seatId: seat.id, score: IMPULSE_SCORES[reason], reason };
+      // A hesitant judge should not hand out the floor: the score carries its confidence, so a weak
+      // "evidence" (0.75 × 0.4) stays under the floor threshold while a sure "addressed" passes.
+      const confidence = answers?.confidence.wants;
+      const weight = typeof confidence === "number" ? Math.max(0.3, Math.min(1, confidence)) : 1;
+      return { seatId: seat.id, score: IMPULSE_SCORES[reason] * weight, reason };
     };
   }
 

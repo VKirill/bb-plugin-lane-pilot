@@ -87,12 +87,15 @@ describe("the boardroom", () => {
     const trail = feed.map((message) => `${message.seatId}:${message.kind}`);
     expect(trail.slice(0, 4)).toEqual(["chair:agenda", "product:position", "demand:position", "skeptic:position"]);
     // The skeptic addressed the product director in the opening lap, so the product director replies first, on impulse.
-    expect(trail[4]).toBe("product:reply");
-    expect(feed[4]!.text).toContain("Here is the evidence");
+    expect(trail[4]).toBe("moderator:status");
+    expect(feed[4]!.text).toContain("Floor: Product director (addressed, rule");
+    expect(trail[5]).toBe("product:reply");
+    expect(feed[5]!.text).toContain("Here is the evidence");
     expect(trail).toContain("owner:owner");
     const ownerIndex = trail.indexOf("owner:owner");
-    expect(trail[ownerIndex + 1]).toBe("skeptic:reply");
-    expect(feed[ownerIndex + 1]!.text).toContain("On prices");
+    expect(feed[ownerIndex + 1]!.text).toContain("Floor: Skeptic (addressed");
+    expect(trail[ownerIndex + 2]).toBe("skeptic:reply");
+    expect(feed[ownerIndex + 2]!.text).toContain("On prices");
     expect(trail.at(-1)).toBe("chair:decision");
     expect(prompts.some((item) => item.seat === "skeptic" && item.prompt.includes("Что с ценами"))).toBe(true);
   });

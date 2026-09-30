@@ -150,7 +150,8 @@ describe("council tools", () => {
     const status = async () => call("lane_pilot_council_status", { runId, councilId: started.id });
     let view: Record<string, any> = started;
     for (let i = 0; i < 100 && !(view.messages ?? []).some((m: { seatId: string; kind: string }) => m.seatId === "product" && m.kind === "reply"); i++) { await new Promise((r) => setTimeout(r, 50)); view = await status(); }
-    expect(view.messages.map((m: { seatId: string; kind: string }) => `${m.seatId}:${m.kind}`).slice(0, 5)).toEqual(["owner:owner", "chair:agenda", "product:position", "skeptic:position", "product:reply"]);
+    expect(view.messages.map((m: { seatId: string; kind: string }) => `${m.seatId}:${m.kind}`).slice(0, 6)).toEqual(["owner:owner", "chair:agenda", "product:position", "skeptic:position", "moderator:status", "product:reply"]);
+    expect(view.messages[4].text).toContain("Floor: Product director (addressed, rule");
 
     // The room goes quiet and waits for the owner; the owner names the skeptic.
     for (let i = 0; i < 100 && !(view.messages ?? []).some((m: { text: string }) => m.text.includes("waiting for the owner")); i++) { await new Promise((r) => setTimeout(r, 50)); view = await status(); }
@@ -158,7 +159,7 @@ describe("council tools", () => {
     expect(said.said.seq).toBeGreaterThan(0);
     for (let i = 0; i < 100 && !(view.messages ?? []).some((m: { text: string }) => m.text.includes("On prices")); i++) { await new Promise((r) => setTimeout(r, 50)); view = await status(); }
     const trail = view.messages.map((m: { seatId: string; kind: string }) => `${m.seatId}:${m.kind}`);
-    expect(trail[trail.indexOf("owner:owner", 1) + 1]).toBe("skeptic:reply");
+    expect(trail[trail.indexOf("owner:owner", 1) + 2]).toBe("skeptic:reply");
 
     const decided = await harness.behavior.callRpc("council_say", { councilId: started.id, decide: true }) as { decideRequested: boolean };
     expect(decided.decideRequested).toBe(true);

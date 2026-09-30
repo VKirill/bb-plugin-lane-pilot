@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.31 — 2026-09-30
+
+- **The judge is visible and weighed.** Every time a seat gets the floor the feed records why and by whom (Jev or the rule) with every seat's impulse score. Jev's confidence now weighs the impulse: a hesitant «evidence» stays below the floor threshold, a sure «addressed» passes. Verified against System One from the OVH host with real council states.
+
 ## 0.1.30 — 2026-09-30
 
 - **Directors read the code.** Every seat and the chair already ran inside the project checkout with tools; now their prompt says so: read files, grep, run read-only commands and cite path:line before claiming anything, and never modify, install, commit or start anything. Each role has a lens, where it looks first (product: screens and flows; demand: request data and analytics; audience: copy and onboarding; skeptic: validation, billing, tests; growth: funnel and payments; ux: components and states).

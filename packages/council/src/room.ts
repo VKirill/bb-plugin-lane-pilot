@@ -116,10 +116,12 @@ export async function runRoom(initial: CouncilSession, io: RoomIo): Promise<Deci
       if (io.decideRequested()) { note(MODERATOR_SEAT_ID, lap, "status", "The owner asked for the decision."); break; }
       const last = feed.at(-1)!;
       const impulses: Impulse[] = [];
+      const judgedBy = new Map<string, "judge" | "rule">();
       for (const seat of session.seats) {
         const own = feed.filter((message) => message.seatId === seat.id);
         let impulse: Impulse | null = null;
         if (io.impulse) { try { impulse = await io.impulse({ session, seat, last, ownStatements: own }); } catch { impulse = null; } }
+        judgedBy.set(seat.id, impulse ? "judge" : "rule");
         impulses.push(impulse ?? ruleImpulse({ session, seat, feed, last }));
       }
       const speaker = chooseSpeaker(impulses, feed);
@@ -131,6 +133,7 @@ export async function runRoom(initial: CouncilSession, io: RoomIo): Promise<Deci
         continue;
       }
       const seat = session.seats.find((item) => item.id === speaker.seatId)!;
+      note(MODERATOR_SEAT_ID, lap, "status", `Floor: ${seat.title} (${speaker.reason}, ${judgedBy.get(seat.id) ?? "rule"}; ${impulses.map((item) => `${item.seatId} ${Math.round(item.score * 100)}%`).join(", ")})`);
       io.presence?.(seat.id);
       const text = (await io.spawnTurn({ session, seat, round: lap, prompt: seatPrompt({ session, seat, round: lap, evidence, feed, sinceSeq: lastSeen.get(seat.id) ?? 0, workspace: io.workspace }) })).trim();
       io.presence?.(null);
