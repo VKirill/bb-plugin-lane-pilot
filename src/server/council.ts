@@ -313,11 +313,38 @@ export function createCouncil(ctx: ServerCore) {
     return session;
   }
 
+  /** A reload drops the loops; sessions they were driving cannot resume mid-way and say so instead of looking alive. */
+  function reconcileAfterReload(): string[] {
+    const stale = db.prepare("SELECT id FROM lane_pilot_council WHERE state IN ('agenda','discussion','synthesis')").all() as Array<{ id: string }>;
+    for (const row of stale) {
+      setCouncilState(db, row.id, { state: "failed", reason: "interrupted by a plugin reload; convene the council again" });
+      addCouncilMessage(db, { councilId: row.id, seatId: "moderator", round: 0, kind: "status", text: "Interrupted by a plugin reload. Convene the council again." });
+    }
+    return stale.map((row) => row.id);
+  }
+  const interrupted = reconcileAfterReload();
+  if (interrupted.length) ctx.log(`Lane Pilot councils interrupted by the reload: ${interrupted.join(", ")}`);
+
+  /** Which pair every seat would get right now and where it comes from; the settings panel and the CLI show it. */
+  async function seatDefaults(projectId: string) {
+    const settings = (await ctx.effectiveProjectSettings(projectId)).values;
+    const config = loadPrototypeConfig(db, projectId);
+    const pairs = selectionPairs(settings, { providerId: config?.writerProviderId ?? "", model: config?.writerModel ?? "" });
+    const seats = seatsFor(["product", "demand", "audience", "skeptic", "growth", "ux"], pairs, settings);
+    const chairOwn = configuredSeatPair(settings, "chair");
+    const chair = chairOwn ?? pairs.find((pair) => !seats.some((seat) => seat.providerId === pair.providerId && seat.model === pair.model)) ?? pairs[0] ?? null;
+    return {
+      pairs,
+      seats: [
+        ...seats.map((seat) => ({ id: seat.id, title: seat.title, providerId: seat.providerId, model: seat.model, configured: Boolean(configuredSeatPair(settings, seat.id)) })),
+        { id: "chair", title: "Chair", providerId: chair?.providerId ?? null, model: chair?.model ?? null, configured: Boolean(chairOwn) },
+      ],
+    };
+  }
+
   return {
-    startCouncil, councilView, requestStop, say, requestDecision,
+    startCouncil, councilView, requestStop, say, requestDecision, seatDefaults,
     listCouncils: (projectId: string, runId?: string) => listCouncilSessions(db, { projectId, runId }),
-    effectiveSettings: (projectId: string) => ctx.effectiveProjectSettings(projectId),
-    projectWriter: (projectId: string) => { const config = loadPrototypeConfig(db, projectId); return { providerId: config?.writerProviderId ?? "", model: config?.writerModel ?? "" }; },
   };
 }
 
@@ -387,18 +414,7 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
 
 export function councilRpc(db: LanePilotDatabase, council: CouncilApi) {
   return {
-    get_council_defaults: async ({ projectId }: { projectId: string }) => {
-      const settings = (await council.effectiveSettings(projectId)).values;
-      const config = council.projectWriter(projectId);
-      const pairs = selectionPairs(settings, config);
-      const seats = seatsFor(["product", "demand", "audience", "skeptic", "growth", "ux"], pairs, settings);
-      const chairOwn = configuredSeatPair(settings, "chair");
-      const chair = chairOwn ?? pairs.find((pair) => !seats.some((seat) => seat.providerId === pair.providerId && seat.model === pair.model)) ?? pairs[0] ?? null;
-      return { seats: [
-        ...seats.map((seat) => ({ id: seat.id, title: seat.title, providerId: seat.providerId, model: seat.model, configured: Boolean(configuredSeatPair(settings, seat.id)) })),
-        { id: "chair", title: "Chair", providerId: chair?.providerId ?? null, model: chair?.model ?? null, configured: Boolean(chairOwn) },
-      ] };
-    },
+    get_council_defaults: async ({ projectId }: { projectId: string }) => ({ seats: (await council.seatDefaults(projectId)).seats }),
     council_say: async ({ councilId, text, decide }: { councilId: string; text?: string; decide?: boolean }) => {
       const said = text ? council.say(councilId, text) : null;
       const decided = decide ? council.requestDecision(councilId) : null;

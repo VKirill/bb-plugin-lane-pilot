@@ -6,11 +6,12 @@ import { outputText } from "./writer-task";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "./core";
 import { RUN_BUDGET_SETTINGS, runHealth } from "./health";
+import { configuredSetting } from "./context";
 import { getCouncilSession } from "@lane-pilot/council";
 import type { Services } from "./services";
 
 export function registerCli(ctx: ServerCore, services: Services) {
-  const { bb, cancelQueuedAttempt, db, host } = ctx;
+  const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
 
   const usage = [
     "bb lane-pilot configure <json>",
@@ -50,6 +51,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"council", summary:"Convene a council of directors on a question in an open PM run", usage:"bb lane-pilot council <run-id> <question> [roles=product,skeptic] [rounds=N] [mode=room|rounds] [judge=on|off] [materials=a.md,b.csv]" },
       { name:"council-say", summary:"Say something to a running council as the owner, or decide=1 to ask for the decision", usage:"bb lane-pilot council-say <council-id> [text] [decide=1]" },
       { name:"council-status", summary:"A council session and its feed", usage:"bb lane-pilot council-status <council-id> [after-seq]" },
+      { name:"council-seats", summary:"Which provider/model pair each seat would get in a project and the pairs the stage selections offer", usage:"bb lane-pilot council-seats <project-id>" },
       { name:"docs-nightly", summary:"Run the nightly docs pass now for docs-enabled folders of a project", usage:"bb lane-pilot docs-nightly <project-id> [folder-path] [since-commit]" },
       { name:"finish", summary:"Close a PM run after observing it idle and release activation", usage:"bb lane-pilot finish <project-id> [run-id]" },
       { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id> [run-id]" },
@@ -112,6 +114,11 @@ export function registerCli(ctx: ServerCore, services: Services) {
           const said = text ? services.council.say(args[0]!, text) : null;
           const decided = decide ? services.council.requestDecision(args[0]!) : null;
           return { exitCode:0, stdout:JSON.stringify({ said: said ? said.seq : null, decideRequested: Boolean(decided) }) };
+        }
+        if (command === "council-seats" && args.length === 1) {
+          const settings = (await effectiveProjectSettings(args[0]!)).values;
+          const keys = ["writer.provider","writer.model","plan_critique.provider","plan_critique.model","code_critique.provider","code_critique.model","specialist.provider","specialist.model","night_review.provider","night_review.model","memory.provider","memory.model","docs.provider","docs.model"];
+          return { exitCode:0, stdout:JSON.stringify({ ...await services.council.seatDefaults(args[0]!), settings: Object.fromEntries(keys.map((key) => [key, configuredSetting(settings, key) ?? null])) }, null, 2) };
         }
         if (command === "council-status" && args.length >= 1) {
           const found = getCouncilSession(db, args[0]!);

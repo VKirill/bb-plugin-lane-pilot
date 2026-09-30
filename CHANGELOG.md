@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.33 — 2026-09-30
+
+- A council interrupted by a plugin reload is marked failed with the reason instead of staying «in session» forever; `bb lane-pilot council-seats <project>` shows the pair every seat would get and the pairs the stage selections offer.
+
 ## 0.1.32 — 2026-09-30
 
 - **Council seats no longer save a model by themselves.** The settings panel shows which pair each seat would take from the stage selections; a picker appears only after «Задать свою модель», and «Вернуть наследование» drops the seat back. The earlier version let the picker report the catalog's first model as a choice for every empty seat.
