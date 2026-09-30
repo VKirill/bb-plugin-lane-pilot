@@ -17,7 +17,12 @@ import { createProjectLifeStage } from "./src/server/stages/project-life";
 import { createQaStages } from "./src/server/stages/qa";
 import { registerTools } from "./src/server/tools";
 import { createWriterHost } from "./src/server/writer-host";
-import { createWriterRun } from "./src/server/writer-run";
+import { createWriterState } from "./src/server/writer/state";
+import { createWriterSpawn } from "./src/server/writer/spawn";
+import { createWriterVerify } from "./src/server/writer/verify";
+import { createWriterFinish } from "./src/server/writer/finish";
+import { createWriterStart } from "./src/server/writer/start";
+import { createWriterDispatch } from "./src/server/writer/dispatch";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export { experimental_vkLifecycle } from "./src/native-install-lifecycle";
 
@@ -33,7 +38,12 @@ export default async function plugin(bb: BbPluginApi) {
     services,
     createReconcile(ctx, services),
     createActivation(ctx, services),
-    createWriterRun(ctx, services),
+    createWriterState(ctx),
+    createWriterSpawn(ctx, services),
+    createWriterVerify(ctx, services),
+    createWriterFinish(ctx, services),
+    createWriterStart(ctx, services),
+    createWriterDispatch(ctx, services),
     createQaStages(ctx),
     createStageChildren(ctx),
     createDocsStage(ctx, services),
