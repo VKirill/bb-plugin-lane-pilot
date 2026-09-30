@@ -14,3 +14,4 @@ export {
 export { estimateTokens, memoryRecordId, parseMemoryCandidates } from "./candidates";
 export { memoryContext, memoryMaintenancePrompt } from "./context";
 export { MEMORY_SCHEMA, searchMemoryRecords, storeMemoryRecords, type MemoryDatabase } from "./store";
+export { audienceForSensitivity, exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile, sensitivityForAudience, type LaneMemoryFile } from "./files";

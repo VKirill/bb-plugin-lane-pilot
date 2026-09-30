@@ -7,6 +7,7 @@ import { readGateReport } from "../stages/gate-report";
 import { mountHandoff } from "./handoff";
 import { mountInsights } from "./insights";
 import { mountHealth } from "./health";
+import { mountMemorySync } from "./memory-sync";
 import { z } from "zod";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
@@ -187,6 +188,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountHandoff(ctx);
   mountInsights(ctx);
   mountHealth(ctx, services);
+  mountMemorySync(ctx);
 
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;

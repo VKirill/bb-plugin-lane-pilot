@@ -17,6 +17,13 @@ retrieval, and a token budget that is enforced before anything is stored or inje
 | `memoryMaintenancePrompt(input)` | The prompt for the maintenance model |
 | `estimateTokens(text)` | The budget unit used everywhere here |
 
+## Files
+
+claude-lane keeps memory as `.agents/memory/<id>.md` files with YAML front matter (schema 2).
+`parseLaneMemoryFile` reads the fields that matter, `laneMemoryFileToCandidate` maps a file to a
+record and an audience (public → export, internal → subagent, sensitive → owner), and
+`renderLaneMemoryFile` writes a record back as a file every CLI hook indexes like any other.
+
 ## Storage
 
 The package expects the `lane_pilot_memory` table and its `lane_pilot_memory_fts` FTS5 index.

@@ -34,6 +34,8 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_lessons_sweep",
   "lane_pilot_memory_golden",
   "lane_pilot_run_health",
+  "lane_pilot_memory_import",
+  "lane_pilot_memory_export",
 ] as const;
 
 export const NATIVE_LP_BRIDGE_PM_TOOLS = [
@@ -50,6 +52,8 @@ export const NATIVE_LP_BRIDGE_PM_TOOLS = [
   "lane_pilot_lessons_sweep",
   "lane_pilot_memory_golden",
   "lane_pilot_run_health",
+  "lane_pilot_memory_import",
+  "lane_pilot_memory_export",
 ] as const;
 
 export function lpBridgeCatalogNames(tools: readonly string[] = NATIVE_LP_BRIDGE_TOOLS): string[] {
