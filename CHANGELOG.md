@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — architecture foundation (branch `arch/foundation`)
+## 0.1.26 — 2026-09-30
 
 - **Packages.** An npm workspace under `packages/` holds code reusable beyond this plugin: `@lane-pilot/thread-observe` (when a child thread is done or failed), `@lane-pilot/memory-core` (guarded project memory over SQLite), `@lane-pilot/handoff` (typed task cards between agents with states, leases and receipts), `@lane-pilot/resilience` (provider circuit breaker, run budgets), `@lane-pilot/run-insights` (writer acceptance per model and risk, lessons from receipts, golden retrieval checks). The map and the rules are in [docs/architecture.md](docs/architecture.md).
 - **Handoffs.** PM tools `lane_pilot_handoff_create`, `lane_pilot_handoff_receipt`, `lane_pilot_handoff_list`: a task given to another agent is a card with objective, acceptance, inputs, budget and deadline; it is delivered into a named BB thread or carried to the caller's own subagent, and its receipt closes it. Overdue cards expire every five minutes.

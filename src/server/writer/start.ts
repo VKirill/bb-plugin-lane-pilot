@@ -25,9 +25,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         : classifyFailure(`${input.status}:${input.reason ?? ""}`);
       services.providerBreaker.record(key, outcome === "product" ? "ok" : outcome);
     }
-    const listed = await bb.sdk.threads.events.list({ threadId:input.writerThreadId, types:["thread/tokenUsage/updated"], order:"desc", limit:"1" }).catch(() => null);
-    const usage = Array.isArray(listed) ? tokenUsageFromEvent(listed[0]) : null;
-    if (usage) input.budget.noteTokens(usage.threadId, usage.totalTokens);
+    try {
+      const listed = await bb.sdk.threads.events.list({ threadId:input.writerThreadId, types:["thread/tokenUsage/updated"], order:"desc", limit:"50" });
+      const usage = Array.isArray(listed) ? tokenUsageFromEvent(listed[0]) : null;
+      if (usage) input.budget.noteTokens(usage.threadId, usage.totalTokens);
+    } catch {
+      // Usage is informational; a host that cannot list events does not fail the attempt.
+    }
   }
 
   function startWriterTask(input:{
