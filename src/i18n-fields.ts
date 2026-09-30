@@ -777,6 +777,14 @@ export const fieldEn = {
   section_ops: "Run operations",
   section_guard: "Guard hooks",
   section_other: "Other",
+  field_s386: "Attempts per run",
+  reason_s386: "Writer attempts in one run before new tasks are blocked with the exact reason",
+  field_s387: "Wall minutes per run",
+  reason_s387: "Wall-clock minutes a run may take from its first writer attempt",
+  field_s388: "Tokens per run",
+  reason_s388: "Total tokens of writer threads in a run, from BB usage events",
+  field_s389: "Child threads per run",
+  reason_s389: "Writer and helper threads one run may spawn",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1558,4 +1566,12 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   section_ops: "Операции запуска",
   section_guard: "Хуки защиты",
   section_other: "Прочее",
+  field_s386: "Попыток на запуск",
+  reason_s386: "Попытки писателей в одном запуске; сверх лимита новые попытки блокируются с точной причиной",
+  field_s387: "Минут на запуск",
+  reason_s387: "Минуты по часам от первой попытки писателя",
+  field_s388: "Токенов на запуск",
+  reason_s388: "Суммарные токены тредов писателей в запуске по событиям BB",
+  field_s389: "Дочерних тредов на запуск",
+  reason_s389: "Треды писателей и помощников, которые может породить один запуск",
 };
