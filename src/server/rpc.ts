@@ -7,6 +7,7 @@ import { settingsRpc } from "./rpc/settings";
 import { selectionsRpc } from "./rpc/selections";
 import { stackRpc } from "./rpc/stack";
 import { insightsRpc } from "./rpc/insights";
+import { councilRpc } from "./council";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
@@ -17,5 +18,6 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...selectionsRpc(ctx, services),
     ...stackRpc(ctx),
     ...insightsRpc(ctx),
+    ...councilRpc(ctx.db, services.council),
   });
 }

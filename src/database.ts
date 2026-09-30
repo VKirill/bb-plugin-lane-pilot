@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { handoffMigrations } from "@lane-pilot/handoff";
+import { councilMigrations } from "@lane-pilot/council";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig } from "./contracts";
 import type { StageId, StageState } from "./stages/contract";
@@ -211,6 +212,7 @@ export const migrations = [
   // Settings scopes of a native run, outermost first: the project is implicit, then section:<id>...
   `ALTER TABLE lane_pilot_run ADD COLUMN settings_scopes_json TEXT`,
   ...handoffMigrations,
+  ...councilMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

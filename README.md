@@ -9,7 +9,7 @@ Based on [VKirill/claude-lane-stack](https://github.com/VKirill/claude-lane-stac
 Назначение: isolated PM + writer dispatch for Lane Stack on BB.
 Владелец работы: AG-196 / AG-177.
 Статус: active.
-Проверено: 2026-09-23; 0.1.10 на хабе прошла полный Jev→native writer→PM receipt и живые клики EN/RU. Версия 0.1.26 раскладывает плагин по пакетам и модулям (docs/architecture.md). Версия 0.1.11 исправляет отображение CLI preview в Diagnostics, сохранение unrelated settings после native выбора и terminal cancel guard; запись о её live-проверке — в отчёте AG-246.
+Проверено: 2026-09-23; 0.1.10 на хабе прошла полный Jev→native writer→PM receipt и живые клики EN/RU. Версия 0.1.27 добавляет совет директоров, 0.1.26 раскладывает плагин по пакетам и модулям (docs/architecture.md). Версия 0.1.11 исправляет отображение CLI preview в Diagnostics, сохранение unrelated settings после native выбора и terminal cancel guard; запись о её live-проверке — в отчёте AG-246.
 
 | Field | Value |
 |---|---|
@@ -99,9 +99,9 @@ Does not call Agency RPC. Uses public Plugin SDK only.
 
 ## Packages and server modules
 
-Reusable code lives in `packages/` as an npm workspace (`@lane-pilot/thread-observe`, `memory-core`, `handoff`, `resilience`, `run-insights`), server modules under `src/server/`. The map, the dependency rule and the phases of the split are in [docs/architecture.md](docs/architecture.md).
+Reusable code lives in `packages/` as an npm workspace (`@lane-pilot/thread-observe`, `memory-core`, `handoff`, `resilience`, `run-insights`, `council`), server modules under `src/server/`. The map, the dependency rule and the phases of the split are in [docs/architecture.md](docs/architecture.md).
 
-PM tools added by those modules: `lane_pilot_handoff_create` / `lane_pilot_handoff_receipt` / `lane_pilot_handoff_list` (typed task cards between agents), `lane_pilot_routing_stats` (first-try acceptance per provider, model and risk), `lane_pilot_lessons_sweep` (recent findings and rejections into subagent memory), `lane_pilot_memory_golden` (retrieval score against a golden set), `lane_pilot_run_health` (provider breaker and run budget), `lane_pilot_memory_import` / `lane_pilot_memory_export` (lane-memory files ↔ the hub corpus). CLI: `bb lane-pilot budget`, `bb lane-pilot health`.
+PM tools added by those modules: `lane_pilot_handoff_create` / `lane_pilot_handoff_receipt` / `lane_pilot_handoff_list` (typed task cards between agents), `lane_pilot_routing_stats` (first-try acceptance per provider, model and risk), `lane_pilot_lessons_sweep` (recent findings and rejections into subagent memory), `lane_pilot_memory_golden` (retrieval score against a golden set), `lane_pilot_run_health` (provider breaker and run budget), `lane_pilot_memory_import` / `lane_pilot_memory_export` (lane-memory files ↔ the hub corpus). `lane_pilot_council_start` / `_status` / `_stop` (a council of directors on a product question, decision page under `docs/decisions/`). CLI: `bb lane-pilot budget`, `bb lane-pilot health`.
 
 ## Commands
 

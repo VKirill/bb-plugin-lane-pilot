@@ -630,6 +630,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   // A section keeps its own settings over its project's; null edits the project itself.
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [routingHints, setRoutingHints] = useState<Array<{ risk: string; hint: string }>>([]);
+  type CouncilRow = { id: string; runId: string; question: string; state: string; round: number; maxRounds: number; decisionPath: string | null; updatedAt: number };
+  type CouncilDetail = { id: string; question: string; state: string; round: number; maxRounds: number; agenda: string[]; criteria: string[]; decisionPath: string | null; reason: string | null; recommendation: string | null; seats: Array<{ id: string; title: string; providerId: string | null; model: string | null }>; messages: Array<{ seq: number; seatId: string; round: number; kind: string; text: string; at: number }> };
+  const [councils, setCouncils] = useState<CouncilRow[]>([]);
+  const [council, setCouncil] = useState<CouncilDetail | null>(null);
+  const openCouncil = (councilId: string) => { void rpc.call("get_council", { councilId }).then((detail) => setCouncil(detail as CouncilDetail)).catch(() => setCouncil(null)); };
   const [sections, setSections] = useState<Array<{ id:string; parentId:string|null; name:string; path:string; kind:"folder"|"group" }>>([]);
   const scoped = selectedSectionId ? { sectionId: selectedSectionId } : {};
   const cacheKey = (id: string, section: string | null | undefined) => `${id}|${section ?? ""}`;
@@ -741,6 +746,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
       const next = await rpc.call("get_screen", { ...scoped, projectId }) as ScreenPayload;
       if (generation !== loadGeneration.current) return;
       setData(next);
+      void rpc.call("list_councils", { projectId }).then((listed) => { if (generation === loadGeneration.current) setCouncils((listed as { councils: CouncilRow[] }).councils); }).catch(() => setCouncils([]));
       void rpc.call("get_routing_hint", { projectId }).then((hint) => { if (generation === loadGeneration.current) setRoutingHints((hint as { hints: Array<{ risk: string; hint: string }> }).hints); }).catch(() => setRoutingHints([]));
       if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
       setResultSource(next.writerResultJson);
@@ -1754,6 +1760,37 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 {t("resume")}
               </Button>
             </div>
+            <section className="space-y-2 rounded-md border p-3" data-testid="council-feed" data-bb-ru-skip>
+              <h3 className="text-sm font-medium">{t("councilTitle")}</h3>
+              {!councils.length ? <p className="text-xs text-muted-foreground">{t("councilEmpty")}</p> : (
+                <ul className="space-y-1">
+                  {councils.map((row) => (
+                    <li key={row.id}>
+                      <button type="button" className="text-left text-sm underline-offset-2 hover:underline" onClick={() => openCouncil(row.id)}>
+                        {row.question}
+                      </button>
+                      <span className="ml-2 text-xs text-muted-foreground">{row.state} · {t("councilRound")} {row.round}/{row.maxRounds}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {council ? (
+                <div className="space-y-2 border-t pt-2 text-sm" data-testid="council-detail">
+                  <div className="text-xs text-muted-foreground">{council.seats.map((seat) => `${seat.title}${seat.providerId && seat.model ? ` (${seat.providerId}/${seat.model})` : ""}`).join(" · ")}</div>
+                  {council.agenda.length ? <ol className="list-decimal pl-5 text-xs">{council.agenda.map((item) => <li key={item}>{item}</li>)}</ol> : null}
+                  <div className="max-h-96 space-y-2 overflow-y-auto">
+                    {council.messages.map((message) => (
+                      <div key={message.seq} className="rounded bg-muted/40 p-2">
+                        <div className="text-xs font-medium">{council.seats.find((seat) => seat.id === message.seatId)?.title ?? message.seatId} · {t("councilRound")} {message.round} · {message.kind}</div>
+                        <div className="whitespace-pre-wrap text-xs">{message.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {council.recommendation ? <div className="text-xs"><span className="font-medium">{t("councilDecision")}: </span>{council.recommendation}{council.decisionPath ? ` (${council.decisionPath})` : ""}</div> : null}
+                  {council.reason ? <div className="text-xs text-destructive">{council.reason}</div> : null}
+                </div>
+              ) : null}
+            </section>
             {!data?.runs.length ? (
               <p className="text-sm text-muted-foreground">{t("emptyRuns")}</p>
             ) : (

@@ -972,6 +972,19 @@ export const rpcContract = defineRpcContract({
     input: z.object({ projectId: z.string().min(1), snapshotPath: z.string().startsWith("/").optional() }).strict(),
     output: z.unknown(),
   },
+  list_councils: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.object({ councils: z.array(z.object({ id: z.string(), runId: z.string(), question: z.string(), state: z.string(), round: z.number().int(), maxRounds: z.number().int(), decisionPath: z.string().nullable(), updatedAt: z.number().int() })) }).strict(),
+  },
+  get_council: {
+    input: z.object({ councilId: z.string().min(1) }).strict(),
+    output: z.object({
+      id: z.string(), question: z.string(), state: z.string(), round: z.number().int(), maxRounds: z.number().int(), agenda: z.array(z.string()), criteria: z.array(z.string()),
+      decisionPath: z.string().nullable(), reason: z.string().nullable(), recommendation: z.string().nullable(),
+      seats: z.array(z.object({ id: z.string(), title: z.string(), providerId: z.string().nullable(), model: z.string().nullable() })),
+      messages: z.array(z.object({ seq: z.number().int(), seatId: z.string(), round: z.number().int(), kind: z.string(), text: z.string(), at: z.number().int() })),
+    }).strict(),
+  },
   get_routing_hint: {
     input: z.object({ projectId: z.string().min(1), days: z.number().int().min(1).max(365).optional() }).strict(),
     output: z.object({

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.27 — 2026-09-30
+
+- **Council of directors.** `lane_pilot_council_start` convenes role-bound seats (product, demand, audience, skeptic; growth and ux on request) on distinct configured models as hidden threads. The chair turns the question into an agenda and criteria, seats give positions and reply only where they disagree or add evidence (PASS otherwise), a moderator rule ends the discussion on the round cap, on repetition or when most seats pass (an outside judge can override), and the chair writes a decision record: options ranked by the criteria, recommendation, dissent, experiments, next tasks. The record lands in `docs/decisions/` and each next task becomes a handoff card. `lane_pilot_council_status` and the run monitor show the feed; `lane_pilot_council_stop` ends a session. Package `@lane-pilot/council` holds the protocol.
+
 ## 0.1.26 — 2026-09-30
 
 - **Packages.** An npm workspace under `packages/` holds code reusable beyond this plugin: `@lane-pilot/thread-observe` (when a child thread is done or failed), `@lane-pilot/memory-core` (guarded project memory over SQLite), `@lane-pilot/handoff` (typed task cards between agents with states, leases and receipts), `@lane-pilot/resilience` (provider circuit breaker, run budgets), `@lane-pilot/run-insights` (writer acceptance per model and risk, lessons from receipts, golden retrieval checks). The map and the rules are in [docs/architecture.md](docs/architecture.md).

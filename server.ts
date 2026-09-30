@@ -2,6 +2,7 @@ import { listUnfinishedStages, openDatabase } from "./src/database";
 import { createActivation } from "./src/server/activation";
 import { registerCli } from "./src/server/cli";
 import { createCore } from "./src/server/core";
+import { createCouncil } from "./src/server/council";
 import { createDocsNightly } from "./src/server/docs-nightly";
 import { mountNativeWiring } from "./src/server/native-wiring";
 import { createProbes } from "./src/server/probes";
@@ -54,6 +55,7 @@ export default async function plugin(bb: BbPluginApi) {
     createDocsNightly(ctx, services),
     createProbes(ctx, services),
     createWriterHost(ctx),
+    { council: createCouncil(ctx) },
   );
   registerRpc(ctx, services);
   registerTools(ctx, services);
