@@ -131,13 +131,13 @@ describe("insights tools", () => {
       throw new Error("scan did not finish");
     };
 
-    expect((await list()).analyzer).toEqual({ providerId: "codex", model: "m", reasoningLevel: "high", serviceTier: null });
+    expect((await list()).analyzer).toEqual({ providerId: "codex", model: "gpt-6-luna", reasoningLevel: "high", serviceTier: "fast" });
     expect(await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "ru" })).toMatchObject({ started: true });
     const first = await scanDone();
     expect(first.scan).toMatchObject({ state: "done", triaged: 5, groups: 1, proposals: 1 });
     expect(first.triage).toMatchObject({ total: 5, byOrigin: { writer: 3, orchestrator: 2 }, errors: 0, pendingGroups: 0 });
     expect(spawned).toHaveLength(1);
-    expect(spawned[0]).toMatchObject({ projectId, visibility: "hidden", providerId: "codex", model: "m", pluginMetadata: { role: "rules-analyzer", category: "missing_output" } });
+    expect(spawned[0]).toMatchObject({ projectId, visibility: "hidden", providerId: "codex", model: "gpt-6-luna", reasoningLevel: "high", serviceTier: "fast", pluginMetadata: { role: "rules-analyzer", category: "missing_output" } });
     expect(spawned[0]!.prompt).toContain("Write the rules in Russian");
     expect(spawned[0]!.prompt).toContain("writer thr-w1: done, wrote the code but not docs");
     expect(spawned[0]!.prompt).not.toContain(".agents/PROGRESS.md");

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.46 — 2026-10-01
+
+- **The rules analyzer defaults to Codex GPT-6 Luna, high, fast** instead of the project's writer model; a model picked in «Rules from lessons» stays. On the live SelfyStudio group (three failed `npm -w` checks) Luna set all three aside as not the writers' fault (foreign specs, a file the writer never touched), while Grok 4.6 had written a rule telling writers to fix those failures, which would send them outside their owns_paths. Luna is also the cheaper model.
+- The settings bundle builds again: 0.1.45 imported the docs default from a module that needs `node:crypto`.
+
 ## 0.1.45 — 2026-10-01
 
 - **Docs are written by Codex GPT-6 Luna, high reasoning, fast tier by default**, not by the writer's model; a project that picks its own docs model keeps it. The nightly pass, the post-task stage and the settings picker use the same default.

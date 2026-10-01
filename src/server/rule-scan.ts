@@ -3,9 +3,8 @@ import {
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import { getRun, getRunSettingsScopes, loadProjectSettings, loadPrototypeConfig } from "../database";
+import { getRun, getRunSettingsScopes } from "../database";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../owns-paths";
-import { resolveStageWriterSelection } from "../stage-writer-selection";
 import { bbServiceTier, writerExecutionSelection } from "../jev-reasoning";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
 import { fullAccessSpawn } from "./pm-spawn";
@@ -22,6 +21,7 @@ const ANALYZER_LIMIT_MS = 20 * 60_000;
 /** Rewrites of rules on trial one scan may spend the analyzer on. */
 const MAX_REVISIONS_PER_SCAN = 2;
 
+export const DEFAULT_ANALYZER = { providerId: "codex", model: "gpt-6-luna", reasoningLevel: "high", serviceTier: "fast" } as const;
 export type AnalyzerSelection = { providerId: string; model: string; reasoningLevel: string; serviceTier: "default" | "fast" | null };
 export type RuleScanState = {
   state: "idle" | "running" | "done" | "failed";
@@ -91,10 +91,10 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   async function analyzerFor(projectId: string): Promise<AnalyzerSelection | null> {
     const stored = await bb.storage.kv.get(ANALYZER_KEY(projectId)) as AnalyzerSelection | undefined;
     if (stored?.providerId && stored.model) return stored;
-    // Until the owner picks one, the analyzer runs on the project's writer model.
-    const config = loadPrototypeConfig(db, projectId);
-    const { providerId, model } = resolveStageWriterSelection({ settings: loadProjectSettings(db, projectId), config: { writerProviderId: config?.writerProviderId ?? "", writerModel: config?.writerModel ?? "" } });
-    return providerId && model ? { providerId, model, reasoningLevel: "high", serviceTier: null } : null;
+    // Until the owner picks one: Codex GPT-6 Luna, high, fast. On the SelfyStudio group (2026-10-01) it set aside
+    // three failures that were not the writers' (foreign specs, untouched files) where Grok 4.6 wrote a rule that
+    // would have sent writers outside their owns_paths; it is also the cheaper model.
+    return { ...DEFAULT_ANALYZER };
   }
 
   async function saveAnalyzer(projectId: string, selection: AnalyzerSelection): Promise<AnalyzerSelection> {
