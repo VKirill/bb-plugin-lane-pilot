@@ -102,6 +102,9 @@ describe("main-agent spawn payload", () => {
 
     const first = await harness.behavior.callRpc("activate_pm", { projectId, sourceThreadId: "source-thread" }) as { threadId: string; runId: string };
     expect(first.threadId).toBe("pm-main");
+    // BB 0.5 rejects sourceThreadId outside forks («sourceThreadId requires an originKind»): the PM is the chat's child.
+    expect(spawns[0]).not.toHaveProperty("sourceThreadId");
+    expect(spawns[0]).toMatchObject({ parentThreadId: "source-thread" });
     expect(spawns[0]?.experimental_vkCompiledMainAgent).toMatchObject({
       id: "copy-lead",
     });

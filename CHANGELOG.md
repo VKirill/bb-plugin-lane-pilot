@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.42 — 2026-10-01
+
+- **Lane Pilot can be enabled from a chat again.** BB 0.5 rejects `sourceThreadId` on a spawn that is not a fork («sourceThreadId requires an originKind»), and the PM was spawned with it, so «Enable Lane Pilot» from an ordinary chat and `bb lane-pilot activate` failed. The PM is now the chat's child without a source; writer placement takes the PM's parent as its source when BB stores none (helpers already dropped the field). Found by the live sandbox check of 0.1.41.
+
 ## 0.1.41 — 2026-10-01
 
 - **A writer reads only the rules its task needs.** Before a writer starts, System One gets the task contract (objective, paths, acceptance, interfaces, invariants, verification commands) and one yes/no question per accepted rule; a rule goes into the prompt from p(yes) 0.3 up. Without an answer every rule goes in, as before: a missing rule costs more than an extra one. Calibrated on 60 SelfyStudio contracts with the analyzer's live rule and a deploy rule: 2 of 59 needed rules missed, 4 of 61 unneeded added; without interfaces and invariants terse release tasks («Ship 6ce641636b») were missed. The attempt trace records which rules were picked out of how many (`dispatchContext.rulesPicked`).

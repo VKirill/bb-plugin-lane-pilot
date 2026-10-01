@@ -137,8 +137,8 @@ export function createActivation(ctx: ServerCore, services: Services) {
     try {
       spawned = await fullAccessSpawn(bb, {
         projectId,
+        // BB 0.5 accepts sourceThreadId only on forks (originKind); the PM is a child of the chat it was enabled from.
         ...(sourceThreadId ? {
-          sourceThreadId,
           parentThreadId: sourceThreadId,
           ...(lifecycleOwnerThreadId ? { lifecycleOwnerThreadId } : {}),
         } : {}),

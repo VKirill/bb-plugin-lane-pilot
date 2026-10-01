@@ -158,7 +158,8 @@ export async function helperChildPlacement(input:{
   // is its own source and lifecycle owner. Before this, a root `bb` PM failed every writer spawn with
   // helper_parent_relation_missing (hub log 2026-09-27), surfacing only as a misleading reconcile reason.
   const rootPm = run?.kind === "cli" || !stringAt(parentThread, "parentThreadId");
-  const sourceThreadId = stringAt(parentThread, "sourceThreadId") ?? (rootPm ? parentId : null);
+  // A PM enabled from a chat is that chat's child; BB no longer stores the chat as its source, so the parent is.
+  const sourceThreadId = stringAt(parentThread, "sourceThreadId") ?? (rootPm ? parentId : stringAt(parentThread, "parentThreadId"));
   const lifecycleOwnerThreadId = stringAt(parentThread, "lifecycleOwnerThreadId") ?? (rootPm ? parentId : null);
   if (!sourceThreadId || !lifecycleOwnerThreadId) throw new Error("helper_parent_relation_missing");
   const settings = await inheritedProjectSettings(input.bb,input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
