@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.40 — 2026-10-01
+
+- **Text-grouping drafts leave once Jev answers.** A scan that reached System One deletes the fallback's undecided `sweep` proposals; decided ones stay, and the fallback recreates drafts only when Jev is unavailable. On the hub the two 0.1.37 drafts (bookkeeping noise in 40 and 11 SelfyStudio tasks) were still waiting for the owner next to the analyzer's rule.
+
 ## 0.1.39 — 2026-10-01
 
 Fixes from the first live scan on the hub (SelfyStudio, 45 failures).

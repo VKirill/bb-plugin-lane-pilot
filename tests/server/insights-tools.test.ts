@@ -117,6 +117,9 @@ describe("insights tools", () => {
     };
     for (const task of ["w1", "w2", "w3"]) seed(task, `missing expected_outputs: docs/${task}.md`);
     for (const task of ["o1", "o2"]) seed(task, "owns_paths rejected .agents/PROGRESS.md");
+    // A text-grouping draft left from the fallback is dropped once Jev answers; a decided one stays.
+    db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,first_seen_at,last_seen_at,updated_at)
+      VALUES ('rule_old','${projectId}','x','Repeated in 40 tasks: .agents noise','sweep','proposed',40,40,'[]',1,1,1), ('rule_kept','${projectId}','y','Decided long ago','sweep','rejected',3,3,'[]',1,1,1)`).run();
     const list = async () => await harness.behavior.callRpc("list_rule_proposals", { projectId }) as Record<string, any>;
     const scanDone = async () => {
       for (let i = 0; i < 100; i++) {
@@ -137,7 +140,9 @@ describe("insights tools", () => {
     expect(spawned[0]!.prompt).toContain("Write the rules in Russian");
     expect(spawned[0]!.prompt).toContain("writer thr-w1: done, wrote the code but not docs");
     expect(spawned[0]!.prompt).not.toContain(".agents/PROGRESS.md");
-    const proposal = first.proposals[0];
+    expect(first.proposals.map((row: { id: string }) => row.id)).not.toContain("rule_old");
+    expect(first.proposals.map((row: { id: string }) => row.id)).toContain("rule_kept");
+    const proposal = first.proposals.find((row: { author: string }) => row.author === "model");
     expect(proposal).toMatchObject({ author: "model", state: "proposed", rule: "Создай каждый файл из expected_outputs до ответа и проверь его ls.", taskCount: 3 });
     expect(proposal.evidence.map((row: { taskId: string }) => row.taskId).sort()).toEqual(["w1", "w2", "w3"]);
 

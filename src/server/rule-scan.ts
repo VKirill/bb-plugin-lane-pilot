@@ -241,6 +241,8 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
           await setScan(projectId, { state: "failed", finishedAt: Date.now(), triaged: triage.triaged, reason: triage.reason ?? triage.state });
           return;
         }
+        // With System One answering, the text-grouping drafts of the fallback are noise; decided ones stay.
+        db.prepare("DELETE FROM lane_pilot_rule_proposal WHERE project_id=? AND author='sweep' AND state='proposed'").run(projectId);
         await setScan(projectId, { triaged: triage.triaged });
         const since = Date.now() - RULE_SCAN_WINDOW_MS;
         const groups = writerGroups(db, projectId, since).slice(0, MAX_GROUPS_PER_SCAN);
