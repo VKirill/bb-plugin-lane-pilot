@@ -31,6 +31,11 @@ export {
   type RulesDatabase,
 } from "./rules";
 export {
+  codeVerdict,
+  rejectedPaths,
+  splitRejectedPaths,
+  TRIAGE_VERSION,
+  type RejectedPathSplit,
   saveTriage,
   triageMigrations,
   triageQuestions,

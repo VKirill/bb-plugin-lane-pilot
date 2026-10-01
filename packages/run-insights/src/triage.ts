@@ -77,17 +77,48 @@ export function triageQuestions(rules: ReadonlyArray<{ rule: string }>): Record<
 /** Files Lane Pilot, its hooks and sibling agents write on their own; a writer never owns them. */
 const BOOKKEEPING = /^(\.agents\/|\.bb\/|\.claude\/|PROGRESS\.md$)/;
 
+/** Bump when the facts, the questions or the code verdicts change: every stored answer is asked again. */
+export const TRIAGE_VERSION = "2";
+
+/** Paths an ownership rejection names. */
+export function rejectedPaths(reason: string): string[] {
+  return /(?:owns_paths rejected |never_touch: )(.+)$/s.exec(reason)?.[1]?.split(",").map((path) => path.trim()).filter(Boolean) ?? [];
+}
+
+/** Rejected paths split by who they belong to; `owned` uses the host plugin's own glob rules. */
+export type RejectedPathSplit = { owned: string[]; bookkeeping: string[]; outside: string[] };
+
+export function splitRejectedPaths(reason: string, owns: (path: string) => boolean): RejectedPathSplit {
+  const split: RejectedPathSplit = { owned: [], bookkeeping: [], outside: [] };
+  for (const path of rejectedPaths(reason)) {
+    if (BOOKKEEPING.test(path)) split.bookkeeping.push(path);
+    else if (owns(path)) split.owned.push(path);
+    else split.outside.push(path);
+  }
+  return split;
+}
+
+/**
+ * Verdicts code can give without asking: an ownership gate that rejected the task's own files, or only
+ * bookkeeping files, failed itself (the sibling never_touch union fixed in 0.1.24 did exactly this).
+ */
+export function codeVerdict(split: RejectedPathSplit): { origin: "orchestrator"; detail: string } | null {
+  if (split.owned.length > 0) return { origin: "orchestrator", detail: "code:gate_rejected_owned_paths" };
+  if (split.bookkeeping.length > 0 && split.outside.length === 0) return { origin: "orchestrator", detail: "code:bookkeeping_only" };
+  return null;
+}
+
 export type FailedAttempt = {
   attemptId: string; runId: string; taskId: string; state: string; reason: string; contractJson: string; threadId: string | null; failedAt: number;
 };
 
 /** What System One reads: the failure, the task, and the facts code can settle on its own (jevals' split). */
-export function triageState(attempt: FailedAttempt): Record<string, unknown> {
+export function triageState(attempt: FailedAttempt, split: RejectedPathSplit = { owned: [], bookkeeping: [], outside: rejectedPaths(attempt.reason) }): Record<string, unknown> {
   let contract: Record<string, unknown> = {};
   try { contract = JSON.parse(attempt.contractJson) as Record<string, unknown>; } catch { /* reason alone */ }
   const list = (key: string) => (Array.isArray(contract[key]) ? contract[key] as unknown[] : []).filter((item): item is string => typeof item === "string");
   const reason = attempt.reason;
-  const rejected = /(?:owns_paths rejected |never_touch: )(.+)$/s.exec(reason)?.[1]?.split(",").map((path) => path.trim()).filter(Boolean) ?? [];
+  const rejected = rejectedPaths(reason);
   const outputs = list("expected_outputs");
   return {
     attempt_state: attempt.state,
@@ -100,8 +131,9 @@ export function triageState(attempt: FailedAttempt): Record<string, unknown> {
       verification_commands: (Array.isArray(contract.verification) ? contract.verification as Array<{ command?: unknown }> : []).map((row) => row.command).filter((command) => typeof command === "string"),
     },
     facts_computed_by_code: {
-      paths_rejected_by_ownership_gate: rejected,
+      paths_rejected_by_ownership_gate: rejected.slice(0, 40),
       all_rejected_paths_are_lane_pilot_bookkeeping: rejected.length > 0 ? rejected.every((path) => BOOKKEEPING.test(path)) : null,
+      rejected_paths_outside_this_task_scope: split.outside.slice(0, 40),
       reason_is_an_internal_error_code_of_the_orchestrator: /^[a-z][a-z0-9_]+(:|$)/.test(reason) && !reason.startsWith("owns_paths"),
       expected_outputs_written_as_prose_not_paths: outputs.some((output) => /\s/.test(output.trim())),
     },
@@ -109,7 +141,7 @@ export function triageState(attempt: FailedAttempt): Record<string, unknown> {
   };
 }
 
-const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+const sha = (text: string) => createHash("sha256").update(`${TRIAGE_VERSION}\n${text}`).digest("hex");
 
 /** Failed attempts since `since` that have no triage for their current reason yet, oldest first. */
 export function untriagedAttempts(db: TriageDatabase, projectId: string, since: number, limit = 200): FailedAttempt[] {

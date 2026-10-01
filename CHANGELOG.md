@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.39 — 2026-10-01
+
+Fixes from the first live scan on the hub (SelfyStudio, 45 failures).
+
+- **Code decides ownership rejections it can judge.** Jev called 26 SelfyStudio failures the writer's fault; 20 of them were ownership rejections of paths the task itself owns, the sibling never_touch union fixed in 0.1.24. Rejected paths are now split into owned, bookkeeping and outside the task's scope with Lane Pilot's own glob rules: a gate that rejected owned or only bookkeeping paths is Lane Pilot's fault without asking Jev, and Jev sees only the paths really outside the task. Over all 103 hub failures of 30 days: 56 decided in code, 12 writer mistakes left (missing expected files, broken project tests, an unowned test file), each checked by hand.
+- **Stored answers are versioned.** Changing facts, questions or code verdicts re-asks every stored answer once.
+- **A scan cut off by a restart is reported as interrupted** instead of staying «running» with the button locked (the hub's BB server restarted 23 s into the first scan).
+
 ## 0.1.38 — 2026-10-01
 
 Rules from lessons now come from sorting by meaning instead of masked failure text. The 0.1.37 grouping proposed Lane Pilot's own old bug (bookkeeping files counted against writers) as a writer rule.

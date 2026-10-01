@@ -144,7 +144,9 @@ describe("insights tools", () => {
     await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "ru" });
     const second = await scanDone();
     expect(second.scan).toMatchObject({ state: "done", triaged: 0, groups: 0 });
-    expect(judged).toHaveLength(5);
+    // The two bookkeeping-only rejections are decided in code; Jev is asked about the three others, once.
+    expect(judged).toHaveLength(3);
+    expect(judged.some((reason) => reason.includes(".agents/"))).toBe(false);
     expect(spawned).toHaveLength(1);
 
     saveProjectSetting(db, projectId, "memory.enabled", "true");
@@ -165,6 +167,38 @@ describe("insights tools", () => {
 
     await harness.behavior.callRpc("save_rules_analyzer", { projectId, analyzer: { providerId: "claude-code", model: "opus", reasoningLevel: "max", serviceTier: null } });
     expect((await list()).analyzer).toMatchObject({ providerId: "claude-code", model: "opus" });
+  });
+
+  it("decides in code when the gate rejected the task's own files, and reports a scan cut off by a restart", async () => {
+    const judged: string[] = [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: { projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-1", path: "/tmp/rules-ws", isDefault: true }] }) as never, list: async () => [] as never } },
+      experimental_callHostRpc: (call) => { judged.push(String((call.input as { state: string }).state)); return { hostId: "host-1", status: "ok", reason: null, answers: { origin: "writer", category: "outside_scope" }, confidence: { origin: 0.9 } }; },
+    });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, { projectId, hostId: "host-1", pmWorkspacePath: "/tmp/rules-ws", writerWorkspacePath: "/tmp/rules-ws", pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
+    createRun(db, runId, projectId);
+    const now = Date.now();
+    createTask(db, { id: "own", runId, kind: "bb", contract: { owns_paths: ["apps/api/**"], never_touch: [] } });
+    db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
+      .run("a-own", runId, "own", "validation_failed", "writer changed paths outside owns_paths or inside never_touch: apps/api/routes.ts", now, now, 1, "[]");
+    await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "en" });
+    let listed: Record<string, any> = {};
+    for (let i = 0; i < 100; i++) {
+      listed = await harness.behavior.callRpc("list_rule_proposals", { projectId }) as Record<string, any>;
+      if (listed.scan.state !== "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(judged).toEqual([]);
+    expect(listed.triage.byOrigin).toEqual({ orchestrator: 1 });
+    expect(db.prepare("SELECT detail FROM lane_pilot_failure_triage").all()).toEqual([{ detail: "code:gate_rejected_owned_paths" }]);
+
+    await bb.storage.kv.set(`rules-scan:${projectId}`, { state: "running", startedAt: 1, finishedAt: null, triaged: 0, groups: 0, proposals: 0, reason: null });
+    expect(((await harness.behavior.callRpc("list_rule_proposals", { projectId })) as Record<string, any>).scan).toMatchObject({ state: "failed", reason: "interrupted_by_restart" });
+    expect(await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "en" })).toMatchObject({ started: true });
   });
 
   it("falls back to masked-text grouping when the project's machine has no Jev key", async () => {

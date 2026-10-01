@@ -1,9 +1,10 @@
 import {
-  listRuleProposals, saveTriage, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
+  codeVerdict, listRuleProposals, saveTriage, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { loadProjectSettings, loadPrototypeConfig } from "../database";
+import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../owns-paths";
 import { resolveStageWriterSelection } from "../stage-writer-selection";
 import { bbServiceTier, writerExecutionSelection } from "../jev-reasoning";
 import { refreshRuleProposals } from "./insights";
@@ -83,14 +84,25 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     return selection;
   }
 
+  /** A scan stored as running that no live process drives was cut off by a reload or a server restart. */
   async function scanState(projectId: string): Promise<RuleScanState> {
-    return { ...IDLE, ...(await bb.storage.kv.get(SCAN_KEY(projectId)) as Partial<RuleScanState> | undefined) };
+    const stored: RuleScanState = { ...IDLE, ...(await bb.storage.kv.get(SCAN_KEY(projectId)) as Partial<RuleScanState> | undefined) };
+    return stored.state === "running" && !running.has(projectId) ? { ...stored, state: "failed", reason: "interrupted_by_restart" } : stored;
   }
 
   async function setScan(projectId: string, patch: Partial<RuleScanState>): Promise<RuleScanState> {
-    const next = { ...await scanState(projectId), ...patch };
+    const next = { ...IDLE, ...(await bb.storage.kv.get(SCAN_KEY(projectId)) as Partial<RuleScanState> | undefined), ...patch };
     await bb.storage.kv.set(SCAN_KEY(projectId), next);
     return next;
+  }
+
+  /** A path the task owns and does not forbid itself; rejecting one of these is the gate's fault. */
+  function splitOwnership(attempt: FailedAttempt) {
+    let contract: { owns_paths?: unknown; never_touch?: unknown } = {};
+    try { contract = JSON.parse(attempt.contractJson) as typeof contract; } catch { /* nothing owned */ }
+    const owns = Array.isArray(contract.owns_paths) ? contract.owns_paths.filter((item): item is string => typeof item === "string") : [];
+    const never = Array.isArray(contract.never_touch) ? contract.never_touch.filter((item): item is string => typeof item === "string") : [];
+    return splitRejectedPaths(attempt.reason, (path) => fileAllowedByOwns(path, owns) && !fileBlockedByNeverTouch(path, never));
   }
 
   async function projectPlace(projectId: string): Promise<{ hostId: string; path: string } | null> {
@@ -115,8 +127,15 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     const queue = [...pending];
     const worker = async () => {
       for (let attempt = queue.shift(); attempt && !unavailable && !ctx.isDisposed(); attempt = queue.shift()) {
+        const split = splitOwnership(attempt);
+        const verdict = codeVerdict(split);
+        if (verdict) {
+          saveTriage(db, projectId, attempt, { status: "ok", origin: verdict.origin, originConfidence: 1, detail: verdict.detail }, now);
+          triaged++;
+          continue;
+        }
         const judged = await host.call("councilJudge", {
-          requestedHostId: place.hostId, state: JSON.stringify(triageState(attempt)).slice(0, 60_000), questions,
+          requestedHostId: place.hostId, state: JSON.stringify(triageState(attempt, split)).slice(0, 60_000), questions,
         }, { hostId: place.hostId, timeoutMs: 10_000 }).catch((cause: unknown) => ({ status: "error" as const, answers: {}, confidence: {}, reason: cause instanceof Error ? cause.message : String(cause) }));
         if (judged.status === "disabled") { unavailable = judged.reason ?? "jev_disabled"; return; }
         if (judged.status !== "ok") { saveTriage(db, projectId, attempt, { status: "error", detail: judged.reason ?? judged.status }, now); continue; }

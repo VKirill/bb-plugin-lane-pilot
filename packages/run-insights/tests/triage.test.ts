@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { ruleMigrations, saveTriage, triageQuestions, triageState, triageSummary, untriagedAttempts, writerGroups, type FailedAttempt } from "../src/index";
+import { codeVerdict, ruleMigrations, saveTriage, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, writerGroups, type FailedAttempt } from "../src/index";
 import { triageMigrations } from "../src/triage";
 
 function openDb() {
@@ -30,6 +30,18 @@ describe("triage state", () => {
     expect((triageState(attempt("owns_paths rejected apps/api/a.ts")).facts_computed_by_code as Record<string, unknown>).all_rejected_paths_are_lane_pilot_bookkeeping).toBe(false);
     expect((triageState(attempt("attempt_worktree_provision_timeout:provisioning")).facts_computed_by_code as Record<string, unknown>).reason_is_an_internal_error_code_of_the_orchestrator).toBe(true);
     expect((triageState(attempt("missing expected_outputs: x", { expected_outputs: ["The page shows a keyword"] })).facts_computed_by_code as Record<string, unknown>).expected_outputs_written_as_prose_not_paths).toBe(true);
+  });
+
+  it("lets code decide when the gate rejected the task's own files or only bookkeeping files", () => {
+    const owns = (path: string) => path.startsWith("apps/api/");
+    const ownFiles = splitRejectedPaths("writer changed paths outside owns_paths or inside never_touch: apps/api/a.ts, apps/web/b.ts", owns);
+    expect(ownFiles).toEqual({ owned: ["apps/api/a.ts"], bookkeeping: [], outside: ["apps/web/b.ts"] });
+    expect(codeVerdict(ownFiles)).toEqual({ origin: "orchestrator", detail: "code:gate_rejected_owned_paths" });
+    expect(codeVerdict(splitRejectedPaths("owns_paths rejected .agents/PROGRESS.md", owns))).toEqual({ origin: "orchestrator", detail: "code:bookkeeping_only" });
+    const outside = splitRejectedPaths("writer changed paths outside owns_paths or inside never_touch: .agents/x.md, apps/web/b.ts", owns);
+    expect(codeVerdict(outside)).toBeNull();
+    expect((triageState(attempt("x"), outside).facts_computed_by_code as Record<string, unknown>).rejected_paths_outside_this_task_scope).toEqual(["apps/web/b.ts"]);
+    expect(codeVerdict(splitRejectedPaths("missing expected_outputs: a.md", owns))).toBeNull();
   });
 
   it("asks about known rules only when there are some", () => {
