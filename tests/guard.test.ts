@@ -2,9 +2,10 @@ import { mkdirSync, symlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
 
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
-const upstream = join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack/hooks/guard_shell.py");
+const upstream = upstreamPath("hooks/guard_shell.py");
 const cwd = join(process.cwd(), "tests/guard-fixture");
 mkdirSync(cwd, {recursive:true});
 
@@ -109,7 +110,7 @@ describe("E2 Lane Pilot PM guard", () => {
     expect(a.status).not.toBe(0);
   });
 
-  it("leaves representative upstream PM_AGENTS behavior byte-for-byte", () => {
+  it.skipIf(NO_UPSTREAM)("leaves representative upstream PM_AGENTS behavior byte-for-byte", () => {
     const probes = [
       bash("read","git status",true),
       bash("upstream mutation remains upstream","git add src/app.ts",true),

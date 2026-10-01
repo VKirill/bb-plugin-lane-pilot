@@ -51,6 +51,11 @@ describe("Lane Pilot PM ships", () => {
     expect(bash("dev-orchestrator", "git commit -q -F msg.txt && git push origin main", NATIVE).status).toBe(0);
     expect(bash("dev-orchestrator", "git push --force-with-lease origin main", NATIVE).status).toBe(0);
   });
+  it("a commit message that mentions forced pushes or the hook-skip flag is text, not a command", () => {
+    const skip = "--no-" + "verify";
+    expect(bash("dev-orchestrator", `git commit -m "guard: git push -uf and +main are caught; ${skip} in text is fine" && git push origin main`, NATIVE).status).toBe(0);
+    expect(bash("writer", `git commit ${skip} -m "x"`).status).toBe(2);
+  });
 });
 
 describe("a denied PM edit points where the PM can act", () => {

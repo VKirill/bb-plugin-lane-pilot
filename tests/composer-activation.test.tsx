@@ -43,7 +43,7 @@ async function mountComposer(input: {
     composer: { scope: input.scope, text: "Please review this project" },
     rpc: {
       get_preferences: () => ({ locale: "en", preference: "en", lastProjectId: null }),
-      activation_context: (args: { projectId: string | null }) => ({
+      activation_context: (request: unknown) => { const args = request as { projectId: string | null }; return {
         projectId: args.projectId,
         projects: input.context.projects,
         bindingStatus: input.context.bindingStatus,
@@ -56,16 +56,16 @@ async function mountComposer(input: {
         pluginRole: input.context.pluginRole ?? null,
         threadStatus: input.context.threadStatus ?? null,
         requiredSessionPolicy: "none",
-      }),
+      }; },
       activate_pm: input.activate ?? (async () => ({ threadId: "thr_pm", runId: "run_1" })),
       native_install_start: async (input: unknown) => { installStarts.push((input as { hostId: string }).hostId); return { started: true }; },
-      prepare_native_session: async ({ agentId }: { agentId: string }) => ({
+      prepare_native_session: async (request: unknown) => { const { agentId } = request as { agentId: string }; return {
         token: "11111111-1111-1111-1111-111111111111",
         label: agentId === "copy-lead" ? "Night desk" : "Development coordinator",
         agentId: agentId || "dev-orchestrator",
         profileMode: "installed",
         cliAgentsCollision: null,
-      }),
+      }; },
     },
   });
 }

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
+import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
 import { aggregateRun } from "../src/aggregation";
 import { spawnSync } from "node:child_process";
 import { buildCliInvocation } from "../src/argv-builder";
@@ -274,12 +275,12 @@ describe("task-v2", () => {
     verify:"tests" as const,
     verification:[{ command:"true", cwd:"/tmp/x" }],
   };
-  it("requires the 18 upstream fields and keeps the copyrighted schema copy", () => {
+  it.skipIf(NO_UPSTREAM)("requires the 18 upstream fields and keeps the copyrighted schema copy", () => {
     const schema = loadTaskV2Schema();
     expect(schema.required).toEqual([...TASK_V2_REQUIRED]);
     expect(schema.additionalProperties).toBe(false);
     const copied = readFileSync(join(process.cwd(), "lane-stack/schemas/task-v2.schema.json"), "utf8");
-    const upstream = readFileSync(join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack/schemas/task-v2.schema.json"), "utf8");
+    const upstream = readFileSync(upstreamPath("schemas/task-v2.schema.json"), "utf8");
     expect(copied).toBe(upstream);
     expect(readFileSync(join(process.cwd(), "lane-stack/schemas/LICENSE"), "utf8")).toMatch(/Copyright \(c\) 2026 VKirill/);
   });

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterAll, describe, expect, it } from "vitest";
+import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
 import { TARGET_SHA } from "../src/constants";
 import { importSettingsOnce, openDatabase } from "../src/database";
 import { sha256FileOrNull } from "../src/hash";
@@ -14,7 +15,7 @@ import {
 } from "../src/stack-ops";
 import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
 
-const FALLBACK = join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack");
+const FALLBACK = upstreamPath();
 const home = mkdtempSync(join(tmpdir(), "lane-pilot-s18-"));
 const receiptDir = join(home, "receipts");
 const workspace = join(home, "ws");
@@ -75,7 +76,7 @@ afterAll(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-describe("S1–S8 isolated HOME", () => {
+describe.skipIf(NO_UPSTREAM)("S1–S8 isolated HOME", () => {
   it("S2 detect sees a non-target SHA", async () => {
     const detected = await detectStack(ctx);
     expect(detected.scenario).toBe("S2");

@@ -38,7 +38,7 @@ export async function collectAgentInventory(input: {
   const tools = emptyInventoryGroup("unavailable");
   let skills = emptyInventoryGroup(input.listSkills ? "ready" : "unavailable");
   let mcpServers = emptyInventoryGroup(input.listMcp ? "ready" : "unavailable");
-  if (input.listSkills) {
+  if (input.listSkills && input.projectId) {
     try {
       const listed = await input.listSkills(input.projectId);
       skills = {

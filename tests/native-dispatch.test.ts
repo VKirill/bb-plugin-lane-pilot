@@ -45,8 +45,8 @@ async function setup(input?: {
       threads: {
         get: async ({ threadId }: { threadId: string }) => ({ id: threadId, environmentId: "env_native" }),
         getPluginMetadata: async () => ({}),
-        updatePluginMetadata: async ({ threadId, set }: { threadId: string; set: Record<string, unknown> }) => {
-          metadata.push({ threadId, set });
+        updatePluginMetadata: async ({ threadId, set }: { threadId: string; set?: Record<string, unknown> }) => {
+          metadata.push({ threadId, set: set ?? {} });
         },
       },
       projects: {

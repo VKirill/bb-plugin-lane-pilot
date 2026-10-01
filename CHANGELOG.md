@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.35 — 2026-10-01
+
+The suite is green for the first time since the server split: 915 passed, 0 failed (27 failed on 0.1.34), `tsc` clean (6 errors before). Two production bugs surfaced while fixing it.
+
+- **A PM started without a source thread can dispatch writers again.** Every helper spawn (writer, critic, council turn) needs the parent's source and lifecycle owner; a root `bb` PM — Enable without a source chat — has neither, so each writer spawn failed with `helper_parent_relation_missing` (hub log, 2026-09-27, 8 rejected attempts). A root PM thread is now its own source and owner, as a native CLI root chat already was.
+- **A repaired revision is re-critiqued.** After a repair the new code-critique row inherited the repair ledger's `spawnAttempted`, so `claimStageSpawn` refused, the old critic thread was adopted and its previous `changes_requested` re-read: the repair was never reviewed and the task ended blocked.
+- **The real spawn error survives reconcile.** A rejected spawn used to read only «reconcile completed on a short page without a matching thread», which hid the cause above for days; the original error now leads the reason.
+- **Git arguments are parsed, not grepped.** The guard reads `git commit/push/merge` arguments with shlex, so a commit message that mentions forced pushes or the hook-skip flag is text; `git push -uf` and `git push origin +main` are now caught.
+- **Tests no longer depend on another chat's temp folder or on machine state.** Upstream comparisons use a pinned Claude Lane Stack v1.38.0 (`tests/upstream-fixture.ts`: env, legacy snapshot, cached `git archive` of the pinned commit from the sibling checkout, or a clear skip). The npm-isolation test checks that a run leaves the host's global npm unchanged instead of requiring it to be empty. Stale tests follow the current contracts: worktree merge via `gitIntegrate`, execution packets that name files and line windows, background memory after acceptance, the native installer, current error texts. A page-mounting UI test runs one scenario per test instead of five mounts in one 5 s budget.
+- Type fixes: `collectAgentInventory` lists skills only with a project id; managed-workspace binding falls back to the configured host explicitly.
+
 ## 0.1.34 — 2026-10-01
 
 Instructions audit against Anthropic's «Prompting playbook» (thread thr_syz25bgrhk).

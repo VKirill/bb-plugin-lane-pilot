@@ -3,17 +3,17 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
 import { instrumentInstallSh, isolatedNpmPrefix, writeSkipWrappers } from "../src/install-runner";
-import { hostHasOpenCursorPackage, isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
+import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
 
-const UPSTREAM = join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack");
-const INSTALL_SH = readFileSync(join(UPSTREAM, "install.sh"), "utf8");
+const INSTALL_SH = NO_UPSTREAM ? "" : readFileSync(upstreamPath("install.sh"), "utf8");
 const NPM_BLOCK = INSTALL_SH.slice(
   INSTALL_SH.indexOf("# OpenCode → Cursor subscription models."),
   INSTALL_SH.indexOf('if [[ -f "$HOME/.config/opencode/opencode.json" && -f "$STACK_ROOT/profiles/opencode/opencode-lane.ts" ]]; then'),
 );
 
-describe("D1 skip wrappers block install.sh npm/open-cursor", () => {
+describe.skipIf(NO_UPSTREAM)("D1 skip wrappers block install.sh npm/open-cursor", () => {
   it("never execs real npm and leaves the host global prefix unchanged", async () => {
     const root = mkdtempSync(join(tmpdir(), "lane-pilot-d1-"));
     const home = join(root, "home");
@@ -50,23 +50,16 @@ describe("D1 skip wrappers block install.sh npm/open-cursor", () => {
     expect(result.stderr).toContain("real npm is never invoked");
     expect(readFileSync(skipLog, "utf8")).toMatch(/blocked npm install -g @rama_nigg\/open-cursor/);
     expect(existsSync(join(prefix, "lib/node_modules/@rama_nigg/open-cursor"))).toBe(false);
+    // The run must leave the host's global npm exactly as it found it; whether the owner has
+    // open-cursor installed there on purpose is machine state, not something this test owns.
     expect(after).toEqual(before);
-    expect(after.packageExists).toBe(false);
-    expect(hostHasOpenCursorPackage()).toBe(false);
     rmSync(root, { recursive: true, force: true });
-  });
-
-  it("fails if a leaked npm install writes the host global prefix", async () => {
-    const before = snapshotGlobalOpenCursor();
-    expect(hostHasOpenCursorPackage(), "host global prefix already has @rama_nigg/open-cursor").toBe(false);
-    expect(before.packageExists).toBe(false);
-    expect(Object.values(before.bins).some(Boolean)).toBe(false);
   });
 
   it("instruments all five production install.sh checkpoints", async () => {
     const dest = join(mkdtempSync(join(tmpdir(), "lane-pilot-anchors-")), "install.sh");
     await instrumentInstallSh(
-      join(process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack"),
+      upstreamPath(),
       dest,
     );
     const text = readFileSync(dest, "utf8");

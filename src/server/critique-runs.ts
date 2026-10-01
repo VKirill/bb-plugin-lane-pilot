@@ -348,6 +348,9 @@ export async function runCodeCritique(input:{
   }
   const snapshot = {
     ...ledgerCarry,
+    // The carried repair ledger's spawnAttempted is about the repair writer of the previous round;
+    // left in place it made claimStageSpawn refuse, so a repaired revision was never re-critiqued.
+    spawnAttempted:false,
     ...hashFields,
     mode:parsed.mode, autoFix:parsed.autoFix, maxRounds:parsed.maxRounds,
     reviewer:{ providerId, model:modelId },

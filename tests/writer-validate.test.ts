@@ -24,6 +24,9 @@ import { validateAcceptanceV2 } from "../src/acceptance-v2";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";
+// The PM is a root chat (projectId only, no parent/source/owner), as on the hub; writer fakes answer the rest.
+const withPm = <A extends { threadId:string }, R>(get:(args:A) => Promise<R>) =>
+  async (args:A) => args.threadId === pmThreadId ? { id:pmThreadId, status:"idle", projectId } as never : get(args);
 const config = {
   projectId,
   hostId:"host-test",
@@ -100,7 +103,7 @@ describe("BB writer validation on the server path", () => {
           return { id:"writer-delayed" };
         },
         wait: async () => delayed,
-        get: async () => ({ id:"writer-delayed", status:writerIdle ? "idle" : "active" }),
+        get: withPm(async () => ({ id:"writer-delayed", status:writerIdle ? "idle" : "active" })),
         output: async () => ({ text:"writer output" }),
         list: async () => [] as never,
       }, providers:{
@@ -189,7 +192,7 @@ describe("BB writer validation on the server path", () => {
             : { role:"writer" },
           spawn:async (input) => { spawnedInput = input as unknown as Record<string, unknown>; return { id:"writer-classifier-rpc-failure" }; },
           wait:async () => ({ matched:true, thread:{ status:"idle" } }),
-          get:async () => ({ id:"writer-classifier-rpc-failure", status:"idle" }),
+          get:withPm(async () => ({ id:"writer-classifier-rpc-failure", status:"idle" })),
           output:async () => ({ text:"created hello.txt" }),
           list:async () => [] as never,
         },
@@ -245,7 +248,7 @@ describe("BB writer validation on the server path", () => {
         getPluginMetadata:async ({threadId})=>threadId===pmThreadId?{role:"pm",lanePilotRunId:"run-effort-retry"}:{role:"writer"},
         spawn:async (input)=>{spawned.push(input as unknown as Record<string,unknown>);return {id:`writer-retry-${++threadNo}`};},
         wait:async ()=>({matched:true,thread:{status:threadNo===1?"error":"idle"}}),
-        get:async ({threadId})=>({id:threadId,status:threadId==="writer-retry-1"?"error":"idle"}),
+        get:withPm(async ({threadId})=>({id:threadId,status:threadId==="writer-retry-1"?"error":"idle"})),
         output:async ()=>({text:"created hello.txt"}),list:async ()=>[] as never,
       },providers:{list:listLiveWriterProviders,models:listLiveWriterModels},files:{
         read:async ({path})=>path.endsWith("README.md")?{content:"retry fixture\n"}:path.endsWith("hello.txt")?{content:"hello\n"}:{content:null},
@@ -296,7 +299,7 @@ describe("BB writer validation on the server path", () => {
         getPluginMetadata:async ({threadId})=>threadId===pmThreadId?{role:"pm",lanePilotRunId:"run-manual-high"}:{role:"writer"},
         spawn:async (input)=>{spawnedInput=input as unknown as Record<string,unknown>;return {id:"writer-manual-high"};},
         wait:async ()=>({matched:true,thread:{status:"idle"}}),
-        get:async ({threadId})=>({id:threadId,status:"idle"}),
+        get:withPm(async ({threadId})=>({id:threadId,status:"idle"})),
         output:async ()=>({text:"created hello.txt"}),list:async ()=>[] as never,
       },providers:{list:listLiveWriterProviders,models:listLiveWriterModels},files:{
         read:async ({path})=>path.endsWith("README.md")?{content:"manual high fixture\n"}:path.endsWith("hello.txt")?{content:"hello\n"}:{content:null},
@@ -348,7 +351,7 @@ describe("BB writer validation on the server path", () => {
         getPluginMetadata:async ({threadId})=>threadId===pmThreadId?{role:"pm",lanePilotRunId:"run-auto-low"}:{role:"writer"},
         spawn:async (input)=>{spawnedInput=input as unknown as Record<string,unknown>;return {id:"writer-auto-low"};},
         wait:async ()=>({matched:true,thread:{status:"idle"}}),
-        get:async ({threadId})=>({id:threadId,status:"idle"}),
+        get:withPm(async ({threadId})=>({id:threadId,status:"idle"})),
         output:async ()=>({text:"created hello.txt"}),list:async ()=>[] as never,
       },providers:{list:listLiveWriterProviders,models:listLiveWriterModels},files:{
         read:async ({path})=>path.endsWith("README.md")?{content:"automatic low fixture\n"}:path.endsWith("hello.txt")?{content:"hello\n"}:{content:null},
@@ -547,7 +550,7 @@ describe("BB writer validation on the server path", () => {
             : { role:"writer" },
           spawn: async () => ({ id:"writer-real" }),
           wait: async () => ({ matched:true, thread:{ status:"idle" } }),
-          get: async () => ({ id:"writer-real", status:"idle" }),
+          get: withPm(async () => ({ id:"writer-real", status:"idle" })),
           output: async () => ({ text:"ok" }),
           list: async () => [] as never,
         },
@@ -621,11 +624,11 @@ describe("BB writer validation on the server path", () => {
             threadStates.set(id, "active");
             return { id };
           },
-          get: async ({ threadId }) => {
+          get: withPm(async ({ threadId }) => {
             statusPollCount += 1;
             threadStates.set(threadId, "error");
             return { id:threadId, status:threadStates.get(threadId) ?? "error" };
-          },
+          }),
           output: async () => ({ text:"ok" }),
           list: async () => [] as never,
         },
@@ -677,9 +680,9 @@ describe("BB writer validation on the server path", () => {
           ? { role:"pm", lanePilotRunId:"run-background-error" }
           : { role:"writer" },
         spawn: async () => ({ id:"writer-background-error" }),
-        get: async () => statusUnavailable
+        get: withPm(async () => statusUnavailable
           ? new Promise<never>(() => {})
-          : ({ id:"writer-background-error", status:"idle" }),
+          : ({ id:"writer-background-error", status:"idle" })),
         output: async () => { throw new Error("synthetic output read failure"); },
         list: async () => [] as never,
       }, providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },

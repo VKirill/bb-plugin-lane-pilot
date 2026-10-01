@@ -183,7 +183,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
             throw new Error("native environment CAS failed; run is no longer pending or already has a binding");
           }
         } else {
-          const hostId = stringAt(environment, "hostId") ?? runHostId;
+          const hostId = stringAt(environment, "hostId") ?? config.hostId;
           const workspace = resolveManagedWorkspace(environment, hostId);
           if (!workspace.path) throw new Error("managed workspace missing path");
           if (!setRunWorkspace(db, runId, workspace.path, workspace.environmentId ?? environmentId)) {

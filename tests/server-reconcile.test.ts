@@ -54,12 +54,11 @@ describe("production spawn_unknown reconciliation", () => {
     savePrototypeConfig(db, config);
     await plugin(bb);
 
-    const install = await harness.behavior.callRpc("stack_install", { projectId, confirmExternalOps:true });
-    expect(install).toMatchObject({ operation:"install", manager:"managed-checkout", status:"skipped" });
-    expect(hostCalls.map((call) => call.method)).toEqual(["coexistenceInventory", "coexistenceOperation"]);
-    expect(hostCalls[1]?.input).toMatchObject({ operation:"install", manager:"managed-checkout", expectedSha256:"a".repeat(64) });
-
-    hostCalls.length = 0;
+    // Since c9729a4 install goes through the native installer, which needs BB's plugin lifecycle;
+    // without it (stock BB and the hub's vk build) install fails closed before touching the host.
+    await expect(harness.behavior.callRpc("stack_install", { projectId, confirmExternalOps:true }))
+      .rejects.toThrow("experimental_vkPluginLifecycle");
+    expect(hostCalls).toEqual([]);
     const connect = await harness.behavior.callRpc("stack_connect", { projectId, confirmExternalOps:true });
     expect(connect).toMatchObject({ action:"connect", status:"ok", coexistenceOperations:[
       { manager:"opencode-plugin",operation:"install",status:"skipped" },

@@ -154,9 +154,12 @@ export async function helperChildPlacement(input:{
   const threadProject = stringAt(parentThread, "projectId");
   if (!threadProject) throw new Error("helper_parent_identity_unresolved");
   if (threadProject !== input.projectId) throw new Error("helper_parent_project_mismatch");
-  // A native Lane PM is a root chat the user opened: it is its own source and lifecycle owner.
-  const sourceThreadId = stringAt(parentThread, "sourceThreadId") ?? (run?.kind === "cli" ? parentId : null);
-  const lifecycleOwnerThreadId = stringAt(parentThread, "lifecycleOwnerThreadId") ?? (run?.kind === "cli" ? parentId : null);
+  // A root PM chat (the user's own native Lane chat, or a PM Enable spawned without a source thread)
+  // is its own source and lifecycle owner. Before this, a root `bb` PM failed every writer spawn with
+  // helper_parent_relation_missing (hub log 2026-09-27), surfacing only as a misleading reconcile reason.
+  const rootPm = run?.kind === "cli" || !stringAt(parentThread, "parentThreadId");
+  const sourceThreadId = stringAt(parentThread, "sourceThreadId") ?? (rootPm ? parentId : null);
+  const lifecycleOwnerThreadId = stringAt(parentThread, "lifecycleOwnerThreadId") ?? (rootPm ? parentId : null);
   if (!sourceThreadId || !lifecycleOwnerThreadId) throw new Error("helper_parent_relation_missing");
   const settings = await inheritedProjectSettings(input.bb,input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
   const routing = freezeRunRouting(input.db, input.runId, settings);

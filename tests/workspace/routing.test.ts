@@ -148,7 +148,7 @@ describe("workspace routing", () => {
     saveProjectSetting(failedDb,config.projectId,"adoc.040","worktree");
     await plugin(incomplete.bb);
     await expect(incomplete.harness.behavior.callRpc("activate_pm",{ projectId:config.projectId,sourceThreadId:"source-thread" }))
-      .rejects.toThrow(/managed worktree.*not ready/);
+      .rejects.toThrow(/managed workspace is not ready \(status=creating\)/);
     expect(failedDb.prepare("SELECT state,writer_workspace_path,writer_environment_id FROM lane_pilot_run").get())
       .toMatchObject({ state:"blocked",writer_workspace_path:null,writer_environment_id:null });
     expect(failedDb.prepare("SELECT COUNT(*) AS count FROM lane_pilot_activation").get()).toEqual({ count:0 });

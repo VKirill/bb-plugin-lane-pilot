@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
 import {
   acceptanceArtifactDir,
   buildAcceptanceV2,
@@ -32,7 +33,7 @@ const task = {
   verification:[],
 } as TaskV2;
 
-describe("upstream acceptance-v2 receipt", () => {
+describe.skipIf(NO_UPSTREAM)("upstream acceptance-v2 receipt", () => {
   it("validates the serialized acceptance.json against the exact upstream schema with zero errors", () => {
     const report = "STATUS: complete\n";
     const receipt = buildAcceptanceV2({
@@ -50,9 +51,7 @@ describe("upstream acceptance-v2 receipt", () => {
     expect(validateAcceptanceV2({ ...receipt, schema_version:1 })).toMatchObject({ ok:false });
 
     const vendoredSchema = join(process.cwd(), "lane-stack/schemas/acceptance-v2.schema.json");
-    const upstreamSchema = join(
-      process.cwd(), ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack/schemas/acceptance-v2.schema.json",
-    );
+    const upstreamSchema = upstreamPath("schemas/acceptance-v2.schema.json");
     expect(readFileSync(vendoredSchema, "utf8")).toBe(readFileSync(upstreamSchema, "utf8"));
     expect(loadAcceptanceV2Schema()).toEqual(JSON.parse(readFileSync(upstreamSchema, "utf8")));
 

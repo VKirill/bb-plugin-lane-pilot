@@ -161,6 +161,33 @@ def _without_data_heredocs(command: str) -> str:
     return _HEREDOC.sub(strip, command)
 
 
+_CONTROL_TOKENS = {";", "&&", "||", "|", "&", "(", ")", ";;", "|&"}
+
+
+def _git_args(command: str, subcommands: set[str]) -> list[list[str]]:
+    """Arguments of each real `git <subcommand>` in a command; quoted text such as a commit message stays one token."""
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        alternatives = "|".join(sorted(subcommands))
+        return [m.group(1).split() for m in re.finditer(rf"\bgit\s+(?:{alternatives})\b([^;&|\n]*)", command)]
+    pushes: list[list[str]] = []
+    i = 0
+    while i < len(tokens) - 1:
+        if Path(tokens[i]).name == "git" and tokens[i + 1] in subcommands:
+            j = i + 2
+            while j < len(tokens) and tokens[j] not in _CONTROL_TOKENS:
+                j += 1
+            pushes.append(tokens[i + 2 : j])
+            i = j
+        else:
+            i += 1
+    return pushes
+
+
 def _is_env_secret_file(name: str) -> bool:
     """True for dotenv-style files the PM may write without involving writers.
 
@@ -820,15 +847,15 @@ def main() -> None:
                 _deny_pm(client, error)
 
     # git hook skip
-    if re.search(r"\bgit\s+(commit|push|merge)\b", low) and (
-        "--no-verify" in low or "husky=0" in low or "husky=false" in low
+    git_writes = _git_args(_without_data_heredocs(cmd), {"commit", "push", "merge"})
+    if git_writes and (
+        any("--no-verify" in args for args in git_writes) or "husky=0" in low or "husky=false" in low
     ):
         emit_deny(client, "[agent-guard] git --no-verify / HUSKY=0 blocked. Fix the failing hook instead of bypassing it.")
 
     # force push: flags are read inside the push command itself and case-sensitively, so
     # `git commit -F msg && git push` is not a force push; +refspec forces too.
-    for push in re.finditer(r"\bgit\s+push\b([^;&|\n]*)", _without_data_heredocs(cmd)):
-        args = push.group(1).split()
+    for args in _git_args(_without_data_heredocs(cmd), {"push"}):
         forced = any(a == "--force" or a.startswith("--force=") or re.fullmatch(r"-[a-zA-Z]*f[a-zA-Z]*", a) or (a.startswith("+") and len(a) > 1) for a in args)
         if forced and not any(a.startswith("--force-with-lease") for a in args):
             emit_deny(client, "[agent-guard] git push --force blocked. Use --force-with-lease after git fetch.")
