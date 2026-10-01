@@ -43,7 +43,13 @@ describe("Lane Pilot PM ships", () => {
     });
   }
   it("force push stays blocked", () => {
-    expect(bash("dev-orchestrator", "git push --force origin main", NATIVE).status).toBe(2);
+    for (const command of ["git push --force origin main", "git push -f origin main", "git push -uf origin main", "git push origin +main"]) {
+      expect(bash("dev-orchestrator", command, NATIVE).status, command).toBe(2);
+    }
+  });
+  it("a commit message file (-F) next to a push is not a force push", () => {
+    expect(bash("dev-orchestrator", "git commit -q -F msg.txt && git push origin main", NATIVE).status).toBe(0);
+    expect(bash("dev-orchestrator", "git push --force-with-lease origin main", NATIVE).status).toBe(0);
   });
 });
 

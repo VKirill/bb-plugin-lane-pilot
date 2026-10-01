@@ -825,11 +825,13 @@ def main() -> None:
     ):
         emit_deny(client, "[agent-guard] git --no-verify / HUSKY=0 blocked. Fix the failing hook instead of bypassing it.")
 
-    # force push
-    if re.search(r"\bgit\s+push\b", low) and (
-        re.search(r"(^|[\s])--force($|[\s=])", low) or re.search(r"(^|[\s])-f($|[\s])", low)
-    ) and "--force-with-lease" not in low:
-        emit_deny(client, "[agent-guard] git push --force blocked. Use --force-with-lease after git fetch.")
+    # force push: flags are read inside the push command itself and case-sensitively, so
+    # `git commit -F msg && git push` is not a force push; +refspec forces too.
+    for push in re.finditer(r"\bgit\s+push\b([^;&|\n]*)", _without_data_heredocs(cmd)):
+        args = push.group(1).split()
+        forced = any(a == "--force" or a.startswith("--force=") or re.fullmatch(r"-[a-zA-Z]*f[a-zA-Z]*", a) or (a.startswith("+") and len(a) > 1) for a in args)
+        if forced and not any(a.startswith("--force-with-lease") for a in args):
+            emit_deny(client, "[agent-guard] git push --force blocked. Use --force-with-lease after git fetch.")
 
     # SQL destroyers (simple)
     if re.search(r"\b(drop\s+(table|database|schema)|truncate\s+table)\b", low):
