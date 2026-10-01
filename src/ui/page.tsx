@@ -1597,7 +1597,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   })}
                 </Disclosure>
               </section> : null}
-              {activeScope !== "globals" && projectId && cardVisible("rulesTitle", "rulesHelp") ? <RuleProposals projectId={projectId} /> : null}
+              {activeScope !== "globals" && projectId && cardVisible("rulesTitle", "rulesHelp") ? <RuleProposals projectId={projectId} picker={modelPicker} /> : null}
               {cardVisible("docsPicker", "docsPickerHelp", "docsMaintain", "groupDocs") ? <section className="space-y-2" data-testid="docs-picker">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1">

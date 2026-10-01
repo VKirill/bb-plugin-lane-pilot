@@ -3,16 +3,17 @@ import { getRuleProposal, listRuleProposals, routingHint, writerAcceptanceStats,
 import { rpcContract } from "../../contracts";
 import { loadProjectSettings } from "../../database";
 import { configuredSetting } from "../context";
-import { acceptRuleProposal, memorySettingsFor, refreshRuleProposals, rejectRuleProposal, revokeRule } from "../insights";
+import { acceptRuleProposal, memorySettingsFor, rejectRuleProposal, revokeRule } from "../insights";
 import type { ServerCore } from "../core";
+import type { Services } from "../services";
 
 const RISKS = ["low", "medium", "high", "critical"] as const;
 
-const ruleView = ({ id, rule, author, state, occurrences, taskCount, examples, lastSeenAt, decidedAt }: RuleProposal) =>
-  ({ id, rule, author, state, occurrences, taskCount, examples, lastSeenAt, decidedAt });
+const ruleView = ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt }: RuleProposal) =>
+  ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt });
 
 /** What the settings screen shows next to the writer picker: first-try acceptance per risk against the configured pair. */
-export function insightsRpc(ctx: ServerCore) {
+export function insightsRpc(ctx: ServerCore, services: Services) {
   const { db } = ctx;
   return {
     get_routing_hint: async ({ projectId, days }) => {
@@ -26,17 +27,24 @@ export function insightsRpc(ctx: ServerCore) {
     },
     /** Repeated lessons the owner may turn into rules, and the rules already confirmed. Recounted on every open. */
     list_rule_proposals: async ({ projectId }) => {
-      refreshRuleProposals(db, projectId);
       let memory = { enabled: false, inject: false };
       try {
         const settings = memorySettingsFor(db, projectId);
         memory = { enabled: settings.enabled, inject: settings.inject };
       } catch { /* invalid memory settings: rules are listed, injection is reported off */ }
-      return { proposals: listRuleProposals(db, projectId).map(ruleView), memory };
+      return {
+        proposals: listRuleProposals(db, projectId).map(ruleView), memory,
+        triage: services.ruleScan.summary(projectId),
+        scan: await services.ruleScan.scanState(projectId),
+        analyzer: await services.ruleScan.analyzerFor(projectId),
+      };
     },
+    /** The «Rescan» button; returns at once, the screen polls list_rule_proposals for progress. */
+    start_rule_scan: async ({ projectId, locale }) => services.ruleScan.startScan(projectId, locale),
+    save_rules_analyzer: async ({ projectId, analyzer }) => ({ analyzer: await services.ruleScan.saveAnalyzer(projectId, analyzer) }),
     decide_rule_proposal: async ({ projectId, id, action, rule }) => {
       if (action === "accept") return { proposal: ruleView(acceptRuleProposal(db, projectId, id, rule ?? getRuleProposal(db, projectId, id)?.rule ?? "")) };
       return { proposal: ruleView(action === "reject" ? rejectRuleProposal(db, projectId, id) : revokeRule(db, projectId, id)) };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_routing_hint" | "list_rule_proposals" | "decide_rule_proposal">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_routing_hint" | "list_rule_proposals" | "decide_rule_proposal" | "start_rule_scan" | "save_rules_analyzer">;
 }

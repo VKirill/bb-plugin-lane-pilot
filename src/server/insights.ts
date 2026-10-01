@@ -99,7 +99,6 @@ export async function sweepLessons(ctx: ServerContext, projectId: string, now = 
   const sources = collectLessonSources(db, { projectId, since });
   const candidates = lessonCandidates(sources);
   await bb.storage.kv.set(LESSONS_SINCE_KEY(projectId), now);
-  refreshRuleProposals(db, projectId, now);
   const ruleProposals = listRuleProposals(db, projectId, { state: "proposed", limit: 10 })
     .map(({ id, rule, occurrences, taskCount, examples }) => ({ id, rule, occurrences, taskCount, examples }));
   if (candidates.length === 0) return { ...base, state: "nothing_new", sources: sources.length, ruleProposals };

@@ -7,6 +7,7 @@ import { createDocsNightly } from "./src/server/docs-nightly";
 import { mountNativeWiring } from "./src/server/native-wiring";
 import { createProbes } from "./src/server/probes";
 import { createReconcile } from "./src/server/reconcile";
+import { createRuleScan } from "./src/server/rule-scan";
 import { registerRpc } from "./src/server/rpc";
 import type { Services } from "./src/server/services";
 import { createStageChildren } from "./src/server/stages/children";
@@ -56,6 +57,7 @@ export default async function plugin(bb: BbPluginApi) {
     createProbes(ctx, services),
     createWriterHost(ctx),
     { council: createCouncil(ctx) },
+    { ruleScan: createRuleScan(ctx, services) },
   );
   registerRpc(ctx, services);
   registerTools(ctx, services);

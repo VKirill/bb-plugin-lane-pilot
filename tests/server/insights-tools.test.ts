@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { acceptedRules } from "@lane-pilot/run-insights";
-import { createRun, createTask, openDatabase, saveProjectSetting, saveStageReceipt, searchMemoryRecords, setRunThread } from "../../src/database";
+import { createRun, createTask, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, searchMemoryRecords, setRunThread } from "../../src/database";
 import { sweepLessons } from "../../src/server/insights";
 import { createCore } from "../../src/server/core";
 
@@ -74,38 +74,126 @@ describe("insights tools", () => {
     expect(golden).toMatchObject({ cases: 2, hits: 1, hitRate: 0.5, misses: [{ query: "unrelated seo query", missing: ["nope"] }] });
   });
 
-  it("turns a repeated failure into a rule the owner accepts, rewords and revokes", async () => {
-    const { db, harness, call } = await setup();
-    dispose = () => harness.lifecycle.dispose();
-    const now = Date.now();
-    ["t1", "t2", "t3"].forEach((task, index) => {
-      createTask(db, { id: task, runId, kind: "bb", contract: { risk: "low" } });
-      db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
-        .run(`a-${task}`, runId, task, "validation_failed", `verification failed (curl -fsS https://site${index}.example/p): curl: (6) Could not resolve host: site${index}.example`, now, now, 1, "[]");
+  it("Jev sorts failures, the analyzer writes a rule with evidence, a rescan pays nothing, the owner accepts and revokes", async () => {
+    const judged: string[] = [];
+    const spawned: Array<Record<string, any>> = [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: {
+        threads: {
+          getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : {},
+          spawn: async (args) => { spawned.push(args as Record<string, any>); return { id: `analyzer-${spawned.length}` }; },
+          get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId }),
+          events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
+          output: async ({ threadId }) => ({ output: threadId.startsWith("analyzer-")
+            ? 'Here: {"rules":[{"rule":"Создай каждый файл из expected_outputs до ответа и проверь его ls.","evidence":["w1","w2"],"also_seen":["w3"]}],"not_writer":[]}'
+            : `writer ${threadId}: done, wrote the code but not docs` }),
+          stop: async () => ({ ok: true }) as never,
+          list: async () => [] as never,
+        },
+        projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-1", path: "/tmp/rules-ws", isDefault: true }] }) as never, list: async () => [] as never },
+      },
+      experimental_callHostRpc: (call) => {
+        if (call.method !== "councilJudge") throw new Error(`unexpected host method ${call.method}`);
+        const state = JSON.parse((call.input as { state: string }).state) as { failure_reason: string };
+        judged.push(state.failure_reason);
+        const bookkeeping = state.failure_reason.includes(".agents/");
+        return { hostId: "host-1", status: "ok", reason: null,
+          answers: { origin: bookkeeping ? "orchestrator" : "writer", category: "missing_output" }, confidence: { origin: 0.9, category: 0.95 } };
+      },
     });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, { projectId, hostId: "host-1", pmWorkspacePath: "/tmp/rules-ws", writerWorkspacePath: "/tmp/rules-ws", pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
+    createRun(db, runId, projectId);
+    setRunThread(db, runId, pmThreadId);
+    const call = async (name: string, params: Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
+    const now = Date.now();
+    const seed = (task: string, reason: string) => {
+      createTask(db, { id: task, runId, kind: "bb", contract: { risk: "low", title: `task ${task}`, expected_outputs: [`docs/${task}.md`] } });
+      db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json,thread_id) VALUES(?,?,?,?,?,?,?,?,?,?)")
+        .run(`a-${task}`, runId, task, "validation_failed", reason, now, now, 1, "[]", `thr-${task}`);
+    };
+    for (const task of ["w1", "w2", "w3"]) seed(task, `missing expected_outputs: docs/${task}.md`);
+    for (const task of ["o1", "o2"]) seed(task, "owns_paths rejected .agents/PROGRESS.md");
+    const list = async () => await harness.behavior.callRpc("list_rule_proposals", { projectId }) as Record<string, any>;
+    const scanDone = async () => {
+      for (let i = 0; i < 100; i++) {
+        const listed = await list();
+        if (listed.scan.state !== "running") return listed;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error("scan did not finish");
+    };
 
-    const listed = await harness.behavior.callRpc("list_rule_proposals", { projectId }) as { proposals: Array<Record<string, any>>; memory: { enabled: boolean } };
-    expect(listed.memory.enabled).toBe(false);
-    expect(listed.proposals).toHaveLength(1);
-    const proposal = listed.proposals[0]!;
-    expect(proposal).toMatchObject({ state: "proposed", author: "sweep", occurrences: 3, taskCount: 3 });
+    expect((await list()).analyzer).toEqual({ providerId: "codex", model: "m", reasoningLevel: "high", serviceTier: null });
+    expect(await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "ru" })).toMatchObject({ started: true });
+    const first = await scanDone();
+    expect(first.scan).toMatchObject({ state: "done", triaged: 5, groups: 1, proposals: 1 });
+    expect(first.triage).toMatchObject({ total: 5, byOrigin: { writer: 3, orchestrator: 2 }, errors: 0, pendingGroups: 0 });
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0]).toMatchObject({ projectId, visibility: "hidden", providerId: "codex", model: "m", pluginMetadata: { role: "rules-analyzer", category: "missing_output" } });
+    expect(spawned[0]!.prompt).toContain("Write the rules in Russian");
+    expect(spawned[0]!.prompt).toContain("writer thr-w1: done, wrote the code but not docs");
+    expect(spawned[0]!.prompt).not.toContain(".agents/PROGRESS.md");
+    const proposal = first.proposals[0];
+    expect(proposal).toMatchObject({ author: "model", state: "proposed", rule: "Создай каждый файл из expected_outputs до ответа и проверь его ls.", taskCount: 3 });
+    expect(proposal.evidence.map((row: { taskId: string }) => row.taskId).sort()).toEqual(["w1", "w2", "w3"]);
+
+    await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "ru" });
+    const second = await scanDone();
+    expect(second.scan).toMatchObject({ state: "done", triaged: 0, groups: 0 });
+    expect(judged).toHaveLength(5);
+    expect(spawned).toHaveLength(1);
 
     saveProjectSetting(db, projectId, "memory.enabled", "true");
     const swept = await call("lane_pilot_lessons_sweep", { runId });
-    expect(swept.ruleProposals).toEqual([expect.objectContaining({ id: proposal.id, occurrences: 3 })]);
-    const reworded = await call("lane_pilot_rule_propose", { runId, proposalId: proposal.id, rule: "Verification commands must not reach the network." });
+    expect(swept.ruleProposals).toEqual([expect.objectContaining({ id: proposal.id, taskCount: 3 })]);
+    const reworded = await call("lane_pilot_rule_propose", { runId, proposalId: proposal.id, rule: "Before answering, create every expected output file." });
     expect(reworded).toMatchObject({ revised: true, proposal: { author: "pm" } });
 
-    const accepted = await harness.behavior.callRpc("decide_rule_proposal", { projectId, id: proposal.id, action: "accept", rule: "Never use curl or other network calls in verification commands." }) as { proposal: Record<string, any> };
-    expect(accepted.proposal).toMatchObject({ state: "accepted", author: "owner", rule: "Never use curl or other network calls in verification commands." });
-    expect(acceptedRules(db, projectId)).toEqual([expect.objectContaining({ rule: "Never use curl or other network calls in verification commands." })]);
-    const stored = db.prepare("SELECT kind, audience FROM lane_pilot_memory WHERE project_id=? AND content LIKE 'Never use curl%'").all(projectId);
-    expect(stored).toEqual([{ kind: "core", audience: "subagent" }]);
+    const accepted = await harness.behavior.callRpc("decide_rule_proposal", { projectId, id: proposal.id, action: "accept", rule: "Создавай все файлы из expected_outputs до ответа." }) as { proposal: Record<string, any> };
+    expect(accepted.proposal).toMatchObject({ state: "accepted", author: "owner" });
+    expect(acceptedRules(db, projectId)).toEqual([expect.objectContaining({ rule: "Создавай все файлы из expected_outputs до ответа." })]);
+    expect(db.prepare("SELECT kind, audience FROM lane_pilot_memory WHERE project_id=? AND content LIKE 'Создавай%'").all(projectId)).toEqual([{ kind: "core", audience: "subagent" }]);
     await expect(harness.behavior.callRpc("decide_rule_proposal", { projectId, id: proposal.id, action: "reject" })).rejects.toThrow(/not waiting/);
 
     const revoked = await harness.behavior.callRpc("decide_rule_proposal", { projectId, id: proposal.id, action: "revoke" }) as { proposal: Record<string, any> };
     expect(revoked.proposal.state).toBe("revoked");
     expect(acceptedRules(db, projectId)).toEqual([]);
-    expect(db.prepare("SELECT count(*) AS n FROM lane_pilot_memory WHERE project_id=? AND content LIKE 'Never use curl%'").get(projectId)).toEqual({ n: 0 });
+
+    await harness.behavior.callRpc("save_rules_analyzer", { projectId, analyzer: { providerId: "claude-code", model: "opus", reasoningLevel: "max", serviceTier: null } });
+    expect((await list()).analyzer).toMatchObject({ providerId: "claude-code", model: "opus" });
+  });
+
+  it("falls back to masked-text grouping when the project's machine has no Jev key", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: { projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-1", path: "/tmp/rules-ws", isDefault: true }] }) as never, list: async () => [] as never } },
+      experimental_callHostRpc: () => ({ hostId: "host-1", status: "disabled", answers: {}, reason: "missing_typesafe_api_key" }),
+    });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, { projectId, hostId: "host-1", pmWorkspacePath: "/tmp/rules-ws", writerWorkspacePath: "/tmp/rules-ws", pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
+    createRun(db, runId, projectId);
+    const now = Date.now();
+    for (const [index, task] of ["t1", "t2", "t3"].entries()) {
+      createTask(db, { id: task, runId, kind: "bb", contract: { risk: "low" } });
+      db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
+        .run(`a-${task}`, runId, task, "validation_failed", `curl: (6) Could not resolve host: site${index}.example`, now, now, 1, "[]");
+      db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
+        .run(`b-${task}`, runId, task, "validation_failed", "owns_paths rejected .agents/memory/episodes/1.md", now, now, 2, "[]");
+    }
+    await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "en" });
+    let listed: Record<string, any> = {};
+    for (let i = 0; i < 100; i++) {
+      listed = await harness.behavior.callRpc("list_rule_proposals", { projectId }) as Record<string, any>;
+      if (listed.scan.state !== "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(listed.scan).toMatchObject({ state: "done", reason: "jev_unavailable:missing_typesafe_api_key", proposals: 1 });
+    expect(listed.proposals).toEqual([expect.objectContaining({ author: "sweep", rule: expect.stringContaining("Could not resolve host") })]);
   });
 });

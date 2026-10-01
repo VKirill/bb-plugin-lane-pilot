@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.38 — 2026-10-01
+
+Rules from lessons now come from sorting by meaning instead of masked failure text. The 0.1.37 grouping proposed Lane Pilot's own old bug (bookkeeping files counted against writers) as a writer rule.
+
+- **System One sorts every failed writer attempt.** One Jev call per attempt through the project's machine (`councilJudge`) answers whose fault it is (writer, Lane Pilot, environment, task contract, unclear), what kind of writer mistake it is, and whether an existing rule already covers it. Code computes the facts Jev needs (bookkeeping-only paths, internal error codes, prose expected outputs). Answers are stored per attempt and reused until the failure text changes; new failures of active projects are sorted every 15 minutes.
+- **Calibrated before use.** On 35 labelled hub failures writer-or-not came out 35/35 in two runs and the category 7/7; the five-way origin is about 74 % and is shown as information only.
+- **The analyzer model writes the rules.** «Rescan» in «Rules from lessons» sorts the last 30 days, then for every category with writer mistakes in at least three tasks a hidden thread on the chosen analyzer model reads the task contracts, failure reasons, critiques and the tail of each writer's answer and writes up to three rules citing task ids. It also lists where else the same mistake happened and drops failures that are not the writer's. The analyzer model has its own picker in the block, the project's writer by default.
+- **Evidence on every proposal.** A proposal shows the tasks it stands on; tasks already cited, matched to a rule or set aside by the analyzer are not proposed again, so a second scan costs nothing when nothing new failed.
+- Without Jev on the project's machine the scan falls back to the 0.1.37 text grouping, which now also leaves out rejections that name only `.agents/`, `.bb/`, `.claude/` or `PROGRESS.md`.
+
 ## 0.1.37 — 2026-10-01
 
 Two ideas from the «Harness and Loop Engineering» write-up (thread thr_58hvcw4qtg): a loop needs a hard exit when a task cannot be done, and lessons should turn into rules a human confirms.

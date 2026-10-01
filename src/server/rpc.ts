@@ -17,7 +17,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...settingsRpc(ctx, services),
     ...selectionsRpc(ctx, services),
     ...stackRpc(ctx),
-    ...insightsRpc(ctx),
+    ...insightsRpc(ctx, services),
     ...councilRpc(ctx.db, services.council),
   });
 }

@@ -31,13 +31,24 @@ export const settingValidationSchema = z.object({
 const ruleProposalSchema = z.object({
   id: z.string(),
   rule: z.string(),
-  author: z.enum(["sweep", "pm", "owner"]),
+  author: z.enum(["sweep", "pm", "owner", "model"]),
   state: z.enum(["proposed", "accepted", "rejected", "revoked"]),
   occurrences: z.number().int(),
   taskCount: z.number().int(),
   examples: z.array(z.string()),
+  evidence: z.array(z.object({ runId: z.string(), taskId: z.string(), attemptId: z.string(), reason: z.string() }).strict()),
   lastSeenAt: z.number().int(),
   decidedAt: z.number().int().nullable(),
+}).strict();
+
+const ruleScanSchema = z.object({
+  state: z.enum(["idle", "running", "done", "failed"]),
+  startedAt: z.number().int().nullable(), finishedAt: z.number().int().nullable(),
+  triaged: z.number().int(), groups: z.number().int(), proposals: z.number().int(), reason: z.string().nullable(),
+}).strict();
+
+const rulesAnalyzerSchema = z.object({
+  providerId: z.string().min(1), model: z.string().min(1), reasoningLevel: z.string().min(1), serviceTier: z.enum(["default", "fast"]).nullable(),
 }).strict();
 
 export const taskV2Schema = z.object({
@@ -1046,7 +1057,18 @@ export const rpcContract = defineRpcContract({
     output: z.object({
       proposals: z.array(ruleProposalSchema),
       memory: z.object({ enabled: z.boolean(), inject: z.boolean() }).strict(),
+      triage: z.object({ total: z.number().int(), byOrigin: z.record(z.string(), z.number().int()), errors: z.number().int(), lastTriagedAt: z.number().nullable(), pendingGroups: z.number().int() }).strict(),
+      scan: ruleScanSchema,
+      analyzer: rulesAnalyzerSchema.nullable(),
     }).strict(),
+  },
+  start_rule_scan: {
+    input: z.object({ projectId: z.string().min(1), locale: z.enum(["ru", "en"]) }).strict(),
+    output: z.object({ started: z.boolean(), scan: ruleScanSchema }).strict(),
+  },
+  save_rules_analyzer: {
+    input: z.object({ projectId: z.string().min(1), analyzer: rulesAnalyzerSchema }).strict(),
+    output: z.object({ analyzer: rulesAnalyzerSchema }).strict(),
   },
   decide_rule_proposal: {
     input: z.object({

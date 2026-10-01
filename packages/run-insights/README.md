@@ -39,6 +39,14 @@ plan are not proposed: a writer rule cannot prevent them.
 | `acceptedRules(db, projectId)` | Accepted rules whose memory record still exists |
 | `ruleMigrations` | The `lane_pilot_rule_proposal` table, appended to the host's migrations |
 
+## Failure triage
+
+System One sorts each failed attempt: whose fault, what kind of writer mistake, and whether an existing rule
+covers it. `triageState` builds the state with the facts code can settle on its own; `triageQuestions` holds
+the calibrated wording (writer-or-not 35/35 on labelled hub failures). `untriagedAttempts` and `saveTriage`
+keep one answer per attempt until its reason changes; `writerGroups` groups writer mistakes by category,
+leaving out tasks already cited by a proposal. `upsertModelProposal` stores what the analyzer model wrote.
+
 ## Golden retrieval checks
 
 A golden set is a list of queries with the record ids they must return. Run it after every memory

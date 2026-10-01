@@ -90,7 +90,7 @@ const cursorGrokModel = {
   supportedReasoningEfforts:["high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })),
 };
 
-type RuleRow = { id:string; rule:string; author:"sweep"|"pm"|"owner"; state:"proposed"|"accepted"|"rejected"|"revoked"; occurrences:number; taskCount:number; examples:string[]; lastSeenAt:number; decidedAt:number|null };
+type RuleRow = { id:string; rule:string; author:"sweep"|"pm"|"owner"|"model"; state:"proposed"|"accepted"|"rejected"|"revoked"; occurrences:number; taskCount:number; examples:string[]; evidence:Array<{runId:string;taskId:string;attemptId:string;reason:string}>; lastSeenAt:number; decidedAt:number|null };
 
 async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:string;model:string;reasoningLevel:string})=>Promise<void>; rules?:RuleRow[]; ruleCalls?:Array<Record<string, unknown>> }) {
   const { bb, harness } = createFakePluginHost({
@@ -161,7 +161,11 @@ async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:s
         singleSaveCalls.push(input as typeof singleSaveCalls[number]);
         return harness.behavior.callRpc("save_setting", input) as Promise<unknown>;
       },
-      list_rule_proposals:() => ({ proposals:options?.rules ?? [], memory:{ enabled:true, inject:true } }),
+      list_rule_proposals:() => ({ proposals:options?.rules ?? [], memory:{ enabled:true, inject:true },
+        triage:{ total:5, byOrigin:{ writer:3, orchestrator:2 }, errors:0, lastTriagedAt:1, pendingGroups:0 },
+        scan:{ state:"done", startedAt:1, finishedAt:2, triaged:5, groups:1, proposals:1, reason:null },
+        analyzer:{ providerId:"codex", model:"gpt-6-luna", reasoningLevel:"high", serviceTier:null } }),
+      start_rule_scan:(input) => { options?.ruleCalls?.push({ scan:input }); return { started:true, scan:{ state:"running", startedAt:3, finishedAt:null, triaged:0, groups:0, proposals:0, reason:null } }; },
       decide_rule_proposal:(input) => {
         const call = input as { id:string; action:"accept"|"reject"|"revoke"; rule?:string };
         options?.ruleCalls?.push(call);
@@ -211,14 +215,23 @@ describe("native writer settings against the registered SQLite backend", () => {
 
   it("shows repeated failures as rule proposals; the owner edits and accepts one, then revokes it", async () => {
     const rules:RuleRow[] = [
-      { id:"rule_a", rule:"Repeated in 3 tasks: curl: (6) Could not resolve host — before finishing a task, make sure this does not happen.", author:"sweep", state:"proposed", occurrences:3, taskCount:3, examples:["curl: (6) Could not resolve host: a.example"], lastSeenAt:1, decidedAt:null },
-      { id:"rule_b", rule:"Old ownership noise", author:"sweep", state:"rejected", occurrences:40, taskCount:40, examples:[], lastSeenAt:1, decidedAt:2 },
+      { id:"rule_a", rule:"Create every expected output before answering.", author:"model", state:"proposed", occurrences:3, taskCount:3, examples:[],
+        evidence:[{ runId:"r", taskId:"w1", attemptId:"a1", reason:"missing expected_outputs: docs/w1.md" }, { runId:"r", taskId:"w2", attemptId:"a2", reason:"missing expected_outputs: docs/w2.md" }], lastSeenAt:1, decidedAt:null },
+      { id:"rule_b", rule:"Old ownership noise", author:"sweep", state:"rejected", occurrences:40, taskCount:40, examples:[], evidence:[], lastSeenAt:1, decidedAt:2 },
     ];
     const ruleCalls:Array<Record<string, unknown>> = [];
     const { harness, slot } = await mountWithBackend({ rules, ruleCalls });
     try {
       const card = await slot.findByTestId("rule-rule_a");
       expect(card.textContent).toContain(`${en.rulesTasks}: 3`);
+      expect(card.textContent).toContain(en.rulesAuthorModel);
+      expect(slot.getByTestId("rule-evidence-rule_a").textContent).toContain("w2: missing expected_outputs: docs/w2.md");
+      expect(slot.getByTestId("rules-triage").textContent).toContain(`${en.rulesOrigin_writer}: 3`);
+      expect(slot.getByTestId("rules-triage").textContent).toContain(`${en.rulesOrigin_orchestrator}: 2`);
+      expect(slot.getByTestId("rules-scan-result").textContent).toContain(`${en.rulesScanProposals} 1`);
+      fireEvent.click(within(slot.getByTestId("rule-proposals")).getByRole("button", { name:en.rulesScan }));
+      await waitFor(() => expect(ruleCalls[0]).toEqual({ scan:{ projectId, locale:"en" } }));
+      ruleCalls.length = 0;
       expect(slot.getByTestId("rule-proposals").textContent).toContain(`${en.rulesClosed} (1)`);
       fireEvent.change(card.querySelector("textarea")!, { target:{ value:"Never use the network in verification commands." } });
       fireEvent.click(within(card).getByRole("button", { name:en.rulesAccept }));
