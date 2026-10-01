@@ -68,6 +68,18 @@ describe("BB lifecycle", () => {
     expect(await kv.list()).toEqual(["native-install:host:ovh"]);
     expect(callHost.mock.calls[0]?.[0]).toMatchObject({ input: { action: "remove" } });
   });
+  it("keeps enabling the other machines when one fails, and records that machine's error", async () => {
+    const kv = kvFixture();
+    for (const host of ["macbook", "mini", "ovh"]) await registerNativeInstallHost(kv, host);
+    const callHost = vi.fn(async ({ hostId }: { hostId: string }) => { if (hostId === "macbook") throw new Error("Codex app-server exited: 1"); });
+    await expect(experimental_vkLifecycle({ kv, callHost, signal: new AbortController().signal, action: "enable" })).resolves.toBeUndefined();
+    expect(callHost.mock.calls.map(([call]) => call.hostId)).toEqual(["macbook", "mini", "ovh"]);
+    expect(await kv.get("native-install:error:macbook")).toMatchObject({ action: "enable", error: "Codex app-server exited: 1" });
+    expect(await kv.list("native-install:host:")).toHaveLength(3);
+    callHost.mockImplementation(async () => {});
+    await experimental_vkLifecycle({ kv, callHost, signal: new AbortController().signal, action: "enable" });
+    expect(await kv.get("native-install:error:macbook")).toBeUndefined();
+  });
   it("prevents installation on a core without cleanup support", async () => {
     const call = vi.fn();
     const installer = createNativeInstaller({ supported: false, kv: kvFixture(), call, log: () => {} });

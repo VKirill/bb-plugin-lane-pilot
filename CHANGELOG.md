@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.36 — 2026-10-01
+
+- **One broken machine no longer takes Lane Pilot down.** With core lifecycle support back on the hub (0.44.0-vk.3), every load runs `enable` on each registered machine to repair Claude Lane. The MacBook's Codex CLI was broken (missing `@openai/codex-darwin-arm64`), its `nativeInstall` failed, and the whole plugin failed to load on every machine. Enable and disable now carry on past a failing machine and keep its error under `native-install:error:<host>`, cleared by the next success; removal stays strict so files are never left orphaned.
+- Tests: the page-mounting UI file gets a 20 s budget (each test mounts the settings page, 1–3 s alone); the hourly docs test holds the docs child explicitly instead of relying on being the first to poll it. Three full runs green in a row.
+
 ## 0.1.35 — 2026-10-01
 
 The suite is green for the first time since the server split: 915 passed, 0 failed (27 failed on 0.1.34), `tsc` clean (6 errors before). Two production bugs surfaced while fixing it.

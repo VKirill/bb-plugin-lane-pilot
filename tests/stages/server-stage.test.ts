@@ -42,6 +42,8 @@ const readFirstLine = `- README.md L1-L2 (sha256 ${readmeSha8})`;
 // Memory is kept in the background right after acceptance (fa996c1), so a test that needs the child "still running"
 // holds its events.list until released instead of racing the PM's own call.
 const heldEvents = new Map<string,Promise<void>>();
+/** While true, the docs child reports no completion, so a test sees it running until it releases it. */
+let docsEventsHeld=false;
 function holdEvents(threadId:string):()=>void {
   let release=()=>{};
   heldEvents.set(threadId,new Promise<void>((resolve)=>{release=()=>{heldEvents.delete(threadId);resolve();};}));
@@ -80,6 +82,7 @@ const task:TaskV2 = {
 };
 
 async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[], codeCritiqueOutputs?:string[], codeRepairOutput?:string) {
+  docsEventsHeld=false;
   extraListPaths=[];
   writerControl = writerControl ?? {hold:false,states:new Map()};
   const spawned:Array<Record<string,unknown>> = [];
@@ -181,6 +184,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
             const gate=heldEvents.get(threadId);
             if(gate) await gate;
             if(eventsListThrowThreadId && threadId===eventsListThrowThreadId) throw new Error("sdk_events_list_filtered_unavailable");
+            if(docsEventsHeld && threadId==="docs-thread") return [];
             const hold=(docsHoldEvents && threadId==="docs-thread") || holdEventThreadIds.includes(threadId);
             if(hold) {
               const n=(eventListCounts.get(threadId)??0)+1;
@@ -802,8 +806,10 @@ describe("stage → native writer → receipt", () => {
     const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(task.id) as {id:string};
     db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
     claimActivation(db,{projectId,pmThreadId,runId:"stage-run"});
+    docsEventsHeld=true;
     const first=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
     expect(first.state).toBe("running");
+    docsEventsHeld=false;
     await harness.runSchedule("docs-maintenance-hourly");
     expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance")?.state).toBe("passed");
     expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);

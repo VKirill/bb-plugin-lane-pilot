@@ -100,7 +100,8 @@ async function mountPage(
   });
 }
 
-describe("Lane Pilot UI", () => {
+// Each test mounts the whole settings page (1-3 s alone); the 5 s unit default is too tight under a parallel run.
+describe("Lane Pilot UI", { timeout: 20_000 }, () => {
   afterEach(() => {
     cleanup();
     setLocaleOverride(null);

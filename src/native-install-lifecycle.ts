@@ -2,6 +2,7 @@ import type { PluginKvStorage, PluginRpcContract } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contracts";
 
 const PREFIX = "native-install:host:";
+const ERROR_PREFIX = "native-install:error:";
 type Action = "enable" | "disable" | "remove";
 type LifecycleContext = {
   action: Action; kv: PluginKvStorage; signal: AbortSignal;
@@ -17,7 +18,17 @@ export async function experimental_vkLifecycle(ctx: LifecycleContext): Promise<v
     ctx.signal.throwIfAborted();
     const row = await ctx.kv.get<{ hostId: string }>(key);
     if (!row || key !== `${PREFIX}${row.hostId}`) throw new Error("Invalid native installation host registry");
-    await ctx.callHost({ contract: hostContract, method: "nativeInstall", input: { requestedHostId: row.hostId, action: ctx.action }, hostId: row.hostId, signal: ctx.signal, timeoutMs: 600_000 });
+    try {
+      await ctx.callHost({ contract: hostContract, method: "nativeInstall", input: { requestedHostId: row.hostId, action: ctx.action }, hostId: row.hostId, signal: ctx.signal, timeoutMs: 600_000 });
+      await ctx.kv.delete(`${ERROR_PREFIX}${row.hostId}`);
+    } catch (error) {
+      // Enable and disable repair Claude Lane on every registered machine. One machine that is offline or has a
+      // broken CLI (2026-10-01: Codex on the MacBook) must not take the plugin down everywhere; the error is kept
+      // for that host and the next transition retries. Removal stays strict so files are never left orphaned.
+      if (ctx.action === "remove") throw error;
+      await ctx.kv.set(`${ERROR_PREFIX}${row.hostId}`, { action: ctx.action, error: error instanceof Error ? error.message : String(error), at: Date.now() });
+      continue;
+    }
     if (ctx.action === "remove") await ctx.kv.delete(key);
   }
 }
