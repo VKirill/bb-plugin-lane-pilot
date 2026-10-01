@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.41 — 2026-10-01
+
+- **A writer reads only the rules its task needs.** Before a writer starts, System One gets the task contract (objective, paths, acceptance, interfaces, invariants, verification commands) and one yes/no question per accepted rule; a rule goes into the prompt from p(yes) 0.3 up. Without an answer every rule goes in, as before: a missing rule costs more than an extra one. Calibrated on 60 SelfyStudio contracts with the analyzer's live rule and a deploy rule: 2 of 59 needed rules missed, 4 of 61 unneeded added; without interfaces and invariants terse release tasks («Ship 6ce641636b») were missed. The attempt trace records which rules were picked out of how many (`dispatchContext.rulesPicked`).
+
 ## 0.1.40 — 2026-10-01
 
 - **Text-grouping drafts leave once Jev answers.** A scan that reached System One deletes the fallback's undecided `sweep` proposals; decided ones stay, and the fallback recreates drafts only when Jev is unavailable. On the hub the two 0.1.37 drafts (bookkeeping noise in 40 and 11 SelfyStudio tasks) were still waiting for the owner next to the analyzer's rule.

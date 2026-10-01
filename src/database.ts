@@ -776,6 +776,8 @@ export type ReasoningTrace = {
     memoryText:string;
     /** Owner-confirmed project rules; absent in traces written before 0.1.37. */
     rulesText?:string;
+    /** Which accepted rules System One picked for this task (ids), out of how many. */
+    rulesPicked?:{total:number;picked:string[]};
     executionPacket:string;
     executionPacketSha256:string;
     pmReadContext:string;

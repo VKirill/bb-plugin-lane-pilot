@@ -258,3 +258,39 @@ export function acceptedRules(db: RulesDatabase, projectId: string): Array<{ id:
     JOIN lane_pilot_memory m ON m.project_id=p.project_id AND m.id=p.memory_id
     WHERE p.project_id=? AND p.state='accepted' ORDER BY p.decided_at`).all(projectId) as Array<{ id: string; rule: string; memoryId: string }>;
 }
+
+/**
+ * Which accepted rules a writer should read for one task. Calibrated on 60 SelfyStudio contracts and two
+ * rules (2026-10-01): with interfaces and invariants in the state and p(yes) ≥ 0.3, 2 of 59 needed rules
+ * were missed and 4 of 61 unneeded ones added. A missed rule costs more than an extra one, hence the low bar.
+ */
+export const RULE_RELEVANCE_THRESHOLD = 0.3;
+
+export function ruleRelevanceState(task: Record<string, unknown>): Record<string, unknown> {
+  const commands = (Array.isArray(task.verification) ? task.verification as Array<{ command?: unknown }> : [])
+    .map((row) => row.command).filter((command) => typeof command === "string");
+  return { task: {
+    title: task.title, objective: typeof task.objective === "string" ? task.objective.slice(0, 1200) : null,
+    owns_paths: task.owns_paths, expected_outputs: task.expected_outputs, acceptance: task.acceptance,
+    interfaces: task.interfaces, invariants: task.invariants, read_first: task.read_first, verification_commands: commands,
+  } };
+}
+
+/** One yes/no question per rule, keyed `r1`…`rN` in the order of `rules`. */
+export function ruleRelevanceQuestions(rules: ReadonlyArray<{ rule: string }>): Record<string, { instructions: string; criteria: Record<string, string> }> {
+  return Object.fromEntries(rules.map((row, index) => [`r${index + 1}`, {
+    instructions: "Should a writer working on this task be reminded of this project rule? Answer yes only when the task's own work or its verification commands touch what the rule is about.",
+    criteria: { yes: `the rule applies to this task: ${row.rule}`.slice(0, 500), no: "the rule is about something this task does not do" },
+  }]));
+}
+
+/** Rules whose probability of «yes» reaches the threshold; an unanswered rule is kept. */
+export function pickRelevantRules<T>(rules: readonly T[], answers: Record<string, string>, confidence: Record<string, number>, threshold = RULE_RELEVANCE_THRESHOLD): T[] {
+  return rules.filter((_, index) => {
+    const key = `r${index + 1}`;
+    const choice = answers[key];
+    if (choice !== "yes" && choice !== "no") return true;
+    const sure = confidence[key] ?? 1;
+    return (choice === "yes" ? sure : 1 - sure) >= threshold;
+  });
+}

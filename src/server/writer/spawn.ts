@@ -2,7 +2,7 @@ import { breakerKey } from "@lane-pilot/resilience";
 import { parseDirtSnapshots } from "../../cli-outcome";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { acceptedRules } from "@lane-pilot/run-insights";
+import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
 import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, searchMemoryRecords, setAttemptDirtBefore, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../database";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../../jev-reasoning";
 import { spawnWithSeam } from "../../spawn-seam";
@@ -22,6 +22,21 @@ import type { Services } from "../services";
 
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
+
+  /**
+   * System One picks the accepted rules this task needs, so a writer's prompt does not carry every rule of the
+   * project. Without an answer every rule goes in: a missing rule costs more than an extra one.
+   */
+  async function relevantRules<T extends { rule:string }>(rules:T[],task:Record<string,unknown>,hostId:string):Promise<T[]> {
+    if(rules.length===0) return rules;
+    const picked:T[]=[];
+    for(let start=0;start<rules.length;start+=8){
+      const chunk=rules.slice(start,start+8);
+      const judged=await host.call("councilJudge",{requestedHostId:hostId,state:JSON.stringify(ruleRelevanceState(task)).slice(0,60_000),questions:ruleRelevanceQuestions(chunk)},{hostId,timeoutMs:6_000}).catch(()=>null);
+      picked.push(...(judged?.status==="ok"?pickRelevantRules(chunk,judged.answers,judged.confidence??{}):chunk));
+    }
+    return picked;
+  }
 
   async function spawnWriterAttempt(input: {
     projectId:string; runId:string; taskId:string; attemptId:string;
@@ -53,8 +68,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const taskMemoryQuery=`${input.task.title}\n${input.task.objective}\n${input.task.acceptance.join(" ")}`;
       const memoryOn=memorySettings.enabled&&memorySettings.inject;
       // Confirmed rules reach every writer; retrieval skips their records so they are not repeated as memory.
-      const rules=memoryOn?acceptedRules(db,input.projectId):[];
-      const ruleMemoryIds=new Set(rules.map((rule)=>rule.memoryId));
+      const allRules=memoryOn?acceptedRules(db,input.projectId):[];
+      const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
+      const rules=await relevantRules(allRules,input.task as unknown as Record<string,unknown>,input.config.hostId);
       const rulesText=rules.map((rule)=>`- ${rule.rule}`).join("\n");
       const relevantMemory=memoryOn
         ? memoryContext(searchMemoryRecords(db,input.projectId,taskMemoryQuery,100,memorySettings.searchEngine,"subagent",memorySettings.personalBot).filter((record)=>!ruleMemoryIds.has(record.id)),taskMemoryQuery,memorySettings.contextBudget)
@@ -285,6 +301,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           dispatchContext:{
             memoryText:relevantMemory.text,
             rulesText,
+            rulesPicked:{total:allRules.length,picked:rules.map((rule)=>rule.id)},
             executionPacket,
             executionPacketSha256,
             pmReadContext:input.pmReadContext ?? "",

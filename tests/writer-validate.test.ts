@@ -291,6 +291,68 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
+  it.each([
+    { jev:"ok" as const, expected:["Run every npm verification command before answering."], skipped:["Check the site healthcheck after every deploy."] },
+    { jev:"down" as const, expected:["Run every npm verification command before answering.", "Check the site healthcheck after every deploy."], skipped:[] },
+  ])("puts only the accepted rules System One picks for the task into the writer prompt (jev $jev)", async ({ jev, expected, skipped }) => {
+    let spawnedPrompt = "";
+    const judged: Array<Record<string, unknown>> = [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{
+        threads:{
+          getPluginMetadata:async ({ threadId }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:"run-rules" } : { role:"writer" },
+          spawn:async (input) => { spawnedPrompt = String((input as { prompt?:string }).prompt ?? ""); return { id:"writer-rules" }; },
+          wait:async () => ({ matched:true, thread:{ status:"idle" } }),
+          get:withPm(async () => ({ id:"writer-rules", status:"idle" })),
+          output:async () => ({ text:"NEEDS_HUMAN: stop here, the test only needs the prompt" }),
+          list:async () => [] as never,
+        },
+        providers:{ list:listLiveWriterProviders, models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium","high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }) },
+        files:{ read:async ({ path }) => path.endsWith("README.md") ? { content:"fixture\n" } : { content:null }, write:async () => ({ ok:true }) },
+      },
+      experimental_callHostRpc:(call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if (call.method === "classifyPlan") throw new Error("RPC transport failed");
+        if (call.method === "councilJudge") {
+          judged.push(call.input as Record<string, unknown>);
+          if (jev === "down") return { hostId:"host-test", status:"disabled", answers:{}, reason:"missing_typesafe_api_key" };
+          return { hostId:"host-test", status:"ok", reason:null, answers:{ r1:"yes", r2:"no" }, confidence:{ r1:0.95, r2:0.9 } };
+        }
+        if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
+        const command = String((call.input as { command?:string }).command ?? "");
+        if (command.includes("porcelain")) return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
+        return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
+      },
+    });
+    const db = openDatabase(bb);
+    saveLegacyWriterConfig(db);
+    saveProjectSetting(db, projectId, "writer.reasoning_effort", "high");
+    saveProjectSetting(db, projectId, "memory.enabled", "true");
+    saveProjectSetting(db, projectId, "memory.inject", "true");
+    ["Run every npm verification command before answering.", "Check the site healthcheck after every deploy."].forEach((rule, index) => {
+      db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)")
+        .run(`mem-${index}`, projectId, "", "core", "subagent", rule, '["rule"]', "s", index);
+      db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at)
+        VALUES (?,?,?,?,'owner','accepted',3,3,'[]',?,1,1,1,?)`).run(`rule-${index}`, projectId, `s${index}`, rule, `mem-${index}`, index);
+    });
+    createRun(db, "run-rules", projectId, "bb", config.writerWorkspacePath);
+    setRunThread(db, "run-rules", pmThreadId);
+    await plugin(bb);
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, plan:"Plan for the rules test", task:{ ...task, id:`rules-task-${jev}`, verify:"none", verification:[] } },
+      { threadId:pmThreadId, projectId },
+    )));
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"run-rules", timeoutSec:2 }, { threadId:pmThreadId, projectId });
+    expect(judged).toHaveLength(1);
+    expect(Object.keys(judged[0]!.questions as object)).toEqual(["r1", "r2"]);
+    for (const rule of expected) expect(spawnedPrompt).toContain(rule);
+    for (const rule of skipped) expect(spawnedPrompt).not.toContain(rule);
+    expect(getReasoningTrace(db, dispatched.attemptId)?.dispatchContext?.rulesPicked).toEqual({ total:2, picked:jev === "ok" ? ["rule-0"] : ["rule-0", "rule-1"] });
+    await harness.lifecycle.dispose();
+  });
+
   it("escalates a retry from the first effort and stores the applied choice in its receipt", async () => {
     let snapshots=0;
     const spawned:Array<Record<string,unknown>>=[];
