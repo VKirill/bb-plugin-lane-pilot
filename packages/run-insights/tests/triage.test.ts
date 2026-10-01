@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { codeVerdict, ruleMigrations, saveTriage, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, writerGroups, type FailedAttempt } from "../src/index";
+import { codeVerdict, ruleMigrations, ruleTrialMigrations, saveTriage, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, writerGroups, type FailedAttempt } from "../src/index";
 import { triageMigrations } from "../src/triage";
 
 function openDb() {
@@ -10,7 +10,7 @@ function openDb() {
     CREATE TABLE lane_pilot_task (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, contract_json TEXT NOT NULL);
     CREATE TABLE lane_pilot_attempt (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, task_id TEXT NOT NULL, state TEXT NOT NULL, reason TEXT, thread_id TEXT, updated_at INTEGER NOT NULL);
   `);
-  for (const statement of [...ruleMigrations, ...triageMigrations]) db.exec(statement);
+  for (const statement of [...ruleMigrations, ...triageMigrations, ...ruleTrialMigrations]) db.exec(statement);
   db.prepare("INSERT INTO lane_pilot_run(id,project_id) VALUES('r1','p')").run();
   return db;
 }

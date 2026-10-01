@@ -68,3 +68,16 @@ describe("installed 0.1.11 migration lineage", () => {
     await harness.lifecycle.dispose();
   });
 });
+
+/**
+ * What the hub has applied as of 0.1.42 (62 statements, read from its `_bb_migrations` on 2026-10-01). 0.1.43
+ * first appended its statements to a package array that sits before the triage migrations and shifted index 61:
+ * the hub refused the reload. New statements go at the end of `migrations`, never into an earlier array.
+ */
+const HUB_APPLIED_0142 = ["ee647cc1d58d276e", "2c3d9bb116b7b3f1", "8273f68631753b45", "51053669bf3f4813", "b453807ac70ef83b", "2c979d960284d491", "e55875f3d4b9a647", "ed205edf71eb7732", "cfc20e54aa754763", "f43ffb2b1a6b0867", "f07e4477d504ddb7", "a713f922a5c01ff6", "50a028b5dc091da7", "5ccc08f9a7c95357", "38b98ce65547ae57", "630f1271ebbd4496", "b9c253d10c245b6b", "c9bfeb3b420f1c1c", "8392fb63f6c76f68", "f67351b6fb4b46d7", "4e252e7a2948bdd7", "70416f771dd28570", "c7be7ec04ff0029f", "7b57e7a86bb5b2ec", "9256b47028da27e1", "e5d3ee4284a43c9a", "20bdaf264ca73743", "a0a918d9abccbf97", "895b209bad71eb75", "7c565e7de06fd52e", "973a12038bacaa55", "fd4e1d894523f17a", "0b4ab12f19436184", "0197b8f7a1d5e336", "cb244b0b50b16105", "48968a4e68410d3e", "647bcecb8a25c304", "8b5bec28b91dce57", "c08965a27427c004", "9691cee1c6c9ba2a", "9bf6a6cb1334c139", "d6bd59a2aacf1cc1", "b7f1bb2944119bc6", "e2d18d9b18f19c20", "e6061bfa43e00617", "0896f00e1c33b759", "e56761b546d96dca", "869f01f78cf8b00c", "3f206d7a104f318a", "98f8b69c15c7fbed", "27077e1304933f6e", "6ae33c12c683ce3a", "01fbdab3efdfe2cb", "da8b5f0fe292ae9f", "cd2a2af12f061aa0", "3709d8350e89d2dc", "fe216f70bcad044e", "470b962afa06c07c", "2c101850580cfe0d", "da25990d2c3f5317", "c64f022897aafaa8", "e86335940f1b161f"];
+
+describe("hub migration lineage", () => {
+  it("keeps every statement the hub applied at its index", () => {
+    expect(migrations.slice(0, HUB_APPLIED_0142.length).map((statement) => createHash("sha256").update(statement).digest("hex").slice(0, 16))).toEqual(HUB_APPLIED_0142);
+  });
+});

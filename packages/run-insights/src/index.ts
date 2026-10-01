@@ -20,6 +20,7 @@ export {
   repeatedLessons,
   reviseRuleProposal,
   ruleMigrations,
+  ruleTrialMigrations,
   ruleProposalId,
   pickRelevantRules,
   ruleRelevanceQuestions,

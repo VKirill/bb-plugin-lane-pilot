@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import {
+  ruleTrialMigrations,
   acceptedRules, collectLessonSources, decideRuleProposal, getRuleProposal, lessonSignature, listRuleProposals,
   normalizeLessonText, repeatedLessons, reviseRuleProposal, ruleMigrations, ruleProposalId, upsertRuleProposals,
   type LessonSource,
@@ -15,7 +16,7 @@ function openDb() {
       provider_id TEXT, model TEXT, result_json TEXT, reason TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY(run_id, task_id, stage_id));
     CREATE TABLE lane_pilot_memory (id TEXT NOT NULL, project_id TEXT NOT NULL, UNIQUE(project_id,id));
   `);
-  for (const statement of ruleMigrations) db.exec(statement);
+  for (const statement of [...ruleMigrations, ...ruleTrialMigrations]) db.exec(statement);
   return db;
 }
 

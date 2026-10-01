@@ -1,7 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { handoffMigrations } from "@lane-pilot/handoff";
 import { councilMigrations } from "@lane-pilot/council";
-import { ruleMigrations, triageMigrations } from "@lane-pilot/run-insights";
+import { ruleMigrations, ruleTrialMigrations, triageMigrations } from "@lane-pilot/run-insights";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig } from "./contracts";
 import type { StageId, StageState } from "./stages/contract";
@@ -216,6 +216,7 @@ export const migrations = [
   ...councilMigrations,
   ...ruleMigrations,
   ...triageMigrations,
+  ...ruleTrialMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

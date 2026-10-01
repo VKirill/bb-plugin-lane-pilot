@@ -48,6 +48,13 @@ export const ruleMigrations: readonly string[] = [
     FROM lane_pilot_rule_proposal`,
   `DROP TABLE lane_pilot_rule_proposal`,
   `ALTER TABLE lane_pilot_rule_proposal_v2 RENAME TO lane_pilot_rule_proposal`,
+];
+
+/**
+ * 0.1.43 statements, appended by the host after the triage migrations: they were applied on the hub before
+ * these existed, so these go last to keep every recorded index unchanged.
+ */
+export const ruleTrialMigrations: readonly string[] = [
   // 0.1.43: rules adopt themselves. A rule the system adopted is on trial until the tasks it was given to show
   // whether the mistake still recurs; owner decisions are never touched by the trial.
   `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN decided_by TEXT`,
