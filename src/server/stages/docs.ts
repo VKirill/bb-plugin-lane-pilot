@@ -49,6 +49,15 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
     }
     let receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
     const liveChild = Boolean(receipt?.threadId || docsChildSnapshot(receipt?.result));
+    // Auto mode: a folder that is not a working codebase on this machine gets no docs after its tasks either.
+    if (docsSettings.mode === "auto" && docsSettings.enabled && docsSettings.maintain && !liveChild) {
+      const verdict = await services.docsVerdict(args.projectId, { hostId:config.hostId, path:run.writer_workspace_path! }).catch(() => null);
+      if (verdict && !verdict.need) {
+        const reason = `docs_not_needed:${verdict.reason}`;
+        recordStage(db,{...base,state:"skipped",reason});
+        return {runId:args.runId,taskId:args.taskId,state:"skipped",reason};
+      }
+    }
     if ((!docsSettings.enabled || !docsSettings.maintain) && !liveChild) {
       recordStage(db,{...base,state:"skipped",reason:!docsSettings.enabled?"disabled_by_project_setting":"docs_maintain_disabled"});
       return {runId:args.runId,taskId:args.taskId,state:"skipped",reason:!docsSettings.enabled?"disabled_by_project_setting":"docs_maintain_disabled"};

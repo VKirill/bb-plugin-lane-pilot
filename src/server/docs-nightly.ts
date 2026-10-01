@@ -4,6 +4,8 @@ import { resolveStageWriterSelection } from "../stage-writer-selection";
 import { sha256 } from "../stages/contract";
 import { docsRepairPrompt, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings } from "../stages/docs";
 import type { DocsUnit } from "../stages/docs";
+import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../stages/docs-worthiness";
+import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../stages/docs-worthiness";
 import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, pagesToRefresh, unlinkedPages, withCitedSources, withVerifiedConfidence } from "../stages/docs-lint";
 import { configuredSetting } from "./context";
 import { fullAccessSpawn } from "./pm-spawn";
@@ -13,8 +15,87 @@ import { basename, resolve } from "node:path";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 
+/** Runs the work it is given one after another, in the order it was given; a failure does not stop the queue. */
+export function createSerialQueue():<T>(work:()=>Promise<T>)=>Promise<T> {
+  let tail:Promise<unknown>=Promise.resolve();
+  return <T>(work:()=>Promise<T>):Promise<T>=>{
+    const turn=tail.then(work);
+    tail=turn.catch(()=>undefined);
+    return turn;
+  };
+}
+
 export function createDocsNightly(ctx: ServerCore, services: Services) {
   const { bb, db, host, listProjectSections, sectionChain } = ctx;
+
+  /** A folder on one machine: the unit docs are judged and written for. */
+  type DocsPlace = { hostId:string; path:string };
+  type StoredDocsVerdict = DocsVerdict & { projectId:string; hostId:string; path:string; factsKey:string; facts:DocsWorthinessFacts; at:number; docsSince:number|null };
+  const WORTH_KEY=(place:DocsPlace)=>`docs-worthiness:${place.hostId}:${sha256(resolve(place.path)).slice(0,16)}`;
+  /** A verdict older than this is asked again even when the folder looks the same. */
+  const VERDICT_TTL_MS=30*24*3_600_000;
+
+  /**
+   * Whether docs are worth keeping for this folder on this machine. Facts come from the folder itself; code
+   * settles the clear cases, System One the borderline ones. Kept until the facts move or a month passes.
+   */
+  async function docsVerdict(projectId:string, place:DocsPlace, opts:{force?:boolean;now?:number}={}):Promise<StoredDocsVerdict|null> {
+    const now=opts.now??Date.now();
+    const stored=await bb.storage.kv.get(WORTH_KEY(place)).catch(()=>null) as StoredDocsVerdict|null;
+    const facts=await host.call("docsWorthinessFacts",{requestedHostId:place.hostId,projectCwd:place.path},{hostId:place.hostId,timeoutMs:60_000}).catch(()=>null);
+    if(!facts) return stored;
+    const factsKey=docsFactsKey(facts);
+    const docsSince=stored?.docsSince??(facts.docsPages>0?now:null);
+    if(stored&&!opts.force&&stored.factsKey===factsKey&&now-stored.at<VERDICT_TTL_MS) return {...stored,facts,docsSince};
+    let verdict=codeDocsVerdict(facts);
+    if(!verdict){
+      const judged=await host.call("councilJudge",{requestedHostId:place.hostId,state:JSON.stringify(docsWorthinessState(facts,place)),
+        questions:{worth:{instructions:DOCS_WORTHINESS_QUESTION.instructions,criteria:{...DOCS_WORTHINESS_QUESTION.criteria}}}},{hostId:place.hostId,timeoutMs:10_000}).catch(()=>null);
+      const choice=judged?.status==="ok"?judged.answers.worth:undefined;
+      const sure=judged?.confidence?.worth??0.5;
+      verdict=choice==="needed"||choice==="not_needed"
+        ? {need:(choice==="needed"?sure:1-sure)>=0.5,reason:(choice==="needed"?sure:1-sure)>=0.5?"jev_needed":"jev_not_needed",confidence:sure}
+        : fallbackDocsVerdict(facts);
+    }
+    const next:StoredDocsVerdict={...verdict,projectId,hostId:place.hostId,path:place.path,factsKey,facts,at:now,docsSince};
+    await bb.storage.kv.set(WORTH_KEY(place),next);
+    return next;
+  }
+
+  /** The last time a writer task in this folder was pointed at its docs: read_first or the execution packet named a docs page. */
+  function docsLastRead(place:DocsPlace):number|null {
+    const root=resolve(place.path);
+    const row=db.prepare(`SELECT max(t.created_at) AS at FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id
+      LEFT JOIN lane_pilot_attempt a ON a.task_id=t.id LEFT JOIN lane_pilot_attempt_reasoning x ON x.attempt_id=a.id
+      WHERE (r.writer_workspace_path=? OR r.writer_workspace_path LIKE ?) AND (r.writer_host_id IS NULL OR r.writer_host_id=?)
+        AND (json_extract(t.contract_json,'$.read_first') LIKE '%docs/%' OR json_extract(x.trace_json,'$.dispatchContext.executionPacket') LIKE '%docs/%')`)
+      .get(root,`${root}/%`,place.hostId) as {at:number|null}|undefined;
+    return row?.at??null;
+  }
+
+  /** Where a folder in auto mode stands: verdict, and for kept docs how often they are refreshed. */
+  async function docsPlaceStatus(projectId:string, place:DocsPlace, opts:{force?:boolean;now?:number}={}):Promise<{verdict:StoredDocsVerdict|null;cadence:DocsCadence;lastReadAt:number|null}> {
+    const now=opts.now??Date.now();
+    const verdict=await docsVerdict(projectId,place,opts);
+    const lastReadAt=docsLastRead(place);
+    const cadence=verdict?.need&&verdict.facts.docsPages>0&&verdict.docsSince!==null ? docsCadence({lastReadAt,docsSince:verdict.docsSince,now}) : "nightly";
+    return {verdict,cadence,lastReadAt};
+  }
+
+  /** Every folder of a project on every machine: its sources and its section folders, as the nightly pass sees them. */
+  async function docsPlaces(projectId:string):Promise<Array<DocsPlace & {scopes:string[];name:string}>> {
+    const places:Array<DocsPlace & {scopes:string[];name:string}>=[];
+    const described=await bb.sdk.projects.get({projectId}).catch(()=>null) as {name?:string;sources?:Array<{hostId?:string;path?:string}>}|null;
+    for(const source of described?.sources??[]){
+      if(source.hostId&&source.path&&!places.some((place)=>place.hostId===source.hostId&&place.path===source.path)) places.push({scopes:[],hostId:source.hostId,path:source.path,name:described?.name??basename(source.path)});
+    }
+    const sections=await listProjectSections(projectId);
+    for(const section of sections) if(section.kind==="folder"&&section.path&&section.hostId) places.push({scopes:sectionChain(sections,section.id),hostId:section.hostId,path:section.path,name:section.name});
+    return places;
+  }
+
+  /** One folder's docs pass at a time across every project: passes queue up instead of running side by side. */
+  const inDocsQueue=createSerialQueue();
 
   /** A workspace with at least this many product code files keeps its own docs folder; smaller ones belong to the root docs. */
   const WORKSPACE_DOCS_MIN_FILES=15;
@@ -114,10 +195,16 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           const catchUp=Boolean(opts.catchUp)&&!opts.force&&unsettled&&!docsPassesRunning.has(place.path);
           if(opts.catchUp&&!catchUp) continue;
           if(!opts.force&&!catchUp&&scope.localHour!==docs.hour) continue;
+          if(docs.mode==="auto"){
+            const status=await docsPlaceStatus(project.id,place);
+            if(!status.verdict?.need){ results.push({projectId:project.id,path:place.path,hostId:place.hostId,state:"skipped",reason:`docs_not_needed:${status.verdict?.reason??"no_facts"}`}); continue; }
+            if(!opts.force&&!cadenceAllowsToday(status.cadence,scope.localDate)){ results.push({projectId:project.id,path:place.path,hostId:place.hostId,state:"skipped",reason:`docs_${status.cadence}`}); continue; }
+          }
           const schedule=`docs-nightly-${sha256(place.path).slice(0,12)}`;
           if(!opts.force&&!catchUp&&!claimDailySchedule(db,project.id,schedule,scope.localDate)) continue;
           if(docsPassesRunning.has(place.path)) continue;
           docsPassesRunning.add(place.path);
+          await inDocsQueue(async()=>{
           const firstResult=results.length;
           const attempts=(catchUp?night?.attempts??0:0)+1;
           await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:false,failed:0});
@@ -180,6 +267,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           await run(flowUnits.length?{...root,flows:flowUnits.map((unit)=>unit.flow!.slug)}:root);
           await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:true,failed:results.slice(firstResult).filter((row)=>row.state==="failed").length});
           } finally { docsPassesRunning.delete(place.path); }
+          });
         }catch(cause){
           const reason=cause instanceof Error?cause.message:String(cause);
           results.push({projectId:project.id,path:place.path,state:"failed",reason});
@@ -525,5 +613,5 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
 
   bb.background.schedule("docs-nightly-catchup","*/2 * * * *",runDocsCatchUps);
 
-  return { WORKSPACE_DOCS_MIN_FILES, DOCS_UNIT_CONCURRENCY, docsSpawnGate, spawnDocsThread, DOCS_NIGHT_ATTEMPTS, DOCS_OPEN_KEY, docsPassesRunning, DOCS_TOOLING, unitWritable, runNightlyDocs, runDocsUnit, docsUnitRecordKey, DOCS_UNITS_OPEN_KEY, docsUnitsIndexChain, updateDocsUnitsIndex, saveDocsUnitRecord, dropDocsUnitRecord, docsUnitsFinishing, pluginStopped, finishDocsUnit, runScheduledDocsMaintenance, runDocsCatchUps };
+  return { docsPlaces, docsVerdict, docsPlaceStatus, docsLastRead, WORKSPACE_DOCS_MIN_FILES, DOCS_UNIT_CONCURRENCY, docsSpawnGate, spawnDocsThread, DOCS_NIGHT_ATTEMPTS, DOCS_OPEN_KEY, docsPassesRunning, DOCS_TOOLING, unitWritable, runNightlyDocs, runDocsUnit, docsUnitRecordKey, DOCS_UNITS_OPEN_KEY, docsUnitsIndexChain, updateDocsUnitsIndex, saveDocsUnitRecord, dropDocsUnitRecord, docsUnitsFinishing, pluginStopped, finishDocsUnit, runScheduledDocsMaintenance, runDocsCatchUps };
 }

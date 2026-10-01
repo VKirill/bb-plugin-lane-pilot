@@ -71,6 +71,8 @@ const task: TaskV2 = {
 function saveLegacyWriterConfig(db: ReturnType<typeof openDatabase>): void {
   savePrototypeConfig(db, config);
   saveProjectSetting(db, projectId, "plan_critique.enabled", false);
+  // These tests follow the writer alone; memory (on by default) would add its maintainer after acceptance.
+  saveProjectSetting(db, projectId, "memory.enabled", false);
 }
 
 const listLiveWriterProviders = async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:true }, serviceTiers:[

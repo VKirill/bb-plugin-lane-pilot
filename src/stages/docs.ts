@@ -4,7 +4,10 @@ export const DOCS_SINCE_CHOICES = ["yesterday", "24 hours ago", "7 days ago"] as
 export type DocsSince = (typeof DOCS_SINCE_CHOICES)[number];
 
 export type DocsMaintenanceSettings = {
+  /** On unless the mode is "off"; in "auto" the folder's worthiness verdict decides per place. */
   enabled: boolean;
+  /** "auto" (the default) keeps docs where a folder is worth it, "on" always, "off" never. */
+  mode: "auto" | "on" | "off";
   maintain: boolean;
   since: DocsSince;
   pageCap: number;
@@ -18,13 +21,15 @@ const DOC_ROOTS = ["docs/", "apps/"] as const;
 const MAX_PAGE_BYTES = 40_000;
 
 export function parseDocsSettings(raw:Record<string,unknown>):DocsMaintenanceSettings {
-  const enabled = parseBoolean(raw["docs.enabled"], false, "docs.enabled");
+  const rawEnabled = raw["docs.enabled"];
+  const mode = rawEnabled == null || rawEnabled === "" || rawEnabled === "auto" ? "auto" : parseBoolean(rawEnabled, false, "docs.enabled") ? "on" : "off";
+  const enabled = mode !== "off";
   const maintain = parseBoolean(raw["docs.maintain"], true, "docs.maintain");
   const sinceValue = raw["docs.since"] ?? "yesterday";
   if (!(DOCS_SINCE_CHOICES as readonly unknown[]).includes(sinceValue)) throw new Error("docs.since must be yesterday, 24 hours ago, or 7 days ago");
   const pageCap = parseInteger(raw["docs.page_cap"], 0, 0, Number.MAX_SAFE_INTEGER, "docs.page_cap");
   const hour = parseInteger(raw["docs.hour"], 5, 0, 23, "docs.hour");
-  return { enabled, maintain, since:sinceValue as DocsSince, pageCap, hour };
+  return { enabled, mode, maintain, since:sinceValue as DocsSince, pageCap, hour };
 }
 
 function parseBoolean(value:unknown, fallback:boolean, name:string):boolean {

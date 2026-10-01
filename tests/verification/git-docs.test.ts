@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { flowDocsWritable, nightlyDocsPrompt } from "../../src/stages/docs";
-import { gitDocsScope, revertPaths } from "../../src/verification/git-docs";
+import { docsWorthinessFacts, gitDocsScope, revertPaths } from "../../src/verification/git-docs";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { stdio: "pipe" });
 const gitAt = (date: string, cwd: string, ...args: string[]) =>
@@ -131,4 +131,25 @@ it("asks the root to turn new decision drafts into ADRs", () => {
   const prompt = nightlyDocsPrompt({ since:"yesterday", hasDocs:true, changed:[], unit:{ docsDir:"docs" }, decisionDrafts:[".agents/decisions/2026-09-27-refund-once.md"] });
   expect(prompt).toContain("Add each draft below as an ADR");
   expect(prompt).toContain("- .agents/decisions/2026-09-27-refund-once.md");
+});
+
+it("tells a codebase from a content folder, counting only the folder's own commits", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lane-worth-"));
+  try {
+    git(root, "init", "-q"); git(root, "config", "user.email", "t@t"); git(root, "config", "user.name", "t");
+    await mkdir(join(root, "app/src"), { recursive: true }); await mkdir(join(root, "app/tests")); await mkdir(join(root, "ads"));
+    await writeFile(join(root, "app/package.json"), "{}");
+    for (const name of ["a", "b", "c"]) await writeFile(join(root, `app/src/${name}.ts`), "export {}");
+    await writeFile(join(root, "app/tests/a.test.ts"), "1");
+    await writeFile(join(root, "app/Dockerfile"), "FROM node");
+    for (const name of ["banner.png", "copy.md", "plan.csv"]) await writeFile(join(root, `ads/${name}`), "x");
+    git(root, "add", "app"); gitAt("2000-01-01T00:00:00", root, "commit", "-qm", "old app");
+    git(root, "add", "ads"); git(root, "commit", "-qm", "ads now");
+    const app = await docsWorthinessFacts({ projectCwd: join(root, "app") });
+    expect(app).toMatchObject({ status: "ready", codeFiles: 3, testFiles: 1, contentFiles: 0, manifests: ["package.json"], deploy: true, commits30d: 0, docsPages: 0 });
+    expect(app.languages).toEqual([{ ext: "ts", files: 3 }]);
+    const ads = await docsWorthinessFacts({ projectCwd: join(root, "ads") });
+    expect(ads).toMatchObject({ status: "ready", codeFiles: 0, contentFiles: 3, commits30d: 1 });
+    expect((await docsWorthinessFacts({ projectCwd: tmpdir() })).status).toBe("not-git");
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -52,6 +52,7 @@ describe("memory sync", () => {
     setRunThread(db, runId, pmThreadId);
     const call = async (name: string, params: Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
 
+    saveProjectSetting(db, projectId, "memory.enabled", "false");
     expect(await call("lane_pilot_memory_import", { runId })).toMatchObject({ state: "skipped", reason: "memory_disabled" });
     saveProjectSetting(db, projectId, "memory.enabled", "true");
 

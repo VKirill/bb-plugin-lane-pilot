@@ -64,6 +64,7 @@ import { userVisibleProjects } from "../project-scope";
 import { CONTROL_H } from "./control-row";
 import { Disclosure } from "./disclosure";
 import { RuleProposals } from "./rule-proposals";
+import { DocsPlaces } from "./docs-places";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
 
@@ -1604,9 +1605,23 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     <h3 className="text-sm font-medium">{t("groupDocs")}</h3>
                     <HelpTip label={t("docsPickerTechnical")}><p>{t("docsPickerTechnical")}</p></HelpTip>
                   </div>
-                  {(() => { const row = catalogRow("docs.enabled"); return row ? <Switch checked={asBoolean(displayedValue("docs.enabled"), false)} aria-label={t("groupDocs")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
+                  {(() => {
+                    const row = catalogRow("docs.enabled");
+                    if (!row) return null;
+                    const raw = displayedValue("docs.enabled");
+                    const mode = raw === undefined || raw === null || raw === "" || raw === "auto" ? "auto" : asBoolean(raw, false) ? "true" : "false";
+                    return <Select value={mode} onValueChange={(next) => void applySetting(row, next)}>
+                      <SelectTrigger aria-label={t("groupDocs")} data-testid="docs-mode" className="w-[11rem] min-w-0 max-w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">{t("docsModeAuto")}</SelectItem>
+                        <SelectItem value="true">{t("docsModeOn")}</SelectItem>
+                        <SelectItem value="false">{t("docsModeOff")}</SelectItem>
+                      </SelectContent>
+                    </Select>;
+                  })()}
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
+                {activeScope !== "globals" && projectId ? <DocsPlaces projectId={projectId} /> : null}
                 <div className="max-w-xl">{modelPicker(docsPickerValue, (next) => { void saveDocsSelection(next); })}</div>
                 <Disclosure summary={t("settingsAdvanced")}>
                   {(["docs.maintain","docs.page_cap","docs.since","docs.hour"] as const).map((key) => {

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.44 — 2026-10-01
+
+Memory on by default; docs kept automatically, only where a folder is worth it.
+
+- **Project memory is on unless a project turns it off.** The maintainer runs after every accepted task and writers get relevant memory; adopted rules now reach writers in projects that never set memory (SelfyStudio among them). Projects that set it explicitly keep their choice.
+- **Docs have three modes: Auto (default), Always, Never.** Projects that had docs switched on keep Always; unset ones are Auto. The settings switch is a select.
+- **Auto judges every folder on every machine on its own.** The same section can be an advertiser's artifacts on one machine and working code on another. A host call reads what the folder is made of: code, test and content files, languages, package manifests, deploy files, the folder's own commits in 30 days, docs pages. Code settles the clear cases: not a git repository, no code, no commits and no docs yet → no docs; code with a package manifest, or 50+ code files → docs. System One judges the rest (scripts beside content without a manifest). The verdict is stored per machine and folder and asked again when the deciding facts move or after 30 days.
+- **Docs nobody reads go quiet.** A task «reads» a folder's docs when its read_first or execution packet names a docs page. After 60 days without a read the folder's pass runs weekly (Mondays of its machine), after 120 days it pauses; a read brings it back to nightly.
+- **One folder's docs pass at a time** across all projects: passes queue instead of running side by side.
+- The post-task docs stage skips a folder Auto judged not worth docs. «Docs» lists every folder per machine with its verdict, reason, facts, cadence and last read, with «Re-evaluate».
+- Calibrated on the owner's 65 folders on Mac mini and OVH: plugins, ohmy-seo, telegram-ads-assistant, SelfyStudio and treba keep docs; client, ads, SEO and paperwork folders are not repositories; muse and the landing templates have no code; treba-sites goes to System One (needed, 0.82).
+
 ## 0.1.43 — 2026-10-01
 
 Rules learn on their own, inside the section they come from.

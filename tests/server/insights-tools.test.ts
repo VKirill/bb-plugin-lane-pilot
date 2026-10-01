@@ -57,6 +57,7 @@ describe("insights tools", () => {
     saveStageReceipt(db, { runId, taskId: "t1", stageId: "night-review", contractVersion: 1, state: "passed", inputSha256: "c".repeat(64), outputSha256: null, attempt: 0, providerId: null, model: null, threadId: null,
       result: { decision: "findings", summary: "s", findings: [{ severity: "blocking", path: "apps/api/src/orders/checkout.ts", finding: "Discount applied twice on retry", suggestedFix: "Make applyDiscount idempotent" }] }, reason: null, updatedAt: Date.now() });
 
+    saveProjectSetting(db, projectId, "memory.enabled", "false");
     const disabled = await call("lane_pilot_lessons_sweep", { runId });
     expect(disabled).toMatchObject({ state: "skipped", reason: "memory_disabled" });
 

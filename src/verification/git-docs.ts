@@ -156,3 +156,55 @@ export async function revertPaths(input:{ projectCwd:string; paths:string[] }):P
   });
   return { reverted, failed };
 }
+
+/** What a folder is made of, for deciding whether keeping docs for it is worth anything. */
+export type DocsWorthinessFacts = {
+  status: "ready" | "not-git" | "failed";
+  trackedFiles: number;
+  /** Product code files: CODE_FILE outside tests, docs and tooling. */
+  codeFiles: number;
+  testFiles: number;
+  /** Texts, tables, media and configs that are not code. */
+  contentFiles: number;
+  /** The five most common code extensions with their counts. */
+  languages: Array<{ ext: string; files: number }>;
+  commits30d: number;
+  /** package.json, pyproject.toml, go.mod and similar at the folder's root. */
+  manifests: string[];
+  /** Dockerfile, compose, CI workflows or deploy scripts: the code runs somewhere. */
+  deploy: boolean;
+  docsPages: number;
+  reason: string | null;
+};
+
+const CONTENT_FILE = /\.(md|mdx|txt|csv|tsv|docx?|xlsx?|pdf|png|jpe?g|webp|gif|svg|mp4|mov|mp3|wav|html?)$/i;
+const MANIFEST = /^(package\.json|pyproject\.toml|requirements\.txt|go\.mod|Cargo\.toml|composer\.json|Gemfile|pom\.xml|build\.gradle)$/;
+const DEPLOY = /(^|\/)(Dockerfile|docker-compose[^/]*\.ya?ml|compose\.ya?ml|deploy[^/]*\.(sh|ya?ml)|Procfile)$|^\.github\/workflows\/|^scripts\/deploy/;
+
+export async function docsWorthinessFacts(input: { projectCwd: string }): Promise<DocsWorthinessFacts> {
+  const empty = { trackedFiles: 0, codeFiles: 0, testFiles: 0, contentFiles: 0, languages: [], commits30d: 0, manifests: [], deploy: false, docsPages: 0 };
+  const git = async (...args: string[]) => (await run("git", ["-C", input.projectCwd, ...args], { maxBuffer: 64 * 1024 * 1024 })).stdout;
+  try {
+    const inside = (await git("rev-parse", "--is-inside-work-tree").catch(() => "")).trim();
+    if (inside !== "true") return { status: "not-git", ...empty, reason: null };
+    const tracked = (await git("ls-files")).split("\n").filter(Boolean);
+    const byExt = new Map<string, number>();
+    let codeFiles = 0, testFiles = 0, contentFiles = 0, docsPages = 0;
+    for (const path of tracked) {
+      if (/(^|\/)docs\/.+\.mdx?$/.test(path)) docsPages++;
+      if (CODE_FILE.test(path) && !NOT_CODE.test(path)) {
+        if (TEST_PATH.test(path)) testFiles++;
+        else { codeFiles++; const ext = /\.([a-z0-9]+)$/i.exec(path)?.[1] ?? ""; byExt.set(ext, (byExt.get(ext) ?? 0) + 1); }
+      } else if (CONTENT_FILE.test(path) && !NOT_CODE.test(path)) contentFiles++;
+    }
+    // Only commits that touched this folder: a section inside a busy monorepo is not busy by itself.
+    const commits30d = Number((await git("rev-list", "--count", "--since=30.days", "HEAD", "--", ".").catch(() => "0")).trim()) || 0;
+    return {
+      status: "ready", trackedFiles: tracked.length, codeFiles, testFiles, contentFiles,
+      languages: [...byExt].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([ext, files]) => ({ ext, files })),
+      commits30d, manifests: tracked.filter((path) => MANIFEST.test(path)), deploy: tracked.some((path) => DEPLOY.test(path)), docsPages, reason: null,
+    };
+  } catch (cause) {
+    return { status: "failed", ...empty, reason: cause instanceof Error ? cause.message : String(cause) };
+  }
+}

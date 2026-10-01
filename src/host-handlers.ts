@@ -1,7 +1,7 @@
 import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree } from "./verification/git-integrate";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, verifyDocsCitations } from "./verification/docs-jev";
 import { buildDocsFlows } from "./verification/docs-flows";
-import { commitDocs, docsLineCounts as readDocsLineCounts, gitDocsScope as readGitDocsScope, revertPaths } from "./verification/git-docs";
+import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, revertPaths } from "./verification/git-docs";
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -80,6 +80,10 @@ export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>
 export const gitDocsScope: ExperimentalHostRpcHandlers<typeof hostContract>["gitDocsScope"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await readGitDocsScope({projectCwd:input.projectCwd,sinceEpochMs:input.sinceEpochMs,base:input.base,docsDir:input.docsDir,exclude:input.exclude}),
+});
+
+export const docsWorthinessFacts: ExperimentalHostRpcHandlers<typeof hostContract>["docsWorthinessFacts"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await readDocsWorthinessFacts({projectCwd:input.projectCwd}),
 });
 
 export const gitRevertPaths: ExperimentalHostRpcHandlers<typeof hostContract>["gitRevertPaths"] = async (input) => ({

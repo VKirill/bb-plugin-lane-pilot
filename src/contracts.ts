@@ -184,6 +184,12 @@ export const hostContract = defineRpcContract({
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), isRepoRoot:z.boolean(), hasDocs:z.boolean(), changed:z.array(z.string()), dirty:z.array(z.string()), base:z.string().nullable(),
       workspaces:z.array(z.object({ path:z.string(), name:z.string(), codeFiles:z.number().int() })), localDate:z.string(), localHour:z.number().int(), reason:z.string().nullable() }).strict(),
   },
+  docsWorthinessFacts: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/") }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), trackedFiles:z.number().int(), codeFiles:z.number().int(), testFiles:z.number().int(),
+      contentFiles:z.number().int(), languages:z.array(z.object({ ext:z.string(), files:z.number().int() })), commits30d:z.number().int(), manifests:z.array(z.string()),
+      deploy:z.boolean(), docsPages:z.number().int(), reason:z.string().nullable() }).strict(),
+  },
   docsAnchors: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), pages:z.array(z.object({ path:z.string(), title:z.string() })).max(500),
       prefix:z.string().max(240).optional(), exclude:z.array(z.string()).max(500).optional(),
@@ -1069,6 +1075,19 @@ export const rpcContract = defineRpcContract({
       scan: ruleScanSchema,
       analyzer: rulesAnalyzerSchema.nullable(),
       events: z.array(z.object({ ruleId: z.string(), action: z.string(), detail: z.string().nullable(), at: z.number().int() }).strict()),
+    }).strict(),
+  },
+  docs_overview: {
+    input: z.object({ projectId: z.string().min(1), recheck: z.boolean().optional() }).strict(),
+    output: z.object({
+      places: z.array(z.object({
+        hostId: z.string(), path: z.string(), name: z.string(), scopes: z.array(z.string()),
+        mode: z.enum(["auto", "on", "off"]),
+        verdict: z.object({ need: z.boolean(), reason: z.string(), confidence: z.number().nullable(), at: z.number().int(),
+          facts: z.object({ codeFiles: z.number().int(), contentFiles: z.number().int(), commits30d: z.number().int(), manifests: z.array(z.string()), docsPages: z.number().int() }).strict() }).strict().nullable(),
+        cadence: z.enum(["nightly", "weekly", "paused"]),
+        lastReadAt: z.number().int().nullable(),
+      }).strict()),
     }).strict(),
   },
   start_rule_scan: {

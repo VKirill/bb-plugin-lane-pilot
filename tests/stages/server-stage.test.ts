@@ -1225,8 +1225,9 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("records an explicit skipped memory receipt when the opt-in setting is disabled", async () => {
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+  it("records an explicit skipped memory receipt when the project turns memory off", async () => {
+    // Memory is on by default since 0.1.44; a project that turns it off gets an explicit skipped receipt.
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"memory.enabled":false});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
     const skipped=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_memory_maintain",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
@@ -1537,7 +1538,7 @@ describe("stage → native writer → receipt", () => {
 
   it("runs configured specialist review on a high-risk task before spawning the writer", async () => {
     const { db,harness,spawned } = await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "specialist.enabled":true,"specialist.when":"high_risk","specialist.provider":"critic","specialist.model":"critic-model",
+      "specialist.enabled":true,"specialist.when":"high_risk","specialist.provider":"critic","specialist.model":"critic-model","memory.enabled":false,
     },undefined,undefined,undefined,undefined,undefined,[[],[]]);
     const highRiskTask = {...task,id:"stage-task-high",risk:"high" as const};
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write the fixture safely",task:highRiskTask},{threadId:pmThreadId,projectId});

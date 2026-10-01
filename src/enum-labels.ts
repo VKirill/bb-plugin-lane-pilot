@@ -15,6 +15,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "memory.audience": { owner: "enumMemoryOwner", subagent: "enumMemorySubagent", export: "enumMemoryExport" },
   "memory.search_engine": { auto: "enumSearchAuto", fts5: "enumSearchFts5", bm25: "enumSearchBm25" },
   "docs.since": { yesterday: "enumDocsYesterday", "24 hours ago": "enumDocs24h", "7 days ago": "enumDocs7d" },
+  "docs.enabled": { auto: "docsModeAuto", true: "docsModeOn", false: "docsModeOff" },
   "run.gate": { none: "enumGateNone", "pre-merge": "enumGatePreMerge" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",

@@ -48,6 +48,10 @@ export interface Services {
   DOCS_UNITS_OPEN_KEY: DocsNightlyApi["DOCS_UNITS_OPEN_KEY"];
   DOCS_UNIT_CONCURRENCY: DocsNightlyApi["DOCS_UNIT_CONCURRENCY"];
   WORKSPACE_DOCS_MIN_FILES: DocsNightlyApi["WORKSPACE_DOCS_MIN_FILES"];
+  docsVerdict: DocsNightlyApi["docsVerdict"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  docsPlaceStatus: DocsNightlyApi["docsPlaceStatus"];
+  docsLastRead: DocsNightlyApi["docsLastRead"];
   activate: ActivationApi["activate"];
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   providerBreaker: WriterStateApi["providerBreaker"];
