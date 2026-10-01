@@ -1,9 +1,8 @@
 import { taskV2Schema } from "../../contracts";
 import { claimDocsSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../database";
 import { bbServiceTier, writerExecutionSelection } from "../../jev-reasoning";
-import { resolveStageWriterSelection } from "../../stage-writer-selection";
 import { sha256 } from "../../stages/contract";
-import { docsInputHash, docsMaintenancePrompt, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../../stages/docs";
+import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../../stages/docs";
 import type { DocsPage } from "../../stages/docs";
 import { boundedAgentName } from "../../stages/role";
 import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../child-snapshots";
@@ -30,11 +29,11 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
     if (listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt")?.state !== "passed") throw new Error("docs maintenance requires an accepted writer receipt first");
     const settings = loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
     const docsAgent=boundedAgentName(settings["docs.agent"],"docs-maintainer");
-    const docsSelection=resolveStageWriterSelection({settings,config,stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
-    const docsProviderId=docsSelection.providerId;
-    const docsModelId=docsSelection.model;
-    const configuredDocsEffort=typeof settings["docs.reasoning_effort"]==="string"&&settings["docs.reasoning_effort"]?settings["docs.reasoning_effort"] as string:null;
-    const docsServiceTier=settings["docs.service_tier"]==="fast"?"fast":"standard";
+    const docsChoice=docsSelection(settings);
+    const docsProviderId=docsChoice.providerId;
+    const docsModelId=docsChoice.model;
+    const configuredDocsEffort=docsChoice.reasoningLevel;
+    const docsServiceTier=docsChoice.serviceTier;
     const parsedSettings:Record<string,unknown> = Object.fromEntries(["docs.enabled","docs.maintain","docs.since","docs.page_cap","docs.hour","docs.agent"].map((key)=>[key,configuredSetting(settings,key)]));
     const docsSettings = parseDocsSettings(parsedSettings);
     const base = {runId:args.runId,taskId:args.taskId,stageId:"docs-maintenance" as const,input:JSON.stringify({taskId:args.taskId,settings:docsSettings,agent:docsAgent,providerId:docsProviderId,model:docsModelId,reasoningEffort:configuredDocsEffort,serviceTier:docsServiceTier})};

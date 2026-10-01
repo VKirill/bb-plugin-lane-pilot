@@ -7,6 +7,7 @@ import {
   docsInputHash, docsScheduleDue, docsSinceEpoch, parseDocsSettings,
   selectDocsPages, validateDocsEdits,
   type DocsPage,
+  docsSelection,
 } from "../../src/stages/docs";
 
 const now = new Date(2026, 8, 23, 5, 0, 0);
@@ -34,6 +35,13 @@ describe("living docs stage policy", () => {
       expect(result.pages.every((item)=>/^[a-f0-9]{64}$/.test(item.sha256))).toBe(true);
       expect(result.pages.every((item)=>Number.isInteger(item.modifiedAt))).toBe(true);
     } finally { await rm(root,{recursive:true,force:true}); }
+  });
+
+  it("writes docs with Codex GPT-6 Luna, high, fast unless the project picks its own model", () => {
+    expect(docsSelection({ "writer.provider":"acp-cursor", "writer.model":"grok-4.6" })).toEqual({ providerId:"codex", model:"gpt-6-luna", reasoningLevel:"high", serviceTier:"fast" });
+    expect(docsSelection({ "docs.reasoning_effort":"xhigh" })).toMatchObject({ model:"gpt-6-luna", reasoningLevel:"xhigh", serviceTier:"fast" });
+    expect(docsSelection({ "docs.provider":"claude-code", "docs.model":"claude-sonnet-5-5" })).toEqual({ providerId:"claude-code", model:"claude-sonnet-5-5", reasoningLevel:"high", serviceTier:"standard" });
+    expect(docsSelection({ "docs.provider":"codex", "docs.model":"gpt-6-sol", "docs.service_tier":"fast" })).toMatchObject({ serviceTier:"fast" });
   });
 
   it("parses only supported controls and applies the defaults", () => {

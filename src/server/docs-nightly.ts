@@ -1,8 +1,7 @@
 import { claimDailySchedule, getActivation, getRun, listRunsWithAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../database";
 import { bbServiceTier, writerExecutionSelection } from "../jev-reasoning";
-import { resolveStageWriterSelection } from "../stage-writer-selection";
 import { sha256 } from "../stages/contract";
-import { docsRepairPrompt, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings } from "../stages/docs";
+import { docsRepairPrompt, docsSelection, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings } from "../stages/docs";
 import type { DocsUnit } from "../stages/docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../stages/docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../stages/docs-worthiness";
@@ -355,13 +354,13 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const last=hasDocs?await bb.storage.kv.get(kvKey).catch(()=>null) as {warnings?:Array<{path:string;rule:string;detail:string}>}|null:null;
     const pagePaths=new Set(existing.map((page)=>page.path));
     const doubts=(last?.warnings??[]).filter((warning)=>(warning.rule==="evidence-check"||warning.rule==="contradiction")&&pagePaths.has(warning.path));
-    const selection=resolveStageWriterSelection({settings,config:{writerProviderId:"codex",writerModel:"gpt-6-luna"},stageProviderKey:"docs.provider",stageModelKey:"docs.model"});
+    const selection=docsSelection(settings);
     const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
     const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
     const model=catalog.models.find((item)=>item.id===selection.model||item.model===selection.model);
     if(!provider||!model) throw new Error(`docs provider or model unavailable: ${selection.providerId}/${selection.model}`);
-    const effort=typeof settings["docs.reasoning_effort"]==="string"&&settings["docs.reasoning_effort"]?settings["docs.reasoning_effort"] as string:"medium";
-    const tier=provider.capabilities.supportsServiceTier?bbServiceTier(settings["docs.service_tier"]==="fast"?"fast":"standard"):null;
+    const effort=selection.reasoningLevel;
+    const tier=provider.capabilities.supportsServiceTier?bbServiceTier(selection.serviceTier):null;
     const threadId=await spawnDocsThread({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:flow?` · flow ${flow.slug}`:""}`,
       ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
       prompt:nightlyDocsPrompt({since:docs.since,hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,

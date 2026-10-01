@@ -3,6 +3,21 @@ import { createHash } from "node:crypto";
 export const DOCS_SINCE_CHOICES = ["yesterday", "24 hours ago", "7 days ago"] as const;
 export type DocsSince = (typeof DOCS_SINCE_CHOICES)[number];
 
+/** The docs writer when the project picked none: Codex GPT-6 Luna, high reasoning, fast tier. */
+export const DOCS_DEFAULT_SELECTION = { providerId:"codex", model:"gpt-6-luna", reasoningLevel:"high", serviceTier:"fast" } as const;
+
+/** The project's own docs model when it set one, otherwise the docs default (not the writer's model). */
+export function docsSelection(settings:Record<string,unknown>):{providerId:string;model:string;reasoningLevel:string;serviceTier:"fast"|"standard"} {
+  const text=(key:string)=>typeof settings[key]==="string"&&settings[key]?settings[key] as string:null;
+  const own=text("docs.provider")&&text("docs.model");
+  return {
+    providerId:own?text("docs.provider")!:DOCS_DEFAULT_SELECTION.providerId,
+    model:own?text("docs.model")!:DOCS_DEFAULT_SELECTION.model,
+    reasoningLevel:text("docs.reasoning_effort")??DOCS_DEFAULT_SELECTION.reasoningLevel,
+    serviceTier:settings["docs.service_tier"]==="standard"||settings["docs.service_tier"]==="default"?"standard":settings["docs.service_tier"]==="fast"||!own?"fast":"standard",
+  };
+}
+
 export type DocsMaintenanceSettings = {
   /** On unless the mode is "off"; in "auto" the folder's worthiness verdict decides per place. */
   enabled: boolean;

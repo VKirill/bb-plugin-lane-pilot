@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.45 — 2026-10-01
+
+- **Docs are written by Codex GPT-6 Luna, high reasoning, fast tier by default**, not by the writer's model; a project that picks its own docs model keeps it. The nightly pass, the post-task stage and the settings picker use the same default.
+
 ## 0.1.44 — 2026-10-01
 
 Memory on by default; docs kept automatically, only where a folder is worth it.

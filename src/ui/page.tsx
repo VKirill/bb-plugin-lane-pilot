@@ -65,6 +65,7 @@ import { CONTROL_H } from "./control-row";
 import { Disclosure } from "./disclosure";
 import { RuleProposals } from "./rule-proposals";
 import { DocsPlaces } from "./docs-places";
+import { DOCS_DEFAULT_SELECTION } from "../stages/docs";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
 
@@ -1199,12 +1200,14 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     reasoningLevel:(String(data?.values[NIGHT_EFFORT]??"high")||"high") as ExperimentalProviderModelPickerValue["reasoningLevel"],
     ...(providers.providers?.find((provider)=>provider.id===nightProviderId)?.serviceTiers?.length?{serviceTier:data?.values[NIGHT_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
   };
-  const docsProviderId=String(data?.values[DOCS_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
+  // Without a project choice the docs writer is Codex GPT-6 Luna, high, fast (DOCS_DEFAULT_SELECTION), not the writer model.
+  const docsOwn=Boolean(data?.values[DOCS_PROVIDER]&&data?.values[DOCS_MODEL]);
+  const docsProviderId=String(docsOwn?data?.values[DOCS_PROVIDER]:DOCS_DEFAULT_SELECTION.providerId);
   const docsPickerValue:ExperimentalProviderModelPickerValue={
     providerId:docsProviderId,
-    model:String(data?.values[DOCS_MODEL]??data?.values[WRITER_MODEL]??""),
-    reasoningLevel:(String(data?.values[DOCS_EFFORT]??data?.values[WRITER_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
-    ...(providers.providers?.find((provider)=>provider.id===docsProviderId)?.serviceTiers?.length?{serviceTier:data?.values[DOCS_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
+    model:String(docsOwn?data?.values[DOCS_MODEL]:DOCS_DEFAULT_SELECTION.model),
+    reasoningLevel:(String(data?.values[DOCS_EFFORT]??DOCS_DEFAULT_SELECTION.reasoningLevel)||DOCS_DEFAULT_SELECTION.reasoningLevel) as ExperimentalProviderModelPickerValue["reasoningLevel"],
+    ...(providers.providers?.find((provider)=>provider.id===docsProviderId)?.serviceTiers?.length?{serviceTier:data?.values[DOCS_SERVICE_TIER]==="standard"||data?.values[DOCS_SERVICE_TIER]==="default"?"default":(data?.values[DOCS_SERVICE_TIER]==="fast"||!docsOwn)?"fast":"default"}:{}),
   };
   const projectLifeProviderId=String(data?.values[PROJECT_LIFE_PROVIDER] ?? "codex");
   const projectLifePickerValue:ExperimentalProviderModelPickerValue={
