@@ -65,7 +65,7 @@ import { CONTROL_H } from "./control-row";
 import { Disclosure } from "./disclosure";
 import { RuleProposals } from "./rule-proposals";
 import { DocsPlaces } from "./docs-places";
-import { DOCS_DEFAULT_SELECTION } from "../stages/docs";
+import { DOCS_DEFAULT_SELECTION } from "../stages/docs-defaults";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
 

@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 export const DOCS_SINCE_CHOICES = ["yesterday", "24 hours ago", "7 days ago"] as const;
 export type DocsSince = (typeof DOCS_SINCE_CHOICES)[number];
 
-/** The docs writer when the project picked none: Codex GPT-6 Luna, high reasoning, fast tier. */
-export const DOCS_DEFAULT_SELECTION = { providerId:"codex", model:"gpt-6-luna", reasoningLevel:"high", serviceTier:"fast" } as const;
+import { DOCS_DEFAULT_SELECTION } from "./docs-defaults";
+export { DOCS_DEFAULT_SELECTION };
 
 /** The project's own docs model when it set one, otherwise the docs default (not the writer's model). */
 export function docsSelection(settings:Record<string,unknown>):{providerId:string;model:string;reasoningLevel:string;serviceTier:"fast"|"standard"} {
