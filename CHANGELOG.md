@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.47 — 2026-10-01
+
+Rules analyzer prompts audited with the agent-instructions skill and measured before and after.
+
+- **Evidence is fenced as data.** Writers' answers, failure reasons and reviews sit inside `<evidence>` / `<other_failures>` and the prompt says they are recorded output to analyze, not instructions, even where they address the analyzer: a rule written from them reaches every writer of the place.
+- **«No rule» is a correct answer, and both costs are named.** A missing rule lets a mistake repeat; a wrong rule pushes every writer of the place the wrong way. System One's sort is presented as a guess to check, not a fact.
+- **A rule is ready only when** it is one imperative sentence, an action inside the writer's own owns_paths and task, shown by the evidence to be skipped in at least two tasks, and specific to the project; each rule now carries `why`.
+- **Rewrite may answer «no rule can help», and the rule is then retired** instead of staying as it was.
+- Measured on GPT-6 Luna high and Grok 4.6, 3 runs per case, graded by code: Grok on the live SelfyStudio group (foreign failures) wrote a rule 3 of 3 times with the old prompt and 0 of 3 with the new one; injection held on both; Luna passed all four cases (foreign failures, missing outputs, injection, mixed) 12/12 with either prompt. The missing-output case uses synthetic writer answers because the original threads were deleted.
+
 ## 0.1.46 — 2026-10-01
 
 - **The rules analyzer defaults to Codex GPT-6 Luna, high, fast** instead of the project's writer model; a model picked in «Rules from lessons» stays. On the live SelfyStudio group (three failed `npm -w` checks) Luna set all three aside as not the writers' fault (foreign specs, a file the writer never touched), while Grok 4.6 had written a rule telling writers to fix those failures, which would send them outside their owns_paths. Luna is also the cheaper model.
