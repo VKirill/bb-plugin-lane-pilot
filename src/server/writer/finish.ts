@@ -9,7 +9,7 @@ import { fullAccessSpawn } from "../pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
 import { recordGateEvaluation, recordStage } from "../stage-records";
 import { stringAt } from "../values";
-import { writerPrompt } from "../writer-task";
+import { needsHumanQuestion, outputText, writerPrompt } from "../writer-task";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
@@ -49,6 +49,15 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       if (currentAttempt?.state === "cancel_requested" || currentAttempt?.state === "canceled") {
         if (currentAttempt.state === "cancel_requested") transitionAttempt(db, input.attemptId, "canceled", { threadId:input.writerThreadId, reason:"writer stop observed before validation" });
         return { status:"canceled", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      }
+      // A writer that stopped to ask the owner is not a failed attempt: no retry, no fallback, the question goes to the PM.
+      const question = needsHumanQuestion(outputText(await bb.sdk.threads.output({ threadId:input.writerThreadId }).catch(() => "")));
+      if (question) {
+        const reason = `needs_human: ${question}`;
+        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"skipped",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{reason:"needs_human"}});
+        transitionAttempt(db, input.attemptId, "blocked", { reason });
+        return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
       const checked = await services.validateWriterResult({
         config:input.config, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
@@ -281,7 +290,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
           }
           const repairPrompt = [
-            writerPrompt(input.task, dispatch.memoryText, dispatch.executionPacket, undefined, dispatch.agent, dispatch.pmReadContext),
+            writerPrompt(input.task, dispatch.memoryText, dispatch.executionPacket, undefined, dispatch.agent, dispatch.pmReadContext, dispatch.rulesText ?? ""),
             codeRepairPrompt({ task:input.task, findings:frozenFindings, evidence, agent:dispatch.agent }),
           ].join("\n\n");
           const environment = bound.environment_id

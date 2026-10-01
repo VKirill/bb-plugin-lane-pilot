@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot, type RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import React from "react";
@@ -90,7 +90,9 @@ const cursorGrokModel = {
   supportedReasoningEfforts:["high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })),
 };
 
-async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:string;model:string;reasoningLevel:string})=>Promise<void> }) {
+type RuleRow = { id:string; rule:string; author:"sweep"|"pm"|"owner"; state:"proposed"|"accepted"|"rejected"|"revoked"; occurrences:number; taskCount:number; examples:string[]; lastSeenAt:number; decidedAt:number|null };
+
+async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:string;model:string;reasoningLevel:string})=>Promise<void>; rules?:RuleRow[]; ruleCalls?:Array<Record<string, unknown>> }) {
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
     sdk:{ providers:{
@@ -159,6 +161,14 @@ async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:s
         singleSaveCalls.push(input as typeof singleSaveCalls[number]);
         return harness.behavior.callRpc("save_setting", input) as Promise<unknown>;
       },
+      list_rule_proposals:() => ({ proposals:options?.rules ?? [], memory:{ enabled:true, inject:true } }),
+      decide_rule_proposal:(input) => {
+        const call = input as { id:string; action:"accept"|"reject"|"revoke"; rule?:string };
+        options?.ruleCalls?.push(call);
+        const row = options!.rules!.find((item) => item.id === call.id)!;
+        Object.assign(row, call.action === "accept" ? { state:"accepted", rule:call.rule ?? row.rule, author:"owner" } : { state:call.action === "reject" ? "rejected" : "revoked" });
+        return { proposal:row };
+      },
     },
   });
   await waitFor(() => {
@@ -197,6 +207,28 @@ describe("native writer settings against the registered SQLite backend", () => {
     setLocaleOverride(null);
     document.documentElement.lang = "en";
     vi.clearAllMocks();
+  });
+
+  it("shows repeated failures as rule proposals; the owner edits and accepts one, then revokes it", async () => {
+    const rules:RuleRow[] = [
+      { id:"rule_a", rule:"Repeated in 3 tasks: curl: (6) Could not resolve host — before finishing a task, make sure this does not happen.", author:"sweep", state:"proposed", occurrences:3, taskCount:3, examples:["curl: (6) Could not resolve host: a.example"], lastSeenAt:1, decidedAt:null },
+      { id:"rule_b", rule:"Old ownership noise", author:"sweep", state:"rejected", occurrences:40, taskCount:40, examples:[], lastSeenAt:1, decidedAt:2 },
+    ];
+    const ruleCalls:Array<Record<string, unknown>> = [];
+    const { harness, slot } = await mountWithBackend({ rules, ruleCalls });
+    try {
+      const card = await slot.findByTestId("rule-rule_a");
+      expect(card.textContent).toContain(`${en.rulesTasks}: 3`);
+      expect(slot.getByTestId("rule-proposals").textContent).toContain(`${en.rulesClosed} (1)`);
+      fireEvent.change(card.querySelector("textarea")!, { target:{ value:"Never use the network in verification commands." } });
+      fireEvent.click(within(card).getByRole("button", { name:en.rulesAccept }));
+      await waitFor(() => expect(slot.getByTestId("rule-rule_a").textContent).toContain(en.rulesRevoke));
+      expect(ruleCalls[0]).toMatchObject({ id:"rule_a", action:"accept", rule:"Never use the network in verification commands." });
+      expect(slot.getByTestId("rule-rule_a").textContent).toContain("Never use the network in verification commands.");
+      fireEvent.click(within(slot.getByTestId("rule-rule_a")).getByRole("button", { name:en.rulesRevoke }));
+      await waitFor(() => expect(slot.queryByTestId("rule-rule_a")).toBeNull());
+      expect(ruleCalls[1]).toMatchObject({ id:"rule_a", action:"revoke" });
+    } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
   it("saves one coherent provider/model/reasoning/service-tier selection with CAS and persists it", async () => {

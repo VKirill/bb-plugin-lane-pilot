@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.37 — 2026-10-01
+
+Two ideas from the «Harness and Loop Engineering» write-up (thread thr_58hvcw4qtg): a loop needs a hard exit when a task cannot be done, and lessons should turn into rules a human confirms.
+
+- **A writer can stop and ask.** When the contract contradicts itself or the code, or a file, access or product decision it needs is missing, the writer answers `NEEDS_HUMAN: <question>` and changes nothing. The attempt ends `blocked` with `needs_human: <question>` at once: no second attempt, no emergency writer, and the PM is told to put the question to the owner. Before, such a task burned two attempts and ended as «retry limit 2 exhausted».
+- **Repeated lessons become rule proposals.** A writer failure with the same shape in at least three tasks over 30 days (paths, numbers and hosts masked; one task counts once however many stages recorded it) becomes a proposal. Failures of the run machinery (`internal_error`, worktree provisioning, execution packets, merge conflicts) and plan critiques are left out: no writer rule can prevent them. The PM can reword a proposal with `lane_pilot_rule_propose`; `lane_pilot_lessons_sweep` lists the waiting ones.
+- **The owner decides in settings.** «Memory and docs» gets «Rules from lessons»: edit the wording, accept or reject; accepted rules can be revoked. An accepted rule is a `core` project memory record for writers (CLI export marks it `always`), and every writer prompt carries the rules in force in their own block, repair prompts included. Revoking removes the record.
+- **Lessons see validation failures.** `collectLessonSources` read only `failed`, `blocked` and `rejected` attempts, while most real rejections end in `validation_failed` and `blocked` carries «retry limit exhausted», which is filtered as noise. On the hub that left 50+ ownership rejections out of lessons.
+- Not done on purpose: running checks only for changed modules. On the hub 11 of about 130 failed attempts in 10 days failed a verification command, and nearly all of those were the environment (no network in the sandbox, `bb` missing, `false`).
+
 ## 0.1.36 — 2026-10-01
 
 - **One broken machine no longer takes Lane Pilot down.** With core lifecycle support back on the hub (0.44.0-vk.3), every load runs `enable` on each registered machine to repair Claude Lane. The MacBook's Codex CLI was broken (missing `@openai/codex-darwin-arm64`), its `nativeInstall` failed, and the whole plugin failed to load on every machine. Enable and disable now carry on past a failing machine and keep its error under `native-install:error:<host>`, cleared by the next success; removal stays strict so files are never left orphaned.

@@ -10,7 +10,8 @@ type ReceiptRow = { run_id: string; task_id: string; stage_id: string; state: st
 type AttemptRow = { run_id: string; task_id: string; reason: string | null; updated_at: number };
 
 const LESSON_STAGES = ["night-review", "acceptance-receipt", "verification", "code-critique", "plan-critique"] as const;
-const NOISE = /retry limit|attempts exhausted|canceled by|thread deleted|plugin reload/i;
+// `needs_human:` is a question for the owner about one task, not a mistake the next writer should avoid.
+const NOISE = /retry limit|attempts exhausted|canceled by|thread deleted|plugin reload|^needs_human:/i;
 
 function nightFindings(row: ReceiptRow): LessonSource[] {
   if (!row.result_json) return [];
@@ -34,7 +35,7 @@ export function collectLessonSources(db: InsightsDatabase, filter: { projectId: 
     ORDER BY s.updated_at DESC LIMIT ?`).all(filter.projectId, filter.since, ...LESSON_STAGES, limit) as ReceiptRow[];
   const attempts = db.prepare(`SELECT a.run_id, a.task_id, a.reason, a.updated_at
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE r.project_id=? AND a.updated_at>=? AND a.state IN ('failed','blocked','rejected') AND a.reason IS NOT NULL
+    WHERE r.project_id=? AND a.updated_at>=? AND a.state IN ('failed','blocked','rejected','validation_failed') AND a.reason IS NOT NULL
     ORDER BY a.updated_at DESC LIMIT ?`).all(filter.projectId, filter.since, limit) as AttemptRow[];
   const sources: LessonSource[] = [];
   for (const row of receipts) {

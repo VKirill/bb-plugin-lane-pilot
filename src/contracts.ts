@@ -28,6 +28,18 @@ export const settingValidationSchema = z.object({
   params: z.array(z.string()),
 }).strict();
 
+const ruleProposalSchema = z.object({
+  id: z.string(),
+  rule: z.string(),
+  author: z.enum(["sweep", "pm", "owner"]),
+  state: z.enum(["proposed", "accepted", "rejected", "revoked"]),
+  occurrences: z.number().int(),
+  taskCount: z.number().int(),
+  examples: z.array(z.string()),
+  lastSeenAt: z.number().int(),
+  decidedAt: z.number().int().nullable(),
+}).strict();
+
 export const taskV2Schema = z.object({
   schema_version: z.literal(2),
   id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
@@ -1028,5 +1040,21 @@ export const rpcContract = defineRpcContract({
       hints: z.array(z.object({ risk: z.string(), hint: z.string() })),
       stats: z.array(z.object({ providerId: z.string(), model: z.string(), risk: z.string(), tasks: z.number().int(), acceptedFirstTry: z.number().int(), accepted: z.number().int(), failed: z.number().int() })),
     }).strict(),
+  },
+  list_rule_proposals: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.object({
+      proposals: z.array(ruleProposalSchema),
+      memory: z.object({ enabled: z.boolean(), inject: z.boolean() }).strict(),
+    }).strict(),
+  },
+  decide_rule_proposal: {
+    input: z.object({
+      projectId: z.string().min(1),
+      id: z.string().min(1),
+      action: z.enum(["accept", "reject", "revoke"]),
+      rule: z.string().min(8).max(600).optional(),
+    }).strict(),
+    output: z.object({ proposal: ruleProposalSchema }).strict(),
   },
 });

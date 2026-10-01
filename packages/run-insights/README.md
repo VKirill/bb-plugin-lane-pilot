@@ -24,6 +24,21 @@ for the `subagent` audience, so the next writer in the same area reads them befo
 | `collectLessonSources(db, {projectId, since})` | Receipts and attempt reasons worth learning from |
 | `lessonCandidates(sources)` | Deduplicated `note` candidates with path and severity concepts |
 
+## Rule proposals
+
+A lesson that keeps repeating is a rule waiting to be written. Writer failures with the same masked
+signature in three tasks become a proposal; the owner rewords and accepts it, and the host plugin
+stores accepted rules where every writer reads them. Failures of the run machinery and of the PM's
+plan are not proposed: a writer rule cannot prevent them.
+
+| Export | What it does |
+|---|---|
+| `repeatedLessons(sources, {minOccurrences?, minTasks?})` | Groups of the same failure across tasks, one count per task |
+| `upsertRuleProposals(db, projectId, lessons)` | New groups become `proposed`; known ones refresh counts, never wording or decision |
+| `reviseRuleProposal` / `decideRuleProposal` | Reword while proposed; state changes by compare-and-swap |
+| `acceptedRules(db, projectId)` | Accepted rules whose memory record still exists |
+| `ruleMigrations` | The `lane_pilot_rule_proposal` table, appended to the host's migrations |
+
 ## Golden retrieval checks
 
 A golden set is a list of queries with the record ids they must return. Run it after every memory

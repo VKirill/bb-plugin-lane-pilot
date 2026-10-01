@@ -238,6 +238,59 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("stops on a writer's NEEDS_HUMAN question without retry and hands the question to the PM", async () => {
+    let spawns = 0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{
+        threads:{
+          getPluginMetadata:async ({ threadId }) => threadId === pmThreadId
+            ? { role:"pm", lanePilotRunId:"run-needs-human" }
+            : { role:"writer" },
+          spawn:async () => { spawns += 1; return { id:`writer-needs-human-${spawns}` }; },
+          wait:async () => ({ matched:true, thread:{ status:"idle" } }),
+          get:withPm(async () => ({ id:"writer-needs-human-1", status:"idle" })),
+          output:async () => ({ text:"NEEDS_HUMAN: Which pricing plan should the landing show, Pro or Team?\nI changed nothing." }),
+          list:async () => [] as never,
+        },
+        providers:{ list:listLiveWriterProviders, models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium","high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }) },
+        files:{
+          read:async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" } : { content:null },
+          write:async () => ({ ok:true }),
+        },
+      },
+      experimental_callHostRpc:(call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if (call.method === "classifyPlan") throw new Error("RPC transport failed");
+        if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
+        const command = String((call.input as { command?:string }).command ?? "");
+        if (command.includes("porcelain")) return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
+        return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
+      },
+    });
+    const db = openDatabase(bb);
+    saveLegacyWriterConfig(db);
+    saveProjectSetting(db, projectId, "writer.reasoning_effort", "high");
+    createRun(db, "run-needs-human", projectId, "bb", config.writerWorkspacePath);
+    setRunThread(db, "run-needs-human", pmThreadId);
+    await plugin(bb);
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, plan:"Complete plan for the needs-human test", task:{ ...task, id:"needs-human-task", verify:"none", verification:[] } },
+      { threadId:pmThreadId, projectId },
+    )));
+    expect(dispatched.state).toBe("queued");
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:"run-needs-human", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+    )));
+    expect(result.state).not.toBe("accepted");
+    expect(JSON.stringify(result)).toContain("needs_human: Which pricing plan should the landing show, Pro or Team?");
+    expect(spawns).toBe(1);
+    const attempts = db.prepare("SELECT state, reason FROM lane_pilot_attempt WHERE run_id='run-needs-human'").all();
+    expect(attempts).toEqual([{ state:"blocked", reason:"needs_human: Which pricing plan should the landing show, Pro or Team?" }]);
+    await harness.lifecycle.dispose();
+  });
+
   it("escalates a retry from the first effort and stores the applied choice in its receipt", async () => {
     let snapshots=0;
     const spawned:Array<Record<string,unknown>>=[];

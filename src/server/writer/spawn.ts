@@ -2,6 +2,7 @@ import { breakerKey } from "@lane-pilot/resilience";
 import { parseDirtSnapshots } from "../../cli-outcome";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
+import { acceptedRules } from "@lane-pilot/run-insights";
 import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, searchMemoryRecords, setAttemptDirtBefore, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../database";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../../jev-reasoning";
 import { spawnWithSeam } from "../../spawn-seam";
@@ -50,8 +51,13 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       let dirtBefore=sourcePreflight.snapshots;
       const memorySettings=parseMemorySettings(settings);
       const taskMemoryQuery=`${input.task.title}\n${input.task.objective}\n${input.task.acceptance.join(" ")}`;
-      const relevantMemory=memorySettings.enabled&&memorySettings.inject
-        ? memoryContext(searchMemoryRecords(db,input.projectId,taskMemoryQuery,100,memorySettings.searchEngine,"subagent",memorySettings.personalBot),taskMemoryQuery,memorySettings.contextBudget)
+      const memoryOn=memorySettings.enabled&&memorySettings.inject;
+      // Confirmed rules reach every writer; retrieval skips their records so they are not repeated as memory.
+      const rules=memoryOn?acceptedRules(db,input.projectId):[];
+      const ruleMemoryIds=new Set(rules.map((rule)=>rule.memoryId));
+      const rulesText=rules.map((rule)=>`- ${rule.rule}`).join("\n");
+      const relevantMemory=memoryOn
+        ? memoryContext(searchMemoryRecords(db,input.projectId,taskMemoryQuery,100,memorySettings.searchEngine,"subagent",memorySettings.personalBot).filter((record)=>!ruleMemoryIds.has(record.id)),taskMemoryQuery,memorySettings.contextBudget)
         : {text:"",records:[],estimatedTokens:0};
       const writerProviderId = input.emergency?.providerId ?? (typeof settings["writer.provider"] === "string"
         ? settings["writer.provider"] as string : input.config.writerProviderId);
@@ -278,6 +284,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           ...existingTrace,
           dispatchContext:{
             memoryText:relevantMemory.text,
+            rulesText,
             executionPacket,
             executionPacketSha256,
             pmReadContext:input.pmReadContext ?? "",
@@ -298,7 +305,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         ...execution,
         prompt: writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
           ? `Fallback reason: ${input.emergency.reason}. Primary provider/model: ${typeof settings["writer.provider"] === "string" ? settings["writer.provider"] : input.config.writerProviderId}/${typeof settings["writer.model"] === "string" ? settings["writer.model"] : input.config.writerModel}.`
-          : undefined,writerAgent,input.pmReadContext ?? ""),
+          : undefined,writerAgent,input.pmReadContext ?? "",rulesText),
         environment,
         pluginMetadata:{
           role:input.emergency ? "emergency-writer" : "writer",

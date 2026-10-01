@@ -63,6 +63,7 @@ import { chromeIsCompact, contentStacksControls, PanelLayoutContext, useObserved
 import { userVisibleProjects } from "../project-scope";
 import { CONTROL_H } from "./control-row";
 import { Disclosure } from "./disclosure";
+import { RuleProposals } from "./rule-proposals";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
 
@@ -1574,7 +1575,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </section>
             </SettingsGroup> : null}
 
-            {cardVisible("memoryPicker", "docsPicker", "onboardingPicker", "largeFileRead", "groupDocs", "groupProjectLife") ? <SettingsGroup title={t("sectionMemoryDocs")} testId="settings-memory-docs">
+            {cardVisible("memoryPicker", "rulesTitle", "docsPicker", "onboardingPicker", "largeFileRead", "groupDocs", "groupProjectLife") ? <SettingsGroup title={t("sectionMemoryDocs")} testId="settings-memory-docs">
               {cardVisible("memoryPicker", "memoryPickerHelp", "settingMemoryEnabled") ? <section className="space-y-2" data-testid="memory-picker">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1">
@@ -1596,6 +1597,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   })}
                 </Disclosure>
               </section> : null}
+              {activeScope !== "globals" && projectId && cardVisible("rulesTitle", "rulesHelp") ? <RuleProposals projectId={projectId} /> : null}
               {cardVisible("docsPicker", "docsPickerHelp", "docsMaintain", "groupDocs") ? <section className="space-y-2" data-testid="docs-picker">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1">
