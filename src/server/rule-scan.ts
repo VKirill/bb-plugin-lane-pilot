@@ -1,13 +1,13 @@
 import {
-  codeVerdict, listRuleProposals, saveTriage, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
+  codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import { loadProjectSettings, loadPrototypeConfig } from "../database";
+import { getRun, getRunSettingsScopes, loadProjectSettings, loadPrototypeConfig } from "../database";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../owns-paths";
 import { resolveStageWriterSelection } from "../stage-writer-selection";
 import { bbServiceTier, writerExecutionSelection } from "../jev-reasoning";
-import { refreshRuleProposals } from "./insights";
+import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
 import { fullAccessSpawn } from "./pm-spawn";
 import { stringAt } from "./values";
 import { outputText } from "./writer-task";
@@ -19,16 +19,21 @@ export const RULE_SCAN_WINDOW_MS = 30 * 24 * 3_600_000;
 const TRIAGE_CONCURRENCY = 4;
 const MAX_GROUPS_PER_SCAN = 4;
 const ANALYZER_LIMIT_MS = 20 * 60_000;
+/** Rewrites of rules on trial one scan may spend the analyzer on. */
+const MAX_REVISIONS_PER_SCAN = 2;
 
 export type AnalyzerSelection = { providerId: string; model: string; reasoningLevel: string; serviceTier: "default" | "fast" | null };
 export type RuleScanState = {
   state: "idle" | "running" | "done" | "failed";
   startedAt: number | null; finishedAt: number | null;
   triaged: number; groups: number; proposals: number; reason: string | null;
+  /** What the trial did in this scan: rules adopted, confirmed, rewritten, retired. */
+  adopted?: number; confirmed?: number; revised?: number; retired?: number;
 };
 
 const ANALYZER_KEY = (projectId: string) => `rules-analyzer:${projectId}`;
 const SCAN_KEY = (projectId: string) => `rules-scan:${projectId}`;
+const LOCALE_KEY = (projectId: string) => `rules-locale:${projectId}`;
 const IDLE: RuleScanState = { state: "idle", startedAt: null, finishedAt: null, triaged: 0, groups: 0, proposals: 0, reason: null };
 
 /** The analyzer's answer: rules with the task ids they stand on, and tasks it found were not the writer's fault. */
@@ -50,10 +55,11 @@ export function parseAnalyzerOutput(text: string): { rules: Array<{ rule: string
   return { rules, notWriter };
 }
 
-export function analyzerPrompt(input: { category: string; locale: "ru" | "en"; group: unknown[]; others: unknown[]; rules: string[] }): string {
+export function analyzerPrompt(input: { category: string; locale: "ru" | "en"; group: unknown[]; others: unknown[]; rules: string[]; scopeLabel?: string }): string {
   return [
     "You are the Lane Pilot rules analyzer. Read-only: do not edit files, do not run commands, answer from the evidence below.",
     `System One sorted these failed writer attempts as the writer's fault, category «${input.category}», each from a different task.`,
+    `The rule will apply to ${input.scopeLabel ? `the section «${input.scopeLabel}» and everything below it` : "the whole project"}; write it for that place, not for another part of the project.`,
     "Find what the writers did wrong in common and write at most three rules that would have prevented it. A rule is one imperative sentence a writer can follow before it finishes a task, specific to this project, not generic advice. Cite only task ids from the evidence.",
     "Then check the other recent writer failures: list in also_seen the task ids where the same mistake happened.",
     "If a failure is not really the writer's fault (Lane Pilot machinery, the environment, a broken task contract), put it in not_writer instead of making a rule from it.",
@@ -63,6 +69,18 @@ export function analyzerPrompt(input: { category: string; locale: "ru" | "en"; g
     '{"rules":[{"rule":"...","evidence":["taskId"],"also_seen":["taskId"]}],"not_writer":[{"taskId":"...","why":"..."}]}',
     "EVIDENCE:", JSON.stringify(input.group),
     "OTHER RECENT WRITER FAILURES:", JSON.stringify(input.others),
+  ].join("\n\n");
+}
+
+export function rewritePrompt(input: { rule: string; locale: "ru" | "en"; evidence: unknown[] }): string {
+  return [
+    "You are the Lane Pilot rules analyzer. Read-only: do not edit files, do not run commands, answer from the evidence below.",
+    "This project rule was given to the writers below, and they still made the mistake it is about:",
+    input.rule,
+    "Rewrite it as one imperative sentence that would have stopped these writers: name the concrete check or action, not the outcome. Keep it specific to this project.",
+    `Write the rule in ${input.locale === "ru" ? "Russian" : "English"}.`,
+    'Answer with JSON only: {"rules":[{"rule":"...","evidence":["taskId"]}]}',
+    "EVIDENCE:", JSON.stringify(input.evidence),
   ].join("\n\n");
 }
 
@@ -96,6 +114,34 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     return next;
   }
 
+  /**
+   * Where a run sits in the project's sections, outermost first. Runs that did not record it (older and CLI runs)
+   * are placed by their writer folder, the way their settings are.
+   */
+  async function chainForRun(runId: string, cache = new Map<string, string[]>()): Promise<string[]> {
+    const stored = getRunSettingsScopes(db, runId);
+    if (stored.length > 0) return stored;
+    const run = getRun(db, runId);
+    if (!run?.writer_workspace_path) return [];
+    const key = `${run.project_id}\u0000${run.writer_workspace_path}`;
+    if (!cache.has(key)) cache.set(key, await ctx.scopesForWorkspace(run.project_id, run.writer_workspace_path).catch(() => []));
+    return cache.get(key)!;
+  }
+
+  async function projectChains(projectId: string): Promise<Map<string, string[]>> {
+    const cache = new Map<string, string[]>();
+    const chains = new Map<string, string[]>();
+    for (const row of db.prepare("SELECT id FROM lane_pilot_run WHERE project_id=?").all(projectId) as Array<{ id: string }>) chains.set(row.id, await chainForRun(row.id, cache));
+    return chains;
+  }
+
+  /** «Клиенты / rich-tent.ru» for a section chain; empty for the whole project. */
+  async function scopeLabel(projectId: string, scope: readonly string[], sections?: Array<{ id: string; name: string }>): Promise<string> {
+    if (scope.length === 0) return "";
+    const rows = sections ?? await ctx.listProjectSections(projectId);
+    return scope.map((binding) => rows.find((row) => `section:${row.id}` === binding)?.name ?? binding.replace(/^section:/, "")).join(" / ");
+  }
+
   /** A path the task owns and does not forbid itself; rejecting one of these is the gate's fault. */
   function splitOwnership(attempt: FailedAttempt) {
     let contract: { owns_paths?: unknown; never_touch?: unknown } = {};
@@ -120,8 +166,8 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     if (pending.length === 0) return { state: "ok", triaged: 0 };
     const place = await projectPlace(projectId);
     if (!place) return { state: "no_host", triaged: 0 };
-    const rules = listRuleProposals(db, projectId).filter((row) => row.state === "accepted" || row.state === "rejected").slice(0, 8);
-    const questions = triageQuestions(rules);
+    const known = [...listRuleProposals(db, projectId, { state: "accepted", limit: 50 }), ...listRuleProposals(db, projectId, { state: "rejected", limit: 50 })];
+    const chains = await projectChains(projectId);
     let triaged = 0;
     let unavailable: string | null = null;
     const queue = [...pending];
@@ -134,6 +180,9 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
           triaged++;
           continue;
         }
+        // Only rules of the attempt's own sections can be the mistake it repeats.
+        const rules = known.filter((rule) => scopeApplies(rule.scope, chains.get(attempt.runId) ?? [])).slice(0, 8);
+        const questions = triageQuestions(rules);
         const judged = await host.call("councilJudge", {
           requestedHostId: place.hostId, state: JSON.stringify(triageState(attempt, split)).slice(0, 60_000), questions,
         }, { hostId: place.hostId, timeoutMs: 10_000 }).catch((cause: unknown) => ({ status: "error" as const, answers: {}, confidence: {}, reason: cause instanceof Error ? cause.message : String(cause) }));
@@ -176,40 +225,41 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     };
   }
 
-  async function analyzeGroup(projectId: string, group: WriterGroup, others: WriterGroup["failures"], place: { hostId: string; path: string }, analyzer: AnalyzerSelection, locale: "ru" | "en"): Promise<number> {
-    const evidence = await Promise.all(group.failures.slice(0, 8).map(evidenceFor));
-    const prompt = analyzerPrompt({
-      category: group.category, locale, group: evidence,
-      others: others.filter((row) => !group.failures.some((own) => own.taskId === row.taskId)).slice(0, 40).map((row) => ({ taskId: row.taskId, failureReason: row.reason.slice(0, 300) })),
-      rules: listRuleProposals(db, projectId).filter((row) => row.state === "accepted").map((row) => row.rule),
-    });
+  async function runAnalyzer(projectId: string, title: string, prompt: string, place: { hostId: string; path: string }, analyzer: AnalyzerSelection, metadata: Record<string, unknown>): Promise<string> {
     const spawned = await fullAccessSpawn(bb, {
-      projectId, visibility: "hidden", title: `Lane Pilot rules: ${group.category}`,
+      projectId, visibility: "hidden", title,
       ...writerExecutionSelection(analyzer.providerId, analyzer.model, analyzer.reasoningLevel, analyzer.serviceTier ? bbServiceTier(analyzer.serviceTier === "fast" ? "fast" : "standard") : null),
       prompt,
       environment: { type: "host", hostId: place.hostId, workspace: { type: "unmanaged", path: place.path } },
-      pluginMetadata: { role: "rules-analyzer", stageId: "rules-analyzer", category: group.category },
+      pluginMetadata: { role: "rules-analyzer", stageId: "rules-analyzer", ...metadata },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("rules_analyzer_thread_id_missing");
     const deadline = Date.now() + ANALYZER_LIMIT_MS;
-    let text: string | null = null;
     while (Date.now() < deadline && !ctx.isDisposed()) {
       const observed = await observeStageChild(bb, threadId, 30_000);
-      if (observed.kind === "completed") { text = outputText(await bb.sdk.threads.output({ threadId })); break; }
+      if (observed.kind === "completed") return outputText(await bb.sdk.threads.output({ threadId }));
       if (observed.kind === "product_failure") throw new Error(`rules analyzer failed: ${observed.via}:${observed.detail}`);
     }
-    if (text === null) {
-      await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-      throw new Error("rules analyzer did not finish in time");
-    }
+    await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+    throw new Error("rules analyzer did not finish in time");
+  }
+
+  async function analyzeGroup(projectId: string, group: WriterGroup, others: WriterGroup["failures"], place: { hostId: string; path: string }, analyzer: AnalyzerSelection, locale: "ru" | "en"): Promise<string[]> {
+    const evidence = await Promise.all(group.failures.slice(0, 8).map(evidenceFor));
+    const prompt = analyzerPrompt({
+      category: group.category, locale, group: evidence, scopeLabel: await scopeLabel(projectId, group.scope),
+      others: others.filter((row) => !group.failures.some((own) => own.taskId === row.taskId)).slice(0, 40).map((row) => ({ taskId: row.taskId, failureReason: row.reason.slice(0, 300) })),
+      rules: listRuleProposals(db, projectId).filter((row) => row.state === "accepted" && scopeApplies(row.scope, group.scope)).map((row) => row.rule),
+    });
+    const text = await runAnalyzer(projectId, `Lane Pilot rules: ${group.category}`, prompt, place, analyzer, { category: group.category });
     const parsed = parseAnalyzerOutput(text);
     const known = new Map([...group.failures, ...others].map((row) => [row.taskId, row]));
     for (const taskId of parsed.notWriter) {
       const row = known.get(taskId);
       if (row) db.prepare("UPDATE lane_pilot_failure_triage SET detail='model:not_writer' WHERE project_id=? AND attempt_id=?").run(projectId, row.attemptId);
     }
-    let stored = 0;
+    const stored: string[] = [];
     for (const rule of parsed.rules) {
       const cited = [...new Set([...rule.evidence, ...rule.alsoSeen])].flatMap((taskId) => {
         const row = known.get(taskId);
@@ -217,16 +267,48 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
       });
       if (cited.length === 0) continue;
       const times = cited.map((ref) => known.get(ref.taskId)!.failedAt);
-      upsertModelProposal(db, projectId, { category: group.category, rule: rule.rule, evidence: cited, firstSeenAt: Math.min(...times), lastSeenAt: Math.max(...times) });
-      stored++;
+      stored.push(upsertModelProposal(db, projectId, { category: group.category, rule: rule.rule, evidence: cited, firstSeenAt: Math.min(...times), lastSeenAt: Math.max(...times), scope: group.scope }).id);
     }
     return stored;
+  }
+
+  /**
+   * The trial: every rule the system adopted is judged on what happened to the writers who were given it.
+   * Owner decisions are not touched. A rewrite goes through the analyzer with the failures the rule missed.
+   */
+  async function evaluateRules(projectId: string, place: { hostId: string; path: string } | null, analyzer: AnalyzerSelection | null, locale: "ru" | "en", now = Date.now()): Promise<{ confirmed: number; revised: number; retired: number }> {
+    const result = { confirmed: 0, revised: 0, retired: 0 };
+    let rewrites = 0;
+    for (const rule of listRuleProposals(db, projectId, { state: "accepted", limit: 500 }).filter((row) => row.decidedBy === "auto")) {
+      if (ctx.isDisposed()) break;
+      const since = rule.revisionStartedAt ?? rule.decidedAt ?? now;
+      const stats = ruleTrialStats(db, projectId, rule.id, since);
+      const decision = decideRuleTrial(rule, stats, now);
+      if (decision.action === "confirm") {
+        setRuleTrial(db, projectId, rule.id, { trialState: "confirmed" });
+        logRuleEvent(db, projectId, rule.id, "confirmed", `given to ${stats.applied} attempts, ${stats.appliedAccepted} accepted, no recurrence`, now);
+        result.confirmed++;
+      } else if (decision.action === "retire") {
+        retireAdoptedRule(db, projectId, rule.id, decision.reason === "unused" ? "unused" : `kept_recurring after ${rule.revision} wordings`, now);
+        result.retired++;
+      } else if (decision.action === "revise" && place && analyzer && rewrites < MAX_REVISIONS_PER_SCAN) {
+        rewrites++;
+        const failures = stats.recurrences.map((row) => ({ ...row, runId: (db.prepare("SELECT run_id FROM lane_pilot_attempt WHERE id=?").get(row.attemptId) as { run_id?: string } | undefined)?.run_id ?? "",
+          threadId: (db.prepare("SELECT thread_id FROM lane_pilot_attempt WHERE id=?").get(row.attemptId) as { thread_id?: string | null } | undefined)?.thread_id ?? null, failedAt: now }));
+        const evidence = await Promise.all(failures.slice(0, 6).map(evidenceFor));
+        const text = await runAnalyzer(projectId, "Lane Pilot rules: rewrite", rewritePrompt({ rule: rule.rule, locale, evidence }), place, analyzer, { ruleId: rule.id });
+        const rewritten = parseAnalyzerOutput(text).rules[0]?.rule;
+        if (rewritten && rewordAdoptedRule(db, projectId, rule.id, rewritten, `${stats.recurrences.length} writers given the rule repeated the mistake`, now)) result.revised++;
+      }
+    }
+    return result;
   }
 
   /** The «Rescan» button: triage the last 30 days, then let the analyzer model write rules for each big enough writer group. */
   async function startScan(projectId: string, locale: "ru" | "en"): Promise<{ started: boolean; scan: RuleScanState }> {
     if (running.has(projectId)) return { started: false, scan: await scanState(projectId) };
     running.add(projectId);
+    await bb.storage.kv.set(LOCALE_KEY(projectId), locale);
     const scan = await setScan(projectId, { state: "running", startedAt: Date.now(), finishedAt: null, triaged: 0, groups: 0, proposals: 0, reason: null });
     void (async () => {
       try {
@@ -245,23 +327,32 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
         db.prepare("DELETE FROM lane_pilot_rule_proposal WHERE project_id=? AND author='sweep' AND state='proposed'").run(projectId);
         await setScan(projectId, { triaged: triage.triaged });
         const since = Date.now() - RULE_SCAN_WINDOW_MS;
-        const groups = writerGroups(db, projectId, since).slice(0, MAX_GROUPS_PER_SCAN);
+        const chains = await projectChains(projectId);
+        const groups = writerGroups(db, projectId, since, { chains }).slice(0, MAX_GROUPS_PER_SCAN);
         await setScan(projectId, { groups: groups.length });
-        if (groups.length === 0) { await setScan(projectId, { state: "done", finishedAt: Date.now() }); return; }
         const place = await projectPlace(projectId);
         const analyzer = await analyzerFor(projectId);
-        if (!place || !analyzer) {
+        if (groups.length > 0 && (!place || !analyzer)) {
           await setScan(projectId, { state: "failed", finishedAt: Date.now(), reason: !place ? "no_host" : "no_analyzer_model" });
           return;
         }
-        const others = writerGroups(db, projectId, since, { minTasks: 1 }).flatMap((group) => group.failures);
-        let proposals = 0;
+        const others = writerGroups(db, projectId, since, { minTasks: 1, chains }).flatMap((group) => group.failures);
+        let proposals = 0, adopted = 0;
         for (const group of groups) {
           if (ctx.isDisposed()) return;
-          proposals += await analyzeGroup(projectId, group, others, place, analyzer, locale);
-          await setScan(projectId, { proposals });
+          const written = await analyzeGroup(projectId, group, others, place!, analyzer!, locale);
+          proposals += written.length;
+          // Rules adopt themselves: on trial right away, judged by what happens to the writers who get them.
+          for (const id of written) if (getRuleProposal(db, projectId, id)?.state === "proposed" && adoptRuleProposal(db, projectId, id)) adopted++;
+          await setScan(projectId, { proposals, adopted });
         }
-        await setScan(projectId, { state: "done", finishedAt: Date.now(), proposals });
+        // Proposals the analyzer wrote in earlier scans (or before rules adopted themselves) join the trial too.
+        for (const row of listRuleProposals(db, projectId, { state: "proposed", limit: 100 }).filter((item) => item.author === "model")) {
+          if (adoptRuleProposal(db, projectId, row.id)) adopted++;
+        }
+        await setScan(projectId, { adopted });
+        const trial = await evaluateRules(projectId, place, analyzer, locale);
+        await setScan(projectId, { state: "done", finishedAt: Date.now(), proposals, adopted, ...trial });
       } catch (cause) {
         await setScan(projectId, { state: "failed", finishedAt: Date.now(), reason: cause instanceof Error ? cause.message : String(cause) }).catch(() => undefined);
       } finally {
@@ -271,10 +362,25 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     return { started: true, scan };
   }
 
-  function summary(projectId: string): TriageSummary & { pendingGroups: number } {
+  async function summary(projectId: string): Promise<TriageSummary & { pendingGroups: number }> {
     const since = Date.now() - RULE_SCAN_WINDOW_MS;
-    return { ...triageSummary(db, projectId, since), pendingGroups: writerGroups(db, projectId, since).length };
+    return { ...triageSummary(db, projectId, since), pendingGroups: writerGroups(db, projectId, since, { chains: await projectChains(projectId) }).length };
   }
+
+  /** Every night each project with runs in the last 30 days rescans and judges its rules on trial, without anyone pressing a button. */
+  bb.background.schedule("rules-nightly", "30 3 * * *", async () => {
+    if (ctx.isDisposed()) return;
+    const since = Date.now() - RULE_SCAN_WINDOW_MS;
+    const projects = (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id);
+    for (const projectId of projects) {
+      if (ctx.isDisposed()) return;
+      const stored = await bb.storage.kv.get<string>(LOCALE_KEY(projectId));
+      const preferred = await bb.storage.kv.get<string>("preferences:locale");
+      const locale = stored === "ru" || stored === "en" ? stored : preferred === "ru" ? "ru" : "en";
+      await startScan(projectId, locale);
+      for (let i = 0; i < 180 && running.has(projectId) && !ctx.isDisposed(); i++) await new Promise((resolve) => setTimeout(resolve, 10_000));
+    }
+  });
 
   /** Every 15 minutes new failures of recently active projects get their System One answers; no model runs. */
   bb.background.schedule("rules-triage", "*/15 * * * *", async () => {
@@ -288,7 +394,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     }
   });
 
-  return { analyzerFor, saveAnalyzer, scanState, startScan, summary, triageNew };
+  return { analyzerFor, chainForRun, evaluateRules, saveAnalyzer, scanLabel: scopeLabel, scanState, startScan, summary, triageNew };
 }
 
 export type RuleScanApi = ReturnType<typeof createRuleScan>;

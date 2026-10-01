@@ -1,5 +1,5 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import { getRuleProposal, listRuleProposals, routingHint, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
+import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStats, routingHint, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
 import { rpcContract } from "../../contracts";
 import { loadProjectSettings } from "../../database";
 import { configuredSetting } from "../context";
@@ -9,8 +9,9 @@ import type { Services } from "../services";
 
 const RISKS = ["low", "medium", "high", "critical"] as const;
 
-const ruleView = ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt }: RuleProposal) =>
-  ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt });
+const ruleView = ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, scope }: RuleProposal,
+  trial: { applied: number; appliedAccepted: number; recurrences: number } | null = null, scopeLabel = "") =>
+  ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, trial, scope, scopeLabel });
 
 /** What the settings screen shows next to the writer picker: first-try acceptance per risk against the configured pair. */
 export function insightsRpc(ctx: ServerCore, services: Services) {
@@ -27,14 +28,23 @@ export function insightsRpc(ctx: ServerCore, services: Services) {
     },
     /** Repeated lessons the owner may turn into rules, and the rules already confirmed. Recounted on every open. */
     list_rule_proposals: async ({ projectId }) => {
+      const sections = await ctx.listProjectSections(projectId);
       let memory = { enabled: false, inject: false };
       try {
         const settings = memorySettingsFor(db, projectId);
         memory = { enabled: settings.enabled, inject: settings.inject };
       } catch { /* invalid memory settings: rules are listed, injection is reported off */ }
       return {
-        proposals: listRuleProposals(db, projectId).map(ruleView), memory,
-        triage: services.ruleScan.summary(projectId),
+        // Rules in force show how their current wording fares: attempts given it, accepted, mistakes repeated anyway.
+        proposals: await Promise.all(listRuleProposals(db, projectId).map(async (row) => {
+          const label = await services.ruleScan.scanLabel(projectId, row.scope, sections);
+          if (row.state !== "accepted") return ruleView(row, null, label);
+          const stats = ruleTrialStats(db, projectId, row.id, row.revisionStartedAt ?? row.decidedAt ?? 0);
+          return ruleView(row, { applied: stats.applied, appliedAccepted: stats.appliedAccepted, recurrences: stats.recurrences.length }, label);
+        })),
+        memory,
+        events: listRuleEvents(db, projectId, 30),
+        triage: await services.ruleScan.summary(projectId),
         scan: await services.ruleScan.scanState(projectId),
         analyzer: await services.ruleScan.analyzerFor(projectId),
       };

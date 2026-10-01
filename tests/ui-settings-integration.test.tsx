@@ -90,7 +90,8 @@ const cursorGrokModel = {
   supportedReasoningEfforts:["high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })),
 };
 
-type RuleRow = { id:string; rule:string; author:"sweep"|"pm"|"owner"|"model"; state:"proposed"|"accepted"|"rejected"|"revoked"; occurrences:number; taskCount:number; examples:string[]; evidence:Array<{runId:string;taskId:string;attemptId:string;reason:string}>; lastSeenAt:number; decidedAt:number|null };
+type RuleRow = { id:string; rule:string; author:"sweep"|"pm"|"owner"|"model"; state:"proposed"|"accepted"|"rejected"|"revoked"; occurrences:number; taskCount:number; examples:string[]; evidence:Array<{runId:string;taskId:string;attemptId:string;reason:string}>; lastSeenAt:number; decidedAt:number|null;
+  decidedBy?:"owner"|"auto"|null; trialState?:"trial"|"confirmed"|null; revision?:number; retiredReason?:string|null; trial?:{applied:number;appliedAccepted:number;recurrences:number}|null; scope?:string[]; scopeLabel?:string };
 
 async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:string;model:string;reasoningLevel:string})=>Promise<void>; rules?:RuleRow[]; ruleCalls?:Array<Record<string, unknown>> }) {
   const { bb, harness } = createFakePluginHost({
@@ -164,7 +165,8 @@ async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:s
       list_rule_proposals:() => ({ proposals:options?.rules ?? [], memory:{ enabled:true, inject:true },
         triage:{ total:5, byOrigin:{ writer:3, orchestrator:2 }, errors:0, lastTriagedAt:1, pendingGroups:0 },
         scan:{ state:"done", startedAt:1, finishedAt:2, triaged:5, groups:1, proposals:1, reason:null },
-        analyzer:{ providerId:"codex", model:"gpt-6-luna", reasoningLevel:"high", serviceTier:null } }),
+        analyzer:{ providerId:"codex", model:"gpt-6-luna", reasoningLevel:"high", serviceTier:null },
+        events:[{ ruleId:"rule_a", action:"adopted", detail:null, at:1 }] }),
       start_rule_scan:(input) => { options?.ruleCalls?.push({ scan:input }); return { started:true, scan:{ state:"running", startedAt:3, finishedAt:null, triaged:0, groups:0, proposals:0, reason:null } }; },
       decide_rule_proposal:(input) => {
         const call = input as { id:string; action:"accept"|"reject"|"revoke"; rule?:string };

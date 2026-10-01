@@ -86,7 +86,7 @@ describe("rule proposals", () => {
     expect(reviseRuleProposal(db, "p", id, "late edit", "pm")).toBe(false);
 
     expect(listRuleProposals(db, "p").map((row) => row.state)).toEqual(["proposed", "accepted"]);
-    expect(acceptedRules(db, "p")).toEqual([{ id, rule: "No network in verification.", memoryId: "mem-1" }]);
+    expect(acceptedRules(db, "p")).toEqual([{ id, rule: "No network in verification.", memoryId: "mem-1", scope: [] }]);
 
     db.prepare("DELETE FROM lane_pilot_memory WHERE id='mem-1'").run();
     expect(acceptedRules(db, "p")).toEqual([]);
@@ -103,5 +103,59 @@ describe("rule relevance", () => {
     expect(picked.map((row) => row.rule)).toEqual(["Run every verification command.", "Unanswered", "Unsure no"]);
     const state = ruleRelevanceState({ title: "Release", invariants: ["rollback-safe"], interfaces: ["scripts/deploy.sh"], verification: [{ command: "npm test" }] });
     expect(state.task).toMatchObject({ invariants: ["rollback-safe"], interfaces: ["scripts/deploy.sh"], verification_commands: ["npm test"] });
+  });
+});
+
+describe("rule scope and trial", () => {
+  it("gives a section's rule only to runs in that section or below it", async () => {
+    const { scopeApplies } = await import("../src/index");
+    expect(scopeApplies([], ["section:a"])).toBe(true);
+    expect(scopeApplies(["section:a"], ["section:a", "section:b"])).toBe(true);
+    expect(scopeApplies(["section:a", "section:b"], ["section:a"])).toBe(false);
+    expect(scopeApplies(["section:a", "section:b"], ["section:a", "section:c"])).toBe(false);
+    const db = openDb();
+    db.prepare("INSERT INTO lane_pilot_memory(id,project_id) VALUES('m1','p'),('m2','p')").run();
+    db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json)
+      VALUES ('r-tent','p','a','tent rule','model','accepted',3,3,'[]','m1',1,1,1,1,'["section:clients","section:tent"]'), ('r-all','p','b','project rule','model','accepted',3,3,'[]','m2',1,1,1,2,'[]')`).run();
+    expect(acceptedRules(db, "p", ["section:clients", "section:aura"]).map((row) => row.id)).toEqual(["r-all"]);
+    expect(acceptedRules(db, "p", ["section:clients", "section:tent"]).map((row) => row.id)).toEqual(["r-tent", "r-all"]);
+  });
+
+  it("confirms a rule its writers stopped breaking, rewrites one they keep breaking, then retires it; unused rules leave", async () => {
+    const { decideRuleTrial, RULE_TRIAL } = await import("../src/index");
+    const day = 86_400_000, now = 100 * day;
+    const rule = { trialState: "trial" as const, revision: 1, revisionStartedAt: now - day, decidedAt: now - day };
+    const stats = (applied: number, recurrences: number, lastAppliedAt: number | null = now) =>
+      ({ applied, appliedAccepted: applied - recurrences, recurrences: Array.from({ length: recurrences }, (_, i) => ({ attemptId: `a${i}`, taskId: `t${i}`, reason: "x" })), lastAppliedAt });
+    expect(decideRuleTrial(rule, stats(4, 0), now)).toEqual({ action: "keep" });
+    expect(decideRuleTrial(rule, stats(RULE_TRIAL.confirmAfterApplied, 0), now)).toEqual({ action: "confirm" });
+    expect(decideRuleTrial(rule, stats(6, 1), now)).toEqual({ action: "keep" });
+    expect(decideRuleTrial(rule, stats(6, 2), now)).toEqual({ action: "revise" });
+    expect(decideRuleTrial({ ...rule, revision: RULE_TRIAL.maxRevisions }, stats(6, 2), now)).toEqual({ action: "retire", reason: "kept_recurring" });
+    expect(decideRuleTrial({ ...rule, trialState: "confirmed" }, stats(9, 0), now)).toEqual({ action: "keep" });
+    expect(decideRuleTrial(rule, stats(0, 0, null), now + RULE_TRIAL.unusedAfterMs)).toEqual({ action: "retire", reason: "unused" });
+  });
+
+  it("counts attempts given a rule and the mistakes they repeated from what is recorded, once each", async () => {
+    const { ruleTrialStats } = await import("../src/index");
+    const { triageMigrations } = await import("../src/triage");
+    const db = openDb();
+    for (const statement of triageMigrations) db.exec(statement);
+    db.exec(`CREATE TABLE lane_pilot_attempt_reasoning (attempt_id TEXT PRIMARY KEY, trace_json TEXT NOT NULL);
+      CREATE TABLE lane_pilot_attempt2 (x INTEGER)`);
+    db.exec("ALTER TABLE lane_pilot_attempt ADD COLUMN created_at INTEGER");
+    db.prepare("INSERT INTO lane_pilot_run(id,project_id) VALUES('r1','p')").run();
+    const attempt = (id: string, state: string, picked: string[], at: number) => {
+      db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,updated_at,created_at) VALUES(?,?,?,?,?,?,?)").run(id, "r1", `t-${id}`, state, null, at, at);
+      db.prepare("INSERT INTO lane_pilot_attempt_reasoning VALUES(?,?)").run(id, JSON.stringify({ dispatchContext: { rulesPicked: { total: 2, picked } } }));
+    };
+    attempt("a1", "accepted", ["rule-x"], 10); attempt("a2", "validation_failed", ["rule-x"], 20); attempt("a3", "validation_failed", [], 30); attempt("a0", "accepted", ["rule-x"], 1);
+    const triage = (id: string, rule: string | null) => db.prepare(`INSERT INTO lane_pilot_failure_triage (project_id,attempt_id,run_id,task_id,reason_sha256,reason,origin,same_rule_id,status,failed_at,triaged_at)
+      VALUES ('p',?,'r1',?,'h','missing',?, ?, 'ok', 25, 26)`).run(id, `t-${id}`, "writer", rule);
+    triage("a2", "rule-x"); triage("a3", "rule-x");
+    const stats = ruleTrialStats(db, "p", "rule-x", 5);
+    expect(stats).toMatchObject({ applied: 2, appliedAccepted: 1, lastAppliedAt: 20 });
+    // a3 repeated the mistake but was never given the rule: a miss of the picker, not of the rule.
+    expect(stats.recurrences.map((row) => row.attemptId)).toEqual(["a2"]);
   });
 });

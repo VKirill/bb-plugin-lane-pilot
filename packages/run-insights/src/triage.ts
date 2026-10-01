@@ -188,32 +188,56 @@ export function triageSummary(db: TriageDatabase, projectId: string, since: numb
 }
 
 export type WriterFailure = { attemptId: string; runId: string; taskId: string; reason: string; threadId: string | null; failedAt: number };
-export type WriterGroup = { category: string; taskCount: number; failures: WriterFailure[] };
+/** `scope` is the section chain the group's rule belongs to, outermost first; empty for the whole project. */
+export type WriterGroup = { category: string; taskCount: number; failures: WriterFailure[]; scope: string[] };
 
 /**
  * Writer failures grouped by meaning: one category, at least `minTasks` tasks, none already covered by an
  * existing rule (Jev matched it) or cited as evidence of a proposal. One failure per task, the newest.
  */
-export function writerGroups(db: TriageDatabase, projectId: string, since: number, options: { minTasks?: number; minConfidence?: number } = {}): WriterGroup[] {
+export function writerGroups(db: TriageDatabase, projectId: string, since: number, options: { minTasks?: number; minConfidence?: number; chains?: ReadonlyMap<string, readonly string[]> } = {}): WriterGroup[] {
   const minTasks = options.minTasks ?? 3;
-  const rows = db.prepare(`SELECT f.attempt_id AS attemptId, f.run_id AS runId, f.task_id AS taskId, f.reason, f.category, f.failed_at AS failedAt, a.thread_id AS threadId
-    FROM lane_pilot_failure_triage f LEFT JOIN lane_pilot_attempt a ON a.id=f.attempt_id
+  const rows = db.prepare(`SELECT f.attempt_id AS attemptId, f.run_id AS runId, f.task_id AS taskId, f.reason, f.category, f.failed_at AS failedAt, a.thread_id AS threadId,
+      r.settings_scopes_json AS scopesJson
+    FROM lane_pilot_failure_triage f LEFT JOIN lane_pilot_attempt a ON a.id=f.attempt_id LEFT JOIN lane_pilot_run r ON r.id=f.run_id
     WHERE f.project_id=? AND f.failed_at>=? AND f.status='ok' AND f.origin='writer' AND f.origin_confidence>=? AND f.same_rule_id IS NULL
       AND (f.detail IS NULL OR f.detail<>'model:not_writer')
-    ORDER BY f.failed_at DESC`).all(projectId, since, options.minConfidence ?? 0.5) as Array<WriterFailure & { category: string | null }>;
+    ORDER BY f.failed_at DESC`).all(projectId, since, options.minConfidence ?? 0.5) as Array<WriterFailure & { category: string | null; scopesJson: string | null }>;
   const cited = new Set<string>();
   for (const row of db.prepare("SELECT evidence_json FROM lane_pilot_rule_proposal WHERE project_id=?").all(projectId) as Array<{ evidence_json: string }>) {
     try { for (const ref of JSON.parse(row.evidence_json) as Array<{ taskId?: unknown }>) if (typeof ref.taskId === "string") cited.add(ref.taskId); } catch { /* no evidence */ }
   }
-  const groups = new Map<string, Map<string, WriterFailure>>();
+  const byCategory = new Map<string, Map<string, { failure: WriterFailure; chain: string[] }>>();
   for (const row of rows) {
     if (cited.has(row.taskId)) continue;
     const category = row.category ?? "other";
-    const byTask = groups.get(category) ?? new Map<string, WriterFailure>();
-    if (!byTask.has(row.taskId)) byTask.set(row.taskId, { attemptId: row.attemptId, runId: row.runId, taskId: row.taskId, reason: row.reason, threadId: row.threadId, failedAt: row.failedAt });
-    groups.set(category, byTask);
+    const byTask = byCategory.get(category) ?? new Map<string, { failure: WriterFailure; chain: string[] }>();
+    if (!byTask.has(row.taskId)) {
+      const stored = options.chains?.get(row.runId);
+      let chain: string[] = stored ? [...stored] : [];
+      if (!stored) { try { const parsed = JSON.parse(row.scopesJson ?? "[]") as unknown; if (Array.isArray(parsed)) chain = parsed.filter((item): item is string => typeof item === "string"); } catch { /* project root */ } }
+      byTask.set(row.taskId, { failure: { attemptId: row.attemptId, runId: row.runId, taskId: row.taskId, reason: row.reason, threadId: row.threadId, failedAt: row.failedAt }, chain });
+    }
+    byCategory.set(category, byTask);
   }
-  return [...groups].filter(([, byTask]) => byTask.size >= minTasks)
-    .map(([category, byTask]) => ({ category, taskCount: byTask.size, failures: [...byTask.values()] }))
-    .sort((a, b) => b.taskCount - a.taskCount);
+  const groups: WriterGroup[] = [];
+  for (const [category, byTask] of byCategory) {
+    // Deepest section first: a section with enough tasks of its own gets its own rule; what is left climbs to the parent.
+    let pending = [...byTask.values()];
+    const deepest = Math.max(0, ...pending.map((item) => item.chain.length));
+    for (let depth = deepest; depth >= 0 && pending.length > 0; depth--) {
+      const atDepth = new Map<string, typeof pending>();
+      for (const item of pending) {
+        if (item.chain.length < depth) continue;
+        const key = item.chain.slice(0, depth).join("\u0000");
+        atDepth.set(key, [...(atDepth.get(key) ?? []), item]);
+      }
+      for (const [, items] of atDepth) {
+        if (items.length < minTasks) continue;
+        groups.push({ category, taskCount: items.length, failures: items.map((item) => item.failure), scope: items[0]!.chain.slice(0, depth) });
+        pending = pending.filter((item) => !items.includes(item));
+      }
+    }
+  }
+  return groups.sort((a, b) => b.taskCount - a.taskCount);
 }

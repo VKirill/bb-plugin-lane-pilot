@@ -6,12 +6,12 @@ import { triageMigrations } from "../src/triage";
 function openDb() {
   const db = new Database(":memory:");
   db.exec(`
-    CREATE TABLE lane_pilot_run (id TEXT PRIMARY KEY, project_id TEXT NOT NULL);
+    CREATE TABLE lane_pilot_run (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, settings_scopes_json TEXT);
     CREATE TABLE lane_pilot_task (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, contract_json TEXT NOT NULL);
     CREATE TABLE lane_pilot_attempt (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, task_id TEXT NOT NULL, state TEXT NOT NULL, reason TEXT, thread_id TEXT, updated_at INTEGER NOT NULL);
   `);
   for (const statement of [...ruleMigrations, ...triageMigrations]) db.exec(statement);
-  db.prepare("INSERT INTO lane_pilot_run VALUES('r1','p')").run();
+  db.prepare("INSERT INTO lane_pilot_run(id,project_id) VALUES('r1','p')").run();
   return db;
 }
 
@@ -93,5 +93,32 @@ describe("triage store", () => {
     db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,first_seen_at,last_seen_at,updated_at)
       VALUES ('rule_y','p','model:x','r','model','proposed',1,1,'[]','[{"taskId":"t1"}]',1,1,1)`).run();
     expect(writerGroups(db, "p", 0, { minTasks: 1 }).map((row) => row.taskCount)).toEqual([1]);
+  });
+});
+
+describe("sections", () => {
+  it("gives a section its own rule when its tasks suffice and lifts the rest to the deepest common parent", () => {
+    const db = openDb();
+    const clients = "section:clients", tent = "section:rich-tent", aura = "section:aura", gas = "section:gas";
+    const runs: Record<string, string[]> = { rt: [clients, tent], au: [clients, aura], ga: [clients, gas], root: [] };
+    for (const [run, chain] of Object.entries(runs)) db.prepare("INSERT INTO lane_pilot_run(id,project_id,settings_scopes_json) VALUES(?, 'p', ?)").run(run, JSON.stringify(chain));
+    let at = 1;
+    const fail = (run: string, task: string) => {
+      db.prepare("INSERT OR IGNORE INTO lane_pilot_task VALUES(?, ?, '{}')").run(task, run);
+      db.prepare("INSERT INTO lane_pilot_attempt VALUES(?, ?, ?, 'validation_failed', ?, NULL, ?)").run(`a-${task}`, run, task, `missing expected_outputs: ${task}.md`, at++);
+      const row = untriagedAttempts(db, "p", 0).find((item) => item.attemptId === `a-${task}`)!;
+      saveTriage(db, "p", row, { status: "ok", origin: "writer", originConfidence: 0.9, category: "missing_output" });
+    };
+    for (const task of ["t1", "t2", "t3"]) fail("rt", task);
+    fail("au", "a1"); fail("ga", "g1"); fail("root", "r1");
+    const groups = writerGroups(db, "p", 0);
+    // rich-tent has three of its own; aura, gas and the project root have one each, so they meet at the project level.
+    expect(groups.map((group) => ({ scope: group.scope, tasks: group.failures.map((row) => row.taskId).sort() }))).toEqual([
+      { scope: [clients, tent], tasks: ["t1", "t2", "t3"] },
+      { scope: [], tasks: ["a1", "g1", "r1"] },
+    ]);
+    fail("au", "a2");
+    expect(writerGroups(db, "p", 0).map((group) => group.scope)).toEqual([[clients, tent], [clients]]);
+    expect(writerGroups(db, "p", 0, { chains: new Map([["rt", []], ["au", []], ["ga", []], ["root", []]]) }).map((group) => group.scope)).toEqual([[]]);
   });
 });

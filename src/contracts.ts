@@ -39,12 +39,20 @@ const ruleProposalSchema = z.object({
   evidence: z.array(z.object({ runId: z.string(), taskId: z.string(), attemptId: z.string(), reason: z.string() }).strict()),
   lastSeenAt: z.number().int(),
   decidedAt: z.number().int().nullable(),
+  decidedBy: z.enum(["owner", "auto"]).nullable(),
+  trialState: z.enum(["trial", "confirmed"]).nullable(),
+  revision: z.number().int(),
+  retiredReason: z.string().nullable(),
+  trial: z.object({ applied: z.number().int(), appliedAccepted: z.number().int(), recurrences: z.number().int() }).strict().nullable(),
+  scope: z.array(z.string()),
+  scopeLabel: z.string(),
 }).strict();
 
 const ruleScanSchema = z.object({
   state: z.enum(["idle", "running", "done", "failed"]),
   startedAt: z.number().int().nullable(), finishedAt: z.number().int().nullable(),
   triaged: z.number().int(), groups: z.number().int(), proposals: z.number().int(), reason: z.string().nullable(),
+  adopted: z.number().int().optional(), confirmed: z.number().int().optional(), revised: z.number().int().optional(), retired: z.number().int().optional(),
 }).strict();
 
 const rulesAnalyzerSchema = z.object({
@@ -1060,6 +1068,7 @@ export const rpcContract = defineRpcContract({
       triage: z.object({ total: z.number().int(), byOrigin: z.record(z.string(), z.number().int()), errors: z.number().int(), lastTriagedAt: z.number().nullable(), pendingGroups: z.number().int() }).strict(),
       scan: ruleScanSchema,
       analyzer: rulesAnalyzerSchema.nullable(),
+      events: z.array(z.object({ ruleId: z.string(), action: z.string(), detail: z.string().nullable(), at: z.number().int() }).strict()),
     }).strict(),
   },
   start_rule_scan: {

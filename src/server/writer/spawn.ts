@@ -68,7 +68,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const taskMemoryQuery=`${input.task.title}\n${input.task.objective}\n${input.task.acceptance.join(" ")}`;
       const memoryOn=memorySettings.enabled&&memorySettings.inject;
       // Confirmed rules reach every writer; retrieval skips their records so they are not repeated as memory.
-      const allRules=memoryOn?acceptedRules(db,input.projectId):[];
+      // Rules of the run's own sections only: a client's rule never reaches another client's writer.
+      const allRules=memoryOn?acceptedRules(db,input.projectId,await services.ruleScan.chainForRun(input.runId)):[];
       const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
       const rules=await relevantRules(allRules,input.task as unknown as Record<string,unknown>,input.config.hostId);
       const rulesText=rules.map((rule)=>`- ${rule.rule}`).join("\n");

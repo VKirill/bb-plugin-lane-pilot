@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, type MemoryCandidate, type MemorySettings } from "@lane-pilot/memory-core";
 import {
-  collectLessonSources, decideRuleProposal, getRuleProposal, lessonCandidates, listRuleProposals, parseGoldenCases, repeatedLessons,
-  reviseRuleProposal, routingHint, runGoldenEval, upsertRuleProposals, writerAcceptanceStats, type RuleProposal,
+  collectLessonSources, decideRuleProposal, getRuleProposal, lessonCandidates, listRuleProposals, logRuleEvent, parseGoldenCases, repeatedLessons,
+  reviseAdoptedRule, reviseRuleProposal, routingHint, RULE_TRIAL, runGoldenEval, setRuleTrial, upsertRuleProposals, writerAcceptanceStats, type RuleProposal,
 } from "@lane-pilot/run-insights";
 import { loadProjectSettings, type LanePilotDatabase } from "../database";
 import { configuredSetting, requirePmRun, type ServerContext } from "./context";
@@ -42,7 +42,7 @@ export function refreshRuleProposals(db: LanePilotDatabase, projectId: string, n
  * The owner confirms a rule: it becomes a `core` record for the subagent audience, so every writer of the
  * project reads it and CLI exports mark it `always`. The memory budget may refuse it.
  */
-export function acceptRuleProposal(db: LanePilotDatabase, projectId: string, id: string, rule: string): RuleProposal {
+export function acceptRuleProposal(db: LanePilotDatabase, projectId: string, id: string, rule: string, by: "owner" | "auto" = "owner", now = Date.now()): RuleProposal {
   const proposal = getRuleProposal(db, projectId, id);
   if (!proposal || proposal.state !== "proposed") throw new Error("rule proposal is not waiting for a decision");
   const settings = memorySettingsFor(db, projectId);
@@ -54,15 +54,66 @@ export function acceptRuleProposal(db: LanePilotDatabase, projectId: string, id:
     entries: [{ kind: "core", content, concepts: ["rule", "owner-confirmed"] }],
     coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget,
   });
-  if (!decideRuleProposal(db, projectId, id, { from: "proposed", to: "accepted", rule: content, author: content === proposal.rule ? undefined : "owner", memoryId })) {
+  if (!decideRuleProposal(db, projectId, id, { from: "proposed", to: "accepted", rule: content, author: content === proposal.rule || by === "auto" ? undefined : "owner", memoryId }, now)) {
     deleteMemoryRecord(db, projectId, memoryId);
     throw new Error("rule proposal was decided elsewhere");
   }
+  setRuleTrial(db, projectId, id, by === "auto"
+    ? { decidedBy: "auto", trialState: "trial", revisionStartedAt: now }
+    : { decidedBy: "owner", trialState: null, revisionStartedAt: now });
+  logRuleEvent(db, projectId, id, by === "auto" ? "adopted" : "owner_accepted", null, now);
   return getRuleProposal(db, projectId, id)!;
+}
+
+/**
+ * The system adopts a rule the analyzer wrote: it goes into force on trial. Over the cap of rules in force it
+ * stays proposed and the journal says why.
+ */
+export function adoptRuleProposal(db: LanePilotDatabase, projectId: string, id: string, now = Date.now()): RuleProposal | null {
+  const proposal = getRuleProposal(db, projectId, id);
+  if (!proposal || proposal.state !== "proposed") return null;
+  const inForce = listRuleProposals(db, projectId, { state: "accepted", limit: 500 }).length;
+  if (inForce >= RULE_TRIAL.maxActive) {
+    logRuleEvent(db, projectId, id, "cap_reached", `${inForce} rules in force`, now);
+    return null;
+  }
+  return acceptRuleProposal(db, projectId, id, proposal.rule, "auto", now);
+}
+
+/** Takes a rule out of force on the system's own judgement; the journal keeps the reason. */
+export function retireAdoptedRule(db: LanePilotDatabase, projectId: string, id: string, reason: string, now = Date.now()): void {
+  const proposal = getRuleProposal(db, projectId, id);
+  if (!proposal || proposal.state !== "accepted") return;
+  if (!decideRuleProposal(db, projectId, id, { from: "accepted", to: "revoked", memoryId: proposal.memoryId }, now)) return;
+  if (proposal.memoryId) deleteMemoryRecord(db, projectId, proposal.memoryId);
+  setRuleTrial(db, projectId, id, { trialState: null, retiredReason: reason });
+  logRuleEvent(db, projectId, id, "retired", reason, now);
+}
+
+/** A rule on trial that did not prevent its mistake gets the analyzer's new wording; the old memory record goes. */
+export function rewordAdoptedRule(db: LanePilotDatabase, projectId: string, id: string, rule: string, detail: string, now = Date.now()): boolean {
+  const proposal = getRuleProposal(db, projectId, id);
+  if (!proposal || proposal.state !== "accepted") return false;
+  const settings = memorySettingsFor(db, projectId);
+  const content = rule.replace(/\s+/g, " ").trim().slice(0, 600);
+  const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot);
+  storeMemoryRecords(db, {
+    projectId, personalBot: settings.personalBot, audience: "subagent",
+    sourceSha256: createHash("sha256").update(`rule:${id}:${proposal.revision + 1}`).digest("hex"),
+    entries: [{ kind: "core", content, concepts: ["rule", "auto-adopted"] }],
+    coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget,
+  });
+  if (!reviseAdoptedRule(db, projectId, id, content, memoryId, now)) { deleteMemoryRecord(db, projectId, memoryId); return false; }
+  if (proposal.memoryId && proposal.memoryId !== memoryId) deleteMemoryRecord(db, projectId, proposal.memoryId);
+  setRuleTrial(db, projectId, id, { trialState: "trial" });
+  logRuleEvent(db, projectId, id, "revised", detail, now);
+  return true;
 }
 
 export function rejectRuleProposal(db: LanePilotDatabase, projectId: string, id: string): RuleProposal {
   if (!decideRuleProposal(db, projectId, id, { from: "proposed", to: "rejected" })) throw new Error("rule proposal is not waiting for a decision");
+  setRuleTrial(db, projectId, id, { decidedBy: "owner" });
+  logRuleEvent(db, projectId, id, "owner_rejected");
   return getRuleProposal(db, projectId, id)!;
 }
 
@@ -72,6 +123,8 @@ export function revokeRule(db: LanePilotDatabase, projectId: string, id: string)
   if (!proposal || proposal.state !== "accepted") throw new Error("rule is not accepted");
   if (!decideRuleProposal(db, projectId, id, { from: "accepted", to: "revoked", memoryId: proposal.memoryId })) throw new Error("rule was changed elsewhere");
   if (proposal.memoryId) deleteMemoryRecord(db, projectId, proposal.memoryId);
+  setRuleTrial(db, projectId, id, { decidedBy: "owner", trialState: null, retiredReason: "owner" });
+  logRuleEvent(db, projectId, id, "owner_revoked");
   return getRuleProposal(db, projectId, id)!;
 }
 

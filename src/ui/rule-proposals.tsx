@@ -11,11 +11,20 @@ type Proposal = {
   id: string; rule: string; author: "sweep" | "pm" | "owner" | "model"; state: "proposed" | "accepted" | "rejected" | "revoked";
   occurrences: number; taskCount: number; examples: string[]; evidence: Array<{ runId: string; taskId: string; attemptId: string; reason: string }>;
   lastSeenAt: number; decidedAt: number | null;
+  decidedBy: "owner" | "auto" | null; trialState: "trial" | "confirmed" | null; revision: number; retiredReason: string | null;
+  trial: { applied: number; appliedAccepted: number; recurrences: number } | null;
+  scope: string[]; scopeLabel: string;
 };
-type Scan = { state: "idle" | "running" | "done" | "failed"; startedAt: number | null; finishedAt: number | null; triaged: number; groups: number; proposals: number; reason: string | null };
+type Scan = { state: "idle" | "running" | "done" | "failed"; startedAt: number | null; finishedAt: number | null; triaged: number; groups: number; proposals: number; reason: string | null;
+  adopted?: number; confirmed?: number; revised?: number; retired?: number };
+type RuleEventRow = { ruleId: string; action: string; detail: string | null; at: number };
 type Triage = { total: number; byOrigin: Record<string, number>; errors: number; lastTriagedAt: number | null; pendingGroups: number };
 type Analyzer = { providerId: string; model: string; reasoningLevel: string; serviceTier: "default" | "fast" | null };
-type Listed = { proposals: Proposal[]; memory: { enabled: boolean; inject: boolean }; triage: Triage; scan: Scan; analyzer: Analyzer | null };
+type Listed = { proposals: Proposal[]; memory: { enabled: boolean; inject: boolean }; triage: Triage; scan: Scan; analyzer: Analyzer | null; events: RuleEventRow[] };
+const EVENT_LABEL: Record<string, I18nKey> = {
+  adopted: "rulesEvent_adopted", confirmed: "rulesEvent_confirmed", revised: "rulesEvent_revised", retired: "rulesEvent_retired", cap_reached: "rulesEvent_cap_reached",
+  owner_accepted: "rulesEvent_owner_accepted", owner_rejected: "rulesEvent_owner_rejected", owner_revoked: "rulesEvent_owner_revoked",
+};
 
 const AUTHOR: Record<Proposal["author"], I18nKey> = { sweep: "rulesAuthorSweep", pm: "rulesAuthorPm", owner: "rulesAuthorOwner", model: "rulesAuthorModel" };
 const ORIGINS = ["writer", "orchestrator", "environment", "task", "unclear"] as const;
@@ -94,10 +103,18 @@ export function RuleProposals({ projectId, picker }: {
 
   const meta = (proposal: Proposal) => (
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <Badge variant="outline" data-testid={`rule-scope-${proposal.id}`}>{proposal.scopeLabel || t("rulesScopeProject")}</Badge>
       <span>{t("rulesTasks")}: {proposal.taskCount}</span>
       <Badge variant="outline">{t(AUTHOR[proposal.author])}</Badge>
+      {proposal.state === "accepted" ? <Badge variant={proposal.trialState === "trial" ? "secondary" : "outline"}>
+        {proposal.decidedBy === "auto" ? (proposal.trialState === "trial" ? t("rulesTrial") : t("rulesConfirmed")) : t("rulesByOwner")}
+      </Badge> : null}
+      {proposal.decidedBy === "auto" && proposal.state === "accepted" ? <span>{t("rulesByAuto")}</span> : null}
+      {proposal.revision > 1 ? <span>{t("rulesRevision")} {proposal.revision}</span> : null}
+      {proposal.trial ? <span data-testid={`rule-trial-${proposal.id}`}>{t("rulesApplied")}: {proposal.trial.applied} · {t("rulesRecurred")}: {proposal.trial.recurrences}</span> : null}
     </div>
   );
+  const ruleText = (id: string) => proposals.find((row) => row.id === id)?.rule ?? id;
 
   const evidence = (proposal: Proposal) => proposal.evidence.length > 0 ? (
     <Disclosure compact summary={`${t("rulesEvidence")} (${proposal.evidence.length})`}>
@@ -143,7 +160,8 @@ export function RuleProposals({ projectId, picker }: {
             <span className="text-xs text-muted-foreground" data-testid="rules-scan-result">
               {scan.state === "failed"
                 ? `${t("rulesScanFailed")}: ${scan.reason ?? ""}`
-                : `${t("rulesScanLast")}: ${t("rulesScanTriaged")} ${scan.triaged}, ${t("rulesScanGroups")} ${scan.groups}, ${t("rulesScanProposals")} ${scan.proposals}`}
+                : `${t("rulesScanLast")}: ${t("rulesScanTriaged")} ${scan.triaged}, ${t("rulesScanGroups")} ${scan.groups}, ${t("rulesScanProposals")} ${scan.proposals}`
+                  + `, ${t("rulesScanAdopted")} ${scan.adopted ?? 0}, ${t("rulesScanTrial")} ${scan.confirmed ?? 0}, ${t("rulesScanRevisedShort")} ${scan.revised ?? 0}, ${t("rulesScanRetiredShort")} ${scan.retired ?? 0}`}
             </span>
           ) : null}
         </div>
@@ -181,6 +199,13 @@ export function RuleProposals({ projectId, picker }: {
           </div>
         ))}
       </div> : null}
+      {(listed?.events?.length ?? 0) > 0 ? <Disclosure compact summary={`${t("rulesJournal")} (${listed!.events.length})`}>
+        <ul className="max-w-xl space-y-1 text-xs text-muted-foreground" style={{ overflowWrap: "anywhere" }} data-testid="rules-journal">
+          {listed!.events.map((event, index) => <li key={`${event.at}-${index}`}>
+            {new Date(event.at).toLocaleString()} · {EVENT_LABEL[event.action] ? t(EVENT_LABEL[event.action]!) : event.action}{event.detail ? ` (${event.detail})` : ""}: {ruleText(event.ruleId).slice(0, 140)}
+          </li>)}
+        </ul>
+      </Disclosure> : null}
       {closed.length > 0 ? <Disclosure compact summary={`${t("rulesClosed")} (${closed.length})`}>
         <ul className="max-w-xl space-y-1 text-xs text-muted-foreground" style={{ overflowWrap: "anywhere" }}>
           {closed.map((proposal) => <li key={proposal.id}>{proposal.rule}</li>)}

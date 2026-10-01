@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.43 — 2026-10-01
+
+Rules learn on their own, inside the section they come from.
+
+- **The system adopts the analyzer's rules on trial.** No button: a rule the analyzer writes goes into force at once, marked «on trial» (12 rules in force per project at most; over the cap it waits and the journal says why). Proposals the analyzer wrote earlier join on the next scan. Owner decisions are never touched by the trial.
+- **A trial is judged by what happened to the writers who got the rule.** Counts come from what is already recorded, the attempt trace's picked rules and the triage's match of a failure to a rule, so nothing is counted twice: 5 attempts given the rule without the mistake confirm it; 2 writers given it repeating the mistake send it to the analyzer with those failures for a new wording (2 per scan at most); the same after the second wording retires it; a rule no task needed for 60 days leaves. A failure of a writer that was not given the rule does not count against it.
+- **Every night.** At 03:30 each project with runs in the last 30 days rescans, adopts and judges, in the language of its last manual scan.
+- **Rules stay in their section.** A writer mistake climbs the project's sections only as far as needed to reach three tasks: three in «Clients / rich-tent.ru» make a rule for rich-tent.ru alone, one each in three clients make a «Clients» rule, scattered ones a project rule. A writer gets only the rules of its own section and the sections above it, so one client's rule never reaches another client's writer; System One picks among those. Runs that did not record their sections are placed by their writer folder; failures match only rules of their own sections.
+- **The block shows the trial.** Each rule says its section, who adopted it, on trial or confirmed, the wording number, how many writers got it and how many repeated the mistake anyway; a journal lists every adoption, confirmation, rewrite and retirement with its reason. The owner can still revoke any rule.
+
 ## 0.1.42 — 2026-10-01
 
 - **Lane Pilot can be enabled from a chat again.** BB 0.5 rejects `sourceThreadId` on a spawn that is not a fork («sourceThreadId requires an originKind»), and the PM was spawned with it, so «Enable Lane Pilot» from an ordinary chat and `bb lane-pilot activate` failed. The PM is now the chat's child without a source; writer placement takes the PM's parent as its source when BB stores none (helpers already dropped the field). Found by the live sandbox check of 0.1.41.

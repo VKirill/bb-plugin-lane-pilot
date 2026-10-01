@@ -48,6 +48,24 @@ export const ruleMigrations: readonly string[] = [
     FROM lane_pilot_rule_proposal`,
   `DROP TABLE lane_pilot_rule_proposal`,
   `ALTER TABLE lane_pilot_rule_proposal_v2 RENAME TO lane_pilot_rule_proposal`,
+  // 0.1.43: rules adopt themselves. A rule the system adopted is on trial until the tasks it was given to show
+  // whether the mistake still recurs; owner decisions are never touched by the trial.
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN decided_by TEXT`,
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN trial_state TEXT`,
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN revision_started_at INTEGER`,
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN retired_reason TEXT`,
+  `CREATE TABLE IF NOT EXISTS lane_pilot_rule_event (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    rule_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    detail TEXT,
+    at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_rule_event_project ON lane_pilot_rule_event(project_id, at DESC)`,
+  // A rule belongs to the section where its mistakes happened (outermost first, [] = the whole project).
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN scope_json TEXT NOT NULL DEFAULT '[]'`,
 ];
 
 export type RuleProposalState = "proposed" | "accepted" | "rejected" | "revoked";
@@ -81,7 +99,24 @@ export type RuleProposal = {
   lastSeenAt: number;
   updatedAt: number;
   decidedAt: number | null;
+  decidedBy: "owner" | "auto" | null;
+  trialState: "trial" | "confirmed" | null;
+  revision: number;
+  revisionStartedAt: number | null;
+  retiredReason: string | null;
+  /** Section chain the rule applies to, outermost first; empty for the whole project. */
+  scope: string[];
 };
+
+export function parseScope(json: string | null | undefined): string[] {
+  try { const value = JSON.parse(json ?? "[]") as unknown; return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
+  catch { return []; }
+}
+
+/** A rule applies where its section chain is a prefix of the run's: its own section and everything below it. */
+export function scopeApplies(ruleScope: readonly string[], runChain: readonly string[]): boolean {
+  return ruleScope.length <= runChain.length && ruleScope.every((section, index) => runChain[index] === section);
+}
 
 const clip = (text: string, max: number) => text.replace(/\s+/g, " ").trim().slice(0, max);
 
@@ -166,6 +201,8 @@ type Row = {
   id: string; project_id: string; signature: string; rule: string; author: RuleProposalAuthor; state: RuleProposalState;
   occurrences: number; task_count: number; examples_json: string; evidence_json: string; memory_id: string | null;
   first_seen_at: number; last_seen_at: number; updated_at: number; decided_at: number | null;
+  decided_by: "owner" | "auto" | null; trial_state: "trial" | "confirmed" | null; revision: number; revision_started_at: number | null; retired_reason: string | null;
+  scope_json?: string;
 };
 
 function fromRow(row: Row): RuleProposal {
@@ -174,6 +211,9 @@ function fromRow(row: Row): RuleProposal {
     occurrences: row.occurrences, taskCount: row.task_count, examples: JSON.parse(row.examples_json) as string[],
     evidence: JSON.parse(row.evidence_json) as RuleEvidence[],
     memoryId: row.memory_id, firstSeenAt: row.first_seen_at, lastSeenAt: row.last_seen_at, updatedAt: row.updated_at, decidedAt: row.decided_at,
+    decidedBy: row.decided_by ?? null, trialState: row.trial_state ?? null, revision: row.revision ?? 1,
+    revisionStartedAt: row.revision_started_at ?? null, retiredReason: row.retired_reason ?? null,
+    scope: parseScope(row.scope_json),
   };
 }
 
@@ -204,21 +244,22 @@ export function upsertRuleProposals(db: RulesDatabase, projectId: string, lesson
  * second scan that writes the same rule refreshes it instead of adding a copy.
  */
 export function upsertModelProposal(db: RulesDatabase, projectId: string, input: {
-  category: string; rule: string; evidence: RuleEvidence[]; firstSeenAt: number; lastSeenAt: number;
+  category: string; rule: string; evidence: RuleEvidence[]; firstSeenAt: number; lastSeenAt: number; scope?: readonly string[];
 }, now = Date.now()): { id: string; created: boolean } {
   const rule = input.rule.replace(/\s+/g, " ").trim().slice(0, 600);
-  const signature = `model:${input.category}:${createHash("sha256").update(rule.toLowerCase()).digest("hex").slice(0, 12)}`;
+  const scope = [...(input.scope ?? [])];
+  const signature = `model:${scope.join("/")}:${input.category}:${createHash("sha256").update(rule.toLowerCase()).digest("hex").slice(0, 12)}`;
   const id = ruleProposalId(signature);
   const created = !getRuleProposal(db, projectId, id);
   const tasks = new Set(input.evidence.map((row) => `${row.runId}/${row.taskId}`));
   const examples = [...new Set(input.evidence.map((row) => clip(row.reason, 300)))].slice(0, 3);
   db.prepare(`INSERT INTO lane_pilot_rule_proposal
-    (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at)
-    VALUES (?,?,?,?,'model','proposed',?,?,?,?,NULL,?,?,?,NULL)
+    (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json)
+    VALUES (?,?,?,?,'model','proposed',?,?,?,?,NULL,?,?,?,NULL,?)
     ON CONFLICT(project_id,id) DO UPDATE SET occurrences=excluded.occurrences, task_count=excluded.task_count,
       examples_json=excluded.examples_json, evidence_json=excluded.evidence_json, last_seen_at=MAX(last_seen_at,excluded.last_seen_at)`)
     .run(id, projectId, signature, rule, input.evidence.length, tasks.size, JSON.stringify(examples), JSON.stringify(input.evidence.slice(0, 50)),
-      input.firstSeenAt, input.lastSeenAt, now);
+      input.firstSeenAt, input.lastSeenAt, now, JSON.stringify(scope));
   return { id, created };
 }
 
@@ -253,10 +294,13 @@ export function decideRuleProposal(db: RulesDatabase, projectId: string, id: str
 }
 
 /** Accepted rules whose memory record still exists: what every writer of the project must read. */
-export function acceptedRules(db: RulesDatabase, projectId: string): Array<{ id: string; rule: string; memoryId: string }> {
-  return db.prepare(`SELECT p.id, p.rule, p.memory_id AS memoryId FROM lane_pilot_rule_proposal p
+export function acceptedRules(db: RulesDatabase, projectId: string, runChain?: readonly string[]): Array<{ id: string; rule: string; memoryId: string; scope: string[] }> {
+  const rows = (db.prepare(`SELECT p.id, p.rule, p.memory_id AS memoryId, p.scope_json AS scopeJson FROM lane_pilot_rule_proposal p
     JOIN lane_pilot_memory m ON m.project_id=p.project_id AND m.id=p.memory_id
-    WHERE p.project_id=? AND p.state='accepted' ORDER BY p.decided_at`).all(projectId) as Array<{ id: string; rule: string; memoryId: string }>;
+    WHERE p.project_id=? AND p.state='accepted' ORDER BY p.decided_at`).all(projectId) as Array<{ id: string; rule: string; memoryId: string; scopeJson: string }>)
+    .map(({ scopeJson, ...row }) => ({ ...row, scope: parseScope(scopeJson) }));
+  // Without a chain every rule of the project is listed; a run's chain keeps only the rules of its sections.
+  return runChain ? rows.filter((row) => scopeApplies(row.scope, runChain)) : rows;
 }
 
 /**
@@ -293,4 +337,91 @@ export function pickRelevantRules<T>(rules: readonly T[], answers: Record<string
     const sure = confidence[key] ?? 1;
     return (choice === "yes" ? sure : 1 - sure) >= threshold;
   });
+}
+
+
+export type RuleEventAction = "adopted" | "confirmed" | "revised" | "retired" | "cap_reached" | "owner_accepted" | "owner_rejected" | "owner_revoked";
+export type RuleEvent = { ruleId: string; action: RuleEventAction; detail: string | null; at: number };
+
+export function logRuleEvent(db: RulesDatabase, projectId: string, ruleId: string, action: RuleEventAction, detail: string | null = null, now = Date.now()): void {
+  db.prepare("INSERT INTO lane_pilot_rule_event(project_id,rule_id,action,detail,at) VALUES(?,?,?,?,?)").run(projectId, ruleId, action, detail, now);
+}
+
+export function listRuleEvents(db: RulesDatabase, projectId: string, limit = 50): RuleEvent[] {
+  return db.prepare("SELECT rule_id AS ruleId, action, detail, at FROM lane_pilot_rule_event WHERE project_id=? ORDER BY at DESC, id DESC LIMIT ?")
+    .all(projectId, Math.min(Math.max(limit, 1), 500)) as RuleEvent[];
+}
+
+/** Marks who decided a rule and, for the system's own decisions, where its trial stands. */
+export function setRuleTrial(db: RulesDatabase, projectId: string, id: string, fields: {
+  decidedBy?: "owner" | "auto"; trialState?: "trial" | "confirmed" | null; revisionStartedAt?: number; retiredReason?: string | null;
+}): void {
+  db.prepare(`UPDATE lane_pilot_rule_proposal SET decided_by=COALESCE(?,decided_by),
+      trial_state=CASE WHEN ? THEN ? ELSE trial_state END, revision_started_at=COALESCE(?,revision_started_at),
+      retired_reason=CASE WHEN ? THEN ? ELSE retired_reason END WHERE project_id=? AND id=?`)
+    .run(fields.decidedBy ?? null, fields.trialState !== undefined ? 1 : 0, fields.trialState ?? null, fields.revisionStartedAt ?? null,
+      fields.retiredReason !== undefined ? 1 : 0, fields.retiredReason ?? null, projectId, id);
+}
+
+/** A trial rule gets a new wording: the counters start again from now. */
+export function reviseAdoptedRule(db: RulesDatabase, projectId: string, id: string, rule: string, memoryId: string, now = Date.now()): boolean {
+  return db.prepare(`UPDATE lane_pilot_rule_proposal SET rule=?, memory_id=?, revision=revision+1, revision_started_at=?, updated_at=?
+    WHERE project_id=? AND id=? AND state='accepted'`).run(rule, memoryId, now, now, projectId, id).changes === 1;
+}
+
+export type RuleTrialStats = {
+  /** Writer attempts that were given the rule since its current wording. */
+  applied: number;
+  /** Of those, attempts that were accepted. */
+  appliedAccepted: number;
+  /** Failures System One matched to the rule among the attempts that were given it: the rule did not prevent them. */
+  recurrences: Array<{ attemptId: string; taskId: string; reason: string }>;
+  lastAppliedAt: number | null;
+};
+
+/**
+ * Derived from what is already recorded (the attempt trace's picked rules and the triage's rule match), so a
+ * re-triage or a reload never counts twice.
+ */
+export function ruleTrialStats(db: RulesDatabase, projectId: string, ruleId: string, since: number): RuleTrialStats {
+  const applied = db.prepare(`SELECT a.id, a.state, a.created_at AS at FROM lane_pilot_attempt_reasoning r
+      JOIN lane_pilot_attempt a ON a.id=r.attempt_id JOIN lane_pilot_run run ON run.id=a.run_id,
+      json_each(COALESCE(json_extract(r.trace_json,'$.dispatchContext.rulesPicked.picked'),'[]')) p
+    WHERE run.project_id=? AND p.value=? AND a.created_at>=?`).all(projectId, ruleId, since) as Array<{ id: string; state: string; at: number }>;
+  const ids = new Set(applied.map((row) => row.id));
+  const recurrences = (db.prepare(`SELECT attempt_id AS attemptId, task_id AS taskId, reason FROM lane_pilot_failure_triage
+    WHERE project_id=? AND same_rule_id=? AND status='ok' AND failed_at>=?`).all(projectId, ruleId, since) as Array<{ attemptId: string; taskId: string; reason: string }>)
+    .filter((row) => ids.has(row.attemptId));
+  return {
+    applied: applied.length,
+    appliedAccepted: applied.filter((row) => row.state === "accepted").length,
+    recurrences,
+    lastAppliedAt: applied.length ? Math.max(...applied.map((row) => row.at)) : null,
+  };
+}
+
+export const RULE_TRIAL = {
+  /** Attempts given the rule without a recurrence before it is confirmed. */
+  confirmAfterApplied: 5,
+  /** Recurrences among attempts given the rule before it is rewritten or retired. */
+  reviseAfterRecurrences: 2,
+  /** Wordings a rule may have before a further recurrence retires it. */
+  maxRevisions: 2,
+  /** Rules in force per project the system may adopt up to; the owner's are counted too. */
+  maxActive: 12,
+  /** A rule nobody needed for this long leaves. */
+  unusedAfterMs: 60 * 24 * 3_600_000,
+} as const;
+
+export type RuleTrialDecision = { action: "keep" } | { action: "confirm" } | { action: "revise" } | { action: "retire"; reason: "kept_recurring" | "unused" };
+
+/** What the system does with one rule it adopted; owner decisions never reach this. */
+export function decideRuleTrial(rule: Pick<RuleProposal, "trialState" | "revision" | "revisionStartedAt" | "decidedAt">, stats: RuleTrialStats, now = Date.now()): RuleTrialDecision {
+  if (stats.recurrences.length >= RULE_TRIAL.reviseAfterRecurrences) {
+    return rule.revision >= RULE_TRIAL.maxRevisions ? { action: "retire", reason: "kept_recurring" } : { action: "revise" };
+  }
+  const since = stats.lastAppliedAt ?? rule.revisionStartedAt ?? rule.decidedAt ?? now;
+  if (now - since >= RULE_TRIAL.unusedAfterMs) return { action: "retire", reason: "unused" };
+  if (rule.trialState === "trial" && stats.applied >= RULE_TRIAL.confirmAfterApplied && stats.recurrences.length === 0) return { action: "confirm" };
+  return { action: "keep" };
 }

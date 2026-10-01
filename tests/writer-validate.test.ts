@@ -336,7 +336,12 @@ describe("BB writer validation on the server path", () => {
       db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at)
         VALUES (?,?,?,?,'owner','accepted',3,3,'[]',?,1,1,1,?)`).run(`rule-${index}`, projectId, `s${index}`, rule, `mem-${index}`, index);
     });
+    // A rule from another section of the project (another client) must never reach this run's writer.
+    db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES('mem-other',?,'','core','subagent','Other client rule.','[]','s',9)").run(projectId);
+    db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json)
+      VALUES ('rule-other',?,'s9','Other client rule.','model','accepted',3,3,'[]','mem-other',1,1,1,9,'["section:clients","section:other-client"]')`).run(projectId);
     createRun(db, "run-rules", projectId, "bb", config.writerWorkspacePath);
+    db.prepare("UPDATE lane_pilot_run SET settings_scopes_json=? WHERE id='run-rules'").run(JSON.stringify(["section:clients", "section:this-client"]));
     setRunThread(db, "run-rules", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -349,6 +354,7 @@ describe("BB writer validation on the server path", () => {
     expect(Object.keys(judged[0]!.questions as object)).toEqual(["r1", "r2"]);
     for (const rule of expected) expect(spawnedPrompt).toContain(rule);
     for (const rule of skipped) expect(spawnedPrompt).not.toContain(rule);
+    expect(spawnedPrompt).not.toContain("Other client rule.");
     expect(getReasoningTrace(db, dispatched.attemptId)?.dispatchContext?.rulesPicked).toEqual({ total:2, picked:jev === "ok" ? ["rule-0"] : ["rule-0", "rule-1"] });
     await harness.lifecycle.dispose();
   });
