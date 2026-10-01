@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.34 — 2026-10-01
+
+Instructions audit against Anthropic's «Prompting playbook» (thread thr_syz25bgrhk).
+
+- **The PM ships the way the project runs.** «Ship» no longer hinges on `scripts/deploy.sh`: after every task is accepted the PM pushes main to origin (never force), brings the project up by its own deploy or start command (PROJECT.md, README, package scripts, deploy script, docker compose, systemd) and proves it is live with a healthcheck or a request; with no way to run the project it says so after the push. The PM prompt now ends with a done criterion.
+- **A denied PM edit points to `lane_pilot_dispatch_writer`.** In a Lane Pilot chat the guard used to answer «delegate mutations to the run supervisor», an agent the PM prompt forbids and Lane Pilot strips. The terminal orchestrator keeps the old route.
+- **`wt-merge-main` and `run-init` are blocked by the guard in a Lane Pilot chat**, not only by the prompt: Lane Pilot merges accepted work itself. Read-only `run-validate` stays allowed and the prompt no longer forbids it.
+- **Project git hooks run on writer commits.** `integrateWorktree` committed the writer's worktree with the hook-skip flag, while the merge into main ran hooks and the guard forbids that flag to agents. A rejecting hook now fails the attempt with the hook's output, and the retry has to satisfy it.
+- **The guard reads commands, not report text.** Destructive checks (hook skip, force push, DROP/TRUNCATE, DELETE without WHERE, recursive force delete) skip heredoc bodies handed to a non-shell program; a heredoc piped or fed to a shell is still checked.
+- **Rules carry their reasons.** One docs rule with its reason («Lane Pilot writes docs nightly and reverts other edits») for every session; reasons for the PM's autonomy, the shell-edit ban and the specialists' former bare prohibitions; the list of agents the PM may not spawn is gone because code already strips them.
+- **Handoff recipients are described.** The registry showed only each agent's «You are **x**» header; every agent now has a one-line summary of what it does and leaves to others, used for listing and for picking a recipient by request.
+- **Night review blocks only on real defects**: a concrete unmet requirement, broken behavior, a security or data-loss risk; style is a warning at most.
+
 ## 0.1.33 — 2026-09-30
 
 - The chair's decision no longer fails on an over-long field: strings are clipped to the schema ceilings with an ellipsis. A live session had failed on a 300-character metric.

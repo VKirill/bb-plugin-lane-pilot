@@ -32,6 +32,7 @@ export function nightReviewPrompt(input:{agent:string;task:unknown;acceptedResul
     `You are the ${input.agent} night review stage for a bounded Lane Pilot task.`,
     "Review the accepted task result and its verification facts. Do not edit files, run commands, or merge anything.",
     `Limit the report to at most ${input.maxFindings} concrete findings. Only report issues within the task contract and affected workspace.`,
+    "A blocking finding stops the run until a fix is verified, so use blocking only for a concrete unmet requirement, broken behavior, or a security or data-loss risk you can point to; style and taste are warnings at most. Do not invent repository facts.",
     "Return exactly one JSON object matching {decision:'clear'|'findings',summary:string,findings:[{severity:'blocking'|'warning',path:string,finding:string,suggestedFix:string}]}. Use clear with an empty findings array only when no actionable finding exists.",
     `Workspace: ${input.workspace}`,
     "TASK CONTRACT:",JSON.stringify(input.task),

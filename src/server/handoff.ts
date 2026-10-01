@@ -22,6 +22,7 @@ import {
   type StoredHandoff,
 } from "@lane-pilot/handoff";
 import bundledAgents from "../bundled-agents.json";
+import { BB_AGENT_SUMMARIES } from "../native-agent-overlay";
 import { requirePmRun, type ServerContext } from "./context";
 
 export const HANDOFF_TOOLS = ["lane_pilot_handoff_create", "lane_pilot_handoff_receipt", "lane_pilot_handoff_list"] as const;
@@ -30,7 +31,7 @@ type BundledAgent = { displayName?: string; prompt?: string; skills?: string[]; 
 
 export function bundledAgentDefinitions(): AgentDefinition[] {
   return Object.entries(bundledAgents as Record<string, BundledAgent>).map(([id, agent]) => ({
-    id, displayName: agent.displayName, prompt: agent.prompt, skills: agent.skills, tools: agent.tools,
+    id, displayName: agent.displayName, description: BB_AGENT_SUMMARIES[id], prompt: agent.prompt, skills: agent.skills, tools: agent.tools,
   }));
 }
 

@@ -53,8 +53,10 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   if(dirty.stdout.trim()) {
     const add=git(input.worktreePath,["add","-A"]);
     if(!add.ok) return fail(`worktree add: ${add.reason}`);
-    const commit=git(input.worktreePath,[...identity(input.worktreePath),"commit","-q","--no-verify","-m",input.message]);
-    if(!commit.ok) return fail(`worktree commit: ${commit.reason}`);
+    // The project's own git hooks run here as they do for any commit and for the merge below: a hook
+    // that rejects the writer's work fails the attempt with its output, and the retry has to satisfy it.
+    const commit=git(input.worktreePath,[...identity(input.worktreePath),"commit","-q","-m",input.message]);
+    if(!commit.ok) return fail(`project git hook or commit rejected the writer's work: ${commit.reason.split("\n").slice(-12).join("\n")}`);
   }
   const head=git(input.worktreePath,["rev-parse","HEAD"]);
   if(!head.ok) return fail(`worktree head: ${head.reason}`);

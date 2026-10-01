@@ -134,13 +134,31 @@ SQL_MUTATION = re.compile(
 )
 
 
-def _deny_pm(client: str, detail: str) -> None:
-    emit_deny(
-        client,
-        "[orchestrator-guard] "
-        f"{detail}. Keep PM work read-only/control-plane-only; delegate mutations "
-        "to the run supervisor and its writer/recovery lane.",
+def _deny_pm(client: str, detail: str, lane_pilot: bool = False) -> None:
+    # A Lane Pilot PM has no run supervisor: its writers are BB threads it dispatches itself.
+    tail = (
+        "Product changes go through lane_pilot_dispatch_writer (then poll lane_pilot_wait_writer); "
+        "Lane Pilot critiques, accepts and merges them."
+        if lane_pilot
+        else "Keep PM work read-only/control-plane-only; delegate mutations "
+        "to the run supervisor and its writer/recovery lane."
     )
+    emit_deny(client, f"[orchestrator-guard] {detail}. {tail}")
+
+
+# Heredoc bodies fed to anything but a shell are data (a report, a script for python), not commands.
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n(.*?)(?:\n[ \t]*\2[ \t]*(?:\n|$)|$)", re.S)
+_SHELL_CONSUMER = re.compile(r"(?:^|[\s;&|(/])(?:ba|z|da|k)?sh\b|\beval\b")
+
+
+def _without_data_heredocs(command: str) -> str:
+    def strip(match: re.Match[str]) -> str:
+        line_start = command.rfind("\n", 0, match.start()) + 1
+        line_end = command.find("\n", match.start())
+        if _SHELL_CONSUMER.search(command[line_start : line_end if line_end >= 0 else len(command)]):
+            return match.group(0)
+        return match.group(0)[: match.start(3) - match.start(0)] + "\n"
+    return _HEREDOC.sub(strip, command)
 
 
 def _is_env_secret_file(name: str) -> bool:
@@ -729,7 +747,7 @@ def main() -> None:
         if is_edit_tool(name):
             path = file_path(p)
             if not path or not _pm_edit_allowed(path, p.get("cwd") or p.get("workspaceRoot")):
-                _deny_pm(client, f"direct {name or 'edit'} outside PM contract files is forbidden")
+                _deny_pm(client, f"direct {name or 'edit'} outside PM contract files is forbidden", lane_pilot=True)
             emit_allow(client)
         if name and not is_shell_tool(name):
             emit_allow(client)
@@ -741,11 +759,12 @@ def main() -> None:
         # still blocks). Only BB thread control stays scoped, and writers are BB threads, not lanes.
         error = _lane_pilot_bb_error(cmd)
         if error:
-            _deny_pm(client, error)
+            _deny_pm(client, error, lane_pilot=True)
+    lane_pilot_chat = key in LANE_PILOT_PM_AGENT_TYPES or bool(key in PM_AGENTS and os.environ.get("LANE_PILOT_AGENT_TYPE"))
     if key in PM_AGENTS and is_edit_tool(name):
         path = file_path(p)
         if not path or not _pm_edit_allowed(path, p.get("cwd") or p.get("workspaceRoot")):
-            _deny_pm(client, f"direct {name or 'edit'} outside PM contract files is forbidden")
+            _deny_pm(client, f"direct {name or 'edit'} outside PM contract files is forbidden", lane_pilot=lane_pilot_chat)
         emit_allow(client)
     if name and not is_shell_tool(name):
         emit_allow(client)
@@ -755,19 +774,22 @@ def main() -> None:
             emit_deny(client, "[agent-guard] malformed shell tool payload blocked.")
         emit_allow(client)
 
-    low = cmd.lower()
+    # Destructive checks read commands, not report text a heredoc hands to a non-shell program.
+    low = _without_data_heredocs(cmd).lower()
 
-    # A Lane Pilot BB chat (its launcher sets LANE_PILOT_AGENT_TYPE) runs writers as BB threads.
-    if (key in LANE_PILOT_PM_AGENT_TYPES or (key in PM_AGENTS and os.environ.get("LANE_PILOT_AGENT_TYPE"))) and re.search(
+    # A Lane Pilot BB chat (its launcher sets LANE_PILOT_AGENT_TYPE) runs writers as BB threads,
+    # and Lane Pilot itself critiques, accepts and merges them into main.
+    if lane_pilot_chat and re.search(
         r"(?:^|[;&|(\n]\s*|\b(?:until|while|if|then|do|exec|command)\s+)(?:[^\s;&|()]+/)?"
-        r"(?:run-controller\b|lane-ctl\s+(?:start|retry|fallback)\b|lane-bg\b|lane-exec\b)",
-        cmd,
+        r"(?:run-controller\b|run-init\b|wt-merge-main\b|lane-ctl\s+(?:start|retry|fallback)\b|lane-bg\b|lane-exec\b)",
+        _without_data_heredocs(cmd),
     ):
         emit_deny(
             client,
-            "[lane-pilot-guard] In a Lane Pilot chat writer lanes are BB threads. Dispatch each "
-            "task with lane_pilot_dispatch_writer and poll lane_pilot_wait_writer; do not start "
-            "run-controller, lane-ctl, lane-bg or lane-exec.",
+            "[lane-pilot-guard] In a Lane Pilot chat writer lanes are BB threads, and Lane Pilot "
+            "merges accepted work into main itself. Dispatch each task with lane_pilot_dispatch_writer "
+            "and poll lane_pilot_wait_writer; do not start run-controller, run-init, wt-merge-main, "
+            "lane-ctl, lane-bg or lane-exec.",
         )
 
     if key == "dev-orchestrator" and re.search(
@@ -791,7 +813,7 @@ def main() -> None:
         if os.environ.get("LANE_PILOT_AGENT_TYPE"):
             error = _lane_pilot_bb_error(cmd)
             if error:
-                _deny_pm(client, error)
+                _deny_pm(client, error, lane_pilot=True)
         else:
             error = _pm_shell_error(cmd)
             if error:

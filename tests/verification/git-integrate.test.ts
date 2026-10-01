@@ -151,3 +151,20 @@ it("names the files when main has uncommitted edits the merge would overwrite", 
   expect(blocked.reason).toContain("base checkout has uncommitted changes");
   expect(await readFile(join(base, "server.ts"), "utf8")).toBe("line1\nline2 edited in main\nline3\n");
 });
+
+it("runs the project's pre-commit hook on writer work: a rejection fails the attempt with the hook output", async () => {
+  const { chmod } = await import("node:fs/promises");
+  const { base, worktree } = await repo();
+  const hook = join(base, ".git", "hooks", "pre-commit");
+  await writeFile(hook, "#!/bin/sh\nif git diff --cached | grep -q FORBIDDEN; then echo 'lint: FORBIDDEN marker in staged code' >&2; exit 1; fi\n");
+  await chmod(hook, 0o755);
+  const bad = await worktree("bad");
+  await writeFile(join(bad, "lib.ts"), "export const x = 'FORBIDDEN';\n");
+  const rejected = await integrateWorktree({ basePath: base, worktreePath: bad, message: "bad" });
+  expect(rejected.status).toBe("failed");
+  expect(rejected.reason).toContain("lint: FORBIDDEN marker in staged code");
+  expect(git(base, "log", "--oneline").trim().split("\n")).toHaveLength(1);
+  const good = await worktree("good");
+  await writeFile(join(good, "lib.ts"), "export const x = 1;\n");
+  expect((await integrateWorktree({ basePath: base, worktreePath: good, message: "good" })).status).toBe("merged");
+});
