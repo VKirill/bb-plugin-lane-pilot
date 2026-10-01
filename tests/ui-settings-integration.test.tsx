@@ -167,6 +167,7 @@ async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:s
         scan:{ state:"done", startedAt:1, finishedAt:2, triaged:5, groups:1, proposals:1, reason:null },
         analyzer:{ providerId:"codex", model:"gpt-6-luna", reasoningLevel:"high", serviceTier:null },
         events:[{ ruleId:"rule_a", action:"adopted", detail:null, at:1 }] }),
+      save_rules_analyzer:(input) => { options?.ruleCalls?.push({ analyzer:input }); return { analyzer:(input as { analyzer:unknown }).analyzer }; },
       start_rule_scan:(input) => { options?.ruleCalls?.push({ scan:input }); return { started:true, scan:{ state:"running", startedAt:3, finishedAt:null, triaged:0, groups:0, proposals:0, reason:null } }; },
       decide_rule_proposal:(input) => {
         const call = input as { id:string; action:"accept"|"reject"|"revoke"; rule?:string };
@@ -225,6 +226,9 @@ describe("native writer settings against the registered SQLite backend", () => {
     const { harness, slot } = await mountWithBackend({ rules, ruleCalls });
     try {
       const card = await slot.findByTestId("rule-rule_a");
+      // Opening the screen must not save an analyzer the picker merely normalized.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(ruleCalls.filter((call) => "analyzer" in call)).toEqual([]);
       expect(card.textContent).toContain(`${en.rulesTasks}: 3`);
       expect(card.textContent).toContain(en.rulesAuthorModel);
       expect(slot.getByTestId("rule-evidence-rule_a").textContent).toContain("w2: missing expected_outputs: docs/w2.md");

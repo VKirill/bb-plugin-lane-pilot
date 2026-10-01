@@ -90,6 +90,14 @@ export function rewritePrompt(input: { rule: string; locale: "ru" | "en"; eviden
   ].join("\n\n");
 }
 
+/** «Разбор ошибок · Клиенты / rich-tent.ru · 004.2, 007»: what was analyzed and which tasks, not a generic name. */
+export function analyzerThreadTitle(input: { kind: "analyze" | "rewrite"; locale: "ru" | "en"; place: string; taskIds: string[] }): string {
+  const what = input.kind === "analyze" ? (input.locale === "ru" ? "Разбор ошибок" : "Writer mistakes") : (input.locale === "ru" ? "Переписать правило" : "Rewrite rule");
+  const tasks = [...new Set(input.taskIds)];
+  const shown = tasks.slice(0, 4).join(", ") + (tasks.length > 4 ? ` +${tasks.length - 4}` : "");
+  return [what, input.place, shown].filter(Boolean).join(" · ").slice(0, 160);
+}
+
 export function createRuleScan(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;
   const running = new Set<string>();
@@ -139,6 +147,14 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     const chains = new Map<string, string[]>();
     for (const row of db.prepare("SELECT id FROM lane_pilot_run WHERE project_id=?").all(projectId) as Array<{ id: string }>) chains.set(row.id, await chainForRun(row.id, cache));
     return chains;
+  }
+
+  /** The section's path, or the project's name when the rule is for the whole project. */
+  async function placeLabel(projectId: string, scope: readonly string[]): Promise<string> {
+    const label = await scopeLabel(projectId, scope);
+    if (label) return label;
+    const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { name?: string } | null;
+    return project?.name ?? projectId;
   }
 
   /** «Клиенты / rich-tent.ru» for a section chain; empty for the whole project. */
@@ -258,7 +274,8 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
       others: others.filter((row) => !group.failures.some((own) => own.taskId === row.taskId)).slice(0, 40).map((row) => ({ taskId: row.taskId, failureReason: row.reason.slice(0, 300) })),
       rules: listRuleProposals(db, projectId).filter((row) => row.state === "accepted" && scopeApplies(row.scope, group.scope)).map((row) => row.rule),
     });
-    const text = await runAnalyzer(projectId, `Lane Pilot rules: ${group.category}`, prompt, place, analyzer, { category: group.category });
+    const title = analyzerThreadTitle({ kind: "analyze", locale, place: await placeLabel(projectId, group.scope), taskIds: group.failures.map((row) => row.taskId) });
+    const text = await runAnalyzer(projectId, title, prompt, place, analyzer, { category: group.category });
     const parsed = parseAnalyzerOutput(text);
     const known = new Map([...group.failures, ...others].map((row) => [row.taskId, row]));
     for (const taskId of parsed.notWriter) {
@@ -302,7 +319,8 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
         const failures = stats.recurrences.map((row) => ({ ...row, runId: (db.prepare("SELECT run_id FROM lane_pilot_attempt WHERE id=?").get(row.attemptId) as { run_id?: string } | undefined)?.run_id ?? "",
           threadId: (db.prepare("SELECT thread_id FROM lane_pilot_attempt WHERE id=?").get(row.attemptId) as { thread_id?: string | null } | undefined)?.thread_id ?? null, failedAt: now }));
         const evidence = await Promise.all(failures.slice(0, 6).map(evidenceFor));
-        const text = await runAnalyzer(projectId, "Lane Pilot rules: rewrite", rewritePrompt({ rule: rule.rule, locale, evidence }), place, analyzer, { ruleId: rule.id });
+        const title = analyzerThreadTitle({ kind: "rewrite", locale, place: await placeLabel(projectId, rule.scope), taskIds: stats.recurrences.map((row) => row.taskId) });
+        const text = await runAnalyzer(projectId, title, rewritePrompt({ rule: rule.rule, locale, evidence }), place, analyzer, { ruleId: rule.id });
         const rewritten = parseAnalyzerOutput(text).rules[0]?.rule;
         if (!rewritten) {
           // The analyzer found no rule that would have helped: a rule that cannot help leaves.

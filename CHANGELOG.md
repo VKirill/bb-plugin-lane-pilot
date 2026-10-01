@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.48 — 2026-10-01
+
+- **Analyzer threads say what they analyzed:** «Разбор ошибок · Клиенты / rich-tent.ru · 004.2, 007» and «Переписать правило · … · task ids», in the project's language, instead of «Lane Pilot rules: <category>».
+- **Opening «Rules from lessons» no longer changes the analyzer.** The model picker reports a normalized value on mount; that was saved, which put SelfyStudio on GPT-6.1 Sol low instead of the GPT-6 Luna default. Only a change made by hand is saved now; SelfyStudio is back on Luna high fast.
+
 ## 0.1.47 — 2026-10-01
 
 Rules analyzer prompts audited with the agent-instructions skill and measured before and after.

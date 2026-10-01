@@ -138,6 +138,7 @@ describe("insights tools", () => {
     expect(first.triage).toMatchObject({ total: 5, byOrigin: { writer: 3, orchestrator: 2 }, errors: 0, pendingGroups: 0 });
     expect(spawned).toHaveLength(1);
     expect(spawned[0]).toMatchObject({ projectId, visibility: "hidden", providerId: "codex", model: "gpt-6-luna", reasoningLevel: "high", serviceTier: "fast", pluginMetadata: { role: "rules-analyzer", category: "missing_output" } });
+    expect(spawned[0]!.title).toMatch(/^Разбор ошибок · .+ · (w[123], ){2}w[123]$/);
     expect(spawned[0]!.prompt).toContain("Write the rules in Russian");
     expect(spawned[0]!.prompt).toContain("writer thr-w1: done, wrote the code but not docs");
     expect(spawned[0]!.prompt).not.toContain(".agents/PROGRESS.md");

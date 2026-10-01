@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRpc, type ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../contracts";
@@ -44,6 +44,9 @@ export function RuleProposals({ projectId, picker }: {
   const [listed, setListed] = useState<Listed | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  // The picker reports a normalized value on mount (a model missing from the catalog, an unsupported effort); only a
+  // change the owner made by hand is saved, or opening the screen would silently replace the analyzer.
+  const touched = useRef(false);
 
   const load = useCallback(async () => {
     try { setListed(await rpc.call("list_rule_proposals", { projectId }) as Listed); } catch { setListed(null); }
@@ -81,6 +84,7 @@ export function RuleProposals({ projectId, picker }: {
   };
 
   const saveAnalyzer = async (next: ExperimentalProviderModelPickerValue) => {
+    if (!touched.current) return;
     try {
       await rpc.call("save_rules_analyzer", { projectId, analyzer: {
         providerId: next.providerId, model: next.model, reasoningLevel: next.reasoningLevel,
@@ -151,9 +155,11 @@ export function RuleProposals({ projectId, picker }: {
       <div className="max-w-xl space-y-2">
         <div className="text-xs font-medium">{t("rulesAnalyzer")}</div>
         <p className="text-xs text-muted-foreground">{t("rulesAnalyzerHelp")}</p>
+        <div onPointerDownCapture={() => { touched.current = true; }} onKeyDownCapture={() => { touched.current = true; }}>
         {picker(analyzer
           ? { providerId: analyzer.providerId, model: analyzer.model, reasoningLevel: analyzer.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"], ...(analyzer.serviceTier ? { serviceTier: analyzer.serviceTier } : {}) }
           : { providerId: "", model: "", reasoningLevel: "none" }, (next) => { void saveAnalyzer(next); })}
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" variant="outline" disabled={scanning || !listed} onClick={() => void rescan()}>{scanning ? t("rulesScanRunning") : t("rulesScan")}</Button>
           {scan && scan.state !== "idle" && scan.state !== "running" ? (
