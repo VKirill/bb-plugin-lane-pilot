@@ -751,6 +751,23 @@ export const rpcContract = defineRpcContract({
       description: z.string().min(1),
     }).strict().nullable(),
   },
+  helper_access_view: {
+    input: z.object({ projectId: z.string().min(1), sectionId: z.string().min(1).optional() }).strict(),
+    output: z.object({
+      mode: z.string(),
+      roles: z.array(z.object({
+        role: z.string(), key: z.string(), version: z.number().int(), value: z.unknown(), inherited: z.boolean(),
+        groups: z.object({ bbPlugins: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict(), skills: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict(), mcpServers: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict(), nativePlugins: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict() }).strict(),
+        switches: z.object({ userInstructions: z.object({ include: z.boolean(), source: z.enum(["role","owner"]) }).strict(), projectInstructions: z.object({ include: z.boolean(), source: z.enum(["role","owner"]) }).strict() }).strict(),
+      }).strict()),
+      catalog: z.object({
+        bbPlugins: z.array(z.object({ id: z.string(), name: z.string() }).strict()),
+        skills: z.array(z.object({ name: z.string(), description: z.string() }).strict()),
+      }).strict(),
+      mandatory: z.object({ bbPlugins: z.array(z.string()), mcpServers: z.array(z.string()) }).strict(),
+      providers: z.record(z.string(), z.array(z.string())),
+    }).strict(),
+  },
   get_screen: {
     input: z.object({ projectId: z.string().min(1), sectionId: z.string().min(1).optional() }).strict(),
     output: z.object({

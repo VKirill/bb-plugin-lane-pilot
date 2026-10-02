@@ -104,18 +104,79 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "specialist:tavily": { bbPlugins: [], skills: ["tavily"], mcpServers: [] },
 };
 
-export function roleProfilePolicy(role: HelperRole): VkSessionPolicy {
+export const HELPER_ROLES = Object.keys(ROLE_PROFILES) as HelperRole[];
+export const ACCESS_GROUPS = ["bbPlugins", "skills", "mcpServers", "nativePlugins"] as const;
+export type AccessGroup = (typeof ACCESS_GROUPS)[number];
+export const ACCESS_SWITCHES = ["userInstructions", "projectInstructions"] as const;
+export type AccessSwitch = (typeof ACCESS_SWITCHES)[number];
+
+/**
+ * An owner's change to one role, stored per role as `helper.access.<role>` (project or section scope).
+ * A group set to "role" (or absent) keeps the role profile; "all" stops narrowing it; "allow" is an exact
+ * list (the mandatory core resources are always added).
+ */
+export type RoleAccessGroup = { mode: "role" | "all" | "allow"; names?: string[] };
+export type RoleAccess = Partial<Record<AccessGroup, RoleAccessGroup>> & Partial<Record<AccessSwitch, "role" | "include" | "leave_out">>;
+export const roleAccessKey = (role: HelperRole) => `helper.access.${role}`;
+
+export function parseRoleAccess(raw: unknown): RoleAccess {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const row = raw as Record<string, unknown>;
+  const out: RoleAccess = {};
+  for (const group of ACCESS_GROUPS) {
+    const g = row[group];
+    if (!g || typeof g !== "object") continue;
+    const mode = (g as { mode?: unknown }).mode;
+    if (mode !== "role" && mode !== "all" && mode !== "allow") continue;
+    const names = (g as { names?: unknown }).names;
+    out[group] = mode === "allow"
+      ? { mode, names: Array.isArray(names) ? [...new Set(names.filter((n): n is string => typeof n === "string" && n.trim().length > 0).map((n) => n.trim()))].slice(0, 300) : [] }
+      : { mode };
+  }
+  for (const sw of ACCESS_SWITCHES) {
+    const v = row[sw];
+    if (v === "role" || v === "include" || v === "leave_out") out[sw] = v;
+  }
+  return out;
+}
+
+export function roleAccessFromSettings(input: Record<string, unknown>): Partial<Record<HelperRole, RoleAccess>> {
+  const out: Partial<Record<HelperRole, RoleAccess>> = {};
+  for (const role of HELPER_ROLES) {
+    const access = parseRoleAccess(input[roleAccessKey(role)]);
+    if (Object.keys(access).length) out[role] = access;
+  }
+  return out;
+}
+
+/** What one group of a role effectively loads: a list (mandatory included) or null for «everything BB has». */
+export function effectiveGroup(role: HelperRole, group: AccessGroup, access: RoleAccess = {}): { names: string[] | null; source: "role" | "owner" } {
+  const own = access[group];
+  const mandatory = group === "bbPlugins" ? MANDATORY_BB_PLUGINS : group === "mcpServers" ? MANDATORY_MCP_SERVERS : [];
+  if (own?.mode === "all") return { names: null, source: "owner" };
+  if (own?.mode === "allow") return { names: withMandatory(own.names ?? [], mandatory), source: "owner" };
   const profile = ROLE_PROFILES[role];
-  return {
-    skills: { mode: "allow", names: [...profile.skills] },
-    mcpServers: { mode: "allow", names: withMandatory(profile.mcpServers, MANDATORY_MCP_SERVERS) },
-    bbPlugins: { mode: "allow", names: withMandatory(profile.bbPlugins, MANDATORY_BB_PLUGINS) },
-    nativePlugins: { mode: "allow", names: [] },
-    // The user's own AGENTS.md/CLAUDE.md is for their chats; the project's instructions stay.
-    userInstructions: false,
-    claudeAiSync: false,
-    required: true,
-  };
+  const base = group === "nativePlugins" ? [] : profile[group];
+  return { names: withMandatory(base, mandatory), source: "role" };
+}
+
+export function effectiveSwitch(sw: AccessSwitch, access: RoleAccess = {}): { include: boolean; source: "role" | "owner" } {
+  const own = access[sw];
+  if (own === "include") return { include: true, source: "owner" };
+  if (own === "leave_out") return { include: false, source: "owner" };
+  // Role default: the user's personal instructions are left out, the project's stay.
+  return { include: sw === "projectInstructions", source: "role" };
+}
+
+export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}): VkSessionPolicy {
+  const policy: VkSessionPolicy = { claudeAiSync: false, required: true };
+  for (const group of ACCESS_GROUPS) {
+    const { names } = effectiveGroup(role, group, access);
+    if (names) policy[group] = { mode: "allow", names };
+  }
+  if (!effectiveSwitch("userInstructions", access).include) policy.userInstructions = false;
+  if (!effectiveSwitch("projectInstructions", access).include) policy.projectInstructions = false;
+  return policy;
 }
 
 export const HELPER_SPAWN_ROLES = [
@@ -126,6 +187,8 @@ export type HelperSpawnRole = (typeof HELPER_SPAWN_ROLES)[number];
 
 export type HelperContextSettings = {
   mode: HelperContextMode;
+  /** Owner changes per role, used by the «by role» mode; frozen into a run's snapshot with the rest. */
+  roleAccess?: Partial<Record<HelperRole, RoleAccess>>;
   skills: string[];
   mcpServers: string[];
   bbPlugins: string[];
@@ -155,7 +218,7 @@ export function parseHelperContextSettings(input: Record<string, unknown>):
   const raw = input["helper.context_mode"];
   // The default: every helper gets the profile of its role.
   if (raw === undefined || raw === null || raw === "" || raw === "roles") {
-    return { ok: true, settings: { mode: "roles", skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] } };
+    return { ok: true, settings: { mode: "roles", skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [], roleAccess: roleAccessFromSettings(input) } };
   }
   if (raw !== "selected" && raw !== "none" && raw !== "inherit") {
     return { ok: false, reason: "helper_context_mode_invalid" };
@@ -275,7 +338,7 @@ export function requiredSessionPolicySpawnBinding(input: {
     const groups = input.advertised.providerGroups[input.providerId as keyof typeof CORE_PROVIDER_GROUPS];
     const switches = input.advertised.instructionSwitches[input.providerId as keyof typeof CORE_INSTRUCTION_SWITCHES];
     if (!groups || !switches) return {};
-    return { experimental_vkRequiredSessionPolicy: { version: 1, policy: spawnPolicyForProvider(roleProfilePolicy(input.role), groups, switches, true) } };
+    return { experimental_vkRequiredSessionPolicy: { version: 1, policy: spawnPolicyForProvider(roleProfilePolicy(input.role, input.snapshot.settings.roleAccess?.[input.role]), groups, switches, true) } };
   }
   if (input.capability !== "required" || !input.advertised) {
     throw new Error("helper_context_required_api_unavailable");

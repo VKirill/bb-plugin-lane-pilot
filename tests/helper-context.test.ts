@@ -18,7 +18,7 @@ import {
 describe("helper session filter", () => {
   it("treats a missing mode as by role: no project-wide policy, each helper gets its role's profile", () => {
     const parsed = parseHelperContextSettings({});
-    expect(parsed).toEqual({ ok: true, settings: { mode: "roles", skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] } });
+    expect(parsed).toEqual({ ok: true, settings: { mode: "roles", skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [], roleAccess: {} } });
     if (!parsed.ok) return;
     expect(helperContextToPolicy(parsed.settings)).toBeNull();
     expect(decideHelperDispatch({ settings: parsed.settings, capability: "none" })).toMatchObject({ ok: true, policy: null, snapshot: { mode: "roles" } });
@@ -230,5 +230,26 @@ describe("role profiles", () => {
   it("runs a helper with BB's ordinary context when the core cannot enforce it or the role is unknown", () => {
     expect(bindRole({ capability: "dynamic", advertised: null, snapshot, providerId: "codex", role: "writer" })).toEqual({});
     expect(bindRole({ capability: "required", advertised, snapshot, providerId: "codex" })).toEqual({});
+  });
+});
+
+describe("owner changes per role", () => {
+  it("reads helper.access.<role>, merges it over the role profile and keeps the mandatory resources", async () => {
+    const { parseHelperContextSettings: parse, roleProfilePolicy, effectiveGroup, effectiveSwitch } = await import("../src/helper-context");
+    const parsed = parse({
+      "helper.access.writer": { skills: { mode: "allow", names: ["ru-text", " ", "ru-text"] }, bbPlugins: { mode: "all" }, userInstructions: "include" },
+      "helper.access.docs-maintainer": { mcpServers: { mode: "allow", names: ["context7"] }, bogus: 1 },
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const writer = roleProfilePolicy("writer", parsed.settings.roleAccess?.writer);
+    expect(writer.skills?.names).toEqual(["ru-text"]);
+    expect(writer.bbPlugins).toBeUndefined();
+    expect(writer.userInstructions).toBeUndefined();
+    const docs = roleProfilePolicy("docs-maintainer", parsed.settings.roleAccess?.["docs-maintainer"]);
+    expect(docs.mcpServers?.names).toEqual(["bb-bridge", "context7"]);
+    expect(docs.skills?.names).toContain("docs-maintain");
+    expect(effectiveGroup("writer", "bbPlugins", parsed.settings.roleAccess?.writer)).toEqual({ names: null, source: "owner" });
+    expect(effectiveSwitch("projectInstructions")).toEqual({ include: true, source: "role" });
   });
 });

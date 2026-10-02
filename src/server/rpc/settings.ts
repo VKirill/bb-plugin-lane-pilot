@@ -1,3 +1,4 @@
+import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "../../helper-context";
 import { detectCompiledMainAgentCapability } from "../../agent-profile";
 import { buildCliInvocation } from "../../argv-builder";
 import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../constants";
@@ -17,6 +18,38 @@ import type { Services } from "../services";
 export function settingsRpc(ctx: ServerCore, services: Services) {
   const { bb, cliSettingsFor, db, host, listProjectSections, screenWriterBinding, sectionChain, serializedKv, settingsAbove, writerBindingKey } = ctx;
   return {
+    helper_access_view: async ({ projectId, sectionId }) => {
+      const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];
+      const bindingId = scopes.at(-1) ?? "";
+      const settings = loadProjectSettings(db, projectId, scopes);
+      const own = new Map(listSettingRows(db, projectId, bindingId).map((row) => [row.key, row]));
+      const parsed = parseHelperContextSettings(settings);
+      const versions = getSettingVersions(db, projectId, HELPER_ROLES.map(roleAccessKey), bindingId);
+      const roles = HELPER_ROLES.map((role) => {
+        const key = roleAccessKey(role);
+        const access = parseRoleAccess(settings[key]);
+        return {
+          role, key, version: versions[key] ?? 0, value: own.get(key)?.value ?? null,
+          inherited: !own.has(key) && settings[key] !== undefined,
+          groups: Object.fromEntries(ACCESS_GROUPS.map((group) => [group, effectiveGroup(role, group, access)])) as never,
+          switches: Object.fromEntries(ACCESS_SWITCHES.map((sw) => [sw, effectiveSwitch(sw, access)])) as never,
+        };
+      });
+      const plugins = await (bb.sdk.plugins.list() as Promise<unknown>).catch(() => []);
+      const pluginRows = (Array.isArray(plugins) ? plugins : ((plugins as { plugins?: unknown[] })?.plugins ?? [])) as Array<{ id?: string; name?: string; displayName?: string }>;
+      const skills = await (bb.sdk.skills.list({ projectId, environmentId: null } as never) as Promise<unknown>).catch(() => []);
+      const skillRows = (Array.isArray(skills) ? skills : ((skills as { skills?: unknown[] })?.skills ?? [])) as Array<{ name?: string; description?: string }>;
+      return {
+        mode: parsed.ok ? parsed.settings.mode : "invalid",
+        roles,
+        catalog: {
+          bbPlugins: pluginRows.filter((p) => typeof p.id === "string").map((p) => ({ id: p.id!, name: p.displayName ?? p.name ?? p.id! })).sort((a, b) => a.id.localeCompare(b.id)),
+          skills: [...new Map(skillRows.filter((k) => typeof k.name === "string").map((k) => [k.name!, { name: k.name!, description: (k.description ?? "").slice(0, 200) }])).values()].sort((a, b) => a.name.localeCompare(b.name)),
+        },
+        mandatory: { bbPlugins: [...MANDATORY_BB_PLUGINS], mcpServers: [...MANDATORY_MCP_SERVERS] },
+        providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).map(([id, groups]) => [id, [...groups]])),
+      };
+    },
     get_screen: async ({ projectId, sectionId }) => {
       // A section shows its own values over its parents', its project's and the global ones.
       const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];
@@ -265,5 +298,5 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       await bb.storage.kv.set(writerBindingKey(projectId), { hostId, path });
       return { ok: true };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_screen" | "save_setting" | "reset_project_settings" | "save_settings" | "save_writer_binding">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "helper_access_view" | "get_screen" | "save_setting" | "reset_project_settings" | "save_settings" | "save_writer_binding">;
 }
