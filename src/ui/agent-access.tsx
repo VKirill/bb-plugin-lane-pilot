@@ -3,6 +3,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../contracts";
 import { detectLocale, t, type I18nKey } from "../../i18n";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
 import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_INSTRUCTION_SWITCHES, type AccessGroup, type AccessSwitch, type RoleAccess } from "../helper-context";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -14,13 +15,16 @@ import { usePanelLayout } from "./panel-layout";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 
 type Source = "role" | "owner";
+/** The layer a value comes from: the role profile in code, or the scope that holds the row. */
+type Origin = "global" | "project" | "section";
 type RoleView = {
-  role: string; key: string; version: number; value: unknown; inherited: boolean;
+  role: string; key: string; version: number; value: unknown; inherited: boolean; origin: Origin | null;
   groups: Record<AccessGroup, { names: string[] | null; source: Source }>;
   switches: Record<AccessSwitch, { include: boolean; source: Source }>;
 };
 type AccessView = {
   mode: string;
+  modeOrigin: Origin | null;
   roles: RoleView[];
   catalog: { bbPlugins: Array<{ id: string; name: string }>; skills: Array<{ name: string; description: string }> };
   mandatory: { bbPlugins: string[]; mcpServers: string[] };
@@ -45,6 +49,13 @@ const SWITCH_LABEL: Record<AccessSwitch, { label: I18nKey; hint: I18nKey }> = {
 const PROVIDER_LABEL: Record<string, I18nKey> = {
   "claude-code": "accessProviderClaudeCode", codex: "accessProviderCodex", "acp-opencode": "accessProviderOpencode", "acp-cursor": "accessProviderCursor",
 };
+const ORIGIN_LABEL: Record<"role" | Origin, I18nKey> = {
+  role: "accessOrigin_role", global: "accessOrigin_global", project: "accessOrigin_project", section: "accessOrigin_section",
+};
+const RESET_LABEL: Record<"role" | Origin, I18nKey> = {
+  role: "accessResetTo_role", global: "accessResetTo_global", project: "accessResetTo_project", section: "accessResetTo_section",
+};
+const COLUMNS = [...ACCESS_GROUPS, ...ACCESS_SWITCHES] as const;
 const SHOWN_NAMES = 5;
 
 /** «1 навык», «2 навыка», «5 навыков»: the form key follows the language's plural rule. */
@@ -182,18 +193,18 @@ function NameEditor({ chosen, locked, catalog, searchLabel, disabled, testId, on
   );
 }
 
-function AccessRow({ testId, label, hint, effective, source, control, children }: {
-  testId: string; label: string; hint?: string; effective: string; source: Source; control: ReactNode; children?: ReactNode;
+function AccessRow({ testId, label, hint, effective, origin, control, children }: {
+  testId: string; label: string; hint?: string; effective: string; origin: "role" | Origin; control: ReactNode; children?: ReactNode;
 }) {
   const { stackControls } = usePanelLayout();
   return (
-    <div className="min-w-0 space-y-2 py-2" data-testid={testId} data-source={source}>
+    <div className="min-w-0 space-y-2 py-2" data-testid={testId} data-origin={origin}>
       <div className={stackControls ? "grid min-w-0 gap-1.5" : "grid min-w-0 gap-1.5 md:grid-cols-[minmax(0,1fr)_11rem] md:items-start md:gap-3"}>
         <div className="min-w-0">
           <div className="text-sm font-medium">{label}</div>
           {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
           <div className="break-words text-xs text-muted-foreground" data-testid={`${testId}-effective`} title={effective}>
-            {effective}<span> · </span><span className={source === "owner" ? "text-foreground" : ""}>{t(source === "owner" ? "accessSourceOwner" : "accessSourceRole")}</span>
+            {effective}<span> · </span><span className={origin === "role" ? "" : "text-foreground"} data-testid={`${testId}-origin`}>{t(ORIGIN_LABEL[origin])}</span>
           </div>
         </div>
         {control}
@@ -214,11 +225,14 @@ function ModeSelect({ value, options, label, disabled, testId, onChange }: {
   );
 }
 
-function RoleCard({ role, view, open, busy, onToggle, onSave }: {
-  role: RoleView; view: AccessView; open: boolean; busy: boolean; onToggle: () => void; onSave: (role: RoleView, next: RoleAccess | null) => void;
+function RoleCard({ role, view, scope, below, open, busy, onToggle, onSave, onReset }: {
+  role: RoleView; view: AccessView; scope: Origin; below: "role" | Origin; open: boolean; busy: boolean; onToggle: () => void;
+  onSave: (role: RoleView, next: RoleAccess | null) => void; onReset: (role: RoleView) => void;
 }) {
   const id = roleKey(role.role);
   const changed = isChanged(role);
+  const origin: "role" | Origin = changed ? role.origin ?? scope : "role";
+  const rowOrigin = (source: Source): "role" | Origin => source === "owner" ? role.origin ?? scope : "role";
   const current = ownerAccess(role, view.mandatory);
   const commit = (patch: RoleAccess) => {
     const next: RoleAccess = { ...current, ...patch };
@@ -239,7 +253,7 @@ function RoleCard({ role, view, open, busy, onToggle, onSave }: {
       : group === "skills" ? view.catalog.skills.map((skill) => ({ name: skill.name, label: skill.name, detail: skill.description })) : null;
     const searchLabel = group === "bbPlugins" ? t("accessAddSearchPlugins") : group === "skills" ? t("accessAddSearchSkills") : t("accessAddTypeName");
     return (
-      <AccessRow key={group} testId={`access-${id}-${group}`} label={t(GROUP_LABEL[group])} source={state.source}
+      <AccessRow key={group} testId={`access-${id}-${group}`} label={t(GROUP_LABEL[group])} origin={rowOrigin(state.source)}
         effective={namesText(state.names, mode === "role")}
         control={<ModeSelect value={mode} label={t(GROUP_LABEL[group])} disabled={busy} testId={`access-${id}-${group}-mode`} onChange={setMode}
           options={[["role", "accessModeRole"], ["all", "accessModeAll"], ["allow", "accessModeAllow"]]} />}>
@@ -254,7 +268,7 @@ function RoleCard({ role, view, open, busy, onToggle, onSave }: {
     const state = role.switches[sw];
     const mode = state.source === "role" ? "role" : state.include ? "include" : "leave_out";
     return (
-      <AccessRow key={sw} testId={`access-${id}-${sw}`} label={t(SWITCH_LABEL[sw].label)} hint={t(SWITCH_LABEL[sw].hint)} source={state.source}
+      <AccessRow key={sw} testId={`access-${id}-${sw}`} label={t(SWITCH_LABEL[sw].label)} hint={t(SWITCH_LABEL[sw].hint)} origin={rowOrigin(state.source)}
         effective={t(state.include ? "accessIncluded" : "accessLeftOut")}
         control={<ModeSelect value={mode} label={t(SWITCH_LABEL[sw].label)} disabled={busy} testId={`access-${id}-${sw}-mode`}
           onChange={(next) => { if (next !== mode) commit({ [sw]: next === "role" ? undefined : next }); }}
@@ -262,7 +276,7 @@ function RoleCard({ role, view, open, busy, onToggle, onSave }: {
     );
   };
   return (
-    <div className="lp-card min-w-0 overflow-hidden" data-testid={`access-role-${id}`} data-open={open} data-changed={changed}>
+    <div id={`access-card-${id}`} className="lp-card min-w-0 scroll-mt-3 overflow-hidden" data-testid={`access-role-${id}`} data-open={open} data-changed={changed} data-origin={origin}>
       <button type="button" aria-expanded={open} aria-controls={`access-body-${id}`} onClick={onToggle}
         className="flex w-full min-w-0 items-start gap-2 p-3 text-left hover:bg-[var(--lp-well)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
         <Icon name="ChevronRight" className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
@@ -271,16 +285,16 @@ function RoleCard({ role, view, open, busy, onToggle, onSave }: {
           <span className="block text-xs text-muted-foreground">{t(`accessPurpose_${id}` as I18nKey)}</span>
           <span className="block break-words text-xs" data-testid={`access-summary-${id}`}>{roleSummary(role, view.mandatory)}</span>
         </span>
-        <Badge variant={changed ? "secondary" : "outline"} className="shrink-0" data-testid={`access-badge-${id}`}>{t(changed ? "accessSourceOwner" : "accessSourceRole")}</Badge>
+        <Badge variant={changed ? "secondary" : "outline"} className="shrink-0" data-testid={`access-badge-${id}`}>{t(ORIGIN_LABEL[origin])}</Badge>
       </button>
       {open ? (
         <div id={`access-body-${id}`} className="min-w-0 divide-y divide-[var(--lp-hairline)] border-t border-[var(--lp-hairline)] px-3 pb-2">
           {ACCESS_GROUPS.map(groupRow)}
           {ACCESS_SWITCHES.map(switchRow)}
-          {changed ? (
+          {role.origin === scope && !role.inherited ? (
             <div className="pt-2">
-              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onSave(role, null)}>
-                <Icon name="RotateCcw" className="mr-1.5 size-3.5" />{t("accessReset")}
+              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onReset(role)}>
+                <Icon name="RotateCcw" className="mr-1.5 size-3.5" />{t(RESET_LABEL[below])}
               </Button>
             </div>
           ) : null}
@@ -316,15 +330,93 @@ function providerLines(providers: Record<string, string[]>): string[] {
   });
 }
 
+function cellText(role: RoleView, column: (typeof COLUMNS)[number], mandatory: AccessView["mandatory"]): string {
+  if (column === "userInstructions" || column === "projectInstructions") return role.switches[column].include ? "✓" : "—";
+  const names = role.groups[column].names;
+  if (names === null) return t("accessAllShort");
+  const count = names.filter((name) => !lockedNames(column, mandatory).includes(name)).length;
+  return count ? String(count) : "—";
+}
+
+/** One line per role, one column per kind of resource; the table scrolls inside its own box on a narrow screen. */
+function AccessMatrix({ view, scope, onPick }: { view: AccessView; scope: Origin; onPick: (role: string) => void }) {
+  const known = new Map(view.roles.map((role) => [role.role, role]));
+  // On a narrow column the table packs tighter so most of it fits; what does not fit scrolls inside the box.
+  const { stackControls: compact } = usePanelLayout();
+  const cellPad = compact ? "px-0" : "px-1.5";
+  return (
+    <Surface testId="access-matrix">
+      <SurfaceHeader><h2 className="text-sm font-medium">{t("accessMatrixTitle")}</h2></SurfaceHeader>
+      <SurfaceBody className="space-y-2">
+        <p className="max-w-xl text-xs text-muted-foreground">{t("accessMatrixHint")}</p>
+        <div className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-[var(--lp-hairline)]" data-testid="access-matrix-scroll">
+          <table className={compact ? "w-full min-w-[21rem] table-fixed border-collapse text-[11px]" : "w-full min-w-[36rem] border-collapse text-xs"}>
+            <thead>
+              <tr className="bg-[var(--lp-well)] text-muted-foreground">
+                <th scope="col" className={`sticky left-0 z-[1] bg-[var(--lp-well)] py-1.5 text-left font-medium ${compact ? "w-[6.5rem] px-1.5" : "min-w-[9.5rem] px-2"}`}>{t("accessMatrixRole")}</th>
+                {COLUMNS.map((column) => <th key={column} scope="col" className={`${cellPad} py-1.5 text-center font-medium leading-tight ${compact ? "text-[9.5px]" : ""}`}>{t(`accessCol_${column}` as I18nKey)}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {SECTIONS.map((section) => {
+                const roles = section.roles.map((role) => known.get(role)).filter((role): role is RoleView => Boolean(role));
+                if (!roles.length) return null;
+                return [
+                  <tr key={`h-${section.id}`}><th colSpan={COLUMNS.length + 1} scope="colgroup" className="sticky left-0 border-t border-[var(--lp-hairline)] bg-[var(--lp-card)] px-2 pb-0.5 pt-2 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t(`accessGroup_${section.id}` as I18nKey)}</th></tr>,
+                  ...roles.map((role) => {
+                    const id = roleKey(role.role);
+                    const changed = isChanged(role);
+                    const origin: "role" | Origin = changed ? role.origin ?? scope : "role";
+                    return (
+                      <tr key={role.role} data-testid={`access-matrix-row-${id}`} data-origin={origin} className="cursor-pointer border-t border-[var(--lp-hairline)] hover:bg-[var(--lp-well)]" onClick={() => onPick(role.role)}>
+                        <th scope="row" className={`sticky left-0 z-[1] bg-[var(--lp-card)] py-1 text-left font-normal ${compact ? "px-1.5" : "px-2"}`}>
+                          <button type="button" className="block w-full break-words text-left text-[11px] font-medium leading-tight hover:underline sm:text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">{t(`accessName_${id}` as I18nKey)}</button>
+                          <Badge variant={changed ? "secondary" : "outline"} className="mt-0.5 px-1.5 py-0 text-[10px]" data-testid={`access-matrix-origin-${id}`}>{t(ORIGIN_LABEL[origin])}</Badge>
+                        </th>
+                        {COLUMNS.map((column) => {
+                          const owner = (column === "userInstructions" || column === "projectInstructions" ? role.switches[column].source : role.groups[column].source) === "owner";
+                          return <td key={column} data-testid={`access-matrix-${id}-${column}`} className={`${cellPad} py-1 text-center tabular-nums ${owner ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{cellText(role, column, view.mandatory)}</td>;
+                        })}
+                      </tr>
+                    );
+                  }),
+                ];
+              })}
+            </tbody>
+          </table>
+        </div>
+      </SurfaceBody>
+    </Surface>
+  );
+}
+
+/** The PM chat is not a helper: it loads everything on purpose and has nothing to set here. */
+function PmCard() {
+  return (
+    <div className="lp-card min-w-0 space-y-1 p-3" data-testid="access-pm-card">
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <span className="text-sm font-medium">{t("accessPmTitle")}</span>
+        <Badge variant="outline" className="shrink-0">{t("accessPmBadge")}</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">{t("accessPmBody")}</p>
+      <p className="text-xs text-muted-foreground">{t("accessPmNarrow")}</p>
+    </div>
+  );
+}
+
 /**
  * The «Agent access» tab: per kind of helper, what its session loads (BB plugins, skills, MCP servers, CLI plugins,
- * personal and project instructions), where each value comes from, and the owner's per-role changes.
+ * personal and project instructions), where each value comes from (role profile, global, project or section), and
+ * the owner's per-role changes at the current level.
  */
-export function AgentAccess({ projectId, sectionId, modeControl, refreshKey }: {
-  projectId: string; sectionId: string | null; modeControl: ReactNode; refreshKey: number;
+export function AgentAccess({ projectId, sectionId, parentSectionId, modeControl, refreshKey }: {
+  projectId: string; sectionId: string | null; parentSectionId?: string | null; modeControl: ReactNode; refreshKey: number;
 }) {
   const rpc = useRpc<typeof rpcContract>();
+  const scope: Origin = projectId === GLOBAL_SETTINGS_PROJECT_ID ? "global" : sectionId ? "section" : "project";
   const [view, setView] = useState<AccessView | null>(null);
+  // What each role falls back to when this level's change is removed: the origin seen one level up.
+  const [below, setBelow] = useState<Record<string, Origin | null>>({});
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
@@ -332,20 +424,30 @@ export function AgentAccess({ projectId, sectionId, modeControl, refreshKey }: {
 
   const load = useCallback(async () => {
     const mine = ++generation.current;
+    const parent = scope === "global" ? null
+      : scope === "project" ? { projectId: GLOBAL_SETTINGS_PROJECT_ID }
+        : { projectId, ...(parentSectionId ? { sectionId: parentSectionId } : {}) };
     try {
-      const next = await rpc.call("helper_access_view", { projectId, ...(sectionId ? { sectionId } : {}) }) as AccessView;
-      if (mine === generation.current) { setView(next); setFailed(false); }
+      const [next, up] = await Promise.all([
+        rpc.call("helper_access_view", { projectId, ...(sectionId ? { sectionId } : {}) }) as Promise<AccessView>,
+        parent ? (rpc.call("helper_access_view", parent) as Promise<AccessView>).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (mine !== generation.current) return;
+      setView(next);
+      setBelow(Object.fromEntries((up?.roles ?? []).map((role) => [role.role, role.origin])));
+      setFailed(false);
     } catch { if (mine === generation.current) setFailed(true); }
-  }, [projectId, sectionId, rpc]);
+  }, [projectId, sectionId, parentSectionId, scope, rpc]);
 
   // The mode field lives on the page, so a change there refetches the view.
   useEffect(() => { void load(); }, [load, refreshKey]);
   useEffect(() => { setOpen(new Set()); }, [projectId, sectionId]);
 
-  const save = async (role: RoleView, value: RoleAccess | null) => {
-    setBusy(role.role);
+  const scoped = { projectId, ...(sectionId ? { sectionId } : {}) };
+  const settle = async (task: () => Promise<{ ok: boolean; conflict: boolean }>, role: string) => {
+    setBusy(role);
     try {
-      const result = await rpc.call("save_setting", { projectId, ...(sectionId ? { sectionId } : {}), key: role.key, value, expectedVersion: role.version });
+      const result = await task();
       if (!result.ok) toast.error(t(result.conflict ? "accessConflict" : "accessSaveFailed"));
     } catch (cause) {
       toast.error(t("accessSaveFailed"), { description: cause instanceof Error ? cause.message : String(cause) });
@@ -354,18 +456,27 @@ export function AgentAccess({ projectId, sectionId, modeControl, refreshKey }: {
       setBusy(null);
     }
   };
+  const save = (role: RoleView, value: RoleAccess | null) => settle(() => rpc.call("save_setting", { ...scoped, key: role.key, value, expectedVersion: role.version }), role.role);
+  // Removing this level's row lets the level below show through; a stored null would hide it.
+  const reset = (role: RoleView) => settle(() => rpc.call("reset_project_settings", { ...scoped, keys: [role.key], expectedVersions: { [role.key]: role.version } }), role.role);
 
   const toggle = (role: string) => setOpen((current) => { const next = new Set(current); if (next.has(role)) next.delete(role); else next.add(role); return next; });
+  const reveal = (role: string) => {
+    setOpen((current) => new Set(current).add(role));
+    setTimeout(() => document.getElementById(`access-card-${roleKey(role)}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
   const known = new Map((view?.roles ?? []).map((role) => [role.role, role]));
   const roleModeOff = view !== null && view.mode !== "roles";
 
   return (
-    <div className="min-w-0 space-y-4" data-testid="agent-access">
+    <div className="min-w-0 space-y-4" data-testid="agent-access" data-scope={scope}>
       <Surface testId="access-mode">
         <SurfaceHeader><h2 className="text-sm font-medium">{t("tabAccess")}</h2></SurfaceHeader>
         <SurfaceBody className="space-y-3">
           <p className="max-w-xl text-xs text-muted-foreground">{t("accessIntro")}</p>
+          <p className="max-w-xl text-xs text-muted-foreground" data-testid="access-scope-note">{t(scope === "global" ? "accessIntroGlobal" : "accessOrder")}</p>
           {modeControl}
+          {view ? <p className="text-xs text-muted-foreground" data-testid="access-mode-origin">{t("accessModeSource")}: <span className="text-foreground">{t(view.modeOrigin ? ORIGIN_LABEL[view.modeOrigin] : "accessOrigin_default")}</span></p> : null}
           {roleModeOff ? <p className="rounded-lg border border-[var(--lp-hairline)] bg-[var(--lp-well)] px-3 py-2 text-xs lp-text-warning" role="note" data-testid="access-mode-off">{t("accessModeOff")}</p> : null}
         </SurfaceBody>
       </Surface>
@@ -375,8 +486,10 @@ export function AgentAccess({ projectId, sectionId, modeControl, refreshKey }: {
         </div>
       ) : null}
       {!view && !failed ? <p className="text-xs text-muted-foreground" data-testid="access-loading">{t("accessLoading")}</p> : null}
+      {view ? <PmCard /> : null}
       {view ? (
         <div className={roleModeOff ? "min-w-0 space-y-4 opacity-60" : "min-w-0 space-y-4"} data-testid="access-roles" data-inactive={roleModeOff}>
+          <AccessMatrix view={view} scope={scope} onPick={reveal} />
           {SECTIONS.map((section) => {
             const roles = section.roles.map((role) => known.get(role)).filter((role): role is RoleView => Boolean(role));
             if (!roles.length) return null;
@@ -385,7 +498,8 @@ export function AgentAccess({ projectId, sectionId, modeControl, refreshKey }: {
                 <h3 className="text-sm font-medium">{t(`accessGroup_${section.id}` as I18nKey)}</h3>
                 <div className="min-w-0 space-y-2">
                   {roles.map((role) => (
-                    <RoleCard key={role.role} role={role} view={view} open={open.has(role.role)} busy={busy === role.role} onToggle={() => toggle(role.role)} onSave={(r, v) => void save(r, v)} />
+                    <RoleCard key={role.role} role={role} view={view} scope={scope} below={below[role.role] ?? "role"} open={open.has(role.role)} busy={busy === role.role}
+                      onToggle={() => toggle(role.role)} onSave={(r, v) => void save(r, v)} onReset={(r) => void reset(r)} />
                   ))}
                 </div>
               </section>

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.78 — 2026-10-02
+
+- **Agent access in «Global settings» too.** Role access set there is the default for every project; a project or a section overrides any role. The order is spelled out on the tab: role profile → global → project → section.
+- **Where each value comes from.** Cards and rows say «role default», «global», «project» or «section» instead of «changed»; the session-filter mode shows its level as well. «Back to …» names the layer underneath and removes the row, so that layer shows through (saving an empty value used to hide it instead).
+- **A summary matrix** at the top of the tab: every helper with its BB plugins, skills, MCP servers, CLI plugins and both instruction switches, the origin under each name; a click opens the role's card. On a phone the table scrolls inside its own box.
+- **The main agent (PM) card** explains what the PM loads and why it is not narrowed, and points to Project Folders «Session context» for narrowing a PM chat.
+- `reset_project_settings` accepts `helper.access.<role>`; `helper_access_view` reports `origin`/`modeOrigin` and serves the global scope (skill catalog from the first project).
+
+Verified on the hub: a global change to the writer's skills showed up in a project as «global» and disappeared after the reset.
+
 ## 0.1.77 — 2026-10-02
 
 - **New settings tab «Agent access» («Доступы агентов»).** For each of the 20 kinds of helpers Lane Pilot spawns — grouped as writing code, reviewing, keeping the project, browser, specialists — a card shows what it loads into its session and where that comes from: BB plugins, skills, MCP servers, CLI plugins, personal and project instructions, each marked «by role» or «changed». Any group can be switched to «Everything BB has» or «Only selected» with a chip editor over the BB plugin and skill catalogs; the mandatory project checkout, Project Folders and `bb-bridge` stay locked in. «Back to role» drops the change. A footer says which providers honour which groups. The session-filter mode moved here from «Execution».

@@ -784,7 +784,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   }, [isGlobal]);
 
   // Runs and maintenance belong to the project and its machine; the global level has no overview or rules.
-  const tabs = isGlobal ? ["settings", "checks", "council", "memory"]
+  const tabs = isGlobal ? ["settings", "checks", "council", "memory", "access"]
     : selectedSectionId ? ["overview", "settings", "checks", "council", "memory", "access", "rules"]
       : ["overview", "settings", "checks", "council", "memory", "access", "rules", "monitor", "service"];
   useEffect(() => {
@@ -1751,9 +1751,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             </SettingsGroup>
 
           </TabsContent>
-          {tabs.includes("rules") ? <>
           <TabsContent value="access" forceMount={true} className="space-y-6" hidden={tab !== "access"} data-testid="access-panel">
-            {!isGlobal && projectId ? <AgentAccess projectId={projectId} sectionId={selectedSectionId} refreshKey={data?.versions["helper.context_mode"] ?? 0}
+            {projectId ? <AgentAccess projectId={projectId} sectionId={selectedSectionId} parentSectionId={sections.find((item) => item.id === selectedSectionId)?.parentId ?? null} refreshKey={data?.versions["helper.context_mode"] ?? 0}
               modeControl={<div className="space-y-2" data-testid="access-mode-fields">
                 {(["helper.context_mode", ...(displayedValue("helper.context_mode") === "selected" ? ["helper.skills", "helper.mcp_servers", "helper.bb_plugins", "helper.native_plugins"] : [])] as const).map((key) => {
                   const row = catalogRow(key);
@@ -1763,6 +1762,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </div>} /> : null}
           </TabsContent>
 
+          {tabs.includes("rules") ? <>
           <TabsContent value="rules" forceMount={true} className="space-y-6" hidden={tab !== "rules"} data-testid="rules-panel">
             {!isGlobal && projectId ? <RuleProposals projectId={projectId} picker={modelPicker} /> : null}
           </TabsContent>

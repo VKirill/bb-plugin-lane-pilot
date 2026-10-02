@@ -261,7 +261,9 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
       const reject = (key: string, message: string) => ({ ok: false, conflict: false, values: {}, versions: {}, validation: { code: "incompatible_setting" as const, key, params: [key, message] } });
       const editable = new Set(VISIBLE_CATALOG.filter((row) => row.uiStatus === "editable").map((row) => row.storageKey));
-      const invalid = keys.find((key) => !editable.has(key) || expectedVersions[key] === undefined);
+      // Per-role access rows (helper.access.<role>) are not catalog settings; dropping the row lets the level below show through.
+      const roleAccessKeys = new Set(HELPER_ROLES.map(roleAccessKey));
+      const invalid = keys.find((key) => !(editable.has(key) || roleAccessKeys.has(key)) || expectedVersions[key] === undefined);
       if (invalid) return reject(invalid, "unknown or noneditable setting / missing CAS version");
       const groups = ["writer", "memory", "night_review", "docs", "project_life", "onboarding", "pm_read", "plan_critique", "code_critique", "specialist"].map((prefix) => ["provider", "model", "reasoning_effort", "service_tier"].map((suffix) => `${prefix}.${suffix}`));
       const affected = groups.filter((group) => group.some((key) => keys.includes(key)));
