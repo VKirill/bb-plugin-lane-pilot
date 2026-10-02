@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.75 — 2026-10-02
+
+- **A helper context of their own for writers, critics and specialists works on the VK core.** The fork now carries required session policies and compiled main agents (`0.44.0-vk.12` and later): settings «Helper context: selected / none» are written with each helper thread at spawn and enforced on every turn. The core keeps them in reserved thread plugin metadata, with no migration or protocol bump, and advertises `markerStorage: "thread-plugin-metadata"` instead of `hostDaemonProtocolVersion: 216`; Lane Pilot accepts both.
+- `vk-requires.json` matches the code: only the composer dispatch and plugin lifecycle functions are required; session policy, required session policy and compiled main agent are optional.
+- README describes the whole plugin and the experimental core it needs.
+
+Verified live: with «selected» (skill `ru-text`, plugin `lane-pilot`) a codex writer started with the required snapshot and its marker in place and the task was accepted. The first tries found a core bug: a codex child inherited the PM's «claude.ai sync off» from Project Folders and was refused; fixed in `vk.14`.
+
 ## 0.1.74 — 2026-10-02
 
 - **Tasks run side by side only when they cannot touch the same files.** Before a writer takes a pool slot, Lane Pilot checks the open tasks started earlier on the same checkout (any run of the project); if their `owns_paths` may overlap (one pattern's literal folder contains the other's), the task waits for them instead of conflicting at the merge. Disjoint tasks still run in parallel up to `ops.pool_size`. The wait shows on the `writer-agent` stage («waiting for <task> … owns_paths overlap») and in the plugin log.

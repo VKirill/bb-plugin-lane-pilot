@@ -39,7 +39,10 @@ export type RequiredSessionAdvertisement = {
   snapshotDigest: true;
   parentCeiling: true;
   bridgeHandshakeVersion: 1;
-  hostDaemonProtocolVersion: 216;
+  /** The archived protocol-216 core; the VK core advertises markerStorage instead. */
+  hostDaemonProtocolVersion?: 216;
+  /** Since 2026-10-02 the VK core keeps the required markers in thread plugin metadata, with no protocol bump. */
+  markerStorage?: "thread-plugin-metadata";
   providerGroups: { [K in keyof typeof CORE_PROVIDER_GROUPS]: readonly string[] };
   instructionSwitches: { [K in keyof typeof CORE_INSTRUCTION_SWITCHES]: readonly string[] };
   mandatoryBbPlugins: readonly string[];
@@ -54,7 +57,7 @@ export function coreRequiredSessionAdvertisement(): RequiredSessionAdvertisement
     snapshotDigest: true,
     parentCeiling: true,
     bridgeHandshakeVersion: 1,
-    hostDaemonProtocolVersion: 216,
+    markerStorage: "thread-plugin-metadata",
     providerGroups: CORE_PROVIDER_GROUPS,
     instructionSwitches: CORE_INSTRUCTION_SWITCHES,
     mandatoryBbPlugins: [...MANDATORY_BB_PLUGINS],
@@ -162,7 +165,7 @@ export function parseRequiredSessionPolicyCapability(agents: {
     || row.snapshotDigest !== true
     || row.parentCeiling !== true
     || row.bridgeHandshakeVersion !== REQUIRED_SESSION_HANDSHAKE_VERSION
-    || row.hostDaemonProtocolVersion !== REQUIRED_SESSION_HOST_DAEMON_PROTOCOL
+    || (row.hostDaemonProtocolVersion !== REQUIRED_SESSION_HOST_DAEMON_PROTOCOL && row.markerStorage !== "thread-plugin-metadata")
     || !advertisedMatrixMatch(row.providerGroups, CORE_PROVIDER_GROUPS)
     || !advertisedMatrixMatch(row.instructionSwitches, CORE_INSTRUCTION_SWITCHES)
     || !isStringArray(row.mandatoryBbPlugins)

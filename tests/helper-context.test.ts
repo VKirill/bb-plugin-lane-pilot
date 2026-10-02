@@ -178,3 +178,13 @@ describe("helper session filter", () => {
     expect(none?.mcpServers).toEqual({ mode: "allow", names: [...MANDATORY_MCP_SERVERS] });
   });
 });
+
+it("accepts the VK core's metadata markers and the archived protocol-216 core, and nothing in between", async () => {
+  const { coreRequiredSessionAdvertisement: advertised, parseRequiredSessionPolicyCapability: parse } = await import("../src/helper-context");
+  const vk = advertised();
+  expect(parse({ experimental_vkRequiredSessionPolicy: () => vk })).not.toBeNull();
+  const { markerStorage: _drop, ...archived } = vk;
+  expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...archived, hostDaemonProtocolVersion: 216 }) })).not.toBeNull();
+  expect(parse({ experimental_vkRequiredSessionPolicy: () => archived })).toBeNull();
+  expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...archived, hostDaemonProtocolVersion: 215 }) })).toBeNull();
+});

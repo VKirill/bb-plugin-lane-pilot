@@ -48,11 +48,11 @@ The fork adds functions with the `vk` prefix; Lane Pilot feature-tests each one 
 |---|---|---|---|
 | `useComposer().experimental_vkSetDispatchData` | required | the «Enable for this chat» button attaches the Lane profile to the next new chat without changing its text | the PM chat cannot be enabled from the composer |
 | `experimental_vkLifecycle` / `bb.server.experimental_vkPluginLifecycle` | required | on enable, installs or repairs Claude Lane on every registered machine | native installation refuses to run; machines must be prepared by hand |
-| `bb.agents.experimental_vkSessionPolicy` | required | session rules of the core (which plugins, skills, MCP servers a session loads, set for example by Project Folders); Lane Pilot detects them to decide how helper threads inherit the PM chat's context | helpers run with BB's ordinary context |
-| `experimental_vkRequiredSessionPolicy` | optional, not in the fork yet | a helper context of its own for writers, critics and specialists («selected» / «none» in settings), enforced at spawn | those two options are refused (`helper_context_required_api_unavailable`); the default «inherit» works |
-| `experimental_vkCompiledMainAgent` | optional, not in the fork yet | the PM profile compiled into the session by the core | the PM profile comes from the Lane agent definition and instructions |
+| `bb.agents.experimental_vkSessionPolicy` | optional | session rules of the core (which plugins, skills, MCP servers a session loads, set for example by Project Folders); Lane Pilot detects them to decide how helper threads inherit the PM chat's context | helpers run with BB's ordinary context |
+| `experimental_vkRequiredSessionPolicy` | optional | a helper context of its own for writers, critics and specialists («selected» / «none» in settings): the snapshot is written with the thread at spawn, enforced on every turn and inherited by its children | those two options are refused (`helper_context_required_api_unavailable`); the default «inherit» works |
+| `experimental_vkCompiledMainAgent` | optional | a compiled main agent profile fixed on a Claude Code thread at spawn | the profile comes from the Lane agent definition and instructions |
 
-The two optional functions need database migrations and host-daemon protocol changes, which the fork does not carry by its rules.
+The fork keeps both snapshots and their digest markers in reserved thread plugin metadata rows, with no database migrations and no host-daemon protocol change; provider bridges report support in their handshake. Since `0.44.0-vk.12`.
 
 How the fork is kept in step with official BB releases, and how to add a function: `VK_PATCHES.md` and `VK_FUNCTIONS.md` in the fork's `vk/experimental` branch.
 
