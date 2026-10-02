@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.65 — 2026-10-02
+
+- **Working helpers show as squares next to the agent badge** above the message box of a Lane Pilot chat: one per writer, specialist, browser check, council seat or critic that is still working, with its role's icon and a pulse. Hovering names the role and the task. A click opens that thread in the chat's right-hand side panel (BB's own thread view), so you can watch it without leaving the chat; where the surface has no side panel it goes to the thread. New RPC `list_helper_threads`, new side-panel tab «Помощники Lane Pilot».
+- The agent badge tests had been failing since 0.1.50 (the badge stopped copying the box's radius); they now match the badge, and the whole suite is green.
+
 ## 0.1.64 — 2026-10-02
 
 Third step onto BB rails: writers work in BB's own worktree environments.

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "../i18n";
 import { findComposerPromptBox, promptBoxFrameStyle, PROMPT_BOX_AGENT_LABEL_LEFT } from "../src/ui/composer-prompt-box";
@@ -22,6 +22,8 @@ async function mountBadge(input: {
     projectId: string;
     description: string;
   } | null;
+  helpers?: Array<{ id: string; title: string; status: string; role: string; detail: string | null }>;
+  openThreadPanel?: (options: unknown) => boolean;
 }) {
   const preference = input.preference ?? "en";
   const app = await loadPluginApp(() => import("../app"));
@@ -40,7 +42,9 @@ async function mountBadge(input: {
         lastProjectId: null,
       }),
       native_thread: () => input.nativeThread ?? null,
+      list_helper_threads: () => ({ threads: input.helpers ?? [] }),
     },
+    ...(input.openThreadPanel ? { openThreadPanel: input.openThreadPanel as never } : {}),
   });
 }
 
@@ -95,12 +99,13 @@ describe("Lane Pilot composer agent badge", () => {
     box.style.backgroundColor = "rgb(5, 6, 7)";
     box.style.borderRadius = "14px";
     document.body.append(box);
+    // The stroke and fill are copied; the radius is not (0.1.50: the box's 14px made the 20px label a pill).
     expect(promptBoxFrameStyle(box)).toMatchObject({
       borderStyle: "dashed",
       borderColor: "rgb(20, 30, 40)",
       backgroundColor: "rgb(5, 6, 7)",
-      borderRadius: "14px",
     });
+    expect(promptBoxFrameStyle(box)).not.toHaveProperty("borderRadius");
     box.remove();
   });
 
@@ -146,13 +151,46 @@ describe("Lane Pilot composer agent badge", () => {
     shell.append(root, box);
     await waitFor(() => expect(box.querySelector("[aria-label='Lane Pilot agent']")).toBeTruthy());
     expect(box.textContent).toContain("Copy editor");
-    const label = box.querySelector("[aria-label='Lane Pilot agent']");
-    expect((label as HTMLElement).style.left).toBe(PROMPT_BOX_AGENT_LABEL_LEFT);
-    expect((label as HTMLElement).style.position).toBe("absolute");
-    expect((label as HTMLElement).style.borderStyle).toBe("dashed");
-    expect((label as HTMLElement).style.borderColor).toBe("rgb(20, 30, 40)");
-    expect((label as HTMLElement).style.backgroundColor).toBe("rgb(5, 6, 7)");
-    expect((label as HTMLElement).style.borderRadius).toBe("14px");
+    const label = box.querySelector("[aria-label='Lane Pilot agent']") as HTMLElement;
+    // The wrapper sits on the border and also carries the working helpers' squares.
+    const wrapper = label.parentElement as HTMLElement;
+    expect(wrapper.style.left).toBe(PROMPT_BOX_AGENT_LABEL_LEFT);
+    expect(wrapper.style.position).toBe("absolute");
+    expect(label.style.borderStyle).toBe("dashed");
+    expect(label.style.borderColor).toBe("rgb(20, 30, 40)");
+    expect(label.style.backgroundColor).toBe("rgb(5, 6, 7)");
+    expect(label.style.borderRadius).toBe("0.375rem");
+    slot.lifecycle.unmount();
+  });
+
+  it("shows a square per working helper next to the agent and opens it in the side panel", async () => {
+    const opened: unknown[] = [];
+    const slot = await mountBadge({
+      scope: { kind: "thread", threadId: "thr_pm" },
+      nativeThread: { token: "11111111-1111-1111-1111-111111111111", agentId: "dev-orchestrator", agentType: "dev-orchestrator", projectId: "proj_a", description: "Development coordinator" },
+      helpers: [
+        { id: "thr_writer", title: "Blog look-card chooser modal", status: "active", role: "writer", detail: null },
+        { id: "thr_design", title: "Wizard mockup", status: "active", role: "specialist", detail: "design-lead" },
+      ],
+      openThreadPanel: (options) => { opened.push(options); return true; },
+    });
+    const writer = await slot.findByTestId("helper-chip-thr_writer");
+    expect(writer.getAttribute("title")).toBe("Writer: Blog look-card chooser modal");
+    expect(slot.getByTestId("helper-chip-thr_design").getAttribute("title")).toBe("Specialist · design-lead: Wizard mockup");
+    fireEvent.click(writer);
+    expect(opened).toEqual([{ actionId: "lane-helper-thread", title: "Blog look-card chooser modal", params: { threadId: "thr_writer" } }]);
+    slot.lifecycle.unmount();
+  });
+
+  it("goes to the helper's thread where the surface has no side panel", async () => {
+    const slot = await mountBadge({
+      scope: { kind: "thread", threadId: "thr_pm" },
+      nativeThread: { token: "11111111-1111-1111-1111-111111111111", agentId: "dev-orchestrator", agentType: "dev-orchestrator", projectId: "proj_a", description: "Development coordinator" },
+      helpers: [{ id: "thr_writer", title: "Task", status: "active", role: "writer", detail: null }],
+      openThreadPanel: () => false,
+    });
+    fireEvent.click(await slot.findByTestId("helper-chip-thr_writer"));
+    expect(slot.inspection.navigateCalls).toContainEqual(expect.objectContaining({ method: "toThread" }));
     slot.lifecycle.unmount();
   });
 });

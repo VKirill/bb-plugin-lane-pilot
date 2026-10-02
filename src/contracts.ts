@@ -716,6 +716,10 @@ export const rpcContract = defineRpcContract({
       cliAgentsCollision: z.enum(["pending", "thread", "mention"]).nullable(),
     }).strict(),
   },
+  list_helper_threads: {
+    input: z.object({ threadId: z.string().min(1) }).strict(),
+    output: z.object({ threads: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), role: z.string(), detail: z.string().nullable() }).strict()) }).strict(),
+  },
   native_thread: {
     input: z.object({ threadId: z.string().min(1) }).strict(),
     output: z.object({

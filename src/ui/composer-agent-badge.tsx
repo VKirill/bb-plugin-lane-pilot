@@ -7,12 +7,13 @@ import { agentPickerLabel } from "../agent-display";
 import { nativeAgentCliId } from "../native-session";
 import { findComposerPromptBox, promptBoxFrameStyle, PROMPT_BOX_AGENT_LABEL_LEFT } from "./composer-prompt-box";
 import { getPendingNativeAgent, subscribePendingNativeAgent } from "./pending-native-agent";
+import { HelperChips, useHelperThreads, type HelperThread } from "./helper-threads";
 
 function shortAgentId(value: string): string {
   try { return nativeAgentCliId(value); } catch { return value; }
 }
 
-function AgentNameBadge(agent: { agentId: string; description: string }) {
+function AgentNameBadge(agent: { agentId: string; description: string; helpers?: HelperThread[] }) {
   const id = shortAgentId(agent.agentId);
   const markerRef = useRef<HTMLSpanElement>(null);
   const [host, setHost] = useState<HTMLElement | null>(null);
@@ -47,16 +48,11 @@ function AgentNameBadge(agent: { agentId: string; description: string }) {
   // box's top border from the parent instead of inside, over the placeholder.
   const compact = host?.hasAttribute("data-promptbox-compact") ?? false;
   const target = host && compact ? host.parentElement : host;
-  const chip = (
+  const label = (
     <span
       className="pointer-events-none text-xs leading-none text-muted-foreground"
       style={{
         ...frame,
-        position: host ? "absolute" : undefined,
-        left: host ? (compact ? `calc(${offset.left}px + ${PROMPT_BOX_AGENT_LABEL_LEFT})` : PROMPT_BOX_AGENT_LABEL_LEFT) : undefined,
-        top: host ? (compact ? offset.top : 0) : undefined,
-        transform: host ? "translateY(-50%)" : undefined,
-        zIndex: host ? 10 : undefined,
         padding: "0.125rem 0.5rem",
         // The box's own radius turns a 20px chip into a pill; this keeps the box's shape.
         borderRadius: "0.375rem",
@@ -64,6 +60,22 @@ function AgentNameBadge(agent: { agentId: string; description: string }) {
       aria-label={t("composerAgentBadge")}
     >
       {agentPickerLabel({ id, description: agent.description }, t)}
+    </span>
+  );
+  // The label and the working helpers' squares sit together on the box's top border.
+  const chip = (
+    <span
+      className="pointer-events-none flex items-center gap-1"
+      style={{
+        position: host ? "absolute" : undefined,
+        left: host ? (compact ? `calc(${offset.left}px + ${PROMPT_BOX_AGENT_LABEL_LEFT})` : PROMPT_BOX_AGENT_LABEL_LEFT) : undefined,
+        top: host ? (compact ? offset.top : 0) : undefined,
+        transform: host ? "translateY(-50%)" : undefined,
+        zIndex: host ? 10 : undefined,
+      }}
+    >
+      {label}
+      <HelperChips threads={agent.helpers ?? []} frame={frame} />
     </span>
   );
 
@@ -105,6 +117,7 @@ export function ComposerAgentBadge() {
     return () => { current = false; };
   }, [rpc, threadId]);
 
-  if (threadId) return bound ? <AgentNameBadge {...bound} /> : null;
+  const helpers = useHelperThreads(bound ? threadId : null);
+  if (threadId) return bound ? <AgentNameBadge {...bound} helpers={helpers} /> : null;
   return pending ? <AgentNameBadge {...pending} /> : null;
 }

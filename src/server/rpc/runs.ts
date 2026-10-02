@@ -36,6 +36,24 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       const label = agentPickerLabel({ id: record.agentId, description }, t);
       return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null };
     },
+    // The PM chat's helpers that are still working: writers, specialists, the browser check, council seats, critics.
+    list_helper_threads: async ({ threadId }) => {
+      const rows = await bb.sdk.threads.list({ parentThreadId: threadId, includeHidden: true, limit: 50 }).catch(() => []);
+      const working = (rows as unknown as Array<Record<string, unknown>>)
+        .filter((row) => typeof row.id === "string" && !row.archivedAt && !["idle", "error", "stopped", "completed"].includes(String(row.status)));
+      const threads = await Promise.all(working.map(async (row) => {
+        const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: String(row.id) }).catch(() => null);
+        return {
+          id: String(row.id),
+          // «Lane Pilot writer: <task>» → «<task>»: the square's icon already says the role.
+          title: (stringAt(row, "title") ?? stringAt(row, "titleFallback") ?? String(row.id)).replace(/^Lane Pilot [^:]{1,40}:\s*/, ""),
+          status: String(row.status),
+          role: stringAt(metadata, "role") ?? "helper",
+          detail: stringAt(metadata, "specialist"),
+        };
+      }));
+      return { threads: threads.filter((row) => row.role !== "workspace-provisioner") };
+    },
     native_thread: async ({ threadId }) => {
       const selected = await bb.storage.kv.get(`native-thread:${threadId}`);
       if (!selected) return null;
@@ -150,5 +168,5 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "native_thread" | "activation_context" | "cancel_attempt" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "native_thread" | "activation_context" | "cancel_attempt" | "retry_attempt" | "resume_runs">;
 }
