@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/database";
-import { createSelfRepair, reasonSignature, repairPrompt } from "../../src/server/self-repair";
+import { createSelfRepair, logIncidents, reasonSignature, repairPrompt } from "../../src/server/self-repair";
 import type { ServerCore } from "../../src/server/core";
 
 function setup(threadStatus: Record<string, string> = {}) {
@@ -110,6 +110,23 @@ describe("self-repair", () => {
     attempt("lpattempt_r", "lprun_a", "running", null, now - 5 * 60_000);
     const incidents = await createSelfRepair(ctx).collect(0, { ...(await createSelfRepair(ctx).config()) });
     expect(incidents.map((row) => [row.kind, row.attemptId])).toEqual([["stuck", "lpattempt_s"]]);
+  });
+
+  it("reads Lane Pilot's own failures from the plugin log, not machine outages or its own lines", () => {
+    const line = (ts: number, message: string) => JSON.stringify({ ts, level: "warn", message });
+    const text = [
+      line(100, "Lane Pilot docs resume failed for /home/u/a docs: plugin \"lane-pilot\" used a stale API handle"),
+      line(200, "Lane Pilot docs resume failed for /home/u/b docs: plugin \"lane-pilot\" used a stale API handle"),
+      line(300, "Lane Pilot nightly docs failed for /Users/x: Host is not connected"),
+      line(400, "self-repair: started @thread:thr_x for blocked:1:spawn failed"),
+      line(500, "writer a waits for b: their owns_paths overlap"),
+      line(50, "Lane Pilot docs resume failed: old"),
+      "not json",
+    ].join("\n");
+    const rows = logIncidents(text, 60);
+    expect(rows.map((row) => row.at)).toEqual([100, 200]);
+    expect(rows[0]!.signature).toBe(rows[1]!.signature);
+    expect(rows[0]!.kind).toBe("log");
   });
 
   it("the prompt tells the agent to verify live, ship only on green and report to the PM", () => {
