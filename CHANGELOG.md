@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.72 — 2026-10-02
+
+- **A browser check reaches a dev server on another machine over the private VPN, not getbb.app.** The machine the check runs on reports its WireGuard address (new host call `vpnAddress`: the first private IPv4 on a `wg*`, `utun*`, `tun*` or `tailscale*` interface), and the check opens a localhost target there (`http://10.8.0.4:<port>/`) with the server listening on all interfaces. `bb connect expose` is used only when the machine has no VPN address.
+- **A blocked browser check can run again,** whatever stopped it (no QA machine, offline, unreachable port); only a verdict on the product, passed or failed, is final.
+
+Verified live: a PM on OVH, a writer merged into main, then the check's agent started the dev server on OVH and the BB browser on the Mac mini opened `http://10.8.0.4:8765/` at 375 px: passed, with a screenshot. OVH's firewall now admits TCP 3000–9999 from 10.8.0.0/24 on wg0 only.
+
 ## 0.1.71 — 2026-10-02
 
 Browser checks, tried end to end from OVH with a dev server:

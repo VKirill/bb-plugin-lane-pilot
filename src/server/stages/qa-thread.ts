@@ -29,7 +29,10 @@ export function parseQaVerdict(text: string): QaVerdict {
   return { verdict: "blocked", summary: "browser_qa_thread_returned_no_verdict", cases: [] };
 }
 
-export function qaThreadPrompt(input: { url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; qaHostId: string; devServer?: string }): string {
+export function qaThreadPrompt(input: { url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; qaHostId: string; devServer?: string; vpnAddress?: string | null }): string {
+  const reach = input.vpnAddress
+    ? `   The browser runs on ${input.qaHostId}, which may not be the machine you run on. If the target is localhost or 127.0.0.1 and your machine (\`bb status\`) is not ${input.qaHostId}, open it at this machine's private VPN address instead: replace the host with ${input.vpnAddress} (for example http://${input.vpnAddress}:<port>/). The server must listen on all interfaces (0.0.0.0, e.g. vite --host 0.0.0.0). Do not use bb connect.`
+    : `   The browser runs on ${input.qaHostId}, which may not be the machine you run on. If the target is localhost or 127.0.0.1 and your machine (\`bb status\`) is not ${input.qaHostId}, share the port first with \`bb connect expose <port> --json\` and check the URL it returns.`;
   const devServer = input.devServer ? [
     `0. The target is served by a dev server you start: run \`bb terminal create --thread "$BB_THREAD_ID" --title "Dev server" --json -- ${input.devServer}\` from your workspace, keep its terminal id, and wait until the target answers (\`curl -sS -o /dev/null -w "%{http_code}" <url>\`, up to 3 minutes; read \`bb terminal output <id>\` if it does not). When you are done, close it with \`bb terminal close <id>\`, whatever the verdict.`,
   ] : [];
@@ -45,7 +48,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
     ...devServer,
     "1. Load the browser-automation skill.",
     `2. Run \`bb browser instances --host ${input.qaHostId} --json\`. If it lists an instance, open \`bb browser-automation open --backend desktop --machine ${input.qaHostId} --desktop <instance-id> --json\` (a visible BB tab); otherwise \`bb browser-automation open --backend local --headless --machine ${input.qaHostId} --json\` and copy its previewDirective into your message once, so the owner can watch.`,
-    `   The browser runs on ${input.qaHostId}, which may not be the machine you run on. If the target is localhost or 127.0.0.1 and your machine (\`bb status\`) is not ${input.qaHostId}, share the port first with \`bb connect expose <port> --json\` and check the URL it returns.`,
+    reach,
     "3. For every viewport set the page width, open the target and go through every case. Take a fresh snapshot before using refs; take a screenshot as proof for each case and look at it.",
     "4. Close the session.",
     "Do not change any file. Do not guess: a case you could not check is blocked, with the reason.",
@@ -65,7 +68,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
  */
 export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDisposed">, input: {
   projectId: string; runId: string; pmThreadId: string; taskTitle: string; qaHostId: string; timeoutSec: number;
-  url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; devServer?: string;
+  url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; devServer?: string; vpnAddress?: string | null;
   agent: { providerId: string; model: string; effort: string };
   onSpawned?: (threadId: string) => void;
 }): Promise<QaVerdict & { threadId: string; link: string }> {

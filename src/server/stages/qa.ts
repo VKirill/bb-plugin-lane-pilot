@@ -198,9 +198,12 @@ export function createQaStages(ctx: ServerCore) {
         const agent = provider === "codex" && model
           ? { providerId:"codex", model, effort:reasoning ?? "high" }
           : { providerId:"claude-code", model:"claude-opus-5-5", effort:"high" };
+        // A localhost target on another machine is reached over the private VPN when this machine has an address there.
+        const vpn = qaTarget.hostId === config.hostId ? null
+          : await host.call("vpnAddress",{requestedHostId:config.hostId},{hostId:config.hostId,timeoutMs:15_000}).catch(()=>null);
         const verdict = await runQaThread(ctx, {
           projectId:args.projectId, runId:args.runId, pmThreadId:args.threadId, taskTitle:task.title, qaHostId:qaTarget.hostId, timeoutSec,
-          url:args.url, cases:args.cases, viewports:args.viewports, envClass:args.envClass, authorized:args.authorized, devServer:args.devServer, agent,
+          url:args.url, cases:args.cases, viewports:args.viewports, envClass:args.envClass, authorized:args.authorized, devServer:args.devServer, vpnAddress:vpn?.address ?? null, agent,
           onSpawned:(threadId) => recordStage(db,{...dispatchedBase,state:"running",result:{...targetSnapshot,threadId,link:`@thread:${threadId}`}}),
         });
         const state = verdict.verdict;

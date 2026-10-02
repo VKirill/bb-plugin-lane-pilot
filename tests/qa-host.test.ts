@@ -45,10 +45,10 @@ describe("browser QA host routing", () => {
     expect(resolveBrowserQaTarget({ ...args, needsWorkspace:false })).toMatchObject({ hostId:"host_mini", sameHost:false });
   });
 
-  it("lets a check that never ran run again, but keeps a verdict of one that ran", () => {
+  it("lets a check that could not be made run again, but keeps a verdict on the product", () => {
     expect(resolveStaleBrowserQaReceipt({ state:"blocked", result:{ configuredHostId:null }, updatedAt:1 }).kind).toBe("retry");
     expect(resolveStaleBrowserQaReceipt({ state:"skipped", result:null, updatedAt:1 }).kind).toBe("retry");
-    expect(resolveStaleBrowserQaReceipt({ state:"blocked", result:{ threadId:"thr_qa" }, updatedAt:1 }).kind).toBe("terminal");
+    expect(resolveStaleBrowserQaReceipt({ state:"blocked", result:{ threadId:"thr_qa" }, updatedAt:1 }).kind).toBe("retry");
     expect(resolveStaleBrowserQaReceipt({ state:"failed", result:{ threadId:"thr_qa" }, updatedAt:1 }).kind).toBe("terminal");
     expect(resolveStaleBrowserQaReceipt({ state:"passed", result:{}, updatedAt:1 }).kind).toBe("terminal");
   });

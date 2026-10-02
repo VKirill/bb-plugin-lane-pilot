@@ -427,6 +427,10 @@ export const hostContract = defineRpcContract({
       processPid:z.number().int().nullable(), runnerPath:z.string().nullable(),
     }).strict(),
   },
+  vpnAddress: {
+    input: z.object({ requestedHostId:z.string().min(1) }).strict(),
+    output: z.object({ hostId:z.string(), address:z.string().nullable(), interface:z.string().nullable() }).strict(),
+  },
   probeBrowserQaTarget: {
     input: z.object({
       requestedHostId:z.string().min(1), workspacePath:z.string().startsWith("/"), url:z.string().url(),

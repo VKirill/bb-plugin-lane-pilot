@@ -1,3 +1,4 @@
+import { networkInterfaces } from "node:os";
 import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree } from "./verification/git-integrate";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "./verification/docs-jev";
 import { buildDocsFlows } from "./verification/docs-flows";
@@ -372,6 +373,21 @@ export const runCommand: ExperimentalHostRpcHandlers<typeof hostContract>["runCo
 export const runSandboxedCommand: ExperimentalHostRpcHandlers<typeof hostContract>["runSandboxedCommand"] = async (input) => (
   runSandboxedCommandOnHost(input)
 );
+
+/**
+ * This machine's address in the private WireGuard network (wg*, utun*, tun*, tailscale*): another machine's browser
+ * reaches a dev server here at that address, without a public tunnel.
+ */
+export const vpnAddress: ExperimentalHostRpcHandlers<typeof hostContract>["vpnAddress"] = async (input) => {
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  for (const [name, entries] of Object.entries(networkInterfaces())) {
+    if (!/^(wg|utun|tun|tailscale)/.test(name)) continue;
+    const ipv4 = entries?.find((entry) => entry.family === "IPv4" && !entry.internal
+      && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(entry.address));
+    if (ipv4) return { hostId, address:ipv4.address, interface:name };
+  }
+  return { hostId, address:null, interface:null };
+};
 
 export const sandboxCommandLine: ExperimentalHostRpcHandlers<typeof hostContract>["sandboxCommandLine"] = async (input) => (
   prepareSandboxedCommandLine(input)

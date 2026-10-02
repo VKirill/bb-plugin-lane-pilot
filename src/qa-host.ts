@@ -70,10 +70,11 @@ export function resolveStaleBrowserQaReceipt(input: {
   | { kind: "observe" }
   | { kind: "outcome_unknown"; reason: string; result: Record<string, unknown> } {
   if (!["pending", "running"].includes(input.state)) {
-    // A check that never ran (no Browser QA machine yet, machine offline, disabled) may run once the cause is fixed;
-    // only a check that actually ran keeps its verdict.
+    // «blocked» means the check could not be made (no Browser QA machine yet, machine offline, the port not
+    // reachable) and «skipped» that it was off; both may run again once the cause is fixed. Only a verdict on the
+    // product, passed or failed, is final.
     const ran = qaSpawnClaimed(input.result) || Boolean(input.result && typeof input.result === "object" && (input.result as { threadId?: unknown }).threadId);
-    return (input.state === "blocked" || input.state === "skipped") && !ran ? { kind: "retry" } : { kind: "terminal" };
+    return input.state === "blocked" || (input.state === "skipped" && !ran) ? { kind: "retry" } : { kind: "terminal" };
   }
   if (!qaSpawnClaimed(input.result)) return { kind: "retry" };
   const frozen = input.result && typeof input.result === "object" ? { ...(input.result as Record<string, unknown>) } : {};

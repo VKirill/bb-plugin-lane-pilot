@@ -37,6 +37,7 @@ import {
   runSandboxedCommand,
   sandboxCommandLine,
   sandboxRelease,
+  vpnAddress,
   runBrowserQa,
   probeBrowserQaTarget,
   snapshot,
@@ -60,7 +61,7 @@ export default experimental_defineHostEntry({
   handlers: {
     nativeInstall: nativeInstallHost,
     detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, docsAnchors:withJevKey(docsAnchors), docsFlows:withJevKey(docsFlows), docsDepth:withJevKey(docsDepth), docsVerifyCitations:withJevKey(docsVerifyCitations), docsStaleness:withJevKey(docsStalenessHandler), gitIntegrate, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, writeDocsPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan:withJevKey(classifyPlan), inspectCritiqueCoverage,
-    councilJudge:withJevKey(councilJudge), runCli, runCommand, runSandboxedCommand, sandboxCommandLine, sandboxRelease, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
+    councilJudge:withJevKey(councilJudge), runCli, runCommand, runSandboxedCommand, sandboxCommandLine, sandboxRelease, vpnAddress, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
   },
 });

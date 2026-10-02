@@ -24,6 +24,14 @@ describe("browser check thread", () => {
     expect(prompt).not.toContain("Dev server");
   });
 
+  it("opens a localhost target on another machine at its VPN address, without bb connect", () => {
+    const prompt = qaThreadPrompt({ url: "http://localhost:8765/", cases: ["Page loads"], viewports: "375", envClass: "local", authorized: false,
+      qaHostId: "host_mini", vpnAddress: "10.8.0.4" });
+    expect(prompt).toContain("http://10.8.0.4:<port>/");
+    expect(prompt).toContain("Do not use bb connect.");
+    expect(prompt).not.toContain("bb connect expose");
+  });
+
   it("starts a given dev server in a BB terminal of the check's thread and closes it", () => {
     const prompt = qaThreadPrompt({ url: "http://localhost:5173/", cases: ["Page loads"], viewports: "375", envClass: "local", authorized: false,
       qaHostId: "host_mini", devServer: "npm run dev -- --port 5173" });
