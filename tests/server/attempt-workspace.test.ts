@@ -2,6 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace, transitionAttempt } from "../../src/database";
 import { createCore } from "../../src/server/core";
+import { freshAttemptStart } from "../../src/server/writer/start";
 
 const base = "/home/ubuntu/apps/selfystudio";
 const worktree = "/home/ubuntu/.lane-pilot/worktrees/lpattempt_a/selfystudio";
@@ -27,5 +28,16 @@ describe("attempt workspace for a native run's own worktree", () => {
     expect(core.acceptedTaskWorkspace("run", "bot-fix", base, task, "lpattempt_a").path).toBe(base);
     expect(core.acceptedTaskWorkspace("run", "bot-fix", base, task).path).toBe(base);
     await harness.lifecycle.dispose();
+  });
+
+  it("a retry of an attempt resumed in its worktree starts from the run's workspace, not the removed worktree", () => {
+    const resumed = { ...(task as object), project_cwd: worktree, verification: [{ command: "npm test", cwd: worktree }] } as never;
+    const config = { hostId: "h", writerWorkspacePath: worktree } as never;
+    const fresh = freshAttemptStart(resumed, config, base);
+    expect(fresh.task.project_cwd).toBe(base);
+    expect(fresh.task.verification[0]!.cwd).toBe(base);
+    expect(fresh.config.writerWorkspacePath).toBe(base);
+    const plain = { ...(task as object) } as never;
+    expect(freshAttemptStart(plain, config, base).task).toBe(plain);
   });
 });

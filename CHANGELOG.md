@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.88 — 2026-10-02
+
+From the project-folders PM's report (4 dispatches of one task, each rolled back although the writer's own `npm run typecheck && npm test && npm run build` passed):
+- **`bb plugin build` works inside the check sandbox.** The sandbox moves HOME into a temp folder, so `bb` looked for its build toolchain there, tried to download it and failed with «Cannot find module 'npm/package.json'»; every BB plugin whose check builds it failed acceptance. The sandbox now passes the real `BB_DATA_DIR` (seatbelt and bubblewrap); writes stay limited to the workspace and temp.
+- **A retry after a reload starts from the run's workspace.** An attempt resumed after a reload is bound to its own worktree; when it failed, the retry inherited that path, the worktree was already removed, and the snapshot failed with «spawnSync /bin/bash ENOENT». New attempts (and the emergency writer) now start from the run's workspace; the resumed attempt itself is still checked in its worktree.
+
 ## 0.1.87 — 2026-10-02
 
 - **A docs repair taken into the running turn no longer hangs its unit.** After sending the repair round, the docs unit waited for a `turn/started` that came after the request. Codex sometimes takes the follow-up into the turn it is still finishing (`turn/input/accepted`, no new `turn/started`; 275 of 3267 requests on the hub). The wait has no deadline, so the SelfyStudio unit `apps/worker/docs` of 2026-09-29 waited for three days and blocked the folder's nightly pass. Each plugin reload stopped it and the next one resumed it, which logged «docs resume failed … stale API handle» at every deploy. Now the end of the turn that accepted the follow-up ends the wait. A follow-up nobody takes fails through BB's error events, like a first turn, instead of waiting forever. `turn/input/accepted` counts as a started session.

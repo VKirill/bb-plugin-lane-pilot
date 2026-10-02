@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { accessSync, constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
 import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export type SandboxedCommandInput = {
@@ -68,6 +68,17 @@ export function bbCliDir(env:NodeJS.ProcessEnv = process.env):string|null {
   return null;
 }
 
+/**
+ * BB's data folder, where `bb plugin build` keeps its build toolchain. The sandbox moves HOME into a temp
+ * folder, so without this `bb` looked for the toolchain there, tried to download it and failed with
+ * «Cannot find module 'npm/package.json'» — every `npm run build` of a BB plugin failed acceptance
+ * (project-folders, 2026-10-02). Reading it is allowed; the sandbox still writes only the workspace and temp.
+ */
+export function bbDataDir(env:NodeJS.ProcessEnv = process.env):string {
+  const pinned = env.BB_DATA_DIR?.trim();
+  return pinned && isAbsolute(pinned) ? pinned : join(homedir(),".bb");
+}
+
 function sandboxPath(base:string):string {
   const bb = bbCliDir();
   return bb ? `${base}:${bb}` : base;
@@ -82,7 +93,7 @@ export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempP
   args.push("--bind",input.tempPath,input.tempPath,"--proc","/proc","--dev","/dev","--chdir",input.cwd,
     "--clearenv","--setenv","PATH",sandboxPath("/usr/local/bin:/usr/bin:/bin"),"--setenv","HOME",input.tempPath,
     "--setenv","TMPDIR",input.tempPath,"--setenv","TMP",input.tempPath,"--setenv","TEMP",input.tempPath,
-    "--setenv","LANG","C","--setenv","LC_ALL","C","--","/bin/bash","--noprofile","--norc","-c");
+    "--setenv","BB_DATA_DIR",bbDataDir(),"--setenv","LANG","C","--setenv","LC_ALL","C","--","/bin/bash","--noprofile","--norc","-c");
   return args;
 }
 
@@ -179,7 +190,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       cwd,
       env:{
         PATH:sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"),
-        HOME:tempPath,TMPDIR:tempPath,TMP:tempPath,TEMP:tempPath,
+        HOME:tempPath,TMPDIR:tempPath,TMP:tempPath,TEMP:tempPath,BB_DATA_DIR:bbDataDir(),
         LANG:"C",LC_ALL:"C",
       },
       encoding:"utf8",timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
@@ -249,7 +260,7 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & 
   }
   const profile = buildSeatbeltProfile(workspacePath,tempPath);
   const policySha256 = createHash("sha256").update(profile,"utf8").digest("hex");
-  const env = [`PATH=${sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")}`,`HOME=${tempPath}`,`TMPDIR=${tempPath}`,`TMP=${tempPath}`,`TEMP=${tempPath}`,"LANG=C","LC_ALL=C"];
+  const env = [`PATH=${sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")}`,`HOME=${tempPath}`,`TMPDIR=${tempPath}`,`TMP=${tempPath}`,`TEMP=${tempPath}`,`BB_DATA_DIR=${bbDataDir()}`,"LANG=C","LC_ALL=C"];
   return {hostId,backend,workspacePath,cwd,policySha256,cleanup:{tempPath,created:[]},
     // Passed variables come before the sandbox's own, so PATH, HOME and the temp folders always win.
     commandLine:`cd ${shellQuote(cwd)} && exec /usr/bin/env -i ${[...passed,...[...env,SANDBOX_EXEC,"-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command].map(shellQuote)].join(" ")}`};

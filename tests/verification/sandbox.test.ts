@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBubblewrapArgs, buildSeatbeltProfile, passEnvWords, prepareSandboxedCommandLine, releaseSandboxedCommandLine, resolveSandboxBackend } from "../../src/verification/sandbox";
+import { bbDataDir, buildBubblewrapArgs, buildSeatbeltProfile, passEnvWords, prepareSandboxedCommandLine, releaseSandboxedCommandLine, resolveSandboxBackend } from "../../src/verification/sandbox";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,6 +37,17 @@ describe("host sandbox policy", () => {
     expect(args.slice(2, 4)).toEqual(["--unshare-all","--share-net"]);
     expect(args).toEqual(expect.arrayContaining(["--unshare-all","--ro-bind","/","/","--bind","/work","/work","--ro-bind","/work/.git","/work/.git","--chdir","/work/project","--clearenv","--setenv","HOME","/tmp/lp","--","/bin/bash","--noprofile","--norc","-c"]));
     expect(args).toContain("--share-net");
+  });
+
+  it("points bb at the real BB data folder, so `bb plugin build` finds its toolchain while HOME is the temp folder",async()=>{
+    expect(bbDataDir({BB_DATA_DIR:"/data/bb"})).toBe("/data/bb");
+    expect(bbDataDir({})).toMatch(/\/\.bb$/);
+    const args=buildBubblewrapArgs({workspacePath:"/work",cwd:"/work",tempPath:"/tmp/lp",guardPaths:[]});
+    expect(args.join(" ")).toContain(`--setenv BB_DATA_DIR ${bbDataDir()}`);
+    const workspace=realpathSync(mkdtempSync(join(tmpdir(),"lp-bbdata-")));
+    const line=await prepareSandboxedCommandLine({requestedHostId:"h",workspacePath:workspace,cwd:workspace,command:"true"});
+    try { if(line.backend==="macos-seatbelt") expect(line.commandLine).toContain(`BB_DATA_DIR=${bbDataDir()}`); }
+    finally { await releaseSandboxedCommandLine(line.cleanup); }
   });
 
   it("accepts the Linux backend at both project-setting and host RPC boundaries",()=>{

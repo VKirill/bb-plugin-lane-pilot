@@ -15,6 +15,15 @@ import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
+/** Where a new attempt of the task starts: the run's workspace, whatever worktree a resumed attempt was bound to. */
+export function freshAttemptStart(task:TaskV2, config:PrototypeConfig, runWorkspace:string|null):{task:TaskV2;config:PrototypeConfig} {
+  if (!runWorkspace || resolve(task.project_cwd) === resolve(runWorkspace)) return { task, config };
+  return {
+    task:{...task,project_cwd:runWorkspace,verification:task.verification.map((command)=>({...command,cwd:runWorkspace}))},
+    config:{...config,writerWorkspacePath:runWorkspace},
+  };
+}
+
 export function createWriterStart(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host, markCanceledWriterStages, refreshRun, runPolicyFor } = ctx;
 
@@ -52,6 +61,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       reasoningLevel:existingTrace.effectiveReasoningLevel, serviceTier:existingTrace.serviceTier,
       selectionSource:existingTrace.selectionSource,
     };
+    // An attempt resumed after a reload arrives bound to its own worktree. Every new attempt starts from the run's
+    // workspace instead: that worktree is removed when the attempt fails, and a retry snapshotted inside it failed
+    // with «spawnSync /bin/bash ENOENT» (project-folders, 2026-10-02).
+    const { task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, getRun(db, input.runId)?.writer_workspace_path ?? null);
+    let activeConfig = input.config;
     let activeTask = input.task;
     let dirtBefore = input.dirtBefore ?? [];
     let baselineDirtBefore:DirtSnapshot[]|null=input.dirtBefore?[...input.dirtBefore]:null;
@@ -161,7 +175,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           }
           const spawned = await services.spawnWriterAttempt({
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
-            config:input.config, task:input.task, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext,
+            config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
           });
           if (!spawned.ok) {
@@ -172,8 +186,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
             }:undefined;
-            activeTask = {...input.task,project_cwd:spawned.workspacePath,
-              verification:input.task.verification.map(command=>({...command,cwd:spawned.workspacePath}))};
+            activeConfig = freshConfig;
+            activeTask = {...freshTask,project_cwd:spawned.workspacePath,
+              verification:freshTask.verification.map(command=>({...command,cwd:spawned.workspacePath}))};
             dirtBefore = spawned.dirtBefore;
             baselineDirtBefore ??=[...spawned.dirtBefore];
             baselineWorkspacePath ??=spawned.workspacePath;
@@ -182,7 +197,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
         if (writerThreadId) {
           last = { ...await services.finishWriterAttempt({
-            projectId:input.projectId, config:input.config, task:activeTask, runId:input.runId,
+            projectId:input.projectId, config:activeConfig, task:activeTask, runId:input.runId,
             taskId:input.taskId, attemptId, pmThreadId:input.pmThreadId, writerThreadId, dirtBefore,
           }), ...(executionPacketSha256 ? { executionPacketSha256 } : {}) };
           const workspaceBinding=getAttempt(db,attemptId);
@@ -238,7 +253,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         createAttempt(db, { id:attemptId, runId:input.runId, taskId:input.taskId });
         writerThreadId = undefined;
         writerSelection=undefined;
-        activeTask = input.task;
+        activeConfig = freshConfig;
+        activeTask = freshTask;
         dirtBefore = [];
         executionPacketSha256 = null;
       }
@@ -262,7 +278,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             writerSelection=undefined;
             const spawned=await services.spawnWriterAttempt({
               projectId:input.projectId,runId:input.runId,taskId:input.taskId,attemptId:emergencyAttemptId,
-              config:input.config,task:input.task,plan:input.plan,pmThreadId:input.pmThreadId,pmReadContext,
+              config:freshConfig,task:freshTask,plan:input.plan,pmThreadId:input.pmThreadId,pmReadContext,
               emergency:{...emergencySelection,reason:decision.reason},
             });
             if (!spawned.ok) {
@@ -277,15 +293,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
             }:undefined;
-              activeTask={...input.task,project_cwd:spawned.workspacePath,
-                verification:input.task.verification.map(command=>({...command,cwd:spawned.workspacePath}))};
+              activeConfig=freshConfig;
+              activeTask={...freshTask,project_cwd:spawned.workspacePath,
+                verification:freshTask.verification.map(command=>({...command,cwd:spawned.workspacePath}))};
               executionPacketSha256=spawned.executionPacketSha256 ?? null;
               const fallbackWorkspace=getAttempt(db,emergencyAttemptId)?.workspace_path;
               dirtBefore=baselineWorkspacePath&&fallbackWorkspace===baselineWorkspacePath
                 ? baselineDirtBefore??spawned.dirtBefore : spawned.dirtBefore;
               const emergencyFallback={reason:decision.reason,primaryAttemptId,providerId:emergencySelection.providerId,model:emergencySelection.model};
               last={...await services.finishWriterAttempt({
-                projectId:input.projectId,config:input.config,task:activeTask,runId:input.runId,taskId:input.taskId,
+                projectId:input.projectId,config:activeConfig,task:activeTask,runId:input.runId,taskId:input.taskId,
                 attemptId:emergencyAttemptId,pmThreadId:input.pmThreadId,writerThreadId,dirtBefore,
                 emergencyFallback,
               }),emergencyFallback:{state:"completed",...emergencyFallback,attemptId:emergencyAttemptId}};
