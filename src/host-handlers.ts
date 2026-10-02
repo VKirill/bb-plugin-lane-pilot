@@ -71,10 +71,17 @@ export const gitRemoveWorktree: ExperimentalHostRpcHandlers<typeof hostContract>
   ...await removeLaneWorktree({basePath:input.basePath,worktreePath:input.worktreePath}),
 });
 
-export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitCreateWorktree"] = async (input, context) => ({
+/**
+ * Writer worktrees live in ~/.lane-pilot/worktrees on the host. BB refuses to start a thread in a folder inside its
+ * own storage that is not one of its environments (HTTP 409 «Workspace path is inside bb-managed storage»), which
+ * is where the plugin's data dir is: every SelfyStudio writer on OVH failed to spawn that way on 2026-10-02.
+ */
+export const laneWorktreeRoot = () => join(homedir(), ".lane-pilot", "worktrees");
+
+export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitCreateWorktree"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await createWorktree({basePath:input.basePath,name:input.name,
-    targetPath:join(context.experimental_paths.dataDir,"worktrees",input.name,basename(input.basePath))}),
+    targetPath:join(laneWorktreeRoot(),input.name,basename(input.basePath))}),
 });
 
 export const gitDocsScope: ExperimentalHostRpcHandlers<typeof hostContract>["gitDocsScope"] = async (input) => ({

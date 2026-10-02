@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.63 — 2026-10-02
+
+- **Writers in their own worktree could not start.** Lane Pilot made each attempt's worktree inside the plugin's data dir, which sits in BB's storage on the host; BB now refuses a thread there unless it is one of its own environments (`HTTP 409: Workspace path is inside bb-managed storage but is not a workspace of this project`). Every SelfyStudio writer on OVH failed this way. Worktrees now live in `~/.lane-pilot/worktrees/` on the host. The PM chat's «Project checkout» was right all along.
+
 ## 0.1.62 — 2026-10-02
 
 Second step onto BB rails: the browser check runs in the BB browser, in a thread you can open.
