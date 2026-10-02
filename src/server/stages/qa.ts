@@ -14,7 +14,7 @@ import type { ServerCore } from "../core";
 export function createQaStages(ctx: ServerCore) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host } = ctx;
 
-  async function runBrowserQa(args:{threadId:string;projectId:string;runId:string;taskId:string;url:string;cases:string[];envClass:"local"|"staging"|"preview"|"production"|"unknown";viewports:string;authorized:boolean})
+  async function runBrowserQa(args:{threadId:string;projectId:string;runId:string;taskId:string;url:string;cases:string[];envClass:"local"|"staging"|"preview"|"production"|"unknown";viewports:string;authorized:boolean;devServer?:string})
     : Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata,"role") !== "pm" || stringAt(metadata,"lanePilotRunId") !== args.runId) {
@@ -61,6 +61,9 @@ export function createQaStages(ctx: ServerCore) {
       }
       if (stale.kind === "observe") {
         return { runId:args.runId,taskId:args.taskId,state:existing.state,reason:"browser_qa_dispatch_unconfirmed_waiting_stale_window",stage:existing };
+      }
+      if (stale.kind === "retry" && (existing.state === "blocked" || existing.state === "skipped")) {
+        recordStage(db,{...base,state:"pending",restart:true});
       }
       if (stale.kind === "outcome_unknown") {
         const frozenInput = existing.result && typeof existing.result === "object"
@@ -125,6 +128,7 @@ export function createQaStages(ctx: ServerCore) {
         configuredHostId: routing.qaHostId ?? configuredSetting(settings, QA_HOST_KEY),
         configuredWorkspace: configuredSetting(settings, QA_WORKSPACE_KEY),
         writerWorkspace: task.project_cwd,
+        needsWorkspace: !threadQa,
       });
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
@@ -178,7 +182,9 @@ export function createQaStages(ctx: ServerCore) {
       configuredReasoning: reasoning ?? null,
     };
     const priorQa = listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa");
-    if (!priorQa) {
+    // A stage restarted after a check that never ran sits in pending; it moves on like a new one. Only one caller
+    // still spawns: claimStageSpawn below is atomic.
+    if (!priorQa || priorQa.state === "pending") {
       recordStage(db,{...dispatchedBase,state:"pending"});
       recordStage(db,{...dispatchedBase,state:"running",providerId:base.providerId,model,result:targetSnapshot});
     }
@@ -194,7 +200,7 @@ export function createQaStages(ctx: ServerCore) {
           : { providerId:"claude-code", model:"claude-opus-5-5", effort:"high" };
         const verdict = await runQaThread(ctx, {
           projectId:args.projectId, runId:args.runId, pmThreadId:args.threadId, taskTitle:task.title, qaHostId:qaTarget.hostId, timeoutSec,
-          url:args.url, cases:args.cases, viewports:args.viewports, envClass:args.envClass, authorized:args.authorized, agent,
+          url:args.url, cases:args.cases, viewports:args.viewports, envClass:args.envClass, authorized:args.authorized, devServer:args.devServer, agent,
           onSpawned:(threadId) => recordStage(db,{...dispatchedBase,state:"running",result:{...targetSnapshot,threadId,link:`@thread:${threadId}`}}),
         });
         const state = verdict.verdict;

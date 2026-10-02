@@ -29,7 +29,10 @@ export function parseQaVerdict(text: string): QaVerdict {
   return { verdict: "blocked", summary: "browser_qa_thread_returned_no_verdict", cases: [] };
 }
 
-export function qaThreadPrompt(input: { url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; qaHostId: string }): string {
+export function qaThreadPrompt(input: { url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; qaHostId: string; devServer?: string }): string {
+  const devServer = input.devServer ? [
+    `0. The target is served by a dev server you start: run \`bb terminal create --thread "$BB_THREAD_ID" --title "Dev server" --json -- ${input.devServer}\` from your workspace, keep its terminal id, and wait until the target answers (\`curl -sS -o /dev/null -w "%{http_code}" <url>\`, up to 3 minutes; read \`bb terminal output <id>\` if it does not). When you are done, close it with \`bb terminal close <id>\`, whatever the verdict.`,
+  ] : [];
   return [
     "You are the Lane Pilot browser check for an accepted task. Check the site in a browser through BB and report a verdict.",
     "",
@@ -39,6 +42,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
     ...input.cases.map((item, index) => `${index + 1}. ${item}`),
     "",
     "How:",
+    ...devServer,
     "1. Load the browser-automation skill.",
     `2. Run \`bb browser instances --host ${input.qaHostId} --json\`. If it lists an instance, open \`bb browser-automation open --backend desktop --machine ${input.qaHostId} --desktop <instance-id> --json\` (a visible BB tab); otherwise \`bb browser-automation open --backend local --headless --machine ${input.qaHostId} --json\` and copy its previewDirective into your message once, so the owner can watch.`,
     `   The browser runs on ${input.qaHostId}, which may not be the machine you run on. If the target is localhost or 127.0.0.1 and your machine (\`bb status\`) is not ${input.qaHostId}, share the port first with \`bb connect expose <port> --json\` and check the URL it returns.`,
@@ -61,7 +65,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
  */
 export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDisposed">, input: {
   projectId: string; runId: string; pmThreadId: string; taskTitle: string; qaHostId: string; timeoutSec: number;
-  url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean;
+  url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; devServer?: string;
   agent: { providerId: string; model: string; effort: string };
   onSpawned?: (threadId: string) => void;
 }): Promise<QaVerdict & { threadId: string; link: string }> {

@@ -2,12 +2,15 @@ import { appendGateEvaluation, listStageReceipts, openDatabase, saveStageReceipt
 import { sha256, stageTransition, validateStageReceipt } from "../stages/contract";
 import type { StageId, StageState } from "../stages/contract";
 export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:string;taskId:string;stageId:StageId;state:StageState;input:string;attempt?:number;
-  providerId?:string|null;model?:string|null;threadId?:string|null;result?:unknown|null;reason?:string|null;replaceOnNewInput?:boolean}): void {
+  providerId?:string|null;model?:string|null;threadId?:string|null;result?:unknown|null;reason?:string|null;replaceOnNewInput?:boolean;
+  /** Starts a stage over from blocked or skipped; only for a stage whose work never ran, so no verdict is lost. */
+  restart?:boolean}): void {
   const previous = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === input.stageId);
   const nextInputSha = sha256(input.input);
   const replace = Boolean(input.replaceOnNewInput && previous && previous.inputSha256 !== nextInputSha
     && ["passed", "failed", "blocked", "skipped"].includes(previous.state) && input.state === "pending");
-  if (previous && !replace && !stageTransition(previous.state, input.state)) {
+  const restart = Boolean(input.restart && previous && ["blocked", "skipped"].includes(previous.state) && input.state === "pending");
+  if (previous && !replace && !restart && !stageTransition(previous.state, input.state)) {
     throw new Error(`illegal stage transition ${input.stageId}: ${previous.state} -> ${input.state}`);
   }
   const result = input.result ?? null;

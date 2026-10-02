@@ -21,5 +21,14 @@ describe("browser check thread", () => {
     expect(prompt).toContain("bb connect expose");
     expect(prompt).toContain("1. Wizard has no captcha");
     expect(prompt).toContain("do not submit, pay, delete or send");
+    expect(prompt).not.toContain("Dev server");
+  });
+
+  it("starts a given dev server in a BB terminal of the check's thread and closes it", () => {
+    const prompt = qaThreadPrompt({ url: "http://localhost:5173/", cases: ["Page loads"], viewports: "375", envClass: "local", authorized: false,
+      qaHostId: "host_mini", devServer: "npm run dev -- --port 5173" });
+    expect(prompt).toContain('bb terminal create --thread "$BB_THREAD_ID" --title "Dev server" --json -- npm run dev -- --port 5173');
+    expect(prompt).toContain("bb terminal close <id>");
+    expect(prompt.indexOf("0. The target")).toBeLessThan(prompt.indexOf("1. Load the browser-automation skill"));
   });
 });

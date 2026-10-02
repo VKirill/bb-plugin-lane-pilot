@@ -39,6 +39,20 @@ describe("browser QA host routing", () => {
     })).toBe("browser_qa_codex_requires_configured_model");
   });
 
+  it("needs a project copy on another QA machine only for the script backends", () => {
+    const args = { writerHostId:"host_ovh", configuredHostId:"host_mini", configuredWorkspace:"", writerWorkspace:"/srv/app" };
+    expect(() => resolveBrowserQaTarget(args)).toThrow("browser_qa_workspace_required_for_cross_host");
+    expect(resolveBrowserQaTarget({ ...args, needsWorkspace:false })).toMatchObject({ hostId:"host_mini", sameHost:false });
+  });
+
+  it("lets a check that never ran run again, but keeps a verdict of one that ran", () => {
+    expect(resolveStaleBrowserQaReceipt({ state:"blocked", result:{ configuredHostId:null }, updatedAt:1 }).kind).toBe("retry");
+    expect(resolveStaleBrowserQaReceipt({ state:"skipped", result:null, updatedAt:1 }).kind).toBe("retry");
+    expect(resolveStaleBrowserQaReceipt({ state:"blocked", result:{ threadId:"thr_qa" }, updatedAt:1 }).kind).toBe("terminal");
+    expect(resolveStaleBrowserQaReceipt({ state:"failed", result:{ threadId:"thr_qa" }, updatedAt:1 }).kind).toBe("terminal");
+    expect(resolveStaleBrowserQaReceipt({ state:"passed", result:{}, updatedAt:1 }).kind).toBe("terminal");
+  });
+
   it("marks a claimed running receipt unknown after the stale window", () => {
     const snapshot = { spawnAttempted:true, configuredHostId:"host-qa-mini", workspacePath:"/tmp/lane-pilot-qa" };
     expect(resolveStaleBrowserQaReceipt({

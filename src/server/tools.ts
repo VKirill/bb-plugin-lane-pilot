@@ -83,17 +83,18 @@ export function registerTools(ctx: ServerCore, services: Services) {
   bb.agents.registerTool({
     name:"lane_pilot_browser_qa",
     description:"Check an accepted task in a browser: a child thread drives the BB browser on the project's Browser QA machine (the Mac mini) and returns a verdict per case and viewport.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. The check runs in a child thread that opens the BB browser on the Browser QA machine (the Mac mini), even when this chat runs elsewhere; a localhost target is shared with bb connect expose first. Supply concrete browser-ui cases and the exact target URL; viewports are CSS widths (default 375,768,1280). Production, unknown, or stateful side-effect cases require authorized=true. Show the owner the returned @thread link. A verdict is passed only when every case passed on every viewport.",
+    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. The check runs in a child thread that opens the BB browser on the Browser QA machine (the Mac mini), even when this chat runs elsewhere; a localhost target is shared with bb connect expose first. When the target is a dev server that is not running, pass its start command in devServer (e.g. npm -w @app/web run dev -- --port 5173): the check starts it in a BB terminal of its thread and closes it afterwards. Supply concrete browser-ui cases and the exact target URL; viewports are CSS widths (default 375,768,1280). Production, unknown, or stateful side-effect cases require authorized=true. Show the owner the returned @thread link. A verdict is passed only when every case passed on every viewport.",
     parameters:z.object({
       runId:z.string().min(1), taskId:z.string().min(1), url:z.string().url(),
       cases:z.array(z.string().min(1).max(2000)).min(1).max(30),
       envClass:z.enum(["local","staging","preview","production","unknown"]),
       viewports:z.string().regex(/^\d{2,4}(,\d{2,4}){0,2}$/).default("375,768,1280"),
       authorized:z.boolean().default(false),
+      devServer:z.string().min(1).max(500).optional(),
     }).strict(),
     execute:async (params,context) => JSON.stringify(await services.runBrowserQa({
       threadId:context.threadId, projectId:context.projectId, runId:params.runId, taskId:params.taskId,
-      url:params.url, cases:params.cases, envClass:params.envClass, viewports:params.viewports, authorized:params.authorized,
+      url:params.url, cases:params.cases, envClass:params.envClass, viewports:params.viewports, authorized:params.authorized, devServer:params.devServer,
     }),null,2),
   });
 

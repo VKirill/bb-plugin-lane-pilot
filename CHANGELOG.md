@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.71 — 2026-10-02
+
+Browser checks, tried end to end from OVH with a dev server:
+
+- **A dev server for the check.** `lane_pilot_browser_qa` takes `devServer`, the command that serves the target. The check's thread starts it in a BB terminal of its own thread, waits until the URL answers, shares the port with `bb connect expose` when the browser is on another machine, and closes the terminal at the end.
+- **A check that never ran can run again for the same task.** One blocked before it started (no Browser QA machine yet, machine offline, disabled) used to keep that receipt for good («already has a receipt; create a new task»); a restart also tripped «illegal stage transition blocked -> pending», and a restarted stage in `pending` answered «browser_qa_already_dispatched» without running. A check that actually ran still keeps its verdict.
+- **The BB-browser check needs no project copy on the QA machine.** `browser_qa_workspace_required_for_cross_host` now applies only to the script backends; the check's thread runs in the PM's environment and drives the browser on the Mac mini remotely.
+
+Live on OVH: the check's agent started `python3 -m http.server 8765` in its terminal and got 200. Sharing the port failed in BB connect for OVH («machine label assignment failed: HTTP 404»): OVH is enrolled through https://bb.vechkasov.pro, which has no connect gate.
+
 ## 0.1.70 — 2026-10-02
 
 Two failures behind SelfyStudio's API and bot tasks not reaching main, both from a host restart in the middle of a merge (a plugin deploy restarts Lane Pilot on every machine):

@@ -1687,6 +1687,14 @@ describe("stage → native writer → receipt", () => {
     }, { threadId:pmThreadId, projectId })));
     expect(required.state).toBe("blocked");
     expect(required.reason).toBe("browser_qa_host_required");
+    // The check never ran: once the machine is set, the same task's check runs.
+    saveProjectSetting(missing.db, projectId, "browser_qa.host_id", missing.qaHostId);
+    const retried = JSON.parse(String(await missing.harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"http://127.0.0.1:5173/", cases:["Open home and verify the title"],
+      envClass:"local", viewports:"375,1280", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(retried.state).toBe("passed");
+    expect(missing.hostRpcCalls.filter((call)=>call.method==="runBrowserQa")).toHaveLength(1);
     await missing.harness.lifecycle.dispose();
   });
 

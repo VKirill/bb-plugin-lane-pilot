@@ -8,13 +8,15 @@ export function resolveBrowserQaTarget(args: {
   configuredHostId: unknown;
   configuredWorkspace: unknown;
   writerWorkspace: string;
+  /** The script backends run in a project copy on the QA machine; the BB-browser thread drives it remotely and needs none. */
+  needsWorkspace?: boolean;
 }): { hostId: string; workspacePath: string; sameHost: boolean } {
   const hostId = typeof args.configuredHostId === "string" ? args.configuredHostId.trim() : "";
   if (!hostId) throw new Error("browser_qa_host_required");
   const sameHost = hostId === args.writerHostId;
   const workspace = typeof args.configuredWorkspace === "string" ? args.configuredWorkspace.trim() : "";
   if (workspace && !workspace.startsWith("/")) throw new Error("browser_qa_workspace_must_be_absolute");
-  if (!sameHost && !workspace) throw new Error("browser_qa_workspace_required_for_cross_host");
+  if (!sameHost && !workspace && args.needsWorkspace !== false) throw new Error("browser_qa_workspace_required_for_cross_host");
   return { hostId, workspacePath: workspace || args.writerWorkspace, sameHost };
 }
 
@@ -67,7 +69,12 @@ export function resolveStaleBrowserQaReceipt(input: {
   | { kind: "retry" }
   | { kind: "observe" }
   | { kind: "outcome_unknown"; reason: string; result: Record<string, unknown> } {
-  if (!["pending", "running"].includes(input.state)) return { kind: "terminal" };
+  if (!["pending", "running"].includes(input.state)) {
+    // A check that never ran (no Browser QA machine yet, machine offline, disabled) may run once the cause is fixed;
+    // only a check that actually ran keeps its verdict.
+    const ran = qaSpawnClaimed(input.result) || Boolean(input.result && typeof input.result === "object" && (input.result as { threadId?: unknown }).threadId);
+    return (input.state === "blocked" || input.state === "skipped") && !ran ? { kind: "retry" } : { kind: "terminal" };
+  }
   if (!qaSpawnClaimed(input.result)) return { kind: "retry" };
   const frozen = input.result && typeof input.result === "object" ? { ...(input.result as Record<string, unknown>) } : {};
   const staleMs = input.staleMs ?? QA_STALE_MS;
