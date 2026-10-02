@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import plugin from "../server";
 import {
   createAttempt,
@@ -892,7 +892,8 @@ describe("BB writer validation on the server path", () => {
     transitionAttempt(db, "attempt-resume", "running", { threadId:"writer-orphan" });
     setAttemptDirtBefore(db, "attempt-resume", ["hello.txt"]);
     await plugin(bb);
-    expect(getAttempt(db, "attempt-resume")?.state).toBe("validation_failed");
+    harness.runService("startup-recovery");
+    await vi.waitFor(() => expect(getAttempt(db, "attempt-resume")?.state).toBe("validation_failed"));
     expect(snapshotCwds).toEqual([config.writerWorkspacePath]);
     await harness.lifecycle.dispose();
   });

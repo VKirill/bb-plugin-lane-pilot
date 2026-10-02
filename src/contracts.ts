@@ -761,6 +761,8 @@ export const rpcContract = defineRpcContract({
         created_at: z.number(),
         updated_at: z.number(),
         cliReceiptJson: z.string().nullable(),
+        /** The PM chat of an open run: what the owner sees instead of a bare run id. */
+        pmThread: z.object({ id: z.string(), title: z.string().nullable(), status: z.string().nullable() }).strict().nullable().optional(),
         stages: z.array(stageReceiptSchema).optional(),
         attempts: z.array(z.object({
           id: z.string(),

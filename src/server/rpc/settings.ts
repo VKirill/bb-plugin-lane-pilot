@@ -8,6 +8,7 @@ import { mapListedQaHosts } from "../../qa-host";
 import { VISIBLE_CATALOG } from "../../ui-catalog";
 import { NATIVE_CODE_CRITIQUE_KEYS, NATIVE_DOCS_KEYS, NATIVE_MEMORY_KEYS, NATIVE_NIGHT_REVIEW_KEYS, NATIVE_ONBOARDING_KEYS, NATIVE_PLAN_CRITIQUE_KEYS, NATIVE_PM_READ_KEYS, NATIVE_PROJECT_LIFE_KEYS, NATIVE_SPECIALIST_KEYS, NATIVE_WRITER_KEYS } from "../run-routing";
 import { asJsonText } from "../writer-task";
+import { stringAt } from "../values";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../contracts";
 import type { ServerCore } from "../core";
@@ -93,6 +94,17 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
           run.cliReceiptJson,
         ])
         .find((text) => text != null) ?? null;
+      // Open runs carry their PM chat's title and status; closed ones are history and are not looked up.
+      const pmThreads = new Map(await Promise.all(listRunsWithAttempts(db, projectId)
+        .filter((run) => !run.closed_at && run.pm_thread_id)
+        .map(async (run) => {
+          let thread: unknown = null;
+          let status: string | null = null;
+          try { thread = await bb.sdk.threads.get({ threadId: run.pm_thread_id! }); status = stringAt(thread, "status"); }
+          catch (cause) { if (/\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause))) status = "gone"; }
+          return [run.id, { id: run.pm_thread_id!, title: stringAt(thread, "title"), status }] as const;
+        })));
+      for (const run of listed) (run as { pmThread?: unknown }).pmThread = pmThreads.get(run.id) ?? null;
       return {
         projectId,
         sectionId: sectionId ?? null,

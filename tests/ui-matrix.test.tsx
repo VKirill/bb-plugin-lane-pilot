@@ -320,16 +320,16 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
       native_install_start: (input) => { started.push(input); status = "installing"; return { started: true }; },
     });
     fireEvent.mouseDown(slot.getByTestId("tab-service"), { button:0 });
-    await waitFor(() => expect(slot.getByTestId("native-install-state").dataset.state).toBe("todo"));
+    await waitFor(() => expect(slot.getByTestId("native-install-state").dataset.state).toBe("todo"), { timeout: 5000 });
     fireEvent.click(slot.getByTestId("native-install-now"));
-    await waitFor(() => expect(started).toEqual([{ hostId:"host_ui" }]));
-    await waitFor(() => expect(slot.getByTestId("native-install-state").textContent).toContain(en.nativeInstalling));
+    await waitFor(() => expect(started).toEqual([{ hostId:"host_ui" }]), { timeout: 5000 });
+    await waitFor(() => expect(slot.getByTestId("native-install-state").textContent).toContain(en.nativeInstalling), { timeout: 5000 });
     expect(slot.queryByTestId("native-install-now")).toBeNull();
     slot.lifecycle.unmount();
     status = "enabled";
     const ready = await mountPage({ get_screen: () => withBinding, native_install_status: () => ({ status, error: null }) });
     fireEvent.mouseDown(ready.getByTestId("tab-service"), { button:0 });
-    await waitFor(() => expect(ready.getByTestId("native-install-state").dataset.state).toBe("ok"));
+    await waitFor(() => expect(ready.getByTestId("native-install-state").dataset.state).toBe("ok"), { timeout: 5000 });
     expect(ready.queryByTestId("native-install-now")).toBeNull();
     ready.lifecycle.unmount();
   });

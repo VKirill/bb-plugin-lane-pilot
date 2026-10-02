@@ -80,6 +80,7 @@ type ScreenPayload = {
     created_at: number;
     updated_at: number;
     cliReceiptJson: string | null;
+    pmThread?: { id: string; title: string | null; status: string | null } | null;
     stages?: StageReceipt[];
     attempts: Array<{
       id: string;
@@ -1936,8 +1937,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     return <Surface key={run.id} testId={`run-${run.id}`}>
                       <SurfaceHeader className="flex-wrap justify-between">
                         <div className="flex min-w-0 items-center gap-2">
-                          <span className="min-w-0 truncate font-mono text-xs" title={run.id}>{run.id}</span>
+                          {run.pmThread?.title
+                            ? <span className="min-w-0 truncate text-sm font-medium" title={run.id}>{run.pmThread.title}</span>
+                            : <span className="min-w-0 truncate font-mono text-xs" title={run.id}>{run.id}</span>}
                           <Badge variant={runTone(run.state)}>{stateLabel(run.state)}</Badge>
+                          {run.pmThread?.status ? <span className="shrink-0 text-xs text-muted-foreground">{t(run.pmThread.status === "active" ? "runChatActive" : run.pmThread.status === "gone" ? "runChatGone" : "runChatIdle")}</span> : null}
                         </div>
                         <span className="text-xs text-muted-foreground">{run.kind}{run.updated_at > 1e11 ? ` · ${new Date(run.updated_at).toLocaleString(locale)}` : ""}</span>
                       </SurfaceHeader>

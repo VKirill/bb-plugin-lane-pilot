@@ -432,6 +432,7 @@ describe("stage → native writer → receipt", () => {
     expect(getAttempt(db,queued.attemptId)?.state).toBe("canceled");
     expect(writerRows()).toHaveLength(1);
     const restarted=await harness.reload(plugin);
+    restarted.harness.runService("startup-recovery");
     const resumedDb=openDatabase(restarted.bb);
     await new Promise(resolve=>setTimeout(resolve,40));
     expect(getAttempt(resumedDb,queued.attemptId)?.state).toBe("canceled");
@@ -459,6 +460,7 @@ describe("stage → native writer → receipt", () => {
       if(index===0)await new Promise(resolve=>setTimeout(resolve,5));
     }
     const restarted=await harness.reload(plugin);
+    restarted.harness.runService("startup-recovery");
     const resumedDb=openDatabase(restarted.bb);
     const writerRows=()=>spawned.filter(row=>(row.pluginMetadata as Record<string,unknown>).role==="writer");
     const waitForWriterCount=async(count:number)=>{
@@ -1051,6 +1053,7 @@ describe("stage → native writer → receipt", () => {
       transitionAttempt(db,"holder-reload-attempt","spawn_requested");
       expect(setAttemptHolderThread(db,"holder-reload-attempt","workspace-provisioner-thread")).toBe(true);
       const restarted=await harness.reload(plugin);
+      restarted.harness.runService("startup-recovery");
       const resumedDb=openDatabase(restarted.bb);
       await restarted.harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId});
       const holders=spawned.filter(row=>(row.pluginMetadata as Record<string,unknown>).role==="workspace-provisioner");
@@ -1090,6 +1093,7 @@ describe("stage → native writer → receipt", () => {
       });
       expect(getAttempt(db,"holder-lost-ack-attempt")).toMatchObject({state:"spawn_requested",holder_thread_id:null,thread_id:null});
       const restarted=await harness.reload(plugin);
+      restarted.harness.runService("startup-recovery");
       const resumedDb=openDatabase(restarted.bb);
       await restarted.harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId});
       expect(spawned.filter(row=>(row.pluginMetadata as Record<string,unknown>).role==="workspace-provisioner")).toHaveLength(0);
@@ -1942,6 +1946,7 @@ describe("stage → native writer → receipt", () => {
     }
     expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
     const restarted=await harness.reload(plugin);
+    restarted.harness.runService("startup-recovery");
     await restarted.harness.behavior.callRpc("resume_runs",{projectId});
     await restarted.harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId});
     expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
@@ -1964,6 +1969,7 @@ describe("stage → native writer → receipt", () => {
       expect(ledger.repairThreadId).toBeUndefined();
       expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
       const restarted=await harness.reload(plugin);
+      restarted.harness.runService("startup-recovery");
       await restarted.harness.behavior.callRpc("resume_runs",{projectId});
       await restarted.harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId});
       expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
@@ -1995,6 +2001,7 @@ describe("stage → native writer → receipt", () => {
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId});
     expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique")).toHaveLength(1);
     const restarted=await harness.reload(plugin);
+    restarted.harness.runService("startup-recovery");
     await restarted.harness.behavior.callRpc("resume_runs",{projectId});
     expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique")).toHaveLength(1);
     await restarted.harness.lifecycle.dispose();
@@ -2050,6 +2057,7 @@ describe("stage → native writer → receipt", () => {
       expect(loadProjectSettings(db,projectId)["code_critique.model"]).toBe("other-model");
       expect(loadProjectSettings(db,projectId)["code_critique.max_rounds"]).toBe(3);
       const restarted=await harness.reload(plugin);
+      restarted.harness.runService("startup-recovery");
       await restarted.harness.behavior.callRpc("resume_runs",{projectId});
       expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
       expect(critics.concat(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique"))

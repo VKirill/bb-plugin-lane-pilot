@@ -1,5 +1,5 @@
 import { closeRun, getAttempt, getRun, listOpenAttempts, openDatabase, releaseActivation } from "../database";
-import { stringAt } from "./values";
+import { stringAt, valueAt } from "./values";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export function cancelRejection(db: ReturnType<typeof openDatabase>, attempt: NonNullable<ReturnType<typeof getAttempt>>): string | null {
   const run = getRun(db, attempt.run_id);
@@ -10,6 +10,36 @@ export function cancelRejection(db: ReturnType<typeof openDatabase>, attempt: No
     return `cancel is not legal from ${attempt.state}`;
   }
   return null;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const isGone = (cause: unknown) => /\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause));
+
+/**
+ * Closes open runs nobody can come back to: the PM chat was deleted or archived, or a run never got a PM chat in a
+ * day. A run is opened per Lane Pilot chat and used to stay «running» forever once the chat was gone. Live and idle
+ * chats are left alone, as is any run with an open attempt or a chat that could not be read.
+ */
+export async function closeAbandonedRuns(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, now = Date.now()): Promise<string[]> {
+  const rows = db.prepare("SELECT id,project_id,pm_thread_id,created_at FROM lane_pilot_run WHERE closed_at IS NULL AND state IN ('pending','running')")
+    .all() as Array<{ id: string; project_id: string; pm_thread_id: string | null; created_at: number }>;
+  const busy = new Set(listOpenAttempts(db).map((attempt) => attempt.run_id));
+  const closed: string[] = [];
+  for (const row of rows) {
+    if (busy.has(row.id)) continue;
+    let abandoned: boolean;
+    if (!row.pm_thread_id) abandoned = now - row.created_at > DAY_MS;
+    else {
+      const thread = await bb.sdk.threads.get({ threadId: row.pm_thread_id }).then((value) => value as unknown, (cause: unknown) => (isGone(cause) ? null : undefined));
+      if (thread === undefined) continue;
+      abandoned = thread === null || valueAt(thread, "archivedAt") != null;
+    }
+    if (abandoned && closeRun(db, row.id, "sweep")) {
+      releaseActivation(db, row.project_id, row.id);
+      closed.push(row.id);
+    }
+  }
+  return closed;
 }
 
 export async function finishRunSafely(
@@ -34,7 +64,6 @@ export async function finishRunSafely(
     };
     if (typeof threads.listRunning !== "function") throw new Error("cannot verify PM status: threads.listRunning is unavailable");
     // A PM thread the user deleted has nothing left to observe; the run must still be closable.
-    const isGone = (cause: unknown) => /\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause));
     const existing = await threads.get({ threadId: run.pm_thread_id }).catch((cause: unknown) => { if (isGone(cause)) return null; throw cause; });
     if (existing !== null) {
       await threads.stop({ threadId: run.pm_thread_id });

@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../contracts";
-import { getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, loadPrototypeConfig, setAttemptHolderThread, transitionAttempt } from "../database";
+import { getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../database";
 import { reconcile, reconcileHolder } from "../reconcile";
 import type { IdempotencyTriple } from "../reconcile";
 import { shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../stages/run-policy";
@@ -10,7 +10,7 @@ import type { ReconcilePort } from "../reconcile";
 import type { Services } from "./services";
 
 export function createReconcile(ctx: ServerCore, services: Services) {
-  const { acceptedTaskWorkspace, bb, db, refreshRun } = ctx;
+  const { acceptedTaskWorkspace, bb, configForRun, db, refreshRun } = ctx;
 
   function threadReconcilePort(projectId:string): ReconcilePort {
     return {
@@ -50,10 +50,12 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     throw new WriterSelectionError(`attempt_worktree_holder_reconcile_error:${result.message}`);
   }
 
-  function enqueueResumedWriter(projectId:string, attempt:NonNullable<ReturnType<typeof getAttempt>>, writerThreadId?:string):boolean {
+  // A native (cli) run takes its host, folder and writer from configForRun; the prototype config exists on a few
+  // old projects only, so reading it here left every other project's writers hanging after a reload.
+  async function enqueueResumedWriter(projectId:string, attempt:NonNullable<ReturnType<typeof getAttempt>>, writerThreadId?:string):Promise<boolean> {
     const run = getRun(db, attempt.run_id);
     const stored = getTask(db, attempt.task_id);
-    const config = loadPrototypeConfig(db, projectId);
+    const config = await configForRun(projectId, run);
     const parsed = stored?.kind === "bb" ? taskV2Schema.safeParse(stored.contract) : null;
     if (!run?.writer_workspace_path || !config || !parsed?.success) return false;
     const taskWorkspace=acceptedTaskWorkspace(attempt.run_id,attempt.task_id,run.writer_workspace_path,parsed.data,attempt.id);
@@ -111,7 +113,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     if (input.attempt.state !== "running") return false;
     const run = getRun(db, input.attempt.run_id);
     const stored = getTask(db, input.attempt.task_id);
-    const config = loadPrototypeConfig(db, input.projectId);
+    const config = await configForRun(input.projectId, run);
     if (!run?.writer_workspace_path || !config || stored?.kind !== "bb") return false;
     const parsed = taskV2Schema.safeParse(stored.contract);
     if (!parsed.success) return false;
@@ -144,14 +146,14 @@ export function createReconcile(ctx: ServerCore, services: Services) {
         // through thread reconciliation, which correctly rejects a missing spawn;
         // resume it directly through the persisted run pool after reload.
         if (shouldResumeWorktreeHolder(attempt)) {
-          enqueueResumedWriter(row.project_id, attempt);
+          await enqueueResumedWriter(row.project_id, attempt);
           resumed.push(row.id);
           continue;
         }
         if (shouldScanLostWorktreeHolder(attempt)) {
           const recovered = await recoverLostHolderThread(row.project_id, attempt);
           if (recovered) {
-            enqueueResumedWriter(row.project_id, getAttempt(db, attempt.id) ?? attempt);
+            await enqueueResumedWriter(row.project_id, getAttempt(db, attempt.id) ?? attempt);
             resumed.push(row.id);
             continue;
           }
@@ -165,7 +167,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
         } else if (current && (current.state === "running" || current.state === "queued")) {
           const run = getRun(db, current.run_id);
           const stored = getTask(db, current.task_id);
-          const config = loadPrototypeConfig(db, row.project_id);
+          const config = await configForRun(row.project_id, run);
           const parsed = stored?.kind === "bb" ? taskV2Schema.safeParse(stored.contract) : null;
           if (run?.writer_workspace_path && config && parsed?.success) {
             const taskWorkspace=acceptedTaskWorkspace(current.run_id,current.task_id,run.writer_workspace_path,parsed.data,current.id);

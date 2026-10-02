@@ -8,6 +8,7 @@ import { mountNativeWiring } from "./src/server/native-wiring";
 import { createProbes } from "./src/server/probes";
 import { createReconcile } from "./src/server/reconcile";
 import { createRuleScan } from "./src/server/rule-scan";
+import { closeAbandonedRuns } from "./src/server/run-finish";
 import { registerRpc } from "./src/server/rpc";
 import type { Services } from "./src/server/services";
 import { createStageChildren } from "./src/server/stages/children";
@@ -62,9 +63,22 @@ export default async function plugin(bb: BbPluginApi) {
   registerRpc(ctx, services);
   registerTools(ctx, services);
   registerCli(ctx, services);
-  await services.resumeOrphans().catch((cause) => {
-    bb.log.warn(`Lane Pilot resume on start skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
+  const sweepRuns = () => closeAbandonedRuns(bb, db).then((closed) => {
+    if (closed.length) bb.log.info(`Lane Pilot closed ${closed.length} runs whose PM chat is gone: ${closed.join(", ")}`);
+  }, (cause) => bb.log.warn(`Lane Pilot run sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
+  // Recovery reads writer workspaces through the host, which is not callable while the factory registers; a service
+  // starts once loading is done. (Run in the factory, a finished writer was failed with «host plugin calls are
+  // unavailable during factory registration».)
+  bb.background.service("startup-recovery", {
+    async start(signal) {
+      await services.resumeOrphans().catch((cause) => {
+        bb.log.warn(`Lane Pilot resume on start skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
+      });
+      await sweepRuns();
+      await new Promise<void>((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
+    },
   });
+  bb.background.schedule("runs-sweep", "*/15 * * * *", sweepRuns);
   // A reload drops the loops that watch background helpers; the stages are idempotent and find their child thread again.
   for (const stage of listUnfinishedStages(db, ["memory-maintenance", "project-life"])) {
     if (stage.stageId === "memory-maintenance") services.maintainMemoryAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);

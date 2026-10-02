@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.60 — 2026-10-02
+
+Runs that hung in «выполняется» for days.
+
+- **Runs close when nobody can return to them.** A run opens per Lane Pilot chat and stayed «running» forever after the chat was deleted or archived, and runs that never got a PM chat stayed «pending». A sweep at start and every 15 minutes closes those (`closed_by = sweep`); live and idle chats, runs with an open attempt and chats that could not be read are left alone. On the hub it closed 19 runs; 10 more with long-idle chats were finished by hand at the owner's request.
+- **Recovery after a reload works for native runs.** Resuming an orphaned writer read the old prototype config, which only 5 projects have, so on SelfyStudio and the rest a finished writer was never picked up and its attempt stayed «running». Recovery now uses `configForRun`, like the rest of the native pipeline.
+- **Startup recovery runs after the plugin has loaded,** as a background service. Run inside the factory, it reached the host while that was not callable yet and failed two old SelfyStudio attempts with «host plugin calls are unavailable during factory registration»; that is the reason recorded on onboarding-s1-backend and onboarding-s1-cabinet, not their writers' work.
+- **«Прогоны» name the PM chat** of an open run and say whether it is working, waiting or deleted, instead of a bare run id.
+
 ## 0.1.58 — 2026-10-02
 
 - **The project's main agent now drives its chats.** With a main agent chosen in a project, every new chat there starts with Lane Pilot on and that agent picked; turning it off in the chat keeps it off for that chat. With «Без специального агента» Lane Pilot stays off until you turn it on. `activation_context` reports the project's `mainAgent`.
