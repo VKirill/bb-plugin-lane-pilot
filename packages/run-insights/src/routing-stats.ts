@@ -33,7 +33,7 @@ function riskOf(contractJson: string): string {
 
 /**
  * One row per provider, model and task risk. A task counts once; it is accepted at the first try
- * when its acceptance receipt passed at attempt 0, accepted when it passed at any attempt, and
+ * when its acceptance receipt passed at the first attempt (attempt_no 1; 0 in older receipts), accepted when it passed at any attempt, and
  * failed when the receipt ended failed or blocked.
  */
 export function writerAcceptanceStats(db: InsightsDatabase, filter: { projectId?: string; since?: number } = {}): WriterStatRow[] {
@@ -59,7 +59,7 @@ export function writerAcceptanceStats(db: InsightsDatabase, filter: { projectId?
     stat.tasks += 1;
     if (row.acceptance_state === "passed") {
       stat.accepted += 1;
-      if (row.acceptance_attempt === 0) stat.acceptedFirstTry += 1;
+      if (row.acceptance_attempt !== null && row.acceptance_attempt <= 1) stat.acceptedFirstTry += 1;
     } else if (row.acceptance_state === "failed" || row.acceptance_state === "blocked") {
       stat.failed += 1;
     }

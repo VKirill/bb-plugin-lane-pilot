@@ -225,6 +225,7 @@ describe("native writer settings against the registered SQLite backend", () => {
     const ruleCalls:Array<Record<string, unknown>> = [];
     const { harness, slot } = await mountWithBackend({ rules, ruleCalls });
     try {
+      fireEvent.mouseDown(slot.getByTestId("tab-rules"), { button:0 });
       const card = await slot.findByTestId("rule-rule_a");
       // Opening the screen must not save an analyzer the picker merely normalized.
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -379,7 +380,7 @@ describe("native writer settings against the registered SQLite backend", () => {
     await finish(harness, slot);
   });
 
-  it("keeps project selection left and user-facing settings separate from Diagnostics", async () => {
+  it("keeps project selection left and user-facing settings separate from the Maintenance diagnostics", async () => {
     const { harness, slot } = await mountWithBackend();
     expect(slot.getByTestId(`project-item-${projectId}`)).toBeTruthy();
     expect(slot.getByTestId("writer-picker")).toBeTruthy();
@@ -389,8 +390,10 @@ describe("native writer settings against the registered SQLite backend", () => {
     expect(slot.getByTestId("night-review-settings").textContent).toContain(en.nightReviewEnabled);
     expect(slot.getByLabelText(en.nightReviewEnabled)).toBeTruthy();
     expect(slot.getByTestId("settings-panel").textContent).not.toContain("--writer-provider");
-    expect(slot.getByTestId("diagnostics-panel").hasAttribute("hidden")).toBe(true);
-    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    // Diagnostics sit folded inside Maintenance, away from the settings tabs.
+    expect(slot.getByTestId("service-panel").hasAttribute("hidden")).toBe(true);
+    expect(slot.getByTestId("diagnostics-disclosure").hasAttribute("open")).toBe(false);
+    fireEvent.mouseDown(slot.getByTestId("tab-service"), { button:0 });
     expect(slot.getByTestId("field-s024").textContent).toContain(en.legacyFastModeExplanation);
     expect(slot.getByTestId("cli-preview")).toBeTruthy();
     await finish(harness, slot);

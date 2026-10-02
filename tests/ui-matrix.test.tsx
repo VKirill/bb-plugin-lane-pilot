@@ -146,7 +146,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     expect(slot.getByTestId("settings-panel").textContent).not.toContain(`${en.fieldEffective}:`);
     fireEvent.click(slot.getByTestId("help-pm_read.min_lines"));
     expect(slot.getByTestId("help-dialog-pm_read.min_lines").textContent).toContain(en.largeFileThresholdHelp);
-    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     const fields = Array.from(slot.getByTestId("diagnostics-panel").querySelectorAll<HTMLElement>("[data-storage-key]"));
     const keys = fields.map((node) => node.getAttribute("data-storage-key"));
     expect(keys.length).toBeGreaterThan(0);
@@ -164,7 +164,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     const spy = vi.spyOn(console, "error").mockImplementation((...args) => { errors.push(args); });
     const slot = await mountPage();
     await waitFor(() => expect(slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy());
-    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     const joined = errors.map((item) => String(item)).join("\n");
     expect(joined).not.toMatch(/same key/i);
     expect(joined).not.toContain("night_review.model");
@@ -183,9 +183,9 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     expect(t("tabSettings")).toBe(ru.tabSettings);
     expect(t("confirmBody")).toBe(ru.confirmBody);
     const slot = await mountPage();
-    expect(slot.getByText(ru.tabSettings)).toBeTruthy();
-    expect(slot.getByText(ru.tabChecks)).toBeTruthy();
-    expect(slot.getByText(ru.tabMonitor)).toBeTruthy();
+    expect(slot.getByTestId("tab-settings").textContent).toBe(ru.tabSettings);
+    expect(slot.getByTestId("tab-checks").textContent).toBe(ru.tabChecks);
+    expect(slot.getByTestId("tab-monitor").textContent).toBe(ru.tabMonitor);
     slot.lifecycle.unmount();
   });
 
@@ -272,7 +272,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
 
   it("asks for confirmation before external install operations", async () => {
     const slot = await mountPage();
-    fireEvent.click(slot.getByTestId("tab-install"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     fireEvent.click(await slot.findByTestId("install-stack"));
     const dialog = await slot.findByTestId("external-ops-dialog");
     expect(dialog.textContent).toContain("npm install -g @rama_nigg/open-cursor");
@@ -286,7 +286,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
 
   it("lists connect-specific operations instead of install.sh commands", async () => {
     const slot = await mountPage();
-    fireEvent.click(slot.getByTestId("tab-install"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     fireEvent.click(slot.getByText(en.connectOpencode));
     const dialog = await slot.findByTestId("external-ops-dialog");
     expect(dialog.textContent).toContain(en.confirmConnectOps);
@@ -294,11 +294,11 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     slot.lifecycle.unmount();
   });
 
-  it("shows writer output and installation receipts only in Diagnostics", async () => {
+  it("shows writer output and installation receipts only in Maintenance technical details", async () => {
     const slot = await mountPage();
     fireEvent.click(slot.getByTestId("tab-monitor"));
     expect(slot.queryByTestId("writer-result")).toBeNull();
-    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     const preview = await slot.findByTestId("cli-preview");
     const previewJson = JSON.parse(preview.querySelector("code")!.textContent!) as { argv:string[] };
     expect(previewJson.argv.filter((arg) => arg === "--provider")).toHaveLength(1);
@@ -306,9 +306,8 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     const writer = await slot.findByTestId("writer-result");
     expect(writer.textContent).toContain("hello from writer");
     expect(slot.getByTestId("diagnostics-panel").textContent).toContain("\"action\":\"install\"");
-    fireEvent.click(slot.getByTestId("tab-install"));
-    expect(slot.container.querySelector("[data-testid='diagnostics-panel']")?.hasAttribute("hidden")).toBe(true);
-    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    // Maintenance keeps the technical details folded under the install actions.
+    expect(slot.getByTestId("diagnostics-disclosure").hasAttribute("open")).toBe(false);
     const install = await slot.findByTestId("install-receipt");
     expect(install.textContent).toContain("\"action\":\"install\"");
     expect(install.textContent).not.toContain("hello from writer");
@@ -320,8 +319,8 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
       const slot = await mountPage({
         get_preferences: () => ({ locale, preference:locale, lastProjectId:null }),
       });
-      fireEvent.mouseDown(slot.getByTestId("tab-install"), { button:0 });
-      fireEvent.click(slot.getByTestId("tab-install"));
+      fireEvent.mouseDown(slot.getByTestId("tab-service"), { button:0 });
+      fireEvent.click(slot.getByTestId("tab-service"));
       await waitFor(() => expect(slot.getByTestId("install-panel").hidden).toBe(false));
       fireEvent.click(slot.getByText(locale === "ru" ? ru.detect : en.detect));
       const result = await slot.findByTestId("stack-detect-result");
@@ -331,7 +330,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
       expect(result.textContent).toContain("1.18.30");
       expect(result.textContent).not.toContain("/tmp/lane-pilot-ui");
       expect(result.textContent).not.toContain("/tmp/snapshot");
-      fireEvent.click(slot.getByTestId("tab-diagnostics"));
+      fireEvent.click(slot.getByTestId("tab-service"));
       expect(slot.getByTestId("import-diagnostics").textContent).toContain("/tmp/lane-pilot-ui");
       expect(slot.getByTestId("import-diagnostics").textContent).toContain("/tmp/snapshot");
       expect(slot.getByTestId("restore-previous-install").textContent).toContain(locale === "ru" ? ru.restorePreviousInstall : en.restorePreviousInstall);
@@ -354,7 +353,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
         }] },
       }),
     });
-    fireEvent.click(slot.getByTestId("tab-install"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     fireEvent.click(slot.getByTestId("stack-detect"));
     const inventory = await slot.findByTestId("coexistence-inventory");
     const checkout = slot.getByTestId("coex-managed-checkout");
@@ -368,18 +367,31 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     slot.lifecycle.unmount();
   }, 15000);
 
-  it("uses a mobile card monitor and hides the wide table below the sm breakpoint", async () => {
+  it("shows one card per run with its attempts inside, the same on every width", async () => {
     const slot = await mountPage();
     fireEvent.mouseDown(slot.getByTestId("tab-monitor"), { button:0 });
     fireEvent.click(slot.getByTestId("tab-monitor"));
     await waitFor(() => expect(slot.getByTestId("run-monitor").hidden).toBe(false));
-    const mobile = await slot.findByTestId("run-monitor-mobile");
-    expect(mobile.querySelector('[data-testid="mobile-attempt-lpattempt_1"]')).not.toBeNull();
-    const monitor = slot.getByTestId("run-monitor");
-    const wideWrapper = Array.from(monitor.querySelectorAll("div")).find((element) => element.classList.contains("hidden") && element.classList.contains("sm:block"));
-    const wideTable = wideWrapper?.querySelector("table");
-    expect(wideTable).not.toBeNull();
-    expect(mobile.className).toContain("sm:hidden");
+    const card = await slot.findByTestId("run-lprun_1");
+    expect(card.querySelector('[data-testid="attempt-lpattempt_1"]')).not.toBeNull();
+    expect(slot.getByTestId("run-monitor").querySelector("table")).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("lists runs in progress first, newest next, and opens the history 20 at a time", async () => {
+    const base = screenFixture();
+    const run = (id: string, state: string, updated: number) => ({ ...base.runs[0]!, id, state, updated_at: updated, attempts: [], stages: [] });
+    base.runs = [run("lprun_old", "closed", 1), ...Array.from({ length: 21 }, (_, i) => run(`lprun_h${i}`, "closed", 100 + i)), run("lprun_live", "running", 2)];
+    const slot = await mountPage({ get_screen: () => base });
+    fireEvent.click(slot.getByTestId("tab-monitor"));
+    const list = await slot.findByTestId("run-list");
+    const ids = () => Array.from(list.children).map((card) => card.getAttribute("data-testid"));
+    expect(ids()[0]).toBe("run-lprun_live");
+    expect(ids()[1]).toBe("run-lprun_h20");
+    expect(ids()).toHaveLength(20);
+    fireEvent.click(slot.getByTestId("runs-show-more"));
+    await waitFor(() => expect(ids()).toHaveLength(23));
+    expect(ids().at(-1)).toBe("run-lprun_old");
     slot.lifecycle.unmount();
   });
 
@@ -409,7 +421,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     { runState:"running", attemptState:"queued", cancel:true, retry:false },
     { runState:"running", attemptState:"running", cancel:true, retry:false },
     { runState:"running", attemptState:"validation_failed", cancel:false, retry:true },
-  ])("shows only legal cancel and retry actions in both monitor layouts (run $runState, attempt $attemptState)", async (scenario) => {
+  ])("shows only legal cancel and retry actions (run $runState, attempt $attemptState)", async (scenario) => {
     {
       const base = screenFixture();
       const run = base.runs[0]!;
@@ -418,13 +430,10 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
       (run.attempts[0]! as {thread_id:string|null}).thread_id = scenario.attemptState === "queued" ? null : "thr_writer";
       const slot = await mountPage({ get_screen:() => base });
       fireEvent.click(slot.getByTestId("tab-monitor"));
-      const mobile = await slot.findByTestId("mobile-attempt-lpattempt_1");
-      const desktop = slot.getByTestId("attempt-lpattempt_1");
-      for (const row of [mobile, desktop]) {
-        const buttons = Array.from(row.querySelectorAll("button")).map((button) => button.textContent);
-        expect(buttons.includes(en.cancel)).toBe(scenario.cancel);
-        expect(buttons.includes(en.retry)).toBe(scenario.retry);
-      }
+      const row = await slot.findByTestId("attempt-lpattempt_1");
+      const buttons = Array.from(row.querySelectorAll("button")).map((button) => button.textContent);
+      expect(buttons.includes(en.cancel)).toBe(scenario.cancel);
+      expect(buttons.includes(en.retry)).toBe(scenario.retry);
       slot.lifecycle.unmount();
     }
   });
@@ -439,7 +448,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     await slot.findByText(ru.tabSettings);
     fireEvent.click(slot.getAllByTestId("tab-monitor").at(-1)!);
     expect(slot.getAllByText(ru.state_running).length).toBeGreaterThan(0);
-    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     expect(slot.getAllByText(new RegExp(ru.unappliedNoChannel)).length).toBeGreaterThan(0);
     slot.lifecycle.unmount();
   });
@@ -483,7 +492,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     });
     await slot.findByTestId("cli-receipt-lprun_cli");
     expect(slot.getByTestId("run-lprun_cli")).toBeTruthy();
-    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     expect(slot.getByTestId("diagnostics-panel").textContent).toContain("cli-receipt.json");
     fireEvent.click(slot.getByTestId("tab-monitor"));
     const monitor = slot.getByTestId("run-monitor");
@@ -544,7 +553,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     });
     fireEvent.click(slot.getByTestId("tab-monitor"));
     expect(slot.queryByTestId("cli-receipt-lpattempt_a")).toBeNull();
-    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     expect((await slot.findByTestId("cli-receipt-lpattempt_a")).textContent).toContain("first");
     expect((await slot.findByTestId("cli-receipt-lpattempt_b")).textContent).toContain("second");
     slot.lifecycle.unmount();
@@ -552,7 +561,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
 
   it("shows the legacy fast-mode mapping in Diagnostics instead of a separate switch", async () => {
     const slot = await mountPage();
-    fireEvent.click(slot.getByTestId("tab-diagnostics"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     const migration = await slot.findByTestId("field-s024");
     expect(migration.textContent).toContain(en.legacyFastModeExplanation);
     expect(migration.querySelector("[role='switch']")).toBeNull();
@@ -627,6 +636,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
 
   it("filters settings by search and keeps picker keys off the settings list", async () => {
     const slot = await mountPage();
+    fireEvent.mouseDown(slot.getByTestId("tab-settings"), { button:0 });
     expect(slot.getByTestId("settings-panel").querySelector("[data-testid='field-s004']")).toBeNull();
     expect(slot.getByTestId("settings-execution")).toBeTruthy();
     expect(slot.getByTestId("checks-panel").querySelector("[data-testid='browser-qa-host']")).toBeTruthy();
@@ -674,7 +684,9 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     fireEvent.click(slot.getAllByRole("tab", { name: "General settings" })[0]!);
     await waitFor(() => expect(slot.getByTestId("project-settings").querySelector("h1")?.textContent).toBe("General settings"));
     expect(slot.queryByTestId("tab-monitor")).toBeNull();
+    expect(slot.queryByTestId("tab-overview")).toBeNull();
     expect(slot.queryByTestId("main-agent")).toBeNull();
+    expect(slot.getByTestId("language-setting")).toBeTruthy();
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     const field = await slot.findByTestId("field-s371");
     fireEvent.click(field.querySelector("button[role='combobox']") as HTMLButtonElement);
@@ -702,6 +714,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
       get_screen: getScreen,
       reset_project_settings: () => { reset = true; return { ok: true, conflict: false, values: { "helper.placement": null }, versions: { "helper.placement": 2 } }; },
     });
+    fireEvent.mouseDown(slot.getByTestId("tab-settings"), { button:0 });
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     const row = slot.getByTestId("field-s371");
     await waitFor(() => expect(row.textContent).toContain("Set on this project"));
@@ -716,7 +729,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
   it("keeps the confirm dialog title and full install ops list in the DOM", async () => {
     const slot = await mountPage();
     await slot.findByTestId("install-stack");
-    fireEvent.click(slot.getByTestId("tab-install"));
+    fireEvent.click(slot.getByTestId("tab-service"));
     fireEvent.click(slot.getByTestId("install-stack"));
     const dialog = await slot.findByTestId("external-ops-dialog");
     expect(dialog.textContent).toContain(en.confirmTitle);

@@ -152,12 +152,12 @@ describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
             fireEvent.click(slot.getByTestId("tab-monitor"));
           }
           if (view === "install" || view === "detect") {
-            fireEvent.mouseDown(slot.getByTestId("tab-install"), { button:0 });
-            fireEvent.click(slot.getByTestId("tab-install"));
+            fireEvent.mouseDown(slot.getByTestId("tab-service"), { button:0 });
+            fireEvent.click(slot.getByTestId("tab-service"));
           }
           if (view === "detect") fireEvent.click(slot.getAllByTestId("stack-detect").at(-1)!);
           if (view === "dialog") {
-            fireEvent.click(slot.getByTestId("tab-install"));
+            fireEvent.click(slot.getByTestId("tab-service"));
             fireEvent.click(slot.getByTestId("install-stack"));
           }
           if (view === "detect") expect((await slot.findByTestId("stack-detect-result")).textContent).toContain(lang === "ru" ? ru.detectScenario : en.detectScenario);

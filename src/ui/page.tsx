@@ -42,14 +42,6 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Icon } from "../../components/ui/icon";
@@ -377,17 +369,47 @@ function HelpTip({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function SettingsGroup({ title, testId, help, children }: { title: string; testId: string; help?: ReactNode; children: ReactNode }) {
+function SettingsGroup({ title, testId, help, children }: { title?: string; testId: string; help?: ReactNode; children: ReactNode }) {
   return (
     <Surface testId={testId}>
-      <SurfaceHeader>
-        <h2 className="text-sm font-medium">{title}</h2>
+      {title || help ? <SurfaceHeader>
+        {title ? <h2 className="text-sm font-medium">{title}</h2> : null}
         {help}
-      </SurfaceHeader>
-      <SurfaceBody className="space-y-4">{children}</SurfaceBody>
+      </SurfaceHeader> : null}
+      <SurfaceBody className={title || help ? "space-y-4" : "space-y-4 pt-3"}>{children}</SurfaceBody>
     </Surface>
   );
 }
+
+/** Rows shown with «Advanced» or while searching; kept in the DOM so search and tests still see them. */
+function AdvancedRows({ show, testId, children }: { show: boolean; testId?: string; children: ReactNode }) {
+  return <div hidden={!show} data-testid={testId} className="min-w-0 space-y-2 border-l border-border pl-3">{children}</div>;
+}
+
+/** One line of the Overview checklist: done, needs attention, or a plain step. */
+function StatusRow({ state, title, detail, action, testId }: { state: "ok" | "todo" | "info"; title: string; detail: ReactNode; action?: ReactNode; testId?: string }) {
+  const mark = state === "ok" ? "✓" : state === "todo" ? "!" : "→";
+  const tone = state === "ok" ? "bg-primary text-primary-foreground" : state === "todo" ? "bg-destructive text-white" : "bg-muted text-muted-foreground";
+  return (
+    <div className="flex min-w-0 items-start gap-3" data-testid={testId} data-state={state}>
+      <span className={`mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${tone}`} aria-hidden>{mark}</span>
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="text-sm font-medium">{title}</div>
+        <div className="break-words text-xs text-muted-foreground">{detail}</div>
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
+const TAB_LABELS: Record<string, I18nKey> = {
+  overview: "tabOverview", settings: "tabSettings", checks: "tabChecks", council: "tabCouncil",
+  memory: "tabMemory", rules: "tabRules", monitor: "tabMonitor", service: "tabService",
+};
+/** Tabs whose cards the search box and the Basic/Advanced switch apply to. */
+const SETTINGS_TABS = new Set(["settings", "checks", "council", "memory"]);
+const OPEN_ATTEMPT_STATES = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"];
+type RoutingStats = { current: { providerId: string; model: string } | null; stats: Array<{ providerId: string; model: string; risk: string; tasks: number; acceptedFirstTry: number }> };
 
 function CheckGroup({
   title,
@@ -563,11 +585,11 @@ function SettingField({
         : "grid min-h-11 min-w-0 gap-1 py-1 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}
     >
       <div className="min-w-0">
-        <div className="flex min-h-8 items-center gap-1">
+        <div className="flex min-h-8 flex-wrap items-center gap-x-1">
           <Label className="text-sm">{settingLabel(row)}</Label>
           <SettingHelp row={row} />
           {inheritance ? (
-            <span className="truncate text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {inheritanceSummary(row.storageKey, inheritance.locale, inheritance.data)}
             </span>
           ) : null}
@@ -634,7 +656,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const isGlobal = projectId === GLOBAL_SETTINGS_PROJECT_ID;
   // A section keeps its own settings over its project's; null edits the project itself.
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
-  const [routingHints, setRoutingHints] = useState<Array<{ risk: string; hint: string }>>([]);
+  const [routingStats, setRoutingStats] = useState<RoutingStats | null>(null);
   const [councilDefaults, setCouncilDefaults] = useState<Array<{ id: string; title: string; providerId: string | null; model: string | null; configured: boolean }>>([]);
   const [councilEditing, setCouncilEditing] = useState<Set<string>>(new Set());
   type CouncilRow = { id: string; runId: string; question: string; state: string; round: number; maxRounds: number; decisionPath: string | null; updatedAt: number };
@@ -650,7 +672,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const [projectListError, setProjectListError] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const providers = useProviders();
-  const [tab, setTab] = useState("settings");
+  const [tab, setTab] = useState("overview");
+  const [runsShown, setRunsShown] = useState(20);
   const [data, setData] = useState<ScreenPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<{ kind: "cas" } | { kind: "validation"; code: "invalid_choice" | "incompatible_setting" | "setup_required" | "writer_binding_ambiguous" | "writer_host_offline" | "catalog_unavailable"; params: string[] } | null>(null);
@@ -755,7 +778,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
       setData(next);
       void rpc.call("get_council_defaults", { projectId }).then((defaults) => { if (generation === loadGeneration.current) setCouncilDefaults((defaults as { seats: typeof councilDefaults }).seats); }).catch(() => setCouncilDefaults([]));
       void rpc.call("list_councils", { projectId }).then((listed) => { if (generation === loadGeneration.current) setCouncils((listed as { councils: CouncilRow[] }).councils); }).catch(() => setCouncils([]));
-      void rpc.call("get_routing_hint", { projectId }).then((hint) => { if (generation === loadGeneration.current) setRoutingHints((hint as { hints: Array<{ risk: string; hint: string }> }).hints); }).catch(() => setRoutingHints([]));
+      void rpc.call("get_routing_hint", { projectId }).then((hint) => { if (generation === loadGeneration.current) setRoutingStats(hint as RoutingStats); }).catch(() => setRoutingStats(null));
       if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
       setResultSource(next.writerResultJson);
       setResultPatch(next.writerResultPatch);
@@ -781,9 +804,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     return () => projectCache.current.clear();
   }, [isGlobal]);
 
+  // Runs and maintenance belong to the project and its machine; the global level has no overview or rules.
+  const tabs = isGlobal ? ["settings", "checks", "council", "memory"]
+    : selectedSectionId ? ["overview", "settings", "checks", "council", "memory", "rules"]
+      : ["overview", "settings", "checks", "council", "memory", "rules", "monitor", "service"];
   useEffect(() => {
-    if (isGlobal && tab !== "settings" && tab !== "checks") setTab("settings");
-  }, [isGlobal, tab]);
+    if (!tabs.includes(tab)) setTab(tabs[0]!);
+  }, [tabs.join(), tab]);
 
   const diagnosticsGrouped = useMemo(() => {
     const map = new Map<string, CatalogRow[]>();
@@ -1300,7 +1327,34 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   }, []);
   const selectedProjectName = projects.find((item) => item.id === projectId)?.name ?? projectId;
   const selectedSectionName = sections.find((item) => item.id === selectedSectionId)?.name ?? null;
-  const mobileNavValue = activeScope === "projects" ? (projectId ? `project:${projectId}` : "projects") : activeScope;
+  const mobileNavValue = activeScope === "projects" ? (selectedSectionId ? `section:${selectedSectionId}` : projectId ? `project:${projectId}` : "projects") : activeScope;
+  // The selected project's sections in tree order, for the phone menu.
+  const flatSections: Array<{ id: string; name: string; depth: number }> = [];
+  const walkSections = (parentId: string | null, depth: number) => {
+    for (const section of sections.filter((item) => item.parentId === parentId)) { flatSections.push({ id: section.id, name: section.name, depth }); walkSections(section.id, depth + 1); }
+  };
+  walkSections(null, 1);
+  const tabSelect = contentWidth > 0 && contentWidth < 560;
+  const searching = settingsQuery.trim() !== "";
+  const advanced = settingsDepth === "advanced" || searching;
+  const hostLabel = (id: string | null | undefined) => (id ? data?.qaHosts?.find((host) => host.id === id)?.name ?? id : "—");
+  const writerChosen = Boolean(data?.values[WRITER_PROVIDER] && data?.values[WRITER_MODEL]);
+  const activeRuns = (data?.runs ?? []).filter((run) => run.state === "pending" || run.state === "running").length;
+  const trackLines = (() => {
+    if (!routingStats) return [];
+    const rate = (row: { acceptedFirstTry: number; tasks: number }) => row.acceptedFirstTry / row.tasks;
+    const current = routingStats.current;
+    return ["low", "medium", "high", "unknown"].flatMap((risk) => {
+      const own = current ? routingStats.stats.find((row) => row.risk === risk && row.providerId === current.providerId && row.model === current.model) : undefined;
+      const best = routingStats.stats.filter((row) => row.risk === risk && row.tasks >= 5)
+        .reduce<RoutingStats["stats"][number] | undefined>((top, row) => (!top || rate(row) > rate(top) ? row : top), undefined);
+      const parts: string[] = [];
+      if (own) parts.push(t("trackOwn").replace("{first}", String(own.acceptedFirstTry)).replace("{tasks}", String(own.tasks)));
+      // Name another pair only when it really did better, so a lone pair is never called «the best».
+      if (best && best !== own && (!own || rate(best) > rate(own))) parts.push(t("trackBetter").replace("{pair}", `${best.providerId}/${best.model}`).replace("{first}", String(best.acceptedFirstTry)).replace("{tasks}", String(best.tasks)));
+      return parts.length ? [{ risk, text: `${t(`trackRisk_${risk}` as I18nKey)}: ${parts.join("; ")}` }] : [];
+    });
+  })();
 
   return (
     <InheritanceContext.Provider value={{ locale, data, reset: (keys) => void resetInherited(keys) }}><PanelLayoutContext.Provider value={{ compactChrome, stackControls }}><div ref={shellRef} className={`flex h-full min-h-0 min-w-0 flex-1 overflow-hidden ${compactChrome ? "flex-col" : "flex-row"}`} data-testid="project-picker" data-locale={locale} data-lp-chrome={compactChrome ? "compact" : "rail"} data-lp-stack={stackControls ? "1" : "0"} data-bb-ru-skip>
@@ -1311,6 +1365,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             onValueChange={(next) => {
               if (next === "globals" || next === "agents") setActiveScope(next);
               else if (next.startsWith("project:")) chooseProject(next.slice("project:".length));
+              else if (next.startsWith("section:")) { setActiveScope("projects"); setSelectedSectionId(next.slice("section:".length)); }
             }}
           >
             <SelectTrigger aria-label={t("scopeNav")} className={`${CONTROL_H} min-w-0 flex-1`} data-testid="scope-nav-mobile">
@@ -1319,10 +1374,14 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             <SelectContent>
               <SelectItem value="globals">{t("navGlobals")}</SelectItem>
               <SelectItem value="agents">{t("navAgents")}</SelectItem>
-              {projects.map((project) => <SelectItem key={project.id} value={`project:${project.id}`}>{project.name}</SelectItem>)}
+              {projects.flatMap((project) => [
+                <SelectItem key={project.id} value={`project:${project.id}`}>{project.name}</SelectItem>,
+                ...(activeScope === "projects" && project.id === projectId ? flatSections.map((section) => (
+                  <SelectItem key={section.id} value={`section:${section.id}`} data-testid={`section-option-${section.id}`}>{`${"\u2003".repeat(section.depth)}${section.name}`}</SelectItem>
+                )) : []),
+              ])}
             </SelectContent>
           </Select>
-          <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
         </div>
       </div>
       <nav className={compactChrome ? "hidden" : "flex w-[13.5rem] shrink-0 flex-col border-r border-border bg-background"} aria-label={t("scopeNav")} data-testid="scope-rail">
@@ -1373,11 +1432,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         </div>
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className={compactChrome ? "hidden" : "flex items-center justify-end border-b border-border px-4 py-2"}>
-          <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
-        </div>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div ref={contentRef} className="mx-auto w-full min-w-0 max-w-5xl space-y-6 px-4 py-5">
+        <div ref={contentRef} className="mx-auto w-full min-w-0 max-w-3xl space-y-6 px-4 py-5">
         <OwnedSettings scope={activeScope === "agents" ? "agents" : "projects"} locale={locale} />
         <main hidden={activeScope === "agents"} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
         {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
@@ -1385,13 +1441,126 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           {isGlobal ? <>
             <h1 className="break-words text-xl font-medium">{t("navGlobals")}</h1>
             <p className="text-xs text-muted-foreground">{t("globalsHelp")}</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="language-setting">
+              <LocaleControls preference={localePreference} onChange={(next) => void chooseLocale(next)} />
+              <span className="text-xs text-muted-foreground">{t("languageHelp")}</span>
+            </div>
           </> : <>
             <p className="text-xs text-muted-foreground">{selectedSectionName ? `${t("selectedSection")} · ${selectedProjectName}` : t("selectedProject")}</p>
             <h1 className="break-words text-xl font-medium">{selectedSectionName ?? selectedProjectName}</h1>
             {selectedSectionName ? <p className="text-xs text-muted-foreground">{t("sectionInheritsHint")}</p> : null}
           </>}
         </div>
-        {isGlobal ? null : <Surface testId="main-agent">
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTitle>{t("loadError")}</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+        {saveError ? (() => {
+          const titleOnly = saveError.kind === "validation" && (saveError.code === "setup_required" || saveError.code === "writer_binding_ambiguous");
+          return (
+            <Alert variant="destructive" data-testid={saveError.kind === "cas" ? "cas-conflict" : "setting-validation-error"}>
+              <AlertTitle className={titleOnly ? "mb-0 leading-5" : undefined}>
+                {saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}
+              </AlertTitle>
+              {titleOnly ? null : (
+                <AlertDescription>
+                  <Button size="sm" variant="outline" onClick={() => void load()}>{t("reload")}</Button>
+                </AlertDescription>
+              )}
+            </Alert>
+          );
+        })() : null}
+
+        <Tabs value={tab} onValueChange={setTab}>
+          {/* Keep the plugin's own EN/RU labels out of BB's DOM-based Russianizer. */}
+          {tabSelect ? (
+            <Select value={tab} onValueChange={setTab}>
+              <SelectTrigger aria-label={t("tabPick")} data-testid="tab-select" className={`${CONTROL_H} w-full min-w-0`}><SelectValue /></SelectTrigger>
+              <SelectContent>{tabs.map((id) => <SelectItem key={id} value={id}>{t(TAB_LABELS[id]!)}</SelectItem>)}</SelectContent>
+            </Select>
+          ) : (
+            <TabsList data-bb-ru-skip className="h-auto w-auto flex-wrap">
+              {tabs.map((id) => <TabsTrigger key={id} value={id} className="px-2.5" data-testid={`tab-${id}`}>{t(TAB_LABELS[id]!)}</TabsTrigger>)}
+            </TabsList>
+          )}
+
+          <div hidden={!SETTINGS_TABS.has(tab) && !searching} className={stackControls ? "mt-4 flex flex-col gap-2" : "mt-4 flex items-end gap-2"} data-testid="settings-toolbar">
+              <div className="min-w-0 flex-1 space-y-1">
+                <Label htmlFor="settings-search">{t("settingsSearch")}</Label>
+                <Input
+                  id="settings-search"
+                  data-testid="settings-search"
+                  value={settingsQuery}
+                  placeholder={t("settingsSearchPlaceholder")}
+                  onChange={(event) => setSettingsQuery(event.target.value)}
+                />
+              </div>
+              <div className={stackControls ? "flex w-full gap-1" : "flex shrink-0 gap-1"} data-testid="settings-depth" aria-label={t("settingsAdvanced")}>
+                <Button className={stackControls ? `${CONTROL_H} min-w-0 flex-1` : CONTROL_H} variant={settingsDepth === "basic" ? "default" : "outline"} aria-pressed={settingsDepth === "basic"} onClick={() => setSettingsDepth("basic")}>{t("settingsBasic")}</Button>
+                <Button className={stackControls ? `${CONTROL_H} min-w-0 flex-1` : CONTROL_H} variant={settingsDepth === "advanced" ? "default" : "outline"} aria-pressed={settingsDepth === "advanced"} onClick={() => setSettingsDepth("advanced")}>{t("settingsAdvanced")}</Button>
+              </div>
+            </div>
+          {tabs.includes("overview") ? <>
+          <TabsContent value="overview" forceMount={true} className="space-y-6" hidden={tab !== "overview"} data-testid="overview-panel">
+            <Surface testId="setup-status">
+              <SurfaceHeader><h2 className="text-sm font-medium">{t("overviewSetup")}</h2></SurfaceHeader>
+              <SurfaceBody className="space-y-3">
+                <StatusRow testId="status-writer" state={writerChosen ? "ok" : "todo"} title={t("writerPicker")}
+                  detail={writerChosen ? `${String(data?.values[WRITER_PROVIDER])} · ${String(data?.values[WRITER_MODEL])}` : t("overviewWriterMissing")}
+                  action={writerChosen ? null : <Button size="sm" variant="outline" onClick={() => setTab("settings")}>{t("overviewOpen")}</Button>} />
+                {selectedSectionId ? null : <StatusRow testId="status-stack" state="info" title={t("overviewStack")} detail={t("overviewStackHelp")}
+                  action={<Button size="sm" variant="outline" onClick={() => setTab("service")}>{t("overviewOpen")}</Button>} />}
+                <StatusRow testId="status-start" state="info" title={t("overviewStart")} detail={t("overviewStartHelp")} />
+                {selectedSectionId ? null : <StatusRow testId="status-runs" state={activeRuns ? "ok" : "info"} title={t("tabMonitor")}
+                  detail={activeRuns ? t("overviewRuns").replace("{n}", String(activeRuns)) : t("overviewNoRuns")}
+                  action={<Button size="sm" variant="outline" onClick={() => setTab("monitor")}>{t("overviewOpen")}</Button>} />}
+              </SurfaceBody>
+            </Surface>
+        {data?.writerBinding && !isGlobal ? (
+          <Card data-testid="writer-binding">
+            <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("projectMachineFolder")}</CardTitle></CardHeader>
+            <CardContent className={`${CARD_BODY} space-y-2 text-sm`}>
+              {data.writerBinding.status === "resolved" ? (
+                <p className="min-w-0 break-all">
+                  {hostLabel(data.writerBinding.hostId)} · {data.writerBinding.path}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {data.writerBinding.source === "session" ? t("inheritedFromSession")
+                      : data.writerBinding.source === "explicit_override" ? t("inheritedFromProject")
+                        : t("inheritedFromProject")}
+                  </span>
+                </p>
+              ) : null}
+              {data.writerBinding.status === "ambiguous" ? (
+                <Select onValueChange={(next) => {
+                  const [hostId, path] = next.split("\u0000");
+                  if (!hostId || !path || !projectId) return;
+                  setSelectedBinding({ hostId, path });
+                  void rpc.call("save_writer_binding", { projectId, hostId, path }).then((result) => {
+                    if (result.ok) { setSaveError(null); setWriterRejected(false); void load(); }
+                  });
+                }}>
+                  <SelectTrigger data-testid="writer-binding-select" aria-label={t("projectMachineFolder")}>
+                    <SelectValue placeholder={t("bindingAmbiguous")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {data.writerBinding.bindings.map((row) => (
+                      <SelectItem key={`${row.hostId}:${row.path}`} value={`${row.hostId}\u0000${row.path}`}>
+                        {hostLabel(row.hostId)} · {row.path}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+              {data.writerBinding.status === "setup_required" ? <p>{t("bindingSetupRequired")}</p> : null}
+              {data.writerBinding.status === "offline" ? <p>{t("bindingOffline")}</p> : null}
+              {data.writerBinding.status === "catalog_unavailable" ? <p>{t("writerCatalogUnavailable")}</p> : null}
+              {(data.inheritedKeys ?? []).length ? <p className="text-xs text-muted-foreground">{t("inheritedFromGlobal")}</p> : null}
+            </CardContent>
+          </Card>
+        ) : null}
+        <Surface testId="main-agent">
         <div className={stackControls ? "grid gap-2 px-3 py-3" : "grid gap-2 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}>
           <div className="space-y-1">
             <Label className="text-sm">{t("mainAgent")}</Label>
@@ -1421,101 +1590,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             </SelectContent>
           </Select>
         </div>
-        </Surface>}
-        {error ? (
-          <Alert variant="destructive">
-            <AlertTitle>{t("loadError")}</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-        {saveError ? (() => {
-          const titleOnly = saveError.kind === "validation" && (saveError.code === "setup_required" || saveError.code === "writer_binding_ambiguous");
-          return (
-            <Alert variant="destructive" data-testid={saveError.kind === "cas" ? "cas-conflict" : "setting-validation-error"}>
-              <AlertTitle className={titleOnly ? "mb-0 leading-5" : undefined}>
-                {saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}
-              </AlertTitle>
-              {titleOnly ? null : (
-                <AlertDescription>
-                  <Button size="sm" variant="outline" onClick={() => void load()}>{t("reload")}</Button>
-                </AlertDescription>
-              )}
-            </Alert>
-          );
-        })() : null}
-        {data?.writerBinding && !isGlobal ? (
-          <Card data-testid="writer-binding">
-            <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("projectMachineFolder")}</CardTitle></CardHeader>
-            <CardContent className={`${CARD_BODY} space-y-2 text-sm`}>
-              {data.writerBinding.status === "resolved" ? (
-                <p className="min-w-0 break-all">
-                  {data.writerBinding.hostId} · {data.writerBinding.path}
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {data.writerBinding.source === "session" ? t("inheritedFromSession")
-                      : data.writerBinding.source === "explicit_override" ? t("inheritedFromProject")
-                        : t("inheritedFromProject")}
-                  </span>
-                </p>
-              ) : null}
-              {data.writerBinding.status === "ambiguous" ? (
-                <Select onValueChange={(next) => {
-                  const [hostId, path] = next.split("\u0000");
-                  if (!hostId || !path || !projectId) return;
-                  setSelectedBinding({ hostId, path });
-                  void rpc.call("save_writer_binding", { projectId, hostId, path }).then((result) => {
-                    if (result.ok) { setSaveError(null); setWriterRejected(false); void load(); }
-                  });
-                }}>
-                  <SelectTrigger data-testid="writer-binding-select" aria-label={t("projectMachineFolder")}>
-                    <SelectValue placeholder={t("bindingAmbiguous")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {data.writerBinding.bindings.map((row) => (
-                      <SelectItem key={`${row.hostId}:${row.path}`} value={`${row.hostId}\u0000${row.path}`}>
-                        {row.hostId} · {row.path}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : null}
-              {data.writerBinding.status === "setup_required" ? <p>{t("bindingSetupRequired")}</p> : null}
-              {data.writerBinding.status === "offline" ? <p>{t("bindingOffline")}</p> : null}
-              {data.writerBinding.status === "catalog_unavailable" ? <p>{t("writerCatalogUnavailable")}</p> : null}
-              {(data.inheritedKeys ?? []).length ? <p className="text-xs text-muted-foreground">{t("inheritedFromGlobal")}</p> : null}
-            </CardContent>
-          </Card>
-        ) : null}
-
-        <Tabs value={tab} onValueChange={setTab}>
-          {/* Keep the plugin's own EN/RU labels out of BB's DOM-based Russianizer. */}
-          <TabsList data-bb-ru-skip className="min-w-0 max-w-full">
-            <TabsTrigger value="settings" data-testid="tab-settings">{t("tabSettings")}</TabsTrigger>
-            <TabsTrigger value="checks" data-testid="tab-checks">{t("tabChecks")}</TabsTrigger>
-            {isGlobal ? null : <>
-              <TabsTrigger value="monitor" data-testid="tab-monitor">{t("tabMonitor")}</TabsTrigger>
-              <TabsTrigger value="install" data-testid="tab-install">{t("tabInstall")}</TabsTrigger>
-              <TabsTrigger value="diagnostics" data-testid="tab-diagnostics">{t("tabDiagnostics")}</TabsTrigger>
-            </>}
-          </TabsList>
-
-          <TabsContent value="settings" forceMount={true} className="space-y-6" hidden={tab !== "settings"} data-testid="settings-panel">
-            <div className={stackControls ? "flex flex-col gap-2" : "flex items-end gap-2"} data-testid="settings-toolbar">
-              <div className="min-w-0 flex-1 space-y-1">
-                <Label htmlFor="settings-search">{t("settingsSearch")}</Label>
-                <Input
-                  id="settings-search"
-                  data-testid="settings-search"
-                  value={settingsQuery}
-                  placeholder={t("settingsSearchPlaceholder")}
-                  onChange={(event) => setSettingsQuery(event.target.value)}
-                />
-              </div>
-              <div className={stackControls ? "flex w-full gap-1" : "flex shrink-0 gap-1"} data-testid="settings-depth" aria-label={t("settingsAdvanced")}>
-                <Button className={stackControls ? `${CONTROL_H} min-w-0 flex-1` : CONTROL_H} variant={settingsDepth === "basic" ? "default" : "outline"} aria-pressed={settingsDepth === "basic"} onClick={() => setSettingsDepth("basic")}>{t("settingsBasic")}</Button>
-                <Button className={stackControls ? `${CONTROL_H} min-w-0 flex-1` : CONTROL_H} variant={settingsDepth === "advanced" ? "default" : "outline"} aria-pressed={settingsDepth === "advanced"} onClick={() => setSettingsDepth("advanced")}>{t("settingsAdvanced")}</Button>
-              </div>
-            </div>
-            {cardVisible("writerPicker", "writerPickerHelp", "writerEffortMode", "jevSettings", "jevOpencode") ? <SettingsGroup title={t("sectionExecution")} testId="settings-execution">
+        </Surface>
+          </TabsContent>
+          </> : null}
+          <TabsContent value="settings" forceMount={true} className="space-y-6" hidden={tab !== "settings" && !searching} data-testid="settings-panel">
+            {cardVisible("writerPicker", "writerPickerHelp", "writerEffortMode", "jevSettings", "jevOpencode") ? <SettingsGroup testId="settings-execution">
               <section className="space-y-2" data-testid="writer-picker">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1">
@@ -1526,17 +1605,17 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
                 <div className="max-w-xl">{modelPicker(pickerValue, (next) => { saveWriterSelection(next); })}</div>
-                {routingHints.length > 0 ? (
+                {trackLines.length > 0 ? (
                   <div className="max-w-xl text-xs text-muted-foreground" data-testid="routing-hints">
                     <div className="font-medium">{t("routingHintTitle")}</div>
-                    {routingHints.map((row) => <div key={row.risk}>{row.hint}</div>)}
+                    {trackLines.map((row) => <div key={row.risk}>{row.text}</div>)}
                   </div>
                 ) : null}
                 {writerRejected && saveError ? <p className="max-w-xl text-xs text-destructive" data-testid="writer-save-error">{saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}</p> : null}
                 {(() => {
                   const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
                   const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
-                  return effortRow ? <Disclosure testId="writer-effort-mode" summary={t("settingsAdvanced")}>
+                  return effortRow ? <AdvancedRows show={advanced} testId="writer-effort-mode">
                     <div className="flex items-center justify-between gap-2 pt-2">
                       <Label className="text-sm" htmlFor="writer-effort-mode">{t("writerEffortMode")}</Label>
                       <Select value={automaticEffort ? "automatic" : "manual"} onValueChange={(next) => void applySetting(effortRow, next === "automatic" ? "1" : "0")}>
@@ -1563,23 +1642,60 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                       return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                         onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                     })}
-                  </Disclosure> : null;
+                  </AdvancedRows> : null;
                 })()}
               </section>
               <section className="space-y-2" data-testid="settings-group-workspace">
                 {(() => { const row = catalogRow("adoc.040"); return row ? <SettingField row={row} value={displayedValue("adoc.040")} disabled={false}
                   onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("adoc.040", next)} /> : null; })()}
-                <Disclosure summary={t("settingsAdvanced")} open={settingsDepth === "advanced"}>
+                <AdvancedRows show={advanced}>
                   {(["adoc.041","adoc.042","ops.max_tasks"] as const).map((key) => {
                     const row = catalogRow(key);
                     return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                       onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                   })}
-                </Disclosure>
+                </AdvancedRows>
               </section>
             </SettingsGroup> : null}
 
-            {cardVisible("memoryPicker", "rulesTitle", "docsPicker", "onboardingPicker", "largeFileRead", "groupDocs", "groupProjectLife") ? <SettingsGroup title={t("sectionMemoryDocs")} testId="settings-memory-docs">
+            {cardVisible("helperContext", "helperContextHelp") ? <div hidden={!advanced}><SettingsGroup title={t("sectionHelperContext")} testId="settings-helper-context" help={<HelpTip label={t("helperContextTechnical")}><p>{t("helperContextTechnical")}</p><p className="mt-1">{t("helperContextNoneNote")}</p></HelpTip>}>
+              <section className="space-y-2" data-testid="helper-context-settings">
+                <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextHelp")}</p>
+                <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextConstraint")}</p>
+                {(() => { const row = catalogRow("helper.placement"); return row ? <SettingField row={row} value={displayedValue("helper.placement")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("helper.placement", next)} /> : null; })()}
+                <AdvancedRows show={advanced}>
+                  {(["helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins"] as const).map((key) => {
+                    const row = catalogRow(key);
+                    return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                      onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                  })}
+                </AdvancedRows>
+              </section>
+            </SettingsGroup></div> : null}
+            {extrasGrouped.filter((group) => group.section !== "night-review" && group.section !== "browser-qa").map(({ section, rows }) => (
+              <section key={section} className="space-y-2" data-testid={`settings-group-${section}`}>
+                <h3 className="text-sm font-medium">{t(sectionKey(section))}</h3>
+                <div className="space-y-2">
+                  {rows.map((row) => (
+                    <SettingField
+                      key={row.storageKey}
+                      row={row}
+                      value={displayedValue(row.storageKey)}
+                      disabled={false}
+                      onChange={(next) => void applySetting(row, next)}
+                      onDraft={(next) => writeDraft(row.storageKey, next)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+            {settingsQuery.trim() && extrasGrouped.filter((group) => group.section !== "night-review" && group.section !== "browser-qa").length === 0 && !cardVisible("writerPicker", "memoryPicker", "jevSettings", "docsPicker", "onboardingPicker", "largeFileRead", "helperContext") ? (
+              <p className="text-sm text-muted-foreground">{t("noMatchingSettings")}</p>
+            ) : null}
+          </TabsContent>
+
+          <TabsContent value="memory" forceMount={true} className="space-y-6" hidden={tab !== "memory" && !searching} data-testid="memory-panel">
+            {cardVisible("memoryPicker", "docsPicker", "onboardingPicker", "largeFileRead", "groupDocs", "groupProjectLife") ? <SettingsGroup testId="settings-memory-docs">
               {cardVisible("memoryPicker", "memoryPickerHelp", "settingMemoryEnabled") ? <section className="space-y-2" data-testid="memory-picker">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1">
@@ -1593,15 +1709,14 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
                 <div className="max-w-xl">{modelPicker(memoryPickerValue, (next) => { void saveMemorySelection(next); })}</div>
-                <Disclosure testId="memory-advanced" summary={t("settingsAdvanced")} open={settingsDepth === "advanced"}>
+                <AdvancedRows show={advanced} testId="memory-advanced">
                   {(["memory.maintain","memory.inject","memory.audience","memory.search_engine","memory.personal_bot","memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget"] as const).map((key) => {
                     const row = catalogRow(key);
                     return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                       onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                   })}
-                </Disclosure>
+                </AdvancedRows>
               </section> : null}
-              {activeScope !== "globals" && projectId && cardVisible("rulesTitle", "rulesHelp") ? <RuleProposals projectId={projectId} picker={modelPicker} /> : null}
               {cardVisible("docsPicker", "docsPickerHelp", "docsMaintain", "groupDocs") ? <section className="space-y-2" data-testid="docs-picker">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1">
@@ -1626,13 +1741,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 <p className="max-w-xl text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
                 {activeScope !== "globals" && projectId ? <DocsPlaces projectId={projectId} /> : null}
                 <div className="max-w-xl">{modelPicker(docsPickerValue, (next) => { void saveDocsSelection(next); })}</div>
-                <Disclosure summary={t("settingsAdvanced")}>
+                <AdvancedRows show={advanced}>
                   {(["docs.maintain","docs.page_cap","docs.since","docs.hour"] as const).map((key) => {
                     const row = catalogRow(key);
                     return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                       onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                   })}
-                </Disclosure>
+                </AdvancedRows>
               </section> : null}
               {cardVisible("groupProjectLife", "projectLifePickerHelp") ? <section className="space-y-2" data-testid="project-life-picker">
                 <div className="flex items-center justify-between gap-2">
@@ -1653,9 +1768,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 <p className="max-w-xl text-xs text-muted-foreground">{t("onboardingPickerHelp")}</p>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("onboardingConstraint")}</p>
                 <div className="max-w-xl">{modelPicker(onboardingPickerValue, (next) => { void saveOnboardingSelection(next); })}</div>
-                <Disclosure summary={t("settingsAdvanced")} open={settingsDepth === "advanced"}>
+                <AdvancedRows show={advanced}>
                   {(() => { const row = catalogRow("onboarding.depth"); return row ? <SettingField row={row} value={displayedValue("onboarding.depth")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("onboarding.depth", next)} /> : null; })()}
-                </Disclosure>
+                </AdvancedRows>
               </section> : null}
               {cardVisible("largeFileRead", "largeFileReadHelp", "largeFilePicker") ? <section className="space-y-2" data-testid="pm-read-settings">
                 <div className="flex items-center justify-between gap-2">
@@ -1668,77 +1783,108 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 <p className="max-w-xl text-xs text-muted-foreground">{t("largeFileReadHelp")}</p>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("largeFileReadConstraint")}</p>
                 <div className="max-w-xl">{modelPicker(pmReadPickerValue, (next) => { void savePmReadSelection(next); })}</div>
-                <Disclosure summary={t("settingsAdvanced")}>
+                <AdvancedRows show={advanced}>
                   {(() => { const row = catalogRow("pm_read.min_lines"); return row ? <SettingField row={row} value={displayedValue("pm_read.min_lines")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("pm_read.min_lines", next)} /> : null; })()}
-                </Disclosure>
+                </AdvancedRows>
               </section> : null}
             </SettingsGroup> : null}
 
-            {cardVisible("helperContext", "helperContextHelp") ? <SettingsGroup title={t("sectionHelperContext")} testId="settings-helper-context" help={<HelpTip label={t("helperContextTechnical")}><p>{t("helperContextTechnical")}</p><p className="mt-1">{t("helperContextNoneNote")}</p></HelpTip>}>
-              <section className="space-y-2" data-testid="helper-context-settings">
-                <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextHelp")}</p>
-                <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextConstraint")}</p>
-                {(() => { const row = catalogRow("helper.placement"); return row ? <SettingField row={row} value={displayedValue("helper.placement")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("helper.placement", next)} /> : null; })()}
-                <Disclosure summary={t("settingsAdvanced")}>
-                  {(["helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins"] as const).map((key) => {
-                    const row = catalogRow(key);
-                    return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
-                      onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
-                  })}
-                </Disclosure>
-              </section>
-            </SettingsGroup> : null}
-            {extrasGrouped.filter((group) => group.section !== "night-review" && group.section !== "browser-qa").map(({ section, rows }) => (
-              <section key={section} className="space-y-2" data-testid={`settings-group-${section}`}>
-                <h3 className="text-sm font-medium">{t(sectionKey(section))}</h3>
-                <div className="space-y-2">
-                  {rows.map((row) => (
-                    <SettingField
-                      key={row.storageKey}
-                      row={row}
-                      value={displayedValue(row.storageKey)}
-                      disabled={false}
-                      onChange={(next) => void applySetting(row, next)}
-                      onDraft={(next) => writeDraft(row.storageKey, next)}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
-            {settingsQuery.trim() && extrasGrouped.filter((group) => group.section !== "night-review" && group.section !== "browser-qa").length === 0 && !cardVisible("writerPicker", "memoryPicker", "jevSettings", "docsPicker", "onboardingPicker", "largeFileRead", "helperContext") ? (
-              <p className="text-sm text-muted-foreground">{t("noMatchingSettings")}</p>
-            ) : null}
           </TabsContent>
-
-          <TabsContent value="checks" forceMount={true} className="space-y-6" hidden={tab !== "checks"} data-testid="checks-panel">
-            <CheckGroup testId="plan-critique-settings" title={t("stagePlanCritique")} help={t("planCritiqueHelp")} toggle={(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
+          {tabs.includes("rules") ? <>
+          <TabsContent value="rules" forceMount={true} className="space-y-6" hidden={tab !== "rules"} data-testid="rules-panel">
+            {!isGlobal && projectId ? <RuleProposals projectId={projectId} picker={modelPicker} /> : null}
+          </TabsContent>
+          </> : null}
+          <TabsContent value="checks" forceMount={true} className="space-y-6" hidden={tab !== "checks" && !searching} data-testid="checks-panel">
+            {cardVisible("stagePlanCritique", "planCritiqueHelp") ? <CheckGroup testId="plan-critique-settings" title={t("stagePlanCritique")} help={t("planCritiqueHelp")} toggle={(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               <div className="max-w-xl">{modelPicker(planCritiquePickerValue, (next) => { void savePlanCritiqueSelection(next); })}</div>
-              <Disclosure summary={t("settingsAdvanced")}>
+              <AdvancedRows show={advanced}>
                 {(["plan_critique.mode","plan_critique.min_score","plan_critique.min_write_tasks","plan_critique.on_high_risk"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
-              </Disclosure>
-            </CheckGroup>
-            <CheckGroup testId="code-critique-settings" title={t("stageCodeCritique")} help={t("codeCritiqueHelp")} toggle={(() => { const row = catalogRow("code_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("code_critique.enabled"), false)} aria-label={t("stageCodeCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
+              </AdvancedRows>
+            </CheckGroup> : null}
+            {cardVisible("stageCodeCritique", "codeCritiqueHelp") ? <CheckGroup testId="code-critique-settings" title={t("stageCodeCritique")} help={t("codeCritiqueHelp")} toggle={(() => { const row = catalogRow("code_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("code_critique.enabled"), false)} aria-label={t("stageCodeCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               <div className="max-w-xl">{modelPicker(codeCritiquePickerValue, (next) => { void saveCodeCritiqueSelection(next); })}</div>
-              <Disclosure summary={t("settingsAdvanced")}>
+              <AdvancedRows show={advanced}>
                 {(["code_critique.mode","code_critique.auto_fix","code_critique.max_rounds"] as const).map((key) => {
                   const row = catalogRow(key);
                   return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
-              </Disclosure>
-            </CheckGroup>
-            <CheckGroup testId="specialist-settings" title={t("specialistReview")} help={t("settingSpecialistEnabledHelp")} toggle={(() => { const row = catalogRow("specialist.enabled"); return row ? <Switch checked={asBoolean(displayedValue("specialist.enabled"), false)} aria-label={t("specialistReview")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
+              </AdvancedRows>
+            </CheckGroup> : null}
+            {cardVisible("specialistReview", "settingSpecialistEnabledHelp") ? <CheckGroup testId="specialist-settings" title={t("specialistReview")} help={t("settingSpecialistEnabledHelp")} toggle={(() => { const row = catalogRow("specialist.enabled"); return row ? <Switch checked={asBoolean(displayedValue("specialist.enabled"), false)} aria-label={t("specialistReview")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               <div className="max-w-xl">{modelPicker(specialistPickerValue, (next) => { void saveSpecialistSelection(next); })}</div>
-              <Disclosure summary={t("settingsAdvanced")} open={settingsDepth === "advanced"}>
+              <AdvancedRows show={advanced}>
                 {(() => { const row = catalogRow("specialist.when"); return row ? <SettingField row={row} value={displayedValue("specialist.when")} disabled={false}
                   onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("specialist.when", next)} /> : null; })()}
-              </Disclosure>
-            </CheckGroup>
-            <CheckGroup testId="council-settings" title={t("councilSettingsTitle")} help={t("councilSettingsHelp")} toggle={(() => { const row = catalogRow("council.judge"); return row ? <Switch checked={asBoolean(displayedValue("council.judge"), true)} aria-label={t("settingCouncilJudge")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
+              </AdvancedRows>
+            </CheckGroup> : null}
+            {cardVisible("nightReviewEnabled", "nightReviewAutoMerge") ? <CheckGroup testId="night-review-settings" title={t(sectionKey("night-review"))} help={t("nightReviewEnabled")} toggle={
+              <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}
+                onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void applySetting(row,next);}} />
+            }>
+              <div className="max-w-xl">{modelPicker(nightPickerValue, (next) => { void saveNightReviewSelection(next); })}</div>
+              <AdvancedRows show={advanced}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <Label className="text-sm" htmlFor="night-review-auto-merge">{t("nightReviewAutoMerge")}</Label>
+                    <HelpTip label={t("nightReviewAutoMergeHelp")}><p>{t("nightReviewAutoMergeHelp")}</p></HelpTip>
+                  </div>
+                  <Switch id="night-review-auto-merge" checked={asBoolean(displayedValue("night_review.auto_merge"),false)} aria-label={t("nightReviewAutoMerge")}
+                    onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.auto_merge");if(row)void applySetting(row,next);}} />
+                </div>
+                {(() => { const row = catalogRow("night_review.max_fix_tasks"); return row ? <SettingField row={row} value={displayedValue("night_review.max_fix_tasks")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("night_review.max_fix_tasks", next)} /> : null; })()}
+              </AdvancedRows>
+            </CheckGroup> : null}
+            {cardVisible("globalQaHost", "browserQaHostHelp") ? <CheckGroup testId="browser-qa-host" title={t("globalQaHost")} help={t("browserQaHostHelp")} toggle={(() => { const row = catalogRow("browser_qa.enabled"); return row ? <Switch checked={asBoolean(displayedValue("browser_qa.enabled"), false)} aria-label={t("globalQaHost")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
+              {(() => {
+                const options = data?.qaHosts ?? [];
+                const current = String(displayedValue(QA_HOST_KEY) ?? "");
+                const known = options.some((host) => host.id === current);
+                if (!options.length) return <p className="text-sm text-muted-foreground">{t("browserQaHostNone")}</p>;
+                return <Select value={known ? current : current ? current : "__inherit__"} onValueChange={(next) => { if (next === "__inherit__") void resetInherited([QA_HOST_KEY]); else void saveKey(QA_HOST_KEY, next); }}>
+                  <SelectTrigger aria-label={t("globalQaHost")} data-testid="browser-qa-host-select" className="min-w-0 max-w-xl">
+                    <SelectValue placeholder={t("inheritChoice")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__inherit__">{t("inheritChoice")}</SelectItem>
+                    {options.map((host) => (
+                      <SelectItem key={host.id} value={host.id}>{host.name} · {host.connected ? t("hostConnected") : t("hostOffline")}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>;
+              })()}
+              {displayedValue(QA_HOST_KEY) && !(data?.qaHosts ?? []).some((host) => host.id === displayedValue(QA_HOST_KEY)) ? <p className="text-xs text-muted-foreground">{t("hostUnavailable")}</p> : null}
+              <AdvancedRows show={advanced}>
+                <Label htmlFor="browser-qa-workspace">{t("browserQaWorkspace")}</Label>
+                <Input
+                  id="browser-qa-workspace"
+                  data-testid="browser-qa-workspace"
+                  value={String(displayedValue(QA_WORKSPACE_KEY) ?? "")}
+                  placeholder={data?.workspacePath ?? "/"}
+                  onChange={(event) => writeDraft(QA_WORKSPACE_KEY, event.target.value)}
+                  onBlur={(event) => void saveKey(QA_WORKSPACE_KEY, event.target.value)}
+                />
+                {extrasGrouped.filter((group) => group.section === "browser-qa").flatMap((group) => group.rows.filter((row) => row.storageKey !== "browser_qa.enabled")).map((row) => (
+                  <SettingField
+                    key={row.storageKey}
+                    row={row}
+                    value={displayedValue(row.storageKey)}
+                    disabled={false}
+                    onChange={(next) => void applySetting(row, next)}
+                    onDraft={(next) => writeDraft(row.storageKey, next)}
+                  />
+                ))}
+              </AdvancedRows>
+            </CheckGroup> : null}
+          </TabsContent>
+
+          <TabsContent value="council" forceMount={true} className="space-y-6" hidden={tab !== "council" && !searching} data-testid="council-panel">
+            {cardVisible("councilSettingsTitle", "councilSettingsHelp") ? <CheckGroup testId="council-settings" title={t("councilSettingsTitle")} help={t("councilSettingsHelp")} toggle={(() => { const row = catalogRow("council.judge"); return row ? <Switch checked={asBoolean(displayedValue("council.judge"), true)} aria-label={t("settingCouncilJudge")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               {COUNCIL_SEATS.map((seat) => {
                 const fallback = councilDefaults.find((row) => row.id === seat);
                 const configured = Boolean(data?.values[`council.${seat}.provider`] && data?.values[`council.${seat}.model`]);
@@ -1761,83 +1907,17 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               })}
               {(() => { const row = catalogRow("council.max_rounds"); return row ? <SettingField row={row} value={displayedValue("council.max_rounds")} disabled={false}
                 onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("council.max_rounds", next)} /> : null; })()}
-            </CheckGroup>
-            <CheckGroup testId="night-review-settings" title={t(sectionKey("night-review"))} help={t("nightReviewEnabled")} toggle={
-              <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}
-                onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void applySetting(row,next);}} />
-            }>
-              <div className="max-w-xl">{modelPicker(nightPickerValue, (next) => { void saveNightReviewSelection(next); })}</div>
-              <Disclosure summary={t("settingsAdvanced")}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-1">
-                    <Label className="text-sm" htmlFor="night-review-auto-merge">{t("nightReviewAutoMerge")}</Label>
-                    <HelpTip label={t("nightReviewAutoMergeHelp")}><p>{t("nightReviewAutoMergeHelp")}</p></HelpTip>
-                  </div>
-                  <Switch id="night-review-auto-merge" checked={asBoolean(displayedValue("night_review.auto_merge"),false)} aria-label={t("nightReviewAutoMerge")}
-                    onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.auto_merge");if(row)void applySetting(row,next);}} />
-                </div>
-                {(() => { const row = catalogRow("night_review.max_fix_tasks"); return row ? <SettingField row={row} value={displayedValue("night_review.max_fix_tasks")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("night_review.max_fix_tasks", next)} /> : null; })()}
-              </Disclosure>
-            </CheckGroup>
-            <CheckGroup testId="browser-qa-host" title={t("globalQaHost")} help={t("browserQaHostHelp")} toggle={(() => { const row = catalogRow("browser_qa.enabled"); return row ? <Switch checked={asBoolean(displayedValue("browser_qa.enabled"), false)} aria-label={t("globalQaHost")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
-              {(() => {
-                const options = data?.qaHosts ?? [];
-                const current = String(displayedValue(QA_HOST_KEY) ?? "");
-                const known = options.some((host) => host.id === current);
-                if (!options.length) return <p className="text-sm text-muted-foreground">{t("browserQaHostNone")}</p>;
-                return <Select value={known ? current : current ? current : "__inherit__"} onValueChange={(next) => { if (next === "__inherit__") void resetInherited([QA_HOST_KEY]); else void saveKey(QA_HOST_KEY, next); }}>
-                  <SelectTrigger aria-label={t("globalQaHost")} data-testid="browser-qa-host-select" className="min-w-0 max-w-xl">
-                    <SelectValue placeholder={t("inheritChoice")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__inherit__">{t("inheritChoice")}</SelectItem>
-                    {options.map((host) => (
-                      <SelectItem key={host.id} value={host.id}>{host.name} · {host.connected ? t("hostConnected") : t("hostOffline")}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>;
-              })()}
-              {displayedValue(QA_HOST_KEY) && !(data?.qaHosts ?? []).some((host) => host.id === displayedValue(QA_HOST_KEY)) ? <p className="text-xs text-muted-foreground">{t("hostUnavailable")}</p> : null}
-              <Disclosure summary={t("settingsAdvanced")}>
-                <Label htmlFor="browser-qa-workspace">{t("browserQaWorkspace")}</Label>
-                <Input
-                  id="browser-qa-workspace"
-                  data-testid="browser-qa-workspace"
-                  value={String(displayedValue(QA_WORKSPACE_KEY) ?? "")}
-                  placeholder={data?.workspacePath ?? "/"}
-                  onChange={(event) => writeDraft(QA_WORKSPACE_KEY, event.target.value)}
-                  onBlur={(event) => void saveKey(QA_WORKSPACE_KEY, event.target.value)}
-                />
-                {extrasGrouped.filter((group) => group.section === "browser-qa").flatMap((group) => group.rows.filter((row) => row.storageKey !== "browser_qa.enabled")).map((row) => (
-                  <SettingField
-                    key={row.storageKey}
-                    row={row}
-                    value={displayedValue(row.storageKey)}
-                    disabled={false}
-                    onChange={(next) => void applySetting(row, next)}
-                    onDraft={(next) => writeDraft(row.storageKey, next)}
-                  />
-                ))}
-              </Disclosure>
-            </CheckGroup>
-          </TabsContent>
-
-          <TabsContent value="monitor" forceMount={true} className="space-y-4" data-testid="run-monitor" hidden={tab !== "monitor"}>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => projectId && void rpc.call("resume_runs", { projectId }).then(load)}>
-                {t("resume")}
-              </Button>
-            </div>
-            <section className="space-y-2 rounded-md border p-3" data-testid="council-feed" data-bb-ru-skip>
-              <h3 className="text-sm font-medium">{t("councilTitle")}</h3>
+            </CheckGroup> : null}
+            {isGlobal ? null : <section className="min-w-0 space-y-2 rounded-lg border border-border bg-card p-3" data-testid="council-feed" data-bb-ru-skip>
+              <h3 className="text-sm font-medium">{t("councilSessions")}</h3>
               {!councils.length ? <p className="text-xs text-muted-foreground">{t("councilEmpty")}</p> : (
                 <ul className="space-y-1">
                   {councils.map((row) => (
                     <li key={row.id}>
-                      <button type="button" className="text-left text-sm underline-offset-2 hover:underline" onClick={() => openCouncil(row.id)}>
+                      <button type="button" className="line-clamp-2 w-full min-w-0 text-left text-sm underline-offset-2 [overflow-wrap:anywhere] hover:underline" onClick={() => openCouncil(row.id)}>
                         {row.question}
                       </button>
-                      <span className="ml-2 text-xs text-muted-foreground">{row.state} · {t("councilRound")} {row.round}/{row.maxRounds}</span>
+                      <span className="text-xs text-muted-foreground">{t(`councilState_${row.state}` as I18nKey) || row.state} · {t("councilRound")} {row.round}/{row.maxRounds}</span>
                     </li>
                   ))}
                 </ul>
@@ -1850,7 +1930,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     {council.messages.map((message) => (
                       <div key={message.seq} className="rounded bg-muted/40 p-2">
                         <div className="text-xs font-medium">{council.seats.find((seat) => seat.id === message.seatId)?.title ?? message.seatId} · {t("councilRound")} {message.round} · {message.kind}</div>
-                        <div className="whitespace-pre-wrap text-xs">{message.text}</div>
+                        <div className="whitespace-pre-wrap break-words text-xs">{message.text}</div>
                       </div>
                     ))}
                   </div>
@@ -1858,118 +1938,132 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   {council.reason ? <div className="text-xs text-destructive">{council.reason}</div> : null}
                 </div>
               ) : null}
-            </section>
+            </section>}
+          </TabsContent>
+          {tabs.includes("monitor") ? <>
+          <TabsContent value="monitor" forceMount={true} className="space-y-4" data-testid="run-monitor" hidden={tab !== "monitor"}>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Button size="sm" variant="outline" onClick={() => projectId && void rpc.call("resume_runs", { projectId }).then(load)}>
+                {t("resume")}
+              </Button>
+              <span className="text-xs text-muted-foreground">{t("runsResumeHelp")}</span>
+            </div>
             {!data?.runs.length ? (
               <p className="text-sm text-muted-foreground">{t("emptyRuns")}</p>
-            ) : (
-              <>
-              <div className="space-y-3 sm:hidden" data-testid="run-monitor-mobile">
-                {data.runs.flatMap((run) => run.attempts.length ? run.attempts.map((attempt, index) => {
-                  const hasOpenAttempt = run.attempts.some((item) => ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(item.state));
-                  return <Card key={attempt.id} data-testid={`mobile-attempt-${attempt.id}`}>
-                    <CardContent className="space-y-2 p-3">
-                      <div className="break-all font-mono text-xs">{t("runId")}: {run.id}</div>
-                      <div className="flex flex-wrap items-center gap-2 text-sm"><span>{t("kind")}: {run.kind}</span><Badge variant={runTone(run.state === "closed" ? run.state : attempt.state)}>{stateLabel(run.state === "closed" ? run.state : attempt.state)}</Badge></div>
-                      <div className="text-xs text-muted-foreground">{t("attempt")}: {attempt.attempt_no || "—"}</div>
-                      <div className="flex flex-wrap gap-2">
-                        {index === 0 && run.state !== "closed" && !hasOpenAttempt ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
-                        {canCancelAttempt(run, attempt) ?
-                          <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId:attempt.id }).then(load)}>{t("cancel")}</Button>
-                          : null}
-                        {canRetryAttempt(run, attempt) ?
-                          <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId:attempt.id }).then(load)}>{t("retry")}</Button>
-                          : null}
+            ) : (() => {
+              const open = (run: MonitorRun) => run.state === "pending" || run.state === "running";
+              // Runs in progress first, then the newest; the history opens 20 at a time.
+              const ordered = [...data.runs].sort((a, b) => Number(open(b)) - Number(open(a)) || b.updated_at - a.updated_at);
+              return <>
+                <div className="space-y-3" data-testid="run-list">
+                  {ordered.slice(0, runsShown).map((run) => {
+                    const hasOpenAttempt = run.attempts.some((item) => OPEN_ATTEMPT_STATES.includes(item.state));
+                    return <Surface key={run.id} testId={`run-${run.id}`}>
+                      <SurfaceHeader className="flex-wrap justify-between">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="min-w-0 truncate font-mono text-xs" title={run.id}>{run.id}</span>
+                          <Badge variant={runTone(run.state)}>{stateLabel(run.state)}</Badge>
+                        </div>
+                        <span className="text-xs text-muted-foreground">{run.kind}{run.updated_at > 1e11 ? ` · ${new Date(run.updated_at).toLocaleString(locale)}` : ""}</span>
+                      </SurfaceHeader>
+                      <SurfaceBody className="space-y-2">
+                        {run.attempts.map((attempt) => (
+                          <div key={attempt.id} data-testid={`attempt-${attempt.id}`} className="flex min-w-0 items-center gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-mono text-xs" title={attempt.task_id}>{attempt.task_id}</div>
+                              <div className="text-xs text-muted-foreground">{t("attempt")} {attempt.attempt_no || "—"}</div>
+                            </div>
+                            <Badge className="shrink-0" variant={runTone(run.state === "closed" ? run.state : attempt.state)}>{stateLabel(run.state === "closed" ? run.state : attempt.state)}</Badge>
+                            {canCancelAttempt(run, attempt) ? <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId: attempt.id }).then(load)}>{t("cancel")}</Button> : null}
+                            {canRetryAttempt(run, attempt) ? <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId: attempt.id }).then(load)}>{t("retry")}</Button> : null}
+                          </div>
+                        ))}
+                        {run.state !== "closed" && !hasOpenAttempt ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
+                        {run.stages?.length ? <Disclosure compact testId={`stage-receipts-${run.id}`} summary={`${t("stageReceipts")} (${run.stages.length})`}>
+                          <div className="divide-y divide-border">
+                    {run.stages?.map((stage) => (
+                      <div key={`${stage.taskId}-${stage.stageId}`} className="space-y-2 py-3 first:pt-0 last:pb-0">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-medium">{stageTitle(stage.stageId)}</span>
+                          <Badge variant={runTone(stage.state)}>{stateLabel(stage.state)}</Badge>
+                        </div>
+                        <div className="break-all font-mono text-xs text-muted-foreground">{stage.taskId} · SHA-256 {stage.inputSha256.slice(0, 12)}{stage.outputSha256 ? ` / ${stage.outputSha256.slice(0, 12)}` : ""}</div>
+                        {stage.reason ? <p className="text-xs text-muted-foreground">{t("stageReason")}: {stage.reason}</p> : null}
+                        {stage.result != null ? <SourceCode content={JSON.stringify(stage.result, null, 2)} path={`${stage.stageId}-receipt.json`} overflow="scroll" /> : null}
+                        {stage.result == null && !stage.reason ? <p className="text-xs text-muted-foreground">{t("stageNoEvidence")}</p> : null}
                       </div>
-                    </CardContent>
-                  </Card>;
-                }) : [<Card key={run.id} data-testid={`mobile-run-${run.id}`}><CardContent className="space-y-2 p-3">
-                  <div className="break-all font-mono text-xs">{t("runId")}: {run.id}</div>
-                  <div className="flex flex-wrap items-center gap-2 text-sm"><span>{t("kind")}: {run.kind}</span><Badge variant={runTone(run.state)}>{stateLabel(run.state)}</Badge></div>
-                  {run.state !== "closed" ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
-                </CardContent></Card>])}
-              </div>
-              <div className="hidden min-w-0 max-w-full overflow-x-auto sm:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("runId")}</TableHead>
-                    <TableHead>{t("kind")}</TableHead>
-                    <TableHead>{t("state")}</TableHead>
-                    <TableHead>{t("attempt")}</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.runs.flatMap((run) => {
-                    if (!run.attempts.length) {
-                      return [(
-                        <TableRow key={run.id} data-testid={`run-${run.id}`}>
-                          <TableCell className="max-w-[12rem] truncate font-mono text-xs">{run.id}</TableCell>
-                          <TableCell>{run.kind}</TableCell>
-                          <TableCell>
-                            <Badge variant={runTone(run.state)}>{stateLabel(run.state)}</Badge>
-                          </TableCell>
-                          <TableCell>—</TableCell>
-                          <TableCell className="space-x-2">
-                            {run.state !== "closed" ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
-                          </TableCell>
-                        </TableRow>
-                      )];
-                    }
-                    const hasOpenAttempt = run.attempts.some((attempt) => ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(attempt.state));
-                    return run.attempts.map((attempt, index) => (
-                    <TableRow key={attempt.id} data-testid={`attempt-${attempt.id}`}>
-                      <TableCell className="max-w-[12rem] truncate font-mono text-xs">{run.id}</TableCell>
-                      <TableCell>{run.kind}</TableCell>
-                      <TableCell>
-                        <Badge variant={runTone(run.state === "closed" ? run.state : attempt.state)}>{stateLabel(run.state === "closed" ? run.state : attempt.state)}</Badge>
-                      </TableCell>
-                      <TableCell>{attempt.attempt_no || "—"}</TableCell>
-                      <TableCell className="space-x-2">
-                        {index === 0 && run.state !== "closed" && !hasOpenAttempt ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
-                        {canCancelAttempt(run, attempt) ?
-                            <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId: attempt.id }).then(load)}>
-                              {t("cancel")}
-                            </Button>
-                          : null}
-                        {canRetryAttempt(run, attempt) ?
-                            <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId: attempt.id }).then(load)}>
-                              {t("retry")}
-                            </Button>
-                          : null}
-                      </TableCell>
-                    </TableRow>
-                    ));
+                    ))}
+                          </div>
+                        </Disclosure> : null}
+                      </SurfaceBody>
+                    </Surface>;
                   })}
-                </TableBody>
-              </Table>
-              </div>
-              </>
-            )}
-            {data?.runs.filter((run) => run.stages?.length).map((run) => (
-              <Card key={`stages-${run.id}`} data-testid={`stage-receipts-${run.id}`}>
-                <CardHeader className={CARD_HEAD}><CardTitle className="break-all font-mono text-xs font-medium">{t("stageReceipts")} · {run.id}</CardTitle></CardHeader>
-                <CardContent className={`${CARD_BODY} divide-y divide-border`}>
-                  {run.stages?.map((stage) => (
-                    <div key={`${stage.taskId}-${stage.stageId}`} className="space-y-2 py-3 first:pt-0 last:pb-0">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-sm font-medium">{stageTitle(stage.stageId)}</span>
-                        <Badge variant={runTone(stage.state)}>{stateLabel(stage.state)}</Badge>
-                      </div>
-                      <div className="break-all font-mono text-xs text-muted-foreground">{stage.taskId} · SHA-256 {stage.inputSha256.slice(0, 12)}{stage.outputSha256 ? ` / ${stage.outputSha256.slice(0, 12)}` : ""}</div>
-                      {stage.reason ? <p className="text-xs text-muted-foreground">{t("stageReason")}: {stage.reason}</p> : null}
-                      {stage.result != null ? <SourceCode content={JSON.stringify(stage.result, null, 2)} path={`${stage.stageId}-receipt.json`} overflow="scroll" /> : null}
-                      {stage.result == null && !stage.reason ? <p className="text-xs text-muted-foreground">{t("stageNoEvidence")}</p> : null}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ))}
+                </div>
+                {ordered.length > runsShown ? <Button size="sm" variant="outline" data-testid="runs-show-more" onClick={() => setRunsShown((count) => count + 20)}>{t("runsShowMore").replace("{n}", String(Math.min(20, ordered.length - runsShown)))}</Button> : null}
+              </>;
+            })()}
             <p className="sr-only">{[...RUN_STATES, ...ATTEMPT_STATES].join(" ")}</p>
           </TabsContent>
+          </> : null}
 
-          <TabsContent value="diagnostics" forceMount={true} className="space-y-5" hidden={tab !== "diagnostics"} data-testid="diagnostics-panel">
-            <p className="text-sm text-muted-foreground">{t("diagnosticsIntro")}</p>
+          {tabs.includes("service") ? <>
+          <TabsContent value="service" forceMount={true} className="space-y-5" hidden={tab !== "service"} data-testid="service-panel">
+            <section className="space-y-4" data-testid="install-panel">
+            {!data?.hostId ? <p className="text-sm text-muted-foreground">{t("hostMissing")}</p> : null}
+            <p className="text-sm text-muted-foreground">{t("serviceIntro")}</p>
+            <div className="space-y-2" data-testid="stack-actions">
+              {([
+                ["detect", <Button size="sm" className="w-full sm:w-52" data-testid="stack-detect" onClick={() => void runStack("detect")}>{t("detect")}</Button>, "detectHelp"],
+                ["install", <Button size="sm" className="w-full sm:w-52" data-testid="install-stack" onClick={() => { setPendingOp("install"); setConfirmOpen(true); }}>{t("install")}</Button>, "installHelp"],
+                ["connect", <Button size="sm" variant="outline" className="w-full sm:w-52" onClick={() => { setPendingOp("connect"); setConfirmOpen(true); }}>{t("connectOpencode")}</Button>, "connectHelp"],
+                ["rollback", <Button size="sm" variant="outline" className="w-full text-destructive sm:w-52" onClick={() => { setPendingOp("rollback"); setConfirmOpen(true); }}>{t("rollback")}</Button>, "rollbackHelp"],
+              ] as const).map(([id, button, help]) => (
+                <div key={id} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                  {button}
+                  <span className="text-xs text-muted-foreground">{t(help)}</span>
+                </div>
+              ))}
+            </div>
+            {detectResult ? <Card data-testid="stack-detect-result">
+              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("detectResult")}</CardTitle></CardHeader>
+              <CardContent className={`${CARD_BODY} grid gap-2 text-sm sm:grid-cols-2`}>
+                <div><span className="text-muted-foreground">{t("detectScenario")}:</span> {detectResult.scenario}</div>
+                <div><span className="text-muted-foreground">{t("detectTargetMatch")}:</span> {detectResult.matchesTarget ? t("yes") : t("no")} ({t("targetMatchInformational")})</div>
+                <div><span className="text-muted-foreground">{t("detectLaneStack")}:</span> {detectResult.laneStack.present ? detectResult.laneStack.version ?? t("unknown") : t("no")}</div>
+                <div><span className="text-muted-foreground">{t("detectOpenCode")}:</span> {detectResult.openCode.present ? `${t("yes")} (${detectResult.openCode.version ?? t("unknown")})` : t("no")}</div>
+              </CardContent>
+            </Card> : null}
+            {detectResult?.coexistence ? <Card data-testid="coexistence-inventory">
+              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("coexInventory")}</CardTitle></CardHeader>
+              <CardContent className={`${CARD_BODY} divide-y divide-border`}>
+                {detectResult.coexistence.managers.map((manager) => (
+                  <div key={`${manager.manager}-${manager.path}`} className="space-y-2 py-3 first:pt-0 last:pb-0" data-testid={`coex-${manager.manager}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium">{t(COEXISTENCE_MANAGER_KEYS[manager.manager] ?? "coexUnknownManager")}</span>
+                      <Badge variant={manager.compatible === false ? "destructive" : manager.decision === "reuse" ? "default" : "outline"}>{t(COEXISTENCE_VALUE_KEYS[manager.decision] ?? "coexDecisionUnknown")}</Badge>
+                    </div>
+                    <div className="break-all font-mono text-xs">{manager.path}</div>
+                    <div className="grid gap-1 text-xs sm:grid-cols-2">
+                      <span>{t("coexInstalled")}: {manager.installed ? t("yes") : t("no")}</span>
+                      <span>{t("coexConfigured")}: {manager.configured ? t("yes") : t("no")}</span>
+                      <span>{t("coexLoaded")}: {manager.loaded === null ? t("coexRuntimeUnverified") : manager.loaded ? t("yes") : t("no")}</span>
+                      <span>{t("coexCompatible")}: {manager.compatible === null ? t("unknown") : manager.compatible ? t("yes") : t("no")}</span>
+                      <span>{t("coexModified")}: {manager.modified === null ? t("unknown") : manager.modified ? t("yes") : t("no")}</span>
+                      <span>{t("coexOwner")}: {t(COEXISTENCE_VALUE_KEYS[manager.owner] ?? "coexOwnerUnknown")}</span>
+                      {manager.version ? <span>{t("version")}: {manager.version}</span> : null}
+                    </div>
+                    {manager.missingCapabilities.length ? <p className="text-xs text-destructive">{t("coexMissingCapabilities")}: {manager.missingCapabilities.join(", ")}</p> : null}
+                    <Disclosure compact summary={`${t("coexEvidence")} (${manager.evidence.length})`}>
+                      <ul className="space-y-1">{manager.evidence.map((evidence, index) => <li key={`${evidence.kind}-${index}`} className="break-words">{evidence.detail}{evidence.sha256 ? ` · SHA-256 ${evidence.sha256.slice(0, 12)}` : ""}</li>)}</ul>
+                    </Disclosure>
+                  </div>
+                ))}
+              </CardContent>
+            </Card> : null}
+            </section>
+            <Disclosure testId="diagnostics-disclosure" summary={t("serviceTechnical")}>
+              <div className="space-y-5" data-testid="diagnostics-panel">
+            <p className="text-xs text-muted-foreground">{t("diagnosticsIntro")}</p>
             <Card>
               <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("importDetails")}</CardTitle></CardHeader>
               <CardContent className={`${CARD_BODY} space-y-1 text-xs text-muted-foreground`} data-testid="import-diagnostics">
@@ -2091,53 +2185,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               <SourceCode content={data.lastReceiptJson} path="install-receipt.json" overflow="scroll" />
               </SurfaceBody>
             </Surface> : null}
+              </div>
+            </Disclosure>
           </TabsContent>
+          </> : null}
 
-          <TabsContent value="install" forceMount={true} className="space-y-5" hidden={tab !== "install"} data-testid="install-panel">
-            {!data?.hostId ? <p className="text-sm text-muted-foreground">{t("hostMissing")}</p> : null}
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" data-testid="stack-detect" onClick={() => void runStack("detect")}>{t("detect")}</Button>
-              <Button size="sm" data-testid="install-stack" onClick={() => { setPendingOp("install"); setConfirmOpen(true); }}>{t("install")}</Button>
-              <Button size="sm" variant="outline" onClick={() => { setPendingOp("connect"); setConfirmOpen(true); }}>{t("connectOpencode")}</Button>
-              <Button size="sm" variant="destructive" onClick={() => { setPendingOp("rollback"); setConfirmOpen(true); }}>{t("rollback")}</Button>
-            </div>
-            {detectResult ? <Card data-testid="stack-detect-result">
-              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("detectResult")}</CardTitle></CardHeader>
-              <CardContent className={`${CARD_BODY} grid gap-2 text-sm sm:grid-cols-2`}>
-                <div><span className="text-muted-foreground">{t("detectScenario")}:</span> {detectResult.scenario}</div>
-                <div><span className="text-muted-foreground">{t("detectTargetMatch")}:</span> {detectResult.matchesTarget ? t("yes") : t("no")} ({t("targetMatchInformational")})</div>
-                <div><span className="text-muted-foreground">{t("detectLaneStack")}:</span> {detectResult.laneStack.present ? detectResult.laneStack.version ?? t("unknown") : t("no")}</div>
-                <div><span className="text-muted-foreground">{t("detectOpenCode")}:</span> {detectResult.openCode.present ? `${t("yes")} (${detectResult.openCode.version ?? t("unknown")})` : t("no")}</div>
-              </CardContent>
-            </Card> : null}
-            {detectResult?.coexistence ? <Card data-testid="coexistence-inventory">
-              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("coexInventory")}</CardTitle></CardHeader>
-              <CardContent className={`${CARD_BODY} divide-y divide-border`}>
-                {detectResult.coexistence.managers.map((manager) => (
-                  <div key={`${manager.manager}-${manager.path}`} className="space-y-2 py-3 first:pt-0 last:pb-0" data-testid={`coex-${manager.manager}`}>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-medium">{t(COEXISTENCE_MANAGER_KEYS[manager.manager] ?? "coexUnknownManager")}</span>
-                      <Badge variant={manager.compatible === false ? "destructive" : manager.decision === "reuse" ? "default" : "outline"}>{t(COEXISTENCE_VALUE_KEYS[manager.decision] ?? "coexDecisionUnknown")}</Badge>
-                    </div>
-                    <div className="break-all font-mono text-xs">{manager.path}</div>
-                    <div className="grid gap-1 text-xs sm:grid-cols-2">
-                      <span>{t("coexInstalled")}: {manager.installed ? t("yes") : t("no")}</span>
-                      <span>{t("coexConfigured")}: {manager.configured ? t("yes") : t("no")}</span>
-                      <span>{t("coexLoaded")}: {manager.loaded === null ? t("coexRuntimeUnverified") : manager.loaded ? t("yes") : t("no")}</span>
-                      <span>{t("coexCompatible")}: {manager.compatible === null ? t("unknown") : manager.compatible ? t("yes") : t("no")}</span>
-                      <span>{t("coexModified")}: {manager.modified === null ? t("unknown") : manager.modified ? t("yes") : t("no")}</span>
-                      <span>{t("coexOwner")}: {t(COEXISTENCE_VALUE_KEYS[manager.owner] ?? "coexOwnerUnknown")}</span>
-                      {manager.version ? <span>{t("version")}: {manager.version}</span> : null}
-                    </div>
-                    {manager.missingCapabilities.length ? <p className="text-xs text-destructive">{t("coexMissingCapabilities")}: {manager.missingCapabilities.join(", ")}</p> : null}
-                    <Disclosure compact summary={`${t("coexEvidence")} (${manager.evidence.length})`}>
-                      <ul className="space-y-1">{manager.evidence.map((evidence, index) => <li key={`${evidence.kind}-${index}`} className="break-words">{evidence.detail}{evidence.sha256 ? ` · SHA-256 ${evidence.sha256.slice(0, 12)}` : ""}</li>)}</ul>
-                    </Disclosure>
-                  </div>
-                ))}
-              </CardContent>
-            </Card> : null}
-          </TabsContent>
         </Tabs>
 
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

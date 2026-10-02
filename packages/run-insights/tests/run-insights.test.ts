@@ -28,9 +28,10 @@ function seedTask(db: Database.Database, input: { run: string; task: string; ris
 describe("writer acceptance statistics", () => {
   it("counts first-try acceptance per provider, model and risk and recommends the best pair", () => {
     const db = openDb();
-    for (let i = 0; i < 6; i++) seedTask(db, { run: "r1", task: `luna-${i}`, risk: "medium", provider: "codex", model: "gpt-6-luna", acceptance: { state: "passed", attempt: i < 5 ? 0 : 1 } });
-    for (let i = 0; i < 6; i++) seedTask(db, { run: "r2", task: `astra-${i}`, risk: "medium", provider: "agy", model: "gemini-6-astra", acceptance: { state: i < 3 ? "passed" : "failed", attempt: 0 } });
+    for (let i = 0; i < 6; i++) seedTask(db, { run: "r1", task: `luna-${i}`, risk: "medium", provider: "codex", model: "gpt-6-luna", acceptance: { state: "passed", attempt: i < 5 ? 1 : 2 } });
+    for (let i = 0; i < 6; i++) seedTask(db, { run: "r2", task: `astra-${i}`, risk: "medium", provider: "agy", model: "gemini-6-astra", acceptance: { state: i < 3 ? "passed" : "failed", attempt: 1 } });
     seedTask(db, { run: "r3", task: "pending", risk: "medium", provider: "agy", model: "gemini-6-astra" });
+    // Attempts are numbered from 1; a receipt written before that numbering says 0 for the first try.
     seedTask(db, { run: "r3", task: "high-1", risk: "high", provider: "codex", model: "gpt-6-luna", acceptance: { state: "passed", attempt: 0 } });
 
     const stats = writerAcceptanceStats(db, { projectId: "p" });

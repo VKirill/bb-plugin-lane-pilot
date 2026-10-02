@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.52 — 2026-10-02
+
+The settings screen, reorganised so that someone opening Lane Pilot for the first time can find their way around, on a phone as well as a desktop.
+
+- **Eight tabs instead of five long ones.** A project or section opens on «Обзор», then «Исполнение», «Проверки», «Совет», «Память и документы», «Правила», «Прогоны» and «Обслуживание». Each tab holds one topic: «Правила из уроков» moved out of «Память и документы», and the council settings and sessions moved out of «Проверки» and the run monitor. A section has no «Прогоны» or «Обслуживание», because runs and installs belong to the project and its machine. «Общие настройки» keep the four settings tabs.
+- **«Обзор» says what to do first:** whether a writer model is chosen, where to check Lane Stack, how to start a run from a chat, and how many runs are going on. The project's machine and folder and its main agent moved here from the top of every tab.
+- **One «Расширенные» switch instead of a dozen grey bars.** The advanced rows under each setting appear when the switch is on or while searching. «Контекст помощников», which the current BB cannot use, is shown only in advanced mode. A search shows matches from all settings tabs at once.
+- **«Прогоны» is one card per run with its attempts inside.** Runs in progress come first, then the newest. The history opens 20 at a time, so SelfyStudio's monitor is no longer 190 000 px tall. Stage receipts are folded.
+- **«Обслуживание» explains its buttons.** Each install action says what it does. «Откатить» is no longer a red button next to «Установить». Diagnostics are folded under «Технические подробности».
+- **On a phone, the menu lists a project's sections,** indented as in the tree, and the tabs become a select. The language switch moved into «Общие настройки».
+- **The machine shows by name,** for example «MAC Mini» instead of `host_7sea4qaad8`.
+- **«Что говорят прогоны» counted first-try acceptance wrongly.** Attempts are numbered from 1, but the count expected 0, so every pair showed 0%. A pair is also no longer called «the best on record» when it is the only one. The lines are now in the screen's language.
+- Plain-language descriptions for rules from lessons, documents, project life, the browser check machine, the main agent and the empty council list.
+
 ## 0.1.51 — 2026-10-02
 
 - **The Council page fits a phone.** Below 640px the 16rem council list gave way to a select above the chat, so the chat no longer runs off the right edge. The question, seats and agenda take at most 40% of the height, and the seats and agenda fold away on a phone. Long words, code and tables wrap or scroll inside their message, and the composer puts its input on its own row. New messages scroll only the feed, not the BB page around it.
