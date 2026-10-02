@@ -413,6 +413,9 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   const docsUnitsFinishing=new Map<string,DocsUnit>();
 
   /** A reload or a retired host generation stops this instance, not the unit: its progress stays for the next one. */
+  /** How long after the start of its night a unit may still be finished from saved progress. */
+  const DOCS_UNIT_RESUME_MS=48*3_600_000;
+
   const pluginStopped=(cause:unknown)=>/stale API handle|generation .* is retired|plugin .* (reloaded|disabled)/i.test(cause instanceof Error?cause.message:String(cause));
 
   /**
@@ -424,6 +427,13 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const key=docsUnitRecordKey(record.projectId,record.place.path,record.label);
     const {place,unit,threadId,label}=record;
     if(docsUnitsFinishing.has(key)) return {projectId:record.projectId,path:place.path,docsDir:label,state:"skipped",reason:"already finishing"};
+    // A unit from a night long gone is not finished: its list of files dirty before the agent is stale, so what is
+    // dirty now would pass for the agent's changes and be reverted. Its pages stay for the next pass.
+    if(Date.now()-Date.parse(`${record.localDate}T00:00:00Z`)>DOCS_UNIT_RESUME_MS){
+      await dropDocsUnitRecord(record);
+      bb.log.info(`Lane Pilot docs unit ${place.path} ${label} of ${record.localDate} dropped: its night is over`);
+      return {projectId:record.projectId,path:place.path,docsDir:label,state:"skipped",reason:"night_over"};
+    }
     docsUnitsFinishing.set(key,unit);
     try{
       const d=unit.docsDir, flow=unit.flow, writable=unitWritable(unit);
@@ -595,7 +605,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const record=await bb.storage.kv.get(unitKey).catch(()=>null) as DocsUnitRecord|null;
       if(!record){ await updateDocsUnitsIndex((index)=>{ delete index[unitKey]; }); continue; }
       void finishDocsUnit(record,(path,self)=>[...docsUnitsFinishing.values()].some((unit)=>unit!==self&&unitWritable(unit)(path)))
-        .catch((cause)=>bb.log.warn(`Lane Pilot docs resume failed for ${record.place.path} ${record.label}: ${cause instanceof Error?cause.message:String(cause)}`));
+        // A reload stopping this instance is not a failure: the next instance resumes the unit.
+        .catch((cause)=>pluginStopped(cause)?undefined:bb.log.warn(`Lane Pilot docs resume failed for ${record.place.path} ${record.label}: ${cause instanceof Error?cause.message:String(cause)}`));
     }
     const open=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
     const keep:DocsOpenPasses={};

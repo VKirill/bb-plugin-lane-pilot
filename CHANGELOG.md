@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.87 — 2026-10-02
+
+- **A docs repair taken into the running turn no longer hangs its unit.** After sending the repair round, the docs unit waited for a `turn/started` that came after the request. Codex sometimes takes the follow-up into the turn it is still finishing (`turn/input/accepted`, no new `turn/started`; 275 of 3267 requests on the hub). The wait has no deadline, so the SelfyStudio unit `apps/worker/docs` of 2026-09-29 waited for three days and blocked the folder's nightly pass. Each plugin reload stopped it and the next one resumed it, which logged «docs resume failed … stale API handle» at every deploy. Now the end of the turn that accepted the follow-up ends the wait. A follow-up nobody takes fails through BB's error events, like a first turn, instead of waiting forever. `turn/input/accepted` counts as a started session.
+- **A unit of a night long gone is dropped, not finished.** A unit more than two days past the start of its night is no longer resumed: its list of files dirty before the agent is stale, and what is dirty now would pass for the agent's changes and be reverted. Its pages stay for the next pass.
+- A reload that stops a docs unit in this instance is no longer logged as a failure; the next instance resumes it.
+
 ## 0.1.86 — 2026-10-02
 
 Self-repair repairs what is still broken and leaves what is already fixed:

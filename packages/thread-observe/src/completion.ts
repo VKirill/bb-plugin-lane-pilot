@@ -80,7 +80,20 @@ export function decideThreadCompletion(input: {
     const request = rows.filter((row) => row.type === "client/turn/requested").sort((a, b) => b.seq - a.seq)[0];
     const started = rows.filter((row) => row.type === "turn/started").sort((a, b) => b.seq - a.seq)[0];
     if (!request || request.createdAt === null || request.createdAt < input.requestedAfter) return { ok:false, via:"incomplete", detail:"follow_up_not_requested_yet" };
-    if (!started || started.seq < request.seq) return { ok:false, via:"incomplete", detail:"follow_up_not_started" };
+    if (!started || started.seq < request.seq) {
+      // A provider may take the follow-up into the turn still running (turn/input/accepted, no new turn/started):
+      // the end of that turn is the end of the follow-up.
+      const accepted = rows.filter((row) => row.type === "turn/input/accepted" && row.seq > request.seq).sort((a, b) => a.seq - b.seq)[0];
+      const ended = accepted && rows.filter((row) => row.type === "turn/completed" && row.seq > accepted.seq).sort((a, b) => a.seq - b.seq)[0];
+      if (ended) {
+        const status = stringField(ended.data, "status");
+        if (status === "completed") return { ok:true, via:"turn_completed" };
+        if (status === "failed" || status === "interrupted" || status === "error") return { ok:false, via:"canceled", detail:`turn_${status}` };
+      }
+      const failure = threadFailure(input.events, input.now);
+      if (failure) return { ok:false, via:"error", detail:failure };
+      return { ok:false, via:"incomplete", detail:accepted ? "follow_up_running" : "follow_up_not_started" };
+    }
   }
   const current = currentSpawnTurn(input.threadId, input.events);
   if (current.kind === "canceled") return { ok:false, via:"canceled", detail:current.detail };
@@ -97,7 +110,7 @@ export function decideThreadCompletion(input: {
 /** Everything BB reports about a child thread's request: its start, its turn and the ways it can fail. */
 export const THREAD_WATCH_EVENT_TYPES = [
   "client/turn/requested", "client/turn/rejected", "system/thread-provisioning", "thread/identity",
-  "turn/started", "turn/completed", "provider/error", "system/error", "system/thread/interrupted",
+  "turn/started", "turn/input/accepted", "turn/completed", "provider/error", "system/error", "system/thread/interrupted",
 ] as const;
 
 /** A provider that has not opened a session this long after the request is not going to. */
@@ -143,7 +156,7 @@ export function threadFailure(events: unknown[], now = Date.now()): string | nul
       return `provisioning_${stringField(row.data, "status")}`;
     }
   }
-  const started = current.some((row) => row.type === "thread/identity" || row.type === "turn/started");
+  const started = current.some((row) => row.type === "thread/identity" || row.type === "turn/started" || row.type === "turn/input/accepted");
   if (request && request.createdAt !== null && !started && now - request.createdAt > PROVIDER_START_LIMIT_MS) {
     return `provider_not_started:no session ${Math.round((now - request.createdAt) / 1000)}s after the request`;
   }

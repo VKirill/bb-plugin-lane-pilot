@@ -38,7 +38,21 @@ it("after a follow-up, waits for the turn it requested rather than the finished 
   expect(decideThreadCompletion({ threadId:"t", status:"idle", events:done }).ok).toBe(true);
   expect(decideThreadCompletion({ threadId:"t", status:"idle", events:done, requestedAfter:6_000 })).toMatchObject({ ok:false, detail:"follow_up_not_requested_yet" });
   const asked = [...done, ev(4, "client/turn/requested", {}, 6_500)];
-  expect(decideThreadCompletion({ threadId:"t", status:"active", events:asked, requestedAfter:6_000 })).toMatchObject({ ok:false, detail:"follow_up_not_started" });
+  expect(decideThreadCompletion({ threadId:"t", status:"active", events:asked, requestedAfter:6_000, now:6_600 })).toMatchObject({ ok:false, detail:"follow_up_not_started" });
   const finished = [...asked, ev(5, "turn/started", {}, 6_600), ev(6, "turn/completed", { status:"completed" }, 9_000)];
   expect(decideThreadCompletion({ threadId:"t", status:"idle", events:finished, requestedAfter:6_000 }).ok).toBe(true);
+});
+
+it("after a follow-up taken into the running turn, that turn's end is the follow-up's end (live thr_gisgv43unw)", () => {
+  const first = [ev(1, "client/turn/requested", {}, 1_000), ev(8, "turn/started", {}, 1_100), ev(631, "turn/completed", { status:"completed" }, 5_000)];
+  const decide = (events: unknown[], now = 6_600) => decideThreadCompletion({ threadId:"t", status:"idle", events, requestedAfter:6_000, now });
+  // The provider accepts the input and works on it without a new turn/started.
+  const accepted = [...first, ev(634, "client/turn/requested", {}, 6_500), ev(643, "turn/input/accepted", {}, 6_600)];
+  expect(decide(accepted, 6_500 + PROVIDER_START_LIMIT_MS * 2)).toMatchObject({ ok:false, detail:"follow_up_running" });
+  expect(decide([...accepted, ev(1011, "turn/completed", { status:"completed" }, 480_000)])).toEqual({ ok:true, via:"turn_completed" });
+  expect(decide([...accepted, ev(1011, "turn/completed", { status:"interrupted" }, 480_000)])).toMatchObject({ ok:false, via:"canceled" });
+  // A follow-up nobody takes fails like a first turn instead of waiting forever.
+  const ignored = [...first, ev(634, "client/turn/requested", {}, 6_500)];
+  expect(decide(ignored, 6_500 + PROVIDER_START_LIMIT_MS + 1_000)).toMatchObject({ ok:false, via:"error" });
+  expect(decide([...ignored, ev(640, "system/error", { code:"x", message:"boom" }, 7_000)])).toMatchObject({ ok:false, via:"error", detail:"system_error:x:boom" });
 });
