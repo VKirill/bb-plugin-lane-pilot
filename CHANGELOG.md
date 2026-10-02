@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.57 — 2026-10-02
+
+- **One radius scale.** Selected menu rows were 10px on 32px rows and read as pills; rows, buttons and inputs are now all 8px, segments 6px in a 9px track, inner cards 12px, panels 16px. The scale is written into `app.css` and the pokecut-theme skill.
+
 ## 0.1.56 — 2026-10-02
 
 - The left menu starts on the same line as BB's page header strip, so the grid is even.

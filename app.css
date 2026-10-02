@@ -7,6 +7,8 @@
  *
  * The --lp-* tokens read the theme's --pk-* tokens and fall back to BB's own
  * palette, so the plugin stays tidy under any BB theme, light or dark.
+ * Radii: 8px rows, buttons and inputs; 6px segments inside a 9px track;
+ * 12px inner cards; 14px single cards and the header strip; 16px panels.
  * Rules sit in the components layer: a Tailwind utility on an element wins.
  */
 
@@ -103,12 +105,12 @@
     gap: 2px;
     padding: 3px;
     border: 1px solid var(--lp-hairline);
-    border-radius: 10px;
+    border-radius: 9px;
     background-color: var(--lp-well);
   }
 
   .lp-seg-item {
-    border-radius: 7px;
+    border-radius: 6px;
     color: var(--muted-foreground);
     font-weight: 500;
   }
@@ -126,7 +128,7 @@
 
   /* Navigation rows: quiet until chosen; the chosen one is a raised pill. */
   .lp-nav-item {
-    border-radius: 10px;
+    border-radius: 8px;
     color: var(--muted-foreground);
   }
 

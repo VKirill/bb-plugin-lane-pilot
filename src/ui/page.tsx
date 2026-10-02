@@ -1884,7 +1884,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     const pill = row.state === "done" ? "lp-pill-success" : row.state === "failed" || row.state === "stopped" ? "lp-pill-danger" : "lp-pill-info";
                     return (
                       <li key={row.id}>
-                        <button type="button" aria-current={council?.id === row.id ? "true" : undefined} className="w-full min-w-0 rounded-xl px-2 py-2 text-left hover:bg-state-hover aria-[current=true]:bg-state-active" onClick={() => openCouncil(row.id)}>
+                        <button type="button" aria-current={council?.id === row.id ? "true" : undefined} className="w-full min-w-0 rounded-lg px-2 py-2 text-left hover:bg-state-hover aria-[current=true]:bg-state-active" onClick={() => openCouncil(row.id)}>
                           <span className="line-clamp-2 text-sm [overflow-wrap:anywhere]">{row.question}</span>
                           <span className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                             <span className={`rounded-full px-2 py-0.5 font-medium ${pill}`}>{t(`councilState_${row.state}` as I18nKey) || row.state}</span>
