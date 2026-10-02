@@ -3,11 +3,21 @@ import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rm, stat, sy
 import { dirname, isAbsolute, join, relative } from "node:path";
 
 export type GitIntegration = {
-  status:"merged"|"up-to-date"|"conflict"|"failed";
+  status:"merged"|"up-to-date"|"conflict"|"failed"|"busy";
   commit:string|null;
   conflicts:string[];
   reason:string|null;
+  /** With «busy»: what the integration holding the base checkout merges (its commit message). */
+  holder?:string|null;
 };
+
+/** The base checkout is held by a live integration; the caller waits and tries again instead of failing. */
+export class BaseLockBusyError extends Error {
+  constructor(readonly holder:string|null) {
+    super(`another writer integration holds the base checkout${holder?`: ${holder}`:""}`);
+    this.name="BaseLockBusyError";
+  }
+}
 
 const FALLBACK_IDENTITY = ["-c", "user.name=Lane Pilot writer", "-c", "user.email=lane-pilot@localhost"];
 
@@ -34,20 +44,22 @@ function ownerAlive(pid:number):boolean {
  * One integration at a time per base checkout. The lock names its process; a lock whose process is gone
  * (the host restarted mid-merge) is taken over at once, and any lock older than 10 minutes is stale.
  */
-export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>):Promise<T> {
+export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>,label="",waitMs=120_000):Promise<T> {
   const lock=join(basePath,".git","lane-pilot-integrate.lock");
-  const deadline=Date.now()+120_000;
+  const deadline=Date.now()+waitMs;
   for(;;) {
-    try { await mkdir(lock); await writeFile(join(lock,"owner"),String(process.pid)); break; }
+    // The owner file: the pid on the first line, then what this integration merges, for whoever waits.
+    try { await mkdir(lock); await writeFile(join(lock,"owner"),`${process.pid}\n${label.split("\n")[0]!.slice(0,300)}`); break; }
     catch(error) {
       if((error as NodeJS.ErrnoException).code!=="EEXIST") throw error;
       const info=await stat(lock).catch(()=>null);
-      const owner=Number.parseInt(await readFile(join(lock,"owner"),"utf8").catch(()=>""),10);
+      const ownerText=await readFile(join(lock,"owner"),"utf8").catch(()=>"");
+      const owner=Number.parseInt(ownerText,10);
       // A lock without an owner file is either being created right now or was left by an older Lane Pilot.
       const orphaned=Number.isInteger(owner)&&owner>0&&owner!==process.pid&&!ownerAlive(owner);
       const legacy=!Number.isInteger(owner)&&info!==null&&Date.now()-info.mtimeMs>5_000&&!(await readdir(lock).catch(()=>[])).length;
       if(orphaned||legacy||(info&&Date.now()-info.mtimeMs>600_000)) { await rm(lock,{recursive:true,force:true}); continue; }
-      if(Date.now()>deadline) throw new Error("another writer integration holds the base checkout");
+      if(Date.now()>deadline) throw new BaseLockBusyError(ownerText.split("\n")[1]?.trim()||null);
       await new Promise((resolve)=>setTimeout(resolve,500));
     }
   }
@@ -59,7 +71,7 @@ export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>):Pro
  * Commits the writer's worktree and merges it into the run's base checkout (main).
  * A conflict leaves main untouched and names the files, so the task can be redone on the new main.
  */
-export async function integrateWorktree(input:{basePath:string;worktreePath:string;message:string;removeWorktree?:boolean}):Promise<GitIntegration> {
+export async function integrateWorktree(input:{basePath:string;worktreePath:string;message:string;removeWorktree?:boolean;lockWaitMs?:number}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
   const dirty=git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
   if(!dirty.ok) return fail(`worktree status: ${dirty.reason}`);
@@ -75,7 +87,13 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   if(!head.ok) return fail(`worktree head: ${head.reason}`);
   const sha=head.stdout.trim();
   const branch=git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"]).stdout.trim();
-  const result=await withBaseLock(input.basePath,()=>merge(input.basePath,sha,input.message));
+  let result:GitIntegration;
+  try { result=await withBaseLock(input.basePath,()=>merge(input.basePath,sha,input.message),input.message,input.lockWaitMs); }
+  catch(error) {
+    if(!(error instanceof BaseLockBusyError)) throw error;
+    // The writer's work stays committed in its worktree; the next try merges it.
+    return {status:"busy",commit:sha,conflicts:[],reason:error.message,holder:error.holder};
+  }
   // Lane Pilot's own worktree is done once its work is in main, or once main moved past it (a conflict is redone fresh).
   if(input.removeWorktree&&result.status!=="failed") {
     git(input.basePath,["worktree","remove","--force",input.worktreePath]);

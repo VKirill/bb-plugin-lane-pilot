@@ -1,5 +1,7 @@
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { saveBlockedBy, type BlockedBy } from "../blocked-by";
+import { relayFor } from "../relay";
 import type { HelperPolicySnapshot } from "../../helper-context";
 import { writerExecutionSelection } from "../../jev-reasoning";
 import { actionableFindings, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../stages/code-critique";
@@ -15,8 +17,20 @@ import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
+/** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
+const MERGE_QUEUE_MS = 15 * 60_000;
+
 export function createWriterFinish(ctx: ServerCore, services: Services) {
   const { bb, db, getThreadBounded, host } = ctx;
+
+  /** Who holds the checkout: the open attempt whose task the holder's commit message names. */
+  function mergeHolder(runId: string, holder: string | null, since: number): BlockedBy {
+    const projectId = getRun(db, runId)?.project_id;
+    const taskId = holder?.split(":")[0]?.trim() || null;
+    const attempt = taskId ? listOpenAttempts(db).find((row) => row.task_id === taskId && row.project_id === projectId) : undefined;
+    return { kind:"merge-lock", holderTaskId:taskId, holderThreadId:attempt?.thread_id ?? null, holderAttemptId:attempt?.id ?? null,
+      since:new Date(since).toISOString(), retryAfterSec:60, detail:holder };
+  }
 
   async function finishWriterAttempt(input: {
     projectId:string; config:PrototypeConfig; task:TaskV2;
@@ -394,12 +408,32 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const basePath = getRun(db, input.runId)?.writer_workspace_path;
       let integration: { status:string; commit:string|null; conflicts:string[] } | null = null;
       if (bound?.workspace_path && basePath && resolve(bound.workspace_path) !== resolve(basePath)) {
-        const merged = await host.call("gitIntegrate", {
-          requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path,
+        const integrate = () => host.call("gitIntegrate", {
+          requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path!,
           message:`${input.task.id}: ${input.task.title}`.slice(0, 500),
           // Only Lane Pilot's own worktree (no BB environment) is removed; a BB managed one belongs to BB.
           removeWorktree:bound.environment_id === null,
         }, { hostId:input.config.hostId, timeoutMs:180_000 });
+        // Another task merging into the same checkout is a queue, not a failure: wait for it and try again.
+        let merged = await integrate();
+        const queuedSince = Date.now();
+        while (merged.status === "busy" && Date.now() - queuedSince < MERGE_QUEUE_MS && !ctx.isDisposed()) {
+          await new Promise((wake) => setTimeout(wake, 20_000));
+          merged = await integrate();
+        }
+        if (merged.status === "busy") {
+          const blockedBy = mergeHolder(input.runId, merged.holder ?? null, queuedSince);
+          const reason = `merge_queue_timeout: ${merged.reason ?? "another integration holds the base checkout"}`;
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"failed",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged,blockedBy}});
+          await saveBlockedBy(bb.storage.kv, input.attemptId, blockedBy);
+          // The PM is woken when the holder settles, or in 10 minutes, without the owner.
+          await relayFor(ctx).remind({ projectId:input.projectId, threadId:input.pmThreadId, inMinutes:10, watchThreadId:blockedBy.holderThreadId,
+            note:`Задача ${input.taskId} ждала слияния 15 минут: основную копию держит ${blockedBy.holderTaskId ?? "другая задача"}. Работа исполнителя закоммичена в его рабочем дереве; отправь задачу заново, когда держатель освободится.` })
+            .catch((cause) => ctx.log(`merge-block reminder failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+          transitionAttempt(db, input.attemptId, "blocked", { reason });
+          return { status:"blocked", reason, blockedBy, attemptId:input.attemptId, writerThreadId };
+        }
         if (merged.status === "conflict" || merged.status === "failed") {
           const reason = merged.status === "conflict"
             ? `merge_conflict: ${merged.reason?.startsWith("base checkout") ? merged.reason : "main changed since this attempt started"}: ${merged.conflicts.join(", ")}`

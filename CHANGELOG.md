@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.73 — 2026-10-02
+
+Agents no longer wait for the owner when another thread or time will resolve a block.
+
+- **Merges queue instead of failing.** When another task holds the base checkout, the integration answers «busy» with the holder (the lock now records what it merges) and the accepted attempt waits up to 15 minutes, trying every 20 seconds, instead of failing after 2 minutes. The writer's work stays committed in its worktree throughout.
+- **A blocked receipt says who holds it.** `lane_pilot_wait_writer` returns `blockedBy`: the kind of block, the holder's task, thread and attempt, since when, and when to look again.
+- **Relay: questions, answers and reminders between threads.** New tools for the PM: `lane_pilot_ask` queues a question into another thread without interrupting it; `lane_pilot_reply` sends an answer back; `lane_pilot_remind` wakes this chat after N minutes, or earlier when a watched thread finishes its turn; `lane_pilot_relay_list` lists and cancels. The plugin server does the waking: a BB `thread:changed` subscription reacts at once, and a 30-second sweep service catches what events miss. A thread that finishes without answering has its last message passed back. Limits: 6 questions an hour between two threads, 10 open and 30 daily reminders per thread.
+- **«Settled» means really free:** not running a turn, nothing queued for it (a queued question still waits for its turn), and no background command or agent at work. A turn that ends while `sleep` or a build runs on in the background no longer wakes the waiters.
+- **A merge that waited 15 minutes in vain sets the PM a reminder** that watches the holder, so the PM resends the task as soon as the checkout is free.
+- **The PM's instructions have a block ladder:** retry what is yours, ask the holder and set a reminder, back off 5/10/20 minutes, and only after three reminders without progress, or for a decision that is the owner's, write to the owner.
+
+Verified live in the sandbox: a PM asked a thread that ran `sleep 120` in the background, set a 15-minute reminder watching it and ended its turn; the BB event woke it once, 2 min 19 s later, when the holder really freed the checkout, with the holder's answer passed back.
+
 ## 0.1.72 — 2026-10-02
 
 - **A browser check reaches a dev server on another machine over the private VPN, not getbb.app.** The machine the check runs on reports its WireGuard address (new host call `vpnAddress`: the first private IPv4 on a `wg*`, `utun*`, `tun*` or `tailscale*` interface), and the check opens a localhost target there (`http://10.8.0.4:<port>/`) with the server listening on all interfaces. `bb connect expose` is used only when the machine has no VPN address.

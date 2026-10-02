@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -222,4 +222,21 @@ it("sees work already committed in a writer worktree against main's current HEAD
   const head = git(base, "rev-parse", "HEAD").trim();
   const changed = await gitOwnershipChangedPaths({ projectCwd: a, baseSha: head, compareCommitted: true });
   expect(changed.paths).toEqual(["lib.ts"]);
+});
+
+it("reports a base checkout held by a live integration as busy, naming the holder, and keeps the work", async () => {
+  const { base, worktree } = await repo();
+  const lock = join(base, ".git", "lane-pilot-integrate.lock");
+  const holder = spawn("sleep", ["30"]);
+  try {
+    await mkdir(lock);
+    await writeFile(join(lock, "owner"), `${holder.pid}\nbot-fix: Bot fallback`);
+    const a = await worktree("a");
+    await writeFile(join(a, "lib.ts"), "x\n");
+    const busy = await integrateWorktree({ basePath: base, worktreePath: a, message: "api-snap: Snapshot", lockWaitMs: 1_000 });
+    expect(busy).toMatchObject({ status: "busy", holder: "bot-fix: Bot fallback" });
+    expect(git(a, "status", "--porcelain").trim()).toBe("");
+    await (await import("node:fs/promises")).rm(lock, { recursive: true });
+    expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "api-snap: Snapshot" })).status).toBe("merged");
+  } finally { holder.kill(); }
 });

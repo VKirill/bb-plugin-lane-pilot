@@ -194,6 +194,14 @@ Author a task-v2 contract (one outcome, owns_paths, verification). Lane Pilot ru
 - ${BB_LIVE_BROWSER_QA}
 - Fat files in the writer workspace: \`lane_pilot_read\`, not \`pm_read\`.
 
+## Blocked
+Never wait on the owner for something another thread or time will resolve. A blocked receipt carries \`blockedBy\` (who holds it, since when, retryAfterSec). In order:
+1. Retryable on your side (redispatch, a setting you own): do it.
+2. Held by another thread: \`lane_pilot_ask\` it what it holds and when it frees, then \`lane_pilot_remind\` with \`watchThreadId\` set to it and end your turn. You are woken when it settles or the time is up.
+3. Waiting on time: \`lane_pilot_remind\` 5, then 10, then 20 minutes, and end your turn.
+4. After three reminders on the same block without progress, or when a decision is the owner's: tell the owner in one message what you tried and what to choose.
+Answer a question another thread asks you (it carries an askId) with \`lane_pilot_reply\`.
+
 Each writer runs in its own worktree. On acceptance Lane Pilot commits it and merges it into main of this checkout, one at a time; a conflict sends the task back to be redone on the new main.
 
 ## Ship

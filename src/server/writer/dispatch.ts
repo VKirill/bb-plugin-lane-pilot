@@ -1,3 +1,4 @@
+import { loadBlockedBy } from "../blocked-by";
 import { buildCliInvocation } from "../../argv-builder";
 import { requiredCliFlags } from "../../cli-flags";
 import { classifyCliOutcome } from "../../cli-outcome";
@@ -284,7 +285,12 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         });
         const receipt = taskReceipts.length > 1 ? { lanePilotRunId:args.runId, tasks:taskReceipts } : taskReceipts[0] ?? null;
         const reasons = [...latestByTask.values()].map((attempt) => attempt.reason).filter((reason): reason is string => Boolean(reason));
-        return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), ...(reasons.length ? { reason:reasons.join("; ") } : {}) };
+        // A blocked task says who holds it and when to look again, so the PM can ask the holder or set a reminder.
+        const blockedBy = (await Promise.all([...latestByTask.values()].filter((attempt) => attempt.state === "blocked")
+          .map(async (attempt) => { const found = await loadBlockedBy(bb.storage.kv, attempt.id); return found ? { taskId:attempt.task_id, ...found } : null; })))
+          .filter((row) => row !== null);
+        return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), ...(reasons.length ? { reason:reasons.join("; ") } : {}),
+          ...(blockedBy.length ? { blockedBy } : {}) };
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
