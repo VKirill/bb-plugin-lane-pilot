@@ -50,7 +50,7 @@ export function buildSeatbeltProfile(workspacePath:string, tempPath:string):stri
   return [
     "(version 1)",
     "(allow default)",
-    "(deny network*)",
+    // Network stays open: checks such as curl against a dev server or an API must be able to pass.
     `(deny file-write* (require-all (require-not (subpath ${workspace})) (require-not (subpath ${temporary})) (require-not (literal \"/dev/null\"))))`,
     denyWrites,
   ].join("\n");
@@ -74,7 +74,10 @@ function sandboxPath(base:string):string {
 }
 
 export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempPath:string;guardPaths:string[]}):string[] {
-  const args=["--die-with-parent","--new-session","--unshare-all","--ro-bind","/","/","--bind",input.workspacePath,input.workspacePath];
+  // --share-net keeps the host network while every other namespace stays private: a check may curl a dev
+  // server or an API, but still writes only into the workspace and its temp folder. Before, --unshare-all
+  // alone cut the network, so no curl verification could ever pass.
+  const args=["--die-with-parent","--new-session","--unshare-all","--share-net","--ro-bind","/","/","--bind",input.workspacePath,input.workspacePath];
   for (const guardPath of input.guardPaths) args.push("--ro-bind",guardPath,guardPath);
   args.push("--bind",input.tempPath,input.tempPath,"--proc","/proc","--dev","/dev","--chdir",input.cwd,
     "--clearenv","--setenv","PATH",sandboxPath("/usr/local/bin:/usr/bin:/bin"),"--setenv","HOME",input.tempPath,
@@ -196,4 +199,48 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     await releaseGuards();
     await rm(tempPath,{recursive:true,force:true});
   }
+}
+
+const shellQuote=(value:string)=>`'${value.replace(/'/g,"'\\''")}'`;
+
+export type SandboxedCommandLine = {
+  hostId:string; backend:"macos-seatbelt"|"linux-bubblewrap"; workspacePath:string; cwd:string; policySha256:string;
+  commandLine:string; cleanup:{tempPath:string; created:string[]};
+};
+
+/**
+ * The same sandbox as runSandboxedCommandOnHost, as one shell line for a BB terminal: the check then runs where the
+ * owner can open and watch it, and BB reports its output and exit code. The caller releases it with
+ * releaseSandboxedCommandLine once the terminal has exited.
+ */
+export async function prepareSandboxedCommandLine(input:SandboxedCommandInput):Promise<SandboxedCommandLine> {
+  const requestedBackend=input.backend ?? "auto";
+  const seatbeltAvailable=await access(SANDBOX_EXEC).then(()=>true,()=>false);
+  const bubblewrapPath=await Promise.all(BWRAP_CANDIDATES.map(async (path)=>await access(path).then(()=>path,()=>null))).then((paths)=>paths.find(Boolean) ?? null);
+  const backend=resolveSandboxBackend(requestedBackend,process.platform,seatbeltAvailable,Boolean(bubblewrapPath));
+  const workspacePath = await realDirectory(input.workspacePath,"sandbox_workspace");
+  const cwd = await realDirectory(input.cwd,"sandbox_cwd");
+  if (!within(workspacePath,cwd)) throw new Error("sandbox_cwd_outside_workspace");
+  if (!input.command.trim() || input.command.length > 32_000 || input.command.includes("\0")) throw new Error("sandbox_command_invalid_or_too_large");
+  const tempPath = await realpath(await mkdtemp(resolve(tmpdir(),"lane-pilot-sandbox-")));
+  const hostId=process.env.BB_HOST_ID ?? input.requestedHostId;
+  if (backend === "linux-bubblewrap") {
+    const {guardPaths,created}=await prepareGuardPaths(workspacePath);
+    const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
+    const policySha256=createHash("sha256").update(JSON.stringify(args),"utf8").digest("hex");
+    return {hostId,backend,workspacePath,cwd,policySha256,cleanup:{tempPath,created},
+      commandLine:`exec ${[bubblewrapPath!,...args,input.command].map(shellQuote).join(" ")}`};
+  }
+  const profile = buildSeatbeltProfile(workspacePath,tempPath);
+  const policySha256 = createHash("sha256").update(profile,"utf8").digest("hex");
+  const env = [`PATH=${sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")}`,`HOME=${tempPath}`,`TMPDIR=${tempPath}`,`TMP=${tempPath}`,`TEMP=${tempPath}`,"LANG=C","LC_ALL=C"];
+  return {hostId,backend,workspacePath,cwd,policySha256,cleanup:{tempPath,created:[]},
+    commandLine:`cd ${shellQuote(cwd)} && exec ${["/usr/bin/env","-i",...env,SANDBOX_EXEC,"-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command].map(shellQuote).join(" ")}`};
+}
+
+export async function releaseSandboxedCommandLine(cleanup:{tempPath:string;created:string[]}):Promise<void> {
+  // Only Lane Pilot's own sandbox temp folders are removed.
+  if (!/\/lane-pilot-sandbox-[^/]+$/.test(cleanup.tempPath)) throw new Error("sandbox_release_refused");
+  await releaseGuardPaths(cleanup.created);
+  await rm(cleanup.tempPath,{recursive:true,force:true});
 }

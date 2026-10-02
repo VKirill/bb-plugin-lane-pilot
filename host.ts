@@ -35,6 +35,8 @@ import {
   runCli,
   runCommand,
   runSandboxedCommand,
+  sandboxCommandLine,
+  sandboxRelease,
   runBrowserQa,
   probeBrowserQaTarget,
   snapshot,
@@ -51,7 +53,7 @@ export default experimental_defineHostEntry({
   handlers: {
     nativeInstall: nativeInstallHost,
     detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, docsAnchors, docsFlows, docsDepth, docsVerifyCitations, docsStaleness: docsStalenessHandler, gitIntegrate, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, writeDocsPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
-    councilJudge, runCli, runCommand, runSandboxedCommand, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
+    councilJudge, runCli, runCommand, runSandboxedCommand, sandboxCommandLine, sandboxRelease, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
   },
 });

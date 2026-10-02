@@ -731,6 +731,83 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("runs verification in a BB terminal of the writer thread, with the sandbox line and its release", async () => {
+    const created: Array<{ scope:unknown; command:string }> = [];
+    const released: string[] = [];
+    let snapshots = 0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{
+        threads:{
+          getPluginMetadata: async ({ threadId }) => threadId === pmThreadId
+            ? { role:"pm", lanePilotRunId:"run-t" }
+            : { role:"writer" },
+          spawn: async () => ({ id:"writer-real" }),
+          wait: async () => ({ matched:true, thread:{ status:"idle" } }),
+          get: withPm(async () => ({ id:"writer-real", status:"idle" })),
+          output: async () => ({ text:"ok" }),
+          list: async () => [] as never,
+        },
+        terminals:{
+          create: async (input: { scope:unknown; start:{ command:string } }) => {
+            created.push({ scope:input.scope, command:input.start.command });
+            return { id:`term-${created.length}`, status:"running" };
+          },
+          get: async ({ terminalId }: { terminalId:string }) => {
+            const command = created[Number(terminalId.slice(5)) - 1]!.command;
+            return { id:terminalId, status:"exited", exitCode:command.includes("'false'") ? 1 : 0 };
+          },
+          output: async () => ({ chunks:[{ dataBase64:Buffer.from("check output").toString("base64") }] }),
+          close: async () => ({ ok:true }),
+        },
+        providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
+        files:{
+          read: async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" }
+            : path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
+          write: async () => ({ ok:true }),
+        },
+      } as never,
+      experimental_callHostRpc: async (call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if (call.method === "runSandboxedCommand") throw new Error("verification must not bypass the terminal");
+        if (call.method === "sandboxCommandLine") {
+          const command = String((call.input as { command?:string }).command ?? "");
+          return { hostId:"host-test", backend:"macos-seatbelt", workspacePath:task.project_cwd, cwd:task.project_cwd,
+            policySha256:"e".repeat(64), commandLine:`exec sandbox '${command}'`, cleanup:{ tempPath:`/tmp/lane-pilot-sandbox-${command}`, created:[] } };
+        }
+        if (call.method === "sandboxRelease") { released.push(String((call.input as { tempPath:string }).tempPath)); return { hostId:"host-test", released:true }; }
+        if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
+        const command = String((call.input as { command?:string }).command ?? "");
+        if (command.includes("porcelain")) {
+          return { hostId:"host-test", exitCode:0, stdout:JSON.stringify(
+            ++snapshots === 1 || snapshots === 3 ? [] : [{ path:"hello.txt", sha256:snapshots === 2 ? "attempt-1" : "attempt-2" }],
+          ), stderr:"" };
+        }
+        return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
+      },
+    });
+    const db = openDatabase(bb);
+    saveLegacyWriterConfig(db);
+    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
+    createRun(db, "run-t", projectId, "bb", config.writerWorkspacePath);
+    setRunThread(db, "run-t", pmThreadId);
+    await plugin(bb);
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, plan:"Canonical verification plan", task },
+      { threadId:pmThreadId, projectId },
+    )));
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:20 }, { threadId:pmThreadId, projectId },
+    )));
+    expect(created.length).toBeGreaterThanOrEqual(2);
+    expect(created[0]!.scope).toEqual({ kind:"thread", threadId:"writer-real" });
+    expect(created.map((entry) => entry.command)).toContain("exec sandbox 'false'");
+    expect(released).toHaveLength(created.length);
+    expect(result.state).toBe("blocked");
+    await harness.lifecycle.dispose();
+  }, 30_000);
+
   it("observes writer errors, tries one unavailable emergency selection and returns blocked", async () => {
     const threadStates = new Map<string, string>();
     let spawnCount = 0;

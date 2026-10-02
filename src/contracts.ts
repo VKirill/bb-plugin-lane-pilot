@@ -393,6 +393,21 @@ export const hostContract = defineRpcContract({
       exitCode:z.number().int(),policySha256:z.string().regex(/^[a-f0-9]{64}$/),stdout:z.string(),stderr:z.string(),
     }).strict(),
   },
+  sandboxCommandLine: {
+    input:z.object({
+      requestedHostId:z.string().min(1),workspacePath:z.string().startsWith("/"),cwd:z.string().startsWith("/"),
+      backend:z.enum(["auto","macos-seatbelt","linux-bubblewrap"]).optional(),command:z.string().min(1).max(32_000),
+    }).strict(),
+    output:z.object({
+      hostId:z.string(),backend:z.enum(["macos-seatbelt","linux-bubblewrap"]),workspacePath:z.string(),cwd:z.string(),
+      policySha256:z.string().regex(/^[a-f0-9]{64}$/),commandLine:z.string(),
+      cleanup:z.object({tempPath:z.string(),created:z.array(z.string())}).strict(),
+    }).strict(),
+  },
+  sandboxRelease: {
+    input:z.object({requestedHostId:z.string().min(1),tempPath:z.string().startsWith("/"),created:z.array(z.string())}).strict(),
+    output:z.object({hostId:z.string(),released:z.boolean()}).strict(),
+  },
   runBrowserQa: {
     input: z.object({
       requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), url:z.string().url(),

@@ -19,7 +19,47 @@ import type { Services } from "../services";
 export function createWriterVerify(ctx: ServerCore, services: Services) {
   const { bb, db, host, runPolicyFor } = ctx;
 
-  async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string): Promise<Array<VerifyResult & {
+  /**
+   * A writer's check runs in a BB terminal of the writer's thread, inside the same sandbox, so the owner can open it
+   * and watch; BB reports its output and exit code. Null when terminals are unavailable: the caller falls back.
+   */
+  async function runInWriterTerminal(input:{config:PrototypeConfig; writerThreadId:string; workspacePath:string; cwd:string; command:string; backend:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec:number}) {
+    const terminals=(bb.sdk as { terminals?: typeof bb.sdk.terminals }).terminals;
+    if (!terminals?.create) return null;
+    const prepared=await host.call("sandboxCommandLine",{requestedHostId:input.config.hostId,workspacePath:input.workspacePath,cwd:input.cwd,
+      command:input.command,backend:input.backend},{hostId:input.config.hostId,timeoutMs:30_000});
+    if (prepared.hostId!==input.config.hostId) throw new Error("sandbox result host did not match the configured host");
+    try {
+      let session;
+      try {
+        session=await terminals.create({cols:160,rows:48,scope:{kind:"thread",threadId:input.writerThreadId},
+          start:{mode:"command",command:prepared.commandLine},title:`Lane Pilot check: ${input.command.slice(0,60)}`});
+      } catch (cause) {
+        bb.log.warn(`verification terminal unavailable, running on the host: ${cause instanceof Error?cause.message:String(cause)}`);
+        return null;
+      }
+      bb.log.info(`verification in terminal ${session.id} of thread ${input.writerThreadId}: ${input.command.slice(0,120)}`);
+      const deadline=Date.now()+(input.timeoutSec+15)*1000;
+      while (session.status!=="exited"&&session.status!=="disconnected"&&Date.now()<deadline) {
+        await new Promise((resolve)=>setTimeout(resolve,1_500));
+        session=await terminals.get({terminalId:session.id});
+      }
+      const read=await terminals.output({terminalId:session.id,tailBytes:200_000}).catch(()=>({chunks:[] as Array<{dataBase64:string}>}));
+      const text=read.chunks.map((chunk)=>Buffer.from(chunk.dataBase64,"base64").toString("utf8")).join("");
+      if (session.status!=="exited") {
+        await terminals.close({terminalId:session.id,mode:"force"}).catch(()=>undefined);
+        return {exitCode:124,stdout:text,stderr:session.status==="disconnected"?"verification terminal disconnected":`verification timed out after ${input.timeoutSec}s`,
+          backend:prepared.backend,policySha256:prepared.policySha256,workspacePath:prepared.workspacePath,terminalId:session.id};
+      }
+      bb.log.info(`verification terminal ${session.id} exited ${session.exitCode}`);
+      return {exitCode:session.exitCode??1,stdout:text,stderr:"",backend:prepared.backend,policySha256:prepared.policySha256,
+        workspacePath:prepared.workspacePath,terminalId:session.id};
+    } finally {
+      await host.call("sandboxRelease",{requestedHostId:input.config.hostId,...prepared.cleanup},{hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>undefined);
+    }
+  }
+
+  async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string): Promise<Array<VerifyResult & {
     sandboxBackend:string|null; policySha256:string|null; workspacePath:string;
   }>> {
     const policy=runId?runPolicyFor(runId):buildRunPolicy(loadProjectSettings(db,config.projectId));
@@ -27,14 +67,24 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     return mapBounded(task.verification,policy.pools.verification,async(command)=>{
       const release=await services.runWriterPool.acquire(`verification:${runId??config.projectId}`,policy.pools.verification);
       try {
+      const backend=(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto";
+      // The sandbox gives a command 120 s when the task names no limit; waiting only 30 s cut longer checks short.
+      const timeoutSec=command.timeout_sec ?? 120;
+      const inTerminal=writerThreadId ? await runInWriterTerminal({config,writerThreadId,workspacePath:task.project_cwd,cwd:command.cwd,
+        command:command.command,backend,timeoutSec}).catch((cause:unknown)=>{
+          bb.log.warn(`verification terminal failed, running on the host: ${cause instanceof Error?cause.message:String(cause)}`);
+          return null;
+        }) : null;
+      if (inTerminal) return {command:command.command,exitCode:inTerminal.exitCode,stdout:inTerminal.stdout,stderr:inTerminal.stderr,
+        sandboxBackend:inTerminal.backend,policySha256:inTerminal.policySha256,workspacePath:inTerminal.workspacePath};
       const ran = await host.call("runSandboxedCommand", {
         requestedHostId: config.hostId,
         workspacePath:task.project_cwd,
-        backend:(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto",
+        backend,
         command:command.command,
         cwd: command.cwd,
-        timeoutSec: command.timeout_sec,
-      }, { hostId:config.hostId, timeoutMs:(command.timeout_sec ?? 30) * 1000 }).catch((cause: unknown) => ({
+        timeoutSec,
+      }, { hostId:config.hostId, timeoutMs:(timeoutSec + 15) * 1000 }).catch((cause: unknown) => ({
         hostId: config.hostId,
         exitCode: 1,
         stdout: "",
@@ -182,7 +232,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       }).catch(() => null);
       contents[rel] = read ? stringAt(read, "content") : null;
     }
-    const verifies = await runVerification(input.config, input.task, input.runId);
+    const verifies = await runVerification(input.config, input.task, input.runId, input.writerThreadId);
     recordGateEvaluation(db,{...input,gate:"verification",status:verifies.length===0?"skipped":verifies.every((row)=>row.exitCode===0)?"passed":"failed",
       input:JSON.stringify(input.task),summary:{commandCount:verifies.length,failedCount:verifies.filter((row)=>row.exitCode!==0).length}});
     const classified = classifyWriterOutput({ task:input.task, produced, contents, verifies });

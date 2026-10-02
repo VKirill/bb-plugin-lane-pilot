@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.68 — 2026-10-02
+
+- **Writers' checks have network access.** The verification sandbox now keeps the host network (bubblewrap `--share-net`, no `deny network*` in seatbelt) while writes stay limited to the task's folder and a temp folder. Before, every `curl` check, and every test that reached an API or a dev server, failed by construction.
+- **A writer's checks run in a BB terminal of the writer's thread,** inside the same sandbox, titled «Lane Pilot check: …». Open the writer's thread to watch a check live; BB reports its output and exit code. Where BB terminals are unavailable, Lane Pilot falls back to running the check on the host as before. New host calls `sandboxCommandLine` and `sandboxRelease`.
+- A check without its own time limit was waited for only 30 s while the sandbox allowed 120 s; both now use 120 s.
+- The plugin log records where each check ran: «verification in terminal term_… of thread …» and its exit code, or why it fell back to the host.
+
+Verified live: a sandbox PM run's writer passed `test -f`, `grep -q` and `curl -fsS https://example.com` in three BB terminals of its thread, exit code 0 each.
+
 ## 0.1.67 — 2026-10-02
 
 Checked against SelfyStudio on OVH, in the same sandbox Lane Pilot uses: both blocked tasks' checks now pass in a fresh writer worktree (marketing vitest 38/38; bot tests and typecheck, exit 0).

@@ -14,7 +14,7 @@ import { readBoundedWorkspaceFile } from "./bounded-read";
 import { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
 import { runBrowserQaOnHost } from "./stages/browser-qa";
 import { scanCritiqueCoverage } from "./stages/critique-coverage";
-import { runSandboxedCommandOnHost } from "./verification/sandbox";
+import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "./verification/sandbox";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "./verification/git-ownership";
 import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
 import { discoverClaudeAgents, prepareNativeClaude } from "./native-claude-host";
@@ -372,6 +372,15 @@ export const runCommand: ExperimentalHostRpcHandlers<typeof hostContract>["runCo
 export const runSandboxedCommand: ExperimentalHostRpcHandlers<typeof hostContract>["runSandboxedCommand"] = async (input) => (
   runSandboxedCommandOnHost(input)
 );
+
+export const sandboxCommandLine: ExperimentalHostRpcHandlers<typeof hostContract>["sandboxCommandLine"] = async (input) => (
+  prepareSandboxedCommandLine(input)
+);
+
+export const sandboxRelease: ExperimentalHostRpcHandlers<typeof hostContract>["sandboxRelease"] = async (input) => {
+  await releaseSandboxedCommandLine({ tempPath:input.tempPath, created:input.created });
+  return { hostId:process.env.BB_HOST_ID ?? input.requestedHostId, released:true };
+};
 
 export const runBrowserQa: ExperimentalHostRpcHandlers<typeof hostContract>["runBrowserQa"] = async (input) => (
   runBrowserQaOnHost(input)
