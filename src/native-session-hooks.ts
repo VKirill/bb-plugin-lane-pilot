@@ -41,6 +41,8 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_council_status",
   "lane_pilot_council_say",
   "lane_pilot_council_stop",
+  "lane_pilot_specialist",
+  "lane_pilot_wait_specialist",
 ] as const;
 
 export const NATIVE_LP_BRIDGE_PM_TOOLS = [
@@ -64,6 +66,8 @@ export const NATIVE_LP_BRIDGE_PM_TOOLS = [
   "lane_pilot_council_status",
   "lane_pilot_council_say",
   "lane_pilot_council_stop",
+  "lane_pilot_specialist",
+  "lane_pilot_wait_specialist",
 ] as const;
 
 export function lpBridgeCatalogNames(tools: readonly string[] = NATIVE_LP_BRIDGE_TOOLS): string[] {

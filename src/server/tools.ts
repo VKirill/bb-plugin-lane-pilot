@@ -9,6 +9,7 @@ import { mountInsights } from "./insights";
 import { mountHealth } from "./health";
 import { mountMemorySync } from "./memory-sync";
 import { mountCouncilTools } from "./council";
+import { mountSpecialists } from "./specialists";
 import { z } from "zod";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
@@ -191,6 +192,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountHealth(ctx, services);
   mountMemorySync(ctx);
   mountCouncilTools(ctx, services.council);
+  mountSpecialists(ctx);
 
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;

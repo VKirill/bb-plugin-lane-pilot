@@ -1,10 +1,9 @@
 import { t } from "../../../i18n";
 import { agentPickerLabel } from "../../agent-display";
-import { MAIN_AGENT_PROFILE_IDS, compileEffectiveMainAgent, compileMainAgentProfile, detectCompiledMainAgentCapability } from "../../agent-profile";
+import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../agent-profile";
 import { countAttempts, createAttempt, getActivation, getAttempt, getTask, getTaskPlan, listStageReceipts, transitionAttempt } from "../../database";
 import { detectRequiredSessionPolicyCapability } from "../../helper-context";
-import { sessionOverrideAgentsJson } from "../../native-agent-definition";
-import { prepareNativeSessionRecord } from "../../native-dispatch";
+import { storeNativeSelection } from "../native-profile";
 import { DEFAULT_NATIVE_AGENT, nativeAgentCliId, nativeSelectionSchema } from "../../native-session";
 import { userVisibleProjects } from "../../project-scope";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
@@ -33,30 +32,9 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     },
     native_install_status: ({ hostId }) => nativeInstaller.status(hostId),
     prepare_native_session: async ({ projectId, agentId }) => {
-      const shortId = nativeAgentCliId(agentId || DEFAULT_NATIVE_AGENT);
-      const owned = await ownedAgents();
-      const stored = owned[shortId];
-      if (stored?.compiledCorrupt) throw new Error(`compiled_main_agent_corrupt:${shortId}`);
-      let compiled = null;
-      try { compiled = compileEffectiveMainAgent(shortId, stored); } catch { compiled = null; }
-      const stock = (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(shortId) ? compileMainAgentProfile(shortId) : null;
-      const edited = compiled && stock ? compiled.sourceHash !== stock.sourceHash : Boolean(compiled && !stock);
-      if (!compiled && !stock) throw new Error(`Unknown Lane Pilot profile ${shortId}.`);
-      const profileMode = edited ? "session-override" as const : "installed" as const;
-      const agentsJson = sessionOverrideAgentsJson({ agentId: shortId, edited: true, compiled: compiled ?? stock });
-      const record = await prepareNativeSessionRecord({
-        projectId,
-        agentId: shortId,
-        profileMode,
-        agentsJson,
-        sourceHash: compiled?.sourceHash ?? null,
-      });
-      await bb.storage.kv.set(`native-selection:${record.token}`, record);
-      const label = agentPickerLabel({
-        id: shortId,
-        description: compiled?.description ?? shortId,
-      }, t);
-      return { token: record.token, label, agentId: shortId, profileMode, cliAgentsCollision: null };
+      const { selection: record, description } = await storeNativeSelection(ctx, { projectId, agentId: agentId || DEFAULT_NATIVE_AGENT });
+      const label = agentPickerLabel({ id: record.agentId, description }, t);
+      return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null };
     },
     native_thread: async ({ threadId }) => {
       const selected = await bb.storage.kv.get(`native-thread:${threadId}`);

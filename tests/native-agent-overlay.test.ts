@@ -125,13 +125,16 @@ it("gives specialists no bb-bridge tools and keeps the PM core plus browser QA",
     "mcp__bb-bridge__lane_pilot_council_status",
     "mcp__bb-bridge__lane_pilot_council_say",
     "mcp__bb-bridge__lane_pilot_council_stop",
+    "mcp__bb-bridge__lane_pilot_specialist",
+    "mcp__bb-bridge__lane_pilot_wait_specialist",
   ]);
   const overlay = stockAgentsOverlayFromInstalled({
     agentId: "dev-orchestrator",
     source: "plugin:lane-stack",
     markdown: PLUGIN_MD,
   }) as Record<string, { tools: string[] }>;
-  expect(JSON.stringify(overlay["copy-lead"]!.tools)).not.toMatch(/mcp__bb-bridge__/);
+  // Specialists start as their own threads; the PM session carries no copy-lead companion.
+  expect(overlay).not.toHaveProperty("copy-lead");
 });
 
 it("does not rewrite a custom --agents prompt", () => {
@@ -220,11 +223,10 @@ You are **dev-orchestrator**. Dispatch run-controller. Then spawn project-onboar
   const body = overlay?.["dev-orchestrator"] as { prompt: string; tools: string[] };
   expect(body.prompt).toBe(lanePmOverlayPrompt("dev-orchestrator"));
   expect(body.prompt).not.toContain("docs/llm");
-  expect(body.tools[0]).toBe("Agent(lane-stack:design-lead, Explore)");
+  // Specialists are child threads (lane_pilot_specialist), not subagents of the PM session.
+  expect(body.tools[0]).toBe("Agent(Explore)");
   expect(overlay).not.toHaveProperty("project-onboarder");
-  expect(overlay?.["copy-lead"]).toEqual(expect.objectContaining({
-    prompt: laneSessionOverlayPrompt("copy-lead"),
-  }));
+  expect(overlay).not.toHaveProperty("copy-lead");
   expect(overlay).not.toHaveProperty("browser-qa");
 });
 
@@ -241,8 +243,8 @@ it("keeps a Lane PM from delegating code to general-purpose subagents", async ()
   }) as Record<string, { tools: string[] }>;
   expect(overlay["dev-orchestrator"]!.tools[0]).toBe("Agent(Explore, Plan)");
   expect((overlay["dev-orchestrator"] as unknown as { prompt: string }).prompt).toContain("lane_pilot_dispatch_writer");
-  expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, lane-stack:design-lead, Explore)"])).toEqual(["Agent(lane-stack:design-lead, Explore)"]);
+  expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, lane-stack:design-lead, Explore)"])).toEqual(["Agent(Explore)"]);
   expect(withoutCodeWritingSubagents("dev-orchestrator", [
     "Agent(lane-stack:project-onboarder, lane-stack:docs-maintainer, lane-stack:night-reviewer, lane-stack:copy-lead, Explore)",
-  ])).toEqual(["Agent(lane-stack:copy-lead, Explore)"]);
+  ])).toEqual(["Agent(Explore)"]);
 });

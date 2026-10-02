@@ -127,8 +127,9 @@ const PM_AGENT_IDS = new Set(["dev-orchestrator", "frontend-orchestrator", "mark
 /**
  * A Lane PM delegates code only to Lane writers. A general-purpose subagent would write product code
  * in the PM's own checkout, past plan critique, the writer model and worktrees. Onboard/docs/night
- * are Lane Pilot background stages, not Agent() one-shots, so a PM keeps read-only Explore/Plan
- * and the Lane specialists only.
+ * are Lane Pilot background stages, not Agent() one-shots, so a PM keeps read-only Explore/Plan only.
+ * The Lane specialists run as child BB threads through lane_pilot_specialist, so the owner can open them;
+ * as Agent() subagents BB showed only «a background agent is running».
  */
 const BB_PM_STRIPPED_SUBAGENTS = new Set([
   "general-purpose",
@@ -139,6 +140,10 @@ const BB_PM_STRIPPED_SUBAGENTS = new Set([
   "docs-maintainer", "lane-stack:docs-maintainer",
   "night-reviewer", "lane-stack:night-reviewer",
   "browser-qa", "lane-stack:browser-qa",
+  "design-lead", "lane-stack:design-lead",
+  "copy-lead", "lane-stack:copy-lead",
+  "seo-specialist", "lane-stack:seo-specialist",
+  "tavily", "lane-stack:tavily",
 ]);
 
 export const BB_SPECIALIST_COMPANION_IDS = [
@@ -185,9 +190,7 @@ Ask the human only for business meaning, irreversible money/data, a missing secr
 ## Dispatch
 Author a task-v2 contract (one outcome, owns_paths, verification). Lane Pilot runs plan critique, specialist review, acceptance and the merge into main itself. Do not call run-init, run-controller, lane-ctl, lane-bg, lane-exec, or wt-merge-main: that is the terminal Lane Stack's run machinery, and here it would bypass Lane Pilot's acceptance (the guard blocks them). Read-only checks such as run-validate are fine.
 - Product source: \`lane_pilot_dispatch_writer\` with \`project_cwd\` equal to this checkout and the canonical plan in \`plan\`. Independent tasks may go out together; a dependent task waits until its dependencies are accepted. Poll \`lane_pilot_wait_writer\` (runId, timeout ≤ 240s) until accepted or blocked.
-- DESIGN.md / UX audit / gray prototype / mockup: Agent \`design-lead\`.
-- Copy / audience: Agent \`copy-lead\`.
-- SEO: Agent \`seo-specialist\`.
+- Specialists: \`lane_pilot_specialist\` with role \`design-lead\` (DESIGN.md, UX audit, gray prototype, mockup), \`copy-lead\` (copy, audience), \`seo-specialist\` (SEO) or \`tavily\` (web research). Each runs as a child thread of this chat that the owner can open; show them its @thread link, then poll \`lane_pilot_wait_specialist\` (threadId, timeout ≤ 240s). Explore and Plan stay quick read-only Agent subagents.
 - ${BB_LIVE_BROWSER_QA}
 - Fat files in the writer workspace: \`lane_pilot_read\`, not \`pm_read\`.
 
@@ -392,9 +395,9 @@ export function bbSpecialistAgentDefinitions(): Record<string, Record<string, un
   return out;
 }
 
-function withPmCompanions(agentId: string, overlay: Record<string, unknown>): Record<string, unknown> {
-  if (!isLanePmAgent(agentId)) return overlay;
-  return { ...overlay, ...bbSpecialistAgentDefinitions() };
+// Specialists are their own threads now (lane_pilot_specialist), so the PM session carries no companion definitions.
+function withPmCompanions(_agentId: string, overlay: Record<string, unknown>): Record<string, unknown> {
+  return overlay;
 }
 
 export function stockAgentsOverlayFromInstalled(input: {

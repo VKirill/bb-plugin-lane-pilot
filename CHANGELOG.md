@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.61 — 2026-10-02
+
+First step of putting Lane Pilot on BB rails: every agent a PM hands work to is a thread you can open.
+
+- **Specialists are child BB threads.** `lane_pilot_specialist {role, task}` starts design-lead, copy-lead, seo-specialist or tavily as a child thread of the PM chat, in the PM's environment, with that role's Lane Pilot profile; `lane_pilot_wait_specialist` returns the answer, and the PM shows the owner the `@thread` link. Before, they were Claude Code subagents: BB showed only «a background agent is running», with nothing to open. The PM profile keeps `Agent(Explore, Plan)` only, for quick read-only lookups.
+- A specialist works inside its PM's run: its profile selection carries `parentRunId`, so the dispatch hook binds the profile without opening a run of its own.
+- The profile selection behind «Enable Lane Pilot» and behind specialist threads is built in one place (`storeNativeSelection`).
+- Checked live in «LP sandbox rules»: the PM called tavily, which ran in its own thread with its own rules and answered; one run, the PM's.
+
 ## 0.1.60 — 2026-10-02
 
 Runs that hung in «выполняется» for days.

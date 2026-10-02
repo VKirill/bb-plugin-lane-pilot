@@ -89,6 +89,7 @@ export async function prepareNativeSessionRecord(input: {
   profileMode: NativeSelection["profileMode"];
   agentsJson: string | null;
   sourceHash: string | null;
+  parentRunId?: string;
 }): Promise<NativeSelection> {
   const { randomUUID } = await import("node:crypto");
   return nativeSelectionSchema.parse({
@@ -99,6 +100,7 @@ export async function prepareNativeSessionRecord(input: {
     agentsJson: input.agentsJson,
     sourceHash: input.sourceHash,
     createdAt: Date.now(),
+    ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
   });
 }
 
@@ -232,11 +234,14 @@ export async function handleNativeDispatch(
     if (collision) {
       return reject("cli_agents_collision", collisionMessage(collision), { detail: collision });
     }
-    const claimed = claimNativeLaneRun({
-      db,
-      threadId: ctx.thread.id,
-      projectId: ctx.project.id,
-    });
+    // A specialist thread works inside its PM's run; only a chat of its own opens a run.
+    const claimed = selected.parentRunId
+      ? { runId: selected.parentRunId, created: false }
+      : claimNativeLaneRun({
+        db,
+        threadId: ctx.thread.id,
+        projectId: ctx.project.id,
+      });
     if (claimed.created) {
       await attachNativeLaneClaim({
         bb,
@@ -264,7 +269,7 @@ export async function handleNativeDispatch(
       traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "workspace_pending" });
       return { action: "proceed" };
     }
-    if (workspace.environmentId) {
+    if (workspace.environmentId && !selected.parentRunId) {
       if (!finalizeNativeLaneBinding({
         db,
         runId: claimed.runId,

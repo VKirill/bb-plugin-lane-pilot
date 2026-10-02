@@ -5,6 +5,7 @@ import { compileMainAgentProfile } from "../src/agent-profile";
 import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/database";
 import { sessionOverrideAgentsJson } from "../src/native-agent-definition";
 import { nativeSelectionMarker } from "../src/native-session";
+import { prepareNativeSessionRecord } from "../src/native-dispatch";
 
 const stockNativeAgentsJson = () => sessionOverrideAgentsJson({
   agentId: "dev-orchestrator",
@@ -422,4 +423,22 @@ it("binds hidden composer data on ordinary Send and ignores other plugins", asyn
   expect(await hook({ ...context("thr_hidden", "Hello"), experimental_submission: { pluginId: "lane-pilot", data: { token: selected.token } } })).toEqual({ action: "proceed" });
   expect(fake.prepareCalls).toHaveLength(1);
   expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_hidden" })).toMatchObject({ token: selected.token });
+});
+
+it("starts a specialist thread with its own profile inside the PM's run, without a run of its own", async () => {
+  const fake = await setup();
+  const hook = fake.harness.registrations.hooks["message.dispatch"]!;
+  const pm = await fake.harness.behavior.callRpc("prepare_native_session", { projectId: "project_a", agentId: "dev-orchestrator" }) as { token: string };
+  expect(await hook(context("thr_pm", nativeSelectionMarker(pm.token)))).toEqual({ action: "proceed" });
+  const db = openDatabase(fake.bb);
+  const runId = findOpenNativeRun(db, "project_a", "thr_pm")!;
+  const specialist = await prepareNativeSessionRecord({
+    projectId: "project_a", agentId: "design-lead", profileMode: "installed", agentsJson: null, sourceHash: null, parentRunId: runId,
+  });
+  await fake.bb.storage.kv.set(`native-selection:${specialist.token}`, specialist);
+  expect(await hook(context("thr_specialist", nativeSelectionMarker(specialist.token)))).toEqual({ action: "proceed" });
+  expect(fake.prepareCalls.at(-1)).toMatchObject({ agentId: "design-lead", cwd: "/workspace" });
+  expect(findOpenNativeRun(db, "project_a", "thr_specialist")).toBeNull();
+  expect(fake.metadata.some((row) => row.threadId === "thr_specialist")).toBe(false);
+  expect(getRun(db, runId)).toMatchObject({ pm_thread_id: "thr_pm", state: "running" });
 });
