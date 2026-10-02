@@ -1,3 +1,4 @@
+import { GLOBAL_SETTINGS_PROJECT_ID } from "../../lp-defaults";
 import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "../../helper-context";
 import { detectCompiledMainAgentCapability } from "../../agent-profile";
 import { buildCliInvocation } from "../../argv-builder";
@@ -25,12 +26,21 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       const own = new Map(listSettingRows(db, projectId, bindingId).map((row) => [row.key, row]));
       const parsed = parseHelperContextSettings(settings);
       const versions = getSettingVersions(db, projectId, HELPER_ROLES.map(roleAccessKey), bindingId);
+      // Where a key's value comes from: the deepest scope that holds a row for it.
+      const isGlobal = projectId === GLOBAL_SETTINGS_PROJECT_ID;
+      const scopeRows: Array<[ "global" | "project" | "section", Set<string>]> = [
+        ...(isGlobal ? [] : [["global", new Set(listSettingRows(db, GLOBAL_SETTINGS_PROJECT_ID, "").map((row) => row.key))] as ["global", Set<string>]]),
+        [isGlobal ? "global" : "project", new Set(listSettingRows(db, projectId, "").map((row) => row.key))],
+        ...scopes.map((binding) => ["section", new Set(listSettingRows(db, projectId, binding).map((row) => row.key))] as ["section", Set<string>]),
+      ];
+      const originOf = (key: string) => { let found: "global" | "project" | "section" | null = null; for (const [name, keys] of scopeRows) if (keys.has(key)) found = name; return found; };
       const roles = HELPER_ROLES.map((role) => {
         const key = roleAccessKey(role);
         const access = parseRoleAccess(settings[key]);
         return {
           role, key, version: versions[key] ?? 0, value: own.get(key)?.value ?? null,
           inherited: !own.has(key) && settings[key] !== undefined,
+          origin: originOf(key),
           groups: Object.fromEntries(ACCESS_GROUPS.map((group) => [group, effectiveGroup(role, group, access)])) as never,
           switches: Object.fromEntries(ACCESS_SWITCHES.map((sw) => [sw, effectiveSwitch(sw, access)])) as never,
         };
@@ -38,16 +48,21 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       const plugins = await (bb.sdk.plugins.list() as Promise<unknown>).catch(() => []);
       const pluginRows = (Array.isArray(plugins) ? plugins : ((plugins as { plugins?: unknown[] })?.plugins ?? [])) as Array<{ id?: string; name?: string; displayName?: string }>;
       // The skills catalog of the project; some BB versions want an environment, so the project's own is tried next.
-      const listSkills = (environmentId: string | null) => bb.sdk.skills.list({ projectId, environmentId } as never) as Promise<unknown>;
+      // The global scope has no catalog of its own; the first project's stands in for it.
+      const listedProjects = isGlobal ? await (bb.sdk.projects.list() as Promise<unknown>).catch(() => []) : [];
+      const projectRows = (Array.isArray(listedProjects) ? listedProjects : ((listedProjects as { projects?: unknown[] })?.projects ?? [])) as Array<{ id?: string }>;
+      const catalogProject = isGlobal ? projectRows.find((p) => p?.id)?.id ?? projectId : projectId;
+      const listSkills = (environmentId: string | null) => bb.sdk.skills.list({ projectId: catalogProject, environmentId } as never) as Promise<unknown>;
       let skills: unknown = await listSkills(null).catch((cause) => { ctx.log(`helper_access_view skills: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
       if (!skills) {
-        const envs = await (bb.sdk.environments.list({ projectId } as never) as Promise<unknown>).catch(() => []);
+        const envs = await (bb.sdk.environments.list({ projectId: catalogProject } as never) as Promise<unknown>).catch(() => []);
         const env = (Array.isArray(envs) ? envs : ((envs as { environments?: unknown[] })?.environments ?? [])) as Array<{ id?: string }>;
         if (env[0]?.id) skills = await listSkills(env[0].id).catch((cause) => { ctx.log(`helper_access_view skills (env): ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
       }
       const skillRows = (Array.isArray(skills) ? skills : ((skills as { skills?: unknown[] })?.skills ?? [])) as Array<{ name?: string; description?: string }>;
       return {
         mode: parsed.ok ? parsed.settings.mode : "invalid",
+        modeOrigin: originOf("helper.context_mode"),
         roles,
         catalog: {
           bbPlugins: pluginRows.filter((p) => typeof p.id === "string").map((p) => ({ id: p.id!, name: p.displayName ?? p.name ?? p.id! })).sort((a, b) => a.id.localeCompare(b.id)),
