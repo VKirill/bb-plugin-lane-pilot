@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.51 — 2026-10-02
+
+- **The Council page fits a phone.** Below 640px the 16rem council list gave way to a select above the chat, so the chat no longer runs off the right edge. The question, seats and agenda take at most 40% of the height, and the seats and agenda fold away on a phone. Long words, code and tables wrap or scroll inside their message, and the composer puts its input on its own row. New messages scroll only the feed, not the BB page around it.
+
 ## 0.1.50 — 2026-10-02
 
 - **The agent badge has small rounded corners, like the composer.** It copied the box's 14px radius, which made the 20px badge a pill; it now uses 6px.
