@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.89 — 2026-10-03
+
+Relay without stale messages («это напоминание устарело»). On the hub 6 of 26 fired reminders arrived after the thread they waited on had already answered, and 15 more were PMs polling «check whether task X merged» by time.
+- **An answer closes the reminders that waited on it.** When the asked thread answers — with `lane_pilot_reply` or by finishing its turn — the asker's open reminders watching that thread close silently; on a settle the passed-back answer comes first and the reminder does not follow it.
+- **No second copy of an open question.** Asking the same thread again while the first question still waits returns that question with `alreadyWaiting` instead of queueing a stale copy behind it.
+- **Reminders on tasks.** `lane_pilot_remind` takes `taskIds`: the reminder fires the moment every listed task is accepted, blocked or canceled, with their states; `inMinutes` is only the fallback. No polling, nothing stale.
+
 ## 0.1.88 — 2026-10-02
 
 From the project-folders PM's report (4 dispatches of one task, each rolled back although the writer's own `npm run typecheck && npm test && npm run build` passed):

@@ -1,3 +1,4 @@
+import { latestTaskAttemptState } from "../database";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { ServerContext } from "./context";
@@ -14,7 +15,9 @@ export type RelayAsk = {
 };
 export type RelayReminder = {
   kind:"remind"; id:string; projectId:string; threadId:string; note:string; dueAt:number;
-  watchThreadId:string|null; createdAt:number; firedAt:number|null; firedBy:"time"|"watch"|null;
+  watchThreadId:string|null; createdAt:number; firedAt:number|null; firedBy:"time"|"watch"|"answered"|"tasks"|null;
+  /** Lane Pilot tasks the reminder waits for: it fires when every one has finished, instead of polling by time. */
+  taskIds?:string[];
 };
 export type RelayItem = RelayAsk | RelayReminder;
 
@@ -32,9 +35,14 @@ export type RelayDeps = {
   settled(threadId:string):Promise<boolean>;
   /** The thread's last answer, used when an asked thread finishes without lane_pilot_reply. */
   output(threadId:string):Promise<string>;
+  /** The latest attempt state of each task in the project; null when it has none. */
+  taskStates(projectId:string, taskIds:string[]):Promise<Record<string, string|null>>;
   now():number;
   log(message:string):void;
 };
+
+/** A task is finished when its latest attempt is accepted (merged), blocked after its retries, or canceled. */
+const TASK_DONE = new Set(["accepted", "blocked", "canceled"]);
 
 const id = (prefix:string) => `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
 
@@ -53,9 +61,26 @@ export function createRelay(deps:RelayDeps) {
     return next;
   }
 
-  async function ask(input:{projectId:string; fromThreadId:string; toThreadId:string; question:string}) {
+  /**
+   * The thread a reminder waited on has answered: the reminder would only arrive after the answer and read as
+   * stale («это напоминание устарело»), so it is closed without a message.
+   */
+  function closeAnsweredWaits(items:RelayItem[], askerId:string, answeredBy:string) {
+    for (const item of items) {
+      if (item.kind === "remind" && !item.firedAt && item.threadId === askerId && item.watchThreadId === answeredBy) {
+        item.firedAt = deps.now();
+        item.firedBy = "answered";
+      }
+    }
+  }
+
+  async function ask(input:{projectId:string; fromThreadId:string; toThreadId:string; question:string}):Promise<RelayAsk & { alreadyWaiting?:true }> {
     if (input.fromThreadId === input.toThreadId) throw new Error("a thread cannot ask itself");
     return update(async (items) => {
+      // Asking again while the first question waits in that thread's queue only queues a stale copy behind it.
+      const open = items.find((item):item is RelayAsk => item.kind === "ask" && !item.answeredAt
+        && item.fromThreadId === input.fromThreadId && item.toThreadId === input.toThreadId);
+      if (open) return { ...open, alreadyWaiting:true as const };
       const hourAgo = deps.now() - 3_600_000;
       const recent = items.filter((item) => item.kind === "ask" && item.createdAt > hourAgo
         && [item.fromThreadId, item.toThreadId].sort().join() === [input.fromThreadId, input.toThreadId].sort().join());
@@ -84,11 +109,12 @@ export function createRelay(deps:RelayDeps) {
       if (item.answeredAt) return item;
       await deps.send(item.fromThreadId, `Ответ от @thread:${item.toThreadId} на ${item.id}:\n\n${input.answer}`);
       item.answeredAt = deps.now();
+      closeAnsweredWaits(items, item.fromThreadId, item.toThreadId);
       return item;
     });
   }
 
-  async function remind(input:{projectId:string; threadId:string; note:string; inMinutes:number; watchThreadId?:string|null}) {
+  async function remind(input:{projectId:string; threadId:string; note:string; inMinutes:number; watchThreadId?:string|null; taskIds?:string[]}) {
     return update((items) => {
       const mine = items.filter((row):row is RelayReminder => row.kind === "remind" && row.threadId === input.threadId);
       if (mine.filter((row) => !row.firedAt).length >= RELAY_LIMITS.openRemindersPerThread) {
@@ -98,7 +124,8 @@ export function createRelay(deps:RelayDeps) {
         throw new Error(`relay limit: ${RELAY_LIMITS.remindersPerThreadPerDay} reminders a day; escalate to the owner`);
       }
       const item:RelayReminder = { kind:"remind", id:id("rem"), projectId:input.projectId, threadId:input.threadId, note:input.note,
-        dueAt:deps.now() + input.inMinutes * 60_000, watchThreadId:input.watchThreadId ?? null, createdAt:deps.now(), firedAt:null, firedBy:null };
+        dueAt:deps.now() + input.inMinutes * 60_000, watchThreadId:input.watchThreadId ?? null, createdAt:deps.now(), firedAt:null, firedBy:null,
+        ...(input.taskIds?.length ? { taskIds:[...new Set(input.taskIds)] } : {}) };
       items.push(item);
       return item;
     });
@@ -113,8 +140,10 @@ export function createRelay(deps:RelayDeps) {
     });
   }
 
-  async function fire(item:RelayReminder, by:"time"|"watch") {
-    const why = by === "watch" ? `тред @thread:${item.watchThreadId} закончил ход` : "пришло время";
+  async function fire(item:RelayReminder, by:"time"|"watch"|"tasks", states?:Record<string, string|null>) {
+    const why = by === "watch" ? `тред @thread:${item.watchThreadId} закончил ход`
+      : by === "tasks" ? `задачи завершились: ${Object.entries(states ?? {}).map(([task, state]) => `${task} — ${state}`).join(", ")}`
+      : "пришло время";
     await deps.send(item.threadId, `Напоминание Lane Pilot (${item.id}, ${why}):\n\n${item.note}\n\nПроверь, можно ли продолжить. Если всё ещё ждёшь, поставь новое напоминание через lane_pilot_remind с большим интервалом.`);
     item.firedAt = deps.now();
     item.firedBy = by;
@@ -127,14 +156,18 @@ export function createRelay(deps:RelayDeps) {
         || (row.kind === "ask" && !row.answeredAt && row.toThreadId === threadId));
       if (!waiting || !await deps.settled(threadId).catch(() => false)) return 0;
       let woken = 0;
+      // Answers first: whoever gets one now does not also need the reminder that waited on this thread.
       for (const item of items) {
-        if (item.kind === "remind" && !item.firedAt && item.watchThreadId === threadId) { await fire(item, "watch"); woken++; }
         if (item.kind === "ask" && !item.answeredAt && item.toThreadId === threadId) {
           const text = (await deps.output(threadId).catch(() => "")).trim().slice(-4000);
           await deps.send(item.fromThreadId, `@thread:${threadId} закончил ход, не ответив на ${item.id}. Его последнее сообщение:\n\n${text || "(пусто)"}`);
           item.answeredAt = deps.now();
+          closeAnsweredWaits(items, item.fromThreadId, threadId);
           woken++;
         }
+      }
+      for (const item of items) {
+        if (item.kind === "remind" && !item.firedAt && item.watchThreadId === threadId) { await fire(item, "watch"); woken++; }
       }
       return woken;
     });
@@ -147,6 +180,10 @@ export function createRelay(deps:RelayDeps) {
       let fired = 0;
       for (const item of items) {
         if (item.kind !== "remind" || item.firedAt) continue;
+        if (item.taskIds?.length) {
+          const states = await deps.taskStates(item.projectId, item.taskIds).catch(() => ({} as Record<string, string|null>));
+          if (item.taskIds.every((task) => TASK_DONE.has(states[task] ?? ""))) { await fire(item, "tasks", states); fired++; continue; }
+        }
         if (item.dueAt <= deps.now()) { await fire(item, "time"); fired++; }
         else if (item.watchThreadId) watched.add(item.watchThreadId);
       }
@@ -207,6 +244,7 @@ export function relayFor(ctx:ServerContext):Relay {
       return ["idle", "error", "stopped"].includes(thread.status ?? "") && !thread.queuedMessageCount
         && !thread.activeBackgroundAgentCount && commands === 0;
     },
+    taskStates:async (projectId, taskIds) => Object.fromEntries(taskIds.map((task) => [task, latestTaskAttemptState(ctx.db, projectId, task)])),
     output:async (threadId) => {
       const result = await bb.sdk.threads.output({ threadId }) as { output?:unknown; text?:unknown };
       const value = result.output ?? result.text;
@@ -260,6 +298,7 @@ export function mountRelay(ctx:ServerContext):Relay {
       "Use when you wait on another thread: the holder of a blocked task (blockedBy.holderThreadId), a writer, a specialist.",
       "The question is queued into that thread without interrupting its work. Its answer, or its last message if it ends the turn without answering, arrives in this chat.",
       "Then set a reminder with lane_pilot_remind (watchThreadId = that thread) and end your turn; do not ask the owner to tell you when it is free.",
+      "If the result has alreadyWaiting, your earlier question is still queued there: do not ask again, the answer comes when that thread finishes its turn. A reminder watching that thread closes itself once it answers.",
       `At most ${RELAY_LIMITS.asksPerPairPerHour} questions an hour between two threads.`,
     ].join("\n"),
     parameters:z.object({ threadId:z.string().min(1), question:z.string().trim().min(1).max(4000) }).strict(),
@@ -283,14 +322,17 @@ export function mountRelay(ctx:ServerContext):Relay {
       "Use instead of waiting for the owner whenever work is blocked on time or on another thread. Then end your turn; the reminder wakes you.",
       "Back off: 5, then 10, then 20 minutes for the same block; after three reminders without progress, tell the owner what you tried and what to decide.",
       "Pass watchThreadId to be woken as soon as that thread settles (for example blockedBy.holderThreadId).",
+      "Waiting for your own tasks to be accepted or blocked (\"when X is merged, ship\")? Pass taskIds: you are woken the moment all of them finish, with their states, so you never poll and never get a stale reminder. inMinutes is then only the fallback.",
     ].join("\n"),
     parameters:z.object({
       inMinutes:z.number().int().min(1).max(24 * 60),
       note:z.string().trim().min(1).max(2000),
       watchThreadId:z.string().min(1).optional(),
+      taskIds:z.array(z.string().min(1)).max(20).optional(),
     }).strict(),
     execute:async (params, context) => JSON.stringify(refreshAfter(await relay.remind({
       projectId:context.projectId, threadId:context.threadId, note:params.note, inMinutes:params.inMinutes, watchThreadId:params.watchThreadId,
+      taskIds:params.taskIds,
     })), null, 2),
   });
 

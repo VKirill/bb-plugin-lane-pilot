@@ -7,16 +7,18 @@ function harness() {
   const sent: Array<{ threadId:string; text:string }> = [];
   const status = new Map<string, string>();
   const queued = new Map<string, number>();
+  const tasks = new Map<string, string>();
   const relay = createRelay({
     load:async () => structuredClone(items),
     save:async (next) => { items = structuredClone(next); },
     send:async (threadId, text) => { sent.push({ threadId, text }); },
     settled:async (threadId) => status.get(threadId) === "idle" && !(queued.get(threadId) ?? 0),
     output:async () => "I hold the base checkout until 13:40",
+    taskStates:async (_project, ids) => Object.fromEntries(ids.map((task) => [task, tasks.get(task) ?? null])),
     now:() => now,
     log:() => undefined,
   });
-  return { relay, sent, status, queued, items:() => items, tick:(ms:number) => { now += ms; } };
+  return { relay, sent, status, queued, tasks, items:() => items, tick:(ms:number) => { now += ms; } };
 }
 
 describe("relay", () => {
@@ -62,13 +64,55 @@ describe("relay", () => {
   it("limits questions between two threads and cancels reminders", async () => {
     const h = harness();
     for (let index = 0; index < RELAY_LIMITS.asksPerPairPerHour; index++) {
-      await h.relay.ask({ projectId:"P", fromThreadId:index % 2 ? "a" : "b", toThreadId:index % 2 ? "b" : "a", question:"?" });
+      const asked = await h.relay.ask({ projectId:"P", fromThreadId:index % 2 ? "a" : "b", toThreadId:index % 2 ? "b" : "a", question:"?" });
+      await h.relay.reply({ askId:asked.id, fromThreadId:asked.toThreadId, answer:"ok" });
     }
     await expect(h.relay.ask({ projectId:"P", fromThreadId:"a", toThreadId:"b", question:"?" })).rejects.toThrow(/relay limit/);
     await expect(h.relay.ask({ projectId:"P", fromThreadId:"a", toThreadId:"a", question:"?" })).rejects.toThrow(/itself/);
     const reminder = await h.relay.remind({ projectId:"P", threadId:"pm", note:"n", inMinutes:1 });
     expect(await h.relay.cancel({ threadId:"pm", reminderId:reminder.id })).toBe(true);
     h.tick(120_000);
+    expect((await h.relay.sweep()).fired).toBe(0);
+  });
+
+  it("does not queue a second copy of a question that still waits for its answer", async () => {
+    const h = harness();
+    const first = await h.relay.ask({ projectId:"P", fromThreadId:"pm", toThreadId:"lp", question:"Fix the rollback?" });
+    const again = await h.relay.ask({ projectId:"P", fromThreadId:"pm", toThreadId:"lp", question:"Reminder: fix the rollback?" });
+    expect(again).toMatchObject({ id:first.id, alreadyWaiting:true });
+    expect(h.sent.filter((row) => row.threadId === "lp")).toHaveLength(1);
+    await h.relay.reply({ askId:first.id, fromThreadId:"lp", answer:"Fixed in 0.1.88" });
+    const next = await h.relay.ask({ projectId:"P", fromThreadId:"pm", toThreadId:"lp", question:"One more thing?" });
+    expect(next.id).not.toBe(first.id);
+  });
+
+  it("closes the asker's reminder on a thread once that thread answers, instead of sending a stale one", async () => {
+    const h = harness();
+    const asked = await h.relay.ask({ projectId:"P", fromThreadId:"pm", toThreadId:"lp", question:"Fix?" });
+    await h.relay.remind({ projectId:"P", threadId:"pm", note:"check lp's answer", inMinutes:10, watchThreadId:"lp" });
+    await h.relay.reply({ askId:asked.id, fromThreadId:"lp", answer:"Fixed" });
+    h.tick(11 * 60_000);
+    expect((await h.relay.sweep()).fired).toBe(0);
+    expect(h.sent.filter((row) => row.threadId === "pm").map((row) => row.text)).toEqual([expect.stringContaining("Fixed")]);
+    // Answered by settling: the passed-back answer arrives, the reminder on that thread does not.
+    const second = await h.relay.ask({ projectId:"P", fromThreadId:"pm", toThreadId:"lp", question:"Deploy?" });
+    await h.relay.remind({ projectId:"P", threadId:"pm", note:"deploy?", inMinutes:30, watchThreadId:"lp" });
+    h.status.set("lp", "idle");
+    expect(await h.relay.threadSettled("lp")).toBe(1);
+    expect(h.sent.at(-1)!.text).toContain(second.id);
+    expect(h.sent.filter((row) => row.text.includes("deploy?"))).toHaveLength(0);
+  });
+
+  it("a reminder on tasks fires the moment they all finish, with their states, not by polling", async () => {
+    const h = harness();
+    await h.relay.remind({ projectId:"P", threadId:"pm", note:"ship the pages", inMinutes:40, taskIds:["gc-a", "gc-b"] });
+    h.tasks.set("gc-a", "accepted");
+    h.tasks.set("gc-b", "running");
+    expect((await h.relay.sweep()).fired).toBe(0);
+    h.tasks.set("gc-b", "blocked");
+    expect((await h.relay.sweep()).fired).toBe(1);
+    expect(h.sent.at(-1)!.text).toMatch(/gc-a — accepted, gc-b — blocked/);
+    h.tick(41 * 60_000);
     expect((await h.relay.sweep()).fired).toBe(0);
   });
 });
