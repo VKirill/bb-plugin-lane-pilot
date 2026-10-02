@@ -98,6 +98,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         sectionId: sectionId ?? null,
         hostId: writerBinding.status === "resolved" ? writerBinding.hostId : writerBinding.status === "catalog_unavailable" ? null : config?.hostId ?? null,
         workspacePath: writerBinding.status === "resolved" ? writerBinding.path : writerBinding.status === "catalog_unavailable" ? null : config?.writerWorkspacePath ?? null,
+        legacyStack: config !== null,
         inheritedKeys: inherited.inherited,
         explicitKeys: inherited.explicitKeys,
         writerBinding: screenWriterBinding(writerBinding),

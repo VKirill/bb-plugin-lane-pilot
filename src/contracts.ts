@@ -697,6 +697,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ hostId: z.string().min(1) }).strict(),
     output: z.object({ started: z.boolean() }).strict(),
   },
+  native_install_status: {
+    input: z.object({ hostId: z.string().min(1) }).strict(),
+    output: z.object({ status: z.string(), error: z.string().nullable() }).strict(),
+  },
   prepare_native_session: {
     input: z.object({
       projectId: z.string().min(1),
@@ -727,6 +731,8 @@ export const rpcContract = defineRpcContract({
       sectionId: z.string().nullable().optional(),
       hostId: z.string().nullable(),
       workspacePath: z.string().nullable(),
+      /** The project has the CLI-mode Lane Stack setup the Maintenance install actions need. */
+      legacyStack: z.boolean().optional(),
       inheritedKeys: z.array(z.string()).optional(),
       explicitKeys: z.array(z.string()).optional(),
       writerBinding: z.object({

@@ -66,6 +66,13 @@ export function createNativeInstaller(input: {
     async start(hostId: string) {
       if (!pending.has(hostId)) void start(hostId);
     },
+    /** The Maintenance tab's view of one machine: installing, the host's own answer or offline, and the last failure. */
+    async status(hostId: string): Promise<{ status: string; error: string | null }> {
+      const error = errors.get(hostId) ?? (await input.kv.get<{ error: string }>(`${ERROR_PREFIX}${hostId}`))?.error ?? null;
+      if (pending.has(hostId)) return { status: "installing", error };
+      try { return { status: (await input.call(hostId, "status")).status, error }; }
+      catch { return { status: "offline", error }; }
+    },
     async ensure(hostId: string) {
       const running = pending.get(hostId);
       if (running && !await settled(running)) throw new Error("CLI-компоненты Lane Pilot устанавливаются. Повторите отправку после завершения установки.");

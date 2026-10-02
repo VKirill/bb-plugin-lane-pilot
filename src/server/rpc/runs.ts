@@ -31,6 +31,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       await nativeInstaller.start(hostId);
       return { started: true };
     },
+    native_install_status: ({ hostId }) => nativeInstaller.status(hostId),
     prepare_native_session: async ({ projectId, agentId }) => {
       const shortId = nativeAgentCliId(agentId || DEFAULT_NATIVE_AGENT);
       const owned = await ownedAgents();
@@ -167,5 +168,5 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "prepare_native_session" | "native_thread" | "activation_context" | "cancel_attempt" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "native_thread" | "activation_context" | "cancel_attempt" | "retry_attempt" | "resume_runs">;
 }

@@ -47,6 +47,7 @@ function screenFixture() {
     }],
     unapplied: [{ key: "plan_critique.mode", reason: "no proven runtime channel" }],
     cliPreview: { argv:["run", "--provider", "codex", "--service-tier", "fast"], env:{}, applied:["writer.provider"], unapplied:[] },
+    legacyStack: true,
     lastSnapshotPath: "/tmp/snapshot",
     lastReceiptJson: "{\"action\":\"install\"}",
     writerResultJson: "{\"status\":\"accepted\",\"output\":\"hello from writer\"}",
@@ -59,6 +60,13 @@ function screenFixture() {
     lastWriterTrace: null,
   };
 }
+
+// Maintenance shows the Lane Stack install only after a check finds it missing.
+const missingStack = () => ({
+  hostId:"host_ui", laneStack:{ present:false, version:null, sourceSha:null },
+  openCode:{ present:true, version:"1.18.30" }, workspace:{ path:"/tmp/lane-pilot-ui", present:true },
+  targetSha:"abc123", matchesTarget:false, scenario:"S3",
+});
 
 async function mountPage(
   rpc: Record<string, (input: unknown) => unknown> = {},
@@ -271,8 +279,9 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
   });
 
   it("asks for confirmation before external install operations", async () => {
-    const slot = await mountPage();
+    const slot = await mountPage({ stack_detect: missingStack });
     fireEvent.click(slot.getByTestId("tab-service"));
+    fireEvent.click(await slot.findByTestId("stack-detect"));
     fireEvent.click(await slot.findByTestId("install-stack"));
     const dialog = await slot.findByTestId("external-ops-dialog");
     expect(dialog.textContent).toContain("npm install -g @rama_nigg/open-cursor");
@@ -284,10 +293,52 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     slot.lifecycle.unmount();
   });
 
+  it("offers only the Lane Stack check until it finds something to do, and rollback only with a snapshot", async () => {
+    const base = screenFixture();
+    const slot = await mountPage({ get_screen: () => ({ ...base, lastSnapshotPath: null }) });
+    fireEvent.mouseDown(slot.getByTestId("tab-service"), { button:0 });
+    await slot.findByTestId("stack-detect");
+    expect(slot.queryByTestId("install-stack")).toBeNull();
+    expect(slot.queryByTestId("connect-opencode")).toBeNull();
+    expect(slot.queryByTestId("stack-rollback")).toBeNull();
+    fireEvent.click(slot.getByTestId("stack-detect"));
+    // Installed at the target version: nothing to install; OpenCode without the plugin can be connected.
+    await slot.findByTestId("stack-detect-result");
+    expect(slot.queryByTestId("install-stack")).toBeNull();
+    expect(slot.getByTestId("connect-opencode")).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("shows the machine's Lane Pilot state and offers an install only when it is missing", async () => {
+    const started: unknown[] = [];
+    const base = screenFixture();
+    const withBinding = { ...base, writerBinding: { status:"resolved", hostId:"host_ui", path:"/tmp/lane-pilot-ui", source:"session", bindings:[] } };
+    let status = "absent";
+    const slot = await mountPage({
+      get_screen: () => withBinding,
+      native_install_status: () => ({ status, error: null }),
+      native_install_start: (input) => { started.push(input); status = "installing"; return { started: true }; },
+    });
+    fireEvent.mouseDown(slot.getByTestId("tab-service"), { button:0 });
+    await waitFor(() => expect(slot.getByTestId("native-install-state").dataset.state).toBe("todo"));
+    fireEvent.click(slot.getByTestId("native-install-now"));
+    await waitFor(() => expect(started).toEqual([{ hostId:"host_ui" }]));
+    await waitFor(() => expect(slot.getByTestId("native-install-state").textContent).toContain(en.nativeInstalling));
+    expect(slot.queryByTestId("native-install-now")).toBeNull();
+    slot.lifecycle.unmount();
+    status = "enabled";
+    const ready = await mountPage({ get_screen: () => withBinding, native_install_status: () => ({ status, error: null }) });
+    fireEvent.mouseDown(ready.getByTestId("tab-service"), { button:0 });
+    await waitFor(() => expect(ready.getByTestId("native-install-state").dataset.state).toBe("ok"));
+    expect(ready.queryByTestId("native-install-now")).toBeNull();
+    ready.lifecycle.unmount();
+  });
+
   it("lists connect-specific operations instead of install.sh commands", async () => {
     const slot = await mountPage();
     fireEvent.click(slot.getByTestId("tab-service"));
-    fireEvent.click(slot.getByText(en.connectOpencode));
+    fireEvent.click(await slot.findByTestId("stack-detect"));
+    fireEvent.click(await slot.findByTestId("connect-opencode"));
     const dialog = await slot.findByTestId("external-ops-dialog");
     expect(dialog.textContent).toContain(en.confirmConnectOps);
     expect(dialog.textContent).not.toContain("npm install -g @rama_nigg/open-cursor");
@@ -354,7 +405,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
       }),
     });
     fireEvent.click(slot.getByTestId("tab-service"));
-    fireEvent.click(slot.getByTestId("stack-detect"));
+    fireEvent.click(await slot.findByTestId("stack-detect"));
     const inventory = await slot.findByTestId("coexistence-inventory");
     const checkout = slot.getByTestId("coex-managed-checkout");
     expect(inventory.textContent).toContain(en.coexInventory);
@@ -725,10 +776,10 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
   }, 15_000);
 
   it("keeps the confirm dialog title and full install ops list in the DOM", async () => {
-    const slot = await mountPage();
-    await slot.findByTestId("install-stack");
+    const slot = await mountPage({ stack_detect: missingStack });
     fireEvent.click(slot.getByTestId("tab-service"));
-    fireEvent.click(slot.getByTestId("install-stack"));
+    fireEvent.click(await slot.findByTestId("stack-detect"));
+    fireEvent.click(await slot.findByTestId("install-stack"));
     const dialog = await slot.findByTestId("external-ops-dialog");
     expect(dialog.textContent).toContain(en.confirmTitle);
     for (const op of EXTERNAL_OPS) {

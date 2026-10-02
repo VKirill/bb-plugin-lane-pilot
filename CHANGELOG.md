@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.55 — 2026-10-02
+
+«Обслуживание» shows what is on the machine and offers only the action that is needed.
+
+- **Lane Pilot on the project machine comes first,** read live when the tab opens: «Установлен и работает», «Устанавливается…» (re-read every 5 s), «Ещё не установлен» with the reason it installs itself on first use, «Машина недоступна», and the last install error. «Установить сейчас» / «Повторить установку» appears only when the machine answers and Lane Pilot is missing there. New RPC `native_install_status`.
+- **The old Lane Stack buttons only where they work.** Detect, install, OpenCode and rollback need the CLI-mode setup that 5 projects have; on SelfyStudio and the rest they failed with «prototype is not configured». They now sit, folded, under «Lane Stack для CLI-прогонов» only on those projects (`get_screen` reports `legacyStack`). Before a check there is only «Обнаружить»; «Установить» (or «Обновить») appears when the check finds Lane Stack missing or off target, «Подключить OpenCode» when OpenCode is there without the plugin, and «Откатить» only when a pre-install snapshot exists, in its own «Если после установки что-то сломалось» block.
+- The Overview row says Lane Pilot installs itself on first use and points to Maintenance for its state.
+
 ## 0.1.54 — 2026-10-02
 
 - **No settings search.** With the settings split into tabs it only squeezed the Basic/Advanced switch on a phone; the switch now has the row to itself.

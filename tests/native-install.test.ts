@@ -95,6 +95,22 @@ describe("BB lifecycle", () => {
     const broken = createNativeInstaller({ supported: true, kv: kvFixture(), waitMs: 50, call: async (_, action) => { if (action === "install") throw new Error("flock missing"); return { status: "absent" }; }, log: () => {} });
     await expect(broken.ensure("mini")).rejects.toThrow("Установка Claude Lane не удалась: flock missing");
   });
+  it("reports a machine as installing, installed, offline, with the last failure", async () => {
+    const kv = kvFixture();
+    let hang: () => void = () => {};
+    const installer = createNativeInstaller({ supported: true, kv, call: async (hostId, action) => {
+      if (hostId === "ovh") throw new Error("offline");
+      if (action === "install") await new Promise<void>((resolve) => { hang = resolve; });
+      return { status: "enabled" };
+    }, log: () => {} });
+    await expect(installer.status("mini")).resolves.toEqual({ status: "enabled", error: null });
+    await expect(installer.status("ovh")).resolves.toEqual({ status: "offline", error: null });
+    await installer.start("mini");
+    await expect(installer.status("mini")).resolves.toEqual({ status: "installing", error: null });
+    hang();
+    await kv.set("native-install:error:macbook", { action: "enable", error: "codex CLI broken", at: 1 });
+    await expect(installer.status("macbook")).resolves.toEqual({ status: "enabled", error: "codex CLI broken" });
+  });
 });
 describe("Claude Lane on the host", () => {
   async function laneHome(installed: boolean) {

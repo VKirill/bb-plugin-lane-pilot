@@ -68,6 +68,7 @@ type ScreenPayload = {
   sectionId?: string | null;
   hostId: string | null;
   workspacePath: string | null;
+  legacyStack?: boolean;
   values: Record<string, unknown>;
   versions: Record<string, number>;
   explicitKeys: string[];
@@ -650,6 +651,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const providers = useProviders();
   const [tab, setTab] = useState("overview");
   const [runsShown, setRunsShown] = useState(20);
+  const [nativeState, setNativeState] = useState<{ status: string; error: string | null } | null>(null);
   const [data, setData] = useState<ScreenPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<{ kind: "cas" } | { kind: "validation"; code: "invalid_choice" | "incompatible_setting" | "setup_required" | "writer_binding_ambiguous" | "writer_host_offline" | "catalog_unavailable"; params: string[] } | null>(null);
@@ -1302,6 +1304,25 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const tabSelect = contentWidth > 0 && contentWidth < 680;
   const advanced = settingsDepth === "advanced";
   const hostLabel = (id: string | null | undefined) => (id ? data?.qaHosts?.find((host) => host.id === id)?.name ?? id : "—");
+  const nativeHostId = data?.writerBinding?.status === "resolved" ? data.writerBinding.hostId : null;
+  const installNative = async () => {
+    if (!nativeHostId) return;
+    await rpc.call("native_install_start", { hostId: nativeHostId });
+    setNativeState((current) => ({ status: "installing", error: current?.error ?? null }));
+  };
+  // Read the machine's state while Maintenance is open, and every 5 s while it installs.
+  useEffect(() => {
+    if (tab !== "service" || !nativeHostId) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = () => void rpc.call("native_install_status", { hostId: nativeHostId }).then((next) => {
+      if (!alive) return;
+      setNativeState(next);
+      if (next.status === "installing") timer = setTimeout(read, 5000);
+    }).catch(() => { if (alive) setNativeState({ status: "offline", error: null }); });
+    read();
+    return () => { alive = false; if (timer) clearTimeout(timer); };
+  }, [tab, nativeHostId, nativeState?.status === "installing", rpc]);
   const writerChosen = Boolean(data?.values[WRITER_PROVIDER] && data?.values[WRITER_MODEL]);
   const activeRuns = (data?.runs ?? []).filter((run) => run.state === "pending" || run.state === "running").length;
   const trackLines = (() => {
@@ -1964,57 +1985,82 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           {tabs.includes("service") ? <>
           <TabsContent value="service" forceMount={true} className="space-y-5" hidden={tab !== "service"} data-testid="service-panel">
             <section className="space-y-4" data-testid="install-panel">
-            {!data?.hostId ? <p className="text-sm text-muted-foreground">{t("hostMissing")}</p> : null}
-            <p className="text-sm text-muted-foreground">{t("serviceIntro")}</p>
-            <div className="space-y-2" data-testid="stack-actions">
-              {([
-                ["detect", <Button size="sm" variant="outline" className="w-full sm:w-52" data-testid="stack-detect" onClick={() => void runStack("detect")}>{t("detect")}</Button>, "detectHelp"],
-                ["install", <Button size="sm" className="w-full sm:w-52" data-testid="install-stack" onClick={() => { setPendingOp("install"); setConfirmOpen(true); }}>{t("install")}</Button>, "installHelp"],
-                ["connect", <Button size="sm" variant="outline" className="w-full sm:w-52" onClick={() => { setPendingOp("connect"); setConfirmOpen(true); }}>{t("connectOpencode")}</Button>, "connectHelp"],
-                ["rollback", <Button size="sm" variant="outline" className="w-full text-destructive sm:w-52" onClick={() => { setPendingOp("rollback"); setConfirmOpen(true); }}>{t("rollback")}</Button>, "rollbackHelp"],
-              ] as const).map(([id, button, help]) => (
-                <div key={id} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                  {button}
-                  <span className="text-xs text-muted-foreground">{t(help)}</span>
+            <Surface testId="native-install">
+              <SurfaceHeader><h2 className="text-sm font-medium">{t("nativeTitle").replace("{host}", hostLabel(nativeHostId))}</h2></SurfaceHeader>
+              <SurfaceBody className="space-y-3">
+                {!nativeHostId ? <p className="text-sm text-muted-foreground">{t("nativeNoMachine")}</p>
+                  : !nativeState ? <p className="text-sm text-muted-foreground">{t("nativeChecking")}</p>
+                  : <>
+                    <StatusRow testId="native-install-state"
+                      state={nativeState.status === "enabled" ? "ok" : nativeState.status === "installing" ? "info" : "todo"}
+                      title={nativeState.status === "enabled" ? t("nativeEnabled") : nativeState.status === "installing" ? t("nativeInstalling") : nativeState.status === "offline" ? t("nativeOffline") : t("nativeAbsent")}
+                      detail={nativeState.error && nativeState.status !== "enabled" ? <span className="text-destructive">{t("nativeError").replace("{error}", nativeState.error)}</span> : null} />
+                    {/* The only action here, and only when the machine answers and Lane Pilot is missing there. */}
+                    {nativeState.status !== "enabled" && nativeState.status !== "installing" && nativeState.status !== "offline"
+                      ? <Button size="sm" data-testid="native-install-now" onClick={() => void installNative()}>{nativeState.error ? t("nativeRetry") : t("nativeInstallNow")}</Button> : null}
+                  </>}
+              </SurfaceBody>
+            </Surface>
+            {data?.legacyStack ? <Disclosure testId="legacy-stack" summary={t("legacyStackTitle")}>
+              <p className="text-xs text-muted-foreground">{t("legacyStackHelp")}</p>
+              <div className="space-y-2" data-testid="stack-actions">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                  <Button size="sm" variant="outline" className="w-full sm:w-52" data-testid="stack-detect" onClick={() => void runStack("detect")}>{t("detect")}</Button>
+                  <span className="text-xs text-muted-foreground">{t("detectHelp")}</span>
                 </div>
-              ))}
-            </div>
-            {detectResult ? <Card data-testid="stack-detect-result">
-              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("detectResult")}</CardTitle></CardHeader>
-              <CardContent className={`${CARD_BODY} grid gap-2 text-sm sm:grid-cols-2`}>
-                <div><span className="text-muted-foreground">{t("detectScenario")}:</span> {detectResult.scenario}</div>
-                <div><span className="text-muted-foreground">{t("detectTargetMatch")}:</span> {detectResult.matchesTarget ? t("yes") : t("no")} ({t("targetMatchInformational")})</div>
-                <div><span className="text-muted-foreground">{t("detectLaneStack")}:</span> {detectResult.laneStack.present ? detectResult.laneStack.version ?? t("unknown") : t("no")}</div>
-                <div><span className="text-muted-foreground">{t("detectOpenCode")}:</span> {detectResult.openCode.present ? `${t("yes")} (${detectResult.openCode.version ?? t("unknown")})` : t("no")}</div>
-              </CardContent>
-            </Card> : null}
-            {detectResult?.coexistence ? <Card data-testid="coexistence-inventory">
-              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("coexInventory")}</CardTitle></CardHeader>
-              <CardContent className={`${CARD_BODY} divide-y divide-border`}>
-                {detectResult.coexistence.managers.map((manager) => (
-                  <div key={`${manager.manager}-${manager.path}`} className="space-y-2 py-3 first:pt-0 last:pb-0" data-testid={`coex-${manager.manager}`}>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-medium">{t(COEXISTENCE_MANAGER_KEYS[manager.manager] ?? "coexUnknownManager")}</span>
-                      <Badge variant={manager.compatible === false ? "destructive" : manager.decision === "reuse" ? "default" : "outline"}>{t(COEXISTENCE_VALUE_KEYS[manager.decision] ?? "coexDecisionUnknown")}</Badge>
+                {detectResult && (!detectResult.laneStack.present || !detectResult.matchesTarget) ? <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                  <Button size="sm" className="w-full sm:w-52" data-testid="install-stack" onClick={() => { setPendingOp("install"); setConfirmOpen(true); }}>{detectResult.laneStack.present ? t("updateStack") : t("install")}</Button>
+                  <span className="text-xs text-muted-foreground">{t("installHelp")}</span>
+                </div> : null}
+                {detectResult?.openCode.present && !detectResult.coexistence?.managers.some((row) => row.manager === "opencode-plugin" && row.configured) ? <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                  <Button size="sm" variant="outline" className="w-full sm:w-52" data-testid="connect-opencode" onClick={() => { setPendingOp("connect"); setConfirmOpen(true); }}>{t("connectOpencode")}</Button>
+                  <span className="text-xs text-muted-foreground">{t("connectHelp")}</span>
+                </div> : null}
+              </div>
+              {detectResult ? <Card data-testid="stack-detect-result">
+                <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("detectResult")}</CardTitle></CardHeader>
+                <CardContent className={`${CARD_BODY} grid gap-2 text-sm sm:grid-cols-2`}>
+                  <div><span className="text-muted-foreground">{t("detectScenario")}:</span> {detectResult.scenario}</div>
+                  <div><span className="text-muted-foreground">{t("detectTargetMatch")}:</span> {detectResult.matchesTarget ? t("yes") : t("no")} ({t("targetMatchInformational")})</div>
+                  <div><span className="text-muted-foreground">{t("detectLaneStack")}:</span> {detectResult.laneStack.present ? detectResult.laneStack.version ?? t("unknown") : t("no")}</div>
+                  <div><span className="text-muted-foreground">{t("detectOpenCode")}:</span> {detectResult.openCode.present ? `${t("yes")} (${detectResult.openCode.version ?? t("unknown")})` : t("no")}</div>
+                </CardContent>
+              </Card> : null}
+              {detectResult?.coexistence ? <Card data-testid="coexistence-inventory">
+                <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("coexInventory")}</CardTitle></CardHeader>
+                <CardContent className={`${CARD_BODY} divide-y divide-border`}>
+                  {detectResult.coexistence.managers.map((manager) => (
+                    <div key={`${manager.manager}-${manager.path}`} className="space-y-2 py-3 first:pt-0 last:pb-0" data-testid={`coex-${manager.manager}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium">{t(COEXISTENCE_MANAGER_KEYS[manager.manager] ?? "coexUnknownManager")}</span>
+                        <Badge variant={manager.compatible === false ? "destructive" : manager.decision === "reuse" ? "default" : "outline"}>{t(COEXISTENCE_VALUE_KEYS[manager.decision] ?? "coexDecisionUnknown")}</Badge>
+                      </div>
+                      <div className="break-all font-mono text-xs">{manager.path}</div>
+                      <div className="grid gap-1 text-xs sm:grid-cols-2">
+                        <span>{t("coexInstalled")}: {manager.installed ? t("yes") : t("no")}</span>
+                        <span>{t("coexConfigured")}: {manager.configured ? t("yes") : t("no")}</span>
+                        <span>{t("coexLoaded")}: {manager.loaded === null ? t("coexRuntimeUnverified") : manager.loaded ? t("yes") : t("no")}</span>
+                        <span>{t("coexCompatible")}: {manager.compatible === null ? t("unknown") : manager.compatible ? t("yes") : t("no")}</span>
+                        <span>{t("coexModified")}: {manager.modified === null ? t("unknown") : manager.modified ? t("yes") : t("no")}</span>
+                        <span>{t("coexOwner")}: {t(COEXISTENCE_VALUE_KEYS[manager.owner] ?? "coexOwnerUnknown")}</span>
+                        {manager.version ? <span>{t("version")}: {manager.version}</span> : null}
+                      </div>
+                      {manager.missingCapabilities.length ? <p className="text-xs text-destructive">{t("coexMissingCapabilities")}: {manager.missingCapabilities.join(", ")}</p> : null}
+                      <Disclosure compact summary={`${t("coexEvidence")} (${manager.evidence.length})`}>
+                        <ul className="space-y-1">{manager.evidence.map((evidence, index) => <li key={`${evidence.kind}-${index}`} className="break-words">{evidence.detail}{evidence.sha256 ? ` · SHA-256 ${evidence.sha256.slice(0, 12)}` : ""}</li>)}</ul>
+                      </Disclosure>
                     </div>
-                    <div className="break-all font-mono text-xs">{manager.path}</div>
-                    <div className="grid gap-1 text-xs sm:grid-cols-2">
-                      <span>{t("coexInstalled")}: {manager.installed ? t("yes") : t("no")}</span>
-                      <span>{t("coexConfigured")}: {manager.configured ? t("yes") : t("no")}</span>
-                      <span>{t("coexLoaded")}: {manager.loaded === null ? t("coexRuntimeUnverified") : manager.loaded ? t("yes") : t("no")}</span>
-                      <span>{t("coexCompatible")}: {manager.compatible === null ? t("unknown") : manager.compatible ? t("yes") : t("no")}</span>
-                      <span>{t("coexModified")}: {manager.modified === null ? t("unknown") : manager.modified ? t("yes") : t("no")}</span>
-                      <span>{t("coexOwner")}: {t(COEXISTENCE_VALUE_KEYS[manager.owner] ?? "coexOwnerUnknown")}</span>
-                      {manager.version ? <span>{t("version")}: {manager.version}</span> : null}
-                    </div>
-                    {manager.missingCapabilities.length ? <p className="text-xs text-destructive">{t("coexMissingCapabilities")}: {manager.missingCapabilities.join(", ")}</p> : null}
-                    <Disclosure compact summary={`${t("coexEvidence")} (${manager.evidence.length})`}>
-                      <ul className="space-y-1">{manager.evidence.map((evidence, index) => <li key={`${evidence.kind}-${index}`} className="break-words">{evidence.detail}{evidence.sha256 ? ` · SHA-256 ${evidence.sha256.slice(0, 12)}` : ""}</li>)}</ul>
-                    </Disclosure>
-                  </div>
-                ))}
-              </CardContent>
-            </Card> : null}
+                  ))}
+                </CardContent>
+              </Card> : null}
+              {snapshotPath || data.lastSnapshotPath ? <div className="space-y-1 border-t border-[var(--lp-hairline)] pt-3" data-testid="rollback-zone">
+                <p className="text-xs font-medium">{t("rollbackTitle")}</p>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                  <Button size="sm" variant="destructive" className="w-full sm:w-52" data-testid="stack-rollback" onClick={() => { setPendingOp("rollback"); setConfirmOpen(true); }}>{t("rollback")}</Button>
+                  <span className="text-xs text-muted-foreground">{t("rollbackHelp")}</span>
+                </div>
+              </div> : null}
+            </Disclosure> : null}
             </section>
             <Disclosure testId="diagnostics-disclosure" summary={t("serviceTechnical")}>
               <div className="space-y-5" data-testid="diagnostics-panel">

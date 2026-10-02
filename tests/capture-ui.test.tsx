@@ -40,6 +40,7 @@ function screenFixture() {
       }],
     }],
     unapplied: [{ key: "plan_critique.mode", reason: "no proven runtime channel" }],
+    legacyStack: true,
     lastSnapshotPath: "/tmp/snapshot",
     lastReceiptJson: "{\"action\":\"install\"}",
     writerResultJson: "{\"status\":\"accepted\",\"output\":\"hello from writer\"}",
@@ -66,9 +67,9 @@ async function mount(lang: string) {
       retry_attempt: () => ({ ok: true, state: "queued", attemptId: "lpattempt_2", reason: null }),
       resume_runs: () => ({ resumed: [], skipped: [], finished: [] }),
       stack_detect: () => ({
-        hostId:"host_ui", laneStack:{ present:true, version:"1.38.0", sourceSha:"abc123" },
+        hostId:"host_ui", laneStack:{ present:false, version:null, sourceSha:null },
         openCode:{ present:true, version:"1.18.30" }, workspace:{ path:"/tmp/lane-pilot-ui", present:true },
-        targetSha:"abc123", matchesTarget:true, scenario:"S1",
+        targetSha:"abc123", matchesTarget:false, scenario:"S3",
       }),
       stack_install: () => ({ status: "ok" }),
       stack_connect: () => ({ status: "ok" }),
@@ -158,7 +159,8 @@ describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
           if (view === "detect") fireEvent.click(slot.getAllByTestId("stack-detect").at(-1)!);
           if (view === "dialog") {
             fireEvent.click(slot.getByTestId("tab-service"));
-            fireEvent.click(slot.getByTestId("install-stack"));
+            fireEvent.click(slot.getAllByTestId("stack-detect").at(-1)!);
+            fireEvent.click(await slot.findByTestId("install-stack"));
           }
           if (view === "detect") expect((await slot.findByTestId("stack-detect-result")).textContent).toContain(lang === "ru" ? ru.detectScenario : en.detectScenario);
           const dialog = document.querySelector('[data-testid="external-ops-dialog"]');
