@@ -1,5 +1,7 @@
 # Lane Pilot
 
+![Lane Pilot: a captain crab plans, writer crabs dig their own branches, checks in a sandbox, merges into main](docs/images/hero.jpg)
+
 Lane Pilot is a BB plugin that turns a BB chat into a project manager (PM) for a code project. The PM plans the work, hands each task to a writer agent in its own BB thread and git worktree, has the result checked, reviewed and merged into `main`, and keeps going without the owner until something really needs a human decision.
 
 It builds on [Lane Stack](https://github.com/VKirill/claude-lane-stack) (MIT): the terminal workflow (`claude` / `adoc`) stays as installed, and Lane Pilot adds the same discipline inside BB.
@@ -70,6 +72,10 @@ The plugin page in BB (a sandbox project, real data from the hub).
 | ![Global settings](docs/screenshots/global.png) **Global settings** — defaults every project inherits | ![Phone](docs/screenshots/mobile.png) **Phone** — the same page at 390 px |
 
 ## How a task goes through Lane Pilot
+
+![Crab Lanes, a 32-second film about Lane Pilot: the relay and the merge queue](docs/images/crab-lanes-teaser.gif)
+
+**[Watch the full film (32 s, with sound)](https://github.com/VKirill/bb-plugin-lane-pilot/releases/download/v0.1.75/crab-lanes-720.mp4)**: a captain crab plans, writer crabs take their cards and dig their own burrows, a sandbox checks the work, a critic looks again, crabs ask each other instead of the owner, the lock merges one at a time into main, and mistakes become rules. Drawn and scored entirely in code.
 
 ```mermaid
 flowchart TD
