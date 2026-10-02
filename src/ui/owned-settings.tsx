@@ -8,10 +8,8 @@ import {
 import type { rpcContract } from "../contracts";
 import { mergeInventoryItems, RESOURCE_KEYS, resourceModeOf, type InventoryGroup, type ResourceKey, type ResourceMode } from "../agent-inventory";
 import { Button } from "../../components/ui/button";
-import { Icon } from "../../components/ui/icon";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import type { Locale } from "../../i18n";
 import { t } from "../../i18n";
@@ -19,24 +17,12 @@ import { agentPickerLabel } from "../agent-display";
 import type { LanePilotDefaults } from "../lp-defaults";
 import { CONTROL_H } from "./control-row";
 import { Disclosure } from "./disclosure";
+import { HelpSup } from "./help-sup";
 import { usePanelLayout } from "./panel-layout";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 
 const FIELD = "min-w-0 w-full max-w-full";
 const CONTROL = `${FIELD} box-border`;
-
-function HelpTip({ label, children }: { label: string; children: string }) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button type="button" size="sm" variant="ghost" className="h-7 w-7 shrink-0 p-0" aria-label={label}>
-          <Icon name="CircleQuestion" className="size-4 text-muted-foreground" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="max-w-sm text-xs text-muted-foreground">{children}</PopoverContent>
-    </Popover>
-  );
-}
 
 type Agent = {
   id: string; prompt: string; description: string; sourceHash: string; sourceVersion: string; edited: boolean;
@@ -317,9 +303,9 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
       <fieldset disabled={busy} hidden={scope !== "agents"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }}>
         <div className="flex min-w-0 items-start gap-1">
           <p className="text-xs text-muted-foreground">{snapshot.requiredSessionPolicy === "required" ? t("agentResourceLimitsAvailable") : t("agentResourceLimitsUnavailable")}</p>
-          <HelpTip label={snapshot.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}>
+          <HelpSup label={snapshot.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}>
             {snapshot.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}
-          </HelpTip>
+          </HelpSup>
         </div>
         <Surface>
           <SurfaceHeader><h2 className="text-sm font-medium">{t("agentSectionProfile")}</h2></SurfaceHeader>
@@ -346,8 +332,7 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           </Surface>
           <div className="min-w-0 max-w-full space-y-3">
             <div className="flex min-w-0 items-center gap-1 px-0.5">
-              <h2 className="text-sm font-medium">{t("agentSectionResources")}</h2>
-              <HelpTip label={t("agentResourcesHelp")}>{t("agentResourcesHelp")}</HelpTip>
+              <h2 className="text-sm font-medium">{t("agentSectionResources")}<HelpSup label={t("agentResourcesHelp")}>{t("agentResourcesHelp")}</HelpSup></h2>
             </div>
             {RESOURCE_KEYS.map((key) => (
               <ResourcePicker

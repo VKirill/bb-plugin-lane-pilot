@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.54 — 2026-10-02
+
+- **No settings search.** With the settings split into tabs it only squeezed the Basic/Advanced switch on a phone; the switch now has the row to itself.
+- **The «?» sits like an exponent:** a small circle raised to the top of the line right after the title's last word, as in x². Tapping it opens the help; the touch area is larger than the circle. Settings rows, block titles and the Agents screen all use it.
+- **Council seats show their model picker straight away,** with «из настроек стадий» or «своя модель» next to the seat name; «Вернуть наследование» appears only for a seat with its own model. Only a choice made by hand is saved: a picker that normalizes its value on opening no longer writes seven seats.
+- **Council sessions are a compact list:** at most two lines of the question, a coloured status pill and the round, the five latest first and «Показать все» for the rest. On iPhone the question was shown in full, because WebKit ignores line clamping on a button.
+
 ## 0.1.53 — 2026-10-02
 
 Lane Pilot now looks like the Pokecut theme BB already wears (after https://pokecut.rakibulism.space).

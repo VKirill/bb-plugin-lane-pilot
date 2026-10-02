@@ -634,18 +634,17 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     slot.lifecycle.unmount();
   });
 
-  it("filters settings by search and keeps picker keys off the settings list", async () => {
+  it("keeps picker keys off the settings list and shows the advanced rows on demand", async () => {
     const slot = await mountPage();
     fireEvent.mouseDown(slot.getByTestId("tab-settings"), { button:0 });
     expect(slot.getByTestId("settings-panel").querySelector("[data-testid='field-s004']")).toBeNull();
     expect(slot.getByTestId("settings-execution")).toBeTruthy();
     expect(slot.getByTestId("checks-panel").querySelector("[data-testid='browser-qa-host']")).toBeTruthy();
-    fireEvent.change(slot.getByTestId("settings-search"), { target: { value: "zzzz-no-match" } });
-    expect(slot.queryByTestId("writer-picker")).toBeNull();
-    expect(slot.getByText(en.noMatchingSettings)).toBeTruthy();
-    fireEvent.change(slot.getByTestId("settings-search"), { target: { value: "" } });
+    expect(slot.queryByTestId("settings-search")).toBeNull();
+    expect(slot.getByTestId("memory-advanced").hidden).toBe(true);
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     expect(slot.getByTestId("settings-group-workspace")).toBeTruthy();
+    expect(slot.getByTestId("memory-advanced").hidden).toBe(false);
     expect(slot.getByTestId("memory-advanced").textContent).toContain(en.settingMemoryMaintain);
     expect(slot.getByTestId("memory-advanced").textContent).toContain(en.fieldUnitTokens);
     expect(slot.getByTestId("memory-advanced").textContent).not.toContain("memory.core_budget");
@@ -660,7 +659,6 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     const slot = await mountPage({
       get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: null }),
     });
-    expect(slot.getByText(ru.settingsSearch)).toBeTruthy();
     expect(slot.getByTestId("settings-depth").textContent).toContain(ru.settingsBasic);
     expect(slot.getByTestId("settings-depth").textContent).toContain(ru.settingsAdvanced);
     slot.lifecycle.unmount();
