@@ -1,120 +1,247 @@
 # Lane Pilot
 
-BB plugin that runs [Lane Stack](https://github.com/VKirill/claude-lane-stack) in two modes without duplicating the engine: ordinary Claude/adoc in a terminal, and an isolated PM thread inside BB that delegates work to native BB writers.
+Lane Pilot is a BB plugin that turns a BB chat into a project manager (PM) for a code project. The PM plans the work, hands each task to a writer agent in its own BB thread and git worktree, has the result checked, reviewed and merged into `main`, and keeps going without the owner until something really needs a human decision.
 
-Based on [VKirill/claude-lane-stack](https://github.com/VKirill/claude-lane-stack), MIT. Required writer/PM interfaces are probed on the installed engine. A newer or custom checkout that already exposes those interfaces is reused with no engine, user-config, or cache writes. SHA/version is provenance only and does not force an install or downgrade. Copied files under `lane-stack/hooks/` and `lane-stack/schemas/` keep the upstream MIT copyright (`lane-stack/schemas/LICENSE`). Lane Stack itself is not re-published.
+It builds on [Lane Stack](https://github.com/VKirill/claude-lane-stack) (MIT): the terminal workflow (`claude` / `adoc`) stays as installed, and Lane Pilot adds the same discipline inside BB.
 
-Кратко по-русски: плагин подключает Lane Stack к BB — обычный CLI без изменений и отдельный PM-тред в BB с писателями как скрытыми тредами. Upstream не форкается.
+**По-русски коротко.** Lane Pilot делает из чата BB менеджера проекта. PM пишет план и задачи, каждую задачу делает отдельный исполнитель в своём треде BB и своём рабочем дереве git. Lane Pilot проверяет работу в песочнице, прогоняет ревью, сливает в `main`, а при блокировках сам спрашивает другие треды и ставит себе напоминания. Для полноценной работы нужно экспериментальное ядро BB, см. [Требования](#requirements).
 
-Назначение: isolated PM + writer dispatch for Lane Stack on BB.
-Владелец работы: AG-196 / AG-177.
-Статус: active.
-Проверено: 2026-09-23; 0.1.10 на хабе прошла полный Jev→native writer→PM receipt и живые клики EN/RU. Версия 0.1.28 превращает совет в зал заседаний с Jev-судьёй и отдельной страницей, 0.1.27 добавляет совет директоров, 0.1.26 раскладывает плагин по пакетам и модулям (docs/architecture.md). Версия 0.1.11 исправляет отображение CLI preview в Diagnostics, сохранение unrelated settings после native выбора и terminal cancel guard; запись о её live-проверке — в отчёте AG-246.
+> [!IMPORTANT]
+> **Lane Pilot needs the experimental BB core.** Use a BB server built from the fork [VKirill/bb, branch `vk/experimental`](https://github.com/VKirill/bb/tree/vk/experimental): the official BB release with additional `vk` functions on top. On a stock BB the plugin loads, but the PM chat cannot be enabled from the composer and Claude Lane is not installed on the machines. See [Requirements](#requirements).
 
 | Field | Value |
 |---|---|
-| Host | Mac mini `host_7sea4qaad8`; hub bb-server |
-| Canonical sources | this Git repository |
-| Public GitHub | https://github.com/VKirill/bb-plugin-lane-pilot (public) |
-| GitNexus | indexed from this checkout; name `bb-plugin-lane-pilot` |
-| Install | `git:` URL or a `path:` checkout the hub can read |
-| Data | plugin SQLite via BB storage (per project) |
-| Dependencies | BB ≥0.43.3 (без верхнего потолка), Plugin SDK ≥0.4.104, compatible Lane Stack (newer/custom reused), Node 22/24/26 |
+| Version | see [CHANGELOG.md](CHANGELOG.md) |
+| Runs on | BB server (hub) + `bb.host` worker on every enrolled machine |
+| Data | plugin SQLite and KV in BB storage, per project |
+| Public repo | https://github.com/VKirill/bb-plugin-lane-pilot |
+| Architecture | [docs/architecture.md](docs/architecture.md) |
 
-## Modes
+## Contents
 
-1. **Terminal (Mode 1).** `claude` / `adoc` on the machine stay as installed Lane Stack. Lane Pilot does not patch global Claude settings for this mode.
-2. **BB PM (Mode 2).** Explicit activation spawns a **new** PM thread. Settings come from the plugin store. Writers are hidden BB threads (or CLI writers on the project host). Ordinary chats are not PM sessions.
-
-## Project settings and native writers
-
-The settings panel keeps the project list on the left and the selected project's settings on the right. Provider, model, supported reasoning level, and service tier are saved as one compare-and-swap selection from BB's host-routed native writer catalog. For example, the catalog entry `gpt-6-luna` with service tier `fast` is stored as one writer choice; fast does not change the reasoning level. The two Jev routing controls are regular settings. Memory maintenance runs only after an accepted writer receipt; its corpus is isolated per project in plugin SQLite, with audience and token budgets enforced before injection. Owner/export records are available to the PM through its context tool; only `subagent` records can enter future writer prompts.
-
-Technical fields, including argv/environment previews, unapplied settings, storage versions, import paths, and receipts are grouped under Diagnostics. The old `writer.fast_mode` value is diagnostic only and migrates to `writer.service_tier` only when no explicit tier has been saved.
-
-Панель настроек показывает список проектов слева и настройки выбранного проекта справа. Провайдер, модель, доступный уровень reasoning и service tier сохраняются атомарно из каталога BB для host проекта. Например, выбор `gpt-6-luna` с tier `fast` не меняет reasoning. Два переключателя Jev управляют маршрутизацией. Обслуживание памяти запускается после принятой квитанции писателя; её корпус хранится в SQLite плагина отдельно для каждого проекта, а аудитория и лимиты токенов проверяются до инъекции. Записи owner/export доступны PM только через инструмент контекста; в промпты писателей могут попадать только записи `subagent`.
-
-Технические сведения — argv/env, неприменённые настройки, версии хранения, пути импорта и квитанции — находятся во вкладке Diagnostics. Старый `writer.fast_mode` виден только там и переносится в `writer.service_tier`, если явный tier ещё не сохранён.
+- [Requirements](#requirements)
+- [How a task goes through Lane Pilot](#how-a-task-goes-through-lane-pilot)
+- [What the plugin does](#what-the-plugin-does)
+- [PM tools](#pm-tools)
+- [Settings](#settings)
+- [CLI](#cli)
+- [Install, update, deploy](#install-update-deploy)
+- [Lane Stack engine on hosts](#lane-stack-engine-on-hosts)
+- [Known limits](#known-limits)
+- [Development](#development)
 
 ## Requirements
 
-- BB `>=0.43.3`
-- `@get-bb/plugin-sdk` `>=0.4.104`
-- A Lane Stack (or compatible newer/custom engine) on the project host whose required interfaces pass the probe. CLI writers use that reused engine; an incompatible host gets an isolated managed checkout instead of overwriting the user install.
+| What | Version |
+|---|---|
+| BB server | **experimental core** from [VKirill/bb `vk/experimental`](https://github.com/VKirill/bb/tree/vk/experimental), based on BB ≥ 0.43.3 (currently 0.44.0) |
+| Plugin SDK | `@get-bb/plugin-sdk` ≥ 0.4.104 |
+| Node | 22.19+, 24 or 26 |
+| Machines | enrolled BB hosts with git; `bwrap` (bubblewrap) on Linux, `sandbox-exec` on macOS for checks |
+| Optional | TypeSafe Jev key `TYPESAFE_API_KEY` in Env Catalog (routing, triage, council judge); a WireGuard (or Tailscale) network between machines for browser checks of dev servers on another machine |
 
-## Install, update, rollback
+### Experimental core functions
+
+The fork adds functions with the `vk` prefix; Lane Pilot feature-tests each one ([`vk-requires.json`](vk-requires.json)). What each is for and what happens without it:
+
+| Function | Kind | What Lane Pilot uses it for | Without it |
+|---|---|---|---|
+| `useComposer().experimental_vkSetDispatchData` | required | the «Enable for this chat» button attaches the Lane profile to the next new chat without changing its text | the PM chat cannot be enabled from the composer |
+| `experimental_vkLifecycle` / `bb.server.experimental_vkPluginLifecycle` | required | on enable, installs or repairs Claude Lane on every registered machine | native installation refuses to run; machines must be prepared by hand |
+| `bb.agents.experimental_vkSessionPolicy` | required | session rules of the core (which plugins, skills, MCP servers a session loads, set for example by Project Folders); Lane Pilot detects them to decide how helper threads inherit the PM chat's context | helpers run with BB's ordinary context |
+| `experimental_vkRequiredSessionPolicy` | optional, not in the fork yet | a helper context of its own for writers, critics and specialists («selected» / «none» in settings), enforced at spawn | those two options are refused (`helper_context_required_api_unavailable`); the default «inherit» works |
+| `experimental_vkCompiledMainAgent` | optional, not in the fork yet | the PM profile compiled into the session by the core | the PM profile comes from the Lane agent definition and instructions |
+
+The two optional functions need database migrations and host-daemon protocol changes, which the fork does not carry by its rules.
+
+How the fork is kept in step with official BB releases, and how to add a function: `VK_PATCHES.md` and `VK_FUNCTIONS.md` in the fork's `vk/experimental` branch.
+
+## How a task goes through Lane Pilot
+
+```mermaid
+flowchart TD
+  O[Owner writes in a Lane chat] --> PM[PM plans: task-v2 contract with owns_paths and checks]
+  PM --> R[pm-read: reads the files the task names]
+  R --> PC[plan critique: structure + model]
+  PC --> SR[specialist review, high risk]
+  SR --> Q{owns_paths overlap an open task?}
+  Q -- yes --> W1[wait for it]
+  W1 --> Q
+  Q -- no --> WR[writer in its own BB thread and worktree]
+  WR --> V[checks in the sandbox, in a BB terminal of the writer thread]
+  V --> CC[code critique and repair rounds]
+  CC --> A[acceptance receipt]
+  A --> M[merge into main, one at a time]
+  M --> QA[browser check, optional]
+  QA --> D[docs, memory, project life]
+  V -- fails --> RT[retry, at most 2 attempts]
+  RT --> WR
+```
+
+Every stage writes a receipt (state, input and output hashes, attempt, provider, model, thread). The PM sees them through `lane_pilot_wait_writer`; failed attempts are triaged by fault and kind.
+
+## What the plugin does
+
+### PM chat
+
+- «Enable for this chat» in the BB composer turns a new chat into a Lane PM (Claude Code, Opus 5.5, 1M context when the machine has it). The PM's instructions: plan, dispatch in the same turn, never edit product code itself (the `guard_shell.py` hook limits PM edits to `.agents/**` and plans), ship when the batch is accepted.
+- The PM does not ask the owner what it can resolve itself: retries, waits on other threads, timing. It asks for business meaning, money or data that cannot be undone, a missing secret, or a real ambiguity.
+- Working helpers show as squares next to the agent badge above the composer; a click opens the thread in the side panel.
+
+### Writers and parallel work
+
+- Each writer attempt runs in its own BB thread. In «Choose automatically» and «Worktree» modes it also gets its own git worktree (a BB-managed «Worktree» environment, or Lane Pilot's own `lane/<attempt>` worktree under `~/.lane-pilot/worktrees/`). `node_modules` is mirrored and workspace `dist/` and `.nuxt/` are copied, so monorepo checks work in the worktree.
+- Up to `ops.pool_size` writers (default 5, max 10) work at once. A task whose `owns_paths` may overlap an earlier open task's waits for it, so two writers never edit one file at the same time; disjoint tasks run side by side.
+- «In the project folder» mode runs writers one at a time in the checkout itself.
+- Writer provider, model, reasoning and service tier come from BB's native catalog for the project's machine. A circuit breaker stops dispatching to a failing provider; an emergency writer selection takes over after a provider error.
+- A writer that cannot proceed without a human answers `NEEDS_HUMAN: <question>`, and the attempt stops instead of guessing.
+
+### Checks
+
+- Every verification command of a task runs in a sandbox (bubblewrap on Linux, seatbelt on macOS) in a BB terminal of the writer's thread, so it can be watched live. Writes are limited to the task's folder and a temp folder; the network is open; protected state (`.git`, guard files) is read-only.
+- The project's BB machine variables (global and project, importable from Env Catalog) reach the checks by name; values stay in the terminal's shell and never pass through Lane Pilot or its logs.
+- Tool caches written by checks (`.vite`, `.turbo`, `.cache`, …) are not counted as the writer's change and stay out of git.
+- `ops.verify_pool_size` bounds checks running at once.
+
+### Acceptance and merge
+
+- Ownership: the writer's changes (working tree and commits) must fall inside its `owns_paths` and outside `never_touch`; bookkeeping written by hooks and other agents (`.agents/`, `.bb/`, …) is ignored.
+- Optional code critique with automatic repair rounds (`code_critique.*`).
+- Accepted work is committed in the worktree and merged into `main` of the run's checkout under a lock, one merge at a time. A merge that finds the checkout busy waits up to 15 minutes; a lock left by a killed process is taken over at once; a conflict sends the task back to be redone on the new `main`.
+
+### Browser check
+
+- `lane_pilot_browser_qa` runs a child thread that drives the BB browser on the Browser QA machine (the Mac mini) per case and viewport, with screenshots, and returns passed / failed / blocked.
+- `devServer`: the check's thread starts the dev server in its own BB terminal and closes it afterwards. A localhost target on another machine is opened at that machine's private VPN address (WireGuard `wg*`, `utun*`, Tailscale), not through a public tunnel.
+- A check that could not be made (no QA machine, machine offline, port unreachable) can run again for the same task; a verdict on the product is final.
+
+### When work is blocked
+
+- `lane_pilot_wait_writer` returns `blockedBy`: what holds the task, the holder's task and thread, since when, when to look again.
+- The relay lets the PM ask another thread (`lane_pilot_ask`, queued without interrupting it), get the answer back (`lane_pilot_reply`, or the thread's last message if it ends without answering) and set itself reminders (`lane_pilot_remind`) that fire after N minutes or as soon as a watched thread is really free (idle, nothing queued, no background command or agent at work).
+- The plugin server does the waking: a BB `thread:changed` subscription plus a 30-second sweep. Limits: 6 questions an hour between two threads, 10 open and 30 daily reminders per thread. After three reminders on one block without progress the PM writes to the owner.
+
+### Specialists and council
+
+- `lane_pilot_specialist`: design-lead (DESIGN.md, UX audit, prototype), copy-lead, seo-specialist or tavily (web research) as a child thread the owner can open.
+- `lane_pilot_handoff_*`: typed task cards between agents with receipts, leases and deadlines.
+- Council of directors (`lane_pilot_council_*`, sidebar page «Совет»): seats with distinct models discuss a product question, a Jev judge moderates, the owner joins at any time, the decision is written under `docs/decisions/`.
+
+### Memory, rules and docs
+
+- Per-project memory corpus in plugin SQLite with audiences and token budgets; only `subagent` records reach writer prompts. Memory maintenance runs after accepted work.
+- Every failed attempt is triaged (code first, then Jev): orchestrator, writer, environment or task. Writer mistakes seen in three tasks become rule proposals; rules adopt themselves on trial, are confirmed after clean use and retired when unused (`lane_pilot_lessons_sweep`, «Rules from lessons» in settings, nightly at 03:30).
+- Docs maintenance keeps the project wiki current after accepted work and on a schedule (`docs.*`); onboarding preview/apply writes the project passport; project life updates `.agents/PROGRESS.md` and the changelog.
+- Night review (`lane_pilot_night_review` / `_night_fix`): Codex review of the day's branch and bounded fixes; merge only when `night_review.auto_merge` is on and the PR is green.
+
+### Reliability
+
+- Reload recovery: after a plugin reload Lane Pilot finds open attempts, re-attaches to writers still at work and reruns an interrupted acceptance. Writer threads themselves are not affected by a reload.
+- Runs of deleted or archived PM chats, and chatless runs older than a day, are closed automatically.
+- Run budgets (`run.max_*`), provider breaker and stream retry after dropped provider streams (`lane_pilot_run_health`, `bb lane-pilot health`).
+
+## PM tools
+
+| Tool | Purpose |
+|---|---|
+| `lane_pilot_dispatch_writer` / `lane_pilot_wait_writer` | dispatch a task-v2 contract with its plan; wait for the receipt (≤ 240 s per call) |
+| `lane_pilot_dispatch_cli` | run a task through the terminal Lane Stack on the project host |
+| `lane_pilot_read` | bounded read of large files in the writer workspace |
+| `lane_pilot_workspace_status` | the run's checkout and worktrees |
+| `lane_pilot_browser_qa` | browser check of an accepted task |
+| `lane_pilot_specialist` / `lane_pilot_wait_specialist` | specialist child threads |
+| `lane_pilot_ask` / `lane_pilot_reply` / `lane_pilot_remind` / `lane_pilot_relay_list` | questions, answers and reminders between threads |
+| `lane_pilot_handoff_create` / `_receipt` / `_list` | task cards between agents |
+| `lane_pilot_council_start` / `_status` / `_say` / `_stop` | council of directors |
+| `lane_pilot_memory_context` / `_maintain` / `_import` / `_export` / `_golden` | project memory |
+| `lane_pilot_lessons_sweep` / `lane_pilot_rule_propose` | lessons and rules |
+| `lane_pilot_routing_stats` / `lane_pilot_run_health` / `lane_pilot_gate_report` / `lane_pilot_gate_triage` | statistics, health, gate reports |
+| `lane_pilot_docs_maintain`, `lane_pilot_onboarding_preview` / `_apply` | docs and onboarding |
+| `lane_pilot_night_review` / `lane_pilot_night_fix` | night review |
+| `lane_pilot_ingest_opencode_telemetry` | OpenCode lane telemetry |
+
+## Settings
+
+The settings page lists projects (and Project Folders sections) on the left and the selected scope's settings on the right; a section inherits from its parents and can override any value. Technical fields are under Diagnostics.
+
+| Group | Main keys |
+|---|---|
+| Writer | `writer.provider`, `writer.model`, reasoning, `writer.service_tier`, emergency writer |
+| Workspace | `adoc.040` isolation: `auto` (default, worktree per attempt) / `worktree` / `in_place` (one at a time in the checkout) |
+| Pools and timing | `ops.pool_size` (writers at once, ≤ 10), `ops.verify_pool_size`, `ops.command_timeout`, `ops.max_runtime` |
+| Stages | `plan_critique.*`, `specialist.*`, `pm_read`, `code_critique.*`, `browser_qa.*` (`browser_qa.host_id` = the Browser QA machine), `night_review.*` |
+| Memory and docs | `memory.*`, `docs.*` |
+| Jev routing | `jev.*` (plan effort, triage, council judge) |
+| Budgets | `run.max_*` |
+
+## CLI
+
+`bb lane-pilot <command>`; `bb lane-pilot` alone prints the list.
+
+| Command | Purpose |
+|---|---|
+| `activate`, `deactivate`, `state <project>`, `finish <project> [run]`, `resume [project]` | PM runs |
+| `cancel <attempt>`, `recover <attempt>` | attempts |
+| `dispatch-bb`, `dispatch-cli` | dispatch from the terminal |
+| `budget`, `health` | run budgets, provider health |
+| `council`, `council-status`, `council-say`, `council-seats` | council |
+| `docs-nightly` | docs pass now |
+| `host-detect`, `host-install`, `host-rollback`, `host-snapshot*`, `host-import-config`, `host-connect-opencode`, `host-run-cli` | machines and the Lane Stack engine |
+| `events-list`, `wait-thread`, `start-*-probe` | diagnostics |
+
+Plugin RPC for scripts: `bb plugin rpc call lane-pilot <method> --input-file <json>`.
+
+## Install, update, deploy
 
 ```sh
 bb plugin install git:https://github.com/VKirill/bb-plugin-lane-pilot.git --yes
 ```
 
-Path checkout the BB server can read:
+Or from a checkout the BB server can read:
 
 ```sh
-bb plugin build .
+npm ci && npm run build
 bb plugin install path:<absolute-checkout-on-the-server-host> --yes
 ```
 
-Update: pull `main`, `npm run build`, reinstall or reload `lane-pilot`.
+Update: pull `main`, `npm run build`, reload `lane-pilot`. A reload restarts Lane Pilot on the server and every machine; writer threads keep working, and recovery picks up their attempts. Avoid reloading in the middle of an acceptance (checks and merge): the deploy script `bb-plugin-push` waits up to 10 minutes for running acceptances (`LP_DEPLOY_FORCE=1` skips the wait).
 
-Rollback (plugin on the hub, not Lane Stack on a user machine):
+Rollback: install the previous commit, `git:…@<commit>`.
 
-```sh
-bb plugin install git:https://github.com/VKirill/bb-plugin-lane-pilot.git@<previous-commit> --yes
-# or a previously packed 0.0.1-stage0 tarball / previous path snapshot
-```
+## Lane Stack engine on hosts
 
-## Detect and host worker
-
-`bb lane-pilot host-detect <host-id> <workspace-path>` runs on the enrolled project host (`bb.host`), not inside the PM model session.
-
-For BB PM delegation, set task-v2 `project_cwd` to exactly the project's configured writer workspace. The value is captured when the PM run starts; changing the project setting does not change an active run. `lane_pilot_dispatch_writer` returns immediately, then `lane_pilot_wait_writer` returns the receipt or indicates that another bounded wait is needed.
-
-## Install scenarios S1–S8
+The terminal workflow and CLI writers use the Lane Stack installed on the project's machine; Lane Pilot probes its interfaces and reuses a compatible engine (newer or custom included) without writing to it.
 
 | # | Situation | Lane Pilot |
 |---|---|---|
-| S1 | Required interfaces already work (including newer/custom; SHA may differ) | Reuse; zero engine/config/cache writes; PM activation allowed |
-| S2 | Marker SHA present but the engine is incompatible | Isolated owned managed checkout; ordinary Claude/OpenCode configs are not written |
-| S3 | No `install.json` and no compatible engine | Same isolated managed path as S2; existing user configs stay byte-identical |
-| S4 | Already configured project | Idempotent; no duplicate hook merges |
-| S5 | OpenCode `opencode.json` or `.jsonc` | Additive JSONC `plugin[]` patch |
-| S6 | OpenCode missing | Skip S5 |
-| S7 | Existing YAML | One-shot import into plugin storage; YAML is not written back |
-| S8 | BB run | Never writes routing/night-shift/capabilities; never `adoc --apply` / `agents-doctor --apply` |
+| S1 | Required interfaces work | reuse; no engine, config or cache writes |
+| S2 | Marker present, engine incompatible | isolated managed checkout; user configs untouched |
+| S3 | No engine | same isolated managed path |
+| S4 | Project already configured | idempotent |
+| S5 / S6 | OpenCode config present / absent | additive JSONC `plugin[]` patch / skip |
+| S7 | Existing YAML | one-shot import into plugin storage |
+| S8 | BB run | never writes routing, night-shift or capabilities; never `adoc --apply` |
 
-Matrix applicability: 366 rows — the 355 original upstream tuples plus 11 native Lane Pilot additions. Current classification is 145 editable, 91 read-only adapters, 0 unresolved gaps, and 130 evidence-based exclusions; the row-level reasons and source links are in [docs/adoc-applicability.md](docs/adoc-applicability.md). This inventory records coverage decisions, not installed runtime acceptance.
+The 366-row settings applicability matrix is in [docs/adoc-applicability.md](docs/adoc-applicability.md). Files under `lane-stack/hooks/` and `lane-stack/schemas/` are upstream MIT copies.
 
 ## Known limits
 
-- Raw Claude `agent_type` is not available; PM isolation uses project-scope settings plus plugin metadata.
-- `MultiEdit` / `NotebookEdit` are not in the observed Claude runtime; Write/Edit/Bash guards still apply.
-- External ops (`npm install -g @rama_nigg/open-cursor`, `open-cursor install`, Claude marketplace plugin install/uninstall) run only after explicit UI confirmation. Rollback records before/after; it does not promise a perfect restore of those ops.
-- Plugin SDK 0.4.104 does not expose BB's selected UI language. Lane Pilot stores `auto` (default) or an explicit EN/RU override globally in plugin KV. In auto mode, the Russianizer's `data-footer-item="plugin:ru/toggle"` DOM action marks its language signal: the Russianizer is enabled when `bb-plugin-ru:enabled` is absent or is anything other than `off`, and only the explicit `off` value disables it. When that action is absent or disabled, `navigator.language` is checked before a non-default document language (BB's `en` is treated as unknown); the final fallback is EN. A DOM observer and storage listener update mounted Lane Pilot surfaces when this signal changes. The explicit Lane Pilot override takes precedence. The old per-project `ui.language` control is removed from the Lane Pilot panel. The native BB locale is therefore a known SDK limitation rather than a synchronized setting.
-- BB's DOM-based Russianizer may translate portaled UI. Lane Pilot marks its own Radix portals and toast text with `data-bb-ru-skip` so they keep the selected plugin locale.
-- BB owns the navigation panel's native “View details” menu entry. SDK 0.4.104 has no label/localization override for that host menu, so Lane Pilot cannot translate it.
-- A closed PM run retains its history and stores `state=closed`, `closed_at`, and `closed_by` (`rpc` or `cli`). Finishing requires no open writer attempts and a confirmed idle/error PM thread; live finish does not delete threads.
+- Writers and ordinary threads have no `lane_pilot_reply`; their last message is passed back instead.
+- The overlap check is conservative: a pattern's literal folder is compared, so a task can wait when it would not really have collided.
+- BB's selected UI language is not exposed to plugins; Lane Pilot uses `auto` (Russianizer signal, then the browser language) or an explicit EN/RU override.
+- External operations (open-cursor install, Claude marketplace plugins) run only after explicit confirmation; their rollback is best effort.
+- A finished PM run keeps its history (`state=closed`); finishing needs no open attempts and an idle PM thread.
 
-Does not call Agency RPC. Uses public Plugin SDK only.
-
-## Packages and server modules
-
-Reusable code lives in `packages/` as an npm workspace (`@lane-pilot/thread-observe`, `memory-core`, `handoff`, `resilience`, `run-insights`, `council`), server modules under `src/server/`. The map, the dependency rule and the phases of the split are in [docs/architecture.md](docs/architecture.md).
-
-PM tools added by those modules: `lane_pilot_handoff_create` / `lane_pilot_handoff_receipt` / `lane_pilot_handoff_list` (typed task cards between agents), `lane_pilot_routing_stats` (first-try acceptance per provider, model and risk), `lane_pilot_lessons_sweep` (recent findings and rejections into subagent memory; System One sorts each failed attempt by fault and kind, and on «Rescan» an analyzer model writes rules for writer mistakes seen in three tasks; the owner accepts them in settings, «Rules from lessons»), `lane_pilot_rule_propose` (the PM rewords a proposal), `lane_pilot_memory_golden` (retrieval score against a golden set), `lane_pilot_run_health` (provider breaker and run budget), `lane_pilot_memory_import` / `lane_pilot_memory_export` (lane-memory files ↔ the hub corpus). `lane_pilot_council_start` / `_status` / `_say` / `_stop` (a council of directors on a product question: a boardroom where seats speak on impulse and the owner joins at any time, decision page under `docs/decisions/`; the sidebar page «Совет» shows it as a chat). CLI: `bb lane-pilot budget`, `bb lane-pilot health`.
-
-## Commands
+## Development
 
 ```sh
-npm test
+npm test            # vitest
 npm run typecheck
-npm run build
+npm run build       # bb plugin build: server, host worker, app
 ```
 
-Also: `bb plugin types --check .`
-
-CLI overview: `bb lane-pilot` (`activate`, `state`, `finish <project-id> [run-id]`, `dispatch-bb`, `dispatch-cli`, `host-detect`, `resume`, …).
+Code layout, dependency rules and packages (`@lane-pilot/thread-observe`, `memory-core`, `handoff`, `resilience`, `run-insights`, `council`): [docs/architecture.md](docs/architecture.md).
 
 ## License
 
-MIT. Upstream copies: Copyright (c) 2026 VKirill and contributors.
+MIT. Upstream Lane Stack copies: Copyright (c) 2026 VKirill and contributors.
