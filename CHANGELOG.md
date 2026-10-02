@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.62 — 2026-10-02
+
+Second step onto BB rails: the browser check runs in the BB browser, in a thread you can open.
+
+- **`lane_pilot_browser_qa` starts a child thread that drives the BB browser** through the Browser Automation plugin on the project's Browser QA machine (the Mac mini): a BB Desktop tab when one is open there, otherwise a headless session whose live view shows in the thread. It goes through every case on every viewport, looks at a screenshot for each, and ends with a JSON verdict that Lane Pilot stores in the stage receipt; the PM gets the `@thread` link. A «passed» without every case passed on record counts as blocked.
+- **Works wherever the chat runs.** The thread runs in the PM's environment (OVH, say) and opens the browser on the QA machine; a localhost target is shared with `bb connect expose` first. Checked live: an agent on OVH drove headless Chrome on the Mac mini, at 375 and 1280 px, with screenshots, and its verdict parsed.
+- New default `browser_qa.backend = bb-browser` («Браузер BB в треде проверки»). The old runner scripts stay available as `chrome-qa`, `live-chrome` and `headless`.
+- **The browser check failed on every native project.** It read the old prototype config, which only 5 projects have, and stopped with «task does not belong to this PM run». It now uses `configForRun`.
+
 ## 0.1.61 — 2026-10-02
 
 First step of putting Lane Pilot on BB rails: every agent a PM hands work to is a thread you can open.

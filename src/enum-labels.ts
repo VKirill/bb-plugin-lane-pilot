@@ -28,6 +28,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
     none: "helperContextNone",
   },
   "browser_qa.backend": {
+    "bb-browser": "enumQaBackendBbBrowser",
     "chrome-qa": "enumQaBackendChromeQa",
     headless: "enumQaBackendHeadless",
     "live-chrome": "enumQaBackendLiveChrome",

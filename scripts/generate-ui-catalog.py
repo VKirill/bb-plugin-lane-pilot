@@ -1136,7 +1136,7 @@ def main() -> None:
             elif storage_key == "browser_qa.reasoning_effort":
                 options, default_value = [], "medium"
             elif storage_key == "browser_qa.backend":
-                options, default_value = ["chrome-qa", "headless", "live-chrome"], "chrome-qa"
+                options, default_value = ["bb-browser", "chrome-qa", "headless", "live-chrome"], "bb-browser"
             elif storage_key == "browser_qa.approve":
                 options, default_value = ["auto", "never"], "auto"
         elif storage_key == "plan_critique.enabled":

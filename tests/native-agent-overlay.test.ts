@@ -178,9 +178,9 @@ it("is a unified BB PM instruction, not a CLI orchestrator patch", () => {
   expect(LANE_PILOT_PM_SESSION).toContain("design-lead");
   expect(LANE_PILOT_PM_SESSION).toContain("copy-lead");
   expect(LANE_PILOT_PM_SESSION).toContain("seo-specialist");
-  expect(LANE_PILOT_PM_SESSION).toContain("browser-qa");
+  expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_browser_qa");
   expect(LANE_PILOT_PM_SESSION).toContain("Mac mini");
-  expect(LANE_PILOT_PM_SESSION).toContain("Google Chrome");
+  expect(LANE_PILOT_PM_SESSION).toContain("drives the BB browser");
   expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_browser_qa");
   expect(LANE_PILOT_PM_SESSION).toContain("PROJECT.md");
   expect(LANE_PILOT_PM_SESSION).toContain("docs/audiences/");

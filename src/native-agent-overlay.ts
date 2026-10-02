@@ -164,7 +164,7 @@ export function isLanePmAgent(agentId: string): boolean {
 const BB_LANGUAGE = `## Language
 Chat with the human in plain Russian. Every file you write is English.`;
 
-const BB_LIVE_BROWSER_QA = `Live visual QA (clicks, viewports, screenshots you can watch): only \`lane_pilot_browser_qa\` after an accepted writer. That tool runs on the project's Browser QA host — the Mac mini with a visible Google Chrome. Pass \`viewports\` as real CSS widths (for example 375,768,1280); the runner resizes that live window. Do not click in this chat. Do not spawn Agent \`browser-qa\` for live proof. Headless is not live visual QA.`;
+const BB_LIVE_BROWSER_QA = `Browser check (clicks, viewports, screenshots): only \`lane_pilot_browser_qa\` after an accepted writer. It starts a child thread that drives the BB browser on the project's Browser QA machine (the Mac mini), wherever this chat runs; the owner can open that thread and watch. Give the exact URL and concrete cases; \`viewports\` are CSS widths (for example 375,768,1280). Show the owner the returned @thread link. Do not click in this chat and do not spawn an Agent for it.`;
 
 /** One wording, with its reason, for every session that must not write the generated documentation. */
 const BB_DOCS_OWNED = `Lane Pilot writes \`docs/\`, \`README.md\` and \`PROJECT.md\` nightly from the code and reverts other edits there, so read them and do not write them.`;

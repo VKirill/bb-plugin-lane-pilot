@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadPrototypeConfig } from "../../database";
+import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listStageReceipts } from "../../database";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY, qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../../qa-host";
 import { sha256 } from "../../stages/contract";
 import { parseOpenCodeToolTelemetry } from "../../stages/opencode-telemetry";
@@ -7,6 +7,7 @@ import { MAIN_ATTEMPT_LIMIT } from "../../state-machine";
 import { configuredSetting } from "../context";
 import { freezeRunRouting, inheritedProjectSettings } from "../run-routing";
 import { recordStage } from "../stage-records";
+import { runQaThread } from "./qa-thread";
 import { stringAt, valueAt } from "../values";
 import type { ServerCore } from "../core";
 
@@ -20,7 +21,8 @@ export function createQaStages(ctx: ServerCore) {
       throw new Error("runId does not belong to this Lane Pilot PM thread");
     }
     const run = getRun(db,args.runId);
-    const config = loadPrototypeConfig(db,args.projectId);
+    // Native runs (most projects) have no prototype config; reading it made every browser check fail as «not this run».
+    const config = await configForRun(args.projectId, run);
     const taskRow = getTask(db,args.taskId);
     if (!run || run.project_id !== args.projectId || run.pm_thread_id !== args.threadId || !config || !taskRow || taskRow.run_id !== args.runId || taskRow.kind !== "bb") {
       throw new Error("task does not belong to this PM run and project");
@@ -43,9 +45,13 @@ export function createQaStages(ctx: ServerCore) {
     const configuredReasoningValue = typeof reasoningSetting === "string" ? reasoningSetting.trim() : "";
     const configuredReasoning = configuredReasoningValue && configuredReasoningValue !== "provider-specific" ? configuredReasoningValue : undefined;
     const requestInput = {url:args.url,cases:args.cases,envClass:args.envClass,viewports:args.viewports,authorized:args.authorized};
+    const backendValue = configuredSetting(settings,"browser_qa.backend");
+    const backend = backendValue == null || backendValue === "bb-browser" ? "bb-browser"
+      : backendValue === "chrome-qa" || backendValue === "live-chrome" || backendValue === "headless" ? backendValue : null;
+    const threadQa = backend === "bb-browser";
     const base = { runId:args.runId, taskId:args.taskId, stageId:"browser-qa" as const,
       input:JSON.stringify(requestInput),
-      attempt:countAttempts(db,args.runId,args.taskId), providerId:`browser-qa-${provider}`,
+      attempt:countAttempts(db,args.runId,args.taskId), providerId:threadQa ? "browser-qa-thread" : `browser-qa-${provider}`,
       model:configuredModel ?? null };
     const existing = listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa");
     if (existing) {
@@ -89,25 +95,22 @@ export function createQaStages(ctx: ServerCore) {
       recordStage(db,{...base,state:"blocked",reason});
       return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
-    if (provider === "claude") {
+    if (provider === "claude" && !threadQa) {
       recordStage(db,{...base,state:"blocked",reason:"claude browser QA requires the configured chrome-devtools MCP RPC; no schema-verified RPC is available"});
       return {runId:args.runId,taskId:args.taskId,state:"blocked",reason:"claude browser QA requires the configured chrome-devtools MCP RPC; no schema-verified RPC is available",stages:listStageReceipts(db,args.runId,args.taskId)};
     }
-    if (provider === "jev" && configuredModel && configuredModel !== "typesafe/jev-1.13") {
+    if (provider === "jev" && !threadQa && configuredModel && configuredModel !== "typesafe/jev-1.13") {
       const reason = "jev_runner_model_is_fixed: choose browser_qa.provider=codex to apply a custom model";
       recordStage(db,{...base,state:"blocked",reason});
       return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
-    if (provider === "jev" && configuredReasoning) {
+    if (provider === "jev" && !threadQa && configuredReasoning) {
       const reason = "jev_runner_does_not_accept_reasoning_effort; clear that setting or select codex";
       recordStage(db,{...base,state:"blocked",reason});
       return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
     const model = configuredModel;
     let reasoning = configuredReasoning as "low"|"medium"|"high"|"xhigh"|"max"|undefined;
-    const backendValue = configuredSetting(settings,"browser_qa.backend");
-    const backend = backendValue == null || backendValue === "chrome-qa" ? "chrome-qa"
-      : backendValue === "live-chrome" || backendValue === "headless" ? backendValue : null;
     if (!backend) {
       const reason = `unsupported_browser_qa_backend:${String(backendValue)}`;
       recordStage(db,{...base,state:"blocked",reason});
@@ -129,7 +132,7 @@ export function createQaStages(ctx: ServerCore) {
       recordStage(db,{...base,state:"blocked",reason});
       return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
-    if (provider === "codex") {
+    if (provider === "codex" && !threadQa) {
       try {
         const [qaProviders, qaCatalog] = await Promise.all([
           bb.sdk.providers.list({ hostId: qaTarget.hostId }),
@@ -184,6 +187,22 @@ export function createQaStages(ctx: ServerCore) {
       return {runId:args.runId,taskId:args.taskId,state:current?.state ?? "running",reason:"browser_qa_already_dispatched",stage:current};
     }
     try {
+      if (threadQa) {
+        // The thread's own agent: codex when the project picked a codex model for QA, Claude Code otherwise.
+        const agent = provider === "codex" && model
+          ? { providerId:"codex", model, effort:reasoning ?? "high" }
+          : { providerId:"claude-code", model:"claude-opus-5-5", effort:"high" };
+        const verdict = await runQaThread(ctx, {
+          projectId:args.projectId, runId:args.runId, pmThreadId:args.threadId, taskTitle:task.title, qaHostId:qaTarget.hostId, timeoutSec,
+          url:args.url, cases:args.cases, viewports:args.viewports, envClass:args.envClass, authorized:args.authorized, agent,
+          onSpawned:(threadId) => recordStage(db,{...dispatchedBase,state:"running",result:{...targetSnapshot,threadId,link:`@thread:${threadId}`}}),
+        });
+        const state = verdict.verdict;
+        const snapshot = { ...targetSnapshot, url:args.url, backend:"bb-browser", agent, ...verdict };
+        const reason = state === "passed" ? undefined : verdict.summary || undefined;
+        recordStage(db,{...dispatchedBase,state,result:snapshot,...(reason ? {reason} : {})});
+        return {runId:args.runId,taskId:args.taskId,state,link:verdict.link,stage:listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa"),result:snapshot,reason};
+      }
       let probe;
       try {
         probe = await host.call("probeBrowserQaTarget", {
@@ -201,7 +220,7 @@ export function createQaStages(ctx: ServerCore) {
         requestedHostId:qaTarget.hostId, projectCwd:qaTarget.workspacePath, url:args.url,
         slug:`lp-qa-${args.runId.replace(/[^a-z0-9-]/gi,"").slice(-12)}-${args.taskId.replace(/[^a-z0-9-]/gi,"").slice(-12)}-${Date.now()}`.toLowerCase(),
         cases:args.cases, envClass:args.envClass, viewports:args.viewports, authorized:args.authorized,
-        provider, ...(model ? {model} : {}), ...(reasoning ? {reasoningEffort:reasoning} : {}), backend, timeoutSec,
+        provider:provider as "jev"|"codex", ...(model ? {model} : {}), ...(reasoning ? {reasoningEffort:reasoning} : {}), backend:backend as "live-chrome"|"chrome-qa"|"headless", timeoutSec,
       },{hostId:qaTarget.hostId,timeoutMs:(timeoutSec+30)*1000});
       if (result.hostId !== qaTarget.hostId) throw new Error("browser QA result came from a different host");
       const mismatches = [

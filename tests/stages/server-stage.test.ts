@@ -348,7 +348,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
   setupDb = db;
   savePrototypeConfig(db, emergencySelection ? {...config,pmProviderId:emergencySelection.providerId,pmModel:emergencySelection.model} : config);
   saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
-  for (const [key,value] of Object.entries({"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,"browser_qa.host_id":qaHostId,"browser_qa.workspace_path":"/tmp/lane-pilot-qa",...projectSettings})) saveProjectSetting(db,projectId,key,value);
+  for (const [key,value] of Object.entries({"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,"browser_qa.host_id":qaHostId,"browser_qa.workspace_path":"/tmp/lane-pilot-qa","browser_qa.backend":"chrome-qa",...projectSettings})) saveProjectSetting(db,projectId,key,value);
   createRun(db, "stage-run", projectId, "bb", environmentId ? null : config.writerWorkspacePath,
     projectSettings["run.gate"] === "pre-merge" ? "pre-merge" : "none",buildRunPolicy(projectSettings));
   if (environmentId) setRunWorkspace(db,"stage-run",config.writerWorkspacePath,environmentId);

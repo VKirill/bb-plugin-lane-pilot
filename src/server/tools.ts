@@ -82,8 +82,8 @@ export function registerTools(ctx: ServerCore, services: Services) {
 
   bb.agents.registerTool({
     name:"lane_pilot_browser_qa",
-    description:"Run live browser QA on the project's Browser QA machine (Mac mini, visible Google Chrome) after an accepted writer, and return the report and screenshot receipts.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. Live visual QA runs on the configured Browser QA host — the Mac mini with a visible Google Chrome window; viewports (default 375,768,1280) are real CSS widths of that window. Do not click in the PM chat and do not spawn Agent browser-qa for this proof. Headless is not live visual QA. Supply concrete browser-ui cases and the exact target URL. Production, unknown, or stateful side-effect cases require authorized=true. A report without a complete all-passed summary is never reported as passed.",
+    description:"Check an accepted task in a browser: a child thread drives the BB browser on the project's Browser QA machine (the Mac mini) and returns a verdict per case and viewport.",
+    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. The check runs in a child thread that opens the BB browser on the Browser QA machine (the Mac mini), even when this chat runs elsewhere; a localhost target is shared with bb connect expose first. Supply concrete browser-ui cases and the exact target URL; viewports are CSS widths (default 375,768,1280). Production, unknown, or stateful side-effect cases require authorized=true. Show the owner the returned @thread link. A verdict is passed only when every case passed on every viewport.",
     parameters:z.object({
       runId:z.string().min(1), taskId:z.string().min(1), url:z.string().url(),
       cases:z.array(z.string().min(1).max(2000)).min(1).max(30),
