@@ -115,7 +115,10 @@ describe("self-repair", () => {
   it("the prompt tells the agent to verify live, ship only on green and report to the PM", () => {
     const text = repairPrompt([{ signature: "s", kind: "blocked", projectId: "p", runId: "r", taskId: "t", attemptId: "a", pmThreadId: "thr_pm", writerThreadId: null, reason: "x", at: 0 }], "blocked:abc:x");
     expect(text).toMatch(/Verify live/);
-    expect(text).toMatch(/Never deploy on a red suite/);
+    expect(text).toMatch(/continue only when it is green/);
+    expect(text).toMatch(/<incidents>[\s\S]*1970-01-01T00:00:00.000Z[\s\S]*<\/incidents>/);
+    expect(text).toMatch(/never git add -A/);
+    expect(text).toMatch(/already fixed/);
     expect(text).toContain("bb thread tell");
   });
 });

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.83 — 2026-10-02
+
+Self-repair prompt, after the first live repair thread and an instruction audit:
+- Incidents carry their time and sit in an `<incidents>` block marked as evidence, not instructions (reasons come from writers and checks).
+- A first step checks whether a later release already fixed the failure; the first live repair spent its run proving exactly that.
+- Shipping is safe in the shared checkout: stage only own files, no deploy while someone else's uncommitted work is in the tree (the deploy ships the working tree); full path to the deploy script; reasons next to each rule; an explicit «done when».
+
 ## 0.1.82 — 2026-10-02
 
 - Self-repair threads start in the standard speed tier: the tier is sent explicitly as `default`, so BB no longer falls back to the remembered fast mode.
