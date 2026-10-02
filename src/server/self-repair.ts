@@ -196,7 +196,7 @@ export function createSelfRepair(ctx: ServerCore) {
           environment: { type: "reuse", environmentId: cfg.environmentId },
           title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
           prompt: repairPrompt(record.samples, signature),
-          ...writerExecutionSelection(cfg.providerId, cfg.model, cfg.reasoningLevel, null),
+          ...writerExecutionSelection(cfg.providerId, cfg.model, cfg.reasoningLevel, "default"),
           pluginMetadata: { role: "self-repair", signature },
         } as Parameters<typeof fullAccessSpawn>[1]);
         spawned = stringAt(result, "id");

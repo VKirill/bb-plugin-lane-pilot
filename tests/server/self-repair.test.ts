@@ -57,7 +57,7 @@ describe("self-repair", () => {
     expect(spawns[0]).toMatchObject({
       projectId: "proj_ejbam66722",
       environment: { type: "reuse", environmentId: "env_bfv6wmb79r" },
-      providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high", permissionMode: "full",
+      providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high", serviceTier: "default", permissionMode: "full",
     });
     expect(String(spawns[0]!.prompt)).toContain("@thread:thr_pm");
     expect(String(spawns[0]!.prompt)).toContain("host plugin calls are unavailable");

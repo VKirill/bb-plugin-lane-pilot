@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.82 — 2026-10-02
+
+- Self-repair threads start in the standard speed tier: the tier is sent explicitly as `default`, so BB no longer falls back to the remembered fast mode.
+
 ## 0.1.81 — 2026-10-02
 
 - **Self-repair.** Lane Pilot watches its own failures every 15 minutes: triage origin «orchestrator», system block reasons and attempts stuck «running» after their writer went idle. Each new kind of problem (one signature over ids, paths and numbers) starts one repair thread in the Lane Pilot repository: Claude Code, Opus 5.5, high reasoning, full access. The thread finds the root cause, fixes it with a test, verifies live, deploys on a green suite, releases and tells the affected PM. One repair at a time, 4 a day; kinds that wait are kept and taken on a later pass; a kind that returns a day after its repair gets a new one. The sandbox project is ignored.
