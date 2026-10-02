@@ -25,8 +25,8 @@ export function Disclosure({
     >
       <summary
         className={cn(
-          "flex w-full cursor-pointer list-none items-center gap-2 rounded-md bg-muted text-foreground",
-          "hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "flex w-full cursor-pointer list-none items-center gap-2 rounded-lg border border-[var(--lp-hairline)] bg-[var(--lp-well)] text-foreground",
+          "hover:bg-[var(--lp-card)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           "[&::-webkit-details-marker]:hidden",
           compact ? "min-h-7 px-2 py-1 text-xs text-muted-foreground" : "min-h-8 px-2.5 py-1.5 text-sm",
         )}

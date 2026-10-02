@@ -1,4 +1,5 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import "./app.css";
 import { t } from "./i18n";
 import { LanePilotPage } from "./src/ui/page";
 import { CouncilPage } from "./src/ui/council-page";

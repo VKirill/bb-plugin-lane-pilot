@@ -142,7 +142,7 @@ function ResourcePicker({
               <p className="text-xs text-muted-foreground">{t("agentSelectedCount").replace("{n}", String(names.length))}</p>
               {unknownSaved ? <p className="text-xs text-muted-foreground">{t("agentSavedUnknownHelp")}</p> : null}
               <Input className={CONTROL} value={query} placeholder={t("agentResourceSearch")} aria-label={t("agentResourceSearch")} onChange={(event) => setQuery(event.target.value)} />
-              <ul className="max-h-40 min-w-0 divide-y divide-border overflow-y-auto rounded-md border border-border" role="list">
+              <ul className="max-h-40 min-w-0 divide-y divide-[var(--lp-hairline)] overflow-y-auto rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-card)]" role="list">
                 {listed.map((item) => (
                   <li key={item.name} className="min-w-0 px-2.5 py-2">
                     <label className="flex min-w-0 items-start gap-2 text-sm">
@@ -154,7 +154,7 @@ function ResourcePicker({
                         onChange={(event) => onChange(event.target.checked ? [...names, item.name] : names.filter((name) => name !== item.name), "selected")}
                       />
                       <span className="min-w-0 flex-1 break-all">{item.label}</span>
-                      {!known.has(item.name) ? <span className="shrink-0 rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">{t("agentSavedUnknown")}</span> : null}
+                      {!known.has(item.name) ? <span className="lp-pill-muted shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none">{t("agentSavedUnknown")}</span> : null}
                     </label>
                   </li>
                 ))}
@@ -258,7 +258,7 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
       <p className="text-sm text-muted-foreground">{scope === "globals" ? t("globalsHelp") : t("agentsHelp")}</p>
     </div>
     {error ? <div className="min-w-0 space-y-2"><p role="alert" className="break-words text-sm text-destructive">{error}</p><Button variant="outline" className={CONTROL_H} disabled={busy} onClick={() => { void rpc.call("get_globals", {}).then(setRemote).catch((cause) => setError(String(cause))); }}>{ru ? "Загрузить текущую версию для сравнения" : "Load current version to compare"}</Button></div> : null}
-    {remote ? <section className="min-w-0 max-w-full space-y-2 rounded-md border border-border p-3"><h2 className="text-sm font-medium">{ru ? "Текущая сохранённая версия" : "Current saved version"}</h2><pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words text-xs">{scope === "globals" ? JSON.stringify(remote.defaults, null, 2) : remote.agents.find((item) => item.id === selected)?.prompt ?? "—"}</pre><p className="text-sm">{ru ? "Ваш черновик остаётся в редакторе. Следующее сохранение заменит показанную версию." : "Your draft remains in the editor. The next save will replace the version shown here."}</p><Button variant="outline" className={CONTROL_H} onClick={() => { setSnapshot(remote); setRemote(null); setError(""); }}>{ru ? "Продолжить с моим черновиком" : "Continue with my draft"}</Button></section> : null}
+    {remote ? <section className="lp-card min-w-0 max-w-full space-y-2 p-3"><h2 className="text-sm font-medium">{ru ? "Текущая сохранённая версия" : "Current saved version"}</h2><pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words text-xs">{scope === "globals" ? JSON.stringify(remote.defaults, null, 2) : remote.agents.find((item) => item.id === selected)?.prompt ?? "—"}</pre><p className="text-sm">{ru ? "Ваш черновик остаётся в редакторе. Следующее сохранение заменит показанную версию." : "Your draft remains in the editor. The next save will replace the version shown here."}</p><Button variant="outline" className={CONTROL_H} onClick={() => { setSnapshot(remote); setRemote(null); setError(""); }}>{ru ? "Продолжить с моим черновиком" : "Continue with my draft"}</Button></section> : null}
     {!snapshot ? <p>{ru ? "Загрузка…" : "Loading…"}</p> : <>
       <fieldset disabled={busy} hidden={scope !== "globals"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }}>
         <Surface>
@@ -341,7 +341,7 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
             <SurfaceHeader><h2 className="text-sm font-medium">{t("agentSectionInstructions")}</h2></SurfaceHeader>
             <SurfaceBody>
             <Label htmlFor="agent-prompt" className="sr-only">{t("agentSectionInstructions")}</Label>
-            <textarea id="agent-prompt" className={`min-h-64 rounded-md border border-input bg-background p-3 text-sm ${CONTROL}`} style={{ overflowWrap: "anywhere", wordBreak: "break-word" }} value={agent.prompt} maxLength={32000} onChange={(event) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, prompt: event.target.value } : item)); setSaved(false); }} />
+            <textarea id="agent-prompt" className={`min-h-64 rounded-xl border border-[var(--lp-outline)] bg-[var(--lp-card)] p-3 text-sm ${CONTROL}`} style={{ overflowWrap: "anywhere", wordBreak: "break-word" }} value={agent.prompt} maxLength={32000} onChange={(event) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, prompt: event.target.value } : item)); setSaved(false); }} />
             </SurfaceBody>
           </Surface>
           <div className="min-w-0 max-w-full space-y-3">

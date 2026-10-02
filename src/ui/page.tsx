@@ -376,23 +376,23 @@ function SettingsGroup({ title, testId, help, children }: { title?: string; test
         {title ? <h2 className="text-sm font-medium">{title}</h2> : null}
         {help}
       </SurfaceHeader> : null}
-      <SurfaceBody className={title || help ? "space-y-4" : "space-y-4 pt-3"}>{children}</SurfaceBody>
+      <SurfaceBody className="space-y-4">{children}</SurfaceBody>
     </Surface>
   );
 }
 
 /** Rows shown with «Advanced» or while searching; kept in the DOM so search and tests still see them. */
 function AdvancedRows({ show, testId, children }: { show: boolean; testId?: string; children: ReactNode }) {
-  return <div hidden={!show} data-testid={testId} className="min-w-0 space-y-2 border-l border-border pl-3">{children}</div>;
+  return <div hidden={!show} data-testid={testId} className="min-w-0 space-y-2 border-l-2 border-[var(--lp-hairline)] pl-3">{children}</div>;
 }
 
 /** One line of the Overview checklist: done, needs attention, or a plain step. */
 function StatusRow({ state, title, detail, action, testId }: { state: "ok" | "todo" | "info"; title: string; detail: ReactNode; action?: ReactNode; testId?: string }) {
   const mark = state === "ok" ? "✓" : state === "todo" ? "!" : "→";
-  const tone = state === "ok" ? "bg-primary text-primary-foreground" : state === "todo" ? "bg-destructive text-white" : "bg-muted text-muted-foreground";
+  const tone = state === "ok" ? "lp-text-success" : state === "todo" ? "lp-text-warning" : "text-muted-foreground";
   return (
     <div className="flex min-w-0 items-start gap-3" data-testid={testId} data-state={state}>
-      <span className={`mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${tone}`} aria-hidden>{mark}</span>
+      <span className={`lp-tile size-8 text-sm font-semibold ${tone}`} aria-hidden>{mark}</span>
       <div className="min-w-0 flex-1 space-y-0.5">
         <div className="text-sm font-medium">{title}</div>
         <div className="break-words text-xs text-muted-foreground">{detail}</div>
@@ -616,16 +616,18 @@ function StatusBadge({ status }: { status: CatalogRow["uiStatus"] }) {
 }
 
 function LocaleControls({ preference, onChange }: { preference: LocalePreference; onChange: (next: LocalePreference) => void }) {
-  return <div className="flex items-center gap-1" aria-label={t("language")}>
-    <span className="mr-1 text-xs text-muted-foreground">{t("language")}</span>
-    <Button className={CONTROL_H} variant={preference === "auto" ? "default" : "outline"} aria-pressed={preference === "auto"} onClick={() => onChange("auto")}>{t("automatic")}</Button>
-    <Button className={CONTROL_H} variant={preference === "en" ? "default" : "outline"} aria-pressed={preference === "en"} onClick={() => onChange("en")}>EN</Button>
-    <Button className={CONTROL_H} variant={preference === "ru" ? "default" : "outline"} aria-pressed={preference === "ru"} onClick={() => onChange("ru")}>RU</Button>
+  return <div className="flex items-center gap-2" aria-label={t("language")}>
+    <span className="text-xs text-muted-foreground">{t("language")}</span>
+    <div className="lp-seg">
+      {(["auto", "en", "ru"] as const).map((option) => (
+        <Button key={option} variant="ghost" size="sm" className="lp-seg-item h-7 px-3 hover:bg-transparent aria-pressed:bg-[var(--lp-card)] aria-pressed:hover:bg-[var(--lp-card)]" aria-pressed={preference === option} onClick={() => onChange(option)}>{option === "auto" ? t("automatic") : option.toUpperCase()}</Button>
+      ))}
+    </div>
   </div>;
 }
 
-function runTone(state: string): "default" | "secondary" | "destructive" | "outline" {
-  if (state === "accepted" || state === "passed") return "default";
+function runTone(state: string): "default" | "secondary" | "destructive" | "outline" | "success" {
+  if (state === "accepted" || state === "passed") return "success";
   if (state === "failed" || state === "blocked" || state === "provider_error" || state === "validation_failed") return "destructive";
   if (state === "running" || state === "pending") return "secondary";
   return "outline";
@@ -1334,7 +1336,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     for (const section of sections.filter((item) => item.parentId === parentId)) { flatSections.push({ id: section.id, name: section.name, depth }); walkSections(section.id, depth + 1); }
   };
   walkSections(null, 1);
-  const tabSelect = contentWidth > 0 && contentWidth < 560;
+  const tabSelect = contentWidth > 0 && contentWidth < 680;
   const searching = settingsQuery.trim() !== "";
   const advanced = settingsDepth === "advanced" || searching;
   const hostLabel = (id: string | null | undefined) => (id ? data?.qaHosts?.find((host) => host.id === id)?.name ?? id : "—");
@@ -1384,13 +1386,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </Select>
         </div>
       </div>
-      <nav className={compactChrome ? "hidden" : "flex w-[13.5rem] shrink-0 flex-col border-r border-border bg-background"} aria-label={t("scopeNav")} data-testid="scope-rail">
-        <div className="flex flex-col gap-0.5 border-b border-border p-2" data-testid="scope-nav">
-          <Button type="button" role="tab" size="sm" aria-selected={activeScope === "globals"} variant={activeScope === "globals" ? "secondary" : "ghost"} className="h-8 w-full justify-start px-2" onClick={() => setActiveScope("globals")}>{t("navGlobals")}</Button>
-          <Button type="button" role="tab" size="sm" aria-selected={activeScope === "agents"} variant={activeScope === "agents" ? "secondary" : "ghost"} className="h-8 w-full justify-start px-2" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
+      <nav className={compactChrome ? "hidden" : "flex w-[13.5rem] shrink-0 flex-col p-2"} aria-label={t("scopeNav")} data-testid="scope-rail">
+        <div className="flex flex-col gap-1 pb-2" data-testid="scope-nav">
+          <Button type="button" role="tab" size="sm" aria-selected={activeScope === "globals"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" onClick={() => setActiveScope("globals")}>{t("navGlobals")}</Button>
+          <Button type="button" role="tab" size="sm" aria-selected={activeScope === "agents"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
         </div>
-        <div className="p-2"><span className="text-xs font-medium text-muted-foreground">{t("projects")}</span></div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
+        <div className="border-t border-[var(--lp-hairline)] px-3 pb-1 pt-3"><span className="text-xs font-medium text-muted-foreground">{t("projects")}</span></div>
+        <div className="min-h-0 flex-1 overflow-y-auto pb-2">
           {projectListError ? <p role="alert" className="px-2 text-xs text-destructive">{t("projectListError")}</p> : null}
           {!projectsLoaded && !projectListError ? <p className="px-2 text-xs text-muted-foreground">{t("loadingProjects")}</p> : null}
           {projectsLoaded && projects.length === 0 && !projectListError ? <p className="px-2 text-xs text-muted-foreground">{t("noProjects")}</p> : null}
@@ -1399,10 +1401,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               key={project.id}
               type="button"
               size="sm"
-              variant={activeScope === "projects" && project.id === projectId ? "secondary" : "ghost"}
-              aria-current={activeScope === "projects" && project.id === projectId ? "page" : undefined}
+              variant="ghost"
+              aria-current={activeScope === "projects" && project.id === projectId && !selectedSectionId ? "page" : undefined}
               data-testid={`project-item-${project.id}`}
-              className="h-auto w-full justify-start px-2 py-1.5 text-left"
+              className={`lp-nav-item h-auto w-full justify-start px-3 py-2 text-left hover:bg-state-hover ${activeScope === "projects" && project.id === projectId ? "font-semibold text-foreground" : ""}`}
               onClick={() => chooseProject(project.id)}
             ><span className="min-w-0 truncate text-sm">{project.name}</span></Button>).flatMap((button, index) => {
               const project = projects[index]!;
@@ -1415,13 +1417,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     key={section.id}
                     type="button"
                     size="sm"
-                    variant={section.id === selectedSectionId ? "secondary" : "ghost"}
+                    variant="ghost"
                     aria-current={section.id === selectedSectionId ? "page" : undefined}
                     data-testid={`section-item-${section.id}`}
-                    className="h-auto w-full justify-start py-1 text-left"
+                    className="lp-nav-item h-auto w-full justify-start py-1.5 text-left hover:bg-state-hover"
                     style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
                     onClick={() => { setActiveScope("projects"); setSelectedSectionId(section.id); }}
-                  ><span className="min-w-0 truncate text-xs text-muted-foreground">{section.name}</span></Button>);
+                  ><span className="min-w-0 truncate text-xs">{section.name}</span></Button>);
                   walk(section.id, depth + 1);
                 }
               };
@@ -1437,7 +1439,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         <OwnedSettings scope={activeScope === "agents" ? "agents" : "projects"} locale={locale} />
         <main hidden={activeScope === "agents"} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
         {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
-        <div>
+        <div className="lp-strip">
           {isGlobal ? <>
             <h1 className="break-words text-xl font-medium">{t("navGlobals")}</h1>
             <p className="text-xs text-muted-foreground">{t("globalsHelp")}</p>
@@ -1481,8 +1483,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               <SelectContent>{tabs.map((id) => <SelectItem key={id} value={id}>{t(TAB_LABELS[id]!)}</SelectItem>)}</SelectContent>
             </Select>
           ) : (
-            <TabsList data-bb-ru-skip className="h-auto w-auto flex-wrap">
-              {tabs.map((id) => <TabsTrigger key={id} value={id} className="px-2.5" data-testid={`tab-${id}`}>{t(TAB_LABELS[id]!)}</TabsTrigger>)}
+            <TabsList data-bb-ru-skip className="w-full">
+              {tabs.map((id) => <TabsTrigger key={id} value={id} className="flex-1 px-2 text-[13px]" data-testid={`tab-${id}`}>{t(TAB_LABELS[id]!)}</TabsTrigger>)}
             </TabsList>
           )}
 
@@ -1497,9 +1499,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   onChange={(event) => setSettingsQuery(event.target.value)}
                 />
               </div>
-              <div className={stackControls ? "flex w-full gap-1" : "flex shrink-0 gap-1"} data-testid="settings-depth" aria-label={t("settingsAdvanced")}>
-                <Button className={stackControls ? `${CONTROL_H} min-w-0 flex-1` : CONTROL_H} variant={settingsDepth === "basic" ? "default" : "outline"} aria-pressed={settingsDepth === "basic"} onClick={() => setSettingsDepth("basic")}>{t("settingsBasic")}</Button>
-                <Button className={stackControls ? `${CONTROL_H} min-w-0 flex-1` : CONTROL_H} variant={settingsDepth === "advanced" ? "default" : "outline"} aria-pressed={settingsDepth === "advanced"} onClick={() => setSettingsDepth("advanced")}>{t("settingsAdvanced")}</Button>
+              <div className={stackControls ? "lp-seg flex w-full" : "lp-seg shrink-0"} data-testid="settings-depth" aria-label={t("settingsAdvanced")}>
+                {(["basic", "advanced"] as const).map((depth) => (
+                  <Button key={depth} variant="ghost" className={`lp-seg-item h-[1.875rem] px-3 hover:bg-transparent aria-pressed:bg-[var(--lp-card)] aria-pressed:hover:bg-[var(--lp-card)] ${stackControls ? "min-w-0 flex-1" : ""}`} aria-pressed={settingsDepth === depth} onClick={() => setSettingsDepth(depth)}>{t(depth === "basic" ? "settingsBasic" : "settingsAdvanced")}</Button>
+                ))}
               </div>
             </div>
           {tabs.includes("overview") ? <>
@@ -1519,9 +1522,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </SurfaceBody>
             </Surface>
         {data?.writerBinding && !isGlobal ? (
-          <Card data-testid="writer-binding">
-            <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("projectMachineFolder")}</CardTitle></CardHeader>
-            <CardContent className={`${CARD_BODY} space-y-2 text-sm`}>
+          <Surface testId="writer-binding">
+            <SurfaceHeader><h2 className="text-sm font-medium">{t("projectMachineFolder")}</h2></SurfaceHeader>
+            <SurfaceBody className="space-y-2 text-sm">
               {data.writerBinding.status === "resolved" ? (
                 <p className="min-w-0 break-all">
                   {hostLabel(data.writerBinding.hostId)} · {data.writerBinding.path}
@@ -1557,13 +1560,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               {data.writerBinding.status === "offline" ? <p>{t("bindingOffline")}</p> : null}
               {data.writerBinding.status === "catalog_unavailable" ? <p>{t("writerCatalogUnavailable")}</p> : null}
               {(data.inheritedKeys ?? []).length ? <p className="text-xs text-muted-foreground">{t("inheritedFromGlobal")}</p> : null}
-            </CardContent>
-          </Card>
+            </SurfaceBody>
+          </Surface>
         ) : null}
         <Surface testId="main-agent">
-        <div className={stackControls ? "grid gap-2 px-3 py-3" : "grid gap-2 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}>
+        <SurfaceHeader><h2 className="text-sm font-medium">{t("mainAgent")}</h2></SurfaceHeader>
+        <div className={stackControls ? "lp-panel-body grid gap-2" : "lp-panel-body grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}>
           <div className="space-y-1">
-            <Label className="text-sm">{t("mainAgent")}</Label>
             <p className="text-xs text-muted-foreground">{t("mainAgentHelp")}</p>
             {data?.compiledMainAgent === "none" && displayedValue("main.agent") ? <p className="text-xs text-muted-foreground">{t("mainAgentUnavailable")}</p> : null}
           </div>
@@ -1908,7 +1911,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               {(() => { const row = catalogRow("council.max_rounds"); return row ? <SettingField row={row} value={displayedValue("council.max_rounds")} disabled={false}
                 onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("council.max_rounds", next)} /> : null; })()}
             </CheckGroup> : null}
-            {isGlobal ? null : <section className="min-w-0 space-y-2 rounded-lg border border-border bg-card p-3" data-testid="council-feed" data-bb-ru-skip>
+            {isGlobal ? null : <section className="lp-card min-w-0 space-y-2 p-3" data-testid="council-feed" data-bb-ru-skip>
               <h3 className="text-sm font-medium">{t("councilSessions")}</h3>
               {!councils.length ? <p className="text-xs text-muted-foreground">{t("councilEmpty")}</p> : (
                 <ul className="space-y-1">
@@ -1928,7 +1931,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   {council.agenda.length ? <ol className="list-decimal pl-5 text-xs">{council.agenda.map((item) => <li key={item}>{item}</li>)}</ol> : null}
                   <div className="max-h-96 space-y-2 overflow-y-auto">
                     {council.messages.map((message) => (
-                      <div key={message.seq} className="rounded bg-muted/40 p-2">
+                      <div key={message.seq} className="rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-2">
                         <div className="text-xs font-medium">{council.seats.find((seat) => seat.id === message.seatId)?.title ?? message.seatId} · {t("councilRound")} {message.round} · {message.kind}</div>
                         <div className="whitespace-pre-wrap break-words text-xs">{message.text}</div>
                       </div>
@@ -2013,7 +2016,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             <p className="text-sm text-muted-foreground">{t("serviceIntro")}</p>
             <div className="space-y-2" data-testid="stack-actions">
               {([
-                ["detect", <Button size="sm" className="w-full sm:w-52" data-testid="stack-detect" onClick={() => void runStack("detect")}>{t("detect")}</Button>, "detectHelp"],
+                ["detect", <Button size="sm" variant="outline" className="w-full sm:w-52" data-testid="stack-detect" onClick={() => void runStack("detect")}>{t("detect")}</Button>, "detectHelp"],
                 ["install", <Button size="sm" className="w-full sm:w-52" data-testid="install-stack" onClick={() => { setPendingOp("install"); setConfirmOpen(true); }}>{t("install")}</Button>, "installHelp"],
                 ["connect", <Button size="sm" variant="outline" className="w-full sm:w-52" onClick={() => { setPendingOp("connect"); setConfirmOpen(true); }}>{t("connectOpencode")}</Button>, "connectHelp"],
                 ["rollback", <Button size="sm" variant="outline" className="w-full text-destructive sm:w-52" onClick={() => { setPendingOp("rollback"); setConfirmOpen(true); }}>{t("rollback")}</Button>, "rollbackHelp"],
@@ -2091,7 +2094,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             <Surface testId="cli-preview">
               <SurfaceHeader><h2 className="text-sm font-medium">{t("cliPreview")}</h2></SurfaceHeader>
               <SurfaceBody>
-              {data?.cliPreview ? <pre className="max-h-80 max-w-full overflow-auto rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground"><code>{JSON.stringify(data.cliPreview, null, 2)}</code></pre>
+              {data?.cliPreview ? <pre className="max-h-80 max-w-full overflow-auto rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-3 text-xs text-foreground"><code>{JSON.stringify(data.cliPreview, null, 2)}</code></pre>
                 : <p className="text-xs text-muted-foreground">{t("noDiagnosticData")}</p>}
               </SurfaceBody>
             </Surface>

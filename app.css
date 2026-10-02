@@ -1,0 +1,177 @@
+/*
+ * Lane Pilot in the Pokecut look (https://pokecut.rakibulism.space), the same
+ * visual language as the Pokecut BB theme: nested cards (a gray well with a
+ * hairline around a white card with a soft drop), segmented controls with a
+ * raised white option, outlined white secondary buttons, the pink-violet
+ * gradient on primary actions, soft tinted status pills.
+ *
+ * The --lp-* tokens read the theme's --pk-* tokens and fall back to BB's own
+ * palette, so the plugin stays tidy under any BB theme, light or dark.
+ * Rules sit in the components layer: a Tailwind utility on an element wins.
+ */
+
+[data-bb-plugin="lane-pilot"],
+[data-bb-plugin-root]:not([data-bb-plugin]) {
+  --lp-well: var(--pk-well, color-mix(in oklab, var(--muted) 45%, var(--card)));
+  --lp-card: var(--pk-card, var(--card));
+  --lp-outline: var(--pk-outline, var(--input));
+  --lp-hairline: var(--pk-hairline, var(--border));
+  --lp-drop: var(--pk-drop, 0 1px 2px rgb(0 0 0 / 0.06));
+  --lp-card-drop: var(--pk-card-drop, none);
+  --lp-raise: 0 1px 3px 0 rgb(0 0 0 / 0.12);
+  --lp-accent: var(--pk-accent-gradient, linear-gradient(var(--primary), var(--primary)));
+  --lp-accent-edge: var(--pk-accent-edge, none);
+  --lp-success: var(--success, #3fae4a);
+  --lp-success-text: var(--diff-added, #2f8a45);
+  --lp-info: var(--timeline-accent, #3e7be8);
+  --lp-warning-text: var(--warning-text, #b4540f);
+  --lp-danger-text: var(--destructive-text, var(--destructive));
+}
+
+@layer components {
+  /* Nested card: the well frames a header line and the white body card. */
+  .lp-panel {
+    min-width: 0;
+    max-width: 100%;
+    padding: 4px;
+    border: 1px solid var(--lp-hairline);
+    border-radius: 16px;
+    background-color: var(--lp-well);
+    box-shadow: var(--lp-card-drop);
+  }
+
+  .lp-panel-head {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .lp-panel-body {
+    min-width: 0;
+    max-width: 100%;
+    padding: 12px;
+    border: 1px solid var(--lp-hairline);
+    border-radius: 12px;
+    background-color: var(--lp-card);
+    box-shadow: var(--lp-drop);
+  }
+
+  /* A single white card, for blocks that need no header well. */
+  .lp-card {
+    min-width: 0;
+    border: 1px solid var(--lp-hairline);
+    border-radius: 14px;
+    background-color: var(--lp-card);
+    box-shadow: var(--lp-drop);
+  }
+
+  /* Page header strip: Pokecut's top bar, a quiet card holding the title. */
+  .lp-strip {
+    min-width: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--lp-hairline);
+    border-radius: 14px;
+    background-color: var(--lp-well);
+  }
+
+  /* Raised white surface: buttons, the active segment, the selected nav row. */
+  .lp-raised {
+    border: 1px solid var(--lp-outline);
+    background-color: var(--lp-card);
+    box-shadow: var(--lp-drop);
+  }
+
+  .lp-accent {
+    border-color: transparent;
+    background-color: var(--primary);
+    background-image: var(--lp-accent);
+    box-shadow: var(--lp-accent-edge);
+    color: #ffffff;
+  }
+
+  .lp-accent:hover:not(:disabled) {
+    filter: brightness(1.05) saturate(1.05);
+  }
+
+  /* Segmented control: a gray track, the chosen option raised in white. */
+  .lp-seg {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--lp-hairline);
+    border-radius: 10px;
+    background-color: var(--lp-well);
+  }
+
+  .lp-seg-item {
+    border-radius: 7px;
+    color: var(--muted-foreground);
+    font-weight: 500;
+  }
+
+  .lp-seg-item:hover {
+    color: var(--foreground);
+  }
+
+  .lp-seg-item:is([data-state="active"], [aria-pressed="true"]) {
+    background-color: var(--lp-card);
+    box-shadow: var(--lp-raise);
+    color: var(--foreground);
+    font-weight: 600;
+  }
+
+  /* Navigation rows: quiet until chosen; the chosen one is a raised pill. */
+  .lp-nav-item {
+    border-radius: 10px;
+    color: var(--muted-foreground);
+  }
+
+  .lp-nav-item:hover {
+    color: var(--foreground);
+  }
+
+  .lp-nav-item:is([aria-selected="true"], [aria-current="page"]) {
+    background-color: var(--lp-card);
+    box-shadow: inset 0 0 0 1px var(--lp-outline), var(--lp-drop);
+    color: var(--foreground);
+  }
+
+  /* Small square tile for a status mark, like Pokecut's stat icons. */
+  .lp-tile {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--lp-outline);
+    border-radius: 9px;
+    background-color: var(--lp-card);
+    box-shadow: var(--lp-drop);
+  }
+
+  .lp-switch[data-state="checked"] {
+    background-color: var(--primary);
+    background-image: var(--lp-accent);
+  }
+
+  .lp-switch[data-state="unchecked"] {
+    background-color: var(--lp-outline);
+  }
+
+  .lp-switch > span {
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  }
+
+  /* Status pills: soft tint, coloured text. */
+  .lp-pill-success { background-color: color-mix(in oklab, var(--lp-success) 14%, transparent); color: var(--lp-success-text); }
+  .lp-pill-info { background-color: color-mix(in oklab, var(--lp-info) 13%, transparent); color: var(--lp-info); }
+  .lp-pill-danger { background-color: color-mix(in oklab, var(--destructive) 12%, transparent); color: var(--lp-danger-text); }
+  .lp-pill-neutral { background-color: var(--lp-card); box-shadow: inset 0 0 0 1px var(--lp-outline); color: var(--foreground); }
+  .lp-pill-muted { background-color: color-mix(in oklab, var(--foreground) 7%, transparent); color: var(--foreground); }
+
+  .lp-text-success { color: var(--lp-success-text); }
+  .lp-text-warning { color: var(--lp-warning-text); }
+}

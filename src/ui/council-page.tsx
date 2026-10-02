@@ -20,7 +20,7 @@ const PROJECT_KEY = "lane-pilot:council:project";
 /** Below this the council list (16rem) and the chat no longer fit side by side. */
 const COUNCIL_COMPACT_MAX = 640;
 /** 16px text on phones keeps iOS from zooming into the native select. */
-const SELECT_CLASS = "h-9 rounded-md border bg-background px-2 text-base sm:h-8 sm:text-sm";
+const SELECT_CLASS = "h-9 rounded-lg border border-[var(--lp-outline)] bg-[var(--lp-card)] px-2 text-base shadow-[var(--lp-drop)] sm:h-8 sm:text-sm";
 /** Long code, tables and paths scroll inside the message instead of widening the page. */
 const MARKDOWN_CLASS = "min-w-0 text-sm [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto";
 
@@ -117,33 +117,33 @@ export function CouncilPage() {
       {projects.length > 0 && !detail ? <p className="text-sm text-muted-foreground">{t("councilEmpty")}</p> : null}
       {detail ? <div className="flex min-h-0 min-w-0 flex-1 gap-3">
         {compact ? null : (
-          <aside className="w-64 shrink-0 space-y-1 overflow-y-auto rounded-md border p-2" data-testid="council-list">
+          <aside className="lp-panel w-64 shrink-0 space-y-1 overflow-y-auto" data-testid="council-list">
             {councils.map((row) => (
-              <button key={row.id} type="button" onClick={() => setCouncilId(row.id)} className={`block w-full rounded px-2 py-1 text-left text-sm hover:bg-muted ${row.id === councilId ? "bg-muted" : ""}`}>
+              <button key={row.id} type="button" onClick={() => setCouncilId(row.id)} aria-current={row.id === councilId ? "page" : undefined} className="lp-nav-item block w-full px-2.5 py-2 text-left text-sm hover:bg-state-hover">
                 <div className="line-clamp-2 break-words">{row.question}</div>
                 <div className="text-xs text-muted-foreground">{t(`councilState_${row.state}` as never) || row.state} · {t("councilRound")} {row.round}</div>
               </button>
             ))}
           </aside>
         )}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border">
+        <section className="lp-card flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <>
-              <header className={`max-h-[40%] shrink-0 space-y-1 overflow-y-auto border-b [overflow-wrap:anywhere] ${compact ? "p-2" : "p-3"}`} data-testid="council-header">
+              <header className={`max-h-[40%] shrink-0 space-y-1 overflow-y-auto border-b border-[var(--lp-hairline)] [overflow-wrap:anywhere] ${compact ? "p-2" : "p-3"}`} data-testid="council-header">
                 <div className={`text-sm font-medium ${compact ? "line-clamp-4" : ""}`}>{detail.question}</div>
                 {compact ? <Disclosure compact summary={`${t("councilTitle")} · ${t("councilRound")} ${detail.round}/${detail.maxRounds}`}>{roster}</Disclosure> : roster}
               </header>
               <div ref={feed} className={`min-h-0 min-w-0 flex-1 space-y-2 overflow-y-auto [overflow-wrap:anywhere] ${compact ? "p-2" : "p-3"}`} data-testid="council-messages">
                 {detail.messages.map((message) => (
-                  <div key={message.seq} className={`min-w-0 rounded p-2 ${message.seatId === "owner" ? "bg-primary/10" : message.seatId === "moderator" ? "text-muted-foreground" : "bg-muted/40"}`}>
+                  <div key={message.seq} className={`min-w-0 rounded-xl p-2.5 ${message.seatId === "owner" ? "bg-primary/10" : message.seatId === "moderator" ? "text-muted-foreground" : "border border-[var(--lp-hairline)] bg-[var(--lp-well)]"}`}>
                     <div className="text-xs font-medium">{speakerName(detail, message.seatId)}{message.seatId === "owner" || message.round === 0 ? "" : ` · ${t("councilRound")} ${message.round}`}{message.kind === "status" ? ` · ${t("councilStatusKind")}` : ""}</div>
                     <Markdown content={message.text} className={MARKDOWN_CLASS} />
                   </div>
                 ))}
                 {detail.speaking ? <div className="text-xs italic text-muted-foreground" data-testid="council-typing">{speakerName(detail, detail.speaking)} {t("councilTyping")}</div> : null}
-                {detail.recommendation ? <div className="min-w-0 rounded border p-2 text-sm"><div className="font-medium">{t("councilDecision")}</div><Markdown content={detail.recommendation} className={MARKDOWN_CLASS} />{detail.decisionPath ? <div className="text-xs text-muted-foreground">{detail.decisionPath}</div> : null}</div> : null}
+                {detail.recommendation ? <div className="lp-raised min-w-0 rounded-xl p-2.5 text-sm"><div className="font-medium">{t("councilDecision")}</div><Markdown content={detail.recommendation} className={MARKDOWN_CLASS} />{detail.decisionPath ? <div className="text-xs text-muted-foreground">{detail.decisionPath}</div> : null}</div> : null}
                 {detail.reason ? <div className="text-xs text-destructive">{detail.reason}</div> : null}
               </div>
-              <footer className={`flex shrink-0 flex-wrap gap-2 border-t ${compact ? "p-2" : "p-3"}`} data-testid="council-composer">
+              <footer className={`flex shrink-0 flex-wrap gap-2 border-t border-[var(--lp-hairline)] ${compact ? "p-2" : "p-3"}`} data-testid="council-composer">
                 <Input className={compact ? "min-w-0 basis-full" : "min-w-0 flex-1"} value={draft} disabled={!running || busy} placeholder={t("councilSayPlaceholder")} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void say(); }} aria-label={t("councilSay")} />
                 <Button className={compact ? "min-w-0 flex-1" : undefined} type="button" size="sm" disabled={!running || busy || !draft.trim()} onClick={() => void say()}>{t("councilSay")}</Button>
                 <Button className={compact ? "min-w-0 flex-1" : undefined} type="button" size="sm" variant="outline" disabled={!running || busy} onClick={() => void say(true)}>{t("councilDecide")}</Button>

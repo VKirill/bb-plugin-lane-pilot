@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.53 — 2026-10-02
+
+Lane Pilot now looks like the Pokecut theme BB already wears (after https://pokecut.rakibulism.space).
+
+- **Nested cards.** Every block is a gray well with a hairline: the title sits in the well, the content in a white card with a soft drop. The project title sits in a quiet header strip.
+- **Segmented controls.** The tabs, «Основные / Расширенные» and the language switch are gray tracks with the chosen option raised in white.
+- **Buttons.** Primary actions wear the pink-violet gradient; secondary buttons are white with an outline and a soft shadow; «Откатить» is a soft red button.
+- **Navigation.** Project and section rows are quiet until chosen; the chosen one is a raised white pill.
+- **Statuses.** Run and attempt states are soft tinted pills: green when accepted, blue while running, red when failed. The Overview checklist marks sit in small tiles.
+- **Switches** are gradient when on. Inputs and selects are white with an outline.
+- The Council page, rules from lessons and the Agents screen use the same cards and pills.
+- One stylesheet, `app.css`, holds these tokens. It reads the Pokecut theme's colours and falls back to BB's own, so the plugin stays tidy under any theme, light or dark.
+
 ## 0.1.52 — 2026-10-02
 
 The settings screen, reorganised so that someone opening Lane Pilot for the first time can find their way around, on a phone as well as a desktop.

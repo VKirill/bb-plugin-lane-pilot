@@ -179,9 +179,9 @@ export function RuleProposals({ projectId, picker }: {
       {pending.length > 0 ? <div className="space-y-2">
         <div className="text-xs font-medium">{t("rulesPending")}</div>
         {pending.map((proposal) => (
-          <div key={proposal.id} className="max-w-xl space-y-2 rounded-md border border-border p-3" data-testid={`rule-${proposal.id}`}>
+          <div key={proposal.id} className="lp-card max-w-xl space-y-2 p-3" data-testid={`rule-${proposal.id}`}>
             {meta(proposal)}
-            <textarea aria-label={t("rulesTitle")} className="min-h-20 w-full rounded-md border border-input bg-background p-2 text-sm"
+            <textarea aria-label={t("rulesTitle")} className="min-h-20 w-full rounded-lg border border-[var(--lp-outline)] bg-[var(--lp-card)] p-2 text-sm"
               style={{ overflowWrap: "anywhere" }} maxLength={600} value={drafts[proposal.id] ?? proposal.rule}
               onChange={(event) => setDrafts((current) => ({ ...current, [proposal.id]: event.target.value }))} />
             {evidence(proposal)}
@@ -195,7 +195,7 @@ export function RuleProposals({ projectId, picker }: {
       {accepted.length > 0 ? <div className="space-y-2">
         <div className="text-xs font-medium">{t("rulesAccepted")}</div>
         {accepted.map((proposal) => (
-          <div key={proposal.id} className="flex max-w-xl items-start justify-between gap-2 rounded-md border border-border p-3" data-testid={`rule-${proposal.id}`}>
+          <div key={proposal.id} className="lp-card flex max-w-xl items-start justify-between gap-2 p-3" data-testid={`rule-${proposal.id}`}>
             <div className="min-w-0 space-y-1">
               <p className="text-sm" style={{ overflowWrap: "anywhere" }}>{proposal.rule}</p>
               {meta(proposal)}
