@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.56 — 2026-10-02
+
+- The left menu starts on the same line as BB's page header strip, so the grid is even.
+
 ## 0.1.55 — 2026-10-02
 
 «Обслуживание» shows what is on the machine and offers only the action that is needed.

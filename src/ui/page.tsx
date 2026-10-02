@@ -1369,7 +1369,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </Select>
         </div>
       </div>
-      <nav className={compactChrome ? "hidden" : "flex w-[13.5rem] shrink-0 flex-col p-2"} aria-label={t("scopeNav")} data-testid="scope-rail">
+      <nav className={compactChrome ? "hidden" : "flex w-[14.5rem] shrink-0 flex-col py-2 pl-6 pr-2"} aria-label={t("scopeNav")} data-testid="scope-rail">
         <div className="flex flex-col gap-1 pb-2" data-testid="scope-nav">
           <Button type="button" role="tab" size="sm" aria-selected={activeScope === "globals"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" onClick={() => setActiveScope("globals")}>{t("navGlobals")}</Button>
           <Button type="button" role="tab" size="sm" aria-selected={activeScope === "agents"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
