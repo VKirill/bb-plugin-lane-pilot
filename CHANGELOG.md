@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.64 — 2026-10-02
+
+Third step onto BB rails: writers work in BB's own worktree environments.
+
+- **A writer's isolated copy is a BB «Рабочее дерево» environment** whenever the run works in the project's own checkout on that machine (SelfyStudio on OVH, for one). BB creates it, it shows in BB as an environment, and its threads, diff and cleanup are BB's. Lane Pilot still links the dependencies and package builds before the writer starts, and still merges the accepted work into main of the project folder. A chat in a section with its own repository keeps Lane Pilot's git worktree in `~/.lane-pilot/worktrees/`, because BB's worktree always forks the project root.
+- **Worktrees are cleaned up when the run closes** (finish or the sweep): their threads are archived and BB retires the environment about five minutes later. While the run is open the writers' threads stay readable.
+- Checked live in «LP sandbox rules», twice: the writer ran in `…/environment-git-worktree/…`, was accepted at the first try and merged into main; after the run closed BB destroyed the environment on its own.
+
 ## 0.1.63 — 2026-10-02
 
 - **Writers in their own worktree could not start.** Lane Pilot made each attempt's worktree inside the plugin's data dir, which sits in BB's storage on the host; BB now refuses a thread there unless it is one of its own environments (`HTTP 409: Workspace path is inside bb-managed storage but is not a workspace of this project`). Every SelfyStudio writer on OVH failed this way. Worktrees now live in `~/.lane-pilot/worktrees/` on the host. The PM chat's «Project checkout» was right all along.

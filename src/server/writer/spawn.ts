@@ -20,6 +20,12 @@ import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
+/** True when the run works in the project's own checkout on that machine, which BB's managed worktree can fork. */
+export async function isProjectRootCheckout(bb: { sdk: { projects: { get(args: { projectId: string }): Promise<unknown> } } }, projectId: string, hostId: string, path: string): Promise<boolean> {
+  const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
+  return (project?.sources ?? []).some((source) => source.hostId === hostId && typeof source.path === "string" && resolve(source.path) === resolve(path));
+}
+
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
 
@@ -187,9 +193,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         if (bound?.workspace_path && bound.environment_id) {
           workspacePath=bound.workspace_path;
           environment={type:"reuse",environmentId:bound.environment_id};
-        } else if (nativeRun) {
-          // BB's managed worktree always forks the project root; a Lane chat works in a section's own
-          // repository, so Lane Pilot adds a git worktree of that repository and hosts the writer there.
+        } else if (nativeRun && !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path)) {
+          // BB's managed worktree always forks the project root; a Lane chat in a section with its own
+          // repository gets a git worktree of that repository from Lane Pilot instead (~/.lane-pilot/worktrees).
           if (bound?.workspace_path) workspacePath=bound.workspace_path;
           else {
             const created=await host.call("gitCreateWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,name:input.attemptId},

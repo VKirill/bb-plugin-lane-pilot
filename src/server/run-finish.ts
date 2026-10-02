@@ -36,10 +36,36 @@ export async function closeAbandonedRuns(bb: BbPluginApi, db: ReturnType<typeof 
     }
     if (abandoned && closeRun(db, row.id, "sweep")) {
       releaseActivation(db, row.project_id, row.id);
+      await cleanupRunEnvironments(bb, db, row.id);
       closed.push(row.id);
     }
   }
   return closed;
+}
+
+/**
+ * A closed run's attempt worktrees that BB made (managed environments) are archived with their threads and
+ * deleted, so they do not pile up on the host. Kept while the run is open, so the owner can still read the writers.
+ */
+export async function cleanupRunEnvironments(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, runId: string): Promise<string[]> {
+  const run = getRun(db, runId);
+  const rows = db.prepare("SELECT DISTINCT environment_id FROM lane_pilot_attempt WHERE run_id=? AND environment_id IS NOT NULL").all(runId) as Array<{ environment_id: string }>;
+  const removed: string[] = [];
+  for (const { environment_id: environmentId } of rows) {
+    if (environmentId === run?.writer_environment_id) continue;
+    try {
+      await bb.sdk.environments.archiveThreads({ environmentId });
+      // With its threads archived BB retires the worktree itself about five minutes later; a delete that BB
+      // refuses as still «ready» meanwhile is fine (seen live on 2026-10-02).
+      await bb.sdk.environments.delete({ environmentId }).catch((cause: unknown) => {
+        if (!/cannot be deleted while ready/i.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
+      });
+      removed.push(environmentId);
+    } catch (cause) {
+      bb.log.warn(`Lane Pilot could not remove environment ${environmentId} of ${runId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+  return removed;
 }
 
 export async function finishRunSafely(
@@ -80,4 +106,5 @@ export async function finishRunSafely(
   }
   if (!closeRun(db, runId, closedBy)) throw new Error("running attempts remain; cancel them before finishing the run");
   releaseActivation(db, projectId, runId);
+  void cleanupRunEnvironments(bb, db, runId);
 }
