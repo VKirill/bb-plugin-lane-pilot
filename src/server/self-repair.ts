@@ -6,6 +6,7 @@ import packageJson from "../../package.json";
 import { fullAccessSpawn } from "./pm-spawn";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { stringAt } from "./values";
+import { writerBriefStats } from "../writer-brief";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../contracts";
 import type { ServerCore } from "./core";
@@ -397,7 +398,8 @@ export function selfRepairRpc(ctx: ServerCore) {
     self_repair_status: async () => repair.status(),
     self_repair_configure: async (patch) => repair.setConfig(patch),
     self_repair_tick: async ({ dryRun, since }) => repair.tick({ dryRun, since }),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "self_repair_status" | "self_repair_configure" | "self_repair_tick">;
+    writer_brief_stats: async ({ projectId, since, until }) => writerBriefStats(ctx.db, projectId, since, until ?? Date.now()),
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "self_repair_status" | "self_repair_configure" | "self_repair_tick" | "writer_brief_stats">;
 }
 
 export type SelfRepair = ReturnType<typeof createSelfRepair>;

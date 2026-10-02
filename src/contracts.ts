@@ -1072,6 +1072,10 @@ export const rpcContract = defineRpcContract({
       finished: z.array(z.string()),
     }).strict(),
   },
+  writer_brief_stats: {
+    input: z.object({ projectId: z.string().min(1), since: z.number().int(), until: z.number().int().optional() }).strict(),
+    output: z.unknown(),
+  },
   self_repair_status: {
     input: z.object({}).strict(),
     output: z.unknown(),

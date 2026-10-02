@@ -1,4 +1,5 @@
 import { breakerKey } from "@lane-pilot/resilience";
+import { writerMemory } from "../../writer-brief";
 import { parseDirtSnapshots } from "../../cli-outcome";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
@@ -7,7 +8,7 @@ import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReason
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../../jev-reasoning";
 import { spawnWithSeam } from "../../spawn-seam";
 import { buildExecutionPacket, renderExecutionPacket } from "../../stages/execution-packet";
-import { memoryContext, parseMemorySettings } from "../../stages/memory";
+import { parseMemorySettings } from "../../stages/memory";
 import { resolveRetryEffort } from "../../stages/retry-effort";
 import { boundedAgentName } from "../../stages/role";
 import { WORKSPACE_DIRT_COMMAND } from "../../workspace-dirt";
@@ -79,9 +80,10 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
       const rules=await relevantRules(allRules,input.task as unknown as Record<string,unknown>,input.config.hostId);
       const rulesText=rules.map((rule)=>`- ${rule.rule}`).join("\n");
-      const relevantMemory=memoryOn
-        ? memoryContext(searchMemoryRecords(db,input.projectId,taskMemoryQuery,100,memorySettings.searchEngine,"subagent",memorySettings.personalBot).filter((record)=>!ruleMemoryIds.has(record.id)),taskMemoryQuery,memorySettings.contextBudget)
-        : {text:"",records:[],estimatedTokens:0};
+      // The writer gets at most three notes that name a path of this task; other helpers keep the budgeted context.
+      const relevantMemory={text:memoryOn
+        ? writerMemory(searchMemoryRecords(db,input.projectId,taskMemoryQuery,100,memorySettings.searchEngine,"subagent",memorySettings.personalBot).filter((record)=>!ruleMemoryIds.has(record.id)),input.task)
+        : ""};
       const writerProviderId = input.emergency?.providerId ?? (typeof settings["writer.provider"] === "string"
         ? settings["writer.provider"] as string : input.config.writerProviderId);
       const writerModel = input.emergency?.model ?? (typeof settings["writer.model"] === "string" && settings["writer.model"]
@@ -301,6 +303,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       }
       const helperSnapshot = requireHelperSpawn({ bb, db, projectId:input.projectId, runId:input.runId });
       const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
+      const writerBrief = writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
+        ? `Fallback reason: ${input.emergency.reason}. Primary provider/model: ${typeof settings["writer.provider"] === "string" ? settings["writer.provider"] : input.config.writerProviderId}/${typeof settings["writer.model"] === "string" ? settings["writer.model"] : input.config.writerModel}.`
+        : undefined,writerAgent,input.pmReadContext ?? "",rulesText);
       const existingTrace = getReasoningTrace(db, input.attemptId);
       if (existingTrace) {
         saveReasoningTrace(db, {
@@ -313,6 +318,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
             executionPacketSha256,
             pmReadContext:input.pmReadContext ?? "",
             agent:writerAgent,
+            promptChars:writerBrief.length,
             helperMode:helperSnapshot?.mode ?? "inherit",
             helperRequired:helperSnapshot?.policy?.required === true,
           },
@@ -327,9 +333,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         ...placement,
         ...requiredPolicyField(bb, helperSnapshot, writerProviderId, "writer"),
         ...execution,
-        prompt: writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
-          ? `Fallback reason: ${input.emergency.reason}. Primary provider/model: ${typeof settings["writer.provider"] === "string" ? settings["writer.provider"] : input.config.writerProviderId}/${typeof settings["writer.model"] === "string" ? settings["writer.model"] : input.config.writerModel}.`
-          : undefined,writerAgent,input.pmReadContext ?? "",rulesText),
+        prompt: writerBrief,
         environment,
         pluginMetadata:{
           role:input.emergency ? "emergency-writer" : "writer",

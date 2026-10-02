@@ -1,4 +1,5 @@
 import { loadBlockedBy } from "../blocked-by";
+import { pmReadBrief } from "../../writer-brief";
 import { buildCliInvocation } from "../../argv-builder";
 import { requiredCliFlags } from "../../cli-flags";
 import { classifyCliOutcome } from "../../cli-outcome";
@@ -197,7 +198,11 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       projectId:args.projectId, runId, taskId, firstAttemptId:attemptId,
       pmThreadId:args.threadId, config:runConfig, task:valid.task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined,
     });
-    return { runId, attemptId, writerThreadId:null, state:"queued", stages:listStageReceipts(db, runId, taskId) };
+    // The writer's brief carries the read stage's facts, not its open questions: those are the PM's to settle.
+    const openQuestions = pmRead.summary ? pmReadBrief(pmRead.summary).openQuestions : [];
+    return { runId, attemptId, writerThreadId:null, state:"queued", stages:listStageReceipts(db, runId, taskId),
+      ...(openQuestions.length ? { pmReadOpenQuestions:openQuestions,
+        pmReadNote:"The writer does not see these questions. If one changes what the writer should do, cancel this attempt and dispatch again with the answer in the plan or contract; otherwise the writer decides from the code." } : {}) };
   }
 
   async function waitWriter(args:{threadId:string; projectId:string; runId:string; timeoutSec:number}): Promise<Record<string, unknown>> {

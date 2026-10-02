@@ -792,6 +792,8 @@ export type ReasoningTrace = {
     agent:string;
     helperMode:string;
     helperRequired:boolean;
+    /** Characters of the brief the writer got; absent before 0.1.90. */
+    promptChars?:number;
   };
   selectionSource?:{
     providerId:string;

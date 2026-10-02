@@ -539,7 +539,8 @@ describe("stage → native writer → receipt", () => {
     const writer=spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer");
     expect(pmRead).toMatchObject({providerId:"critic",model:"critic-model",reasoningLevel:"medium",serviceTier:"default"});
     expect(critique?.prompt).toContain("README notes the managed workspace contract.");
-    expect(writer?.prompt).toContain("README notes the managed workspace contract.");
+    // The writer gets the read stage's key facts; its overview repeats the task.
+    expect(writer?.prompt).toContain("Managed workspaces isolate task edits.");
     expect(fileReads.filter((row)=>row.rootPath===config.writerWorkspacePath && row.path===resolve(config.writerWorkspacePath,"README.md"))).toHaveLength(2);
     expect(listStageReceipts(db,"stage-run",longReadTask.id).find((row)=>row.stageId==="pm-read"))
       .toMatchObject({state:"passed",providerId:"critic",model:"critic-model",threadId:"pm-read-thread"});
@@ -1176,7 +1177,7 @@ describe("stage → native writer → receipt", () => {
     const {harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"writer.agent":"api-writer"});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write the fixture",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    expect(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer")?.prompt).toContain("You are api-writer, the native BB writer");
+    expect(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer")?.prompt).toContain("You are api-writer, the Lane Pilot writer");
     await harness.lifecycle.dispose();
   });
   it("puts host-read line-window content in the actual writer packet before spawning",async()=>{

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.90 — 2026-10-03
+
+A smaller writer brief. Measured on SelfyStudio `gc-pages-polish-2`: 64% of the old 4130-token brief was memory (17 notes, one about the task, seven raw «attempt failed: outside owns_paths» episodes). The same writer (grok-4.6 via Cursor) did the task from a 1110-token brief as well as from the old one; without a new-files rule it once put a helper outside owns_paths. Now the same task gets 1184 tokens (−71%).
+- **Memory by path.** At most three notes: those naming a two-segment tail of an owned or read path (`components/greeting-cards`, `src/site-tool-card-page`; tool caches ignored), then the project's core conventions. Raw failure episodes stay out; repeated failures reach writers as rules.
+- **One rule instead of the episodes:** new files must match owns_paths too, helpers go next to the code.
+- **PM read:** the writer gets the key facts only. The open questions go back to the PM in the dispatch result (`pmReadOpenQuestions`) — cancel and re-dispatch with the answer if one matters.
+- **Each fact once, fixed rules first** (so providers cache that prefix): workspace once, no prose copy of the objective, no empty or default contract fields, verification commands without repeated cwd.
+- **Measure it:** traces record `promptChars`; `writer_brief_stats {projectId, since, until}` returns brief size, tasks accepted on the first attempt and attempts rejected for paths outside owns_paths for a period.
+
 ## 0.1.89 — 2026-10-03
 
 Relay without stale messages («это напоминание устарело»). On the hub 6 of 26 fired reminders arrived after the thread they waited on had already answered, and 15 more were PMs polling «check whether task X merged» by time.
