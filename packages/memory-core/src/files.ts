@@ -15,6 +15,8 @@ export type LaneMemoryFile = {
   contextPriority: string;
   areas: string[];
   hint: string;
+  /** ISO date after which the record no longer holds; empty when it has none. */
+  validUntil: string;
 };
 
 const SENSITIVITY_TO_AUDIENCE: Record<string, MemoryAudience> = { public: "export", internal: "subagent", sensitive: "owner", "encrypted-required": "owner" };
@@ -85,14 +87,16 @@ export function parseLaneMemoryFile(text: string): LaneMemoryFile | null {
     contextPriority: top.context_priority ?? "normal",
     areas: lists.areas ?? (retrieval.areas ? listValue(retrieval.areas) : []),
     hint: retrieval.hint ? unquote(retrieval.hint) : "",
+    validUntil: top.valid_until?.trim() ?? "",
   };
 }
 
 const CONTENT_MAX = 4000;
 
 /** A file record as a memory candidate: `always` files are core, the claim leads, the body follows within bounds. */
-export function laneMemoryFileToCandidate(file: LaneMemoryFile): { candidate: MemoryCandidate; audience: MemoryAudience } | null {
+export function laneMemoryFileToCandidate(file: LaneMemoryFile, now = new Date()): { candidate: MemoryCandidate; audience: MemoryAudience } | null {
   if (file.status !== "active") return null;
+  if (file.validUntil && !Number.isNaN(Date.parse(file.validUntil)) && Date.parse(file.validUntil) < now.getTime()) return null;
   const content = [file.claim.trim(), file.body.trim()].filter(Boolean).join("\n\n").slice(0, CONTENT_MAX);
   if (!content) return null;
   const hintTerms = file.hint.split(/[,;]/).map((term) => term.trim().toLowerCase()).filter(Boolean);
@@ -124,11 +128,12 @@ export function renderLaneMemoryFile(record: MemoryRecord, audience: MemoryAudie
     "schema_version: 2",
     "status: active",
     `memory_type: ${record.kind === "core" ? "normative" : "semantic"}`,
-    "truth_mode: observed",
+    // A rule is a norm; a maintainer note is what an accepted task showed. Neither is an owner statement unless the owner confirmed it.
+    `truth_mode: ${record.concepts.includes("rule") ? "normative" : "observed"}`,
     `claim: ${yamlString(claim)}`,
     `language: ${language}`,
     "source:",
-    "  authority: agent",
+    `  authority: ${record.concepts.includes("owner-confirmed") ? "owner-instruction" : "agent"}`,
     "evidence:",
     "  - type: lane-pilot",
     `    ref: ${yamlString(`memory ${record.id} ${date}`)}`,

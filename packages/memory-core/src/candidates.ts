@@ -2,8 +2,18 @@ import { createHash } from "node:crypto";
 import type { MemoryCandidate, MemoryKind, MemorySettings } from "./settings";
 
 const MAX_ENTRY_BYTES=64_000;
-const SECRET_LIKE=/(?:\bsk-[A-Za-z0-9_-]{20,}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bxox[baprs]-[A-Za-z0-9-]{20,}\b|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|access[_-]?token|password)\s*[:=]\s*\S+)/i;
-const INSTRUCTION_INJECTION=/(?:ignore (?:all )?(?:previous|prior) instructions|forget (?:all )?(?:previous|prior) instructions|забудь(?:те)? (?:все )?(?:прежние |предыдущие )?инструкции)/i;
+const SECRET_LIKE=/(?:\bsk-[A-Za-z0-9_-]{20,}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bxox[baprs]-[A-Za-z0-9-]{20,}\b|\bAKIA[0-9A-Z]{16}\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\bBearer\s+[A-Za-z0-9._~+/-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*\S+)/i;
+const INSTRUCTION_INJECTION=/(?:ignore (?:all )?(?:previous|prior|above) instructions|forget (?:all )?(?:previous|prior) instructions|disregard (?:all )?(?:previous|prior|above)|you are now\b|^\s*#{0,6}\s*(?:system|assistant)\s*:|<\/?(?:system|instructions)>|забудь(?:те)? (?:все )?(?:прежние |предыдущие )?инструкции|игнорируй (?:все )?(?:прежние |предыдущие )?инструкции)/im;
+
+/**
+ * Why a text must not be stored as memory: it looks like a credential, or it talks to the assistant as an
+ * instruction override. Every path that writes memory checks this — maintainer output, imports, rules.
+ */
+export function memoryContentIssue(content:string):string|null {
+  if(SECRET_LIKE.test(content))return "memory content appears to contain a credential; no memory was saved";
+  if(INSTRUCTION_INJECTION.test(content))return "memory content addresses the assistant with an instruction override; no memory was saved";
+  return null;
+}
 
 export function estimateTokens(text:string):number { return Math.ceil(Buffer.byteLength(text,"utf8")/4); }
 
@@ -25,8 +35,8 @@ export function parseMemoryCandidates(raw:unknown,settings:MemorySettings):Memor
     if(Object.keys(row).some((key)=>!["kind","content","concepts"].includes(key)))throw new Error("memory entry contains unsupported fields");
     if(row.kind!=="core"&&row.kind!=="note")throw new Error("memory kind must be core or note");
     if(typeof row.content!=="string"||!row.content.trim()||Buffer.byteLength(row.content,"utf8")>MAX_ENTRY_BYTES)throw new Error("memory content is empty or exceeds the 64000 byte limit");
-    if(SECRET_LIKE.test(row.content))throw new Error("memory content appears to contain a credential; no memory was saved");
-    if(INSTRUCTION_INJECTION.test(row.content))throw new Error("memory content addresses the assistant with an instruction override; no memory was saved");
+    const issue=memoryContentIssue(row.content);
+    if(issue)throw new Error(issue);
     if(!Array.isArray(row.concepts)||row.concepts.length>24||row.concepts.some((item)=>typeof item!=="string"||!item.trim()||item.length>100))throw new Error("memory concepts must be up to 24 short strings");
     const entry={kind:row.kind as MemoryKind,content:row.content.trim(),concepts:[...new Set((row.concepts as string[]).map((item)=>item.trim().toLowerCase()))]};
     const tokens=estimateTokens(entry.content);

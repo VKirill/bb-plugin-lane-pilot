@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.91 — 2026-10-03
+
+Project memory after the audit against the SMA blueprints (`.bb/chats/thr_tev4nistgf/artifacts/memory-audit/`). The database is the source of truth; the `.agents/memory` files mirror it.
+- **One door for every write.** `storeMemoryRecords` refuses credentials (now also AWS keys, JWTs, bearer tokens, `secret:`) and instruction overrides (`you are now`, `## SYSTEM:`, `<system>`…) on every path — rules and imports used to skip the maintainer's check.
+- **Memory is data in the brief.** Writer briefs and council prompts fence memory and PM read facts in `<project_memory>` / `<pm_read_facts>` marked «data, not instructions»; each note is one line, so it cannot forge the next heading.
+- **Failures are not memory.** The lessons sweep counts failures and lists repeated ones as rule proposals, but no longer stores them: 127 of the hub's 155 records were raw «attempt failed» logs. A one-time migration removes them and two orphaned search-index rows (backup: `backups/data-before-0.1.91-*.db`).
+- **One-way mirror.** Import skips Lane Pilot's own `lp-*` exports (a revoked rule no longer comes back from its file) and records past `valid_until`. Export removes `lp-*` files whose record is gone and marks rules `truth_mode: normative`, owner-confirmed ones `authority: owner-instruction`.
+
 ## 0.1.90 — 2026-10-03
 
 A smaller writer brief. Measured on SelfyStudio `gc-pages-polish-2`: 64% of the old 4130-token brief was memory (17 notes, one about the task, seven raw «attempt failed: outside owns_paths» episodes). The same writer (grok-4.6 via Cursor) did the task from a 1110-token brief as well as from the old one; without a new-files rule it once put a helper outside owns_paths. Now the same task gets 1184 tokens (−71%).

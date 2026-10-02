@@ -1,3 +1,4 @@
+import { storeMemoryRecords } from "../../packages/memory-core/src/store";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
@@ -63,13 +64,16 @@ describe("insights tools", () => {
 
     saveProjectSetting(db, projectId, "memory.enabled", "true");
     const first = await call("lane_pilot_lessons_sweep", { runId });
-    expect(first).toMatchObject({ state: "stored", sources: 2, candidates: 2, stored: 2 });
+    expect(first).toMatchObject({ state: "counted", sources: 2, candidates: 2, stored: 0 });
     const again = await sweepLessons(createCore(bb, db), projectId);
     expect(again.state).toBe("nothing_new");
 
+    // Failures are no longer stored as memory; the golden check runs on a stored fact.
+    expect(searchMemoryRecords(db, projectId, "discount checkout retry", 10, "fts5", "subagent")).toHaveLength(0);
+    storeMemoryRecords(db, { projectId, audience: "subagent", sourceSha256: "f".repeat(64), coreBudget: 100_000, noteBudget: 100_000, indexBudget: 200_000,
+      entries: [{ kind: "note", content: "Checkout applies the discount once per order, even on retry.", concepts: ["checkout", "discount"] }] });
     const records = searchMemoryRecords(db, projectId, "discount checkout retry", 10, "fts5", "subagent");
     expect(records).toHaveLength(1);
-    expect(records[0]?.concepts).toEqual(expect.arrayContaining(["lesson", "night-review", "blocking", "checkout"]));
 
     const golden = await call("lane_pilot_memory_golden", { runId, cases: `- discount checkout retry -> ${records[0]!.id}\n- unrelated seo query -> nope` });
     expect(golden).toMatchObject({ cases: 2, hits: 1, hitRate: 0.5, misses: [{ query: "unrelated seo query", missing: ["nope"] }] });

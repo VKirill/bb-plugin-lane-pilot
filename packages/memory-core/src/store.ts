@@ -1,3 +1,4 @@
+import { memoryContentIssue } from "./candidates";
 import type Database from "better-sqlite3";
 import { memoryRecordId } from "./candidates";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine } from "./settings";
@@ -17,6 +18,8 @@ export function storeMemoryRecords(db:MemoryDatabase,input:{projectId:string;per
     const personalBot=input.personalBot??"";
     const existing=db.prepare("SELECT kind,content FROM lane_pilot_memory WHERE project_id=? AND personal_bot=?").all(input.projectId,personalBot) as Array<{kind:MemoryKind;content:string}>;
     const ids=new Set(existing.map((row)=>memoryRecordId(input.projectId,row.kind,row.content,personalBot)));
+    // The one door every write passes: rules and imports reach the corpus without the maintainer's parser.
+    for(const entry of input.entries){ const issue=memoryContentIssue(entry.content); if(issue)throw new Error(issue); }
     const pending=input.entries.filter((entry)=>!ids.has(memoryRecordId(input.projectId,entry.kind,entry.content,personalBot)));
     const estimate=(text:string)=>Math.ceil(Buffer.byteLength(text,"utf8")/4);
     const core=existing.filter((row)=>row.kind==="core").reduce((sum,row)=>sum+estimate(row.content),0)+pending.filter((row)=>row.kind==="core").reduce((sum,row)=>sum+estimate(row.content),0);

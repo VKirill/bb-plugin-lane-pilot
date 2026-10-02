@@ -217,6 +217,10 @@ export const migrations = [
   ...ruleMigrations,
   ...triageMigrations,
   ...ruleTrialMigrations,
+  // 0.1.91: failures are no longer memory (82% of the hub corpus were raw «attempt failed» logs, 2026-10-03 audit);
+  // the triage table keeps them and rules carry what repeats. Also drop index rows whose record is gone.
+  `DELETE FROM lane_pilot_memory WHERE concepts_json LIKE '%"lesson"%'`,
+  `DELETE FROM lane_pilot_memory_fts WHERE id NOT IN (SELECT id FROM lane_pilot_memory)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

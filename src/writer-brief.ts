@@ -37,7 +37,8 @@ export function writerMemory(notes:readonly MemoryNote[], task:Pick<TaskV2, "own
   const usable = notes.filter((note) => !note.concepts.includes("lesson"));
   const aboutPaths = usable.filter((note) => anchors.some((anchor) => note.content.includes(anchor)));
   const core = usable.filter((note) => note.kind === "core" && !aboutPaths.includes(note));
-  return [...aboutPaths, ...core].slice(0, MEMORY_LIMIT).map((note) => `- ${note.content}`).join("\n");
+  // One line per note: a note with line breaks could forge the next heading of the brief.
+  return [...aboutPaths, ...core].slice(0, MEMORY_LIMIT).map((note) => `- ${note.content.replace(/\s+/g, " ").trim()}`).join("\n");
 }
 
 /** The PM read stage's key facts for the writer; its overview repeats the task and its open questions are the PM's. */

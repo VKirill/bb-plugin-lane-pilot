@@ -59,6 +59,8 @@ export async function importFileMemory(ctx: ServerCore, input: { projectId: stri
   const files = await listMemoryFiles(ctx, place);
   const byAudience = new Map<MemoryAudience, MemoryCandidate[]>();
   for (const file of files) {
+    // Lane Pilot's own exports: the database holds them already, and a revoked rule must not come back from its file.
+    if (file.name.startsWith("lp-")) { base.skipped.push({ file: file.name, reason: "exported by Lane Pilot" }); continue; }
     const read = await ctx.bb.sdk.files.read({ hostId: place.hostId, rootPath: place.workspace, path: file.path }).catch(() => null);
     const text = read && typeof read === "object" ? Reflect.get(read, "content") : null;
     if (typeof text !== "string") { base.skipped.push({ file: file.name, reason: "unreadable" }); continue; }
@@ -84,7 +86,7 @@ export async function importFileMemory(ctx: ServerCore, input: { projectId: stri
   return { ...base, files: files.length, imported, state: "imported" };
 }
 
-export type MemoryExportResult = { runId: string; records: number; written: number; existing: number; state: "exported" | "skipped"; reason?: string };
+export type MemoryExportResult = { runId: string; records: number; written: number; existing: number; removed: number; state: "exported" | "skipped"; reason?: string };
 
 function listAllRecords(db: LanePilotDatabase, projectId: string, personalBot: string): Array<MemoryRecord & { audience: MemoryAudience }> {
   const rows = db.prepare("SELECT id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? ORDER BY created_at ASC")
@@ -96,19 +98,25 @@ function listAllRecords(db: LanePilotDatabase, projectId: string, personalBot: s
 export async function exportFileMemory(ctx: ServerCore, input: { projectId: string; runId: string }): Promise<MemoryExportResult> {
   const { db } = ctx;
   const settings: MemorySettings = memorySettingsFor(db, input.projectId);
-  const base = { runId: input.runId, records: 0, written: 0, existing: 0 };
+  const base = { runId: input.runId, records: 0, written: 0, existing: 0, removed: 0 };
   if (!settings.enabled) return { ...base, state: "skipped", reason: "memory_disabled" };
   const place = await placeForRun(ctx, input.projectId, input.runId);
   const present = new Set((await listMemoryFiles(ctx, place)).map((file) => file.name));
   const records = listAllRecords(db, input.projectId, settings.personalBot);
-  let written = 0, existing = 0;
+  let written = 0, existing = 0, removed = 0;
+  const wanted = new Set(records.map((record) => exportedFileName(record)));
   for (const record of records) {
     const name = exportedFileName(record);
     if (present.has(name)) { existing += 1; continue; }
     await ctx.bb.sdk.files.write({ hostId: place.hostId, rootPath: place.workspace, path: `${place.workspace}/${LANE_MEMORY_DIR}/${name}`, content: renderLaneMemoryFile(record, record.audience), contentEncoding: "utf8", createParents: true, expectedSha256: null });
     written += 1;
   }
-  return { ...base, records: records.length, written, existing, state: "exported" };
+  // The files mirror the database: a record deleted there (a revoked rule, a cleaned lesson) leaves the folder too.
+  for (const name of present) {
+    if (!name.startsWith("lp-") || wanted.has(name)) continue;
+    await ctx.bb.sdk.files.remove({ hostId: place.hostId, rootPath: place.workspace, path: `${place.workspace}/${LANE_MEMORY_DIR}/${name}` }).then(() => { removed += 1; }, () => undefined);
+  }
+  return { ...base, records: records.length, written, existing, removed, state: "exported" };
 }
 
 export function mountMemorySync(ctx: ServerCore): void {
@@ -125,8 +133,8 @@ export function mountMemorySync(ctx: ServerCore): void {
   });
   bb.agents.registerTool({
     name: "lane_pilot_memory_export",
-    description: "Write Lane Pilot's project memory records as .agents/memory files so terminal claude-lane sessions read the same memory.",
-    instructions: "Use from the active Lane Pilot PM thread after lessons or maintenance stored new records. Existing files are never overwritten; the CLI's lane-memory rebuilds its index on the next run.",
+    description: "Mirror Lane Pilot's project memory (the source of truth) into .agents/memory files so terminal claude-lane sessions read the same memory.",
+    instructions: "Use from the active Lane Pilot PM thread after maintenance or rule decisions. New records are written, lp-* files whose record is gone are removed; hand-written files are never touched. The CLI's lane-memory rebuilds its index on the next run.",
     parameters: z.object({ runId: z.string().min(1) }).strict(),
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });

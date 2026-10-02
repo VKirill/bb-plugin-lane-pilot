@@ -25,7 +25,7 @@ export function memorySettingsFor(db: LanePilotDatabase, projectId: string): Mem
 }
 
 export type LessonsSweepResult = {
-  projectId: string; state: "stored" | "nothing_new" | "skipped"; reason?: string; sources: number; candidates: number; stored: number; since: number; until: number;
+  projectId: string; state: "counted" | "nothing_new" | "skipped"; reason?: string; sources: number; candidates: number; stored: number; since: number; until: number;
   /** Repeated lessons waiting for the owner to turn them into rules; the PM may reword them with lane_pilot_rule_propose. */
   ruleProposals?: Array<Pick<RuleProposal, "id" | "rule" | "occurrences" | "taskCount" | "examples">>;
 };
@@ -155,20 +155,9 @@ export async function sweepLessons(ctx: ServerContext, projectId: string, now = 
   const ruleProposals = listRuleProposals(db, projectId, { state: "proposed", limit: 10 })
     .map(({ id, rule, occurrences, taskCount, examples }) => ({ id, rule, occurrences, taskCount, examples }));
   if (candidates.length === 0) return { ...base, state: "nothing_new", sources: sources.length, ruleProposals };
-  const sourceSha256 = createHash("sha256").update(sources.map((source) => `${source.runId}/${source.taskId}/${source.at}`).join("\n")).digest("hex");
-  const store = (entries: MemoryCandidate[]) => storeMemoryRecords(db, {
-    projectId, personalBot: settings.personalBot, audience: "subagent", sourceSha256, entries,
-    coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget,
-  }).insertedIds.length;
-  let stored = 0;
-  try {
-    stored = store(candidates);
-  } catch {
-    for (const candidate of candidates) {
-      try { stored += store([candidate]); } catch { break; }
-    }
-  }
-  return { ...base, state: "stored", sources: sources.length, candidates: candidates.length, stored, ruleProposals };
+  // Failures are counted, not stored as memory: on the hub they were 82% of the corpus (raw «attempt failed»
+  // logs, 2026-10-03 audit) and crowded out knowledge. What repeats reaches writers as a rule instead.
+  return { ...base, state: "counted", sources: sources.length, candidates: candidates.length, stored: 0, ruleProposals };
 }
 
 function activeProjects(db: LanePilotDatabase, since: number): string[] {
@@ -199,8 +188,8 @@ export function mountInsights(ctx: ServerContext): void {
 
   bb.agents.registerTool({
     name: "lane_pilot_lessons_sweep",
-    description: "Turn recent night review findings, rejected acceptances and failed attempts into project memory for future writers, now.",
-    instructions: "Use from the active Lane Pilot PM thread. The same sweep also runs on a schedule; calling it twice stores nothing twice. ruleProposals lists lessons that keep repeating; reword each as one imperative rule with lane_pilot_rule_propose and tell the owner it waits in Lane Pilot settings.",
+    description: "Count recent night review findings, rejected acceptances and failed attempts, and list the ones that keep repeating as rule proposals.",
+    instructions: "Use from the active Lane Pilot PM thread. Failures are not stored as memory; what repeats becomes a rule. ruleProposals lists lessons that keep repeating; reword each as one imperative rule with lane_pilot_rule_propose and tell the owner it waits in Lane Pilot settings.",
     parameters: z.object({ runId: z.string().min(1) }).strict(),
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
@@ -241,7 +230,7 @@ export function mountInsights(ctx: ServerContext): void {
       if (ctx.isDisposed()) return;
       try {
         const result = await sweepLessons(ctx, projectId, now);
-        if (result.state === "stored") ctx.log(`Lane Pilot lessons for ${projectId}: ${result.stored} of ${result.candidates} stored from ${result.sources} sources`);
+        if (result.state === "counted") ctx.log(`Lane Pilot lessons for ${projectId}: ${result.candidates} from ${result.sources} sources counted`);
       } catch (cause) {
         ctx.log(`Lane Pilot lessons sweep failed for ${projectId}: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
