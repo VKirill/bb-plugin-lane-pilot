@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.50 — 2026-10-02
+
+- **The agent badge has small rounded corners, like the composer.** It copied the box's 14px radius, which made the 20px badge a pill; it now uses 6px.
+
 ## 0.1.49 — 2026-10-02
 
 - **The agent badge no longer covers the placeholder in a collapsed composer.** On a phone the collapsed prompt box clips its overflow, so the badge was drawn inside it, over «Ask a follow-up». It now sits on the box's top border, as in the expanded composer.

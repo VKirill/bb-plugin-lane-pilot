@@ -12,7 +12,6 @@ export function promptBoxFrameStyle(host: HTMLElement): {
   borderStyle: string;
   borderColor: string;
   backgroundColor: string;
-  borderRadius: string;
 } {
   const s = getComputedStyle(host);
   return {
@@ -20,6 +19,5 @@ export function promptBoxFrameStyle(host: HTMLElement): {
     borderStyle: s.borderTopStyle,
     borderColor: s.borderTopColor,
     backgroundColor: s.backgroundColor,
-    borderRadius: s.borderTopLeftRadius || host.style.borderRadius,
   };
 }

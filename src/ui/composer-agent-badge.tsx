@@ -58,6 +58,8 @@ function AgentNameBadge(agent: { agentId: string; description: string }) {
         transform: host ? "translateY(-50%)" : undefined,
         zIndex: host ? 10 : undefined,
         padding: "0.125rem 0.5rem",
+        // The box's own radius turns a 20px chip into a pill; this keeps the box's shape.
+        borderRadius: "0.375rem",
       }}
       aria-label={t("composerAgentBadge")}
     >
