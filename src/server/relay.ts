@@ -195,9 +195,15 @@ export function relayFor(ctx:ServerContext):Relay {
     },
     settled:async (threadId) => {
       const thread = await bb.sdk.threads.get({ threadId }) as {
-        status?:string; queuedMessageCount?:number; activeBackgroundAgentCount?:number;
+        status?:string; queuedMessageCount?:number; activeBackgroundAgentCount?:number; environmentId?:string|null;
       };
-      const commands = backgroundCommands.get(threadId) ?? 0;
+      // threads.get has no background command count; the thread list of its environment does.
+      type Listed = { id:string; activity?:{ activeBackgroundCommandCount?:number } };
+      const listed = thread.environmentId
+        ? await (bb.sdk.threads.list({ environmentId:thread.environmentId, includeHidden:true } as never) as Promise<unknown>).catch(() => null)
+        : null;
+      const row = Array.isArray(listed) ? (listed as Listed[]).find((item) => item.id === threadId) : undefined;
+      const commands = row?.activity?.activeBackgroundCommandCount ?? backgroundCommands.get(threadId) ?? 0;
       return ["idle", "error", "stopped"].includes(thread.status ?? "") && !thread.queuedMessageCount
         && !thread.activeBackgroundAgentCount && commands === 0;
     },

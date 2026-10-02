@@ -218,7 +218,8 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   const dir=common.stdout.trim();
   const exclude=join(isAbsolute(dir)?dir:join(input.worktreePath,dir),"info","exclude");
   const current=await readFile(exclude,"utf8").catch(()=>"");
-  const missing=["/node_modules","node_modules/"].filter((line)=>!current.split("\n").includes(line));
+  // Tool caches the checks write (vitest's .vite/ inside a package) stay out of the writer's commit and of main.
+  const missing=["/node_modules","node_modules/",".vite/",".vitest/",".turbo/",".parcel-cache/"].filter((line)=>!current.split("\n").includes(line));
   if(missing.length) {
     await mkdir(join(exclude,".."),{recursive:true});
     await appendFile(exclude,`${current&&!current.endsWith("\n")?"\n":""}${missing.join("\n")}\n`);

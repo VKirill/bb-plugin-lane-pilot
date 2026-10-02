@@ -63,3 +63,14 @@ describe("git ownership base adapter",()=>{
     await expect(readFile(marker)).rejects.toMatchObject({code:"ENOENT"});
   });
 });
+
+it("treats tool caches inside monorepo packages as bookkeeping, not as the writer's change", async () => {
+  const { filterOwnershipNoise } = await import("../../src/verification/git-ownership");
+  expect(filterOwnershipNoise([
+    "packages/contracts/.vite/vitest/da39a3ee/results.json",
+    "apps/web/node_modules/.cache/x",
+    "apps/api/.turbo/turbo-build.log",
+    "packages/contracts/src/vite.config.ts",
+    "apps/web/.vitepress/config.ts",
+  ])).toEqual(["apps/web/.vitepress/config.ts", "packages/contracts/src/vite.config.ts"]);
+});

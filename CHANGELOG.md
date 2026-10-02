@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.74 — 2026-10-02
+
+- **Tasks run side by side only when they cannot touch the same files.** Before a writer takes a pool slot, Lane Pilot checks the open tasks started earlier on the same checkout (any run of the project); if their `owns_paths` may overlap (one pattern's literal folder contains the other's), the task waits for them instead of conflicting at the merge. Disjoint tasks still run in parallel up to `ops.pool_size`. The wait shows on the `writer-agent` stage («waiting for <task> … owns_paths overlap») and in the plugin log.
+- **Overlapping tasks are no longer refused at dispatch.** The structural plan check reported `owns_overlap` as an error and blocked the second task; it is now a warning, and the tasks run one after another.
+- **Tool caches inside monorepo packages are not the writer's change.** Vitest wrote `packages/contracts/.vite/vitest/…` during a check, and SelfyStudio's `baseline-green-arch` was rejected as «changed paths outside owns_paths». Cache folders (`.vite`, `.vitest`, `.turbo`, `.cache`, `.parcel-cache`, `node_modules`, Python caches) are ignored at any depth, and a writer's worktree excludes them from git so they never reach main.
+- **The relay no longer wakes a waiter while the watched thread still runs a background command** started before the watch began: it reads the thread's background command count from BB's thread list of its environment, not only from events.
+- Deploy script (`bb-plugin-push`, outside this repo): a reload no longer waits for writers, which keep working in their BB threads; it waits only for attempts in acceptance (writer thread idle, attempt updated in the last 30 minutes: checks and the merge into main), up to `LP_DEPLOY_WAIT_MIN` (10) minutes; `LP_DEPLOY_FORCE=1` overrides. Recovery reruns an interrupted acceptance anyway; this avoids cutting a merge in half.
+
+Verified live: three tasks dispatched at once in the sandbox, A owning `notes/par2/**`, B `notes/par2/b.md`, C `notes/solo2/c.md`: B waited for A (log «writer par2-b waits for par2-a»), C ran alongside, all three merged into main without conflicts. A PM watching a thread whose `sleep 180` was already running in the background was woken only after it ended. A deploy went out while two SelfyStudio writers worked; both carried on.
+
 ## 0.1.73 — 2026-10-02
 
 Agents no longer wait for the owner when another thread or time will resolve a block.

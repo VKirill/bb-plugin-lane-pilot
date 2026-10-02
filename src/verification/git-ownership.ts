@@ -39,6 +39,9 @@ function resolveCommit(cwd:string,ref:string) {
   return {ok:true as const,sha};
 }
 
+/** Cache folders tools write at any depth while checks run. */
+export const TOOL_CACHE_DIRS=new Set(["node_modules",".vite",".vitest",".turbo",".cache",".parcel-cache",".eslintcache",".pytest_cache",".mypy_cache",".ruff_cache","__pycache__"]);
+
 /** Bookkeeping the harness, hooks and sibling agents write into a workspace; never a writer's change. */
 export function filterOwnershipNoise(paths:string[]):string[] {
   const prefixes=[".agents/",".bb/",".repowise/",".worktrees/",".claude/worktrees/","node_modules/",".npm-cache/","npm-cache/",".npm/",".pnpm-store/","pnpm-store/",".yarn/cache/",".yarn/unplugged/",".cache/",".turbo/",".next/cache/","coverage/",".git/"];
@@ -46,6 +49,9 @@ export function filterOwnershipNoise(paths:string[]):string[] {
   return [...new Set(paths.map((path)=>path.replace(/^\.\//, "")).filter((path)=>{
     if(prefixes.some((prefix)=>path.startsWith(prefix))||files.has(path)) return false;
     const parts=path.split("/");
+    // Tool caches inside a package of a monorepo (packages/contracts/.vite/vitest/…) are written by the checks
+    // themselves, not by the writer (SelfyStudio, 2026-10-02).
+    if(parts.slice(0,-1).some((part)=>TOOL_CACHE_DIRS.has(part))) return false;
     return !parts.includes("__pycache__")&&!parts.includes(".pytest_cache")&&!parts.includes(".mypy_cache")&&!parts.includes(".ruff_cache")&&!path.endsWith(".pyc")&&!path.endsWith(".pyo");
   }))].sort();
 }

@@ -1,7 +1,9 @@
 import { breakerKey, classifyFailure, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { taskV2Schema } from "../../contracts";
+import { ownsPathsOverlap } from "../../owns-paths";
 import { reconcile } from "../../reconcile";
 import { emergencyFallbackDecision, sameWriterSelection } from "../../stages/emergency-writer";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
@@ -59,6 +61,33 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let primaryFailure:Record<string,unknown>|null=null;
     const pmReadContext=input.pmReadContext ?? stringAt(listStageReceipts(db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read")?.result,"summary") ?? "";
     let releaseWriterSlot:(()=>void)|undefined;
+    const waitForOverlappingTasks = async () => {
+      const base = getRun(db,input.runId)?.writer_workspace_path;
+      let noted = "";
+      for (;;) {
+        if (ctx.isDisposed()) return;
+        const open = listOpenAttempts(db);
+        const mine = open.findIndex((row) => row.id === attemptId);
+        if (mine < 0) return;
+        const blocker = open.slice(0, mine).find((row) => {
+          if (row.task_id === input.taskId || row.project_id !== input.projectId) return false;
+          if (base && getRun(db,row.run_id)?.writer_workspace_path !== base) return false;
+          const parsed = taskV2Schema.safeParse(getTask(db,row.task_id)?.contract);
+          return parsed.success && ownsPathsOverlap(parsed.data.owns_paths, input.task.owns_paths);
+        });
+        if (!blocker) return;
+        if (noted !== blocker.id) {
+          noted = blocker.id;
+          ctx.log(`writer ${input.taskId} waits for ${blocker.task_id}: their owns_paths overlap`);
+          const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
+          if (!stage || stage.state === "pending") {
+            recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
+              reason:`waiting for ${blocker.task_id} (thread ${blocker.thread_id ?? "not started"}): owns_paths overlap` });
+          }
+        }
+        await new Promise((wake) => setTimeout(wake, 10_000));
+      }
+    };
     void (async () => {
       const policy=runPolicyFor(input.runId);
       // "In the project folder" shares one checkout: writers there go one at a time, whatever the pool says,
@@ -66,6 +95,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const runSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
       const inPlace=parseWorkspaceMode(runSettings["adoc.040"])==="in_place";
       const budget=services.runBudgetFor(input.runId,runSettings);
+      // Tasks run side by side only when they cannot touch the same files: one whose owns_paths overlap an
+      // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
+      if (!inPlace) await waitForOverlappingTasks();
       releaseWriterSlot=await services.runWriterPool.acquire(input.runId,inPlace?1:policy.pools.provider);
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){

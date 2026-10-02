@@ -42,3 +42,24 @@ export function fileAllowedByOwns(file: string, ownsPaths: string[]): boolean {
 export function fileBlockedByNeverTouch(file: string, neverTouch: string[]): boolean {
   return neverTouch.some((pattern) => matchOwnsPath(file, pattern));
 }
+
+/** The part of a pattern before its first wildcard: «apps/bot/**» → «apps/bot», «src/*.ts» → «src». */
+function literalBase(pattern: string): string {
+  const parts: string[] = [];
+  for (const part of normalize(pattern).split("/")) {
+    if (/[*?\[]/.test(part)) break;
+    parts.push(part);
+  }
+  return parts.join("/").replace(/\/+$/, "");
+}
+
+/**
+ * Whether two tasks may touch the same file. Conservative: patterns overlap when one's literal base contains
+ * the other's, so a false «overlap» only makes a task wait, never lets two writers edit one file at once.
+ */
+export function ownsPathsOverlap(a: string[], b: string[]): boolean {
+  return a.some((left) => b.some((right) => {
+    const x = literalBase(left), y = literalBase(right);
+    return !x || !y || x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`);
+  }));
+}

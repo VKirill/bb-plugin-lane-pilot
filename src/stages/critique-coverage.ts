@@ -160,7 +160,9 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
     const a=writers[left]!,b=writers[right]!;
     const overlap=(a.owns_paths??[]).flatMap((ap)=> (b.owns_paths??[]).map((bp)=>[ap.replace(/^\.\//,""),bp.replace(/^\.\//,"")] as const))
       .find(([ap,bp])=>{const x=ap.replace(/\/$/,""),y=bp.replace(/\/$/,"");return x===y||x.startsWith(`${y.replace(/\/\*\*$/,"")}/`)||y.startsWith(`${x.replace(/\/\*\*$/,"")}/`);});
-    if(overlap)add(findings,"owns_overlap","tasks/",`Write tasks ${a.id??"?"} and ${b.id??"?"} overlap owns_paths: ${overlap[0]} <> ${overlap[1]}`,"error");
+    // Overlapping tasks are allowed: Lane Pilot runs them one after another (start.ts waits for the earlier one),
+    // so this is a note for the critic, not a block.
+    if(overlap)add(findings,"owns_overlap","tasks/",`Write tasks ${a.id??"?"} and ${b.id??"?"} overlap owns_paths (${overlap[0]} <> ${overlap[1]}); they will run one after another, not in parallel`,"warning");
   }
   let readFiles=0,readBytes=0;const textCache=new Map<string,string>();
   const mentionedTexts:Array<{source:string;text:string}>=[{source:"Plan",text:input.plan}];

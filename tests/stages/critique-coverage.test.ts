@@ -56,7 +56,7 @@ describe("bounded structural critique coverage scan",()=>{
       {id:"b",lane:"writer",owns_paths:["src/core.ts"],has_verification:false},
     ]});
     expect(result.findings).toEqual(expect.arrayContaining([
-      expect.objectContaining({code:"owns_overlap",severity:"error"}),
+      expect.objectContaining({code:"owns_overlap",severity:"warning"}),
       expect.objectContaining({code:"verify_missing",severity:"error",path:"tasks/b"}),
     ]));
   });
