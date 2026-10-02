@@ -20,6 +20,7 @@ It builds on [Lane Stack](https://github.com/VKirill/claude-lane-stack) (MIT): t
 ## Contents
 
 - [Requirements](#requirements)
+- [Screenshots](#screenshots)
 - [How a task goes through Lane Pilot](#how-a-task-goes-through-lane-pilot)
 - [What the plugin does](#what-the-plugin-does)
 - [PM tools](#pm-tools)
@@ -55,6 +56,18 @@ The fork adds functions with the `vk` prefix; Lane Pilot feature-tests each one 
 The fork keeps both snapshots and their digest markers in reserved thread plugin metadata rows, with no database migrations and no host-daemon protocol change; provider bridges report support in their handshake. Since `0.44.0-vk.12`.
 
 How the fork is kept in step with official BB releases, and how to add a function: `VK_PATCHES.md` and `VK_FUNCTIONS.md` in the fork's `vk/experimental` branch.
+
+## Screenshots
+
+The plugin page in BB (a sandbox project, real data from the hub).
+
+| | |
+|---|---|
+| ![Overview](docs/screenshots/overview.png) **Overview** — first steps, machine and folder, main agent | ![Execution](docs/screenshots/settings.png) **Execution** — writer model with its first-try statistics, workspace isolation |
+| ![Checks](docs/screenshots/checks.png) **Checks** — plan and code critique, specialist review, browser check | ![Runs](docs/screenshots/monitor.png) **Runs** — PM runs, attempts and their states, stage receipts |
+| ![Council](docs/screenshots/council.png) **Council** — council of directors on a product question | ![Memory and docs](docs/screenshots/memory.png) **Memory and docs** — project memory and wiki maintenance |
+| ![Rules](docs/screenshots/rules.png) **Rules** — rules learned from failed attempts | ![Maintenance](docs/screenshots/service.png) **Maintenance** — Lane Pilot on the machines, install and repair |
+| ![Global settings](docs/screenshots/global.png) **Global settings** — defaults every project inherits | ![Phone](docs/screenshots/mobile.png) **Phone** — the same page at 390 px |
 
 ## How a task goes through Lane Pilot
 
