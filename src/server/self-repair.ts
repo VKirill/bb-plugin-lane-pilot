@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import packageJson from "../../package.json";
 import { fullAccessSpawn } from "./pm-spawn";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { stringAt } from "./values";
@@ -44,7 +45,7 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
 
 export type Incident = {
   signature: string;
-  kind: "triage" | "blocked" | "stuck" | "log";
+  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage";
   projectId: string;
   runId: string;
   taskId: string;
@@ -53,15 +54,32 @@ export type Incident = {
   writerThreadId: string | null;
   reason: string;
   at: number;
+  /** The Lane Pilot version that was running when it happened; null — before this load, maybe already fixed. */
+  version?: string | null;
 };
 
-type SignatureRecord = { firstAt: number; lastAt: number; count: number; threadId: string | null; spawnedAt: number | null; samples: Incident[] };
-type SelfRepairState = { cursor: number; signatures: Record<string, SignatureRecord>; spawned: Array<{ at: number; threadId: string; signature: string }> };
+export const VERDICTS = ["fixed", "already-fixed", "not-lane-pilot", "needs-owner"] as const;
+export type Verdict = (typeof VERDICTS)[number];
+type SignatureRecord = {
+  firstAt: number; lastAt: number; count: number; threadId: string | null; spawnedAt: number | null; samples: Incident[];
+  spawnVersion?: string; verdict?: Verdict | null;
+};
+type SelfRepairState = { cursor: number; lastTickAt: number | null; signatures: Record<string, SignatureRecord>; spawned: Array<{ at: number; threadId: string; signature: string }> };
 
 const CONFIG_KEY = "self-repair:config";
 const STATE_KEY = "self-repair:state";
 const SYSTEM_REASON = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing/i;
 const STUCK_MS = 45 * 60_000;
+const QUEUED_MS = 2 * 3_600_000;
+const STAGE_MS = 3_600_000;
+const REPEAT_TASKS = 3;
+const FAILED_STATES = "'blocked','validation_failed','spawn_rejected','provider_error','empty_output'";
+const MUTE_MS = 7 * 86_400_000;
+/** Stops by design: a question for the PM or a dependency that ended blocked. */
+const NOT_A_FAULT = /needs_human|depends_on/i;
+export const VERSION: string = packageJson.version;
+/** When this code was loaded: a failure before it may be what this release fixed. */
+const LOADED_AT = Date.now();
 /** Plugin log lines that report Lane Pilot's own failure; a disconnected or slow machine is not one. */
 const LOG_FAILURE = /\bfailed\b|stale API handle|is retired|unhandled|uncaught/i;
 const LOG_NOT_OURS = /^self-repair|writer attempt \S+ failed|writer spawn for \S+ failed|Host is not connected|Timed out waiting for command result|native-trace|reasoning trace|waits for/i;
@@ -81,6 +99,27 @@ export function reasonSignature(kind: Incident["kind"], reason: string): string 
     .trim()
     .slice(0, 160);
   return `${kind}:${createHash("sha256").update(core).digest("hex").slice(0, 16)}:${core}`;
+}
+
+export function parseVerdict(text: string): Verdict | null {
+  const match = /SELF-REPAIR-VERDICT:\s*([a-z-]+)/i.exec(text);
+  const value = match?.[1]?.toLowerCase();
+  return VERDICTS.find((item) => item === value) ?? null;
+}
+
+/**
+ * Whether a kind of problem needs a repair now. Only occurrences under the running version count: a failure from
+ * before this release may be exactly what the release fixed, so it waits to happen again. After a repair the kind
+ * comes back only if it happens again under a newer version (the fix did not hold), a day later without a verdict,
+ * or a week later when the repair said it is not Lane Pilot's or needs the owner.
+ */
+export function isDue(record: SignatureRecord, now: number, version = VERSION): boolean {
+  const live = record.samples.some((sample) => sample.version === version && sample.at > (record.spawnedAt ?? 0));
+  if (!live) return false;
+  if (!record.spawnedAt) return true;
+  if (record.verdict === "not-lane-pilot" || record.verdict === "needs-owner") return now - record.spawnedAt > MUTE_MS;
+  if (record.verdict === "fixed" || record.verdict === "already-fixed") return version !== record.spawnVersion || now - record.spawnedAt > REPEAT_AFTER_MS;
+  return now - record.spawnedAt > REPEAT_AFTER_MS;
 }
 
 /** Failure lines of the plugin log newer than `since`, as incidents. */
@@ -135,6 +174,7 @@ export function repairPrompt(incidents: Incident[], signature: string): string {
     "",
     "Done when: the cause is named with evidence, and it is either fixed and live (with version) or shown to be already fixed or not Lane Pilot's; the PM is told.",
     "Finish with a short report in Russian for the owner: cause, what you changed (or why nothing), how you verified it, version.",
+    "The very last line of your final message is the verdict, for the watcher that reads it to decide whether this kind of problem needs another repair: SELF-REPAIR-VERDICT: fixed | already-fixed | not-lane-pilot | needs-owner",
     "",
     "Change code only in Lane Pilot, Lane Stack or the VK core: other projects belong to their PMs. If a fix needs a decision only the owner can make (money, deleting data, security), stop and put the question in the report instead of acting.",
   ].join("\n");
@@ -156,7 +196,7 @@ export function createSelfRepair(ctx: ServerCore) {
     const raw = await bb.storage.kv.get(STATE_KEY).catch(() => null);
     const row = raw && typeof raw === "object" ? raw as Partial<SelfRepairState> : {};
     const signatures = Object.fromEntries(Object.entries(row.signatures ?? {}).map(([key, record]) => [key, { ...record, samples: record.samples ?? [] }]));
-    return { cursor: row.cursor ?? Date.now() - 3_600_000, signatures, spawned: row.spawned ?? [] };
+    return { cursor: row.cursor ?? Date.now() - 3_600_000, lastTickAt: row.lastTickAt ?? null, signatures, spawned: row.spawned ?? [] };
   }
 
   /** Failures since the cursor that look like Lane Pilot's fault, plus attempts stuck now. */
@@ -164,15 +204,15 @@ export function createSelfRepair(ctx: ServerCore) {
     const ignored = new Set(cfg.ignoreProjects);
     const out: Incident[] = [];
     const runPm = (runId: string) => (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE id=?").get(runId) as { pm_thread_id: string | null } | undefined)?.pm_thread_id ?? null;
-    const triage = db.prepare(`SELECT t.project_id, t.run_id, t.task_id, t.attempt_id, t.reason, t.triaged_at, a.thread_id FROM lane_pilot_failure_triage t
-      LEFT JOIN lane_pilot_attempt a ON a.id=t.attempt_id WHERE t.origin='orchestrator' AND t.status='ok' AND t.triaged_at > ?`).all(since) as Array<{ project_id: string; run_id: string; task_id: string; attempt_id: string; reason: string; triaged_at: number; thread_id: string | null }>;
+    const triage = db.prepare(`SELECT t.project_id, t.run_id, t.task_id, t.attempt_id, t.reason, t.triaged_at, t.failed_at, a.thread_id FROM lane_pilot_failure_triage t
+      LEFT JOIN lane_pilot_attempt a ON a.id=t.attempt_id WHERE t.origin='orchestrator' AND t.status='ok' AND t.triaged_at > ?`).all(since) as Array<{ project_id: string; run_id: string; task_id: string; attempt_id: string; reason: string; triaged_at: number; failed_at: number; thread_id: string | null }>;
     for (const row of triage) {
-      if (ignored.has(row.project_id)) continue;
+      if (ignored.has(row.project_id) || NOT_A_FAULT.test(row.reason)) continue;
       out.push({ signature: reasonSignature("triage", row.reason), kind: "triage", projectId: row.project_id, runId: row.run_id, taskId: row.task_id,
-        attemptId: row.attempt_id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason: row.reason, at: row.triaged_at });
+        attemptId: row.attempt_id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason: row.reason, at: row.failed_at });
     }
     const blocked = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a
-      JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN ('blocked','validation_failed','spawn_rejected','provider_error') AND a.updated_at > ?`).all(since) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string }>;
+      JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN (${FAILED_STATES}) AND a.updated_at > ?`).all(since) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string }>;
     for (const row of blocked) {
       if (ignored.has(row.project_id) || !row.reason || !SYSTEM_REASON.test(row.reason)) continue;
       if (out.some((item) => item.attemptId === row.id)) continue;
@@ -181,13 +221,50 @@ export function createSelfRepair(ctx: ServerCore) {
     }
     const running = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.updated_at, r.project_id FROM lane_pilot_attempt a
       JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state='running' AND a.updated_at < ?`).all(Date.now() - STUCK_MS) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; updated_at: number; project_id: string }>;
+    const now = Date.now();
     for (const row of running) {
       if (ignored.has(row.project_id) || !row.thread_id) continue;
       const thread = await bb.sdk.threads.get({ threadId: row.thread_id }).catch(() => null);
-      if (stringAt(thread, "status") !== "idle") continue;
-      const reason = `attempt still «running» ${Math.round((Date.now() - row.updated_at) / 60_000)} min after its writer thread went idle`;
-      out.push({ signature: reasonSignature("stuck", "attempt running while its writer is idle"), kind: "stuck", projectId: row.project_id, runId: row.run_id,
-        taskId: row.task_id, attemptId: row.id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason, at: row.updated_at });
+      const status = thread ? stringAt(thread, "status") : "missing";
+      if (status !== "idle" && status !== "error" && status !== "stopped" && status !== "missing") continue;
+      const reason = `attempt still «running» ${Math.round((now - row.updated_at) / 60_000)} min while its writer thread is ${status}`;
+      out.push({ signature: reasonSignature("stuck", `attempt running while its writer is ${status}`), kind: "stuck", projectId: row.project_id, runId: row.run_id,
+        taskId: row.task_id, attemptId: row.id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason, at: now });
+    }
+    // Queued for hours in a run where nothing runs: whatever it waits for will never come.
+    const queued = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.updated_at, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+      WHERE a.state='queued' AND a.updated_at < ? AND r.state='running'
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.state='running')`).all(now - QUEUED_MS) as Array<{ id: string; run_id: string; task_id: string; updated_at: number; project_id: string }>;
+    for (const row of queued) {
+      if (ignored.has(row.project_id)) continue;
+      out.push({ signature: reasonSignature("queued", "attempt queued for hours while nothing runs in its run"), kind: "queued", projectId: row.project_id,
+        runId: row.run_id, taskId: row.task_id, attemptId: row.id, pmThreadId: runPm(row.run_id), writerThreadId: null,
+        reason: `attempt queued ${Math.round((now - row.updated_at) / 60_000)} min while nothing runs in its run`, at: now });
+    }
+    // A stage still pending or running an hour after its task's last attempt ended: nobody will finish it.
+    const stages = db.prepare(`SELECT s.run_id, s.task_id, s.stage_id, s.state, s.updated_at, r.project_id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+      WHERE s.state IN ('pending','running') AND s.updated_at < ? AND r.state='running'
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id AND a.state IN ('running','queued'))
+        AND EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id)`).all(now - STAGE_MS) as Array<{ run_id: string; task_id: string; stage_id: string; state: string; updated_at: number; project_id: string }>;
+    for (const row of stages) {
+      if (ignored.has(row.project_id)) continue;
+      out.push({ signature: reasonSignature("stage", "stage left open after its task's attempts ended"), kind: "stage", projectId: row.project_id,
+        runId: row.run_id, taskId: row.task_id, attemptId: `stage:${row.run_id}:${row.task_id}:${row.stage_id}`, pmThreadId: runPm(row.run_id), writerThreadId: null,
+        reason: `stage ${row.stage_id} left ${row.state} ${Math.round((now - row.updated_at) / 60_000)} min after its task's attempts ended`, at: now });
+    }
+    // The same unfamiliar reason in several tasks within a day is a pattern, not one writer's mistake.
+    const recent = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a
+      JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN (${FAILED_STATES}) AND a.updated_at > ?`).all(now - 86_400_000) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string }>;
+    const patterns = new Map<string, typeof recent>();
+    for (const row of recent) {
+      if (ignored.has(row.project_id) || !row.reason || SYSTEM_REASON.test(row.reason) || NOT_A_FAULT.test(row.reason)) continue;
+      const key = reasonSignature("repeat", row.reason);
+      patterns.set(key, [...(patterns.get(key) ?? []), row]);
+    }
+    for (const [signature, rows] of patterns) {
+      if (new Set(rows.map((row) => `${row.run_id}:${row.task_id}`)).size < REPEAT_TASKS || !rows.some((row) => row.updated_at > since)) continue;
+      for (const row of rows) out.push({ signature, kind: "repeat", projectId: row.project_id, runId: row.run_id, taskId: row.task_id, attemptId: row.id,
+        pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason: row.reason!, at: row.updated_at });
     }
     let logText = "";
     try { logText = readTail(join(bb.server.experimental_dataDir, "plugins", "lane-pilot", "logs", "plugin.log"), LOG_TAIL_BYTES); } catch { /* no log yet */ }
@@ -224,15 +301,23 @@ export function createSelfRepair(ctx: ServerCore) {
     for (const row of incidents) groups.set(row.signature, [...(groups.get(row.signature) ?? []), row]);
     for (const [signature, rows] of groups) {
       const record = current.signatures[signature] ?? { firstAt: now, lastAt: now, count: 0, threadId: null, spawnedAt: null, samples: [] };
-      const fresh = rows.filter((row) => !record.samples.some((seen) => seen.attemptId === row.attemptId));
+      const fresh = rows.filter((row) => !record.samples.some((seen) => seen.attemptId === row.attemptId))
+        .map((row) => ({ ...row, version: row.at >= LOADED_AT ? VERSION : null }));
       if (fresh.length) record.lastAt = now;
       record.count += fresh.length;
       record.samples = [...record.samples, ...fresh].slice(-6);
       current.signatures[signature] = record;
     }
     for (const [signature, record] of Object.entries(current.signatures)) if (now - record.lastAt > FORGET_MS) delete current.signatures[signature];
+    for (const record of Object.values(current.signatures)) {
+      if (!record.threadId || record.verdict || await threadBusy(record.threadId)) continue;
+      const threadId = record.threadId;
+      record.verdict = parseVerdict(await Promise.resolve().then(() => bb.sdk.threads.output({ threadId }))
+        .then((result) => { const value = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text; return typeof value === "string" ? value.slice(-4000) : ""; })
+        .catch(() => ""));
+    }
     const due = Object.entries(current.signatures)
-      .filter(([, record]) => !record.spawnedAt || record.lastAt - record.spawnedAt > REPEAT_AFTER_MS)
+      .filter(([, record]) => isDue(record, now))
       .sort(([, a], [, b]) => a.firstAt - b.firstAt);
     let spawned: string | null = null;
     let reason = due.length ? "" : "nothing new";
@@ -257,6 +342,8 @@ export function createSelfRepair(ctx: ServerCore) {
         if (spawned) {
           record.threadId = spawned;
           record.spawnedAt = now;
+          record.spawnVersion = VERSION;
+          record.verdict = null;
           current.spawned = [...today, { at: now, threadId: spawned, signature }];
           ctx.log(`self-repair: started @thread:${spawned} for ${signature}`);
           if (cfg.sectionId) await placeThread(spawned, cfg.projectId, cfg.sectionId);
@@ -269,6 +356,7 @@ export function createSelfRepair(ctx: ServerCore) {
     }
     if (!options.dryRun) {
       current.cursor = now;
+      current.lastTickAt = now;
       await bb.storage.kv.set(STATE_KEY, current as never);
     }
     return { incidents: incidents.length, signatures: [...groups.keys()], spawned, reason };
@@ -290,8 +378,13 @@ export function createSelfRepair(ctx: ServerCore) {
         lanePilotIncidents: open.map(({ kind, projectId, taskId, attemptId, reason }) => ({ kind, projectId, taskId, attemptId, reason: reason.slice(0, 200) })),
         repairs: current.spawned.filter((row) => row.at > since),
       },
+      version: VERSION,
       cursor: current.cursor,
+      lastTickAt: current.lastTickAt,
       knownSignatures: Object.keys(current.signatures).length,
+      waiting: Object.entries(current.signatures).map(([signature, record]) => ({
+        signature: signature.slice(0, 140), count: record.count, due: isDue(record, Date.now()), verdict: record.verdict ?? null, threadId: record.threadId,
+      })),
     };
   }
 

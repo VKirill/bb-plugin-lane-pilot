@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.86 — 2026-10-02
+
+Self-repair repairs what is still broken and leaves what is already fixed:
+- **Only failures under the running version count.** Each occurrence is stamped with the Lane Pilot version that was running; a failure from before the current release waits to happen again. Two of the first three repair threads spent their run proving a fix had already shipped — this stops that.
+- **Verdicts.** A repair thread ends with `SELF-REPAIR-VERDICT: fixed | already-fixed | not-lane-pilot | needs-owner`; the watcher reads it. Fixed kinds come back only if they happen again under a newer version (or a day later with the same version); not-ours and owner-decision kinds stay quiet for a week.
+- **More detectors:** «writer changed no files» and other failed states; running attempts whose writer is idle, failed, stopped or gone; tasks queued for 2 hours while nothing runs in their run; stages left pending/running after their task ended (live: two accepted SelfyStudio tasks); any unfamiliar reason seen in 3 tasks within a day. `needs_human` and `depends_on` stops are by design and ignored.
+- **A watchdog for the watcher.** `scripts/self-repair-watchdog.sh` runs from launchd on the Mac mini every 30 minutes; if Lane Pilot does not answer or its watcher made no pass for 45 minutes, it starts the repair thread itself (once in 6 hours). `self_repair_status` now reports `version`, `lastTickAt` and every known kind with `due` and `verdict`.
+
 ## 0.1.85 — 2026-10-02
 
 - **Self-repair reads the plugin log.** Failure lines of Lane Pilot's own log (`… failed`, `stale API handle`, `is retired`) are incidents too; offline machines, timeouts, traces and the watcher's own lines are not.

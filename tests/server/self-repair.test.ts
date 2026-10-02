@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/database";
-import { createSelfRepair, logIncidents, reasonSignature, repairPrompt } from "../../src/server/self-repair";
+import { createSelfRepair, isDue, logIncidents, parseVerdict, reasonSignature, repairPrompt, VERSION } from "../../src/server/self-repair";
 import type { ServerCore } from "../../src/server/core";
 
-function setup(threadStatus: Record<string, string> = {}) {
+function setup(threadStatus: Record<string, string> = {}, outputs: Record<string, string> = {}) {
   const spawns: Array<Record<string, unknown>> = [];
   const placed: unknown[] = [];
   let next = 0;
@@ -13,6 +13,7 @@ function setup(threadStatus: Record<string, string> = {}) {
     sdk: {
       plugins: { callRpc: async (args: { method: string; input: unknown }) => { placed.push([args.method, args.input]); return { ok: true }; } },
       threads: {
+        output: async ({ threadId }: { threadId: string }) => ({ output: outputs[threadId] ?? "" }) as never,
         get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: threadStatus[threadId] ?? "idle" }) as never,
         spawn: async (input: unknown) => {
           spawns.push(input as Record<string, unknown>);
@@ -51,6 +52,7 @@ describe("self-repair", () => {
     triage("lpattempt_2", "proj_real", "lprun_a", "tests failed in apps/web", "writer");
     attempt("lpattempt_3", "lprun_a", "blocked", "acceptance unmet: button missing");
     triage("lpattempt_4", "proj_3tb652jpsi", "lprun_s", "internal_error: sandbox drill");
+    triage("lpattempt_5", "proj_real", "lprun_a", "depends_on gc-s7-checkout: that task ended blocked");
     const repair = createSelfRepair(ctx);
     const result = await repair.tick({ since: 0 });
     expect(result.incidents).toBe(1);
@@ -133,6 +135,63 @@ describe("self-repair", () => {
     expect(rows[0]!.kind).toBe("log");
   });
 
+  it("a failure from before this release waits to happen again; one under the running version is repaired", () => {
+    const sample = (at: number, version: string | null) => ({ signature: "s", kind: "blocked" as const, projectId: "p", runId: "r", taskId: "t", attemptId: `a${at}`, pmThreadId: null, writerThreadId: null, reason: "x", at, version });
+    const record = (samples: ReturnType<typeof sample>[], extra = {}) => ({ firstAt: 0, lastAt: 0, count: samples.length, threadId: null, spawnedAt: null, samples, ...extra });
+    const now = 10 * 86_400_000;
+    expect(isDue(record([sample(100, null)]), now)).toBe(false);
+    expect(isDue(record([sample(100, null), sample(200, VERSION)]), now)).toBe(true);
+    // After a repair that fixed it: the same version again within a day is the old code, not a failed fix.
+    const fixed = { spawnedAt: now - 3_600_000, spawnVersion: "0.0.1", verdict: "fixed" };
+    expect(isDue(record([sample(now - 60_000, "0.0.1")], fixed), now, "0.0.1")).toBe(false);
+    expect(isDue(record([sample(now - 60_000, "0.0.2")], fixed), now, "0.0.2")).toBe(true);
+    // Not Lane Pilot's: quiet for a week even if it keeps happening.
+    const notOurs = { spawnedAt: now - 2 * 86_400_000, spawnVersion: VERSION, verdict: "not-lane-pilot" };
+    expect(isDue(record([sample(now - 60_000, VERSION)], notOurs), now)).toBe(false);
+    expect(isDue(record([sample(now - 60_000, VERSION)], notOurs), now + 7 * 86_400_000)).toBe(true);
+  });
+
+  it("reads the repair's verdict from its last line and stops repeating a not-ours kind", async () => {
+    expect(parseVerdict("отчёт…\nSELF-REPAIR-VERDICT: not-lane-pilot")).toBe("not-lane-pilot");
+    expect(parseVerdict("no verdict")).toBeNull();
+    const env = setup({}, { thr_repair1: "Готово.\nSELF-REPAIR-VERDICT: already-fixed" });
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    const repair = createSelfRepair(env.ctx);
+    expect((await repair.tick({ since: 0 })).spawned).toBe("thr_repair1");
+    await repair.tick();
+    const record = Object.values((await repair.state()).signatures)[0]!;
+    expect(record.verdict).toBe("already-fixed");
+    expect(record.spawnVersion).toBe(VERSION);
+  });
+
+  it("an unfamiliar reason in three tasks within a day is a pattern", async () => {
+    const env = setup();
+    for (const n of [1, 2, 3]) env.attempt(`lpattempt_${n}`, "lprun_a", "empty_output", `writer changed no files in apps/x${n}`);
+    env.attempt("lpattempt_9", "lprun_a", "blocked", "needs_human: which button?");
+    const rows = await createSelfRepair(env.ctx).collect(0, (await createSelfRepair(env.ctx).config()));
+    expect(rows.filter((row) => row.kind === "repeat").map((row) => row.attemptId).sort()).toEqual(["lpattempt_1", "lpattempt_2", "lpattempt_3"]);
+    const two = setup();
+    for (const n of [1, 2]) two.attempt(`lpattempt_${n}`, "lprun_a", "empty_output", "writer changed no files");
+    expect((await createSelfRepair(two.ctx).collect(0, await createSelfRepair(two.ctx).config())).filter((row) => row.kind === "repeat")).toEqual([]);
+  });
+
+  it("sees a task queued for hours while nothing runs, and a stage nobody will finish", async () => {
+    const env = setup();
+    const hours = (n: number) => env.now - n * 3_600_000;
+    env.attempt("lpattempt_q", "lprun_a", "queued", null, hours(3));
+    env.attempt("lpattempt_done", "lprun_a", "blocked", "acceptance unmet", hours(3));
+    env.db.prepare("INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-lpattempt_done','lprun_a','bb','{}',?)").run(hours(4));
+    env.db.prepare(`INSERT INTO lane_pilot_stage_receipt (run_id, task_id, stage_id, contract_version, state, input_sha256, attempt, updated_at)
+      VALUES ('lprun_a','task-lpattempt_done','acceptance-receipt',1,'pending','x',0,?)`).run(hours(2));
+    const rows = await createSelfRepair(env.ctx).collect(0, await createSelfRepair(env.ctx).config());
+    expect(rows.filter((row) => row.kind === "queued").map((row) => row.attemptId)).toEqual(["lpattempt_q"]);
+    expect(rows.filter((row) => row.kind === "stage").map((row) => row.attemptId)).toEqual(["stage:lprun_a:task-lpattempt_done:acceptance-receipt"]);
+    const busy = setup();
+    busy.attempt("lpattempt_q", "lprun_a", "queued", null, busy.now - 3 * 3_600_000);
+    busy.attempt("lpattempt_r", "lprun_a", "running", null, busy.now - 60_000);
+    expect((await createSelfRepair(busy.ctx).collect(0, await createSelfRepair(busy.ctx).config())).filter((row) => row.kind === "queued")).toEqual([]);
+  });
+
   it("the prompt tells the agent to verify live, ship only on green and report to the PM", () => {
     const text = repairPrompt([{ signature: "s", kind: "blocked", projectId: "p", runId: "r", taskId: "t", attemptId: "a", pmThreadId: "thr_pm", writerThreadId: null, reason: "x", at: 0 }], "blocked:abc:x");
     expect(text).toMatch(/Verify live/);
@@ -140,6 +199,7 @@ describe("self-repair", () => {
     expect(text).toMatch(/<incidents>[\s\S]*1970-01-01T00:00:00.000Z[\s\S]*<\/incidents>/);
     expect(text).toMatch(/never git add -A/);
     expect(text).toMatch(/already fixed/);
+    expect(text.trim().split("\n").at(-3)).toMatch(/SELF-REPAIR-VERDICT: fixed \| already-fixed \| not-lane-pilot \| needs-owner/);
     expect(text).toContain("bb thread tell");
   });
 });
