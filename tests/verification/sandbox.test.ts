@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildBubblewrapArgs, buildSeatbeltProfile, resolveSandboxBackend } from "../../src/verification/sandbox";
+import { buildBubblewrapArgs, buildSeatbeltProfile, passEnvWords, prepareSandboxedCommandLine, releaseSandboxedCommandLine, resolveSandboxBackend } from "../../src/verification/sandbox";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { hostContract } from "../../src/contracts";
 import { validateSettingValue } from "../../src/setting-validation";
 
@@ -41,5 +45,18 @@ describe("host sandbox policy", () => {
     expect(input.backend).toBe("linux-bubblewrap");
     expect(hostContract.runSandboxedCommand.output.parse({hostId:"host-test",backend:"linux-bubblewrap",workspacePath:"/work",cwd:"/work",exitCode:0,policySha256:"a".repeat(64),stdout:"",stderr:""}).backend).toBe("linux-bubblewrap");
     expect(()=>hostContract.runSandboxedCommand.input.parse({requestedHostId:"host-test",workspacePath:"/work",cwd:"/work",backend:"unsupported",command:"true"})).toThrow();
+  });
+  it("passes project variables by name only, never the sandbox's own ones or invalid names",()=>{
+    expect(passEnvWords(["API_KEY","PATH","HOME","bad-name","API_KEY","A1"])).toEqual(['${API_KEY+"API_KEY=$API_KEY"}','${A1+"A1=$A1"}']);
+  });
+
+  it.runIf(process.platform==="darwin")("hands a set variable into the macOS sandbox and leaves an unset one out",async ()=>{
+    const workspace=realpathSync(mkdtempSync(join(tmpdir(),"lp-passenv-")));
+    const line=await prepareSandboxedCommandLine({requestedHostId:"h",workspacePath:workspace,cwd:workspace,
+      command:'printf "%s|%s|%s" "${LP_SET-}" "${LP_UNSET-unset}" "$HOME"',passEnv:["LP_SET","LP_UNSET","HOME"]});
+    try {
+      const out=execFileSync("/bin/zsh",["-c",line.commandLine],{encoding:"utf8",env:{...process.env,LP_SET:"a b$c",LP_UNSET:undefined}});
+      expect(out).toBe(`a b$c|unset|${line.cleanup.tempPath}`);
+    } finally { await releaseSandboxedCommandLine(line.cleanup); }
   });
 });

@@ -47,13 +47,20 @@ import {
 } from "./src/host-handlers";
 import { sessionInventory } from "./src/session-inventory";
 import { nativeInstallHost } from "./src/native-install-host";
+import { provideJevKey } from "./src/verification/docs-jev";
+
+/** Takes the Env Catalog key the server attached to a Jev call before the handler runs. */
+const withJevKey = <I extends { jevApiKey?: string }, C, O>(handler: (input: I, context: C) => O | Promise<O>) => async (input: I, context: C) => {
+  provideJevKey(input.jevApiKey);
+  return await handler(input, context);
+};
 
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     nativeInstall: nativeInstallHost,
-    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, docsAnchors, docsFlows, docsDepth, docsVerifyCitations, docsStaleness: docsStalenessHandler, gitIntegrate, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, writeDocsPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
-    councilJudge, runCli, runCommand, runSandboxedCommand, sandboxCommandLine, sandboxRelease, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
+    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, docsAnchors:withJevKey(docsAnchors), docsFlows:withJevKey(docsFlows), docsDepth:withJevKey(docsDepth), docsVerifyCitations:withJevKey(docsVerifyCitations), docsStaleness:withJevKey(docsStalenessHandler), gitIntegrate, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, writeDocsPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan:withJevKey(classifyPlan), inspectCritiqueCoverage,
+    councilJudge:withJevKey(councilJudge), runCli, runCommand, runSandboxedCommand, sandboxCommandLine, sandboxRelease, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
   },
 });

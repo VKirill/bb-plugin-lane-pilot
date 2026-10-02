@@ -1,5 +1,5 @@
 import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree } from "./verification/git-integrate";
-import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, verifyDocsCitations } from "./verification/docs-jev";
+import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "./verification/docs-jev";
 import { buildDocsFlows } from "./verification/docs-flows";
 import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, revertPaths } from "./verification/git-docs";
 import { createHash, randomUUID } from "node:crypto";
@@ -432,25 +432,6 @@ const PLAN_EFFORT_QUESTION = {
     xhigh:"deep architecture, concurrency, security, or wide blast radius; cheaper effort will miss it",
   },
 } as const;
-
-async function jevApiKey(): Promise<string> {
-  const fromEnv = (process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY || "").trim();
-  if (fromEnv) return fromEnv;
-  try {
-    const text = await readFile(`${homedir()}/secrets/typesafe.env`, "utf8");
-    for (const line of text.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eq = trimmed.indexOf("=");
-      if (eq < 0) continue;
-      const name = trimmed.slice(0, eq);
-      if (name !== "TYPESAFE_API_KEY" && name !== "JEV_API_KEY") continue;
-      const value = trimmed.slice(eq + 1).trim().replace(/^['\"]|['\"]$/g, "");
-      if (value) return value;
-    }
-  } catch { /* report disabled below */ }
-  return "";
-}
 
 export const classifyPlan: ExperimentalHostRpcHandlers<typeof hostContract>["classifyPlan"] = async (input) => {
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;

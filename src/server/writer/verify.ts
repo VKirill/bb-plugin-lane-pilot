@@ -26,8 +26,12 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
   async function runInWriterTerminal(input:{config:PrototypeConfig; writerThreadId:string; workspacePath:string; cwd:string; command:string; backend:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec:number}) {
     const terminals=(bb.sdk as { terminals?: typeof bb.sdk.terminals }).terminals;
     if (!terminals?.create) return null;
+    // Every machine variable of the project (BB's global ones and the project's own) reaches the check; BB puts
+    // them into the terminal, and only their names travel here.
+    const machineEnv=await Promise.resolve().then(()=>bb.sdk.projects.machineEnvironment({projectId:input.config.projectId})).catch(()=>null);
+    const passEnv=(machineEnv?.variables??[]).map((variable)=>variable.name);
     const prepared=await host.call("sandboxCommandLine",{requestedHostId:input.config.hostId,workspacePath:input.workspacePath,cwd:input.cwd,
-      command:input.command,backend:input.backend},{hostId:input.config.hostId,timeoutMs:30_000});
+      command:input.command,backend:input.backend,passEnv},{hostId:input.config.hostId,timeoutMs:30_000});
     if (prepared.hostId!==input.config.hostId) throw new Error("sandbox result host did not match the configured host");
     try {
       let session;

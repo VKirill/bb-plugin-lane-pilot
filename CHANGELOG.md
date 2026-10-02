@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.69 — 2026-10-02
+
+- **Writers' checks see the project's machine variables.** Every variable BB keeps for the project (Settings → machine environment: the global ones and the project's own) now reaches a check in the sandbox, so tests that need `DATABASE_URL` or an API key can pass. Only names travel through Lane Pilot: the terminal's shell, which BB started with the values, hands them in as `${NAME+"NAME=$NAME"}`, so values never reach Lane Pilot or its logs. The sandbox's own `PATH`, `HOME` and temp folders always win. Variables can be imported from Env Catalog into the machine environment.
+- **Jev's key comes from Env Catalog.** The server reads `TYPESAFE_API_KEY` from Env Catalog (cached 10 minutes) and sends it with each Jev call (plan effort, council judge, the docs stages); a machine falls back to its own env or `~/secrets/typesafe.env` only when the catalog has no key. The plugin log says once which source is in use, never the key.
+
+Verified live in a sandbox PM run: the writer's check `test "$LP_SMOKE_VAR" = "lp-ok"` passed in a BB terminal with the variable set on the project, and the log showed «jev key: from Env Catalog».
+
 ## 0.1.68 — 2026-10-02
 
 - **Writers' checks have network access.** The verification sandbox now keeps the host network (bubblewrap `--share-net`, no `deny network*` in seatbelt) while writes stay limited to the task's folder and a temp folder. Before, every `curl` check, and every test that reached an API or a dev server, failed by construction.

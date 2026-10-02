@@ -213,7 +213,20 @@ export type SandboxedCommandLine = {
  * owner can open and watch it, and BB reports its output and exit code. The caller releases it with
  * releaseSandboxedCommandLine once the terminal has exited.
  */
-export async function prepareSandboxedCommandLine(input:SandboxedCommandInput):Promise<SandboxedCommandLine> {
+const SANDBOX_OWN_ENV=new Set(["PATH","HOME","TMPDIR","TMP","TEMP","LANG","LC_ALL"]);
+
+/**
+ * Words that hand the named variables from the terminal's shell into the sandbox: `${NAME+"NAME=$NAME"}` is one
+ * word when NAME is set and nothing when it is not, in bash and zsh alike. Only names travel; values stay in the
+ * shell that BB started, so they never pass through Lane Pilot or its logs.
+ */
+export function passEnvWords(names:readonly string[]):string[] {
+  return [...new Set(names)].filter((name)=>/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)&&!SANDBOX_OWN_ENV.has(name))
+    .map((name)=>`\${${name}+"${name}=$${name}"}`);
+}
+
+export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & {passEnv?:string[]}):Promise<SandboxedCommandLine> {
+  const passed=passEnvWords(input.passEnv??[]);
   const requestedBackend=input.backend ?? "auto";
   const seatbeltAvailable=await access(SANDBOX_EXEC).then(()=>true,()=>false);
   const bubblewrapPath=await Promise.all(BWRAP_CANDIDATES.map(async (path)=>await access(path).then(()=>path,()=>null))).then((paths)=>paths.find(Boolean) ?? null);
@@ -228,14 +241,18 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput):P
     const {guardPaths,created}=await prepareGuardPaths(workspacePath);
     const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
     const policySha256=createHash("sha256").update(JSON.stringify(args),"utf8").digest("hex");
+    // With variables to pass, `env -i` starts bwrap with only those, instead of bwrap's --clearenv; the sandbox's
+    // own PATH, HOME and temp folders are still set by --setenv and win.
+    const bwrapLine=[bubblewrapPath!,...(passed.length?args.filter((arg)=>arg!=="--clearenv"):args),input.command].map(shellQuote).join(" ");
     return {hostId,backend,workspacePath,cwd,policySha256,cleanup:{tempPath,created},
-      commandLine:`exec ${[bubblewrapPath!,...args,input.command].map(shellQuote).join(" ")}`};
+      commandLine:passed.length?`exec /usr/bin/env -i ${passed.join(" ")} ${bwrapLine}`:`exec ${bwrapLine}`};
   }
   const profile = buildSeatbeltProfile(workspacePath,tempPath);
   const policySha256 = createHash("sha256").update(profile,"utf8").digest("hex");
   const env = [`PATH=${sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")}`,`HOME=${tempPath}`,`TMPDIR=${tempPath}`,`TMP=${tempPath}`,`TEMP=${tempPath}`,"LANG=C","LC_ALL=C"];
   return {hostId,backend,workspacePath,cwd,policySha256,cleanup:{tempPath,created:[]},
-    commandLine:`cd ${shellQuote(cwd)} && exec ${["/usr/bin/env","-i",...env,SANDBOX_EXEC,"-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command].map(shellQuote).join(" ")}`};
+    // Passed variables come before the sandbox's own, so PATH, HOME and the temp folders always win.
+    commandLine:`cd ${shellQuote(cwd)} && exec /usr/bin/env -i ${[...passed,...[...env,SANDBOX_EXEC,"-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command].map(shellQuote)].join(" ")}`};
 }
 
 export async function releaseSandboxedCommandLine(cleanup:{tempPath:string;created:string[]}):Promise<void> {

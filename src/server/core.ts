@@ -24,7 +24,35 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   const state = { disposed: false };
   bb.onDispose(() => { state.disposed = true; });
 
-  const host = bb.hosts.experimental_client({ contract:hostContract });
+  const rawHost = bb.hosts.experimental_client({ contract:hostContract });
+
+  // Jev's key lives in BB's Env Catalog (TYPESAFE_API_KEY); the server reads it there and sends it with each Jev
+  // call, so machines need no ~/secrets/typesafe.env. Without Env Catalog or the record a machine falls back to its own.
+  const JEV_METHODS = new Set(["classifyPlan","councilJudge","docsAnchors","docsFlows","docsDepth","docsVerifyCitations","docsStaleness"]);
+  let jevKeyCache: { value: string | undefined; at: number } | null = null;
+  async function catalogJevKey(): Promise<string | undefined> {
+    if (jevKeyCache && Date.now() - jevKeyCache.at < 10 * 60_000) return jevKeyCache.value;
+    const plugins = (bb.sdk as { plugins?: { callRpc?: (args:{pluginId:string;method:string;input?:unknown;outputSchema:z.ZodType<unknown>}) => Promise<unknown> } }).plugins;
+    let value: string | undefined;
+    try {
+      const record = await plugins?.callRpc?.({ pluginId:"env-catalog", method:"env_get_value", input:{ name:"TYPESAFE_API_KEY" },
+        outputSchema:z.object({ value:z.string().nullable() }).passthrough() }) as { value:string | null } | undefined;
+      value = record?.value?.trim() || undefined;
+    } catch { value = undefined; }
+    if (Boolean(value) !== Boolean(jevKeyCache?.value)) {
+      bb.log.info(value ? "jev key: from Env Catalog (TYPESAFE_API_KEY)" : "jev key: not in Env Catalog, machines use their own");
+    }
+    jevKeyCache = { value, at: Date.now() };
+    return value;
+  }
+  const host = {
+    ...rawHost,
+    call: (async (method: string, input: unknown, options: unknown) => {
+      const key = JEV_METHODS.has(method) ? await catalogJevKey() : undefined;
+      return await (rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>)(method,
+        key ? { ...(input as Record<string, unknown>), jevApiKey:key } : input, options);
+    }) as typeof rawHost.call,
+  } as typeof rawHost;
 
   const nativeInstaller = createNativeInstaller({
     supported: (bb.server as unknown as { experimental_vkPluginLifecycle?: boolean }).experimental_vkPluginLifecycle === true,

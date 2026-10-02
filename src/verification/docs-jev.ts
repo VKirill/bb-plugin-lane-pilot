@@ -32,7 +32,15 @@ export type JevStatus = "ok" | "partial" | "disabled";
 type JevQuestion = { type:"noul" | "choice" | "score"; instructions:unknown; criteria?:unknown };
 type JevAnswer = { noul?:number; choice?:string; probabilities?:Record<string, number>; score?:number; confidence?:number };
 
+let providedJevKey = "";
+
+/** The server sends the key from BB's Env Catalog with each Jev call; it wins over this machine's env and file. */
+export function provideJevKey(key: string | undefined): void {
+  if (key?.trim()) providedJevKey = key.trim();
+}
+
 export async function jevApiKey(): Promise<string> {
+  if (providedJevKey) return providedJevKey;
   const fromEnv = (process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY || "").trim();
   if (fromEnv) return fromEnv;
   const text = await readFile(join(homedir(), "secrets", "typesafe.env"), "utf8").catch(() => "");
