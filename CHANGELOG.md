@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.67 — 2026-10-02
+
+Checked against SelfyStudio on OVH, in the same sandbox Lane Pilot uses: both blocked tasks' checks now pass in a fresh writer worktree (marketing vitest 38/38; bot tests and typecheck, exit 0).
+
+- **A writer's worktree gets the Nuxt app's generated `.nuxt/`,** copied like the packages' `dist/`. Without it vitest stopped at «Failed to load tsconfig '.nuxt/tsconfig.json'».
+- **A folder written with a trailing slash in owns_paths or never_touch now covers everything under it** (`apps/bot-thin/src/handlers/__tests__/`, `docs/`). The acceptance check only understood `/**`: the bot task's own test was rejected as «outside owns_paths», and never_touch folders such as `apps/api/` guarded nothing. It now follows the same rule as the rest of Lane Pilot: a plain path is that file or everything under it.
+
 ## 0.1.66 — 2026-10-02
 
 Two failures behind SelfyStudio's blocked blog and bot tasks, both in Lane Pilot:

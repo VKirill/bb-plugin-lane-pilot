@@ -136,12 +136,16 @@ it("re-points workspace package links at the worktree so checks import the write
   await symlink("../../packages/contracts", join(base, "node_modules", "@mono", "contracts"), "dir");
   await symlink("../../apps/api", join(base, "node_modules", "@mono", "api"), "dir");
   await mkdir(join(base, "apps", "api", "node_modules", "left-pad"), { recursive: true });
-  await writeFile(join(base, ".gitignore"), "node_modules\ndist\n");
+  await writeFile(join(base, ".gitignore"), "node_modules\ndist\n.nuxt\n");
   git(base, "add", ".gitignore"); git(base, "commit", "-qm", "ignore");
   await mkdir(join(base, "packages", "contracts", "dist"));
   await writeFile(join(base, "packages", "contracts", "dist", "index.d.ts"), "export {};\n");
+  await mkdir(join(base, "apps", "api", ".nuxt"));
+  await writeFile(join(base, "apps", "api", ".nuxt", "tsconfig.json"), "{}\n");
   const a = await worktree("a");
-  expect(await prepareWorktree({ basePath: base, worktreePath: a })).toEqual({ linked: ["node_modules", "apps/api/node_modules", "packages/contracts/dist"] });
+  expect(await prepareWorktree({ basePath: base, worktreePath: a })).toEqual({ linked: ["node_modules", "apps/api/node_modules", "apps/api/.nuxt", "packages/contracts/dist"] });
+  // A Nuxt app's generated .nuxt/ is copied like dist/, so its tests find .nuxt/tsconfig.json.
+  expect(await readFile(join(a, "apps", "api", ".nuxt", "tsconfig.json"), "utf8")).toBe("{}\n");
   expect((await lstat(join(a, "packages", "contracts", "dist"))).isSymbolicLink()).toBe(false);
   expect(await readFile(join(a, "packages", "contracts", "dist", "index.d.ts"), "utf8")).toBe("export {};\n");
   expect(await realpath(join(a, "node_modules", "vitest"))).toBe(await realpath(join(base, "node_modules", "vitest")));

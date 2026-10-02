@@ -68,3 +68,23 @@ describe("task ownership and workspace boundaries", () => {
     if (!result.ok) expect(result.reason).toContain(reason);
   });
 });
+
+describe("directory paths with a trailing slash", () => {
+  it("own and guard everything under them, as in owns-paths", async () => {
+    const { findUnownedChanges } = await import("../../src/verification/ownership");
+    const task = {
+      project_cwd: "/repo",
+      owns_paths: ["apps/bot-thin/src/handlers/import-preset.ts", "apps/bot-thin/src/handlers/__tests__/", "apps/marketing/i18n/locales/"],
+      never_touch: ["apps/api/", "docs/"],
+      verification: [],
+    } as never;
+    expect(findUnownedChanges([
+      "apps/bot-thin/src/handlers/__tests__/import-preset.test.ts",
+      "apps/marketing/i18n/locales/ru.json",
+      "apps/bot-thin/src/handlers/import-preset.ts",
+    ], task)).toEqual([]);
+    // Never_touch folders now guard their files too, and a sibling prefix is not the folder.
+    expect(findUnownedChanges(["docs/index.md", "apps/api/server.ts", "apps/bot-thin/src/handlers/__tests__x/a.ts"], task))
+      .toEqual(["apps/api/server.ts", "apps/bot-thin/src/handlers/__tests__x/a.ts", "docs/index.md"]);
+  });
+});

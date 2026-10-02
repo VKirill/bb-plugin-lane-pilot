@@ -200,8 +200,10 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   // Workspace packages are consumed through their ignored build output (exports → dist/). A fresh
   // worktree has none, so every check importing a sibling package would fail; each worktree gets its
   // own copy, and a build inside the worktree never writes into the base checkout or another lane.
-  for(const workspace of workspaces) {
-    const dist=join(workspace,"dist");
+  // Nuxt apps also need their generated .nuxt/ (tsconfig, types): without it vitest stopped at
+  // «Failed to load tsconfig '.nuxt/tsconfig.json'» in SelfyStudio's marketing app (2026-10-02).
+  for(const workspace of workspaces) for(const generated of ["dist",".nuxt"]) {
+    const dist=join(workspace,generated);
     if(!(await stat(join(baseReal,dist)).catch(()=>null))?.isDirectory()||await lstat(join(input.worktreePath,dist)).catch(()=>null)) continue;
     if(!git(baseReal,["check-ignore","-q",dist]).ok) continue;
     await cp(join(baseReal,dist),join(input.worktreePath,dist),{recursive:true,dereference:false,errorOnExist:false,force:true});

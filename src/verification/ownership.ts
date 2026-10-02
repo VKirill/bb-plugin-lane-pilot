@@ -29,6 +29,13 @@ function matches(pattern:string, path:string):boolean {
     return path === prefix || path.startsWith(`${prefix}/`);
   }
   if (normalized === path) return true;
+  // A plain path names that file or everything under it, «apps/bot/__tests__/» included, as in owns-paths.ts.
+  // Before, a trailing slash matched nothing: the bot task's own tests were rejected and a never_touch
+  // «docs/» guarded nothing (SelfyStudio, 2026-10-02).
+  if (!/[*?[]/.test(normalized)) {
+    const prefix = normalized.replace(/\/+$/, "");
+    return path === prefix || path.startsWith(`${prefix}/`);
+  }
   // A single-segment * is supported for path sets such as src/*.ts.
   const expression = normalized.split("/").map((part) => part === "*" ? "[^/]+" :
     part.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")).join("/");
