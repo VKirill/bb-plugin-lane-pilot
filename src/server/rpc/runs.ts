@@ -86,6 +86,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       let bindingStatus: "resolved" | "ambiguous" | "setup_required" | "offline" | "catalog_unavailable" | null = null;
       let writer = { providerId: null as string | null, model: null as string | null, reasoningEffort: null as string | null };
       let liveRun: { threadId: string; runId: string } | null = null;
+      let chosenAgent: string | null = null;
       if (projectId) {
         const binding = await services.resolveProjectWriterHost({ projectId });
         bindingStatus = binding.status;
@@ -95,6 +96,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
           model: typeof settings["writer.model"] === "string" ? settings["writer.model"] as string : null,
           reasoningEffort: typeof settings["writer.reasoning_effort"] === "string" ? settings["writer.reasoning_effort"] as string : null,
         };
+        chosenAgent = typeof settings["main.agent"] === "string" && settings["main.agent"] ? settings["main.agent"] as string : null;
         const activation = getActivation(db, projectId);
         if (activation && !activation.pm_thread_id.startsWith("pending:")) {
           liveRun = { threadId: activation.pm_thread_id, runId: activation.run_id };
@@ -109,6 +111,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
         threadStatus = stringAt(thread, "status");
       }
+      const mainAgents = (await services.listedAgentProfiles()).map((row) => ({ id: row.id, description: row.description }));
       return {
         projectId,
         projects,
@@ -116,7 +119,8 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         compiledMainAgent: detectCompiledMainAgentCapability(
           (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
         ),
-        mainAgents: (await services.listedAgentProfiles()).map((row) => ({ id: row.id, description: row.description })),
+        mainAgents,
+        mainAgent: chosenAgent && mainAgents.some((row) => row.id === chosenAgent) ? chosenAgent : null,
         writer,
         liveRun,
         pluginRole,

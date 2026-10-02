@@ -690,6 +690,8 @@ export const rpcContract = defineRpcContract({
       liveRun: z.object({ threadId: z.string(), runId: z.string() }).strict().nullable(),
       pluginRole: z.string().nullable(),
       threadStatus: z.string().nullable(),
+      /** The project's main agent, when one is chosen and still listed; new chats enable Lane Pilot with it. */
+      mainAgent: z.string().nullable().optional(),
       requiredSessionPolicy: z.enum(["required", "none"]),
     }).strict(),
   },

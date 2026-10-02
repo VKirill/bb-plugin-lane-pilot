@@ -7,6 +7,7 @@ import { setPendingNativeAgent } from "../src/ui/pending-native-agent";
 
 const hiddenData = vi.hoisted(() => ({ value: null as null | { token: string } }));
 const installStarts = vi.hoisted(() => [] as string[]);
+const prepared: string[] = [];
 vi.mock("@get-bb/plugin-sdk/app", async (original) => {
   const sdk = await original<typeof import("@get-bb/plugin-sdk/app")>();
   return {
@@ -32,6 +33,7 @@ async function mountComposer(input: {
     pluginRole?: string | null;
     threadStatus?: string | null;
     liveRun?: { threadId: string; runId: string } | null;
+    mainAgent?: string | null;
   };
   activate?: (args: unknown) => Promise<{ threadId: string; runId: string }>;
 }) {
@@ -56,10 +58,11 @@ async function mountComposer(input: {
         pluginRole: input.context.pluginRole ?? null,
         threadStatus: input.context.threadStatus ?? null,
         requiredSessionPolicy: "none",
+        mainAgent: input.context.mainAgent ?? null,
       }; },
       activate_pm: input.activate ?? (async () => ({ threadId: "thr_pm", runId: "run_1" })),
       native_install_start: async (input: unknown) => { installStarts.push((input as { hostId: string }).hostId); return { started: true }; },
-      prepare_native_session: async (request: unknown) => { const { agentId } = request as { agentId: string }; return {
+      prepare_native_session: async (request: unknown) => { const { agentId } = request as { agentId: string }; prepared.push(agentId); return {
         token: "11111111-1111-1111-1111-111111111111",
         label: agentId === "copy-lead" ? "Night desk" : "Development coordinator",
         agentId: agentId || "dev-orchestrator",
@@ -75,6 +78,7 @@ afterEach(() => {
   setLocaleOverride(null);
   hiddenData.value = null;
   installStarts.length = 0;
+  prepared.length = 0;
   setPendingNativeAgent(null);
 });
 
@@ -138,6 +142,37 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(await slot.findByRole("button", { name: "Disable for this chat" }));
     expect(hiddenData.value).toBeNull();
     expect(slot.inspection.navigateCalls).toEqual([]);
+    slot.lifecycle.unmount();
+  });
+
+  it("starts a new chat with Lane Pilot on and the project's main agent, and stays off once turned off", async () => {
+    const slot = await mountComposer({
+      projectId: "proj_a",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "proj_a" },
+      context: { bindingStatus: "resolved", projects: [{ id: "proj_a", name: "Alpha" }], mainAgent: "copy-lead",
+        mainAgents: [{ id: "dev-orchestrator", description: "Development coordinator" }, { id: "copy-lead", description: "Night desk" }] },
+    });
+    await waitFor(() => expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" }));
+    expect(prepared).toEqual(["copy-lead"]);
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot enabled" }));
+    fireEvent.click(await slot.findByRole("button", { name: "Disable for this chat" }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(hiddenData.value).toBeNull();
+    expect(prepared).toEqual(["copy-lead"]);
+    slot.lifecycle.unmount();
+  });
+
+  it("leaves Lane Pilot off in a project without a main agent", async () => {
+    const slot = await mountComposer({
+      projectId: "proj_a",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "proj_a" },
+      context: { bindingStatus: "resolved", projects: [{ id: "proj_a", name: "Alpha" }] },
+    });
+    await slot.findByRole("button", { name: "Enable Lane Pilot" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(prepared).toEqual([]);
     slot.lifecycle.unmount();
   });
 

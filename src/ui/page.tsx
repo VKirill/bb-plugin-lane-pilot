@@ -1541,7 +1541,6 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         <div className={stackControls ? "lp-panel-body grid gap-2" : "lp-panel-body grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}>
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">{t("mainAgentHelp")}</p>
-            {data?.compiledMainAgent === "none" && displayedValue("main.agent") ? <p className="text-xs text-muted-foreground">{t("mainAgentUnavailable")}</p> : null}
           </div>
           <Select
             value={String(displayedValue("main.agent") ?? "") || "__default__"}

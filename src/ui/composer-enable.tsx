@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useComposer, useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t, detectLocale, setLocaleOverride } from "../../i18n";
@@ -30,6 +30,7 @@ type ContextPayload = {
   pluginRole: string | null;
   threadStatus: string | null;
   requiredSessionPolicy?: "required" | "none";
+  mainAgent?: string | null;
 };
 
 function blockCopy(block: ActivationBlock): string {
@@ -91,7 +92,7 @@ export function EnableLanePilotAction() {
   const disabled = composerButtonDisabled(blocks);
   const blocked = startBlocked(blocks);
 
-  const prepare = async () => {
+  const prepare = async (agent = agentId) => {
     if (blocked || pending || !projectId) return;
     setPending(true);
     setError(null);
@@ -107,7 +108,7 @@ export function EnableLanePilotAction() {
         if (selection.providerId === "claude-code" && selection.model === model) { selected = true; break; }
       }
       if (!selected) throw new Error(t("nativeComposerModelUnavailable"));
-      const result = await rpc.call("prepare_native_session", { projectId, agentId });
+      const result = await rpc.call("prepare_native_session", { projectId, agentId: agent });
       attach({ token: result.token });
       // Claude Lane may still need installing on that machine; start now so the first send does not wait.
       if (hostId) void rpc.call("native_install_start", { hostId }).catch(() => undefined);
@@ -125,6 +126,17 @@ export function EnableLanePilotAction() {
     setEnabled(false);
     setPendingNativeAgent(null);
   }), [composer.experimental_onSubmitted]);
+
+  // A project with a main agent starts every new chat with Lane Pilot on and that agent picked, once per composer;
+  // turning it off by hand stays off.
+  const autoEnabled = useRef<string | null>(null);
+  useEffect(() => {
+    const agent = ctx?.mainAgent;
+    if (!agent || !projectId || ctx?.projectId !== projectId || blocked || autoEnabled.current === projectId) return;
+    autoEnabled.current = projectId;
+    setAgentId(agent);
+    void prepare(agent);
+  }, [ctx, projectId, blocked]);
 
   const disable = () => {
     (composer as typeof composer & { experimental_vkSetDispatchData?: (data: null) => void })

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.58 — 2026-10-02
+
+- **The project's main agent now drives its chats.** With a main agent chosen in a project, every new chat there starts with Lane Pilot on and that agent picked; turning it off in the chat keeps it off for that chat. With «Без специального агента» Lane Pilot stays off until you turn it on. `activation_context` reports the project's `mainAgent`.
+- The «this hub cannot start a custom main agent» note is gone: it was about the old compiled launch, which chats do not use.
+
 ## 0.1.57 — 2026-10-02
 
 - **One radius scale.** Selected menu rows were 10px on 32px rows and read as pills; rows, buttons and inputs are now all 8px, segments 6px in a 9px track, inner cards 12px, panels 16px. The scale is written into `app.css` and the pokecut-theme skill.
