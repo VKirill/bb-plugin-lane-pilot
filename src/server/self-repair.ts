@@ -64,7 +64,7 @@ const SYSTEM_REASON = /internal_error|merge_failed|merge_queue_timeout|ownership
 const STUCK_MS = 45 * 60_000;
 /** Plugin log lines that report Lane Pilot's own failure; a disconnected or slow machine is not one. */
 const LOG_FAILURE = /\bfailed\b|stale API handle|is retired|unhandled|uncaught/i;
-const LOG_NOT_OURS = /^self-repair|Host is not connected|Timed out waiting for command result|native-trace|reasoning trace|waits for/i;
+const LOG_NOT_OURS = /^self-repair|writer attempt \S+ failed|writer spawn for \S+ failed|Host is not connected|Timed out waiting for command result|native-trace|reasoning trace|waits for/i;
 const LOG_TAIL_BYTES = 1_000_000;
 const REPEAT_AFTER_MS = 86_400_000;
 const FORGET_MS = 30 * 86_400_000;

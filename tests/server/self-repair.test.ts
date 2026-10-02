@@ -123,6 +123,7 @@ describe("self-repair", () => {
       line(300, "Lane Pilot nightly docs failed for /Users/x: Host is not connected"),
       line(400, "self-repair: started @thread:thr_x for blocked:1:spawn failed"),
       line(500, "writer a waits for b: their owns_paths overlap"),
+      line(600, "Lane Pilot writer attempt lpattempt_1 failed: another writer integration holds the base checkout"),
       line(50, "Lane Pilot docs resume failed: old"),
       "not json",
     ].join("\n");

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.85 — 2026-10-02
+
+- **Self-repair reads the plugin log.** Failure lines of Lane Pilot's own log (`… failed`, `stale API handle`, `is retired`) are incidents too; offline machines, timeouts, traces and the watcher's own lines are not.
+- **Repair threads are filed** in the Project Folders section «Исправления» under lane-pilot (`sectionId` in `self_repair_configure`, `null` for the project root).
+- The deploy script runs the full suite before shipping Lane Pilot (one retry for flaky tests) and refuses on red.
+
 ## 0.1.84 — 2026-10-02
 
 - **Merge lock without a pid is taken over in seconds, not after 10 minutes.** A plugin reload that stops the host worker between creating the lock's owner file and writing its pid left a lock that was neither orphaned (no pid to check) nor «legacy» (the directory was not empty), so every merge into that checkout waited until the lock turned 10 minutes old. On 2026-10-02 this failed `api-route-snapshot-cluster-source` in SelfyStudio with `internal_error: another writer integration holds the base checkout` (before 0.1.73 made a busy lock a queue). A lock whose owner has no pid 5 seconds after it was created is now treated as abandoned.
