@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { integrateWorktree, withBaseLock } from "../../src/verification/git-integrate";
+import { integrateWorktree, prepareWorktree, withBaseLock } from "../../src/verification/git-integrate";
 import { gitOwnershipChangedPaths } from "../../src/verification/git-ownership";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
@@ -239,4 +239,40 @@ it("reports a base checkout held by a live integration as busy, naming the holde
     await (await import("node:fs/promises")).rm(lock, { recursive: true });
     expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "api-snap: Snapshot" })).status).toBe("merged");
   } finally { holder.kill(); }
+});
+
+it("rebuilds in main a workspace package the merge changed", async () => {
+  const { base, worktree } = await repo();
+  await mkdir(join(base, "packages", "lib", "src"), { recursive: true });
+  await mkdir(join(base, "packages", "lib", "dist"), { recursive: true });
+  await writeFile(join(base, "package.json"), JSON.stringify({ name: "root", private: true, workspaces: ["packages/*"] }));
+  await writeFile(join(base, "packages", "lib", "package.json"), JSON.stringify({ name: "lib", scripts: { build: "node -e \"require('fs').writeFileSync('dist/built.txt','yes')\"" } }));
+  await writeFile(join(base, ".gitignore"), "dist/\nnode_modules/\n");
+  await writeFile(join(base, "packages", "lib", "src", "a.ts"), "1\n");
+  git(base, "add", "-A"); git(base, "commit", "-qm", "lib");
+  const a = await worktree("a");
+  await writeFile(join(a, "packages", "lib", "src", "a.ts"), "2\n");
+  const merged = await integrateWorktree({ basePath: base, worktreePath: a, message: "lib change" });
+  expect(merged.status).toBe("merged");
+  expect(merged.rebuilt).toEqual([{ dir: "packages/lib", ok: true, detail: null }]);
+  expect(await readFile(join(base, "packages", "lib", "dist", "built.txt"), "utf8")).toBe("yes");
+});
+
+it("copies Prisma's generated client into a worktree as real, writable folders; other packages stay links", async () => {
+  const { base, worktree } = await repo();
+  await writeFile(join(base, ".gitignore"), "node_modules/\n"); git(base, "add", "-A"); git(base, "commit", "-qm", "ignore");
+  await mkdir(join(base, "node_modules", ".prisma", "client"), { recursive: true });
+  await writeFile(join(base, "node_modules", ".prisma", "client", "index.js"), "generated\n");
+  await mkdir(join(base, "node_modules", "@prisma", "client"), { recursive: true });
+  await writeFile(join(base, "node_modules", "@prisma", "client", "index.js"), "client\n");
+  await mkdir(join(base, "node_modules", "zod"), { recursive: true });
+  const a = await worktree("a");
+  await prepareWorktree({ basePath: base, worktreePath: a });
+  const { lstat } = await import("node:fs/promises");
+  expect((await lstat(join(a, "node_modules", ".prisma"))).isSymbolicLink()).toBe(false);
+  expect((await lstat(join(a, "node_modules", "@prisma", "client"))).isSymbolicLink()).toBe(false);
+  expect(await readFile(join(a, "node_modules", ".prisma", "client", "index.js"), "utf8")).toBe("generated\n");
+  expect((await lstat(join(a, "node_modules", "zod"))).isSymbolicLink()).toBe(true);
+  await writeFile(join(a, "node_modules", ".prisma", "client", "index.js"), "regenerated\n");
+  expect(await readFile(join(base, "node_modules", ".prisma", "client", "index.js"), "utf8")).toBe("generated\n");
 });

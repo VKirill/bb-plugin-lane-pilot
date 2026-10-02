@@ -6,33 +6,52 @@ function escapeRegExp(value: string): string {
   return value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
 }
 
-function globPartToRegex(part: string): string {
+/**
+ * Glob → regex for ownership patterns. `*` and `?` stay inside one folder; `**` crosses folders, also inside a
+ * name (src/**greeting-card*); a whole double-star segment may match no folder at all (a, **, b matches a/b).
+ */
+function globRegex(pattern: string): RegExp {
+  const parts = normalize(pattern).split("/");
   let source = "";
-  for (const char of part) {
-    if (char === "*") source += "[^/]*";
-    else if (char === "?") source += "[^/]";
-    else source += escapeRegExp(char);
-  }
-  return source;
+  parts.forEach((part, index) => {
+    const last = index === parts.length - 1;
+    if (part === "**") { source += last ? ".*" : "(?:.*/)?"; return; }
+    let piece = "";
+    for (let k = 0; k < part.length; k++) {
+      const char = part[k]!;
+      if (char === "*" && part[k + 1] === "*") { piece += ".*"; k++; }
+      else if (char === "*") piece += "[^/]*";
+      else if (char === "?") piece += "[^/]";
+      else piece += escapeRegExp(char);
+    }
+    source += piece + (last ? "" : "/");
+  });
+  return new RegExp(`^${source}$`);
 }
 
 export function fnmatch(path: string, pattern: string): boolean {
-  const source = normalize(pattern)
-    .split("/")
-    .map((part) => part === "**" ? ".*" : globPartToRegex(part))
-    .join("/");
-  return new RegExp(`^${source}$`).test(normalize(path));
+  return globRegex(pattern).test(normalize(path));
 }
 
+/**
+ * Whether a changed file falls under an owns_paths / never_touch pattern:
+ * - a plain path (no wildcard) names that file or everything under it, with or without a trailing slash;
+ * - a pattern ending in a double-star segment is everything under any folder matching the rest
+ *   (e.g. «*_cards_core» or «packages, *, .vite» followed by a double star);
+ * - any other pattern is a glob (single star within a folder, double star across folders).
+ */
 export function matchOwnsPath(file: string, pattern: string): boolean {
   const path = normalize(file);
-  const pat = normalize(pattern);
+  const pat = normalize(pattern).replace(/\/+$/, (tail) => (pattern.endsWith("/**") ? tail : ""));
+  if (!/[*?\[]/.test(pat)) return path === pat || path.startsWith(`${pat}/`);
   if (pat.endsWith("/**")) {
-    const prefix = pat.slice(0, -3).replace(/\/$/, "");
-    return path === prefix || path.startsWith(`${prefix}/`);
+    const base = pat.slice(0, -3);
+    if (!/[*?\[]/.test(base)) return path === base || path.startsWith(`${base}/`);
+    const parts = path.split("/");
+    for (let k = 1; k <= parts.length; k++) if (fnmatch(parts.slice(0, k).join("/"), base)) return true;
+    return false;
   }
-  if (/[*?\[]/.test(pat)) return fnmatch(path, pat);
-  return path === pat || path.startsWith(pat.endsWith("/") ? pat : `${pat}/`);
+  return fnmatch(path, pat);
 }
 
 export function fileAllowedByOwns(file: string, ownsPaths: string[]): boolean {

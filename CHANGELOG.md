@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.80 — 2026-10-02
+
+From the SelfyStudio PM's report, each checked in the sandbox or on OVH:
+
+- **The PM can ship.** The PM chat's shell guard (Lane Stack `guard_shell.py`, now 1.62.0 and installed on the Mac mini, the MacBook and OVH) lets a Lane Pilot PM run the project's release itself: `sudo -n` scripts, `env` and `set -a; . ./.env`, package builds, `docker image inspect`, `timeout`, `xargs`, multi-line shell and `$(…)`, `git commit -m` with an attribution trailer, `git merge-base` / `check-ignore`. Destructive commands stay blocked. The installed guard on the machines was an older copy without the Lane Pilot branch, so every Lane Pilot PM got the CLI orchestrator's read-only allowlist. The PM may also write text files in its chat folder `.bb/chats/**`.
+- **`read_first` with a date in the file name.** `.agents/plans/2026-10-02-cards.md` was read as the folder `.agents/plans/` with lines 2026–10, so the preflight said «is a directory». Line windows now need a separator (`:10-20`, `#L10-L20`, ` 10-20`).
+- **Wildcards inside names in `owns_paths` / `never_touch`.** `*_greeting_cards_core/**`, `src/**greeting-card*` and `packages/*/.vite/**` now match; one matcher serves the whole plugin. Correct work was rejected two or three times.
+- **Prisma in a writer's worktree.** `node_modules/.prisma` and `@prisma/client` are copied, not linked to the read-only base, so `prisma generate` in a check no longer fails with EROFS.
+- **Workspace `dist/` stays current.** After a merge Lane Pilot rebuilds, in the base checkout, the workspace packages the merge changed that have `dist/` and a build script, so the next writer's worktree copies fresh output (reported per merge as `rebuilt`).
+- **`depends_on` holds a task** until every task it names is accepted; a blocked dependency blocks it, a name no one dispatched blocks it after two minutes.
+- **`lane_pilot_wait_writer` returns a compact result**: per stage only task, stage, state and reason, long strings cut. About 9 KB for a two-task run instead of over 1 MB for SelfyStudio.
+- Plan critique's coverage scan skips `.bb/`, `.claude/` and `.lane-pilot/`: chat history no longer produces false `owns_gap` warnings.
+
+Verified live: a sandbox PM ran the guard commands and wrote to `.bb/chats/…/tmp`; tasks A (`owns_paths: notes/dep/*-a.md`, `read_first` with a dated plan) and B (`depends_on: [dep-a]`) were dispatched together, B waited («writer dep-b waits for depends_on dep-a») and both were accepted in order; `wait_writer` answered with about 9 KB. A PM on OVH ran `sudo -n true`, `sudo -n env FOO=1 true`, `set -a; . /dev/null`, `timeout docker`, `xargs`, `$(hostname)`. On OVH a SelfyStudio worktree got real, writable `.prisma` and `@prisma/client` folders. The post-merge rebuild is covered by a test only.
+
 ## 0.1.79 — 2026-10-02
 
 Found by checking 0.1.78 in the real BB page (https://bb.vechkasov.pro, headless Chromium), not in tests:

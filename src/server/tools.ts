@@ -15,6 +15,30 @@ import { z } from "zod";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 
+/**
+ * What the PM gets back from lane_pilot_wait_writer: per stage only task, stage, state and reason, and strings cut
+ * short. The full receipts of a long run went over 1 MB and overflowed the PM's context on every poll (SelfyStudio).
+ */
+export function compactWaitResult(result: unknown): unknown {
+  const clip = (value: unknown, depth = 0): unknown => {
+    if (typeof value === "string") return value.length > 1500 ? `${value.slice(0, 1500)}… [${value.length - 1500} more chars]` : value;
+    if (Array.isArray(value)) return value.length > 40 ? [...value.slice(-40).map((v) => clip(v, depth + 1)), `… ${value.length - 40} earlier items`] : value.map((v) => clip(v, depth + 1));
+    if (value && typeof value === "object") {
+      if (depth > 6) return "[nested]";
+      return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, clip(v, depth + 1)]));
+    }
+    return value;
+  };
+  if (!result || typeof result !== "object") return result;
+  const row = result as Record<string, unknown>;
+  const stages = Array.isArray(row.stages) ? (row.stages as Array<Record<string, unknown>>) : null;
+  return clip({
+    ...row,
+    ...(stages ? { stages: stages.map((stage) => ({ taskId: stage.taskId, stageId: stage.stageId, state: stage.state,
+      ...(typeof stage.reason === "string" && stage.reason ? { reason: stage.reason.slice(0, 400) } : {}) })) } : {}),
+  });
+}
+
 export function registerTools(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
 
@@ -50,9 +74,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     instructions:"Use only from the same Lane Pilot PM thread that dispatched the run. If state is running, call again with the same runId.",
     parameters:z.object({ runId:z.string().min(1), timeoutSec:z.number().int().min(1).max(240).default(60) }).strict(),
     execute: async (params, context) => JSON.stringify(
-      await services.waitWriter({ threadId:context.threadId, projectId:context.projectId, runId:params.runId, timeoutSec:params.timeoutSec }),
-      null,
-      2,
+      compactWaitResult(await services.waitWriter({ threadId:context.threadId, projectId:context.projectId, runId:params.runId, timeoutSec:params.timeoutSec })),
     ),
   });
 

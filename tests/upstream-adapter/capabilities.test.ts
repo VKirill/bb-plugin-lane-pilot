@@ -104,3 +104,11 @@ describe("upstream capability compatibility", () => {
     });
   });
 });
+
+it("keeps dates in file names as part of the path, and reads windows only after a separator", async () => {
+  const { parseExecutionLineWindows: parse } = await import("../../src/upstream-adapter/capabilities");
+  expect(parse(".agents/plans/2026-10-02-greeting-cards.md")).toEqual({ path: ".agents/plans/2026-10-02-greeting-cards.md", windows: [] });
+  expect(parse(".agents/plans/2026-10-02-cards.md:10-20")).toEqual({ path: ".agents/plans/2026-10-02-cards.md", windows: [{ startLine: 10, endLine: 20 }] });
+  expect(parse("src/a.ts#L5-L9")).toEqual({ path: "src/a.ts", windows: [{ startLine: 5, endLine: 9 }] });
+  expect(parse("src/a.ts 3-4, 8-9")).toEqual({ path: "src/a.ts", windows: [{ startLine: 3, endLine: 4 }, { startLine: 8, endLine: 9 }] });
+});

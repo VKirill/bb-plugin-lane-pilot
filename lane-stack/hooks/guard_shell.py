@@ -242,6 +242,9 @@ def _pm_edit_allowed(path: str, cwd: object) -> bool:
         return True
     if normalized.startswith("docs/plans/"):
         return suffix in _PM_TEXT_SUFFIXES
+    # The chat's own folder (BB project-folders): notes, commit messages, scratch files of this PM chat.
+    if normalized.startswith(".bb/chats/") and "/history/" not in normalized and not normalized.endswith("/thread.json"):
+        return suffix in _PM_TEXT_SUFFIXES
     # Worktree-local or main-repo L1 checkers (must be check.py only).
     if _PM_L1_CHECK_SCRIPT.fullmatch(normalized):
         return True

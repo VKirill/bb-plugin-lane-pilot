@@ -111,10 +111,11 @@ export type PathWindows = { path: string; windows: LineWindow[] };
 export function parseExecutionLineWindows(raw: string): PathWindows {
   const text = raw.trim();
   if (!text) return { path: "", windows: [] };
-  WINDOW_RE.lastIndex = 0;
-  const first = WINDOW_RE.exec(text);
-  const path = first ? text.slice(0, first.index).trim() : text;
-  const tail = text.slice(first?.index ?? text.length);
+  // Line windows start after a separator («file.md:10-20», «file.md#L10-L20», «file.md 10-20»). Without one,
+  // digits belong to the path: «.agents/plans/2026-10-02-cards.md» is a file, not «.agents/plans/» lines 2026-10.
+  const start = /[:#\s]+(?=L?~?\d+\s*[-–—]\s*L?~?\d+)/i.exec(text);
+  const path = start ? text.slice(0, start.index).trim() : text;
+  const tail = start ? text.slice(start.index) : "";
   const windows: LineWindow[] = [];
   WINDOW_RE.lastIndex = 0;
   for (const match of tail.matchAll(WINDOW_RE)) {

@@ -1,7 +1,7 @@
 import { breakerKey, classifyFailure, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "../../owns-paths";
 import { reconcile } from "../../reconcile";
@@ -61,6 +61,39 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let primaryFailure:Record<string,unknown>|null=null;
     const pmReadContext=input.pmReadContext ?? stringAt(listStageReceipts(db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read")?.result,"summary") ?? "";
     let releaseWriterSlot:(()=>void)|undefined;
+    /**
+     * depends_on: the task starts only once every task it names is accepted (its work is in main). A blocked
+     * dependency blocks this task too; a name no one dispatched is a planning mistake and blocks at once.
+     */
+    const waitForDependencies = async (): Promise<string | null> => {
+      const deps = [...new Set((input.task.depends_on ?? []).filter((dep) => dep && dep !== input.taskId))];
+      let noted = "";
+      const since = Date.now();
+      for (;;) {
+        if (ctx.isDisposed()) return null;
+        const pending: string[] = [];
+        for (const dep of deps) {
+          const state = latestTaskAttemptState(db, input.projectId, dep);
+          if (state === "accepted") continue;
+          // A batch may dispatch the dependent before its dependency: give the name two minutes to appear.
+          if (state === null && Date.now() - since > 120_000) return `depends_on ${dep}: no such task was dispatched in this project`;
+          if (state === "blocked" || state === "canceled") return `depends_on ${dep}: that task ended ${state}`;
+          pending.push(dep);
+        }
+        if (!pending.length) return null;
+        const key = pending.join(",");
+        if (noted !== key) {
+          noted = key;
+          ctx.log(`writer ${input.taskId} waits for depends_on ${key}`);
+          const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
+          if (!stage || stage.state === "pending") {
+            recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
+              reason:`waiting for depends_on: ${key}` });
+          }
+        }
+        await new Promise((wake) => setTimeout(wake, 10_000));
+      }
+    };
     const waitForOverlappingTasks = async () => {
       const base = getRun(db,input.runId)?.writer_workspace_path;
       let noted = "";
@@ -97,6 +130,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const budget=services.runBudgetFor(input.runId,runSettings);
       // Tasks run side by side only when they cannot touch the same files: one whose owns_paths overlap an
       // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
+      const dependency = await waitForDependencies();
+      if (dependency) {
+        transitionAttempt(db, attemptId, "blocked", { reason: dependency });
+        last = { status:"blocked", reason: dependency, attemptId };
+        refreshRun(input.runId);
+        return;
+      }
       if (!inPlace) await waitForOverlappingTasks();
       releaseWriterSlot=await services.runWriterPool.acquire(input.runId,inPlace?1:policy.pools.provider);
       const latestAttempt=getAttempt(db,attemptId);

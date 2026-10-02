@@ -1381,7 +1381,7 @@ describe("stage → native writer → receipt", () => {
     const acceptedAttempt = getAttempt(db, String(dispatch.attemptId));
     expect(writerReceipt).toMatchObject({threadId:acceptedAttempt?.thread_id,providerId:spawned[1].providerId,model:spawned[1].model,attempt:1});
     expect(acceptedAttempt).toMatchObject({state:"accepted",thread_id:writerReceipt?.threadId,workspace_path:config.writerWorkspacePath,environment_id:null});
-    expect((result.stages as typeof receipts).filter((row) => row.taskId === task.id && !backgroundStages.has(row.stageId))).toEqual(receipts);
+    expect((result.stages as typeof receipts).filter((row) => row.taskId === task.id && !backgroundStages.has(row.stageId))).toEqual(receipts.map((row) => ({ taskId:row.taskId, stageId:row.stageId, state:row.state, ...(row.reason ? { reason:row.reason.slice(0, 400) } : {}) })));
     expect(receipts.find((row) => row.stageId === "verification")?.result).toEqual({
       produced:["note.txt"], verification:[{ command:"test -f note.txt", exitCode:0, stdout:"", stderr:"",
         sandboxBackend:"macos-seatbelt",policySha256:"c".repeat(64),workspacePath:config.writerWorkspacePath }],
@@ -1416,7 +1416,7 @@ describe("stage → native writer → receipt", () => {
     const expectedProfile={schemaVersion:1,pools:{provider:5,verification:2},score:10,risk:"high",sourceRisk:"critical",scoreAdapter:"task-risk-v1"};
     expect(receipts.find((row)=>row.stageId==="verification")?.result).toMatchObject({runV2:expectedProfile});
     expect(receipts.find((row)=>row.stageId==="writer-agent")?.result).toMatchObject({runV2:expectedProfile});
-    expect(completed.stages.filter((row:{taskId:string})=>row.taskId===criticalTask.id)).toEqual(receipts);
+    expect(completed.stages.filter((row:{taskId:string})=>row.taskId===criticalTask.id)).toEqual(receipts.map((row) => ({ taskId:row.taskId, stageId:row.stageId, state:row.state, ...(row.reason ? { reason:row.reason.slice(0, 400) } : {}) })));
     await harness.lifecycle.dispose();
   });
 

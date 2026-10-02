@@ -626,6 +626,13 @@ export function listTaskTerminalStates(db: LanePilotDatabase, runId: string): st
   });
 }
 
+/** The latest attempt of a task id in a project (any run): what a dependent task waits on. */
+export function latestTaskAttemptState(db: LanePilotDatabase, projectId: string, taskId: string): string | null {
+  const row = db.prepare(`SELECT a.state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE r.project_id=? AND a.task_id=? ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT 1`).get(projectId, taskId) as { state: string } | undefined;
+  return row?.state ?? null;
+}
+
 export function listOpenAttempts(db: LanePilotDatabase): Array<{
   id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string;
 }> {

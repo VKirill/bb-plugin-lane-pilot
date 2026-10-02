@@ -9,6 +9,8 @@ export type GitIntegration = {
   reason:string|null;
   /** With «busy»: what the integration holding the base checkout merges (its commit message). */
   holder?:string|null;
+  /** Workspace packages rebuilt in the base checkout after the merge, with how each build ended. */
+  rebuilt?:Array<{dir:string;ok:boolean;detail:string|null}>;
 };
 
 /** The base checkout is held by a live integration; the caller waits and tries again instead of failing. */
@@ -88,7 +90,14 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   const sha=head.stdout.trim();
   const branch=git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"]).stdout.trim();
   let result:GitIntegration;
-  try { result=await withBaseLock(input.basePath,()=>merge(input.basePath,sha,input.message),input.message,input.lockWaitMs); }
+  try {
+    result=await withBaseLock(input.basePath,async()=>{
+      const before=git(input.basePath,["rev-parse","HEAD"]).stdout.trim();
+      const merged=merge(input.basePath,sha,input.message);
+      if(merged.status==="merged"&&before) merged.rebuilt=await rebuildChangedPackages(input.basePath,before);
+      return merged;
+    },input.message,input.lockWaitMs);
+  }
   catch(error) {
     if(!(error instanceof BaseLockBusyError)) throw error;
     // The writer's work stays committed in its worktree; the next try merges it.
@@ -152,6 +161,28 @@ async function installBaseDependencies(basePath:string):Promise<void> {
   await running;
 }
 
+/**
+ * Rebuilds, in the base checkout, the workspace packages this merge changed that are consumed through their
+ * build output (they have dist/ and a build script). A writer's worktree copies dist/ from here; left stale,
+ * the next writer's typecheck failed until someone rebuilt main by hand (SelfyStudio, 2026-10-02).
+ */
+async function rebuildChangedPackages(basePath:string,before:string):Promise<Array<{dir:string;ok:boolean;detail:string|null}>> {
+  const diff=git(basePath,["diff","--name-only",`${before}..HEAD`]);
+  if(!diff.ok) return [];
+  const changed=diff.stdout.split("\n").map((line)=>line.trim()).filter(Boolean);
+  const out:Array<{dir:string;ok:boolean;detail:string|null}>=[];
+  for(const dir of await workspaceDirs(basePath)) {
+    if(!changed.some((file)=>file.startsWith(`${dir}/`)&&!file.startsWith(`${dir}/dist/`))) continue;
+    if(!(await stat(join(basePath,dir,"dist")).catch(()=>null))?.isDirectory()) continue;
+    const manifest=await readFile(join(basePath,dir,"package.json"),"utf8").then((text)=>JSON.parse(text) as {scripts?:Record<string,string>}).catch(()=>null);
+    if(!manifest?.scripts?.build) continue;
+    const run=spawnSync("npm",["run","build"],{cwd:join(basePath,dir),encoding:"utf8",timeout:300_000,maxBuffer:16<<20});
+    const ok=run.status===0;
+    out.push({dir,ok,detail:ok?null:`${run.error?.message??""}${(run.stderr||run.stdout||"").trim().split("\n").slice(-6).join("\n")}`.slice(0,800)});
+  }
+  return out;
+}
+
 /** The workspace folders of a monorepo (`apps/*`, a literal path), from the base package.json; [] when none. */
 async function workspaceDirs(basePath:string):Promise<string[]> {
   const manifest=await readFile(join(basePath,"package.json"),"utf8").then((text)=>JSON.parse(text) as {workspaces?:string[]|{packages?:string[]}}).catch(()=>null);
@@ -180,6 +211,12 @@ async function workspaceDirs(basePath:string):Promise<string[]> {
  * marketing vitest failed with EROFS on every attempt (2026-10-02).
  */
 const NODE_MODULES_CACHE_DIRS = new Set([".vite-temp", ".vite", ".vitest", ".cache"]);
+/**
+ * Generated code a check rewrites (`prisma generate` writes `.prisma` and refreshes `@prisma/client`): copied,
+ * not linked, so the worktree has the base's current client and the check can regenerate it. A link pointed
+ * into the base checkout, which the sandbox mounts read-only: EROFS (SelfyStudio persistence-prisma typecheck).
+ */
+const NODE_MODULES_WRITABLE_COPIES = new Set([".prisma", "@prisma/client"]);
 
 async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:string}):Promise<boolean> {
   const base=join(input.baseReal,input.dir,"node_modules"), target=join(input.worktreePath,input.dir,"node_modules");
@@ -189,6 +226,10 @@ async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:
   await mkdir(target);
   const linkEntry=async(rel:string[])=>{
     const source=join(base,...rel), destination=join(target,...rel);
+    if(NODE_MODULES_WRITABLE_COPIES.has(rel.join("/"))) {
+      await cp(source,destination,{recursive:true,dereference:true,errorOnExist:false}).catch(async()=>{ await mkdir(destination,{recursive:true}); });
+      return;
+    }
     const info=await lstat(source);
     if(info.isSymbolicLink()) {
       const real=await realpath(source).catch(()=>null);

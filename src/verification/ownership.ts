@@ -1,3 +1,4 @@
+import { matchOwnsPath } from "../owns-paths";
 import { posix } from "node:path";
 
 export type OwnershipTask = {
@@ -24,22 +25,9 @@ function safeRelative(value:string):string|null {
 function matches(pattern:string, path:string):boolean {
   const normalized = safeRelative(pattern);
   if (!normalized) return false;
-  if (normalized.endsWith("/**")) {
-    const prefix = normalized.slice(0, -3).replace(/\/$/, "");
-    return path === prefix || path.startsWith(`${prefix}/`);
-  }
-  if (normalized === path) return true;
-  // A plain path names that file or everything under it, «apps/bot/__tests__/» included, as in owns-paths.ts.
-  // Before, a trailing slash matched nothing: the bot task's own tests were rejected and a never_touch
-  // «docs/» guarded nothing (SelfyStudio, 2026-10-02).
-  if (!/[*?[]/.test(normalized)) {
-    const prefix = normalized.replace(/\/+$/, "");
-    return path === prefix || path.startsWith(`${prefix}/`);
-  }
-  // A single-segment * is supported for path sets such as src/*.ts.
-  const expression = normalized.split("/").map((part) => part === "*" ? "[^/]+" :
-    part.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")).join("/");
-  return new RegExp(`^${expression}$`).test(path);
+  // One matcher for the whole plugin (owns-paths.ts): plain paths cover what is under them, a double star crosses
+  // folders and wildcards inside names work. They did not here, and correct SelfyStudio work was rejected.
+  return matchOwnsPath(path, pattern.endsWith("/") && !normalized.endsWith("/") ? `${normalized}/` : normalized);
 }
 
 export function validateOwnershipContract(task:OwnershipTask):string|null {
