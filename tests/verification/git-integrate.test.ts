@@ -211,6 +211,17 @@ it("takes over an ownerless lock an older Lane Pilot left behind", async () => {
   expect(await withBaseLock(base, () => "ran")).toBe("ran");
 });
 
+it("takes over a lock whose owner file was never written, without the 10-minute wait", async () => {
+  const { base } = await repo();
+  const lock = join(base, ".git", "lane-pilot-integrate.lock");
+  // The host worker was stopped by a plugin reload between creating the owner file and writing its pid.
+  await mkdir(lock);
+  await writeFile(join(lock, "owner"), "");
+  const old = new Date(Date.now() - 60_000);
+  await utimes(lock, old, old);
+  expect(await withBaseLock(base, () => "ran", "", 2_000)).toBe("ran");
+});
+
 it("sees work already committed in a writer worktree against main's current HEAD", async () => {
   const { base, worktree } = await repo();
   const a = await worktree("a");

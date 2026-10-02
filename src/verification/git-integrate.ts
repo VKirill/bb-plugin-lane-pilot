@@ -57,9 +57,10 @@ export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>,labe
       const info=await stat(lock).catch(()=>null);
       const ownerText=await readFile(join(lock,"owner"),"utf8").catch(()=>"");
       const owner=Number.parseInt(ownerText,10);
-      // A lock without an owner file is either being created right now or was left by an older Lane Pilot.
+      // A lock without a pid is either being created right now, or its process was stopped before writing
+      // the pid (a plugin reload between mkdir and the write), or it was left by an older Lane Pilot.
       const orphaned=Number.isInteger(owner)&&owner>0&&owner!==process.pid&&!ownerAlive(owner);
-      const legacy=!Number.isInteger(owner)&&info!==null&&Date.now()-info.mtimeMs>5_000&&!(await readdir(lock).catch(()=>[])).length;
+      const legacy=!Number.isInteger(owner)&&info!==null&&Date.now()-info.mtimeMs>5_000;
       if(orphaned||legacy||(info&&Date.now()-info.mtimeMs>600_000)) { await rm(lock,{recursive:true,force:true}); continue; }
       if(Date.now()>deadline) throw new BaseLockBusyError(ownerText.split("\n")[1]?.trim()||null);
       await new Promise((resolve)=>setTimeout(resolve,500));
