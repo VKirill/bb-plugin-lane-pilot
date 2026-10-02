@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.77 — 2026-10-02
+
+- **New settings tab «Agent access» («Доступы агентов»).** For each of the 20 kinds of helpers Lane Pilot spawns — grouped as writing code, reviewing, keeping the project, browser, specialists — a card shows what it loads into its session and where that comes from: BB plugins, skills, MCP servers, CLI plugins, personal and project instructions, each marked «by role» or «changed». Any group can be switched to «Everything BB has» or «Only selected» with a chip editor over the BB plugin and skill catalogs; the mandatory project checkout, Project Folders and `bb-bridge` stay locked in. «Back to role» drops the change. A footer says which providers honour which groups. The session-filter mode moved here from «Execution».
+- Changes are stored per role (`helper.access.<role>`) on the project or a section; a section changes only the roles it touches and inherits the rest. A run freezes them with its helper policy.
+- New RPC `helper_access_view`.
+
 ## 0.1.76 — 2026-10-02
 
 - **Helpers load only what their job needs, by default.** New helper context mode «By role» (now the default): every helper Lane Pilot spawns gets the profile of its role instead of everything BB has — 43 plugins and descriptions of ~500 skills (about 39 thousand tokens). Writers, code repair and night fixes: two coding skills (`writer-practices`, `karpathy-guidelines`). Plan and code critics, specialist review, night review, gate triage, PM read, council seats, the rules analyzer: nothing extra. Docs maintainer: docs skills, no plugins. Onboarding, memory, project life: their own skills. Browser check: the browser-automation plugin and skill. Specialists: the skills from their agent definition. Every profile keeps the mandatory project checkout, Project Folders and `bb-bridge`, and leaves out the user's personal instructions and claude.ai skills; the project's own AGENTS.md/CLAUDE.md stay. The PM itself is not narrowed. «Everything BB has» (explicit inherit), «Only the lists below» and «None» work as before.

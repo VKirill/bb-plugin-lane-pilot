@@ -55,6 +55,7 @@ import { userVisibleProjects } from "../project-scope";
 import { CONTROL_H } from "./control-row";
 import { Disclosure } from "./disclosure";
 import { RuleProposals } from "./rule-proposals";
+import { AgentAccess } from "./agent-access";
 import { DocsPlaces } from "./docs-places";
 import { DOCS_DEFAULT_SELECTION } from "../stages/docs-defaults";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
@@ -392,7 +393,7 @@ function StatusRow({ state, title, detail, action, testId }: { state: "ok" | "to
 
 const TAB_LABELS: Record<string, I18nKey> = {
   overview: "tabOverview", settings: "tabSettings", checks: "tabChecks", council: "tabCouncil",
-  memory: "tabMemory", rules: "tabRules", monitor: "tabMonitor", service: "tabService",
+  memory: "tabMemory", access: "tabAccess", rules: "tabRules", monitor: "tabMonitor", service: "tabService",
 };
 /** Tabs the Basic/Advanced switch applies to. */
 const SETTINGS_TABS = new Set(["settings", "checks", "council", "memory"]);
@@ -784,8 +785,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
   // Runs and maintenance belong to the project and its machine; the global level has no overview or rules.
   const tabs = isGlobal ? ["settings", "checks", "council", "memory"]
-    : selectedSectionId ? ["overview", "settings", "checks", "council", "memory", "rules"]
-      : ["overview", "settings", "checks", "council", "memory", "rules", "monitor", "service"];
+    : selectedSectionId ? ["overview", "settings", "checks", "council", "memory", "access", "rules"]
+      : ["overview", "settings", "checks", "council", "memory", "access", "rules", "monitor", "service"];
   useEffect(() => {
     if (!tabs.includes(tab)) setTab(tabs[0]!);
   }, [tabs.join(), tab]);
@@ -1638,13 +1639,6 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextHelp")}</p>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextConstraint")}</p>
                 {(() => { const row = catalogRow("helper.placement"); return row ? <SettingField row={row} value={displayedValue("helper.placement")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("helper.placement", next)} /> : null; })()}
-                <AdvancedRows show={advanced}>
-                  {(["helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins"] as const).map((key) => {
-                    const row = catalogRow(key);
-                    return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
-                      onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
-                  })}
-                </AdvancedRows>
               </section>
             </SettingsGroup></div>
             {extrasGrouped.filter((group) => group.section !== "night-review" && group.section !== "browser-qa").map(({ section, rows }) => (
@@ -1758,6 +1752,17 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
 
           </TabsContent>
           {tabs.includes("rules") ? <>
+          <TabsContent value="access" forceMount={true} className="space-y-6" hidden={tab !== "access"} data-testid="access-panel">
+            {!isGlobal && projectId ? <AgentAccess projectId={projectId} sectionId={selectedSectionId} refreshKey={data?.versions["helper.context_mode"] ?? 0}
+              modeControl={<div className="space-y-2" data-testid="access-mode-fields">
+                {(["helper.context_mode", ...(displayedValue("helper.context_mode") === "selected" ? ["helper.skills", "helper.mcp_servers", "helper.bb_plugins", "helper.native_plugins"] : [])] as const).map((key) => {
+                  const row = catalogRow(key);
+                  return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
+                    onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
+                })}
+              </div>} /> : null}
+          </TabsContent>
+
           <TabsContent value="rules" forceMount={true} className="space-y-6" hidden={tab !== "rules"} data-testid="rules-panel">
             {!isGlobal && projectId ? <RuleProposals projectId={projectId} picker={modelPicker} /> : null}
           </TabsContent>

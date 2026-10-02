@@ -37,7 +37,14 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       });
       const plugins = await (bb.sdk.plugins.list() as Promise<unknown>).catch(() => []);
       const pluginRows = (Array.isArray(plugins) ? plugins : ((plugins as { plugins?: unknown[] })?.plugins ?? [])) as Array<{ id?: string; name?: string; displayName?: string }>;
-      const skills = await (bb.sdk.skills.list({ projectId, environmentId: null } as never) as Promise<unknown>).catch(() => []);
+      // The skills catalog of the project; some BB versions want an environment, so the project's own is tried next.
+      const listSkills = (environmentId: string | null) => bb.sdk.skills.list({ projectId, environmentId } as never) as Promise<unknown>;
+      let skills: unknown = await listSkills(null).catch((cause) => { ctx.log(`helper_access_view skills: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+      if (!skills) {
+        const envs = await (bb.sdk.environments.list({ projectId } as never) as Promise<unknown>).catch(() => []);
+        const env = (Array.isArray(envs) ? envs : ((envs as { environments?: unknown[] })?.environments ?? [])) as Array<{ id?: string }>;
+        if (env[0]?.id) skills = await listSkills(env[0].id).catch((cause) => { ctx.log(`helper_access_view skills (env): ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
+      }
       const skillRows = (Array.isArray(skills) ? skills : ((skills as { skills?: unknown[] })?.skills ?? [])) as Array<{ name?: string; description?: string }>;
       return {
         mode: parsed.ok ? parsed.settings.mode : "invalid",
