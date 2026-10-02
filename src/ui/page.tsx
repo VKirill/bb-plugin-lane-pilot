@@ -1303,6 +1303,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     for (const section of sections.filter((item) => item.parentId === parentId)) { flatSections.push({ id: section.id, name: section.name, depth }); walkSections(section.id, depth + 1); }
   };
   walkSections(null, 1);
+    // Phones get a menu; wider screens keep every tab visible and wrap the row instead of scrolling it.
   const tabSelect = contentWidth > 0 && contentWidth < 680;
   const advanced = settingsDepth === "advanced";
   const hostLabel = (id: string | null | undefined) => (id ? data?.qaHosts?.find((host) => host.id === id)?.name ?? id : "—");
@@ -1468,8 +1469,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               <SelectContent>{tabs.map((id) => <SelectItem key={id} value={id}>{t(TAB_LABELS[id]!)}</SelectItem>)}</SelectContent>
             </Select>
           ) : (
-            <TabsList data-bb-ru-skip className="w-full">
-              {tabs.map((id) => <TabsTrigger key={id} value={id} className="flex-1 px-2 text-[13px]" data-testid={`tab-${id}`}>{t(TAB_LABELS[id]!)}</TabsTrigger>)}
+            <TabsList data-bb-ru-skip className="w-full flex-wrap overflow-visible">
+              {tabs.map((id) => <TabsTrigger key={id} value={id} className="flex-1 whitespace-nowrap px-2 text-[13px]" data-testid={`tab-${id}`}>{t(TAB_LABELS[id]!)}</TabsTrigger>)}
             </TabsList>
           )}
 

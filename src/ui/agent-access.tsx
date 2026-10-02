@@ -133,7 +133,18 @@ function NameEditor({ chosen, locked, catalog, searchLabel, disabled, testId, on
   const needle = query.trim().toLowerCase();
   const matches = (catalog ?? []).filter((item) => !taken.has(item.name)
     && (!needle || item.name.toLowerCase().includes(needle) || item.label.toLowerCase().includes(needle) || (item.detail ?? "").toLowerCase().includes(needle)));
-  const shown = matches.slice(0, 8);
+  // Exact name first, then names starting with the query, then names containing it, then description hits:
+  // «ru-text» must not lose to a skill that only mentions ru-text in its description.
+  const rank = (item: Suggestion) => {
+    const name = item.name.toLowerCase(), bare = name.includes(":") ? name.slice(name.indexOf(":") + 1) : name;
+    if (!needle) return 4;
+    if (name === needle) return 0;
+    if (bare === needle) return 0.5;
+    if (name.startsWith(needle) || bare.startsWith(needle)) return 1;
+    if (name.includes(needle) || item.label.toLowerCase().includes(needle)) return 2;
+    return 3;
+  };
+  const shown = matches.map((item, index) => ({ item, index, r: rank(item) })).sort((a, b) => a.r - b.r || a.index - b.index).slice(0, 8).map((row) => row.item);
   const exact = (catalog ?? []).find((item) => item.name.toLowerCase() === needle);
   const custom = needle && !taken.has(query.trim()) && !exact ? query.trim() : null;
   const add = (name: string) => {
@@ -166,12 +177,14 @@ function NameEditor({ chosen, locked, catalog, searchLabel, disabled, testId, on
         ))}
         {!chosen.length ? <span className="text-xs text-muted-foreground">{t("accessEmptyList")}</span> : null}
       </div>
-      <div className="min-w-0">
+      {/* The suggestions float over the page: in the flow they pushed the buttons below, and a click that blurred
+          the field closed them, so the button jumped away under the pointer (found live on 0.1.78). */}
+      <div className="relative min-w-0">
         <Input value={query} disabled={disabled} aria-label={searchLabel} placeholder={searchLabel} className="h-9 w-full min-w-0 text-sm"
           onChange={(event) => setQuery(event.target.value)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
           onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } if (event.key === "Escape") setQuery(""); }} />
         {focused && (shown.length || custom) ? (
-          <div role="listbox" aria-label={searchLabel} className="mt-1 max-h-56 min-w-0 overflow-y-auto rounded-lg border border-[var(--lp-outline)] bg-[var(--lp-card)] p-1">
+          <div role="listbox" aria-label={searchLabel} className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 min-w-0 overflow-y-auto rounded-lg border border-[var(--lp-outline)] bg-[var(--lp-card)] p-1 shadow-lg">
             {shown.map((item) => (
               <button key={item.name} type="button" role="option" aria-selected={false} title={item.detail || item.label} className="block w-full min-w-0 rounded-md px-2 py-1.5 text-left text-sm hover:bg-[var(--lp-well)]"
                 onMouseDown={(event) => event.preventDefault()} onClick={() => add(item.name)}>

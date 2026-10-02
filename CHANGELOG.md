@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.79 — 2026-10-02
+
+Found by checking 0.1.78 in the real BB page (https://bb.vechkasov.pro, headless Chromium), not in tests:
+
+- **«Back to …» did nothing after using the search.** The suggestion list sat in the page flow; a click on the button blurred the search field, the list closed and the button jumped up from under the pointer, so no request was sent. The list now floats over the page.
+- **The wrong skill came first.** Searching «ru-text» offered a skill that only mentions ru-text in its description first. Exact names now come first, then the same name under a plugin prefix (`lane-stack:ru-text`), then names starting with or containing the query, then description matches.
+- **Tabs scrolled out of sight.** Nine tabs did not fit the settings column, so «Overview» and «Execution» were scrolled off the left edge. The row now wraps onto a second line; phones keep the menu.
+
+Verified live in the real BB page at 1280 and 390 px: a project change to the writer's skills (picked from suggestions) showed «project» and 3 skills, «Back to role» restored it; a global change showed «global» in the project and was reset the same way; no horizontal overflow on the phone and no page errors.
+
 ## 0.1.78 — 2026-10-02
 
 - **Agent access in «Global settings» too.** Role access set there is the default for every project; a project or a section overrides any role. The order is spelled out on the tab: role profile → global → project → section.
