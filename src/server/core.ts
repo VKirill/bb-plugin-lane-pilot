@@ -107,8 +107,11 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     const acceptedId=attemptId?null:[...listAttemptsForTask(db,runId,taskId)].reverse().find((attempt)=>attempt.state==="accepted")?.id;
     const binding=selected??(acceptedId?getAttempt(db,acceptedId):null);
     // Lane Pilot's own attempt worktree (native run, no BB environment) is gone once merged or failed:
-    // accepted work is in the run workspace, and a retry gets a fresh worktree.
-    const ownWorktree=getRun(db,runId)?.kind==="cli"&&binding?.environment_id===null;
+    // accepted work is in the run workspace, and a retry gets a fresh worktree. An attempt still in flight
+    // keeps its worktree: resumed after a reload it was checked against the base checkout and failed with
+    // «ownership run scope invalid» (SelfyStudio, 2026-10-02).
+    const inFlight=["queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(String(binding?.state));
+    const ownWorktree=getRun(db,runId)?.kind==="cli"&&binding?.environment_id===null&&!(selected&&inFlight);
     const path=ownWorktree?runWorkspacePath:(binding?.workspace_path??runWorkspacePath);
     return {path,environmentId:binding?.environment_id??null,
       task:{...contractTask,project_cwd:path,verification:contractTask.verification.map((command)=>({...command,cwd:path}))}};

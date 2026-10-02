@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.66 — 2026-10-02
+
+Two failures behind SelfyStudio's blocked blog and bot tasks, both in Lane Pilot:
+
+- **Checks in a writer's worktree could not write vite's cache.** The worktree's `node_modules` mirrored every entry of the base checkout's as a link, `.vite-temp` included, so vitest wrote its bundled config into the base checkout, which the verification sandbox mounts read-only: `EROFS` on every marketing test. Tool caches (`.vite-temp`, `.vite`, `.vitest`, `.cache`) now get their own empty folder in the worktree.
+- **A writer resumed after a plugin reload failed with «ownership run scope invalid».** For Lane Pilot's own worktrees the task's folder was always set back to the base checkout, which is right once the attempt has finished but wrong for one still at work, whose diff then did not match. An attempt in flight now keeps its worktree.
+
 ## 0.1.65 — 2026-10-02
 
 - **Working helpers show as squares next to the agent badge** above the message box of a Lane Pilot chat: one per writer, specialist, browser check, council seat or critic that is still working, with its role's icon and a pulse. Hovering names the role and the task. A click opens that thread in the chat's right-hand side panel (BB's own thread view), so you can watch it without leaving the chat; where the surface has no side panel it goes to the thread. New RPC `list_helper_threads`, new side-panel tab «Помощники Lane Pilot».

@@ -59,6 +59,21 @@ it("links the base node_modules into a writer worktree and keeps the link out of
   expect(git(base, "show", "--stat", "--format=", "HEAD^2")).not.toContain("node_modules");
 });
 
+it("gives tool caches in node_modules their own folder so checks never write into the base checkout", async () => {
+  const { prepareWorktree } = await import("../../src/verification/git-integrate");
+  const { mkdir, lstat } = await import("node:fs/promises");
+  const { base, worktree } = await repo();
+  await mkdir(join(base, "node_modules", "vitest"), { recursive: true });
+  await mkdir(join(base, "node_modules", ".vite-temp"), { recursive: true });
+  await mkdir(join(base, "node_modules", ".bin"), { recursive: true });
+  const a = await worktree("cache");
+  await prepareWorktree({ basePath: base, worktreePath: a });
+  expect((await lstat(join(a, "node_modules", ".vite-temp"))).isSymbolicLink()).toBe(false);
+  expect((await lstat(join(a, "node_modules", ".bin"))).isSymbolicLink()).toBe(true);
+  await writeFile(join(a, "node_modules", ".vite-temp", "config.mjs"), "x");
+  await expect(lstat(join(base, "node_modules", ".vite-temp", "config.mjs"))).rejects.toThrow();
+});
+
 it("installs dependencies from the lockfile before the first writer so nobody runs npm install", async () => {
   const { prepareWorktree } = await import("../../src/verification/git-integrate");
   const { base, worktree } = await repo();

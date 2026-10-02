@@ -143,6 +143,13 @@ async function workspaceDirs(basePath:string):Promise<string[]> {
  * a workspace package (npm links it back into the repository) is re-pointed at the worktree's own
  * copy, so checks in the worktree import the writer's edits and not the base checkout's sources.
  */
+/**
+ * Tool caches inside node_modules (vite writes its bundled config to .vite-temp) get their own empty folder in the
+ * worktree. Linked, they wrote into the base checkout, which the verification sandbox mounts read-only: SelfyStudio's
+ * marketing vitest failed with EROFS on every attempt (2026-10-02).
+ */
+const NODE_MODULES_CACHE_DIRS = new Set([".vite-temp", ".vite", ".vitest", ".cache"]);
+
 async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:string}):Promise<boolean> {
   const base=join(input.baseReal,input.dir,"node_modules"), target=join(input.worktreePath,input.dir,"node_modules");
   if(!(await stat(base).catch(()=>null))?.isDirectory()) return false;
@@ -160,6 +167,7 @@ async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:
     await symlink(source,destination,followed?.isDirectory()?"dir":"file");
   };
   for(const name of await readdir(base)) {
+    if(NODE_MODULES_CACHE_DIRS.has(name)) { await mkdir(join(target,name)); continue; }
     if(name.startsWith("@")&&!(await lstat(join(base,name))).isSymbolicLink()&&(await stat(join(base,name))).isDirectory()) {
       await mkdir(join(target,name));
       for(const child of await readdir(join(base,name))) await linkEntry([name,child]);
