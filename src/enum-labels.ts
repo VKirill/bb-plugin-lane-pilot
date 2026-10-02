@@ -23,6 +23,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
     "linux-bubblewrap": "enumSandboxBubblewrap",
   },
   "helper.context_mode": {
+    roles: "helperContextRoles",
     inherit: "helperContextInherit",
     selected: "helperContextSelected",
     none: "helperContextNone",

@@ -144,7 +144,7 @@ export function createOnboardingStage(ctx: ServerCore, services: Services) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"onboarder",
       });
-      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,tier),prompt,
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, providerId, "onboarder"),...writerExecutionSelection(providerId,modelId,effort,tier),prompt,
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"onboarder",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"onboarding-preview",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("onboarding_thread_id_missing");

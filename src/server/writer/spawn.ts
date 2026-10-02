@@ -325,7 +325,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       });
       const spawned = await spawnWithSeam(() => fullAccessSpawn(bb, {
         ...placement,
-        ...requiredPolicyField(bb, helperSnapshot, writerProviderId),
+        ...requiredPolicyField(bb, helperSnapshot, writerProviderId, "writer"),
         ...execution,
         prompt: writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
           ? `Fallback reason: ${input.emergency.reason}. Primary provider/model: ${typeof settings["writer.provider"] === "string" ? settings["writer.provider"] : input.config.writerProviderId}/${typeof settings["writer.model"] === "string" ? settings["writer.model"] : input.config.writerModel}.`

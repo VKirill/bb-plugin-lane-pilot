@@ -134,7 +134,7 @@ export function createNightStages(ctx: ServerCore, services: Services) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"night-reviewer",
       });
-      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,tier),
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, providerId, "night-reviewer"),...writerExecutionSelection(providerId,modelId,effort,tier),
         prompt:nightReviewPrompt({agent:snapshot.agent,task,acceptedResult:accepted.result,workspace:task.project_cwd,maxFindings:20}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"night-reviewer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-review",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
@@ -191,7 +191,7 @@ export function createNightStages(ctx: ServerCore, services: Services) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"gate-triage",
       });
-      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, providerId),...writerExecutionSelection(providerId,modelId,effort,null),
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, providerId, "gate-triage"),...writerExecutionSelection(providerId,modelId,effort,null),
         prompt:gateTriagePrompt(report),environment:workspaceExecutionEnvironment(config.hostId,{path:run.writer_workspace_path??config.pmWorkspacePath,environmentId:null}),
         pluginMetadata:{role:"gate-triage",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"gate-triage",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("gate_triage_thread_id_missing");
@@ -259,7 +259,7 @@ export function createNightStages(ctx: ServerCore, services: Services) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"night-fixer",
       });
-      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, repairProviderId),...writerExecutionSelection(repairProviderId,repairModelId,repairEffort,tier),
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, repairProviderId, "night-fixer"),...writerExecutionSelection(repairProviderId,repairModelId,repairEffort,tier),
         prompt:nightFixPrompt({task,findings:plan.findings,paths:plan.paths}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"night-fixer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-fix",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});

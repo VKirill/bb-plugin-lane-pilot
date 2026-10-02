@@ -1,4 +1,4 @@
-export const HELPER_CONTEXT_MODES = ["inherit", "selected", "none"] as const;
+export const HELPER_CONTEXT_MODES = ["roles", "inherit", "selected", "none"] as const;
 export type HelperContextMode = (typeof HELPER_CONTEXT_MODES)[number];
 export type VkCapability = "none" | "dynamic" | "required";
 
@@ -24,8 +24,10 @@ export const CORE_PROVIDER_GROUPS = {
   "claude-code": ["bbPlugins", "skills", "mcpServers", "nativePlugins"],
   codex: ["bbPlugins", "skills", "mcpServers", "nativePlugins"],
   "acp-opencode": ["bbPlugins", "skills", "mcpServers"],
-  "acp-cursor": ["bbPlugins", "mcpServers"],
+  "acp-cursor": ["bbPlugins", "skills", "mcpServers"],
 } as const;
+/** Cores before 0.44.0-vk.15 could not narrow BB skills for Cursor. */
+const LEGACY_CURSOR_GROUPS = ["bbPlugins", "mcpServers"] as const;
 export const CORE_INSTRUCTION_SWITCHES = {
   "claude-code": ["userInstructions", "projectInstructions", "claudeAiSync"],
   codex: ["userInstructions", "projectInstructions"],
@@ -64,6 +66,58 @@ export function coreRequiredSessionAdvertisement(): RequiredSessionAdvertisement
     mandatoryMcpServers: [...MANDATORY_MCP_SERVERS],
   };
 }
+/**
+ * What each kind of helper loads when the project uses the default «by role» context: only what the job
+ * needs, so a writer or a docs maintainer does not carry 40-odd BB plugins and 500 skill descriptions in its
+ * prompt. The mandatory core resources (project checkout, Project Folders, bb-bridge) are always added.
+ */
+export type HelperRole =
+  | "writer" | "code-repair" | "night-fixer"
+  | "plan-critic" | "code-critic" | "specialist-reviewer" | "night-reviewer" | "gate-triage" | "pm-reader"
+  | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
+  | "browser-qa" | "council-seat" | "rules-analyzer"
+  | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily";
+
+type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
+const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: [] };
+const READER: RoleProfile = { bbPlugins: [], skills: [], mcpServers: [] };
+export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
+  "writer": CODER,
+  "code-repair": CODER,
+  "night-fixer": CODER,
+  "plan-critic": READER,
+  "code-critic": READER,
+  "specialist-reviewer": READER,
+  "night-reviewer": READER,
+  "gate-triage": READER,
+  "pm-reader": READER,
+  "docs-maintainer": { bbPlugins: [], skills: ["docs-maintain", "docs-methodology", "wiki-methodology"], mcpServers: [] },
+  "onboarder": { bbPlugins: [], skills: ["project-onboard", "project-docs", "project-life"], mcpServers: [] },
+  "memory-maintainer": { bbPlugins: [], skills: ["lane-memory", "memory-discipline"], mcpServers: [] },
+  "project-life": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
+  "browser-qa": { bbPlugins: ["browser-automation"], skills: ["browser-automation", "browser-qa"], mcpServers: [] },
+  "council-seat": READER,
+  "rules-analyzer": READER,
+  "specialist:design-lead": { bbPlugins: [], skills: ["ui-ux-pro-max", "project-design", "project-onboard", "web-design", "design-taste", "impeccable-ui", "page-prototype"], mcpServers: [] },
+  "specialist:copy-lead": { bbPlugins: [], skills: ["copy-project-life", "site-copy-audience", "site-copy-headlines", "site-copy-ux", "copy-research", "tavily", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
+  "specialist:seo-specialist": { bbPlugins: [], skills: ["seo-project-life", "seo-drmax-orchestrator", "cocoon-chainsmith", "drmax-cocoon-engine-x4", "drmax-brandcore", "drmax-text-humanization", "ai-detect", "drmax-signalforge", "drmax-latent-intent", "drmax-market-scoped", "google", "yandex", "seo-tools", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
+  "specialist:tavily": { bbPlugins: [], skills: ["tavily"], mcpServers: [] },
+};
+
+export function roleProfilePolicy(role: HelperRole): VkSessionPolicy {
+  const profile = ROLE_PROFILES[role];
+  return {
+    skills: { mode: "allow", names: [...profile.skills] },
+    mcpServers: { mode: "allow", names: withMandatory(profile.mcpServers, MANDATORY_MCP_SERVERS) },
+    bbPlugins: { mode: "allow", names: withMandatory(profile.bbPlugins, MANDATORY_BB_PLUGINS) },
+    nativePlugins: { mode: "allow", names: [] },
+    // The user's own AGENTS.md/CLAUDE.md is for their chats; the project's instructions stay.
+    userInstructions: false,
+    claudeAiSync: false,
+    required: true,
+  };
+}
+
 export const HELPER_SPAWN_ROLES = [
   "pm-reader", "plan-critic", "specialist-reviewer", "docs-maintainer",
   "onboarder", "memory-maintainer", "night-reviewer", "night-fixer", "gate-triage",
@@ -99,8 +153,9 @@ function csvNames(raw: unknown): string[] {
 export function parseHelperContextSettings(input: Record<string, unknown>):
   { ok: true; settings: HelperContextSettings } | { ok: false; reason: "helper_context_mode_invalid" } {
   const raw = input["helper.context_mode"];
-  if (raw === undefined || raw === null || raw === "") {
-    return { ok: true, settings: { mode: "inherit", skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] } };
+  // The default: every helper gets the profile of its role.
+  if (raw === undefined || raw === null || raw === "" || raw === "roles") {
+    return { ok: true, settings: { mode: "roles", skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] } };
   }
   if (raw !== "selected" && raw !== "none" && raw !== "inherit") {
     return { ok: false, reason: "helper_context_mode_invalid" };
@@ -166,7 +221,8 @@ export function parseRequiredSessionPolicyCapability(agents: {
     || row.parentCeiling !== true
     || row.bridgeHandshakeVersion !== REQUIRED_SESSION_HANDSHAKE_VERSION
     || (row.hostDaemonProtocolVersion !== REQUIRED_SESSION_HOST_DAEMON_PROTOCOL && row.markerStorage !== "thread-plugin-metadata")
-    || !advertisedMatrixMatch(row.providerGroups, CORE_PROVIDER_GROUPS)
+    || !(advertisedMatrixMatch(row.providerGroups, CORE_PROVIDER_GROUPS)
+      || advertisedMatrixMatch(row.providerGroups, { ...CORE_PROVIDER_GROUPS, "acp-cursor": LEGACY_CURSOR_GROUPS }))
     || !advertisedMatrixMatch(row.instructionSwitches, CORE_INSTRUCTION_SWITCHES)
     || !isStringArray(row.mandatoryBbPlugins)
     || !MANDATORY_BB_PLUGINS.every((name) => (row.mandatoryBbPlugins as string[]).includes(name))
@@ -209,8 +265,18 @@ export function requiredSessionPolicySpawnBinding(input: {
   snapshot: HelperPolicySnapshot;
   advertised?: RequiredSessionAdvertisement | null;
   providerId?: string;
+  role?: HelperRole;
 }): { experimental_vkRequiredSessionPolicy: RequiredSessionPolicySpawn } | Record<string, never> {
   if (input.snapshot.mode === "inherit") return {};
+  if (input.snapshot.mode === "roles") {
+    // By role is a default, not a demand: a core without required policies, an unknown role or provider
+    // runs the helper with BB's ordinary context instead of refusing it.
+    if (!input.role || input.capability !== "required" || !input.advertised || !input.providerId) return {};
+    const groups = input.advertised.providerGroups[input.providerId as keyof typeof CORE_PROVIDER_GROUPS];
+    const switches = input.advertised.instructionSwitches[input.providerId as keyof typeof CORE_INSTRUCTION_SWITCHES];
+    if (!groups || !switches) return {};
+    return { experimental_vkRequiredSessionPolicy: { version: 1, policy: spawnPolicyForProvider(roleProfilePolicy(input.role), groups, switches, true) } };
+  }
   if (input.capability !== "required" || !input.advertised) {
     throw new Error("helper_context_required_api_unavailable");
   }
@@ -231,16 +297,19 @@ function spawnPolicyForProvider(
   policy: VkSessionPolicy,
   groups: readonly string[],
   switches: readonly string[],
+  lenient = false,
 ): RequiredSessionPolicySpawn["policy"] {
   const requested = spawnPolicyBody(policy);
   for (const key of ["bbPlugins", "skills", "mcpServers", "nativePlugins"] as const) {
     const filter = requested[key];
     if (!filter) continue;
     if (groups.includes(key)) continue;
-    if (filter.names.length) throw new Error(`helper_context_unsupported_provider_group:${key}`);
+    // A role profile leaves out what the provider cannot narrow; an explicit owner choice refuses instead.
+    if (filter.names.length && !lenient) throw new Error(`helper_context_unsupported_provider_group:${key}`);
     delete requested[key];
   }
   for (const key of ["userInstructions", "projectInstructions", "claudeAiSync"] as const) {
+    if (requested[key] !== undefined && !switches.includes(key) && lenient) { delete requested[key]; continue; }
     if (requested[key] !== undefined && !switches.includes(key)) {
       throw new Error(`helper_context_unsupported_instruction_switch:${key}`);
     }
@@ -253,7 +322,8 @@ function withMandatory(names: string[], mandatory: readonly string[]): string[] 
 }
 
 export function helperContextToPolicy(settings: HelperContextSettings): VkSessionPolicy | null {
-  if (settings.mode === "inherit") return null;
+  // Inherit has no project-wide list; by role is decided per helper at spawn (roleProfilePolicy).
+  if (settings.mode === "inherit" || settings.mode === "roles") return null;
   const names = settings.mode === "none"
     ? { skills: [] as string[], mcpServers: [] as string[], bbPlugins: [] as string[], nativePlugins: [] as string[] }
     : settings;
@@ -309,6 +379,17 @@ export function decideHelperDispatch(input: {
   const settings = input.snapshot?.settings ?? input.settings;
   const child = helperContextToPolicy(settings);
   const policy = settings.mode === "inherit" ? (parentPolicy ? { ...parentPolicy, required: parentRequired } : null) : intersectPolicy(parentPolicy, child);
+
+  if (settings.mode === "roles") {
+    return {
+      ok: true,
+      enforcement: "inherit-parent",
+      required: input.capability === "required",
+      residualFailOpen: false,
+      policy: null,
+      snapshot: input.snapshot ?? { schemaVersion: 1, mode: "roles", settings, parentRequired, parentPolicy, policy: null },
+    };
+  }
 
   if (settings.mode === "inherit") {
     if (parentRequired && input.capability !== "required") {

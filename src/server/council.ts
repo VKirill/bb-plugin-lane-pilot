@@ -194,7 +194,7 @@ export function createCouncil(ctx: ServerCore) {
     const placement = await helperChildPlacement({ bb, db, projectId: input.session.projectId, runId: input.session.runId, role: "council-seat", taskTitle: `${input.seat?.title ?? "Chair"}: ${input.session.question.slice(0, 60)}` });
     const spawned = await fullAccessSpawn(bb, {
       ...placement,
-      ...requiredPolicyField(bb, helperPolicy, providerId),
+      ...requiredPolicyField(bb, helperPolicy, providerId, "council-seat"),
       ...writerExecutionSelection(providerId, model, effort, null),
       prompt: input.prompt,
       environment: workspaceExecutionEnvironment(input.place.hostId, { path: input.place.workspace, environmentId: null }),

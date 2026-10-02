@@ -1,3 +1,4 @@
+import type { HelperRole } from "../helper-context";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
 import { findOpenNativeRun, getRun } from "../database";
@@ -48,7 +49,7 @@ export function mountSpecialists(ctx: ServerCore): void {
     const placement = await helperChildPlacement({ bb, db, projectId: input.projectId, runId, role: "specialist", taskTitle: input.title ?? `${input.role}: ${input.task.slice(0, 60)}` });
     const spawned = await fullAccessSpawn(bb, {
       ...placement,
-      ...requiredPolicyField(bb, helperPolicy, "claude-code"),
+      ...requiredPolicyField(bb, helperPolicy, "claude-code", `specialist:${input.role}` as HelperRole),
       ...writerExecutionSelection("claude-code", SPECIALIST_MODEL, "high", null),
       prompt: specialistPrompt(mentionContext(selection), input.role, input.task),
       environment: { type: "reuse", environmentId },

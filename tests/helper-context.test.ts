@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { HelperRole } from "../src/helper-context";
+import { requiredSessionPolicySpawnBinding as bindRole } from "../src/helper-context";
 import {
   CORE_PROVIDER_GROUPS,
   MANDATORY_BB_PLUGINS,
@@ -14,14 +16,17 @@ import {
 } from "../src/helper-context";
 
 describe("helper session filter", () => {
-  it("treats missing mode as inherit and does not emit a child policy", () => {
+  it("treats a missing mode as by role: no project-wide policy, each helper gets its role's profile", () => {
     const parsed = parseHelperContextSettings({});
-    expect(parsed).toEqual({ ok: true, settings: { mode: "inherit", skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] } });
+    expect(parsed).toEqual({ ok: true, settings: { mode: "roles", skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] } });
     if (!parsed.ok) return;
     expect(helperContextToPolicy(parsed.settings)).toBeNull();
-    expect(decideHelperDispatch({ settings: parsed.settings, capability: "none" })).toMatchObject({
-      ok: true, enforcement: "inherit-parent", required: false, residualFailOpen: false, policy: null,
-    });
+    expect(decideHelperDispatch({ settings: parsed.settings, capability: "none" })).toMatchObject({ ok: true, policy: null, snapshot: { mode: "roles" } });
+  });
+
+  it("keeps an explicit inherit as everything BB has", () => {
+    const parsed = parseHelperContextSettings({ "helper.context_mode": "inherit" });
+    expect(parsed.ok && parsed.settings.mode).toBe("inherit");
   });
 
   it("rejects an invalid stored mode instead of mapping it to inherit", () => {
@@ -187,4 +192,43 @@ it("accepts the VK core's metadata markers and the archived protocol-216 core, a
   expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...archived, hostDaemonProtocolVersion: 216 }) })).not.toBeNull();
   expect(parse({ experimental_vkRequiredSessionPolicy: () => archived })).toBeNull();
   expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...archived, hostDaemonProtocolVersion: 215 }) })).toBeNull();
+});
+
+describe("role profiles", () => {
+  const snapshot = { schemaVersion: 1 as const, mode: "roles" as const, settings: { mode: "roles" as const, skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] }, parentRequired: false, parentPolicy: null, policy: null };
+  const advertised = coreRequiredSessionAdvertisement();
+  const bind = (role: HelperRole, providerId: string, adv = advertised) =>
+    bindRole({ capability: "required", advertised: adv, snapshot, providerId, role });
+
+  it("gives a writer two coding skills and only the mandatory plugins and MCP", () => {
+    const policy = (bind("writer", "codex") as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
+    expect(policy.skills.names).toEqual(["writer-practices", "karpathy-guidelines"]);
+    expect(policy.bbPlugins.names).toEqual(["environment-project-checkout", "project-folders"]);
+    expect(policy.mcpServers.names).toEqual(["bb-bridge"]);
+    expect(policy.nativePlugins.names).toEqual([]);
+  });
+
+  it("gives the docs maintainer docs skills and no plugins, and the browser check the browser plugin", () => {
+    const docs = (bind("docs-maintainer", "claude-code") as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
+    expect(docs.bbPlugins.names).toEqual(["environment-project-checkout", "project-folders"]);
+    expect(docs.skills.names).toContain("docs-maintain");
+    const qa = (bind("browser-qa", "claude-code") as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
+    expect(qa.bbPlugins.names).toContain("browser-automation");
+  });
+
+  it("narrows Grok's BB skills on a new core and leaves them out on an old one instead of refusing", () => {
+    const now = (bind("writer", "acp-cursor") as { experimental_vkRequiredSessionPolicy: { policy: Record<string, unknown> } }).experimental_vkRequiredSessionPolicy.policy;
+    expect(now.skills).toBeDefined();
+    expect(now.userInstructions).toBe(false);
+    expect(now.claudeAiSync).toBeUndefined();
+    const old = { ...advertised, providerGroups: { ...advertised.providerGroups, "acp-cursor": ["bbPlugins", "mcpServers"] } };
+    const legacy = (bind("writer", "acp-cursor", old) as { experimental_vkRequiredSessionPolicy: { policy: Record<string, unknown> } }).experimental_vkRequiredSessionPolicy.policy;
+    expect(legacy.skills).toBeUndefined();
+    expect(legacy.bbPlugins).toBeDefined();
+  });
+
+  it("runs a helper with BB's ordinary context when the core cannot enforce it or the role is unknown", () => {
+    expect(bindRole({ capability: "dynamic", advertised: null, snapshot, providerId: "codex", role: "writer" })).toEqual({});
+    expect(bindRole({ capability: "required", advertised, snapshot, providerId: "codex" })).toEqual({});
+  });
 });

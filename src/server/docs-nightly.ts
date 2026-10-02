@@ -1,3 +1,4 @@
+import { projectRoleField } from "./run-routing";
 import { claimDailySchedule, getActivation, getRun, listRunsWithAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../database";
 import { bbServiceTier, writerExecutionSelection } from "../jev-reasoning";
 import { sha256 } from "../stages/contract";
@@ -363,6 +364,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const tier=provider.capabilities.supportsServiceTier?bbServiceTier(selection.serviceTier):null;
     const threadId=await spawnDocsThread({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:flow?` · flow ${flow.slug}`:""}`,
       ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
+      ...projectRoleField(bb,db,ctx.projectId,selection.providerId,"docs-maintainer"),
       prompt:nightlyDocsPrompt({since:docs.since,hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
         agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts,decisionDrafts}),
       environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},

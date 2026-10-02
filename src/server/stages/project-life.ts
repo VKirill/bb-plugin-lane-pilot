@@ -182,7 +182,7 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
         bb, db, projectId:args.projectId, runId:args.runId, role:"project-life-maintainer",
       });
       const artifactDirs=coveredTaskIds.map((id)=>acceptanceArtifactDir(workspace.path,args.runId,id));
-      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, projectLifeProviderId),
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, projectLifeProviderId, "project-life"),
         ...writerExecutionSelection(projectLifeProviderId,projectLifeModel,projectLifeEffort,tier),
         prompt:projectLifePrompt({workspace:workspace.path,runId:args.runId,artifactDirs,tasks:snapshot.tasks,nowIso:new Date().toISOString()}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),

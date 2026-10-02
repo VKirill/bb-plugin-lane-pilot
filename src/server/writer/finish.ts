@@ -317,7 +317,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           try {
             spawned = await fullAccessSpawn(bb, {
               ...placement,
-              ...requiredPolicyField(bb, helperPolicy, writerSnapshot.providerId),
+              ...requiredPolicyField(bb, helperPolicy, writerSnapshot.providerId, "code-repair"),
               ...writerExecutionSelection(
                 writerSnapshot.providerId,
                 writerSnapshot.model,

@@ -164,7 +164,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"memory-maintainer",
       });
-      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId),
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId, "memory-maintainer"),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
         prompt:memoryMaintenancePrompt({task,acceptedResult:accepted.result,settings:snapshot.settings,agent:snapshot.agent}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),

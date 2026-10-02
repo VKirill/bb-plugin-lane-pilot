@@ -1,3 +1,4 @@
+import { projectRoleField } from "./run-routing";
 import {
   codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
@@ -250,6 +251,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   async function runAnalyzer(projectId: string, title: string, prompt: string, place: { hostId: string; path: string }, analyzer: AnalyzerSelection, metadata: Record<string, unknown>): Promise<string> {
     const spawned = await fullAccessSpawn(bb, {
       projectId, visibility: "hidden", title,
+      ...projectRoleField(bb, db, projectId, analyzer.providerId, "rules-analyzer"),
       ...writerExecutionSelection(analyzer.providerId, analyzer.model, analyzer.reasoningLevel, analyzer.serviceTier ? bbServiceTier(analyzer.serviceTier === "fast" ? "fast" : "standard") : null),
       prompt,
       environment: { type: "host", hostId: place.hostId, workspace: { type: "unmanaged", path: place.path } },

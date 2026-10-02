@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.76 — 2026-10-02
+
+- **Helpers load only what their job needs, by default.** New helper context mode «By role» (now the default): every helper Lane Pilot spawns gets the profile of its role instead of everything BB has — 43 plugins and descriptions of ~500 skills (about 39 thousand tokens). Writers, code repair and night fixes: two coding skills (`writer-practices`, `karpathy-guidelines`). Plan and code critics, specialist review, night review, gate triage, PM read, council seats, the rules analyzer: nothing extra. Docs maintainer: docs skills, no plugins. Onboarding, memory, project life: their own skills. Browser check: the browser-automation plugin and skill. Specialists: the skills from their agent definition. Every profile keeps the mandatory project checkout, Project Folders and `bb-bridge`, and leaves out the user's personal instructions and claude.ai skills; the project's own AGENTS.md/CLAUDE.md stay. The PM itself is not narrowed. «Everything BB has» (explicit inherit), «Only the lists below» and «None» work as before.
+- The nightly docs pass and the rules analyzer, which run outside a PM run, follow the same profiles.
+- Grok (Cursor) writers get their BB skills narrowed too, on the VK core `0.44.0-vk.15` and later; Cursor's own skill folders on the machine stay as they are. On an older core Lane Pilot leaves skills out of the profile instead of refusing the helper.
+- A core without required session policies runs helpers with BB's ordinary context instead of refusing them.
+
+Measured on codex writers in the sandbox: first-turn input 27–35 thousand tokens with everything vs 14.4 thousand with a narrowed context. Verified live on a Grok writer «by role»: its thread carried the role snapshot (mandatory plugins, two coding skills, `bb-bridge`), the task was accepted, and the memory and project-life helpers passed under their profiles. Cursor does not report token counts to BB, so its saving is not measured.
+
 ## 0.1.75 — 2026-10-02
 
 - **A helper context of their own for writers, critics and specialists works on the VK core.** The fork now carries required session policies and compiled main agents (`0.44.0-vk.12` and later): settings «Helper context: selected / none» are written with each helper thread at spawn and enforced on every turn. The core keeps them in reserved thread plugin metadata, with no migration or protocol bump, and advertises `markerStorage: "thread-plugin-metadata"` instead of `hostDaemonProtocolVersion: 216`; Lane Pilot accepts both.

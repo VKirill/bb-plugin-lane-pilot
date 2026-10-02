@@ -80,7 +80,7 @@ export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDispose
   const placement = await helperChildPlacement({ bb, db, projectId: input.projectId, runId: input.runId, role: "browser-qa", taskTitle: `Browser check: ${input.taskTitle}` });
   const spawned = await fullAccessSpawn(bb, {
     ...placement,
-    ...requiredPolicyField(bb, helperPolicy, input.agent.providerId),
+    ...requiredPolicyField(bb, helperPolicy, input.agent.providerId, "browser-qa"),
     ...writerExecutionSelection(input.agent.providerId, input.agent.model, input.agent.effort, null),
     prompt: qaThreadPrompt(input),
     environment: { type: "reuse", environmentId },

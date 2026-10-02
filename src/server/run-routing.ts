@@ -1,6 +1,6 @@
 import { getRun, getRunSettingsScopes, loadProjectSettings, loadRunHelperPolicyJson, openDatabase, persistRunHelperPolicyJson } from "../database";
 import { decideHelperDispatch, detectVkCapability, parseHelperContextSettings, parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding } from "../helper-context";
-import type { HelperPolicySnapshot } from "../helper-context";
+import type { HelperPolicySnapshot, HelperRole } from "../helper-context";
 import { helperSpawnFields, resolveHelperPlacement } from "../helper-placement";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseHelperPlacement, parseLanePilotDefaults } from "../lp-defaults";
 import type { HelperPlacementMode } from "../lp-defaults";
@@ -110,7 +110,7 @@ export function resolveHelperDispatch(input:{bb:BbPluginApi;db:ReturnType<typeof
   if (stored) {
     try { snapshot = JSON.parse(stored) as HelperPolicySnapshot; }
     catch { return { ok: false, reason: "helper_context_snapshot_invalid" }; }
-    if (snapshot?.schemaVersion !== 1 || (snapshot.mode !== "inherit" && snapshot.mode !== "selected" && snapshot.mode !== "none")) {
+    if (snapshot?.schemaVersion !== 1 || (snapshot.mode !== "roles" && snapshot.mode !== "inherit" && snapshot.mode !== "selected" && snapshot.mode !== "none")) {
       return { ok: false, reason: "helper_context_snapshot_invalid" };
     }
   }
@@ -129,13 +129,14 @@ export function requireHelperSpawn(input:{bb:BbPluginApi;db:ReturnType<typeof op
   return decision.snapshot;
 }
 
-export function requiredPolicyField(bb: BbPluginApi, snapshot: HelperPolicySnapshot, providerId?: string) {
+export function requiredPolicyField(bb: BbPluginApi, snapshot: HelperPolicySnapshot, providerId?: string, role?: HelperRole) {
   const agents = (bb as { agents?: { experimental_vkSessionPolicy?: unknown; experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {};
   return requiredSessionPolicySpawnBinding({
     capability: detectVkCapability(agents),
     advertised: parseRequiredSessionPolicyCapability(agents),
     snapshot,
     providerId,
+    role,
   });
 }
 
@@ -180,4 +181,15 @@ export async function helperChildPlacement(input:{
   });
   if (!resolved.ok) throw new Error(resolved.reason);
   return helperSpawnFields(resolved.placement);
+}
+
+/**
+ * Role context for a helper that runs outside a PM run (nightly docs, the rules analyzer): the project's
+ * «by role» default applies; any explicit project choice (inherit, selected, none) leaves the spawn as it is.
+ */
+export function projectRoleField(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, projectId: string, providerId: string, role: HelperRole) {
+  const parsed = parseHelperContextSettings(loadProjectSettings(db, projectId));
+  if (!parsed.ok || parsed.settings.mode !== "roles") return {};
+  const snapshot: HelperPolicySnapshot = { schemaVersion: 1, mode: "roles", settings: parsed.settings, parentRequired: false, parentPolicy: null, policy: null };
+  return requiredPolicyField(bb, snapshot, providerId, role);
 }

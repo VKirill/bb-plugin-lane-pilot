@@ -79,7 +79,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
     });
     const spawned=await fullAccessSpawn(input.bb, {
       ...placement,
-      ...requiredPolicyField(input.bb, helperPolicy, providerId),
+      ...requiredPolicyField(input.bb, helperPolicy, providerId, "pm-reader"),
       ...writerExecutionSelection(providerId,modelId,parsedSettings.effort,serviceTier),
       prompt:pmReadPrompt({agent:"pm-read",packet:renderPacketExcerpts(packet),task:input.task}),
       environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
@@ -195,7 +195,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     });
     const spawned = await fullAccessSpawn(input.bb, {
       ...placement,
-      ...requiredPolicyField(input.bb, helperPolicy, providerId),
+      ...requiredPolicyField(input.bb, helperPolicy, providerId, "plan-critic"),
       ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
       prompt:critiquePrompt({ plan:input.plan, task:input.task, agent, pmReadContext:input.pmReadContext, structuralFindings }),
       environment:{ type:"host", hostId:input.config.hostId,
@@ -425,7 +425,7 @@ export async function runCodeCritique(input:{
     };
     const spawned = await fullAccessSpawn(input.bb, {
       ...placement,
-      ...requiredPolicyField(input.bb, helperPolicy, providerId),
+      ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
       ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
       prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes }),
       environment:{ type:"host", hostId:input.config.hostId,
@@ -504,7 +504,7 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     });
     const spawned = await fullAccessSpawn(input.bb, {
       ...placement,
-      ...requiredPolicyField(input.bb, helperPolicy, providerId),
+      ...requiredPolicyField(input.bb, helperPolicy, providerId, "specialist-reviewer"),
       ...writerExecutionSelection(providerId,modelId,effort,tier),
       prompt:specialistPrompt({task:input.task,plan:input.plan,agent}),
       environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
