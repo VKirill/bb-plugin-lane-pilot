@@ -17,12 +17,14 @@ function AgentNameBadge(agent: { agentId: string; description: string }) {
   const markerRef = useRef<HTMLSpanElement>(null);
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [frame, setFrame] = useState<ReturnType<typeof promptBoxFrameStyle> | undefined>();
+  const [offset, setOffset] = useState({ top: 0, left: 0 });
 
   useLayoutEffect(() => {
     const sync = () => {
       const next = findComposerPromptBox(markerRef.current);
       setHost(next);
       setFrame(next ? promptBoxFrameStyle(next) : undefined);
+      if (next) setOffset((prev) => (prev.top === next.offsetTop && prev.left === next.offsetLeft ? prev : { top: next.offsetTop, left: next.offsetLeft }));
     };
     sync();
     const observer = new MutationObserver(sync);
@@ -41,16 +43,19 @@ function AgentNameBadge(agent: { agentId: string; description: string }) {
     };
   }, [host]);
 
+  // The compact prompt box clips its overflow, so there the chip sits on the
+  // box's top border from the parent instead of inside, over the placeholder.
   const compact = host?.hasAttribute("data-promptbox-compact") ?? false;
+  const target = host && compact ? host.parentElement : host;
   const chip = (
     <span
       className="pointer-events-none text-xs leading-none text-muted-foreground"
       style={{
         ...frame,
         position: host ? "absolute" : undefined,
-        left: host ? PROMPT_BOX_AGENT_LABEL_LEFT : undefined,
-        top: host ? (compact ? "0.375rem" : 0) : undefined,
-        transform: host && !compact ? "translateY(-50%)" : undefined,
+        left: host ? (compact ? `calc(${offset.left}px + ${PROMPT_BOX_AGENT_LABEL_LEFT})` : PROMPT_BOX_AGENT_LABEL_LEFT) : undefined,
+        top: host ? (compact ? offset.top : 0) : undefined,
+        transform: host ? "translateY(-50%)" : undefined,
         zIndex: host ? 10 : undefined,
         padding: "0.125rem 0.5rem",
       }}
@@ -63,7 +68,7 @@ function AgentNameBadge(agent: { agentId: string; description: string }) {
   return (
     <>
       <span ref={markerRef} hidden data-lane-pilot-agent-marker="" />
-      {host ? createPortal(chip, host) : chip}
+      {target ? createPortal(chip, target) : chip}
     </>
   );
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.49 — 2026-10-02
+
+- **The agent badge no longer covers the placeholder in a collapsed composer.** On a phone the collapsed prompt box clips its overflow, so the badge was drawn inside it, over «Ask a follow-up». It now sits on the box's top border, as in the expanded composer.
+
 ## 0.1.48 — 2026-10-01
 
 - **Analyzer threads say what they analyzed:** «Разбор ошибок · Клиенты / rich-tent.ru · 004.2, 007» and «Переписать правило · … · task ids», in the project's language, instead of «Lane Pilot rules: <category>».
