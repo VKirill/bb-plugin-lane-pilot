@@ -1,4 +1,5 @@
 import { listUnfinishedStages, openDatabase } from "./src/database";
+import { closeOrphanWriterStages } from "./src/server/stage-records";
 import { createActivation } from "./src/server/activation";
 import { registerCli } from "./src/server/cli";
 import { createCore } from "./src/server/core";
@@ -75,6 +76,10 @@ export default async function plugin(bb: BbPluginApi) {
         bb.log.warn(`Lane Pilot resume on start skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
       });
       await sweepRuns();
+      try {
+        const closed = closeOrphanWriterStages(db, services.activeWriterTasks);
+        if (closed) bb.log.info(`Lane Pilot closed ${closed} writer stage(s) left open after their task ended`);
+      } catch (cause) { bb.log.warn(`Lane Pilot stage cleanup skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
       await new Promise<void>((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
     },
   });

@@ -1,3 +1,4 @@
+import { countAttempts } from "../src/database";
 import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
@@ -971,7 +972,10 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     harness.runService("startup-recovery");
     await vi.waitFor(() => expect(getAttempt(db, "attempt-resume")?.state).toBe("validation_failed"));
-    expect(snapshotCwds).toEqual([config.writerWorkspacePath]);
+    // Since 0.1.92 the failed resumed attempt is retried (its start loop died with the reload); every snapshot,
+    // the retry's too, runs in the run's own workspace, not the changed project setting.
+    await vi.waitFor(() => expect(countAttempts(db, "run-resume", "resume-task")).toBeGreaterThanOrEqual(2));
+    expect(new Set(snapshotCwds)).toEqual(new Set([config.writerWorkspacePath]));
     await harness.lifecycle.dispose();
   });
 

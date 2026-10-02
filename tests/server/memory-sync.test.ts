@@ -62,7 +62,7 @@ describe("0.1.91 cleanup migration", () => {
     db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES('les','P','','note','subagent',?,'[\"lesson\",\"attempt\",\"failed\"]','x',0)").run(lessonContent);
     db.prepare("INSERT INTO lane_pilot_memory_fts(id,project_id,content,concepts) VALUES('les','P',?,'lesson')").run(lessonContent);
     db.prepare("INSERT INTO lane_pilot_memory_fts(id,project_id,content,concepts) VALUES('ghost','P','gone','x')").run();
-    for (const statement of migrations.slice(-2)) db.prepare(statement).run();
+    for (const statement of migrations.filter((sql) => sql.startsWith("DELETE FROM lane_pilot_memory"))) db.prepare(statement).run();
     expect((db.prepare("SELECT id FROM lane_pilot_memory").all() as Array<{ id:string }>).map((row) => row.id)).toEqual([facts]);
     expect((db.prepare("SELECT id FROM lane_pilot_memory_fts").all() as Array<{ id:string }>).map((row) => row.id)).toEqual([facts]);
   });

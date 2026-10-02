@@ -182,7 +182,7 @@ describe("Agent access tab", () => {
       expect(resets[0]).toEqual({ projectId, keys: ["helper.access.writer"], expectedVersions: { "helper.access.writer": 4 } });
       await waitFor(() => expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_role));
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
-  });
+  }, 45_000); // jsdom clicks through two menus; under a full parallel run it took 16 s and timed out
 
   it("takes free-text names for MCP servers and removes a chip", async () => {
     const { slot, harness, saves } = await mount();

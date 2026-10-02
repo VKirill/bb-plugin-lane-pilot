@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.92 — 2026-10-03
+
+Writer attempts after the audit against the SMA fleet invariants (`.bb/chats/thr_tev4nistgf/artifacts/memory-audit/fleet-invariants.md`).
+- **Final states stay final.** `transitionAttempt` no longer moves an accepted or canceled attempt anywhere else — a cancel during verification could be overwritten with «accepted» after the merge — and returns whether it moved.
+- **A journal of attempt states.** Every move, refused ones marked, goes to `lane_pilot_attempt_transition`, so a skipped or overwritten state can be seen afterwards.
+- **An attempt finished after a reload ends like any other.** Its stages are closed (before, accepted tasks kept «writer-agent running» for good); accepted work gets its memory and project-life passes; a retryable failure is retried within the attempt limit, otherwise the attempt is blocked with «retry limit exhausted» and its stages fail. Before, the start loop that would do this died with the reload and nobody retried.
+- **Stages left open by earlier versions** are closed on start-up from their task's latest attempt.
+
 ## 0.1.91 — 2026-10-03
 
 Project memory after the audit against the SMA blueprints (`.bb/chats/thr_tev4nistgf/artifacts/memory-audit/`). The database is the source of truth; the `.agents/memory` files mirror it.

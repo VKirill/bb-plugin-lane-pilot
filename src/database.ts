@@ -221,6 +221,11 @@ export const migrations = [
   // the triage table keeps them and rules carry what repeats. Also drop index rows whose record is gone.
   `DELETE FROM lane_pilot_memory WHERE concepts_json LIKE '%"lesson"%'`,
   `DELETE FROM lane_pilot_memory_fts WHERE id NOT IN (SELECT id FROM lane_pilot_memory)`,
+  // 0.1.92: every attempt state change, including refused ones, so a skipped or overwritten state can be seen.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_attempt_transition (
+    attempt_id TEXT NOT NULL, from_state TEXT NOT NULL, to_state TEXT NOT NULL, reason TEXT,
+    refused INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_attempt_transition_attempt ON lane_pilot_attempt_transition(attempt_id, at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -732,14 +737,29 @@ export function releaseActivation(db: LanePilotDatabase, projectId: string, runI
   else db.prepare("DELETE FROM lane_pilot_activation WHERE project_id=?").run(projectId);
 }
 
+/** States an attempt never leaves: its work is merged, or the owner stopped it. */
+const FINAL_ATTEMPT_STATES = ["accepted", "canceled"] as const;
+
+/**
+ * Moves an attempt to a new state and journals it. An accepted or canceled attempt keeps its state: before,
+ * a cancel during verification could be overwritten with «accepted» after the merge (fleet invariants audit,
+ * 2026-10-03). Returns false when the move was refused.
+ */
 export function transitionAttempt(
   db: LanePilotDatabase,
   attemptId: string,
   state: string,
   fields: { threadId?: string; reason?: string } = {},
-): void {
-  db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, updated_at=? WHERE id=?`)
-    .run(state, fields.threadId ?? null, fields.reason ?? null, Date.now(), attemptId);
+): boolean {
+  const now = Date.now();
+  const before = db.prepare("SELECT state FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { state: string } | undefined;
+  if (!before) return false;
+  const changed = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, updated_at=?
+    WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=?)`)
+    .run(state, fields.threadId ?? null, fields.reason ?? null, now, attemptId, ...FINAL_ATTEMPT_STATES, state).changes === 1;
+  db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
+    .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
+  return changed;
 }
 
 export function inspectState(db: LanePilotDatabase, projectId: string): Record<string,unknown> {
