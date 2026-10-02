@@ -11,6 +11,7 @@ import { mountMemorySync } from "./memory-sync";
 import { mountCouncilTools } from "./council";
 import { mountSpecialists } from "./specialists";
 import { mountRelay } from "./relay";
+import { mountSelfRepair } from "./self-repair";
 import { z } from "zod";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
@@ -218,6 +219,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountCouncilTools(ctx, services.council);
   mountSpecialists(ctx);
   mountRelay(ctx);
+  mountSelfRepair(ctx);
 
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;

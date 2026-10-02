@@ -158,6 +158,7 @@ Every stage writes a receipt (state, input and output hashes, attempt, provider,
 - Reload recovery: after a plugin reload Lane Pilot finds open attempts, re-attaches to writers still at work and reruns an interrupted acceptance. Writer threads themselves are not affected by a reload.
 - Runs of deleted or archived PM chats, and chatless runs older than a day, are closed automatically.
 - Run budgets (`run.max_*`), provider breaker and stream retry after dropped provider streams (`lane_pilot_run_health`, `bb lane-pilot health`).
+- **Self-repair.** Every 15 minutes Lane Pilot looks for failures that are its own fault: triage origin «orchestrator», system block reasons (`internal_error`, `merge_failed`, spawn errors, EROFS…) and attempts left «running» after their writer went idle. Each new kind of problem, grouped by a normalized reason, gets one repair thread in the Lane Pilot repository (Claude Code, Opus 5.5, high reasoning, full access). The thread finds the cause, fixes it with a test, checks it live, ships on a green suite and tells the affected PM. One repair at a time, at most 4 a day; a kind that returns a day after its repair gets a new one. `self_repair_status` gives the last 24 hours: attempts, failures by fault, open incidents, repairs; `self_repair_configure` changes the target project, environment, model and limits; `self_repair_tick` runs a pass now (`dryRun` by default).
 
 ## PM tools
 

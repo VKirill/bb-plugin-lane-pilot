@@ -1,0 +1,265 @@
+import { createHash } from "node:crypto";
+import { fullAccessSpawn } from "./pm-spawn";
+import { writerExecutionSelection } from "../jev-reasoning";
+import { stringAt } from "./values";
+import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
+import type { rpcContract } from "../contracts";
+import type { ServerCore } from "./core";
+
+/**
+ * Self-repair: every 15 minutes Lane Pilot looks for failures that are its own fault (triage origin
+ * «orchestrator», system-looking block reasons, attempts stuck while their writer idles). Each new kind of
+ * problem gets one repair thread — Claude Code, Opus 5.5, high reasoning — in the Lane Pilot repository,
+ * which finds the cause, fixes, verifies live, ships and tells the affected PM. The owner is not involved.
+ */
+
+export type SelfRepairConfig = {
+  enabled: boolean;
+  projectId: string;
+  environmentId: string;
+  providerId: string;
+  model: string;
+  reasoningLevel: string;
+  maxPerDay: number;
+  /** Projects whose failures are deliberate (the sandbox). */
+  ignoreProjects: string[];
+};
+
+export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
+  enabled: true,
+  projectId: "proj_ejbam66722",
+  environmentId: "env_bfv6wmb79r",
+  providerId: "claude-code",
+  model: "claude-opus-5-5",
+  reasoningLevel: "high",
+  maxPerDay: 4,
+  ignoreProjects: ["proj_3tb652jpsi"],
+};
+
+export type Incident = {
+  signature: string;
+  kind: "triage" | "blocked" | "stuck";
+  projectId: string;
+  runId: string;
+  taskId: string;
+  attemptId: string;
+  pmThreadId: string | null;
+  writerThreadId: string | null;
+  reason: string;
+  at: number;
+};
+
+type SignatureRecord = { firstAt: number; lastAt: number; count: number; threadId: string | null; spawnedAt: number | null; samples: Incident[] };
+type SelfRepairState = { cursor: number; signatures: Record<string, SignatureRecord>; spawned: Array<{ at: number; threadId: string; signature: string }> };
+
+const CONFIG_KEY = "self-repair:config";
+const STATE_KEY = "self-repair:state";
+const SYSTEM_REASON = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing/i;
+const STUCK_MS = 45 * 60_000;
+const REPEAT_AFTER_MS = 86_400_000;
+const FORGET_MS = 30 * 86_400_000;
+
+/** A reason with its ids, paths, hashes and numbers blanked, so one problem in many tasks is one signature. */
+export function reasonSignature(kind: Incident["kind"], reason: string): string {
+  const core = reason
+    .replace(/retry limit \d+ exhausted:\s*/i, "")
+    .replace(/\b(?:lpattempt|lprun|thr|env|proj|host|term|ask|rem)_[a-z0-9]+\b/gi, "<id>")
+    .replace(/(?:[\w.@-]+)?\/[^\s'",;)]+/g, "<path>")
+    .replace(/\b[0-9a-f]{12,}\b/gi, "<hash>")
+    .replace(/\d+/g, "<n>")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+  return `${kind}:${createHash("sha256").update(core).digest("hex").slice(0, 16)}:${core}`;
+}
+
+export function repairPrompt(incidents: Incident[], signature: string): string {
+  const lines = incidents.slice(0, 6).map((row) =>
+    `- ${row.kind} · project ${row.projectId} · run ${row.runId} · task ${row.taskId} · attempt ${row.attemptId}` +
+    `${row.pmThreadId ? ` · PM @thread:${row.pmThreadId}` : ""}${row.writerThreadId ? ` · writer @thread:${row.writerThreadId}` : ""}\n  reason: ${row.reason.slice(0, 600)}`);
+  const pms = [...new Set(incidents.map((row) => row.pmThreadId).filter((id): id is string => Boolean(id)))];
+  return [
+    "Lane Pilot self-repair. Lane Pilot found a failure that looks like its own fault and started you to fix it at the root, without the owner.",
+    "",
+    `Signature: ${signature.split(":").slice(2).join(":")}`,
+    `Occurrences (${incidents.length}):`,
+    ...lines,
+    "",
+    "Do, in order:",
+    "1. Reproduce from data: the run data is on the hub (ssh -i ~/.ssh/oracle_bb ubuntu@10.8.0.1, sqlite3 /home/ubuntu/.bb/plugins/lane-pilot/data.db: lane_pilot_attempt, lane_pilot_stage_receipt, lane_pilot_failure_triage); read the writer and PM threads (bb thread messages <id> --json, bb thread output <id>); plugin log: bb plugin logs lane-pilot.",
+    "2. Decide whose fault it is. If it is not Lane Pilot's (a writer mistake, a wrong task contract, the project's own code or machine), do not change code: tell the affected PM what to do differently (bb thread tell <pm-thread> \"…\") and finish with a short report.",
+    "3. If it is Lane Pilot's (or Lane Stack's guard, or the VK core), fix the cause, not the symptom: follow AGENTS.md and CLAUDE.md here (GitNexus impact before edits, detect-changes before commit), add a test that fails without the fix.",
+    "4. Verify live, not only with tests (memory: verify-live-bb): a real PM/writer run in the sandbox project proj_3tb652jpsi, or the real failing case on its machine; for UI the real BB page.",
+    "5. Ship: wait for a green full suite, then deploy with bb-plugin-push, commit, push, CHANGELOG entry and GitHub release (memory: release-workflow). Never deploy on a red suite.",
+    `6. Tell the affected PM thread${pms.length > 1 ? "s" : ""} (${pms.map((id) => `@thread:${id}`).join(", ") || "none known"}) what was fixed and that the blocked tasks can be dispatched again: bb thread tell <id> "…".`,
+    "7. End with a short report in Russian for the owner: cause, fix, how it was verified, version.",
+    "",
+    "Do not change other projects' code. Do not touch the owner's data. If a fix needs a decision only the owner can make (money, deleting data, security), stop and say so in the report.",
+  ].join("\n");
+}
+
+export function createSelfRepair(ctx: ServerCore) {
+  const { bb, db } = ctx;
+
+  async function config(): Promise<SelfRepairConfig> {
+    const raw = await bb.storage.kv.get(CONFIG_KEY).catch(() => null);
+    return { ...SELF_REPAIR_DEFAULTS, ...(raw && typeof raw === "object" ? raw as Partial<SelfRepairConfig> : {}) };
+  }
+  async function setConfig(patch: Partial<SelfRepairConfig>): Promise<SelfRepairConfig> {
+    const next = { ...(await config()), ...patch };
+    await bb.storage.kv.set(CONFIG_KEY, next as never);
+    return next;
+  }
+  async function state(): Promise<SelfRepairState> {
+    const raw = await bb.storage.kv.get(STATE_KEY).catch(() => null);
+    const row = raw && typeof raw === "object" ? raw as Partial<SelfRepairState> : {};
+    const signatures = Object.fromEntries(Object.entries(row.signatures ?? {}).map(([key, record]) => [key, { ...record, samples: record.samples ?? [] }]));
+    return { cursor: row.cursor ?? Date.now() - 3_600_000, signatures, spawned: row.spawned ?? [] };
+  }
+
+  /** Failures since the cursor that look like Lane Pilot's fault, plus attempts stuck now. */
+  async function collect(since: number, cfg: SelfRepairConfig): Promise<Incident[]> {
+    const ignored = new Set(cfg.ignoreProjects);
+    const out: Incident[] = [];
+    const runPm = (runId: string) => (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE id=?").get(runId) as { pm_thread_id: string | null } | undefined)?.pm_thread_id ?? null;
+    const triage = db.prepare(`SELECT t.project_id, t.run_id, t.task_id, t.attempt_id, t.reason, t.triaged_at, a.thread_id FROM lane_pilot_failure_triage t
+      LEFT JOIN lane_pilot_attempt a ON a.id=t.attempt_id WHERE t.origin='orchestrator' AND t.status='ok' AND t.triaged_at > ?`).all(since) as Array<{ project_id: string; run_id: string; task_id: string; attempt_id: string; reason: string; triaged_at: number; thread_id: string | null }>;
+    for (const row of triage) {
+      if (ignored.has(row.project_id)) continue;
+      out.push({ signature: reasonSignature("triage", row.reason), kind: "triage", projectId: row.project_id, runId: row.run_id, taskId: row.task_id,
+        attemptId: row.attempt_id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason: row.reason, at: row.triaged_at });
+    }
+    const blocked = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a
+      JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN ('blocked','validation_failed','spawn_rejected','provider_error') AND a.updated_at > ?`).all(since) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string }>;
+    for (const row of blocked) {
+      if (ignored.has(row.project_id) || !row.reason || !SYSTEM_REASON.test(row.reason)) continue;
+      if (out.some((item) => item.attemptId === row.id)) continue;
+      out.push({ signature: reasonSignature("blocked", row.reason), kind: "blocked", projectId: row.project_id, runId: row.run_id, taskId: row.task_id,
+        attemptId: row.id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason: row.reason, at: row.updated_at });
+    }
+    const running = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.updated_at, r.project_id FROM lane_pilot_attempt a
+      JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state='running' AND a.updated_at < ?`).all(Date.now() - STUCK_MS) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; updated_at: number; project_id: string }>;
+    for (const row of running) {
+      if (ignored.has(row.project_id) || !row.thread_id) continue;
+      const thread = await bb.sdk.threads.get({ threadId: row.thread_id }).catch(() => null);
+      if (stringAt(thread, "status") !== "idle") continue;
+      const reason = `attempt still «running» ${Math.round((Date.now() - row.updated_at) / 60_000)} min after its writer thread went idle`;
+      out.push({ signature: reasonSignature("stuck", "attempt running while its writer is idle"), kind: "stuck", projectId: row.project_id, runId: row.run_id,
+        taskId: row.task_id, attemptId: row.id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason, at: row.updated_at });
+    }
+    return out;
+  }
+
+  async function threadBusy(threadId: string): Promise<boolean> {
+    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+    const status = stringAt(thread, "status");
+    return status !== null && status !== "idle" && status !== "error" && status !== "stopped";
+  }
+
+  /**
+   * One pass: collect since the cursor, remember each kind of problem with a few samples, start at most one repair
+   * thread for the oldest kind nobody has taken yet. Kinds that wait (a repair running, the daily limit) stay in the
+   * state and are taken on a later pass; a kind seen again a day after its repair started gets a new repair.
+   */
+  async function tick(options: { dryRun?: boolean; since?: number } = {}): Promise<{ incidents: number; signatures: string[]; spawned: string | null; reason: string }> {
+    const cfg = await config();
+    const current = await state();
+    const now = Date.now();
+    const incidents = await collect(options.since ?? current.cursor, cfg);
+    const groups = new Map<string, Incident[]>();
+    for (const row of incidents) groups.set(row.signature, [...(groups.get(row.signature) ?? []), row]);
+    for (const [signature, rows] of groups) {
+      const record = current.signatures[signature] ?? { firstAt: now, lastAt: now, count: 0, threadId: null, spawnedAt: null, samples: [] };
+      const fresh = rows.filter((row) => !record.samples.some((seen) => seen.attemptId === row.attemptId));
+      if (fresh.length) record.lastAt = now;
+      record.count += fresh.length;
+      record.samples = [...record.samples, ...fresh].slice(-6);
+      current.signatures[signature] = record;
+    }
+    for (const [signature, record] of Object.entries(current.signatures)) if (now - record.lastAt > FORGET_MS) delete current.signatures[signature];
+    const due = Object.entries(current.signatures)
+      .filter(([, record]) => !record.spawnedAt || record.lastAt - record.spawnedAt > REPEAT_AFTER_MS)
+      .sort(([, a], [, b]) => a.firstAt - b.firstAt);
+    let spawned: string | null = null;
+    let reason = due.length ? "" : "nothing new";
+    const today = current.spawned.filter((row) => now - row.at < 86_400_000);
+    const active = await Promise.all(today.map((row) => threadBusy(row.threadId)));
+    if (due.length && !cfg.enabled) reason = "self-repair is off";
+    else if (due.length && active.some(Boolean)) reason = "a repair thread is still working";
+    else if (due.length && today.length >= cfg.maxPerDay) reason = `daily limit ${cfg.maxPerDay} reached`;
+    else if (due.length && options.dryRun) reason = `would start a repair for ${due[0]![0]}`;
+    else if (due.length) {
+      const [signature, record] = due[0]!;
+      try {
+        const result = await fullAccessSpawn(bb, {
+          projectId: cfg.projectId,
+          environment: { type: "reuse", environmentId: cfg.environmentId },
+          title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
+          prompt: repairPrompt(record.samples, signature),
+          ...writerExecutionSelection(cfg.providerId, cfg.model, cfg.reasoningLevel, null),
+          pluginMetadata: { role: "self-repair", signature },
+        } as Parameters<typeof fullAccessSpawn>[1]);
+        spawned = stringAt(result, "id");
+        if (spawned) {
+          record.threadId = spawned;
+          record.spawnedAt = now;
+          current.spawned = [...today, { at: now, threadId: spawned, signature }];
+          ctx.log(`self-repair: started @thread:${spawned} for ${signature}`);
+          reason = "started";
+        }
+      } catch (cause) {
+        reason = `spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`;
+        ctx.log(`self-repair: ${reason}`);
+      }
+    }
+    if (!options.dryRun) {
+      current.cursor = now;
+      await bb.storage.kv.set(STATE_KEY, current as never);
+    }
+    return { incidents: incidents.length, signatures: [...groups.keys()], spawned, reason };
+  }
+
+  /** The daily health picture: last 24 hours of attempts, failures by fault, stuck attempts and repairs. */
+  async function status() {
+    const since = Date.now() - 86_400_000;
+    const attempts = db.prepare("SELECT state, count(*) AS n FROM lane_pilot_attempt WHERE updated_at > ? GROUP BY state").all(since) as Array<{ state: string; n: number }>;
+    const faults = db.prepare("SELECT origin, count(*) AS n FROM lane_pilot_failure_triage WHERE triaged_at > ? GROUP BY origin").all(since) as Array<{ origin: string; n: number }>;
+    const cfg = await config();
+    const current = await state();
+    const open = await collect(since, cfg);
+    return {
+      config: cfg,
+      last24h: {
+        attempts: Object.fromEntries(attempts.map((row) => [row.state, row.n])),
+        failuresByFault: Object.fromEntries(faults.map((row) => [row.origin, row.n])),
+        lanePilotIncidents: open.map(({ kind, projectId, taskId, attemptId, reason }) => ({ kind, projectId, taskId, attemptId, reason: reason.slice(0, 200) })),
+        repairs: current.spawned.filter((row) => row.at > since),
+      },
+      cursor: current.cursor,
+      knownSignatures: Object.keys(current.signatures).length,
+    };
+  }
+
+  return { config, setConfig, state, collect, tick, status };
+}
+
+export function selfRepairRpc(ctx: ServerCore) {
+  const repair = createSelfRepair(ctx);
+  return {
+    self_repair_status: async () => repair.status(),
+    self_repair_configure: async (patch) => repair.setConfig(patch),
+    self_repair_tick: async ({ dryRun, since }) => repair.tick({ dryRun, since }),
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "self_repair_status" | "self_repair_configure" | "self_repair_tick">;
+}
+
+export type SelfRepair = ReturnType<typeof createSelfRepair>;
+
+export function mountSelfRepair(ctx: ServerCore): SelfRepair {
+  const repair = createSelfRepair(ctx);
+  ctx.bb.background.schedule("self-repair", "*/15 * * * *", async () => {
+    if (ctx.isDisposed()) return;
+    const result = await repair.tick().catch((cause) => ({ incidents: 0, signatures: [], spawned: null, reason: String(cause) }));
+    if (result.incidents) ctx.log(`self-repair tick: ${result.incidents} incident(s), ${result.signatures.length} kind(s): ${result.reason}`);
+  });
+  return repair;
+}

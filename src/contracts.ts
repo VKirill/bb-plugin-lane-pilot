@@ -1072,6 +1072,27 @@ export const rpcContract = defineRpcContract({
       finished: z.array(z.string()),
     }).strict(),
   },
+  self_repair_status: {
+    input: z.object({}).strict(),
+    output: z.unknown(),
+  },
+  self_repair_configure: {
+    input: z.object({
+      enabled: z.boolean().optional(),
+      projectId: z.string().min(1).optional(),
+      environmentId: z.string().min(1).optional(),
+      providerId: z.string().min(1).optional(),
+      model: z.string().min(1).optional(),
+      reasoningLevel: z.string().min(1).optional(),
+      maxPerDay: z.number().int().min(0).max(20).optional(),
+      ignoreProjects: z.array(z.string().min(1)).max(50).optional(),
+    }).strict(),
+    output: z.unknown(),
+  },
+  self_repair_tick: {
+    input: z.object({ dryRun: z.boolean().default(true), since: z.number().int().optional() }).strict(),
+    output: z.unknown(),
+  },
   stack_detect: {
     input: z.object({ projectId: z.string().min(1) }).strict(),
     output: z.unknown(),
