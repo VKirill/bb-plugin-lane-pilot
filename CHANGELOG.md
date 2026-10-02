@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.70 — 2026-10-02
+
+Two failures behind SelfyStudio's API and bot tasks not reaching main, both from a host restart in the middle of a merge (a plugin deploy restarts Lane Pilot on every machine):
+
+- **A merge lock left by a killed process no longer blocks the next merge.** The lock folder `.git/lane-pilot-integrate.lock` now names its process; when that process is gone the next merge takes it over at once. Before, a lock was stale only after 10 minutes while a merge waited 2, so the API task failed with «another writer integration holds the base checkout». An ownerless lock left by an older Lane Pilot is taken over too.
+- **Work already committed in an attempt's own worktree counts.** Lane Pilot commits the writer's work before merging; cut off between the two, the re-check after the restart saw a clean worktree and marked the finished bot task «writer changed no files». Validation now also counts the worktree's commits since it left main (against main's current HEAD), so such an attempt is accepted and merged.
+
 ## 0.1.69 — 2026-10-02
 
 - **Writers' checks see the project's machine variables.** Every variable BB keeps for the project (Settings → machine environment: the global ones and the project's own) now reaches a check in the sandbox, so tests that need `DATABASE_URL` or an API key can pass. Only names travel through Lane Pilot: the terminal's shell, which BB started with the values, hands them in as `${NAME+"NAME=$NAME"}`, so values never reach Lane Pilot or its logs. The sandbox's own `PATH`, `HOME` and temp folders always win. Variables can be imported from Env Catalog into the machine environment.

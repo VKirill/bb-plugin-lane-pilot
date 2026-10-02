@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rm, stat, symlink } from "node:fs/promises";
+import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 
 export type GitIntegration = {
@@ -24,16 +24,29 @@ function identity(cwd:string):string[] {
   return email.ok&&email.stdout.trim()?[]:FALLBACK_IDENTITY;
 }
 
-/** One integration at a time per base checkout; a lock older than 10 minutes is stale. */
+/** True while the process that took a lock still runs; a host process killed mid-merge leaves its lock behind. */
+function ownerAlive(pid:number):boolean {
+  try { process.kill(pid,0); return true; }
+  catch(error) { return (error as NodeJS.ErrnoException).code==="EPERM"; }
+}
+
+/**
+ * One integration at a time per base checkout. The lock names its process; a lock whose process is gone
+ * (the host restarted mid-merge) is taken over at once, and any lock older than 10 minutes is stale.
+ */
 export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>):Promise<T> {
   const lock=join(basePath,".git","lane-pilot-integrate.lock");
   const deadline=Date.now()+120_000;
   for(;;) {
-    try { await mkdir(lock); break; }
+    try { await mkdir(lock); await writeFile(join(lock,"owner"),String(process.pid)); break; }
     catch(error) {
       if((error as NodeJS.ErrnoException).code!=="EEXIST") throw error;
       const info=await stat(lock).catch(()=>null);
-      if(info&&Date.now()-info.mtimeMs>600_000) { await rm(lock,{recursive:true,force:true}); continue; }
+      const owner=Number.parseInt(await readFile(join(lock,"owner"),"utf8").catch(()=>""),10);
+      // A lock without an owner file is either being created right now or was left by an older Lane Pilot.
+      const orphaned=Number.isInteger(owner)&&owner>0&&owner!==process.pid&&!ownerAlive(owner);
+      const legacy=!Number.isInteger(owner)&&info!==null&&Date.now()-info.mtimeMs>5_000&&!(await readdir(lock).catch(()=>[])).length;
+      if(orphaned||legacy||(info&&Date.now()-info.mtimeMs>600_000)) { await rm(lock,{recursive:true,force:true}); continue; }
       if(Date.now()>deadline) throw new Error("another writer integration holds the base checkout");
       await new Promise((resolve)=>setTimeout(resolve,500));
     }

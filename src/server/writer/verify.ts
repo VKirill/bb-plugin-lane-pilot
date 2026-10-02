@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, validateAcceptanceV2 } from "../../acceptance-v2";
 import { attemptProduced } from "../../cli-outcome";
 import { taskV2Schema } from "../../contracts";
@@ -174,7 +175,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         output:outputText(output), produced:[], verification:[],
       };
     }
-    const produced = attemptProduced(dirt.snapshots, input.dirtBefore);
+    let produced = attemptProduced(dirt.snapshots, input.dirtBefore);
     const runTasks = listTasksForRun(db,input.runId);
     const runOwnershipTasks = runTasks.flatMap((row) => {
       if (row.kind !== "bb") return [];
@@ -183,6 +184,18 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     });
     const persistedRun = getRun(db,input.runId);
     const persistedAttempt = getAttempt(db,input.attemptId);
+    // In the attempt's own worktree, work may already sit in a commit: the writer committed it, or Lane Pilot
+    // committed it on the way to main and was cut off mid-merge (a host restart) before this re-check. Those
+    // files count too; otherwise a finished task reads as «writer changed no files» and never reaches main.
+    const basePath = persistedRun?.writer_workspace_path;
+    if (basePath && resolve(basePath) !== resolve(input.task.project_cwd)) {
+      const base = await host.call("gitOwnershipBase",{requestedHostId:input.config.hostId,projectCwd:basePath},
+        {hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>null);
+      const committed = base?.status==="ready" && base.headSha ? await host.call("gitOwnershipChanges",{
+        requestedHostId:input.config.hostId,projectCwd:input.task.project_cwd,baseSha:base.headSha,compareCommitted:true,
+      },{hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>null) : null;
+      if (committed?.status==="ready" && committed.paths.length) produced = [...new Set([...produced,...committed.paths])].sort();
+    }
     // Task-v2 contracts stay bound to the run's configured project workspace. A
     // risk-routed attempt may execute in its own managed worktree, so validate that
     // separate CAS binding instead of requiring the task contract cwd to equal it.

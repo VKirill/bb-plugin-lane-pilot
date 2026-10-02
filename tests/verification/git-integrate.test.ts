@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { integrateWorktree } from "../../src/verification/git-integrate";
+import { integrateWorktree, withBaseLock } from "../../src/verification/git-integrate";
+import { gitOwnershipChangedPaths } from "../../src/verification/git-ownership";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 
@@ -186,4 +187,39 @@ it("runs the project's pre-commit hook on writer work: a rejection fails the att
   const good = await worktree("good");
   await writeFile(join(good, "lib.ts"), "export const x = 1;\n");
   expect((await integrateWorktree({ basePath: base, worktreePath: good, message: "good" })).status).toBe("merged");
+});
+
+it("takes over a merge lock whose process is gone, at once", async () => {
+  const { base, worktree } = await repo();
+  const lock = join(base, ".git", "lane-pilot-integrate.lock");
+  await mkdir(lock);
+  // A pid that cannot be running: the host process that took the lock was killed mid-merge.
+  await writeFile(join(lock, "owner"), "999999");
+  const a = await worktree("a");
+  await writeFile(join(a, "lib.ts"), "x\n");
+  const started = Date.now();
+  expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "task a" })).status).toBe("merged");
+  expect(Date.now() - started).toBeLessThan(5_000);
+});
+
+it("takes over an ownerless lock an older Lane Pilot left behind", async () => {
+  const { base } = await repo();
+  const lock = join(base, ".git", "lane-pilot-integrate.lock");
+  await mkdir(lock);
+  const old = new Date(Date.now() - 60_000);
+  await utimes(lock, old, old);
+  expect(await withBaseLock(base, () => "ran")).toBe("ran");
+});
+
+it("sees work already committed in a writer worktree against main's current HEAD", async () => {
+  const { base, worktree } = await repo();
+  const a = await worktree("a");
+  await writeFile(join(a, "lib.ts"), "x\n");
+  git(a, "add", "-A"); git(a, "commit", "-qm", "writer work");
+  // main moved on meanwhile; only the worktree's own commit counts.
+  await writeFile(join(base, "other.ts"), "y\n");
+  git(base, "add", "-A"); git(base, "commit", "-qm", "sibling merge");
+  const head = git(base, "rev-parse", "HEAD").trim();
+  const changed = await gitOwnershipChangedPaths({ projectCwd: a, baseSha: head, compareCommitted: true });
+  expect(changed.paths).toEqual(["lib.ts"]);
 });
