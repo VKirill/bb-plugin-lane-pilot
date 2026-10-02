@@ -1081,6 +1081,7 @@ export const rpcContract = defineRpcContract({
       enabled: z.boolean().optional(),
       projectId: z.string().min(1).optional(),
       environmentId: z.string().min(1).optional(),
+      sectionId: z.string().min(1).nullable().optional(),
       providerId: z.string().min(1).optional(),
       model: z.string().min(1).optional(),
       reasoningLevel: z.string().min(1).optional(),

@@ -6,10 +6,12 @@ import type { ServerCore } from "../../src/server/core";
 
 function setup(threadStatus: Record<string, string> = {}) {
   const spawns: Array<Record<string, unknown>> = [];
+  const placed: unknown[] = [];
   let next = 0;
   const { bb } = createFakePluginHost({
     pluginId: "lane-pilot",
     sdk: {
+      plugins: { callRpc: async (args: { method: string; input: unknown }) => { placed.push([args.method, args.input]); return { ok: true }; } },
       threads: {
         get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: threadStatus[threadId] ?? "idle" }) as never,
         spawn: async (input: unknown) => {
@@ -29,7 +31,7 @@ function setup(threadStatus: Record<string, string> = {}) {
   const triage = (id: string, project: string, run: string, reason: string, origin = "orchestrator") =>
     db.prepare(`INSERT INTO lane_pilot_failure_triage (project_id,attempt_id,run_id,task_id,reason_sha256,reason,origin,status,failed_at,triaged_at)
       VALUES (?,?,?,?,?,?,?,'ok',?,?)`).run(project, id, run, `task-${id}`, "x", reason, origin, now, now);
-  return { ctx, db, spawns, attempt, triage, now };
+  return { ctx, db, spawns, placed, attempt, triage, now };
 }
 
 describe("self-repair", () => {
@@ -43,7 +45,7 @@ describe("self-repair", () => {
   });
 
   it("starts one Opus high repair thread in the Lane Pilot section for Lane Pilot's own fault, not for others", async () => {
-    const { ctx, spawns, attempt, triage } = setup();
+    const { ctx, spawns, placed, attempt, triage } = setup();
     attempt("lpattempt_1", "lprun_a", "validation_failed", "cannot read writer-workspace git diff: host plugin calls are unavailable");
     triage("lpattempt_1", "proj_real", "lprun_a", "cannot read writer-workspace git diff: host plugin calls are unavailable");
     triage("lpattempt_2", "proj_real", "lprun_a", "tests failed in apps/web", "writer");
@@ -60,6 +62,7 @@ describe("self-repair", () => {
       providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high", serviceTier: "default", permissionMode: "full",
     });
     expect(String(spawns[0]!.prompt)).toContain("@thread:thr_pm");
+    expect(placed).toEqual([["thread_place", { threadId: "thr_repair1", projectId: "proj_ejbam66722", folderId: "9b66deb6-0e31-42d3-840f-19fa9601380c" }]]);
     expect(String(spawns[0]!.prompt)).toContain("host plugin calls are unavailable");
   });
 

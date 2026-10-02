@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 import { fullAccessSpawn } from "./pm-spawn";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { stringAt } from "./values";
@@ -19,6 +20,8 @@ export type SelfRepairConfig = {
   enabled: boolean;
   projectId: string;
   environmentId: string;
+  /** Project Folders section the repair threads are filed in («Исправления» under lane-pilot); null — the project root. */
+  sectionId: string | null;
   providerId: string;
   model: string;
   reasoningLevel: string;
@@ -31,6 +34,7 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
   enabled: true,
   projectId: "proj_ejbam66722",
   environmentId: "env_bfv6wmb79r",
+  sectionId: "9b66deb6-0e31-42d3-840f-19fa9601380c",
   providerId: "claude-code",
   model: "claude-opus-5-5",
   reasoningLevel: "high",
@@ -191,6 +195,15 @@ export function createSelfRepair(ctx: ServerCore) {
     return out;
   }
 
+  async function placeThread(threadId: string, projectId: string, folderId: string): Promise<void> {
+    try {
+      await bb.sdk.plugins.callRpc({ pluginId: "project-folders", method: "thread_place", input: { threadId, projectId, folderId },
+        outputSchema: z.object({ ok: z.literal(true) }) });
+    } catch (cause) {
+      ctx.log(`self-repair: could not file @thread:${threadId} in section ${folderId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+
   async function threadBusy(threadId: string): Promise<boolean> {
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const status = stringAt(thread, "status");
@@ -246,6 +259,7 @@ export function createSelfRepair(ctx: ServerCore) {
           record.spawnedAt = now;
           current.spawned = [...today, { at: now, threadId: spawned, signature }];
           ctx.log(`self-repair: started @thread:${spawned} for ${signature}`);
+          if (cfg.sectionId) await placeThread(spawned, cfg.projectId, cfg.sectionId);
           reason = "started";
         }
       } catch (cause) {
