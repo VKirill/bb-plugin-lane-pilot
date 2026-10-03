@@ -61,7 +61,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   bb.agents.registerTool({
     name:"lane_pilot_dispatch_writer",
     description:"Start a task-v2 contract with the configured native BB writer and return run/attempt identity immediately.",
-    instructions:"Use only from a Lane Pilot PM thread. Returns before writer completion. Then call lane_pilot_wait_writer with the returned runId; if it reports still running, call it again. Persists identity before spawn, retries at most twice, never falls back to Codex.",
+    instructions:"Use only from a Lane Pilot PM thread. Send every task of the plan now, each in its own call: tasks whose owns_paths do not overlap run in parallel, a task whose owns_paths overlap an open task's waits for it, and a task with depends_on (task ids that must be accepted first) starts by itself once they are — do not hold tasks back in waves. Returns before writer completion. Then call lane_pilot_wait_writer with the returned runId; if it reports still running, call it again. Persists identity before spawn, retries at most twice, never falls back to Codex.",
     parameters:z.object({ confirm:z.literal(true), plan:z.string().min(1), task:taskV2Schema.optional(), baseRef:z.string().trim().min(1).max(240).optional() }).strict(),
     execute: async (params, context) => JSON.stringify(
       await services.dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task, plan:params.plan, baseRef:params.baseRef }),

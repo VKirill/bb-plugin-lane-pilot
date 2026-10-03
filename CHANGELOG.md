@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.104 — 2026-10-03
+
+The PM held independent tasks back in waves and the owner had to ask for parallel runs (SelfyStudio W3/W11 waited for a 90-minute reminder after their dependencies were in main).
+- **Dispatch the whole plan at once.** PM instructions and the `lane_pilot_dispatch_writer` description now say what Lane Pilot already does: tasks with disjoint owns_paths run side by side, a task overlapping an open one queues behind it, and a task with `depends_on` starts by itself once those are accepted — so every task goes out now, none waits for a reminder. Only 14 of 128 SelfyStudio tasks in two days used `depends_on`.
+- **`depends_on` follows redispatches.** A dependency named `P1` now means the latest of `P1`, `P1.2`, `P1.3`…; before, a dependent of a task the PM had to send again blocked after two minutes with «no such task was dispatched». The same holds for `lane_pilot_remind` task ids.
+
+Verified live in the sandbox: the PM sent three tasks within a second, P3 with `depends_on: ["P1"]`; P1 and P2 ran in parallel; P3.2 blocked on the old lookup (P1 had been redispatched as P1.2); after the fix a task depending on `P1` started at once.
+
 ## 0.1.103 — 2026-10-03
 
 - **Worktrees of failed, retried attempts are released too.** 0.1.102 released a worktree only when its attempts were accepted, blocked or canceled; a failed attempt (validation_failed, empty_output, …) stays in that state after its retry starts, so its ≈2 GB worktree stayed: 31 worktrees, 57 GB on OVH a day later. Now an attempt counts as over when it failed and a later attempt of the same task exists, and a holder worktree never bound to its attempt goes on the same terms. A failed attempt nothing replaced still keeps its worktree.

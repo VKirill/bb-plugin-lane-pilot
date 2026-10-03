@@ -637,9 +637,15 @@ export function listTaskTerminalStates(db: LanePilotDatabase, runId: string): st
 }
 
 /** The latest attempt of a task id in a project (any run): what a dependent task waits on. */
+/**
+ * The state of a task's latest attempt. A task the PM sent again is «<id>.2», «<id>.3»: naming «<id>» means its
+ * latest redispatch, so a dependent written against the plan's ids does not block on a name no attempt carries
+ * (live 2026-10-03: P3 depends_on P1, P1 was blocked by the plan check and sent again as P1.2).
+ */
 export function latestTaskAttemptState(db: LanePilotDatabase, projectId: string, taskId: string): string | null {
   const row = db.prepare(`SELECT a.state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE r.project_id=? AND a.task_id=? ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT 1`).get(projectId, taskId) as { state: string } | undefined;
+    WHERE r.project_id=? AND (a.task_id=? OR (substr(a.task_id,1,length(?)+1)=?||'.' AND substr(a.task_id,length(?)+2) GLOB '[0-9]*' AND substr(a.task_id,length(?)+2) NOT GLOB '*[^0-9]*'))
+    ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT 1`).get(projectId, taskId, taskId, taskId, taskId, taskId) as { state: string } | undefined;
   return row?.state ?? null;
 }
 
