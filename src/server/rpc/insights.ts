@@ -4,7 +4,7 @@ import { rpcContract } from "../../contracts";
 import { loadProjectSettings } from "../../database";
 import { parseDocsSettings } from "../../stages/docs";
 import { configuredSetting } from "../context";
-import { acceptRuleProposal, memorySettingsFor, rejectRuleProposal, revokeRule } from "../insights";
+import { acceptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, revokeRule } from "../insights";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
@@ -51,6 +51,23 @@ export function insightsRpc(ctx: ServerCore, services: Services) {
       };
     },
     /** Each folder of the project on each machine: does it keep docs, why, how often, and when tasks last read them. */
+    memory_records_list: async ({ projectId }) => {
+      const rows = db.prepare("SELECT id, kind, audience, content, concepts_json, created_at FROM lane_pilot_memory WHERE project_id=? ORDER BY created_at DESC LIMIT 500")
+        .all(projectId) as Array<{ id: string; kind: "core" | "note"; audience: string; content: string; concepts_json: string; created_at: number }>;
+      return { records: rows.map((row) => {
+        let concepts: string[] = [];
+        try { concepts = JSON.parse(row.concepts_json) as string[]; } catch { concepts = []; }
+        return { id: row.id, kind: row.kind, audience: row.audience, content: row.content, concepts, createdAt: row.created_at, rule: concepts.includes("rule") };
+      }) };
+    },
+    // A rule's record is removed with the rule (the Rules tab), so the rule never stays «accepted» without reaching writers.
+    memory_record_delete: async ({ projectId, id }) => {
+      const row = db.prepare("SELECT concepts_json FROM lane_pilot_memory WHERE project_id=? AND id=?").get(projectId, id) as { concepts_json: string } | undefined;
+      if (!row) return { deleted: false, reason: "not_found" };
+      if (row.concepts_json.includes('"rule"')) return { deleted: false, reason: "rule" };
+      deleteMemoryRecord(db, projectId, id);
+      return { deleted: true, reason: null };
+    },
     docs_overview: async ({ projectId, recheck }) => {
       const places = await services.docsPlaces(projectId);
       const rows = [];
@@ -73,5 +90,5 @@ export function insightsRpc(ctx: ServerCore, services: Services) {
       if (action === "accept") return { proposal: ruleView(acceptRuleProposal(db, projectId, id, rule ?? getRuleProposal(db, projectId, id)?.rule ?? "")) };
       return { proposal: ruleView(action === "reject" ? rejectRuleProposal(db, projectId, id) : revokeRule(db, projectId, id)) };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_routing_hint" | "list_rule_proposals" | "decide_rule_proposal" | "start_rule_scan" | "save_rules_analyzer" | "docs_overview">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_routing_hint" | "list_rule_proposals" | "decide_rule_proposal" | "start_rule_scan" | "save_rules_analyzer" | "docs_overview" | "memory_records_list" | "memory_record_delete">;
 }

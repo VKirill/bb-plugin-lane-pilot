@@ -1159,6 +1159,17 @@ export const rpcContract = defineRpcContract({
       events: z.array(z.object({ ruleId: z.string(), action: z.string(), detail: z.string().nullable(), at: z.number().int() }).strict()),
     }).strict(),
   },
+  memory_records_list: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.object({ records: z.array(z.object({
+      id: z.string(), kind: z.enum(["core", "note"]), audience: z.string(), content: z.string(), concepts: z.array(z.string()),
+      createdAt: z.number().int(), rule: z.boolean(),
+    }).strict()) }).strict(),
+  },
+  memory_record_delete: {
+    input: z.object({ projectId: z.string().min(1), id: z.string().min(1) }).strict(),
+    output: z.object({ deleted: z.boolean(), reason: z.string().nullable() }).strict(),
+  },
   docs_overview: {
     input: z.object({ projectId: z.string().min(1), recheck: z.boolean().optional() }).strict(),
     output: z.object({

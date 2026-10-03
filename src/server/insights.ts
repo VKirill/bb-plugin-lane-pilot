@@ -128,7 +128,7 @@ export function revokeRule(db: LanePilotDatabase, projectId: string, id: string)
   return getRuleProposal(db, projectId, id)!;
 }
 
-function deleteMemoryRecord(db: LanePilotDatabase, projectId: string, memoryId: string): void {
+export function deleteMemoryRecord(db: LanePilotDatabase, projectId: string, memoryId: string): void {
   db.prepare("DELETE FROM lane_pilot_memory_fts WHERE project_id=? AND id=?").run(projectId, memoryId);
   db.prepare("DELETE FROM lane_pilot_memory WHERE project_id=? AND id=?").run(projectId, memoryId);
 }

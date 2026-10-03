@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.93 — 2026-10-03
+
+- **Project memory is visible.** «Memory and documents» lists what the project memory holds — facts and rules, newest first, with kind, date and concepts — and a wrong or outdated fact can be removed. A rule's record is removed with the rule on the Rules tab, so a rule never stays «accepted» without reaching writers. RPC `memory_records_list`, `memory_record_delete`.
+
 ## 0.1.92 — 2026-10-03
 
 Writer attempts after the audit against the SMA fleet invariants (`.bb/chats/thr_tev4nistgf/artifacts/memory-audit/fleet-invariants.md`).

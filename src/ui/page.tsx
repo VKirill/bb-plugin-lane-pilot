@@ -56,6 +56,7 @@ import { CONTROL_H } from "./control-row";
 import { Disclosure } from "./disclosure";
 import { RuleProposals } from "./rule-proposals";
 import { AgentAccess } from "./agent-access";
+import { MemoryRecords } from "./memory-records";
 import { DocsPlaces } from "./docs-places";
 import { DOCS_DEFAULT_SELECTION } from "../stages/docs-defaults";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
@@ -1675,6 +1676,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
                 <div className="max-w-xl">{modelPicker(memoryPickerValue, (next) => { void saveMemorySelection(next); })}</div>
+                {activeScope !== "globals" && projectId ? <MemoryRecords projectId={projectId} /> : null}
                 <AdvancedRows show={advanced} testId="memory-advanced">
                   {(["memory.maintain","memory.inject","memory.audience","memory.search_engine","memory.personal_bot","memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget"] as const).map((key) => {
                     const row = catalogRow(key);
