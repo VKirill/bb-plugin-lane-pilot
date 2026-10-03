@@ -42,4 +42,20 @@ describe("attempt invariants (fleet audit 2026-10-03)", () => {
       .toEqual(["passed", "passed", "passed"]);
     expect(closeOrphanWriterStages(db, new Set())).toBe(0);
   });
+
+  it("ends a failed attempt whose retry was lost in a reload, and closes its stages (live: bot-preset-catalog-style-fallback-r3)", () => {
+    const db = setup();
+    saveTaskPlan(db, "t", "Fix the hero");
+    for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(db, { runId:"run", taskId:"t", stageId, state:"pending", input:"Fix the hero" });
+    recordStage(db, { runId:"run", taskId:"t", stageId:"writer-agent", state:"running", input:"Fix the hero" });
+    transitionAttempt(db, "a1", "running");
+    transitionAttempt(db, "a1", "empty_output", { reason:"writer changed no files" });
+    // The start loop of this process still owns it: not an orphan.
+    expect(closeOrphanWriterStages(db, new Set(["run:t"]))).toBe(0);
+    expect(closeOrphanWriterStages(db, new Set())).toBe(3);
+    expect(db.prepare("SELECT state, reason FROM lane_pilot_attempt WHERE id='a1'").get())
+      .toEqual({ state:"blocked", reason:"writer changed no files; its retry was lost in a plugin reload" });
+    expect(listStageReceipts(db, "run", "t").filter((row) => ["writer-agent", "verification", "acceptance-receipt"].includes(row.stageId)).map((row) => row.state))
+      .toEqual(["failed", "failed", "failed"]);
+  });
 });

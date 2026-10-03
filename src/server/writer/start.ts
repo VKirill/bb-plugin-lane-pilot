@@ -10,7 +10,7 @@ import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import type { AttemptState } from "../../state-machine";
 import { parseWorkspaceMode } from "../../workspace/routing";
-import { recordStage } from "../stage-records";
+import { closeWriterStages, recordStage } from "../stage-records";
 import { id, stringAt } from "../values";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
@@ -149,6 +149,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       if (dependency) {
         transitionAttempt(db, attemptId, "blocked", { reason: dependency });
         last = { status:"blocked", reason: dependency, attemptId };
+        // The writer never starts: close its stages here, or they stay pending for good.
+        closeWriterStages(db, { runId:input.runId, taskId:input.taskId, plan:input.plan, terminal:"failed",
+          attempt:countAttempts(db, input.runId, input.taskId), reason:dependency });
         refreshRun(input.runId);
         return;
       }

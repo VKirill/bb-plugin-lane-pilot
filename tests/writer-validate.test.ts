@@ -241,6 +241,47 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("closes the stages of a task blocked by a blocked depends_on (live: gc-native-price-watermark.4)", async () => {
+    let spawns = 0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{
+        threads:{
+          getPluginMetadata:async ({ threadId }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:"run-depends" } : { role:"writer" },
+          spawn:async () => { spawns += 1; return { id:"writer-depends" }; },
+          get:withPm(async () => ({ id:"writer-depends", status:"idle" })),
+          list:async () => [] as never,
+        },
+        providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
+        files:{ read:async () => ({ content:"task read-first fixture\n" }), write:async () => ({ ok:true }) },
+      },
+      experimental_callHostRpc:(call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
+      },
+    });
+    const db = openDatabase(bb);
+    saveLegacyWriterConfig(db);
+    createRun(db, "run-depends", projectId, "bb", config.writerWorkspacePath);
+    setRunThread(db, "run-depends", pmThreadId);
+    createTask(db, { id:"dep-task", runId:"run-depends", kind:"bb", contract:{ ...task, id:"dep-task" } });
+    createAttempt(db, { id:"dep-attempt", runId:"run-depends", taskId:"dep-task" });
+    transitionAttempt(db, "dep-attempt", "blocked", { reason:"retry limit 2 exhausted" });
+    await plugin(bb);
+    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, plan:"Plan that waits for dep-task", task:{ ...task, id:"dependent", depends_on:["dep-task"], verify:"none", verification:[] } },
+      { threadId:pmThreadId, projectId },
+    )));
+    await vi.waitFor(() => expect(getAttempt(db, dispatched.attemptId)?.state).toBe("blocked"));
+    const blockedBy = ["failed", "depends_on dep-task: that task ended blocked"];
+    await vi.waitFor(() => expect(Object.fromEntries(listStageReceipts(db, "run-depends", "dependent")
+      .filter((row) => ["writer-agent", "verification", "acceptance-receipt"].includes(row.stageId))
+      .map((row) => [row.stageId, [row.state, row.reason]]))).toEqual({ "writer-agent":blockedBy, verification:blockedBy, "acceptance-receipt":blockedBy }));
+    expect(spawns).toBe(0);
+    await harness.lifecycle.dispose();
+  });
+
   it("stops on a writer's NEEDS_HUMAN question without retry and hands the question to the PM", async () => {
     let spawns = 0;
     const { bb, harness } = createFakePluginHost({

@@ -87,6 +87,7 @@ export interface Services {
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
   resumeOrphans: ReconcileApi["resumeOrphans"];
   runBrowserQa: QaStagesApi["runBrowserQa"];
+  resumeBrowserQaThreads: QaStagesApi["resumeBrowserQaThreads"];
   runDocsCatchUps: DocsNightlyApi["runDocsCatchUps"];
   runDocsMaintenance: DocsStageApi["runDocsMaintenance"];
   runDocsUnit: DocsNightlyApi["runDocsUnit"];

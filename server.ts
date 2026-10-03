@@ -87,6 +87,10 @@ export default async function plugin(bb: BbPluginApi) {
         const closed = closeOrphanWriterStages(db, services.activeWriterTasks);
         if (closed) bb.log.info(`Lane Pilot closed ${closed} writer stage(s) left open after their task ended`);
       } catch (cause) { bb.log.warn(`Lane Pilot stage cleanup skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      try {
+        const adopted = services.resumeBrowserQaThreads();
+        if (adopted) bb.log.info(`Lane Pilot adopted ${adopted} browser check(s) left running by a reload`);
+      } catch (cause) { bb.log.warn(`Lane Pilot browser check recovery skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
       await new Promise<void>((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
     },
   });

@@ -7,7 +7,7 @@ import { MAIN_ATTEMPT_LIMIT } from "../../state-machine";
 import { configuredSetting } from "../context";
 import { freezeRunRouting, inheritedProjectSettings } from "../run-routing";
 import { recordStage } from "../stage-records";
-import { runQaThread } from "./qa-thread";
+import { awaitQaVerdict, runQaThread } from "./qa-thread";
 import { stringAt, valueAt } from "../values";
 import type { ServerCore } from "../core";
 
@@ -204,7 +204,9 @@ export function createQaStages(ctx: ServerCore) {
         const verdict = await runQaThread(ctx, {
           projectId:args.projectId, runId:args.runId, pmThreadId:args.threadId, taskTitle:task.title, qaHostId:qaTarget.hostId, timeoutSec,
           url:args.url, cases:args.cases, viewports:args.viewports, envClass:args.envClass, authorized:args.authorized, devServer:args.devServer, vpnAddress:vpn?.address ?? null, agent,
-          onSpawned:(threadId) => recordStage(db,{...dispatchedBase,state:"running",result:{...targetSnapshot,threadId,link:`@thread:${threadId}`}}),
+          // spawnAttempted stays: without it a second call would claim the stage again and start another check.
+          onSpawned:(threadId, deadline) => recordStage(db,{...dispatchedBase,state:"running",
+            result:{...targetSnapshot,spawnAttempted:true,threadId,link:`@thread:${threadId}`,deadline,timeoutSec}}),
         });
         const state = verdict.verdict;
         const snapshot = { ...targetSnapshot, url:args.url, backend:"bb-browser", agent, ...verdict };
@@ -254,10 +256,46 @@ export function createQaStages(ctx: ServerCore) {
       recordStage(db,{...dispatchedBase,state,providerId:base.providerId,model:result.actualModel ?? model,result:snapshot,reason});
       return {runId:args.runId,taskId:args.taskId,state,stage:listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa"),result:snapshot,reason};
     } catch (cause) {
+      // Unloaded mid-check: the stage stays running for the next load to adopt, not failed with a verdict lost.
+      if (ctx.isDisposed()) throw cause;
       const reason = cause instanceof Error ? cause.message : String(cause);
       recordStage(db,{...dispatchedBase,state:"failed",reason,result:targetSnapshot});
       return {runId:args.runId,taskId:args.taskId,state:"failed",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
+  }
+
+  const loadedAt = Date.now();
+  /**
+   * Browser checks whose wait died with a reload. The check thread goes on, so its verdict is read here and stored;
+   * a check claimed before its thread id was saved never confirmed a start and is blocked, so it may run again.
+   * Before, such a stage stayed «running» for good and the verdict was lost.
+   */
+  function resumeBrowserQaThreads(): number {
+    const rows = db.prepare(`SELECT run_id, task_id FROM lane_pilot_stage_receipt WHERE stage_id='browser-qa' AND state='running' AND updated_at < ?`)
+      .all(loadedAt) as Array<{ run_id:string; task_id:string }>;
+    for (const row of rows) {
+      const stage = listStageReceipts(db, row.run_id, row.task_id).find((item) => item.stageId === "browser-qa");
+      if (!stage) continue;
+      const frozen = stage.result && typeof stage.result === "object" ? stage.result as Record<string, unknown> : {};
+      const base = { runId:row.run_id, taskId:row.task_id, stageId:"browser-qa" as const, input:JSON.stringify(frozen), attempt:stage.attempt,
+        providerId:stage.providerId, model:stage.model };
+      const threadId = typeof frozen.threadId === "string" ? frozen.threadId : null;
+      if (!threadId) {
+        recordStage(db, { ...base, state:"blocked", result:frozen, reason:"browser_qa_dispatch_lost_in_reload" });
+        continue;
+      }
+      const timeoutSec = typeof frozen.timeoutSec === "number" ? frozen.timeoutSec : 1800;
+      const deadline = typeof frozen.deadline === "number" ? frozen.deadline : stage.updatedAt + timeoutSec * 1000;
+      void awaitQaVerdict(ctx, threadId, deadline, timeoutSec).then((verdict) => {
+        if (!verdict) return;
+        const reason = verdict.verdict === "passed" ? undefined : verdict.summary || undefined;
+        recordStage(db, { ...base, state:verdict.verdict, result:{ ...frozen, backend:"bb-browser", ...verdict }, ...(reason ? { reason } : {}) });
+        bb.log.info(`Lane Pilot browser check ${row.task_id} adopted after a reload: ${verdict.verdict}`);
+      }).catch((cause: unknown) => {
+        if (!ctx.isDisposed()) bb.log.warn(`Lane Pilot browser check ${row.task_id} could not be adopted: ${cause instanceof Error ? cause.message : String(cause)}`);
+      });
+    }
+    return rows.length;
   }
 
   async function ingestOpenCodeTelemetry(args:{threadId:string;projectId:string;runId:string;taskId:string;sessionId:string;taskFile:string;sourcePath:string})
@@ -303,5 +341,5 @@ export function createQaStages(ctx: ServerCore) {
     }
   }
 
-  return { runBrowserQa, ingestOpenCodeTelemetry };
+  return { runBrowserQa, resumeBrowserQaThreads, ingestOpenCodeTelemetry };
 }

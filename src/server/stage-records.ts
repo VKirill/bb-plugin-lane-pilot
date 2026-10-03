@@ -1,4 +1,6 @@
-import { appendGateEvaluation, getTaskPlan, listStageReceipts, openDatabase, saveStageReceipt } from "../database";
+import { appendGateEvaluation, getTaskPlan, listStageReceipts, openDatabase, saveStageReceipt, transitionAttempt } from "../database";
+import { RETRY_ELIGIBLE } from "../state-machine";
+import type { AttemptState } from "../state-machine";
 import { sha256, stageTransition, validateStageReceipt } from "../stages/contract";
 import type { StageId, StageState } from "../stages/contract";
 export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:string;taskId:string;stageId:StageId;state:StageState;input:string;attempt?:number;
@@ -62,9 +64,18 @@ export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, acti
   let closed = 0;
   for (const row of rows) {
     if (active.has(`${row.run_id}:${row.task_id}`)) continue;
-    const latest = db.prepare(`SELECT state, reason, thread_id FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1`)
-      .get(row.run_id, row.task_id) as { state:string; reason:string|null; thread_id:string|null } | undefined;
-    if (!latest || !["accepted", "blocked", "canceled"].includes(latest.state)) continue;
+    const latest = db.prepare(`SELECT id, state, reason, thread_id FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1`)
+      .get(row.run_id, row.task_id) as { id:string; state:string; reason:string|null; thread_id:string|null } | undefined;
+    if (!latest) continue;
+    // A failed attempt waiting for its retry: the loop that would retry it died with a reload, and start-up recovery
+    // resumes only attempts in flight. Nobody retries it, so it ends here and the PM decides.
+    if (RETRY_ELIGIBLE.includes(latest.state as AttemptState)) {
+      const reason = `${latest.reason ?? latest.state}; its retry was lost in a plugin reload`;
+      transitionAttempt(db, latest.id, "blocked", { reason });
+      latest.state = "blocked";
+      latest.reason = reason;
+    }
+    if (!["accepted", "blocked", "canceled"].includes(latest.state)) continue;
     const terminal = latest.state === "accepted" ? "passed" : latest.state === "canceled" ? "canceled" : "failed";
     const attempts = (db.prepare("SELECT count(*) AS n FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").get(row.run_id, row.task_id) as { n:number }).n;
     closed += closeWriterStages(db, { runId:row.run_id, taskId:row.task_id, plan:getTaskPlan(db, row.task_id) ?? "", terminal, attempt:attempts,

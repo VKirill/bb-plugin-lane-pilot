@@ -73,7 +73,7 @@ export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDispose
   projectId: string; runId: string; pmThreadId: string; taskTitle: string; qaHostId: string; timeoutSec: number;
   url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; devServer?: string; vpnAddress?: string | null;
   agent: { providerId: string; model: string; effort: string };
-  onSpawned?: (threadId: string) => void;
+  onSpawned?: (threadId: string, deadline: number) => void;
 }): Promise<QaVerdict & { threadId: string; link: string }> {
   const { bb, db } = ctx;
   const pm = await bb.sdk.threads.get({ threadId: input.pmThreadId });
@@ -91,17 +91,38 @@ export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDispose
   } as Parameters<typeof fullAccessSpawn>[1]);
   const threadId = stringAt(spawned, "id");
   if (!threadId) throw new Error("browser_qa_thread_id_missing");
-  input.onSpawned?.(threadId);
-  const link = `@thread:${threadId}`;
   const deadline = Date.now() + input.timeoutSec * 1000;
-  while (Date.now() < deadline && !ctx.isDisposed()) {
+  input.onSpawned?.(threadId, deadline);
+  const verdict = await awaitQaVerdict(ctx, threadId, deadline, input.timeoutSec);
+  // A reload stopped the wait, not the thread: the next load picks its verdict up (resumeBrowserQaThreads).
+  if (!verdict) throw new Error("browser_qa_wait_interrupted_by_reload");
+  return verdict;
+}
+
+/**
+ * Waits for a check thread's verdict until the deadline; a thread still working then is stopped and the check is
+ * blocked. Null when the plugin is unloaded meanwhile: the thread goes on and its verdict is still to be read.
+ */
+export async function awaitQaVerdict(ctx: Pick<ServerCore, "bb" | "isDisposed">, threadId: string, deadline: number, timeoutSec: number)
+  : Promise<(QaVerdict & { threadId: string; link: string }) | null> {
+  const { bb } = ctx;
+  const link = `@thread:${threadId}`;
+  while (Date.now() < deadline) {
+    if (ctx.isDisposed()) return null;
     const observed = await observeStageChild(bb, threadId, Math.min(10_000, Math.max(1, deadline - Date.now())));
+    if (ctx.isDisposed()) return null;
     if (observed.kind === "completed") {
       const raw = (await bb.sdk.threads.output({ threadId })).output;
       return { ...parseQaVerdict(typeof raw === "string" ? raw : outputText(raw)), threadId, link };
     }
     if (observed.kind === "product_failure") return { verdict: "blocked", summary: `browser_qa_thread_failed:${observed.via}:${observed.detail}`, cases: [], threadId, link };
   }
+  // Past the deadline (also when adopted after a long outage): a finished thread still has its verdict.
+  const last = await observeStageChild(bb, threadId, 1);
+  if (last.kind === "completed") {
+    const raw = (await bb.sdk.threads.output({ threadId })).output;
+    return { ...parseQaVerdict(typeof raw === "string" ? raw : outputText(raw)), threadId, link };
+  }
   await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-  return { verdict: "blocked", summary: `browser_qa_thread_timeout_${input.timeoutSec}s`, cases: [], threadId, link };
+  return { verdict: "blocked", summary: `browser_qa_thread_timeout_${timeoutSec}s`, cases: [], threadId, link };
 }

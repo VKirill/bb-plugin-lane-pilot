@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.108 — 2026-10-03
+
+Self-repair of «stage left open after its task's attempts ended» (SelfyStudio, three tasks, three causes).
+- **A task blocked by its `depends_on` closes its stages.** The writer never starts, so `writer-agent`, `verification` and `acceptance-receipt` used to stay pending until the next plugin restart (gc-native-price-watermark.4).
+- **A failed attempt whose retry died with a reload ends.** Start-up recovery resumes only attempts in flight; one left at `empty_output`, `validation_failed` or another retryable state was retried by nobody and kept «writer-agent running» for good (bot-preset-catalog-style-fallback-r3, 30 h). On start-up it is now blocked with «…; its retry was lost in a plugin reload» and its stages fail, so the PM can dispatch again.
+- **A browser check survives a reload.** The check thread kept working, but the wait for it died with the plugin and its verdict was lost: the stage stayed «running» (gc-qa-free-session.5, whose thread had finished with «failed»). On start-up Lane Pilot now reads the verdict of such a thread, or waits for it until the check's deadline; a claim that never saved a thread id becomes blocked, so it may run again. The receipt also keeps `spawnAttempted` after the thread starts: without it a second `lane_pilot_browser_qa` call claimed the stage again and could start a second check.
+
 ## 0.1.107 — 2026-10-03
 
 - **`bb plugin reload|install|update` only from a `bb-plugin-*` checkout**, as the owner confirmed (thr_4autf3vdii): a plugin's own PM ships it; a product PM cannot reload Lane Pilot under running writers. BB reads stay open to every Lane Pilot PM.
