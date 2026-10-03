@@ -67,7 +67,9 @@ export default async function plugin(bb: BbPluginApi) {
   const sweepRuns = () => closeAbandonedRuns(bb, db).then((closed) => {
     if (closed.length) bb.log.info(`Lane Pilot closed ${closed.length} runs whose PM chat is gone: ${closed.join(", ")}`);
   }, (cause) => bb.log.warn(`Lane Pilot run sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
-  const sweepEnvironments = () => cleanupFinishedAttemptEnvironments(bb, db).then((removed) => {
+  const snapshotWorktree = async (hostId: string, worktreePath: string, name: string) =>
+    await ctx.host.call("gitWorktreeSnapshot", { requestedHostId:hostId, worktreePath, name }, { hostId, timeoutMs:300_000 });
+  const sweepEnvironments = () => cleanupFinishedAttemptEnvironments(bb, db, snapshotWorktree).then((removed) => {
     if (removed.length) bb.log.info(`Lane Pilot released ${removed.length} worktree(s) of finished attempts`);
   }, (cause) => bb.log.warn(`Lane Pilot worktree sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   bb.background.schedule("attempt-worktree-sweep", "*/10 * * * *", sweepEnvironments);

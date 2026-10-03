@@ -299,3 +299,32 @@ export async function removeLaneWorktree(input:{basePath:string;worktreePath:str
   if(removed) git(input.basePath,["branch","-D",branch]);
   return {removed};
 }
+
+/**
+ * Before a finished attempt's worktree is released: its uncommitted edits and the commits no other branch has are
+ * written to ~/.lane-pilot/released/<name>.patch, so a rejected attempt's work can still be read after the worktree is
+ * gone. «failed» keeps the worktree (the caller does not release it).
+ */
+export async function snapshotWorktree(input:{worktreePath:string;name:string;dir:string}):Promise<{status:"clean"|"saved"|"missing"|"failed";path:string|null;dirty:number;ahead:number;reason:string|null}> {
+  if(!(await stat(input.worktreePath).catch(()=>null))?.isDirectory()) return {status:"missing",path:null,dirty:0,ahead:0,reason:null};
+  const status=git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
+  if(!status.ok) return {status:"failed",path:null,dirty:0,ahead:0,reason:status.reason};
+  const dirty=status.stdout.split("\n").filter(Boolean).length;
+  const own=git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"]).stdout.trim();
+  const others=git(input.worktreePath,["for-each-ref","--format=%(refname)","refs/heads"]).stdout.split("\n").filter((ref)=>ref&&ref!==`refs/heads/${own}`);
+  const ahead=Number.parseInt(git(input.worktreePath,["rev-list","--count","HEAD","--not",...others]).stdout.trim(),10)||0;
+  if(!dirty&&!ahead) return {status:"clean",path:null,dirty,ahead,reason:null};
+  // Written by git straight to files: a worktree with images made the in-memory patch overflow (ENOBUFS).
+  await mkdir(input.dir,{recursive:true});
+  const path=join(input.dir,`${input.name}.patch`);
+  if(dirty){
+    const add=git(input.worktreePath,["add","-A"]);
+    const diff=add.ok?git(input.worktreePath,["diff","--cached","--binary","HEAD",`--output=${path}`]):add;
+    if(!diff.ok) return {status:"failed",path:null,dirty,ahead,reason:diff.reason};
+  }
+  if(ahead){
+    const patches=git(input.worktreePath,["format-patch","-q",`-${ahead}`,"HEAD","-o",join(input.dir,`${input.name}-commits`)]);
+    if(!patches.ok) return {status:"failed",path:null,dirty,ahead,reason:patches.reason};
+  }
+  return {status:"saved",path:dirty?path:join(input.dir,`${input.name}-commits`),dirty,ahead,reason:null};
+}

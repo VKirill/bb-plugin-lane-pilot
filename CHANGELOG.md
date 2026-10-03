@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.103 — 2026-10-03
+
+- **Worktrees of failed, retried attempts are released too.** 0.1.102 released a worktree only when its attempts were accepted, blocked or canceled; a failed attempt (validation_failed, empty_output, …) stays in that state after its retry starts, so its ≈2 GB worktree stayed: 31 worktrees, 57 GB on OVH a day later. Now an attempt counts as over when it failed and a later attempt of the same task exists, and a holder worktree never bound to its attempt goes on the same terms. A failed attempt nothing replaced still keeps its worktree.
+- **Changes are saved before a worktree goes.** Uncommitted edits (`~/.lane-pilot/released/<environment>.patch`) and commits no other branch has (`<environment>-commits/`) are written by git straight to files on the host (host call `gitWorktreeSnapshot`); if that fails, the worktree stays. Live on OVH: 30 released (23 with saved changes, 39 MB of patches), worktrees 57 → 16 GB, the rest live or recent.
+
 ## 0.1.102 — 2026-10-03
 
 - **Worktrees of finished attempts are released while the run is open.** Every writer attempt gets its own BB worktree (≈2 GB in SelfyStudio); they were archived and deleted only when the run closed, and a Lane chat keeps its run open for days. 110 of them (220 GB) filled the OVH disk, and the host went offline: «Lane Pilot: Host is not connected». Every 10 minutes and at start, a worktree whose attempts all ended over 30 minutes ago is archived with its threads and deleted; the run's own workspace and anything an unfinished attempt uses stay. First pass on the hub: 92 released.

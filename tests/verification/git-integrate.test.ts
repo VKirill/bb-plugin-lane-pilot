@@ -302,3 +302,20 @@ it("docs worktree: commits under its own lock and merges only what is committed,
   await expect(readFile(join(base, "docs", "unchecked.md"), "utf8")).rejects.toThrow();
   expect(git(base, "status", "--porcelain")).toBe("");
 });
+
+it("saves a released worktree's uncommitted edits and unshared commits as a patch", async () => {
+  const { base, worktree } = await repo();
+  const { snapshotWorktree } = await import("../../src/verification/git-integrate");
+  const a = await worktree("rejected");
+  await writeFile(join(a, "kept.ts"), "export const committed = 1;\n");
+  git(a, "add", "-A"); git(a, "commit", "-qm", "rejected commit");
+  await writeFile(join(a, "server.ts"), "line1 edited\nline2\nline3\n");
+  const dir = join(base, "..", "released");
+  const saved = await snapshotWorktree({ worktreePath: a, name: "env_x", dir });
+  expect(saved).toMatchObject({ status: "saved", dirty: 1, ahead: 1 });
+  expect(await readFile(saved.path!, "utf8")).toContain("line1 edited");
+  const { readdir } = await import("node:fs/promises");
+  const commits = await readdir(join(dir, "env_x-commits"));
+  expect(await readFile(join(dir, "env_x-commits", commits[0]!), "utf8")).toContain("rejected commit");
+  expect((await snapshotWorktree({ worktreePath: await worktree("clean"), name: "env_y", dir })).status).toBe("clean");
+});

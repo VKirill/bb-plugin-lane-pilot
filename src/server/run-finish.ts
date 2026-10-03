@@ -1,5 +1,6 @@
 import { closeRun, getAttempt, getRun, listOpenAttempts, openDatabase, releaseActivation } from "../database";
 import { stringAt, valueAt } from "./values";
+import { RETRY_ELIGIBLE } from "../state-machine";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export function cancelRejection(db: ReturnType<typeof openDatabase>, attempt: NonNullable<ReturnType<typeof getAttempt>>): string | null {
   const run = getRun(db, attempt.run_id);
@@ -69,23 +70,50 @@ export async function cleanupRunEnvironments(bb: BbPluginApi, db: ReturnType<typ
 }
 
 const ENVIRONMENT_GRACE_MS = 30 * 60 * 1000;
+const FINAL = new Set(["accepted", "blocked", "canceled"]);
+
+export type WorktreeSnapshot = (hostId:string, worktreePath:string, name:string) => Promise<{ status:"clean"|"saved"|"missing"|"failed"; path:string|null; reason:string|null }>;
 
 /**
- * Attempt worktrees of an open run whose attempts all ended at least 30 minutes ago: archived and deleted the same way
- * as on run close. A Lane chat keeps its run open for days, and every attempt got its own BB worktree (≈2 GB in
- * SelfyStudio): 110 of them filled the OVH disk on 2026-10-03 and the host went offline («Host is not connected»).
- * The run's own workspace and any worktree an unfinished attempt uses are left alone.
+ * Attempt worktrees of an open run whose work is over, archived with their threads and deleted the same way as on run
+ * close. A Lane chat keeps its run open for days and every attempt got its own BB worktree (≈2 GB in SelfyStudio):
+ * 110 filled the OVH disk on 2026-10-03 and the host went offline. A worktree goes when, for 30 minutes, each of its
+ * attempts has ended (accepted, blocked, canceled) or failed and been replaced by a later attempt of the same task;
+ * a worktree whose holder thread was made but never bound to its attempt goes on the same terms. A failed attempt
+ * nothing replaced, the run's own workspace and a running attempt stay. Uncommitted edits and commits no other branch
+ * has are saved as a patch first (~/.lane-pilot/released/<environment>.patch); if that fails the worktree stays.
  */
-export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, now = Date.now()): Promise<string[]> {
-  const rows = db.prepare(`SELECT a.environment_id AS environmentId, a.run_id AS runId FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.environment_id IS NOT NULL AND a.environment_id IS NOT r.writer_environment_id
-    GROUP BY a.environment_id
-    HAVING SUM(CASE WHEN a.state IN ('accepted','blocked','canceled') THEN 0 ELSE 1 END)=0 AND MAX(a.updated_at)<?`).all(now - ENVIRONMENT_GRACE_MS) as Array<{ environmentId: string; runId: string }>;
+export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, snapshot: WorktreeSnapshot, now = Date.now()): Promise<string[]> {
+  const rows = db.prepare(`SELECT a.environment_id AS environmentId, a.holder_thread_id AS holderThreadId, a.state, a.updated_at AS updatedAt, a.run_id AS runId,
+      r.writer_environment_id AS runEnvironmentId,
+      EXISTS(SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.created_at>a.created_at) AS superseded
+    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE a.environment_id IS NOT NULL OR a.holder_thread_id IS NOT NULL`).all() as Array<{
+      environmentId:string|null; holderThreadId:string|null; state:string; updatedAt:number; runId:string; runEnvironmentId:string|null; superseded:number }>;
+  const done = (row:(typeof rows)[number]) => FINAL.has(row.state) || ((RETRY_ELIGIBLE as string[]).includes(row.state) && row.superseded === 1);
+  const groups = new Map<string, typeof rows>();
+  for (const row of rows) {
+    let environmentId = row.environmentId;
+    // A holder whose worktree was never bound: its attempt ended before setAttemptWorkspace. Asked only once that attempt is over.
+    if (!environmentId && row.holderThreadId && done(row) && row.updatedAt < now - ENVIRONMENT_GRACE_MS) {
+      environmentId = stringAt(await bb.sdk.threads.get({ threadId: row.holderThreadId }).catch(() => null), "environmentId");
+    }
+    if (!environmentId || environmentId === row.runEnvironmentId) continue;
+    groups.set(environmentId, [...(groups.get(environmentId) ?? []), row]);
+  }
   const removed: string[] = [];
-  for (const { environmentId, runId } of rows) {
+  for (const [environmentId, attempts] of groups) {
+    if (!attempts.every(done) || Math.max(...attempts.map((row) => row.updatedAt)) >= now - ENVIRONMENT_GRACE_MS) continue;
     const environment = await bb.sdk.environments.get({ environmentId }).then((value) => value as unknown, (cause: unknown) => (isGone(cause) ? null : undefined));
-    if (environment === null) continue;
-    if (environment !== undefined && valueAt(environment, "lifecycle") && stringAt(valueAt(environment, "lifecycle"), "phase") !== "active") continue;
+    if (environment === null || environment === undefined) continue;
+    const phase = stringAt(valueAt(environment, "lifecycle"), "phase");
+    if (phase && phase !== "active") continue;
+    const hostId = stringAt(environment, "hostId"), path = stringAt(environment, "path");
+    if (hostId && path) {
+      const saved = await snapshot(hostId, path, environmentId).catch((cause: unknown) => ({ status:"failed" as const, path:null, reason:cause instanceof Error ? cause.message : String(cause) }));
+      if (saved.status === "failed") { bb.log.warn(`Lane Pilot kept worktree ${environmentId}: its changes could not be saved (${saved.reason})`); continue; }
+      if (saved.status === "saved") bb.log.info(`Lane Pilot saved the changes of worktree ${environmentId} to ${saved.path}`);
+    }
     try {
       await bb.sdk.environments.archiveThreads({ environmentId });
       await bb.sdk.environments.delete({ environmentId }).catch((cause: unknown) => {
@@ -93,7 +121,7 @@ export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: Re
       });
       removed.push(environmentId);
     } catch (cause) {
-      bb.log.warn(`Lane Pilot could not remove environment ${environmentId} of ${runId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      bb.log.warn(`Lane Pilot could not remove environment ${environmentId} of ${attempts[0]!.runId}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   }
   return removed;
