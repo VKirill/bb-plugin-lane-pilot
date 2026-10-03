@@ -270,6 +270,54 @@ export function upsertModelProposal(db: RulesDatabase, projectId: string, input:
   return { id, created };
 }
 
+/** Words that carry a rule's meaning; two rules about the same thing share most of them. */
+function ruleWords(rule: string): Set<string> {
+  return new Set((rule.toLowerCase().match(/[\p{L}\p{N}_./-]{4,}/gu) ?? []));
+}
+
+function similarity(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let shared = 0;
+  for (const word of a) if (b.has(word)) shared += 1;
+  return shared / (a.size + b.size - shared);
+}
+
+/** A rule the same as a live one is a repeat of it, not a new proposal. */
+export const LESSON_SAME_RULE = 0.6;
+/** Lessons waiting beyond this count expire, oldest first; they never pile up. */
+export const LESSON_PROPOSALS_MAX = 30;
+
+/**
+ * A lesson from a session — the owner corrected the agent, or it got burned — becomes a rule proposal on the hub
+ * instead of a line in .agents/LESSONS.md, which grew without bound (≈150 entries in SelfyStudio, 2026-10-03).
+ * A lesson close to a proposed or accepted rule counts as a repeat of it.
+ */
+export function upsertLessonProposal(db: RulesDatabase, projectId: string, input: { rule: string; evidence?: string; scope?: readonly string[] }, now = Date.now()):
+  { id: string; created: boolean; repeatOf: string | null } {
+  const rule = clip(input.rule, 600);
+  const words = ruleWords(rule);
+  const live = db.prepare("SELECT id, rule FROM lane_pilot_rule_proposal WHERE project_id=? AND state IN ('proposed','accepted')").all(projectId) as Array<{ id: string; rule: string }>;
+  const twin = live.map((row) => ({ row, score: similarity(words, ruleWords(row.rule)) })).sort((a, b) => b.score - a.score)[0];
+  if (twin && twin.score >= LESSON_SAME_RULE) {
+    db.prepare("UPDATE lane_pilot_rule_proposal SET occurrences=occurrences+1, last_seen_at=?, updated_at=? WHERE project_id=? AND id=?").run(now, now, projectId, twin.row.id);
+    return { id: twin.row.id, created: false, repeatOf: twin.row.id };
+  }
+  const scope = [...(input.scope ?? [])];
+  const signature = `lesson:${scope.join("/")}:${createHash("sha256").update(rule.toLowerCase()).digest("hex").slice(0, 12)}`;
+  const id = ruleProposalId(signature);
+  const examples = input.evidence ? [clip(input.evidence, 300)] : [];
+  db.prepare(`INSERT INTO lane_pilot_rule_proposal
+    (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json)
+    VALUES (?,?,?,?,'pm','proposed',1,0,?,'[]',NULL,?,?,?,NULL,?)
+    ON CONFLICT(project_id,id) DO UPDATE SET occurrences=occurrences+1, last_seen_at=excluded.last_seen_at, updated_at=excluded.updated_at`)
+    .run(id, projectId, signature, rule, JSON.stringify(examples), now, now, now, JSON.stringify(scope));
+  const waiting = db.prepare("SELECT id FROM lane_pilot_rule_proposal WHERE project_id=? AND state='proposed' AND signature LIKE 'lesson:%' ORDER BY last_seen_at DESC").all(projectId) as Array<{ id: string }>;
+  for (const old of waiting.slice(LESSON_PROPOSALS_MAX)) {
+    db.prepare("UPDATE lane_pilot_rule_proposal SET state='rejected', updated_at=?, decided_at=? WHERE project_id=? AND id=? AND state='proposed'").run(now, now, projectId, old.id);
+  }
+  return { id, created: true, repeatOf: null };
+}
+
 const STATE_ORDER = "CASE state WHEN 'proposed' THEN 0 WHEN 'accepted' THEN 1 ELSE 2 END";
 
 export function listRuleProposals(db: RulesDatabase, projectId: string, filter: { state?: RuleProposalState; limit?: number } = {}): RuleProposal[] {

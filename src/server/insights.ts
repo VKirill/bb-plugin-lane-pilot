@@ -4,11 +4,12 @@ import { memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRe
 import {
   collectLessonSources, decideRuleProposal, getRuleProposal, lessonCandidates, listRuleProposals, logRuleEvent, parseGoldenCases, repeatedLessons,
   reviseAdoptedRule, reviseRuleProposal, routingHint, RULE_TRIAL, runGoldenEval, setRuleTrial, upsertRuleProposals, writerAcceptanceStats, type RuleProposal,
+  upsertLessonProposal,
 } from "@lane-pilot/run-insights";
 import { loadProjectSettings, type LanePilotDatabase } from "../database";
 import { configuredSetting, requirePmRun, type ServerContext } from "./context";
 
-export const INSIGHTS_TOOLS = ["lane_pilot_routing_stats", "lane_pilot_lessons_sweep", "lane_pilot_rule_propose", "lane_pilot_memory_golden"] as const;
+export const INSIGHTS_TOOLS = ["lane_pilot_routing_stats", "lane_pilot_lessons_sweep", "lane_pilot_rule_propose", "lane_pilot_lesson", "lane_pilot_memory_golden"] as const;
 
 const MEMORY_KEYS = [
   "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.personal_bot", "memory.search_engine",
@@ -206,6 +207,19 @@ export function mountInsights(ctx: ServerContext): void {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
       const revised = reviseRuleProposal(db, context.projectId, params.proposalId, params.rule.trim(), "pm");
       return JSON.stringify({ revised, proposal: getRuleProposal(db, context.projectId, params.proposalId) }, null, 2);
+    },
+  });
+
+  bb.agents.registerTool({
+    name: "lane_pilot_lesson",
+    description: "Record a lesson as a project rule on the hub: the owner corrected you, or an approach got burned.",
+    instructions: "Use instead of writing .agents/LESSONS.md, which is not kept any more. Write one imperative rule that prevents the mistake, in English, with evidence (run, task, test, date). A rule close to a live one counts as its repeat; a new one goes on trial for writers within the 12-rule cap. Only after a real correction or landmine — not per session.",
+    parameters: z.object({ runId: z.string().min(1), rule: z.string().min(8).max(600), evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional() }).strict(),
+    execute: async (params, context) => {
+      requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
+      const result = upsertLessonProposal(db, context.projectId, { rule: params.rule, evidence: params.evidence, scope: params.scope });
+      const adopted = result.created ? Boolean(adoptRuleProposal(db, context.projectId, result.id)) : false;
+      return JSON.stringify({ ...result, adopted, proposal: getRuleProposal(db, context.projectId, result.id) }, null, 2);
     },
   });
 

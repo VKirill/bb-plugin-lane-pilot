@@ -9,6 +9,7 @@ import { stackRpc } from "./rpc/stack";
 import { insightsRpc } from "./rpc/insights";
 import { councilRpc } from "./council";
 import { selfRepairRpc } from "./self-repair";
+import { sessionMemoryRpc } from "./session-memory";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
@@ -21,5 +22,6 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...insightsRpc(ctx, services),
     ...councilRpc(ctx.db, services.council),
     ...selfRepairRpc(ctx),
+    ...sessionMemoryRpc(ctx, services),
   });
 }

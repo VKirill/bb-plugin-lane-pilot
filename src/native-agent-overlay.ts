@@ -215,7 +215,7 @@ Report each command, its exit code and the live check in the reply; optional fil
 \`docs/\` and \`<app>/docs/\` are living documentation of the code for specialized agents (copy, SEO, design, and coding agents), not an LLM corpus. Root \`PROJECT.md\` is the entry for agents, then \`docs/index.md\`; root \`README.md\` is the short front page for people; role pages live in \`docs/audiences/\` (copy, seo, design). ${BB_DOCS_OWNED} DESIGN.md is the design-lead canon — read and link, do not edit. Record a decision as a draft in \`.agents/decisions/<date>-<slug>.md\`; the nightly docs pass publishes it to \`docs/decisions.md\`.
 
 ## Memory and project-life
-Lane Pilot keeps project memory after each accepted task and refreshes PROGRESS, plan ticks and ROADMAP when the run is idle. \`lane_pilot_memory_maintain\` only reads that result. LESSONS.md, decision drafts, todos and \`.agents/plans/\` stay yours. You are done when every task is accepted, main is pushed, the project is up and checked — or you have reported exactly which step blocked.`;
+Lane Pilot keeps project memory after each accepted task and refreshes PROGRESS, plan ticks and ROADMAP when the run is idle. \`lane_pilot_memory_maintain\` only reads that result. A lesson (the owner corrected you, an approach got burned) is \`lane_pilot_lesson\` — a rule on the hub, not a LESSONS.md line; decision drafts, todos and \`.agents/plans/\` stay yours. You are done when every task is accepted, main is pushed, the project is up and checked — or you have reported exactly which step blocked.`;
 
 export const BB_AGENT_SESSIONS: Record<string, string> = {
   "copy-lead": `This chat is a Lane Pilot copy-lead session in BB.

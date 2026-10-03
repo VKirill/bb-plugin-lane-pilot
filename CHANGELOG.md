@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.96 — 2026-10-03
+
+- **`lane_pilot_lesson` for the PM.** A correction or a burned approach becomes a rule proposal on the hub — repeats merge, new ones go on trial within the 12-rule cap — instead of a `.agents/LESSONS.md` line. The PM instructions say so; `lane-memory lesson` (Lane Stack 1.64.0) does the same from terminal sessions.
+
+## 0.1.95 — 2026-10-03
+
+One project memory on the hub, wherever the work runs.
+- **Session memory API.** `session_memory_project` (which project and section a folder on a machine belongs to), `session_memory_write` (through the same door: no credentials, no instruction overrides), `session_memory_search`, `session_memory_core`. Claude Lane's `lane-memory` uses them through `bb plugin rpc call`, so a PM chat on the Mac mini and a terminal session on OVH read and write the same memory.
+- **Lessons are rule proposals, not a file.** `session_lesson` turns a correction into a rule proposal: one close to a live rule counts as its repeat (word overlap ≥ 0.6), a new one goes on trial right away within the 12-rule cap, and at most 30 lessons wait — older ones expire. Before, `.agents/LESSONS.md` grew without bound (≈150 entries in SelfyStudio) and every writer read all of it.
+
 ## 0.1.94 — 2026-10-03
 
 - **«Передать в новый тред» keeps Lane Pilot.** BB starts the new thread from the thread composer, where no profile is attached, so a handoff from a PM chat came up as a plain Claude chat. The first message of a handoff starts with «Continue from @thread:<id>» on a thread mention; when that thread has a Lane Pilot profile of the same project, the new chat takes it, with a run of its own. A plain mention of a PM chat, or a handoff from an ordinary chat, stays ordinary.

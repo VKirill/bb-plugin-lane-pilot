@@ -1159,6 +1159,27 @@ export const rpcContract = defineRpcContract({
       events: z.array(z.object({ ruleId: z.string(), action: z.string(), detail: z.string().nullable(), at: z.number().int() }).strict()),
     }).strict(),
   },
+  session_memory_project: {
+    input: z.object({ hostId: z.string().min(1), path: z.string().startsWith("/") }).strict(),
+    output: z.object({ projectId: z.string().nullable(), scopes: z.array(z.string()) }).strict(),
+  },
+  session_memory_write: {
+    input: z.object({ projectId: z.string().min(1), kind: z.enum(["core", "note"]), content: z.string().min(1).max(8000),
+      concepts: z.array(z.string().min(1).max(100)).max(24), source: z.string().max(300).optional() }).strict(),
+    output: z.object({ stored: z.boolean(), id: z.string().nullable(), reason: z.string().nullable() }).strict(),
+  },
+  session_memory_search: {
+    input: z.object({ projectId: z.string().min(1), query: z.string().min(1).max(2000), limit: z.number().int().min(1).max(50).optional() }).strict(),
+    output: z.object({ records: z.array(z.object({ id: z.string(), kind: z.enum(["core", "note"]), content: z.string(), concepts: z.array(z.string()) }).strict()) }).strict(),
+  },
+  session_memory_core: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.object({ records: z.array(z.object({ id: z.string(), content: z.string() }).strict()) }).strict(),
+  },
+  session_lesson: {
+    input: z.object({ projectId: z.string().min(1), rule: z.string().min(8).max(600), evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional() }).strict(),
+    output: z.object({ proposalId: z.string(), repeatOf: z.string().nullable(), state: z.string(), adopted: z.boolean() }).strict(),
+  },
   memory_records_list: {
     input: z.object({ projectId: z.string().min(1) }).strict(),
     output: z.object({ records: z.array(z.object({
