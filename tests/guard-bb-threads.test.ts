@@ -23,7 +23,6 @@ const cases: Array<[string, boolean]> = [
   ["bb thread update thr_abc --title x", false],
   ["bb thread fork thr_abc", false],
   ["bb thread queue delete thr_abc qmsg_1", false],
-  ["bb plugin reload lane-pilot", false],
   ["bb memory add x", false],
   ["bb", false],
 ];
@@ -92,7 +91,15 @@ describe("BB native PM can run project node scripts", () => {
   it("allows sudo -n node --env-file=.env scripts/…", () => {
     expect(allowedNative("sudo -n node --env-file=.env scripts/collect-release-evidence.mjs")).toBe(0);
   });
-  it("still denies bb plugin reload", () => {
-    expect(allowedNative("bb plugin reload lane-pilot")).toBe(2);
+  // The owner's PM ships plugins itself (2026-10-03): BB reads and plugin reload/install pass; thread control stays closed.
+  it("reads BB state and reloads plugins, but does not start or archive threads", () => {
+    for (const command of ["bb plugin reload lane-pilot", "bb plugin list", "bb plugin logs project-folders", "bb environment providers", "bb memory catalog --scope all", "bb plugin install ./dist"]) {
+      expect(allowedNative(command)).toBe(0);
+      expect(allowed("lane-pilot-pm", command)).toBe(0);
+    }
+    for (const command of ["bb thread create --prompt x", "bb plugin rpc call x y", "bb env-catalog get SECRET"]) expect(allowedNative(command)).toBe(2);
+  });
+  it("keeps the terminal orchestrator's bb allowlist as it was", () => {
+    expect(allowed("dev-orchestrator", "bb plugin reload lane-pilot")).toBe(2);
   });
 });
