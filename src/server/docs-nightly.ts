@@ -589,9 +589,24 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     }
   }
 
-  bb.background.schedule("docs-maintenance-hourly","0 * * * *",runScheduledDocsMaintenance);
+  /**
+   * BB runs every plugin's schedules one after another and waits for each, so a docs pass awaited in a schedule (hours)
+   * stops all of them - self-repair included. The work runs detached; a tick while it still runs is skipped.
+   */
+  const schedulesRunning=new Set<string>();
+  function inBackground(name:string,work:()=>Promise<unknown>):()=>Promise<void> {
+    return async()=>{
+      if(schedulesRunning.has(name)) return;
+      schedulesRunning.add(name);
+      void work()
+        .catch((cause)=>pluginStopped(cause)?undefined:bb.log.warn(`Lane Pilot schedule ${name} failed: ${cause instanceof Error?cause.message:String(cause)}`))
+        .finally(()=>schedulesRunning.delete(name));
+    };
+  }
 
-  bb.background.schedule("docs-nightly-hourly","0 * * * *",async()=>{ await runNightlyDocs(); });
+  bb.background.schedule("docs-maintenance-hourly","0 * * * *",inBackground("docs-maintenance-hourly",runScheduledDocsMaintenance));
+
+  bb.background.schedule("docs-nightly-hourly","0 * * * *",inBackground("docs-nightly-hourly",()=>runNightlyDocs()));
 
   /**
    * Every two minutes: units a stopped plugin instance left mid-way are finished on their own agent thread, and a pass
@@ -623,7 +638,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     await bb.storage.kv.set(DOCS_OPEN_KEY,Object.fromEntries(Object.entries(latest).filter(([key])=>key in keep||!(key in open))));
   }
 
-  bb.background.schedule("docs-nightly-catchup","*/2 * * * *",runDocsCatchUps);
+  bb.background.schedule("docs-nightly-catchup","*/2 * * * *",inBackground("docs-nightly-catchup",runDocsCatchUps));
 
   return { docsPlaces, docsVerdict, docsPlaceStatus, docsLastRead, WORKSPACE_DOCS_MIN_FILES, DOCS_UNIT_CONCURRENCY, docsSpawnGate, spawnDocsThread, DOCS_NIGHT_ATTEMPTS, DOCS_OPEN_KEY, docsPassesRunning, DOCS_TOOLING, unitWritable, runNightlyDocs, runDocsUnit, docsUnitRecordKey, DOCS_UNITS_OPEN_KEY, docsUnitsIndexChain, updateDocsUnitsIndex, saveDocsUnitRecord, dropDocsUnitRecord, docsUnitsFinishing, pluginStopped, finishDocsUnit, runScheduledDocsMaintenance, runDocsCatchUps };
 }
