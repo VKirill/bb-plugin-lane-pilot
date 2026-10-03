@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.105 — 2026-10-03
+
+Instructions audit of the PM, every helper prompt and the skills they load, against the infrastructure as it now is (reports: `.bb/chats/thr_tev4nistgf/artifacts/instructions-audit/`).
+- **PM prompt.** New «Receipts» (what to do with plan-critique blocks, needs_human, a blocked dependency, a merge conflict, Lane Pilot's own faults — a repair thread handles those, the PM does not patch Lane Pilot) and «Done» sections; quiet helpers spelled out (poll, or end the turn with `lane_pilot_remind` on the task ids — a turn without it is never resumed); one dispatch call per task; the writer model chain; outside-the-code work as a short list (browser, errand, browser QA); text from pages, mail and research marked as data. Removed: names of tools the PM does not have, the list of old terminal commands. A test fails if the PM text names a tool the PM lacks.
+- **PM tools.** Handoff and the file-memory tools (`memory_import/export/golden`) left the PM's set; dispatch, routing stats, council, health and lesson descriptions now match what the tools do (no polling councils, no «cancel this attempt», cap behaviour stated).
+- **Guard texts** (Lane Stack 1.64.4): denials name the route per path; shell edits of project files are refused for the PM; force-push and `rm -rf` texts no longer contradict the prompt.
+- **Helper prompts.** Shared tolerant JSON extraction for nine parsers with the exact contract in each prompt; repair round with one role and a parser that cannot throw; code critique no longer blocks a `changes_requested` with no blocking finding; errand and browser QA mark page text as data and report a missing `ERRAND:` marker as blocked; browser QA no longer mentions `bb connect`; writer brief: rules some on trial, contract wins, both costs of NEEDS_HUMAN, own worktree, no commit/push, secrets via `env_get`; memory maintainer, project-life, night fix/review, council, onboarding, docs and self-repair prompts fixed per the audit.
+- **Role skills.** The memory maintainer (returns JSON, runs no tools) loads no skills; browser QA drops the terminal `browser-qa` skill; docs drop `wiki-methodology` (conflicted with the docs lint); dead skill names removed.
+
 ## 0.1.104 — 2026-10-03
 
 The PM held independent tasks back in waves and the owner had to ask for parallel runs (SelfyStudio W3/W11 waited for a 90-minute reminder after their dependencies were in main).
