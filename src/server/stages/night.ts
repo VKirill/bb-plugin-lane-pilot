@@ -6,7 +6,7 @@ import { resolveStageWriterSelection } from "../../stage-writer-selection";
 import { readGateReport } from "../../stages/gate-report";
 import { gateTriagePrompt, parseGateTriageResult } from "../../stages/gate-triage";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "../../stages/night";
-import { buildNightFixPlan, decideNightMerge, nightFixPrompt } from "../../stages/night-fix";
+import { buildNightFixPlan, decideNightMerge, nightFixBlockedReason, nightFixPrompt } from "../../stages/night-fix";
 import { findUnownedChanges } from "../../verification/ownership";
 import { resolveManagedWorkspace } from "../../workspace/routing";
 import { NightChildSnapshot, childResultObject, nightChildSnapshot } from "../child-snapshots";
@@ -271,6 +271,12 @@ export function createNightStages(ctx: ServerCore, services: Services) {
       const changed=attemptProduced(after.snapshots,before.snapshots).sort();
       const outsideFinding=changed.filter((path)=>!plan.paths.includes(path));
       const unowned=findUnownedChanges(changed,task);
+      const stopped=changed.length?null:nightFixBlockedReason(output);
+      if(stopped!==null) {
+        const reason=`night_fix_blocked:${stopped}`;
+        recordStage(db,{...base,state:"blocked",providerId:repairProviderId,model:repairModelId,threadId,reason,result:{paths:plan.paths,changed,output:typeof output==="string"?output.slice(0,12000):""}});
+        return {runId:args.runId,taskId:args.taskId,state:"blocked",reason};
+      }
       if(!changed.length) throw new Error("night_fix_made_no_changes");
       if(outsideFinding.length||unowned.length) throw new Error(`night_fix_out_of_scope_changes:${[...new Set([...outsideFinding,...unowned])].join(",")}`);
       const verification=await services.runVerification(config,task,args.runId);

@@ -14,11 +14,13 @@ describe("browser check thread", () => {
     expect(parseQaVerdict("no json here")).toMatchObject({ verdict: "blocked", summary: "browser_qa_thread_returned_no_verdict" });
   });
 
-  it("tells the agent to drive the BB browser on the QA machine and to expose a localhost target", () => {
+  it("tells the agent to drive the BB browser on the QA machine and says a local target is unreachable without a VPN address", () => {
     const prompt = qaThreadPrompt({ url: "http://localhost:3000/wizard", cases: ["Wizard has no captcha"], viewports: "375,1280", envClass: "local", authorized: false, qaHostId: "host_mini" });
     expect(prompt).toContain("bb browser-automation open --backend local --headless --machine host_mini");
     expect(prompt).toContain("bb browser instances --host host_mini");
-    expect(prompt).toContain("bb connect expose");
+    expect(prompt).not.toContain("bb connect expose");
+    expect(prompt).toContain("no VPN address for the browser machine");
+    expect(prompt).toContain("do not guess an address");
     expect(prompt).toContain("1. Wizard has no captcha");
     expect(prompt).toContain("do not submit, pay, delete or send");
     expect(prompt).not.toContain("Dev server");

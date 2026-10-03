@@ -241,7 +241,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         if(!holderThreadId) {
           const holder = await spawnWithSeam(() => fullAccessSpawn(bb, {
             projectId:input.projectId, ...execution,
-            prompt:"Prepare the assigned managed workspace and make no file changes. Return only WORKSPACE_READY.",
+            prompt:"Make no file changes and reply with the single word OK.",
             environment:{type:"host",hostId:input.config.hostId,workspace:{type:"managed-worktree",baseBranch:{kind:"default"}}},
             visibility:"hidden",pluginMetadata:{role:"workspace-provisioner",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,workspaceAttemptId:input.attemptId},
           }));
@@ -311,7 +311,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const helperSnapshot = requireHelperSpawn({ bb, db, projectId:input.projectId, runId:input.runId });
       const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
       const writerBrief = writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
-        ? `Fallback reason: ${input.emergency.reason}. Primary provider/model: ${typeof settings["writer.provider"] === "string" ? settings["writer.provider"] : input.config.writerProviderId}/${typeof settings["writer.model"] === "string" ? settings["writer.model"] : input.config.writerModel}.`
+        ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
         : undefined,writerAgent,input.pmReadContext ?? "",rulesText);
       const existingTrace = getReasoningTrace(db, input.attemptId);
       if (existingTrace) {

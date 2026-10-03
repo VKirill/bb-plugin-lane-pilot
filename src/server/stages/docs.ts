@@ -2,6 +2,7 @@ import { taskV2Schema } from "../../contracts";
 import { claimDocsSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../database";
 import { bbServiceTier, writerExecutionSelection } from "../../jev-reasoning";
 import { sha256 } from "../../stages/contract";
+import { extractModelJson } from "../../stages/model-json";
 import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../../stages/docs";
 import type { DocsPage } from "../../stages/docs";
 import { boundedAgentName } from "../../stages/role";
@@ -101,7 +102,7 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
         return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:"docs_snapshot_page_cap_missing"};
       }
       const raw=(await bb.sdk.threads.output({threadId:childId})).output; if(typeof raw!=="string"||!raw.trim()) throw new Error("docs_maintainer_output_empty");
-      let decoded:unknown; try { decoded=JSON.parse(raw); } catch { throw new Error("docs_maintainer_output_must_be_json_array"); }
+      let decoded:unknown; try { decoded=extractModelJson(raw,"array"); } catch { throw new Error("docs_maintainer_output_must_be_json_array"); }
       const edits=validateDocsEdits(decoded,snapshot.pages,pageCap);
       for (const edit of edits) {
         await bb.sdk.files.write({hostId:config.hostId,rootPath:task.project_cwd,path:`${task.project_cwd}/${edit.path}`,content:edit.content,contentEncoding:"utf8",createParents:false,expectedSha256:edit.expectedSha256});

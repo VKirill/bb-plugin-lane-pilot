@@ -1,13 +1,14 @@
 import { z } from "zod";
 import type { CoverageFinding } from "./critique-coverage";
+import { clipped, extractModelJson, NO_TOOLS_LINE } from "./model-json";
 
 export const critiqueResultSchema = z.object({
   decision: z.enum(["approve", "changes_requested"]),
-  summary: z.string().min(1).max(2000),
+  summary: clipped(2000),
   findings: z.array(z.object({
     severity: z.enum(["info", "warning", "blocking"]),
-    finding: z.string().min(1).max(1000),
-    criterion: z.string().min(1).max(500),
+    finding: clipped(1000),
+    criterion: clipped(500),
   }).strict()).max(30),
 }).strict();
 
@@ -61,8 +62,8 @@ function policyBoolean(value: unknown, fallback: boolean, key: string): boolean 
 export function critiquePrompt(input: { plan:string; task:unknown; agent?:string; pmReadContext?:string; structuralFindings?:readonly CoverageFinding[] }): string {
   return [
     `You are ${input.agent?.trim() || "the independent plan-critique stage"} for a bounded software task.`,
-    "Review the plan against the supplied task contract. Do not execute tools or modify files.",
-    "Return exactly one JSON object matching this schema: {decision:'approve'|'changes_requested',summary:string,findings:[{severity:'info'|'warning'|'blocking',finding:string,criterion:string}]}.",
+    `Review the plan against the supplied task contract. ${NO_TOOLS_LINE}`,
+    "Answer with one JSON object and nothing else: no text before or after it. Keys: decision (\"approve\" or \"changes_requested\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with severity \"info\", \"warning\" or \"blocking\", finding (at most 1000 characters) and criterion (at most 500 characters)). Any other key makes the answer unreadable and the plan is blocked.",
     "Use changes_requested only for a concrete missing, contradictory, unsafe, or unverifiable requirement. Do not invent criteria.",
     ...(input.structuralFindings?.length ? ["Deterministic structural findings (independently assess each; info findings are non-blocking):",JSON.stringify(input.structuralFindings)] : []),
     "TASK CONTRACT:", JSON.stringify(input.task),
@@ -72,6 +73,5 @@ export function critiquePrompt(input: { plan:string; task:unknown; agent?:string
 }
 
 export function parseCritique(output: string): CritiqueResult {
-  const trimmed = output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  return critiqueResultSchema.parse(JSON.parse(trimmed));
+  return critiqueResultSchema.parse(extractModelJson(output));
 }
