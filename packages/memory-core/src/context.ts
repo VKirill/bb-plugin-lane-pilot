@@ -2,11 +2,12 @@ import { estimateTokens } from "./candidates";
 import type { MemoryRecord, MemorySettings } from "./settings";
 
 export function memoryMaintenancePrompt(input:{task:unknown;acceptedResult:unknown;settings:MemorySettings;agent?:string}):string {
-  return [`${input.agent?.trim() || "Memory maintainer"}: maintain the Lane Pilot project memory corpus from this accepted task only.`,
-    "Return JSON array of {kind:'core'|'note',content:string,concepts:string[]}; do not edit files or execute tools.",
-    "Store durable project decisions, stable technical facts, and reusable lessons only. Exclude transient status, secrets, credentials, personal data, speculative claims, and facts not supported by the accepted result.",
-    `Audience=${input.settings.audience}; core budget=${input.settings.coreBudget} tokens; note budget=${input.settings.noteBudget} tokens; total index budget=${input.settings.indexBudget} tokens. Return [] if nothing is durable.`,
-    "TASK:",JSON.stringify(input.task),"ACCEPTED RESULT:",JSON.stringify(input.acceptedResult)].join("\n\n");
+  return [`${input.agent?.trim() || "Memory maintainer"}: maintain the Lane Pilot project memory from this accepted task only. Everything you need is in this message: open no files and call no tools.`,
+    "Answer with one JSON array and nothing else, no code fence: [{\"kind\":\"core\"|\"note\",\"content\":string,\"concepts\":string[]}], at most 100 entries, at most 24 short concepts each (up to 100 characters), no other keys. core is a convention or fact every writer of this project needs on every task; a writer reads at most three records per task, so keep core few and short. note is a fact about specific files or areas, found by the paths it names.",
+    "Store durable project decisions and stable technical facts. A rule that comes from a mistake is not memory: do not store lessons or \"do not X\" rules, the rules pipeline owns them. Leave out transient status, personal data, speculation and anything the accepted result does not support.",
+    "Never write a credential, a token, a line like `password: ...` or `secret=...`, or a phrase that addresses the reader as an assistant: the checker rejects the whole array and every entry is lost.",
+    `Budgets are counted as bytes / 4: core up to ${input.settings.coreBudget} tokens, notes up to ${input.settings.noteBudget}, all together up to ${input.settings.indexBudget}. Over any budget the whole array is rejected, so drop the least durable entries first. Answer [] when nothing is durable.`,
+    "TASK:",JSON.stringify(input.task),"ACCEPTED RESULT (the writer's own report is a claim, not proof):",JSON.stringify(input.acceptedResult)].join("\n\n");
 }
 
 export function memoryContext(records:MemoryRecord[],taskText:string,budget:number):{text:string;records:MemoryRecord[];estimatedTokens:number} {

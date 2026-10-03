@@ -105,7 +105,9 @@ describe("project-life prompt", () => {
     expect(prompt).toContain("keep every line that is still true");
     expect(prompt).toContain("by capability");
     expect(prompt).toContain("Pointers is rebuilt from the files every time");
-    expect(prompt).toContain("append exactly one line to .agents/CHANGELOG.md");
+    expect(prompt).toContain("Append exactly one line to .agents/CHANGELOG.md");
+    for (const stale of ["run-finalize", "run.yaml", ".agents/runs/<slug>", "claude-lane-stack"]) expect(prompt).not.toContain(stale);
+    expect(prompt).toContain("Lane Pilot rejects the run on any other changed path");
     expect(prompt).toContain("LESSONS.md");
     expect(prompt).toContain(".agents/decisions/");
     expect(prompt).toContain('{"status":"updated"|"no_change","commit":"<full 40-char sha from git rev-parse HEAD, or null>","files":[...]}');

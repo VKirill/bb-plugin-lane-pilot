@@ -16,12 +16,12 @@ export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "
 const SPECIALIST_MODEL = "claude-opus-5-5";
 const WAIT_STEP_MS = 5_000;
 
-function specialistPrompt(marker: string, role: string, task: string): string {
+export function specialistPrompt(marker: string, role: string, task: string): string {
   return [
     marker,
     "",
-    `The Lane Pilot PM of this project hands you this work as ${role}. Work in this checkout. Do not change product code:`,
-    "write your deliverable where your profile says (under .agents/), then end with a short summary of what you produced and the paths.",
+    `The Lane Pilot PM of this project hands you this work as ${role}. You work in the PM's own checkout, so write only your deliverable (under .agents/, or DESIGN.md files if you are design-lead) and do not change product code, docs/, README.md or PROJECT.md: Lane Pilot's nightly docs pass owns those, and implementation goes to a writer. If the task asks for such a change, do not make it: return it as a task for a writer.`,
+    "Do not commit: leave your files in place and give the PM their paths. If you need an account or key, list the names with env_list and read one with env_get; never print a value. Your final message is the PM's only view of your work: what you produced, the paths, open questions.",
     "",
     "<task>",
     task,

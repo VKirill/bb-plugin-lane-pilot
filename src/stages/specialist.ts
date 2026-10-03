@@ -1,13 +1,14 @@
 import { z } from "zod";
+import { clipped, extractModelJson, NO_TOOLS_LINE } from "./model-json";
 
 export const specialistResultSchema = z.object({
   decision: z.enum(["approve", "block"]),
-  summary: z.string().min(1).max(2000),
+  summary: clipped(2000),
   risks: z.array(z.object({
     severity: z.enum(["high", "critical"]),
     path: z.string().min(1).max(500),
-    concern: z.string().min(1).max(1000),
-    mitigation: z.string().min(1).max(1000),
+    concern: clipped(1000),
+    mitigation: clipped(1000),
   }).strict()).max(30),
 }).strict();
 
@@ -16,8 +17,8 @@ export type SpecialistResult = z.infer<typeof specialistResultSchema>;
 export function specialistPrompt(input:{task:unknown; plan:string; agent?:string}):string {
   return [
     `You are ${input.agent?.trim() || "the specialist risk-review stage"} for a bounded software task.`,
-    "Review the task and plan for concrete security, data-loss, compatibility, and recovery risks. Do not execute tools or modify files.",
-    "Return exactly one JSON object matching {decision:'approve'|'block',summary:string,risks:[{severity:'high'|'critical',path:string,concern:string,mitigation:string}]}.",
+    `Review the task and plan for concrete security, data-loss, compatibility, and recovery risks. ${NO_TOOLS_LINE}`,
+    "Answer with one JSON object and nothing else: no text before or after it. Keys: decision (\"approve\" or \"block\"), summary (string, at most 2000 characters), risks (at most 30 objects, each with severity \"high\" or \"critical\", path (at most 500 characters), concern (at most 1000) and mitigation (at most 1000)). Any other key, or a lower severity, makes the answer unreadable and the task is blocked. Use approve with an empty risks array when there is no high or critical risk.",
     "Block only when a concrete high or critical risk has no adequate mitigation in the supplied plan. Do not invent repository facts.",
     "TASK CONTRACT:", JSON.stringify(input.task),
     "CANONICAL PLAN:", input.plan,
@@ -25,8 +26,7 @@ export function specialistPrompt(input:{task:unknown; plan:string; agent?:string
 }
 
 export function parseSpecialistResult(output:string):SpecialistResult {
-  const trimmed = output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  return specialistResultSchema.parse(JSON.parse(trimmed));
+  return specialistResultSchema.parse(extractModelJson(output));
 }
 
 export function shouldRunSpecialist(input:{enabled:unknown; when:unknown; risk:string}):{run:boolean;reason:string|null} {

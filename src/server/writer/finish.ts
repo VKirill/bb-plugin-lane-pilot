@@ -11,7 +11,7 @@ import { fullAccessSpawn } from "../pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
 import { recordGateEvaluation, recordStage } from "../stage-records";
 import { stringAt } from "../values";
-import { needsHumanQuestion, outputText, writerPrompt } from "../writer-task";
+import { needsHumanQuestion, outputText, WRITER_SETUP_LINES, writerContextBlocks } from "../writer-task";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
@@ -303,10 +303,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             transitionAttempt(db, input.attemptId, "blocked", { reason });
             return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
           }
-          const repairPrompt = [
-            writerPrompt(input.task, dispatch.memoryText, dispatch.executionPacket, undefined, dispatch.agent, dispatch.pmReadContext, dispatch.rulesText ?? ""),
-            codeRepairPrompt({ task:input.task, findings:frozenFindings, evidence, agent:dispatch.agent }),
-          ].join("\n\n");
+          const repairPrompt = codeRepairPrompt({
+            task:input.task, findings:frozenFindings, agent:dispatch.agent,
+            setupLines:WRITER_SETUP_LINES,
+            contextBlocks:writerContextBlocks(input.task, dispatch.memoryText, dispatch.executionPacket, dispatch.pmReadContext, dispatch.rulesText ?? ""),
+          });
           const environment = bound.environment_id
             ? { type:"reuse" as const, environmentId:bound.environment_id }
             : { type:"host" as const, hostId:input.config.hostId, workspace:{ type:"unmanaged" as const, path:writerSnapshot.workspacePath } };

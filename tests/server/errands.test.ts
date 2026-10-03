@@ -3,14 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { browserGoal } from "../../src/host-handlers";
-import { errandPrompt } from "../../src/server/errands";
+import { errandPrompt, errandVerdict } from "../../src/server/errands";
 
 describe("errands", () => {
   it("lets a helper change things only when the owner asked for the change", () => {
     const readOnly = errandPrompt({ task: "Read the OAuth scopes", browserHostId: "host_mini", authorized: false });
     expect(readOnly).toContain("Read and report only");
     expect(readOnly).toContain("--machine host_mini");
-    expect(readOnly).toMatch(/ERRAND: done \| blocked/);
+    expect(readOnly).toContain("`ERRAND: done` or `ERRAND: blocked: <why>`");
+    expect(readOnly).not.toContain("done | blocked");
     expect(errandPrompt({ task: "Remove the analytics scope", browserHostId: "host_mini", authorized: true })).toContain("make them, and only those");
     expect(errandPrompt({ task: "x".repeat(20), browserHostId: null, authorized: false })).toContain("No browser machine is set");
   });

@@ -28,6 +28,6 @@ describe("specialist review stage contract", () => {
     expect(prompt).toContain("You are compatibility-reviewer");
     expect(prompt).toContain('"risk":"critical"');
     expect(prompt).toContain("Keep rollback snapshot");
-    expect(prompt).toContain("Do not execute tools or modify files");
+    expect(prompt).toContain("open no files, run no commands and call no tools");
   });
 });

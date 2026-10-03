@@ -21,11 +21,21 @@ export function memoryRecordId(projectId:string,kind:MemoryKind,content:string,p
   return createHash("sha256").update(`${projectId}\0${personalBot ? `bot:${personalBot}\0` : ""}${kind}\0${content.trim().replace(/\s+/g," ").toLowerCase()}`).digest("hex");
 }
 
-export function parseMemoryCandidates(raw:unknown,settings:MemorySettings):MemoryCandidate[] {
-  if (typeof raw === "string") {
-    const text=raw.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/i,"");
-    try { raw=JSON.parse(text); } catch { throw new Error("memory output must be a JSON array"); }
+/** The array in a maintainer's text: the whole text, a fenced block (last first), or the outermost brackets after a preamble. */
+function arrayFromText(raw:string):unknown {
+  const text=raw.trim();
+  const candidates=[text.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/i,"")];
+  for(const block of [...text.matchAll(/```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n?```/gi)].reverse())candidates.push(block[1]!);
+  const start=text.indexOf("["),end=text.lastIndexOf("]");
+  if(start>=0&&end>start)candidates.push(text.slice(start,end+1));
+  for(const candidate of candidates){
+    try { const value=JSON.parse(candidate.trim()); if(Array.isArray(value))return value; } catch { /* next reading */ }
   }
+  throw new Error("memory output must be a JSON array");
+}
+
+export function parseMemoryCandidates(raw:unknown,settings:MemorySettings):MemoryCandidate[] {
+  if (typeof raw === "string") raw=arrayFromText(raw);
   if(!Array.isArray(raw)||raw.length>100)throw new Error("memory output must be an array of at most 100 entries");
   const result:MemoryCandidate[]=[];
   let core=0,note=0,index=0;

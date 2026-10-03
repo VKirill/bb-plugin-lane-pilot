@@ -1222,7 +1222,8 @@ describe("stage → native writer → receipt", () => {
     expect(fallback).toHaveLength(1);
     expect(fallback[0]?.providerId).toBe("critic");
     expect(fallback[0]?.model).toBe("critic-model");
-    expect(fallback[0]?.prompt).toContain("Emergency fallback mode");
+    expect(fallback[0]?.prompt).toContain("Fallback writer: the first writer's model failed");
+    expect(fallback[0]?.prompt).not.toMatch(/recovery|unsafe/);
     const writerReceipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="writer-agent");
     expect(writerReceipt?.state).toBe("passed");
     expect(writerReceipt).toMatchObject({providerId:fallback[0]?.providerId,model:fallback[0]?.model,threadId:"emergency-thread"});
@@ -1263,7 +1264,7 @@ describe("stage → native writer → receipt", () => {
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_night_review",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
     expect(result.state).toBe("passed");
-    expect(spawned.at(-1)).toMatchObject({model:"critic-model",reasoningLevel:"high",prompt:expect.stringContaining("Do not edit files")});
+    expect(spawned.at(-1)).toMatchObject({model:"critic-model",reasoningLevel:"high",prompt:expect.stringContaining("open no files, run no commands and call no tools")});
     expect((spawned.at(-1)?.pluginMetadata as Record<string,unknown>).stageId).toBe("night-review");
     expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="night-review")).toMatchObject({state:"passed",providerId:"critic",model:"critic-model",threadId:"night-thread"});
     await harness.lifecycle.dispose();
