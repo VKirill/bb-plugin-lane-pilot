@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.94 — 2026-10-03
+
+- **«Передать в новый тред» keeps Lane Pilot.** BB starts the new thread from the thread composer, where no profile is attached, so a handoff from a PM chat came up as a plain Claude chat. The first message of a handoff starts with «Continue from @thread:<id>» on a thread mention; when that thread has a Lane Pilot profile of the same project, the new chat takes it, with a run of its own. A plain mention of a PM chat, or a handoff from an ordinary chat, stays ordinary.
+
 ## 0.1.93 — 2026-10-03
 
 - **Project memory is visible.** «Memory and documents» lists what the project memory holds — facts and rules, newest first, with kind, date and concepts — and a wrong or outdated fact can be removed. A rule's record is removed with the rule on the Rules tab, so a rule never stays «accepted» without reaching writers. RPC `memory_records_list`, `memory_record_delete`.

@@ -442,3 +442,26 @@ it("starts a specialist thread with its own profile inside the PM's run, without
   expect(fake.metadata.some((row) => row.threadId === "thr_specialist")).toBe(false);
   expect(getRun(db, runId)).toMatchObject({ pm_thread_id: "thr_pm", state: "running" });
 });
+
+it("a handoff to a new thread keeps the Lane Pilot profile of the chat it continues", async () => {
+  const fake = await setup();
+  const { token } = await fake.harness.behavior.callRpc("prepare_native_session", { projectId: "project_a", agentId: "dev-orchestrator" }) as { token: string };
+  const hook = fake.harness.registrations.hooks["message.dispatch"]!;
+  await hook(context("thr_pmsource", nativeSelectionMarker(token)));
+  const handoff = (threadId: string, source: string) => {
+    const text = `Continue from @thread:${source}\n\nу нас платёжка уже живая`;
+    const ctx = context(threadId, text);
+    (ctx.input.blocks as Array<{ mentions: unknown[] }>)[0]!.mentions = [{ start: 14, end: 14 + `@thread:${source}`.length,
+      resource: { kind: "thread", threadId: source, projectId: "project_a", label: "Инструментарий" } }];
+    return ctx;
+  };
+  expect(await hook(handoff("thr_pmnext", "thr_pmsource"))).toEqual({ action: "proceed" });
+  expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_pmnext" })).toMatchObject({ agentType: "dev-orchestrator" });
+  // A handoff from an ordinary chat, or a plain mention of a Lane Pilot chat, stays ordinary.
+  await hook(handoff("thr_plainnext", "thr_plainsource"));
+  expect(await fake.harness.behavior.resolveProviderEnv("claude-code", { threadId: "thr_plainnext", hostId: "host_a", projectId: "project_a" })).toEqual([]);
+  const mention = context("thr_mentions", "look at @thread:thr_pmsource");
+  (mention.input.blocks as Array<{ mentions: unknown[] }>)[0]!.mentions = [{ start: 8, end: 28, resource: { kind: "thread", threadId: "thr_pmsource", projectId: "project_a", label: "PM" } }];
+  await hook(mention);
+  expect(await fake.harness.behavior.resolveProviderEnv("claude-code", { threadId: "thr_mentions", hostId: "host_a", projectId: "project_a" })).toEqual([]);
+});

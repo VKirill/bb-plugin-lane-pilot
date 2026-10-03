@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { BbPluginApi, ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { LanePilotDatabase } from "./database";
@@ -135,6 +136,33 @@ export function traceNativeDispatch(
   log.warn(`native-trace ${stage} ${parts.join(" ")}`);
 }
 
+/**
+ * The thread a handoff continues: BB writes «Continue from @thread:<id>» at the start of the new thread's first
+ * message, with a thread mention on it. Any other mention of a thread is not a handoff.
+ */
+export function handoffSourceThread(blocks: unknown): string | null {
+  if (!Array.isArray(blocks)) return null;
+  const first = blocks[0] as { type?: unknown; text?: unknown; mentions?: unknown } | undefined;
+  if (!first || first.type !== "text" || typeof first.text !== "string") return null;
+  const match = /^Continue from @thread:(thr_[a-z0-9]+)\b/.exec(first.text);
+  if (!match) return null;
+  const mentions = Array.isArray(first.mentions) ? first.mentions as Array<{ resource?: { kind?: unknown; threadId?: unknown } }> : [];
+  return mentions.some((mention) => mention.resource?.kind === "thread" && mention.resource.threadId === match[1]) ? match[1]! : null;
+}
+
+/** The source chat's profile for a handoff thread of the same project, as a fresh selection of its own run. */
+async function handoffSelection(bb: BbPluginApi, ctx: { project: { id: string }; input: { blocks?: unknown } }): Promise<NativeSelection | null> {
+  const source = handoffSourceThread(ctx.input.blocks);
+  if (!source) return null;
+  const raw = await bb.storage.kv.get<NativeSelection>(`native-thread:${source}`).catch(() => null);
+  const parsed = raw ? nativeSelectionSchema.safeParse(raw) : null;
+  if (!parsed?.success || parsed.data.projectId !== ctx.project.id) return null;
+  const { parentRunId: _specialistRun, ...profile } = parsed.data;
+  const selection: NativeSelection = { ...profile, token: randomUUID(), createdAt: Date.now() };
+  await bb.storage.kv.set(`native-selection:${selection.token}`, selection);
+  return selection;
+}
+
 export async function handleNativeDispatch(
   bb: BbPluginApi,
   host: HostClient,
@@ -182,7 +210,11 @@ export async function handleNativeDispatch(
     }
     const boundRaw = await bb.storage.kv.get<NativeSelection>(`native-thread:${ctx.thread.id}`);
     const bound = boundRaw ? nativeSelectionSchema.parse(boundRaw) : null;
-    if (!tokens.length && !bound) {
+    // «Передать в новый тред» from a Lane Pilot chat: BB starts the new thread from the thread composer, where no
+    // profile is attached, so the new chat came up without the agent. It takes the source chat's profile instead.
+    const inherited = !tokens.length && !bound ? await handoffSelection(bb, ctx) : null;
+    if (inherited) traceNativeDispatch(bb.log, "dispatch.handoff", { ...base, reason: "inherited", token: inherited.token });
+    if (!tokens.length && !bound && !inherited) {
       traceNativeDispatch(bb.log, "dispatch.skip", { ...base, reason: "no_token_or_bound" });
       return { action: "proceed" };
     }
@@ -199,7 +231,7 @@ export async function handleNativeDispatch(
         { bound: bound.token },
       );
     }
-    let selected = bound;
+    let selected = bound ?? inherited;
     if (tokens.length) {
       const candidate = await bb.storage.kv.get<NativeSelection>(`native-selection:${tokens[0]}`);
       if (!candidate) {
