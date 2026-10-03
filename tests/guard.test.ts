@@ -28,9 +28,12 @@ const cases: Case[] = [
   bash("python script","python3 scripts/mutate.py",true),
   bash("node script","node scripts/mutate.js",true),
   ...["add .","commit -m x","merge branch","push","rebase main","reset --hard","stash","cherry-pick abc","checkout -b x","apply x.patch","am x.patch","pull"].map((tail) => bash(`git ${tail}`,`git ${tail}`,true)),
-  bash("redirect production","echo x > src/production.ts",true),
+  // Shell edits of project files skip critique and acceptance (instructions audit 2026-10-03); temp files pass.
+  bash("redirect production","echo x > src/production.ts",false),
   bash("redirect temp","echo x > /tmp/lane-pilot-test.log",true),
-  bash("tee production","git log | tee src/production.ts",true),
+  bash("tee production","git log | tee src/production.ts",false),
+  bash("sed in place production","sed -i s/a/b/ src/production.ts",false),
+  bash("sed read","sed -n 1,5p src/production.ts",true),
   bash("tee temp","git log | tee /tmp/x.log",true),
   ...["Edit","Write","MultiEdit","NotebookEdit"].map((tool) => edit(`${tool} production`,tool,"src/app.ts",false)),
   ...["Edit","Write","MultiEdit","NotebookEdit"].flatMap((tool) => [
@@ -55,7 +58,7 @@ function invoke(path:string, testCase:Case) {
 }
 
 describe("E2 Lane Pilot PM guard", () => {
-  it("keeps the normative table at 44 cases", () => expect(cases).toHaveLength(44));
+  it("keeps the normative table at 46 cases", () => expect(cases).toHaveLength(46));
   for (const testCase of cases) {
     it(`${testCase.name}: ${testCase.allowed ? "allow" : "deny"}`, () => {
       const result = invoke(guard,testCase);

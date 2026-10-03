@@ -7,7 +7,7 @@ import { bundledAgentDefinitions } from "../src/server/handoff";
 it("defines shipping as push, bring the project up its own way, and prove it is live", () => {
   const ship = LANE_PILOT_PM_SESSION.split("## Ship")[1]!.split("## Docs")[0]!;
   expect(ship).toContain("git push origin");
-  expect(ship).toContain("Never force-push");
+  expect(ship).toContain("the guard refuses a force-push");
   expect(ship).toMatch(/docker compose/);
   expect(ship).toMatch(/systemd/);
   expect(ship).toMatch(/healthcheck/);
@@ -15,9 +15,9 @@ it("defines shipping as push, bring the project up its own way, and prove it is 
 });
 
 it("gives the PM a done criterion and no route to agents it cannot spawn", () => {
-  expect(LANE_PILOT_PM_SESSION).toMatch(/You are done when every task is accepted, main is pushed/);
+  expect(LANE_PILOT_PM_SESSION).toMatch(/## Done\nCode work: every task accepted, main pushed/);
   expect(LANE_PILOT_PM_SESSION).not.toMatch(/run-supervisor|lane-supervisor|night-reviewer/);
-  expect(LANE_PILOT_PM_SESSION).toMatch(/sed -i/);
+  expect(LANE_PILOT_PM_SESSION).toMatch(/shell redirects into project files/);
 });
 
 it("states the docs rule once, with its reason, in every session that must not write docs", () => {

@@ -138,7 +138,7 @@ it("adapts the live empty-client guard deny through inject to hookSpecificOutput
   const body = JSON.parse(result.stdout);
   expect(body.hookSpecificOutput.hookEventName).toBe("PreToolUse");
   expect(body.hookSpecificOutput.permissionDecision).toBe("deny");
-  expect(String(body.hookSpecificOutput.permissionDecisionReason)).toMatch(/orchestrator-guard/);
+  expect(String(body.hookSpecificOutput.permissionDecisionReason)).toMatch(/lane-pilot-guard.*lane_pilot_dispatch_writer/);
 });
 
 it("adapts empty-client deny JSON to native Claude PreToolUse hookSpecificOutput", () => {

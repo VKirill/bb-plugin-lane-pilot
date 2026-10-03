@@ -202,7 +202,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const openQuestions = pmRead.summary ? pmReadBrief(pmRead.summary).openQuestions : [];
     return { runId, attemptId, writerThreadId:null, state:"queued", stages:listStageReceipts(db, runId, taskId),
       ...(openQuestions.length ? { pmReadOpenQuestions:openQuestions,
-        pmReadNote:"The writer does not see these questions. If one changes what the writer should do, cancel this attempt and dispatch again with the answer in the plan or contract; otherwise the writer decides from the code." } : {}) };
+        pmReadNote:"The writer does not see these questions. If one changes what the writer should do, wait for this attempt's receipt and, if it is not accepted, dispatch again with the answer in the plan; otherwise the writer decides from the code." } : {}) };
   }
 
   async function waitWriter(args:{threadId:string; projectId:string; runId:string; timeoutSec:number}): Promise<Record<string, unknown>> {

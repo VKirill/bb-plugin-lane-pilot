@@ -111,17 +111,11 @@ it("gives specialists no bb-bridge tools and keeps the PM core plus browser QA",
     "mcp__bb-bridge__lane_pilot_browser_qa",
     "mcp__bb-bridge__lane_pilot_memory_context",
     "mcp__bb-bridge__lane_pilot_workspace_status",
-    "mcp__bb-bridge__lane_pilot_handoff_create",
-    "mcp__bb-bridge__lane_pilot_handoff_receipt",
-    "mcp__bb-bridge__lane_pilot_handoff_list",
     "mcp__bb-bridge__lane_pilot_routing_stats",
     "mcp__bb-bridge__lane_pilot_lessons_sweep",
     "mcp__bb-bridge__lane_pilot_rule_propose",
     "mcp__bb-bridge__lane_pilot_lesson",
-    "mcp__bb-bridge__lane_pilot_memory_golden",
     "mcp__bb-bridge__lane_pilot_run_health",
-    "mcp__bb-bridge__lane_pilot_memory_import",
-    "mcp__bb-bridge__lane_pilot_memory_export",
     "mcp__bb-bridge__lane_pilot_council_start",
     "mcp__bb-bridge__lane_pilot_council_status",
     "mcp__bb-bridge__lane_pilot_council_say",
@@ -188,14 +182,14 @@ it("is a unified BB PM instruction, not a CLI orchestrator patch", () => {
   expect(LANE_PILOT_PM_SESSION).toContain("seo-specialist");
   expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_browser_qa");
   expect(LANE_PILOT_PM_SESSION).toContain("Mac mini");
-  expect(LANE_PILOT_PM_SESSION).toContain("drives the BB browser");
+  expect(LANE_PILOT_PM_SESSION).toContain("Checking a task of ours after acceptance");
   expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_browser_qa");
   expect(LANE_PILOT_PM_SESSION).toContain("PROJECT.md");
   expect(LANE_PILOT_PM_SESSION).toContain("docs/audiences/");
   expect(LANE_PILOT_PM_SESSION).toContain("specialized agents");
-  expect(LANE_PILOT_PM_SESSION).toMatch(/Do not call run-init/);
+  expect(LANE_PILOT_PM_SESSION).toMatch(/terminal Lane Stack run machinery is not used in this chat/);
   expect(LANE_PILOT_PM_SESSION).toContain("scripts/deploy.sh");
-  expect(LANE_PILOT_PM_SESSION).toContain("что будем делать");
+  expect(LANE_PILOT_PM_SESSION).toContain("asking about it costs the owner a round trip");
   expect(LANE_PILOT_PM_SESSION).not.toContain("docs/llm");
   expect(LANE_PILOT_PM_SESSION).not.toContain("stages.docs");
   expect(LANE_PILOT_PM_SESSION).not.toContain("stages.onboard");

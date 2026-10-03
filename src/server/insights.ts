@@ -172,7 +172,7 @@ export function mountInsights(ctx: ServerContext): void {
   bb.agents.registerTool({
     name: "lane_pilot_routing_stats",
     description: "Which provider and model got tasks accepted at the first try in this project, per task risk, with a recommendation.",
-    instructions: "Use from the active Lane Pilot PM thread before choosing a writer for a risky task. Statistics need at least five tasks per pair to recommend.",
+    instructions: "Use from the active Lane Pilot PM thread when the owner asks which writer model is accepted most often, or before telling the owner that a risky task type needs another writer in Lane Pilot settings (you cannot pick the model per task). Statistics need at least five tasks per pair to recommend.",
     parameters: z.object({ runId: z.string().min(1), risk: z.enum(["low", "medium", "high", "critical"]).optional(), days: z.number().int().min(1).max(365).default(90) }).strict(),
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
@@ -213,7 +213,7 @@ export function mountInsights(ctx: ServerContext): void {
   bb.agents.registerTool({
     name: "lane_pilot_lesson",
     description: "Record a lesson as a project rule on the hub: the owner corrected you, or an approach got burned.",
-    instructions: "Use instead of writing .agents/LESSONS.md, which is not kept any more. Write one imperative rule that prevents the mistake, in English, with evidence (run, task, test, date). `audience`: `pm` for your own work (planning, task contracts, reviewing reports, merging, deploying) — writers never see it; `writer` for how code is edited and checked inside one task; `both` when each must follow it. `always: true` only when the rule holds for every writer task whatever it changes (how to run or read any command); otherwise System One gives it to the tasks it fits. A rule close to a live one counts as its repeat; a new one goes on trial within the 12-rule cap. Only after a real correction or landmine — not per session.",
+    instructions: "Use instead of writing .agents/LESSONS.md, which is not kept any more. Write one imperative rule that prevents the mistake, in English, with evidence (run, task, test, date). `audience`: `pm` for your own work (planning, task contracts, reviewing reports, merging, deploying) — writers never see it; `writer` for how code is edited and checked inside one task; `both` when each must follow it. `always: true` only when the rule holds for every writer task whatever it changes (how to run or read any command); otherwise System One gives it to the tasks it fits. A rule close to a live one counts as its repeat; a new one goes on trial at once while fewer than 12 rules are in force, and otherwise waits until one retires (trial, confirmation and retirement run nightly) — so write only rules that matter. Only after a real correction or landmine — not per session.",
     parameters: z.object({ runId: z.string().min(1), rule: z.string().min(8).max(600), audience: z.enum(["writer", "pm", "both"]), always: z.boolean().default(false),
       evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional() }).strict(),
     execute: async (params, context) => {
