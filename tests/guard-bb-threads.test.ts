@@ -84,6 +84,14 @@ function allowedNative(command: string): number | null {
   }).status;
 }
 
+function allowedIn(cwd: string, command: string): number | null {
+  return spawnSync("python3", [guard], {
+    input:JSON.stringify({ agent_type:"dev-orchestrator", tool_name:"Bash", tool_input:{ command }, cwd }),
+    encoding:"utf8",
+    env:{ ...process.env, AGENT_HOOK_CLIENT:"claude", LANE_PILOT_AGENT_TYPE:"lane-stack:dev-orchestrator" },
+  }).status;
+}
+
 describe("BB native PM can run project node scripts", () => {
   it("allows node scripts/*.mjs", () => {
     expect(allowedNative("node scripts/collect-release-evidence.mjs migration --receipt /tmp/r.json")).toBe(0);
@@ -93,9 +101,14 @@ describe("BB native PM can run project node scripts", () => {
   });
   // The owner's PM ships plugins itself (2026-10-03): BB reads and plugin reload/install pass; thread control stays closed.
   it("reads BB state and reloads plugins, but does not start or archive threads", () => {
-    for (const command of ["bb plugin reload lane-pilot", "bb plugin list", "bb plugin logs project-folders", "bb environment providers", "bb memory catalog --scope all", "bb plugin install ./dist"]) {
+    for (const command of ["bb plugin list", "bb plugin logs project-folders", "bb environment providers", "bb memory catalog --scope all"]) {
       expect(allowedNative(command)).toBe(0);
       expect(allowed("lane-pilot-pm", command)).toBe(0);
+    }
+    // Shipping a plugin only from that plugin's checkout (this repo is bb-plugin-lane-pilot); a product checkout may not.
+    for (const command of ["bb plugin reload lane-pilot", "bb plugin install ./dist", "bb plugin update project-folders"]) {
+      expect(allowedNative(command)).toBe(0);
+      expect(allowedIn("/srv/apps/selfystudio", command)).toBe(2);
     }
     for (const command of ["bb thread create --prompt x", "bb plugin rpc call x y", "bb env-catalog get SECRET"]) expect(allowedNative(command)).toBe(2);
   });
