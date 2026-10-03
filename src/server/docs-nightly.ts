@@ -604,7 +604,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     };
   }
 
-  bb.background.schedule("docs-maintenance-hourly","0 * * * *",inBackground("docs-maintenance-hourly",runScheduledDocsMaintenance));
+  bb.background.schedule("docs-maintenance-hourly","0 * * * *",runScheduledDocsMaintenance);
 
   bb.background.schedule("docs-nightly-hourly","0 * * * *",inBackground("docs-nightly-hourly",()=>runNightlyDocs()));
 
