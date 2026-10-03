@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.99 — 2026-10-03
+
+The self-repair watcher went silent for 50 min on the hub. BB runs a plugin's schedules one after another and waits for each; `docs-nightly-catchup` and `docs-nightly-hourly` awaited a whole docs pass, so every other schedule waited too.
+- The two docs-nightly schedules start their pass detached and return at once; a tick while the pass still runs is skipped. Failures go to the plugin log.
+- `docs-maintenance-hourly` stays awaited: it observes at most 60 s per project.
+
 ## 0.1.98 — 2026-10-03
 
 The PM can get work outside the code done. In thr_wb4dsw4usn it could not open Google Cloud Console nor look for a mail account: its shell may not drive the browser or read Env Catalog, and its only delegate edits code — so it sent the owner to click by hand.
