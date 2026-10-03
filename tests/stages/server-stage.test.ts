@@ -1199,8 +1199,23 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("runs the writer's fallbacks in turn: one that cannot start hands over to the next, before the PM's model",async()=>{
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"jev.LANE_JEV_EFFORT":false,
+      "writer.fallback1.provider":"critic","writer.fallback1.model":"not-in-catalog","writer.fallback1.reasoning_effort":"high",
+      "writer.fallback2.provider":"critic","writer.fallback2.model":"critic-model","writer.fallback2.reasoning_effort":"high"},undefined,undefined,undefined,undefined,undefined,undefined,false,2,{providerId:"critic",model:"critic-model"});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    const fallback=spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="emergency-writer");
+    expect(fallback).toHaveLength(1);
+    expect(fallback[0]).toMatchObject({providerId:"critic",model:"critic-model",reasoningLevel:"high"});
+    const writerReceipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="writer-agent");
+    expect(writerReceipt?.state).toBe("passed");
+    expect((writerReceipt?.result as Record<string,unknown>)?.emergencyFallback).toMatchObject({state:"completed",providerId:"critic",model:"critic-model"});
+    await harness.lifecycle.dispose();
+  });
+
   it("runs one emergency provider after primary provider failures and records provenance in the accepted receipt",async()=>{
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false},undefined,undefined,undefined,undefined,undefined,undefined,false,2,{providerId:"critic",model:"critic-model"});
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"writer.fallback1.provider":"","writer.fallback2.provider":""},undefined,undefined,undefined,undefined,undefined,undefined,false,2,{providerId:"critic",model:"critic-model"});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
     const fallback=spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="emergency-writer");

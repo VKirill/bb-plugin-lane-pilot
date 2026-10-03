@@ -22,8 +22,17 @@ function numberField(value:unknown, key:string): number | null {
   return typeof found === "number" && Number.isFinite(found) ? found : null;
 }
 
+/**
+ * A sub-agent's turn (codex delegations) is reported on the parent thread with a parentToolCallId; it is not the
+ * thread's turn. Counting it ended a docs agent's wait on its sub-agent's «interrupted» turn while the agent kept
+ * writing in the main checkout (SelfyStudio, 2026-10-03).
+ */
+function isSubAgentEvent(event: object): boolean {
+  return stringField(event, "parentToolCallId") !== null || stringField(Reflect.get(event, "data"), "parentToolCallId") !== null;
+}
+
 function readTurnEvent(event: unknown): TurnEvent | null {
-  if (!event || typeof event !== "object") return null;
+  if (!event || typeof event !== "object" || isSubAgentEvent(event)) return null;
   const type = stringField(event, "type");
   if (type !== "turn/started" && type !== "turn/completed") return null;
   const data = Reflect.get(event, "data");
@@ -119,6 +128,7 @@ export const PROVIDER_START_LIMIT_MS = 180_000;
 type WatchedEvent = { type:string; seq:number; createdAt:number|null; data:unknown };
 
 function readWatched(event: unknown): WatchedEvent | null {
+  if (!event || typeof event !== "object" || isSubAgentEvent(event)) return null;
   const type = stringField(event, "type");
   const seq = numberField(event, "seq");
   if (!type || seq === null) return null;

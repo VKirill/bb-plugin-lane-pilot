@@ -61,6 +61,7 @@ import { DocsPlaces } from "./docs-places";
 import { DOCS_DEFAULT_SELECTION } from "../stages/docs-defaults";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
+import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys } from "../writer-fallbacks";
 
 const CARD_HEAD = "space-y-1 px-3 pb-2 pt-3";
 const CARD_BODY = "px-3 pb-3 pt-0";
@@ -638,6 +639,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const [councilDefaults, setCouncilDefaults] = useState<Array<{ id: string; title: string; providerId: string | null; model: string | null; configured: boolean }>>([]);
   // Seat pickers report a normalized value on mount; only a choice made by hand is saved.
   const councilSeatsTouched = useRef(new Set<string>());
+  // Only a change the owner made by hand is saved: the picker reports a normalized value on mount.
+  const fallbackTouched = useRef(new Set<number>());
   const [councilsAll, setCouncilsAll] = useState(false);
   type CouncilRow = { id: string; runId: string; question: string; state: string; round: number; maxRounds: number; decisionPath: string | null; updatedAt: number };
   type CouncilDetail = { id: string; question: string; state: string; round: number; maxRounds: number; agenda: string[]; criteria: string[]; decisionPath: string | null; reason: string | null; recommendation: string | null; seats: Array<{ id: string; title: string; providerId: string | null; model: string | null }>; messages: Array<{ seq: number; seatId: string; round: number; kind: string; text: string; at: number }> };
@@ -1153,6 +1156,19 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
     return true;
   };
+  const saveWriterFallback = async (slot:1|2, selection:ExperimentalProviderModelPickerValue|null)=>{
+    if(!projectId||!data)return false;
+    const keys=writerFallbackKeys(slot);
+    const result=await rpc.call("save_writer_fallback_selection", { ...scoped, projectId, slot,
+      ...(selection?{providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel}:{off:true}),
+      expectedVersions:Object.fromEntries(Object.values(keys).map((key)=>[key,data.versions[key]??0])),
+    });
+    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
+    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
+    setSaveError(null);
+    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    return true;
+  };
   const councilSeatPickerValue=(seat:(typeof COUNCIL_SEATS)[number]):ExperimentalProviderModelPickerValue=>({
     providerId:String(data?.values[`council.${seat}.provider`]??""),
     model:String(data?.values[`council.${seat}.model`]??""),
@@ -1583,6 +1599,37 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
                 <div className="max-w-xl">{modelPicker(pickerValue, (next) => { saveWriterSelection(next); })}</div>
+                <div className="max-w-xl space-y-3 pt-1" data-testid="writer-fallbacks">
+                  <p className="text-xs text-muted-foreground">{t("writerFallbackHelp")}</p>
+                  {WRITER_FALLBACK_SLOTS.map((slot, index) => {
+                    const keys = writerFallbackKeys(slot);
+                    const stored = data?.values[keys.provider];
+                    const off = stored === "";
+                    const fallback = WRITER_FALLBACK_DEFAULTS[index]!;
+                    // A slot turned back on stores its default: it still reads as the default.
+                    const configured = typeof stored === "string" && stored !== ""
+                      && !(stored === fallback.providerId && data?.values[keys.model] === fallback.model && data?.values[keys.effort] === fallback.reasoningLevel);
+                    const value: ExperimentalProviderModelPickerValue = configured
+                      ? { providerId:String(stored), model:String(data?.values[keys.model] ?? ""), reasoningLevel:(String(data?.values[keys.effort] ?? "high") || "high") as ExperimentalProviderModelPickerValue["reasoningLevel"] }
+                      : { providerId:fallback.providerId, model:fallback.model, reasoningLevel:fallback.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"] };
+                    const touch = () => { fallbackTouched.current.add(slot); };
+                    return (
+                      <div key={slot} className="space-y-1.5" data-testid={`writer-fallback-${slot}`}>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-sm font-medium">{t(slot === 1 ? "writerFallback1" : "writerFallback2")}</span>
+                          <span className="text-xs text-muted-foreground">{off ? t("writerFallbackOffState") : configured ? t("councilSeatOwnSet") : t("writerFallbackDefault")}</span>
+                          <Button type="button" size="sm" variant="ghost" className="h-7 px-2" data-testid={`writer-fallback-${slot}-toggle`}
+                            onClick={() => void (off ? saveWriterFallback(slot, { providerId:fallback.providerId, model:fallback.model, reasoningLevel:fallback.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"] }) : saveWriterFallback(slot, null))}>
+                            {off ? t("writerFallbackTurnOn") : t("writerFallbackTurnOff")}
+                          </Button>
+                        </div>
+                        {off ? null : <div onPointerDownCapture={touch} onKeyDownCapture={touch}>
+                          {modelPicker(value, (next) => { if (fallbackTouched.current.has(slot)) void saveWriterFallback(slot, next); })}
+                        </div>}
+                      </div>
+                    );
+                  })}
+                </div>
                 {trackLines.length > 0 ? (
                   <div className="max-w-xl text-xs text-muted-foreground" data-testid="routing-hints">
                     <div className="font-medium">{t("routingHintTitle")}</div>

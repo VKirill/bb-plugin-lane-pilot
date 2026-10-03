@@ -47,7 +47,9 @@ function ownerAlive(pid:number):boolean {
  * (the host restarted mid-merge) is taken over at once, and any lock older than 10 minutes is stale.
  */
 export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>,label="",waitMs=120_000):Promise<T> {
-  const lock=join(basePath,".git","lane-pilot-integrate.lock");
+  // In a worktree .git is a file; the lock lives in that checkout's own git directory.
+  const gitDir=git(basePath,["rev-parse","--absolute-git-dir"]);
+  const lock=join(gitDir.ok&&gitDir.stdout.trim()?gitDir.stdout.trim():join(basePath,".git"),"lane-pilot-integrate.lock");
   const deadline=Date.now()+waitMs;
   for(;;) {
     // The owner file: the pid on the first line, then what this integration merges, for whoever waits.
@@ -74,9 +76,11 @@ export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>,labe
  * Commits the writer's worktree and merges it into the run's base checkout (main).
  * A conflict leaves main untouched and names the files, so the task can be redone on the new main.
  */
-export async function integrateWorktree(input:{basePath:string;worktreePath:string;message:string;removeWorktree?:boolean;lockWaitMs?:number}):Promise<GitIntegration> {
+export async function integrateWorktree(input:{basePath:string;worktreePath:string;message:string;removeWorktree?:boolean;lockWaitMs?:number;
+  /** Merge only what is committed: the docs worktree holds other units' unchecked pages beside the commit. */
+  committedOnly?:boolean}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
-  const dirty=git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
+  const dirty=input.committedOnly?{ok:true as const,stdout:"",reason:""}:git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
   if(!dirty.ok) return fail(`worktree status: ${dirty.reason}`);
   if(dirty.stdout.trim()) {
     const add=git(input.worktreePath,["add","-A"]);
@@ -173,7 +177,8 @@ async function rebuildChangedPackages(basePath:string,before:string):Promise<Arr
   const changed=diff.stdout.split("\n").map((line)=>line.trim()).filter(Boolean);
   const out:Array<{dir:string;ok:boolean;detail:string|null}>=[];
   for(const dir of await workspaceDirs(basePath)) {
-    if(!changed.some((file)=>file.startsWith(`${dir}/`)&&!file.startsWith(`${dir}/dist/`))) continue;
+    // Markdown is no build input: a docs merge must not rebuild every package whose docs/ it touched.
+    if(!changed.some((file)=>file.startsWith(`${dir}/`)&&!file.startsWith(`${dir}/dist/`)&&!file.endsWith(".md"))) continue;
     if(!(await stat(join(basePath,dir,"dist")).catch(()=>null))?.isDirectory()) continue;
     const manifest=await readFile(join(basePath,dir,"package.json"),"utf8").then((text)=>JSON.parse(text) as {scripts?:Record<string,string>}).catch(()=>null);
     if(!manifest?.scripts?.build) continue;

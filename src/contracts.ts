@@ -177,7 +177,8 @@ export const hostContract = defineRpcContract({
     output: z.object({ hostId:z.string(), status:z.enum(["ready","failed"]), path:z.string().nullable(), branch:z.string().nullable(), reason:z.string().nullable() }).strict(),
   },
   gitIntegrate: {
-    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), message:z.string().min(1).max(500), removeWorktree:z.boolean().optional() }).strict(),
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), message:z.string().min(1).max(500), removeWorktree:z.boolean().optional(),
+      committedOnly:z.boolean().optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["merged","up-to-date","conflict","failed","busy"]), commit:z.string().nullable(), conflicts:z.array(z.string()), reason:z.string().nullable(), holder:z.string().nullable().optional(),
       rebuilt:z.array(z.object({ dir:z.string(), ok:z.boolean(), detail:z.string().nullable() }).strict()).optional() }).strict(),
   },
@@ -1053,6 +1054,16 @@ export const rpcContract = defineRpcContract({
       reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]),
       serviceTier:z.enum(["default","fast"]).nullable(),
       expectedVersions:z.object({"specialist.provider":z.number().int().min(0),"specialist.model":z.number().int().min(0),"specialist.reasoning_effort":z.number().int().min(0),"specialist.service_tier":z.number().int().min(0)}).strict(),
+    }).strict(),
+    output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
+  },
+  // A writer fallback model (slot 1 or 2); off: true stores an empty slot, so the default does not come back.
+  save_writer_fallback_selection: {
+    input:z.object({
+      projectId:z.string().min(1),slot:z.union([z.literal(1),z.literal(2)]),sectionId:z.string().min(1).optional(),
+      off:z.boolean().optional(),providerId:z.string().min(1).optional(),model:z.string().min(1).optional(),
+      reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]).optional(),
+      expectedVersions:z.record(z.string(),z.number().int().min(0)),
     }).strict(),
     output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
   },

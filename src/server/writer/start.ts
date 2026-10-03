@@ -5,7 +5,8 @@ import { countAttempts, createAttempt, getAttempt, getReasoningTrace, getRun, ge
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "../../owns-paths";
 import { reconcile } from "../../reconcile";
-import { emergencyFallbackDecision, sameWriterSelection } from "../../stages/emergency-writer";
+import { emergencyFallbackDecision } from "../../stages/emergency-writer";
+import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import type { AttemptState } from "../../state-machine";
 import { parseWorkspaceMode } from "../../workspace/routing";
@@ -259,34 +260,40 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         executionPacketSha256 = null;
       }
       if (last.status !== "accepted" && primaryFailure) {
-        const decision=emergencyFallbackDecision({
-          state:String(primaryFailure.status ?? "unknown"),
-          reason:typeof primaryFailure.reason === "string" ? primaryFailure.reason : null,
-          stopConfirmed:primaryFailure.stopConfirmed === true,
-        });
-        if (decision.run) {
-          const settings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
-          const primaryProvider=typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
-          const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
-          const emergencySelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
-          if (sameWriterSelection({providerId:primaryProvider,model:primaryModel},emergencySelection)) {
-            last={...last,emergencyFallback:{state:"skipped",reason:"configured_pm_selection_matches_primary",trigger:decision.reason}};
-          } else {
-            const primaryAttemptId=typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId;
+        const settings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
+        const primaryProvider=typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
+        const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
+        const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
+        // The writer's fallbacks in turn, then the PM's model; each takes over only while the failure is the model's, not the task's.
+        const chain=writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection);
+        let failure:Record<string, unknown>=primaryFailure;
+        const primaryAttemptId=typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId;
+        if (!chain.length) last={...last,emergencyFallback:{state:"skipped",reason:"configured_pm_selection_matches_primary"}};
+        for (const fallback of chain) {
+          const decision=emergencyFallbackDecision({
+            state:String(failure.status ?? "unknown"),
+            reason:typeof failure.reason === "string" ? failure.reason : null,
+            stopConfirmed:failure.stopConfirmed === true,
+          });
+          if (!decision.run) break;
+          const emergencySelection={providerId:fallback.providerId,model:fallback.model};
             const emergencyAttemptId=id("lpattempt");
             createAttempt(db,{id:emergencyAttemptId,runId:input.runId,taskId:input.taskId});
             writerSelection=undefined;
             const spawned=await services.spawnWriterAttempt({
               projectId:input.projectId,runId:input.runId,taskId:input.taskId,attemptId:emergencyAttemptId,
               config:freshConfig,task:freshTask,plan:input.plan,pmThreadId:input.pmThreadId,pmReadContext,
-              emergency:{...emergencySelection,reason:decision.reason},
+              emergency:{...emergencySelection,reason:decision.reason,...(fallback.pm?{}:{reasoningLevel:fallback.reasoningLevel})},
             });
             if (!spawned.ok) {
               const fallbackFailureReason=`emergency_fallback_failed:${spawned.reason}`;
               transitionAttempt(db,emergencyAttemptId,"blocked",{reason:fallbackFailureReason});
               last={status:"blocked",reason:fallbackFailureReason,attemptId:emergencyAttemptId,
-                emergencyFallback:{state:"failed",reason:spawned.reason,trigger:decision.reason,attemptId:emergencyAttemptId}};
+                emergencyFallback:{state:"failed",reason:spawned.reason,trigger:decision.reason,attemptId:emergencyAttemptId,providerId:fallback.providerId,model:fallback.model}};
               writerThreadId=undefined;
+              // A fallback that cannot start (its own limit, not in this host's catalog) hands over to the next one.
+              failure={status:"spawn_rejected",reason:spawned.reason};
+              continue;
             } else {
               writerThreadId=spawned.threadId;
               writerSelection=spawned.providerId&&spawned.model?{
@@ -309,8 +316,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               const workspaceBinding=getAttempt(db,emergencyAttemptId);
               if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
                 environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision}};
+              await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
+              if (last.status === "accepted") break;
+              failure=last;
             }
-          }
         }
       }
       const accepted = last.status === "accepted";

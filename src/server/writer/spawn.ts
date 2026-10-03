@@ -53,7 +53,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
   async function spawnWriterAttempt(input: {
     projectId:string; runId:string; taskId:string; attemptId:string;
     config:PrototypeConfig; task:TaskV2; plan:string; pmThreadId:string; pmReadContext?:string;
-    emergency?:{providerId:string;model:string;reason:string}; retryIndex?:number;
+    /** A fallback writer: its model, and its effort when it is one of the writer's fallbacks (the PM's model has none). */
+    emergency?:{providerId:string;model:string;reason:string;reasoningLevel?:string}; retryIndex?:number;
   }): Promise<
     | { ok:true; threadId:string; providerId:string|null; model:string|null; reasoningLevel?:string; serviceTier?:"default"|"fast"|null; selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}; dirtBefore:import("../../cli-outcome").DirtSnapshot[]; workspacePath:string; executionPacketSha256?:string }
     | { ok:false; status:"spawn_rejected"; reason:string; attemptId:string }
@@ -124,7 +125,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       }
       const effectiveServiceTier = tierIds.has(requestedServiceTier) ? requestedServiceTier : null;
       const manual = input.emergency
-        ? (model.supportedReasoningEfforts.some((item) => item.reasoningEffort === "low") ? "low" : model.supportedReasoningEfforts[0]?.reasoningEffort ?? "medium")
+        ? (input.emergency.reasoningLevel && model.supportedReasoningEfforts.some((item) => item.reasoningEffort === input.emergency!.reasoningLevel) ? input.emergency.reasoningLevel
+          : model.supportedReasoningEfforts.some((item) => item.reasoningEffort === "low") ? "low" : model.supportedReasoningEfforts[0]?.reasoningEffort ?? "medium")
         : typeof settings["writer.reasoning_effort"] === "string"
           ? settings["writer.reasoning_effort"] as string : "medium";
       const digest = planDigest(input.plan);

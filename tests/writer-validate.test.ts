@@ -860,6 +860,9 @@ describe("BB writer validation on the server path", () => {
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
+    // This test follows the PM's emergency model alone; the writer's fallbacks are off.
+    saveProjectSetting(db, projectId, "writer.fallback1.provider", "");
+    saveProjectSetting(db, projectId, "writer.fallback2.provider", "");
     createRun(db, "run-v", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-v", pmThreadId);
     await plugin(bb);

@@ -287,3 +287,18 @@ it("copies Prisma's generated client into a worktree as real, writable folders; 
   await writeFile(join(a, "node_modules", ".prisma", "client", "index.js"), "regenerated\n");
   expect(await readFile(join(base, "node_modules", ".prisma", "client", "index.js"), "utf8")).toBe("generated\n");
 });
+
+it("docs worktree: commits under its own lock and merges only what is committed, leaving other units' pages out", async () => {
+  const { base, worktree } = await repo();
+  const docs = await worktree("docs");
+  await mkdir(join(docs, "docs"), { recursive: true });
+  await writeFile(join(docs, "docs", "checked.md"), "# checked\n");
+  await writeFile(join(docs, "docs", "unchecked.md"), "# still being written\n");
+  // The lock of a worktree is in its own git dir (.git is a file there); before this the docs commit failed with ENOTDIR.
+  await withBaseLock(docs, () => { git(docs, "add", "docs/checked.md"); git(docs, "commit", "-qm", "docs: checked"); });
+  const merged = await integrateWorktree({ basePath: base, worktreePath: docs, message: "docs: nightly", committedOnly: true });
+  expect(merged.status).toBe("merged");
+  expect(await readFile(join(base, "docs", "checked.md"), "utf8")).toBe("# checked\n");
+  await expect(readFile(join(base, "docs", "unchecked.md"), "utf8")).rejects.toThrow();
+  expect(git(base, "status", "--porcelain")).toBe("");
+});

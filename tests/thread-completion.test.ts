@@ -105,4 +105,19 @@ describe("decideThreadCompletion", () => {
       ],
     })).toEqual({ ok:false, via:"canceled", detail:"turn_interrupted" });
   });
+
+  it("does not end on a sub-agent's interrupted turn (live docs agent thr_vpv6743wkq, 2026-10-03)", () => {
+    const t = "thr_vpv6743wkq";
+    const ev = (seq:number, type:string, data:Record<string, unknown> = {}, createdAt = 1790994000000 + seq) => ({ threadId:t, seq, createdAt, type, data:{ providerThreadId:"p", ...data } });
+    const events = [
+      ev(278, "client/turn/requested", {}, 1790993645000),
+      ev(279, "turn/started"),
+      ev(280, "turn/input/accepted", { clientRequestId:"creq_hsqf8z2he4" }),
+      ev(423, "turn/started", { parentToolCallId:"dab1efe01b-i2253" }),
+      ev(744, "turn/completed", { status:"interrupted", parentToolCallId:"dab1efe01b-i2253" }),
+    ];
+    expect(decideThreadCompletion({ threadId:t, status:"active", events, requestedAfter:1790993640000 })).toMatchObject({ ok:false, via:"incomplete" });
+    expect(decideThreadCompletion({ threadId:t, status:"idle", events:[...events, ev(774, "turn/completed", { status:"completed" })], requestedAfter:1790993640000 }))
+      .toEqual({ ok:true, via:"turn_completed" });
+  });
 });

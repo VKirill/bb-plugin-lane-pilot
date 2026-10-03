@@ -151,7 +151,9 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
    * docs present means no model call. `force` skips the hour for a manual run.
    */
   /** A docs unit's saved progress after its agent started: everything the second half needs, across a plugin reload. */
-  type DocsUnitRecord={version:1;projectId:string;place:{hostId:string;path:string};label:string;unit:DocsUnit;threadId:string;phase:"writing"|"repairing";sentAt?:number;
+  type DocsUnitRecord={version:1;projectId:string;place:{hostId:string;path:string};
+    /** The project checkout when the unit works in the docs worktree (place); its commits are merged there. */
+    basePath?:string;label:string;unit:DocsUnit;threadId:string;phase:"writing"|"repairing";sentAt?:number;
     beforeDirty:string[];localDate:string;since:ReturnType<typeof parseDocsSettings>["since"];roots:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;
     hasDocs:boolean;changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};anchors:{count:number;jev:string}|null;
     core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string};
@@ -163,6 +165,45 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       :nightlyDocsWritable(unit.docsDir);
     // The design canon is the design lead's page, not the docs agent's.
     return (path:string)=>own(path)&&!isDesignCanon(path);
+  }
+
+  /**
+   * The docs worktree of a place: Lane Pilot's own git worktree on lane/docs-<hash>, fresh from main for each pass.
+   * The docs agents used to write in the project checkout for hours, so a deploy found it dirty and its git busy, and an
+   * agent interrupted mid-command left .git/index.lock behind (SelfyStudio, 2026-10-03). A pass that broke off keeps
+   * its worktree while units still have saved progress in it. Without a worktree the pass runs in place, as before.
+   */
+  async function docsWorktree(place:{hostId:string;path:string}):Promise<{hostId:string;path:string}> {
+    const name=`docs-${sha256(place.path).slice(0,12)}`, key=`docs-worktree:${place.hostId}:${name}`;
+    const known=await bb.storage.kv.get(key).catch(()=>null) as {path?:string}|null;
+    if(known?.path){
+      const open=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
+      for(const unitKey of Object.keys(open)){
+        const record=await bb.storage.kv.get(unitKey).catch(()=>null) as DocsUnitRecord|null;
+        if(record?.place.path===known.path) return {hostId:place.hostId,path:known.path};
+      }
+      // Its committed pages reach main before it goes; a busy main waits for the next tick.
+      const merged=await mergeDocs(place.path,{hostId:place.hostId,path:known.path},"docs: earlier pass");
+      if(merged==="busy") throw new Error("docs_worktree_merge_busy: main is merging other work; the pass retries");
+      await host.call("gitRemoveWorktree",{requestedHostId:place.hostId,basePath:place.path,worktreePath:known.path},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null);
+      await bb.storage.kv.delete(key).catch(()=>undefined);
+    }
+    const created=await host.call("gitCreateWorktree",{requestedHostId:place.hostId,basePath:place.path,name},{hostId:place.hostId,timeoutMs:120_000}).catch((cause)=>({status:"failed" as const,path:null,reason:cause instanceof Error?cause.message:String(cause)}));
+    if(created.status!=="ready"||!created.path){
+      bb.log.warn(`Lane Pilot docs worktree for ${place.path} not created (${created.reason}); the pass works in the checkout`);
+      return place;
+    }
+    await bb.storage.kv.set(key,{path:created.path});
+    return {hostId:place.hostId,path:created.path};
+  }
+
+  /** Merges the docs worktree's commits into the project checkout under the writers' merge lock; null when there is no worktree. */
+  async function mergeDocs(basePath:string,work:{hostId:string;path:string},message:string):Promise<string|null> {
+    if(resolve(work.path)===resolve(basePath)) return null;
+    const result=await host.call("gitIntegrate",{requestedHostId:work.hostId,basePath,worktreePath:work.path,message,committedOnly:true},{hostId:work.hostId,timeoutMs:300_000})
+      .catch((cause)=>({status:"failed" as const,reason:cause instanceof Error?cause.message:String(cause),conflicts:[] as string[]}));
+    if(result.status==="conflict"||result.status==="failed") bb.log.warn(`Lane Pilot docs merge into ${basePath} ${result.status}: ${result.reason ?? ""}${result.conflicts.length?` (${result.conflicts.join(", ")})`:""}`);
+    return result.status;
   }
 
   async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string;catchUp?:boolean}={}):Promise<Array<Record<string,unknown>>> {
@@ -211,6 +252,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           const open=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
           await bb.storage.kv.set(DOCS_OPEN_KEY,{...open,[stateKey]:{projectId:project.id,path:place.path,date:scope.localDate}});
           try{
+          // The agents write, check and commit in the place's docs worktree; main sees only merged commits.
+          const work=await docsWorktree(place);
           const own=scope.workspaces.filter((workspace)=>workspace.codeFiles>=WORKSPACE_DOCS_MIN_FILES);
           const workspaces=scope.workspaces.map((workspace)=>({path:workspace.path,name:workspace.name,docsDir:own.includes(workspace)?`${workspace.path}/docs`:null}));
           const units:DocsUnit[]=[...own.map((workspace)=>({docsDir:`${workspace.path}/docs`,workspace:{path:workspace.path,name:workspace.name}})),
@@ -222,25 +265,25 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           // Scan first: every unit with work gets its code map built now, all at once, and the flows are traced beside
           // them, so each agent starts on a finished map instead of waiting for Jev in turn.
           const prefetch=new Map<string,Promise<unknown>>();
-          const titled=(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:units.map((unit)=>unit.docsDir),skipOversized:true},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null))?.pages??[];
+          const titled=(await host.call("listDocsPages",{requestedHostId:work.hostId,projectCwd:work.path,roots:units.map((unit)=>unit.docsDir),skipOversized:true},{hostId:work.hostId,timeoutMs:120_000}).catch(()=>null))?.pages??[];
           await Promise.all(units.map(async(unit)=>{
             const workspace=unit.workspace;
-            const unitScope=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs,docsDir:unit.docsDir,...(opts.base?{base:opts.base}:{})},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null);
+            const unitScope=await host.call("gitDocsScope",{requestedHostId:work.hostId,projectCwd:work.path,sinceEpochMs,docsDir:unit.docsDir,...(opts.base?{base:opts.base}:{})},{hostId:work.hostId,timeoutMs:120_000}).catch(()=>null);
             if(!unitScope||unitScope.status!=="ready") return;
             const changed=unitScope.changed.filter((path)=>workspace?path.startsWith(`${workspace.path}/`):true);
             if(unitScope.hasDocs&&!changed.length&&!unitScope.dirty.some(unitWritable(unit))) return;
             // A unit resuming from saved progress already has its map.
-            if(await bb.storage.kv.get(docsUnitRecordKey(project.id,place.path,unit.docsDir)).catch(()=>null)) return;
+            if(await bb.storage.kv.get(docsUnitRecordKey(project.id,work.path,unit.docsDir)).catch(()=>null)) return;
             const pages=titled.filter((page)=>page.path.startsWith(`${unit.docsDir}/`)&&!isDocsIndex(page.path))
               .map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}));
-            prefetch.set(unit.docsDir,host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix:workspace?`${workspace.path}/`:"",
-              ...(workspace?{}:{exclude:own.map((item)=>item.path),...(workspaces.length?{workspaces}:{})}),pages:pages.slice(0,500)},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null));
+            prefetch.set(unit.docsDir,host.call("docsAnchors",{requestedHostId:work.hostId,projectCwd:work.path,prefix:workspace?`${workspace.path}/`:"",
+              ...(workspace?{}:{exclude:own.map((item)=>item.path),...(workspaces.length?{workspaces}:{})}),pages:pages.slice(0,500)},{hostId:work.hostId,timeoutMs:1_800_000}).catch(()=>null));
           }));
           const flowPagesAtStart=titled.filter((page)=>page.path.startsWith("docs/flows/"));
-          const tracing=host.call("docsFlows",{requestedHostId:place.hostId,projectCwd:place.path,workspaces:workspaces.map((workspace)=>({path:workspace.path,name:workspace.name})),
+          const tracing=host.call("docsFlows",{requestedHostId:work.hostId,projectCwd:work.path,workspaces:workspaces.map((workspace)=>({path:workspace.path,name:workspace.name})),
             keep:[...new Set(flowPagesAtStart.map((page)=>/^docs\/flows\/([^/]+)\.md$/.exec(page.path)?.[1]).filter((slug):slug is string=>Boolean(slug)))]},
-            {hostId:place.hostId,timeoutMs:1_800_000}).catch((cause)=>{ bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
-          const context={projectId:project.id,place,settings,docs,base:opts.base,roots:units.map((unit)=>unit.docsDir),exclude:own.map((workspace)=>workspace.path),workspaces,prefetch,
+            {hostId:work.hostId,timeoutMs:1_800_000}).catch((cause)=>{ bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
+          const context={projectId:project.id,place:work,basePath:place.path,settings,docs,base:opts.base,roots:units.map((unit)=>unit.docsDir),exclude:own.map((workspace)=>workspace.path),workspaces,prefetch,
             othersWritable:(path:string,self:DocsUnit)=>leftover.has(path)||[...running,...docsUnitsFinishing.values()].some((unit)=>unit!==self&&unitWritable(unit)(path))};
           const run=async(unit:DocsUnit)=>{
             running.add(unit);
@@ -265,6 +308,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           await pool([...flowUnits]);
           const root=units.at(-1)!;
           await run(flowUnits.length?{...root,flows:flowUnits.map((unit)=>unit.flow!.slug)}:root);
+          // A unit whose merge found main busy is in the worktree's history; this merges what is still missing.
+          await mergeDocs(place.path,work,`docs: nightly refresh ${scope.localDate}`);
           await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:true,failed:results.slice(firstResult).filter((row)=>row.state==="failed").length});
           } finally { docsPassesRunning.delete(place.path); }
           });
@@ -279,7 +324,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   }
 
   /** One docs folder of a place: its own git scope, code map, agent, checks, builders and commit. */
-  async function runDocsUnit(ctx:{projectId:string;place:{hostId:string;path:string};settings:Record<string,unknown>;docs:ReturnType<typeof parseDocsSettings>;base?:string;
+  async function runDocsUnit(ctx:{projectId:string;place:{hostId:string;path:string};basePath?:string;settings:Record<string,unknown>;docs:ReturnType<typeof parseDocsSettings>;base?:string;
     roots:string[];exclude:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;prefetch:Map<string,Promise<unknown>>;
     othersWritable:(path:string,self:DocsUnit)=>boolean},unit:DocsUnit):Promise<Record<string,unknown>> {
     const {place,settings,docs}=ctx;
@@ -295,7 +340,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     // Jev's staleness check picks the root pages a change actually makes wrong.
     const inUnit=(path:string)=>flow?flowFiles.has(path):prefix?path.startsWith(prefix):true;
     const label=flow?`docs/flows/${flow.slug}.md`:d;
-    const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:ctx.projectId,path:place.path,docsDir:label,state,...extra});
+    const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:ctx.projectId,path:ctx.basePath??place.path,docsDir:label,state,...extra});
     const gitScope=(base?:string)=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),docsDir:label,
       ...(unit.flows?.length?{exclude:["docs/flows"]}:{}),...(base?{base}:{})},{hostId:place.hostId,timeoutMs:120_000});
     const before=await gitScope(ctx.base);
@@ -370,7 +415,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
       pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
     // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
-    const record:DocsUnitRecord={version:1,projectId:ctx.projectId,place,label,unit,threadId,phase:"writing",beforeDirty:before.dirty,localDate:before.localDate,
+    const record:DocsUnitRecord={version:1,projectId:ctx.projectId,place,...(ctx.basePath&&ctx.basePath!==place.path?{basePath:ctx.basePath}:{}),label,unit,threadId,phase:"writing",beforeDirty:before.dirty,localDate:before.localDate,
       since:docs.since,roots:ctx.roots,workspaces:ctx.workspaces,hasDocs,changedCount:changed.length,refresh,gaps,
       anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,core:core.slice(0,2000),kvKey};
     await saveDocsUnitRecord(record);
@@ -437,7 +482,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     docsUnitsFinishing.set(key,unit);
     try{
       const d=unit.docsDir, flow=unit.flow, writable=unitWritable(unit);
-      const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:record.projectId,path:place.path,docsDir:label,state,...extra});
+      const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:record.projectId,path:record.basePath??place.path,docsDir:label,state,...extra});
       const gitScope=()=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(record.since,new Date()),docsDir:label,
         ...(unit.flows?.length?{exclude:["docs/flows"]}:{})},{hostId:place.hostId,timeoutMs:120_000});
       let oversized:string[]=[];
@@ -511,7 +556,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction"||finding.rule==="depth"||finding.rule==="links-external";
       const warnings=checked.findings.filter(judged);
       checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};
-      let commit:string|null=null;
+      let commit:string|null=null, merged:string|null=null;
       // Every page of this folder passed the checks, so pages an earlier pass left uncommitted go in too; code never does.
       if(!checked.findings.length&&checked.docsDirty.length){
         // Builders own what the model must not write: Referenced by blocks, verified confidence, the index.
@@ -547,13 +592,14 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           paths:[...new Set([...checked.docsDirty,...rebuilt,...(flow?[]:[index])])],message:`docs${unit.workspace?`(${unit.workspace.path})`:flow?`(flow ${flow.slug})`:""}: ${record.hasDocs?"nightly refresh":"onboarding"} ${record.localDate}`},{hostId:place.hostId,timeoutMs:120_000});
         if(committed.status==="failed") throw new Error(`docs commit failed: ${committed.reason}`);
         commit=committed.commit;
+        if(record.basePath) merged=await mergeDocs(record.basePath,place,`docs${unit.workspace?`(${unit.workspace.path})`:flow?`(flow ${flow.slug})`:""}: ${record.hasDocs?"nightly refresh":"onboarding"} ${record.localDate}`);
       }
       const failure=checked.findings.length?`${checked.findings.length} docs checks still fail after one repair round`:null;
       const row=report(failure?"failed":"passed",{threadId,onboarding:!record.hasDocs,changedCode:record.changedCount,refreshed:record.refresh,gaps:record.gaps,anchors:record.anchors,
-        docsWritten:checked.touched.filter(writable),commit,...(reverted.length?{reverted}:{}),...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
+        docsWritten:checked.touched.filter(writable),commit,...(merged?{merged}:{}),...(reverted.length?{reverted}:{}),...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
       await bb.storage.kv.set(record.kvKey,{...row,at:Date.now()});
       await dropDocsUnitRecord(record);
-      bb.log.info(`Lane Pilot nightly docs ${row.state} for ${place.path} ${label}`);
+      bb.log.info(`Lane Pilot nightly docs ${row.state} for ${record.basePath??place.path} ${label}${merged?` (merge ${merged})`:""}`);
       return row;
     }catch(cause){
       // The agent's thread failed or its work cannot be checked: the unit is done for tonight, its pages stay pending.

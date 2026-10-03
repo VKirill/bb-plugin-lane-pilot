@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.101 — 2026-10-03
+
+- **A sub-agent's turn no longer ends a wait.** Codex reports its sub-agents' turns on the parent thread (with `parentToolCallId`); Lane Pilot counted them, so a docs agent's sub-agent closed as «interrupted» failed the whole unit while the agent kept writing in the project checkout. Its pages stayed uncommitted, a deploy found the tree dirty, and the interrupted sub-agent's git left `.git/index.lock` behind (SelfyStudio, 02:21 UTC). Applies to every wait on a child thread, writers included.
+- **Nightly docs work in their own worktree.** Each place's pass runs in Lane Pilot's git worktree on `lane/docs-<hash>` (`~/.lane-pilot/worktrees/`), fresh from main for each pass; every checked commit is merged into the project checkout under the writers' merge lock, committed pages only. The checkout is no longer dirty or busy for hours. A pass that broke off keeps its worktree while units have saved progress; without a worktree it runs in place as before. `withBaseLock` takes the lock in the checkout's own git directory (`.git` is a file in a worktree), and a merge of markdown no longer rebuilds packages.
+- **Two writer fallback models.** When the writer's model fails for reasons outside the task (a spent limit, a provider error, a model missing from the catalog), fallback 1 takes the task, then fallback 2, then the PM's model as before. Defaults: GLM 5.3 Flash (`acp-opencode` · `zai-coding-plan/glm-5.3-flash`, high) and Gemini 3.8 high (`acp-opencode` · `router9/ag/gemini-3.8-flash-high`); each can be changed or turned off under «Модель исполнителя» (`save_writer_fallback_selection`). A fallback that cannot start hands over to the next.
+
+Verified live: a sandbox docs pass wrote in its worktree while the checkout stayed clean and merged one commit (7 files, +62/−33); a sandbox writer with a missing model was taken by GLM 5.3 Flash and accepted; the settings controls at 1280 and 390 px.
+
 ## 0.1.100 — 2026-10-03
 
 - **Helpers no longer wake the PM.** BB sent the whole output of every finished child thread into its parent as a new turn: one SelfyStudio PM chat got 52 (16 plan critiques, 16 large-file readers, 15 writers, 4 memory passes, 1 specialist), and in a sandbox an owner message that arrived in the same turn went unanswered. Lane Pilot watches these helpers itself, so they now spawn with `experimental_vkQuietChild: true` in their plugin metadata, and VK core `quiet-child` (runtime vk.16) keeps their turns from waking the parent. The PM, errands and specialists stay as before: the PM waits for those. Older core stores the key and ignores it.
