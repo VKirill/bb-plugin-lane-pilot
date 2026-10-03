@@ -68,6 +68,37 @@ export async function cleanupRunEnvironments(bb: BbPluginApi, db: ReturnType<typ
   return removed;
 }
 
+const ENVIRONMENT_GRACE_MS = 30 * 60 * 1000;
+
+/**
+ * Attempt worktrees of an open run whose attempts all ended at least 30 minutes ago: archived and deleted the same way
+ * as on run close. A Lane chat keeps its run open for days, and every attempt got its own BB worktree (≈2 GB in
+ * SelfyStudio): 110 of them filled the OVH disk on 2026-10-03 and the host went offline («Host is not connected»).
+ * The run's own workspace and any worktree an unfinished attempt uses are left alone.
+ */
+export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, now = Date.now()): Promise<string[]> {
+  const rows = db.prepare(`SELECT a.environment_id AS environmentId, a.run_id AS runId FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE a.environment_id IS NOT NULL AND a.environment_id IS NOT r.writer_environment_id
+    GROUP BY a.environment_id
+    HAVING SUM(CASE WHEN a.state IN ('accepted','blocked','canceled') THEN 0 ELSE 1 END)=0 AND MAX(a.updated_at)<?`).all(now - ENVIRONMENT_GRACE_MS) as Array<{ environmentId: string; runId: string }>;
+  const removed: string[] = [];
+  for (const { environmentId, runId } of rows) {
+    const environment = await bb.sdk.environments.get({ environmentId }).then((value) => value as unknown, (cause: unknown) => (isGone(cause) ? null : undefined));
+    if (environment === null) continue;
+    if (environment !== undefined && valueAt(environment, "lifecycle") && stringAt(valueAt(environment, "lifecycle"), "phase") !== "active") continue;
+    try {
+      await bb.sdk.environments.archiveThreads({ environmentId });
+      await bb.sdk.environments.delete({ environmentId }).catch((cause: unknown) => {
+        if (!/cannot be deleted while ready/i.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
+      });
+      removed.push(environmentId);
+    } catch (cause) {
+      bb.log.warn(`Lane Pilot could not remove environment ${environmentId} of ${runId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+  return removed;
+}
+
 export async function finishRunSafely(
   bb: BbPluginApi,
   db: ReturnType<typeof openDatabase>,

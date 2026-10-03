@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.102 — 2026-10-03
+
+- **Worktrees of finished attempts are released while the run is open.** Every writer attempt gets its own BB worktree (≈2 GB in SelfyStudio); they were archived and deleted only when the run closed, and a Lane chat keeps its run open for days. 110 of them (220 GB) filled the OVH disk, and the host went offline: «Lane Pilot: Host is not connected». Every 10 minutes and at start, a worktree whose attempts all ended over 30 minutes ago is archived with its threads and deleted; the run's own workspace and anything an unfinished attempt uses stay. First pass on the hub: 92 released.
+
 ## 0.1.101 — 2026-10-03
 
 - **A sub-agent's turn no longer ends a wait.** Codex reports its sub-agents' turns on the parent thread (with `parentToolCallId`); Lane Pilot counted them, so a docs agent's sub-agent closed as «interrupted» failed the whole unit while the agent kept writing in the project checkout. Its pages stayed uncommitted, a deploy found the tree dirty, and the interrupted sub-agent's git left `.git/index.lock` behind (SelfyStudio, 02:21 UTC). Applies to every wait on a child thread, writers included.
