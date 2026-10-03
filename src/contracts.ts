@@ -385,6 +385,21 @@ export const hostContract = defineRpcContract({
       stderr: z.string(),
     }).strict(),
   },
+  // One goal in the owner's own Chrome on the browser machine through jev-ultrafast (the computer-use runner).
+  browserGoal: {
+    input: z.object({
+      requestedHostId: z.string().min(1),
+      url: z.string().url(),
+      goal: z.string().min(1).max(2000),
+      timeoutSec: z.number().int().min(10).max(600).optional(),
+    }).strict(),
+    output: z.object({
+      hostId: z.string(), exitCode: z.number().int(), status: z.string(), url: z.string().nullable(), actions: z.number().int().nullable(),
+      // The visible text of the page it reached (jev keeps up to 6000 characters); null from an older launcher.
+      title: z.string().nullable(), text: z.string().nullable(),
+      log: z.string(),
+    }).strict(),
+  },
   runSandboxedCommand: {
     input:z.object({
       requestedHostId:z.string().min(1),workspacePath:z.string().startsWith("/"),cwd:z.string().startsWith("/"),

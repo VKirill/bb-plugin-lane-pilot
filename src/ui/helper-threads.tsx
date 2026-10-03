@@ -14,6 +14,7 @@ const ROLES: Record<string, { icon: IconName; label: I18nKey }> = {
   "emergency-writer": { icon: "Code", label: "helperRole_writer" },
   specialist: { icon: "UserRoundPlus", label: "helperRole_specialist" },
   "browser-qa": { icon: "Target", label: "helperRole_browserQa" },
+  "errand": { icon: "Send", label: "helperRole_errand" },
   "council-seat": { icon: "MessageSquare", label: "helperRole_council" },
   "plan-critic": { icon: "ListTodo", label: "helperRole_planCritic" },
   "code-critic": { icon: "Bug", label: "helperRole_codeCritic" },

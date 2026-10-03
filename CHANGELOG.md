@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.98 — 2026-10-03
+
+The PM can get work outside the code done. In thr_wb4dsw4usn it could not open Google Cloud Console nor look for a mail account: its shell may not drive the browser or read Env Catalog, and its only delegate edits code — so it sent the owner to click by hand.
+- **`lane_pilot_browser`** — one goal in the owner's signed-in Chrome on the Browser QA machine through jev-ultrafast (the computer-use launcher), in seconds; returns the final URL, status and the visible text of the page it ends on (the toolkit launcher now prints jev's page text). A new host call `browserGoal` runs the launcher without a shell (the goal is an argument) and asynchronously. Goals that change anything need `changes: true` and `authorized: true`, given only when the owner asked for that change.
+- **`lane_pilot_errand` / `lane_pilot_wait_errand`** — a helper thread for reading pages, several steps, recordings, mail or accounts. Role `errand` loads the browser-automation and Env Catalog plugins and the browser-automation, computer-use and env-catalog skills, nothing for code; it reports and ends with `ERRAND: done | blocked`.
+- **Guard (Lane Stack copy).** The PM may run `bb env-catalog list` and `request` (names, not values); a denied `bb` command names lane_pilot_browser and lane_pilot_errand.
+- Browser and errand work from any Lane Pilot PM chat, also after its run closed (they need the chat, not open writer work).
+- The Browser QA machine is set once for all projects (global setting `browser_qa.host_id` = the Mac mini).
+- PM instructions say when to use each. Verified live: a sandbox PM read the OAuth scopes of the OhMySEO Google Cloud project — `lane_pilot_browser` reached the page, then an errand read all three tables with screenshots.
+
 ## 0.1.97 — 2026-10-03
 
 Writers get the rules their task needs. Measured on 75 SelfyStudio task contracts and 11 rules, each pair labelled by a separate reviewer, System One asked three times per task.

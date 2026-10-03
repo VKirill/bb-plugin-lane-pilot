@@ -35,6 +35,7 @@ const ROLE_TITLES: Record<string, string> = {
   "night-reviewer": "Lane Pilot night review",
   "night-fixer": "Lane Pilot night fix",
   "gate-triage": "Lane Pilot gate triage",
+  errand: "Lane Pilot errand",
 };
 
 export function helperThreadTitle(role: string, taskTitle?: string): string {

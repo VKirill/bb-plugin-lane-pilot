@@ -18,6 +18,7 @@ import { scanCritiqueCoverage } from "./stages/critique-coverage";
 import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "./verification/sandbox";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "./verification/git-ownership";
 import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
+import { execFile } from "node:child_process";
 import { discoverClaudeAgents, prepareNativeClaude } from "./native-claude-host";
 import {
   connectOpencodeStack,
@@ -566,3 +567,42 @@ export const snapshotDryRun: ExperimentalHostRpcHandlers<typeof hostContract>["s
     }
   })),
 });
+
+
+/**
+ * One browser goal through the jev-ultrafast runner, without a shell: the goal is an argument, never shell text.
+ * The runner prints its steps and, last, one JSON line {status,url,actions}. Asynchronous, so the host worker keeps
+ * serving writer checks while Chrome works.
+ */
+export const browserGoal: ExperimentalHostRpcHandlers<typeof hostContract>["browserGoal"] = async (input) => {
+  // The computer-use launcher of this machine: LANE_PILOT_JEV_RUNNER, else the BB-сервис toolkit checkout.
+  const candidates = process.env.LANE_PILOT_JEV_RUNNER ? [process.env.LANE_PILOT_JEV_RUNNER] : [join(homedir(), "Documents", "BB-сервис", "toolkit", "computer-use", "bin", "run")];
+  let runner: string | null = null;
+  for (const path of candidates) { if (await lstat(path).then(() => true, () => false)) { runner = path; break; } }
+  if (!runner) return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, exitCode: 127, status: "no_runner", url: null, actions: null, title: null, text: null, log: `jev-ultrafast launcher not found; looked at ${candidates.join(", ")}` };
+  const timeoutMs = (input.timeoutSec ?? 180) * 1000;
+  const env = { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].filter(Boolean).join(":") };
+  const { code, out } = await new Promise<{ code: number; out: string }>((resolveRun) => {
+    execFile(runner, ["browser", "--url", input.url, "--goal", input.goal], { env, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
+      const status = error && typeof (error as { code?: unknown }).code === "number" ? (error as { code: number }).code : error ? 1 : 0;
+      resolveRun({ code: status, out: `${stdout ?? ""}${stderr ? `\n${stderr}` : ""}${error && !stdout ? `\n${error.message}` : ""}` });
+    });
+  });
+  let parsed: { status?: unknown; url?: unknown; actions?: unknown; title?: unknown; text?: unknown } = {};
+  for (const line of out.trim().split("\n").reverse()) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try { parsed = JSON.parse(trimmed) as typeof parsed; break; } catch { continue; }
+  }
+  return {
+    hostId: process.env.BB_HOST_ID ?? input.requestedHostId,
+    exitCode: code,
+    status: typeof parsed.status === "string" ? parsed.status : code === 0 ? "unknown" : "error",
+    url: typeof parsed.url === "string" ? parsed.url : null,
+    actions: typeof parsed.actions === "number" ? parsed.actions : null,
+    title: typeof parsed.title === "string" ? parsed.title : null,
+    text: typeof parsed.text === "string" ? parsed.text : null,
+    // The steps only; the final JSON line (with the page text) is returned above, not twice.
+    log: out.split("\n").filter((line) => !line.trim().startsWith("{")).join("\n").slice(-2000),
+  };
+};

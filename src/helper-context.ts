@@ -75,7 +75,7 @@ export type HelperRole =
   | "writer" | "code-repair" | "night-fixer"
   | "plan-critic" | "code-critic" | "specialist-reviewer" | "night-reviewer" | "gate-triage" | "pm-reader"
   | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
-  | "browser-qa" | "council-seat" | "rules-analyzer"
+  | "browser-qa" | "errand" | "council-seat" | "rules-analyzer"
   | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily";
 
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
@@ -96,6 +96,9 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "memory-maintainer": { bbPlugins: [], skills: ["lane-memory", "memory-discipline"], mcpServers: [] },
   "project-life": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
   "browser-qa": { bbPlugins: ["browser-automation"], skills: ["browser-automation", "browser-qa"], mcpServers: [] },
+  // A PM's errand outside the code: a console, a mailbox, a recording. The browser on the browser machine, the fast
+  // jev-ultrafast loop (computer-use) and Env Catalog for the accounts it needs; no code skills.
+  "errand": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "computer-use", "env-catalog"], mcpServers: [] },
   "council-seat": READER,
   "rules-analyzer": READER,
   "specialist:design-lead": { bbPlugins: [], skills: ["ui-ux-pro-max", "project-design", "project-onboard", "web-design", "design-taste", "impeccable-ui", "page-prototype"], mcpServers: [] },

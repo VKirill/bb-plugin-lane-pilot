@@ -1,3 +1,4 @@
+import { mountErrands } from "./errands";
 import { LANE_PILOT_READ_NAME } from "../bounded-read";
 import { taskV2Schema } from "../contracts";
 import { getRun, getRunSettingsScopes, loadProjectSettings, loadPrototypeConfig } from "../database";
@@ -218,6 +219,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountMemorySync(ctx);
   mountCouncilTools(ctx, services.council);
   mountSpecialists(ctx);
+  mountErrands(ctx);
   mountRelay(ctx);
   mountSelfRepair(ctx);
 

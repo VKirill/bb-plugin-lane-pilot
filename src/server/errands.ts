@@ -1,0 +1,149 @@
+import { observeStageChild } from "@lane-pilot/thread-observe";
+import { z } from "zod";
+import { findOpenNativeRun, getRun, getRunSettingsScopes, loadProjectSettings } from "../database";
+import { writerExecutionSelection } from "../jev-reasoning";
+import { QA_HOST_KEY } from "../qa-host";
+import { configuredSetting } from "./context";
+import { fullAccessSpawn } from "./pm-spawn";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";
+import { stringAt } from "./values";
+import { outputText } from "./writer-task";
+import type { ServerCore } from "./core";
+
+const ERRAND_MODEL = "claude-opus-5-5";
+const WAIT_STEP_MS = 5_000;
+
+/**
+ * Work a PM is asked for that is not a code change: a cloud console, a mailbox, a screen recording. Before this a
+ * PM had no way to do it — its shell may not drive the browser and its only delegate, the writer, edits code in a
+ * worktree — so it sent the owner to click through Google Cloud Console by hand (thr_wb4dsw4usn, 2026-10-03).
+ */
+export function errandPrompt(input: { task: string; browserHostId: string | null; authorized: boolean }): string {
+  const browser = input.browserHostId
+    ? [
+      `- The owner's own Chrome, signed in to their accounts, is on machine ${input.browserHostId}.`,
+      "  Fast path for one clear browser goal (seconds): the computer-use launcher (skill computer-use: `.../toolkit/computer-use/bin/run --remote browser --url '<url>' --goal '<goal>'`). It prints the final URL and a status, not the page text; `DONE` is not proof — check the URL. It cannot use iframes, uploads or new tabs.",
+      `  To read a page, see it, record it or do several steps: \`bb browser-automation open --backend desktop --machine ${input.browserHostId} --json\` (skill browser-automation), snapshots and screenshots as proof; close the session at the end.`,
+    ].filter(Boolean)
+    : ["- No browser machine is set for this project (Browser QA machine in Lane Pilot settings); say so if the task needs a browser."];
+  return [
+    "You are a Lane Pilot errand helper. The PM of this project hands you a task that is not a code change. Do it end to end.",
+    "",
+    "<task>",
+    input.task,
+    "</task>",
+    "",
+    input.authorized
+      ? "The owner asked for this in their own words, including the changes it makes; make them, and only those."
+      : "Read and report only: do not change, submit, send, pay, delete or publish anything. If the task needs a change, stop and say which.",
+    "",
+    "What you have:",
+    ...browser,
+    "- Accounts and keys: Env Catalog (skill env-catalog: env_list, then env_get with the exact name). Never print a secret. If an account is missing, env_request it and stop.",
+    "- Do not edit this project's code; code changes go back to the PM.",
+    "",
+    "Finish with what you did, what you saw (exact values, URLs, quotes), and proof (screenshot paths or the final URL). The very last line: ERRAND: done | blocked: <why>",
+  ].join("\n");
+}
+
+export function mountErrands(ctx: ServerCore): void {
+  const { bb, db, host } = ctx;
+
+  function browserSetup(projectId: string, runId: string | null) {
+    const settings = loadProjectSettings(db, projectId, runId ? getRunSettingsScopes(db, runId) : []);
+    const hostId = configuredSetting(settings, QA_HOST_KEY);
+    return { hostId: typeof hostId === "string" && hostId.trim() ? hostId.trim() : null };
+  }
+
+  // The run gives settings scopes and helper placement; an errand needs a PM chat, not open writer work, so the
+  // chat's latest run serves even after it closed (a sandbox PM closes its run right after the accepted writer).
+  function openRun(projectId: string, pmThreadId: string): string {
+    const open = findOpenNativeRun(db, projectId, pmThreadId);
+    const runId = open ?? (db.prepare("SELECT id FROM lane_pilot_run WHERE project_id=? AND pm_thread_id=? ORDER BY created_at DESC LIMIT 1")
+      .get(projectId, pmThreadId) as { id: string } | undefined)?.id;
+    if (!runId || !getRun(db, runId)) throw new Error("errand_needs_pm_chat: call this from a Lane Pilot PM chat");
+    return runId;
+  }
+
+  bb.agents.registerTool({
+    name: "lane_pilot_browser",
+    description: "Do one goal in the owner's signed-in Chrome on the browser machine (the Mac mini) through jev-ultrafast, in seconds, and read the page it ends on.",
+    instructions: "Use from a Lane Pilot PM chat for one clear browser step: open a page and read it, reach a state, click through a console form. Returns the final URL, a status (done, blocked, error) and the visible text of the final page (up to 6000 characters) — check the text, `done` alone is not proof. For long pages, many steps, screenshots, recordings or accounts use lane_pilot_errand. `changes: true` when the goal changes, submits, deletes, pays or publishes anything; then `authorized: true` is required and allowed only when the owner asked for exactly that change in this chat. Not for iframes, uploads or new tabs.",
+    parameters: z.object({
+      url: z.string().url(),
+      goal: z.string().min(4).max(2000),
+      changes: z.boolean(),
+      authorized: z.boolean().default(false),
+      timeoutSec: z.number().int().min(10).max(600).default(180),
+    }).strict(),
+    execute: async (params, context) => {
+      if (!context.threadId || !context.projectId) throw new Error("browser_needs_pm_thread");
+      const runId = openRun(context.projectId, context.threadId);
+      if (params.changes && !params.authorized) {
+        return JSON.stringify({ status: "refused", reason: "changes_need_owner_authorization: ask the owner, then pass authorized=true" });
+      }
+      const setup = browserSetup(context.projectId, runId);
+      if (!setup.hostId) return JSON.stringify({ status: "refused", reason: `no_browser_machine: set ${QA_HOST_KEY} (Browser QA machine) in Lane Pilot settings` });
+      const goal = params.changes ? params.goal : `${params.goal}\nRead-only: do not submit, change, delete, pay or publish anything.`;
+      const result = await host.call("browserGoal", { requestedHostId: setup.hostId, url: params.url, goal, timeoutSec: params.timeoutSec },
+        { hostId: setup.hostId, timeoutMs: (params.timeoutSec + 30) * 1000 });
+      bb.log.info(`browser goal on ${setup.hostId}: ${result.status} ${result.url ?? ""} (${result.actions ?? "?"} actions)`);
+      return JSON.stringify(result, null, 2);
+    },
+  });
+
+  bb.agents.registerTool({
+    name: "lane_pilot_errand",
+    description: "Hand a non-code task to a helper thread: a cloud console in the owner's browser, a mailbox, a screen recording, an account in Env Catalog.",
+    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` only when the owner asked in this chat for the changes the task makes (console settings, sending, deleting); otherwise the helper only reads and reports. Returns at once with the thread; call lane_pilot_wait_errand with its threadId, again while it is running, and show the owner the @thread link.",
+    parameters: z.object({
+      task: z.string().min(10).max(20_000),
+      title: z.string().min(1).max(120).optional(),
+      authorized: z.boolean().default(false),
+    }).strict(),
+    execute: async (params, context) => {
+      if (!context.threadId || !context.projectId) throw new Error("errand_needs_pm_thread");
+      const runId = openRun(context.projectId, context.threadId);
+      const pm = await bb.sdk.threads.get({ threadId: context.threadId });
+      const environmentId = stringAt(pm, "environmentId");
+      if (!environmentId) throw new Error("errand_needs_pm_environment");
+      const setup = browserSetup(context.projectId, runId);
+      const helperPolicy = requireHelperSpawn({ bb, db, projectId: context.projectId, runId });
+      const placement = await helperChildPlacement({ bb, db, projectId: context.projectId, runId, role: "errand", taskTitle: params.title ?? params.task.slice(0, 60) });
+      const spawned = await fullAccessSpawn(bb, {
+        ...placement,
+        ...requiredPolicyField(bb, helperPolicy, "claude-code", "errand"),
+        ...writerExecutionSelection("claude-code", ERRAND_MODEL, "high", null),
+        prompt: errandPrompt({ task: params.task, browserHostId: setup.hostId, authorized: params.authorized }),
+        environment: { type: "reuse", environmentId },
+        pluginMetadata: { role: "errand", lanePilotRunId: runId, parentPmThreadId: context.threadId, helperMode: helperPolicy.mode },
+      } as Parameters<typeof fullAccessSpawn>[1]);
+      const threadId = stringAt(spawned, "id");
+      if (!threadId) throw new Error("errand_thread_id_missing");
+      return JSON.stringify({ threadId, state: "running", browserMachine: setup.hostId, link: `@thread:${threadId}` }, null, 2);
+    },
+  });
+
+  bb.agents.registerTool({
+    name: "lane_pilot_wait_errand",
+    description: "Wait for an errand thread started with lane_pilot_errand and return its report.",
+    instructions: "Call with the threadId from lane_pilot_errand (timeoutSec at most 240). While state is running, call it again.",
+    parameters: z.object({ threadId: z.string().min(1), timeoutSec: z.number().int().min(5).max(240).default(240) }).strict(),
+    execute: async (params) => {
+      const deadline = Date.now() + params.timeoutSec * 1000;
+      let detail = "";
+      while (Date.now() < deadline && !ctx.isDisposed()) {
+        const observed = await observeStageChild(bb, params.threadId, Math.min(WAIT_STEP_MS, Math.max(1, deadline - Date.now())));
+        if (observed.kind === "completed") {
+          const raw = (await bb.sdk.threads.output({ threadId: params.threadId })).output;
+          const output = typeof raw === "string" ? raw : outputText(raw);
+          const verdict = /ERRAND:\s*(done|blocked[^\n]*)\s*$/i.exec(output.trim())?.[1] ?? "done";
+          return JSON.stringify({ threadId: params.threadId, state: verdict.toLowerCase().startsWith("blocked") ? "blocked" : "done", output }, null, 2);
+        }
+        if (observed.kind === "product_failure") return JSON.stringify({ threadId: params.threadId, state: "failed", output: `${observed.via}: ${observed.detail}` });
+        detail = observed.detail;
+      }
+      return JSON.stringify({ threadId: params.threadId, state: "running", output: detail });
+    },
+  });
+}
