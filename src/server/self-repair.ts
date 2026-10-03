@@ -81,9 +81,12 @@ const NOT_A_FAULT = /needs_human|depends_on/i;
 export const VERSION: string = packageJson.version;
 /** When this code was loaded: a failure before it may be what this release fixed. */
 const LOADED_AT = Date.now();
-/** Plugin log lines that report Lane Pilot's own failure; a disconnected or slow machine is not one. */
+/**
+ * Plugin log lines that report Lane Pilot's own failure; a disconnected or slow machine is not one, and neither is a
+ * browser check's verdict on the project («adopted after a reload: failed» is the product failing its check).
+ */
 const LOG_FAILURE = /\bfailed\b|stale API handle|is retired|unhandled|uncaught/i;
-const LOG_NOT_OURS = /^self-repair|writer attempt \S+ failed|writer spawn for \S+ failed|Host is not connected|Timed out waiting for command result|native-trace|reasoning trace|waits for/i;
+const LOG_NOT_OURS = /^self-repair|writer attempt \S+ failed|writer spawn for \S+ failed|Host is not connected|Timed out waiting for command result|native-trace|reasoning trace|waits for|browser check \S+ adopted after a reload/i;
 const LOG_TAIL_BYTES = 1_000_000;
 const REPEAT_AFTER_MS = 86_400_000;
 const FORGET_MS = 30 * 86_400_000;

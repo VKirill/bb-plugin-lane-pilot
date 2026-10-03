@@ -126,6 +126,7 @@ describe("self-repair", () => {
       line(400, "self-repair: started @thread:thr_x for blocked:1:spawn failed"),
       line(500, "writer a waits for b: their owns_paths overlap"),
       line(600, "Lane Pilot writer attempt lpattempt_1 failed: another writer integration holds the base checkout"),
+      line(700, "Lane Pilot browser check gc-qa-free-session.5 adopted after a reload: failed"),
       line(50, "Lane Pilot docs resume failed: old"),
       "not json",
     ].join("\n");

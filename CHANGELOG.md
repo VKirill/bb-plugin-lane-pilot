@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.109 — 2026-10-03
+
+- **A browser check's verdict is not a Lane Pilot failure.** The 0.1.108 start-up adoption logs «Lane Pilot browser check <task> adopted after a reload: failed» when the product failed its check (gc-qa-free-session.5: SelfyStudio's «Выбрать» did nothing for designs the generator lacks). The self-repair watcher read the word «failed» in that line as Lane Pilot's own fault and opened a repair thread; such lines are now skipped like other non-faults.
+
 ## 0.1.108 — 2026-10-03
 
 Self-repair of «stage left open after its task's attempts ended» (SelfyStudio, three tasks, three causes).
