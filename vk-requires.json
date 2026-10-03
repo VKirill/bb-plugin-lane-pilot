@@ -7,6 +7,7 @@
   "optional": [
     "experimental_vkSessionPolicy",
     "experimental_vkRequiredSessionPolicy",
-    "experimental_vkCompiledMainAgent"
+    "experimental_vkCompiledMainAgent",
+    "experimental_vkQuietChild"
   ]
 }

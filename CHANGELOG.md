@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.100 — 2026-10-03
+
+- **Helpers no longer wake the PM.** BB sent the whole output of every finished child thread into its parent as a new turn: one SelfyStudio PM chat got 52 (16 plan critiques, 16 large-file readers, 15 writers, 4 memory passes, 1 specialist), and in a sandbox an owner message that arrived in the same turn went unanswered. Lane Pilot watches these helpers itself, so they now spawn with `experimental_vkQuietChild: true` in their plugin metadata, and VK core `quiet-child` (runtime vk.16) keeps their turns from waking the parent. The PM, errands and specialists stay as before: the PM waits for those. Older core stores the key and ignores it.
+
 ## 0.1.99 — 2026-10-03
 
 The self-repair watcher went silent for 50 min on the hub. BB runs a plugin's schedules one after another and waits for each; `docs-nightly-catchup` and `docs-nightly-hourly` awaited a whole docs pass, so every other schedule waited too.

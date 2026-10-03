@@ -26,6 +26,21 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
  */
 
 export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]) {
-  return bb.sdk.threads.spawn({ ...args, permissionMode:"full",
+  return bb.sdk.threads.spawn({ ...quietHelper(args), permissionMode:"full",
     executionInputSources:{ ...args.executionInputSources, permissionMode:"explicit" } });
+}
+
+/** Children the PM itself waits for or talks to; every other helper is watched by Lane Pilot. */
+const LOUD_ROLES = new Set(["pm", "errand", "specialist", "self-repair"]);
+
+/**
+ * A helper Lane Pilot watches itself (writers, critiques, readers, memory, docs…) is a quiet child: its finished
+ * turn does not wake the PM. Before this BB sent the whole output of each finished helper into the PM as a new turn —
+ * 52 in one SelfyStudio chat — and an owner message that arrived in the same turn went unanswered (2026-10-03).
+ * Needs VK core `quiet-child` (runtime vk.16); older core stores the key and ignores it.
+ */
+export function quietHelper<T extends { parentThreadId?: string | null; pluginMetadata?: Record<string, unknown> }>(args: T): T {
+  const role = args.pluginMetadata?.role;
+  if (!args.parentThreadId || !args.pluginMetadata || (typeof role === "string" && LOUD_ROLES.has(role))) return args;
+  return { ...args, pluginMetadata: { ...args.pluginMetadata, experimental_vkQuietChild: true } };
 }
