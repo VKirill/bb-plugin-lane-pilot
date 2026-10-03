@@ -32,17 +32,22 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
 
   /**
    * System One picks the accepted rules this task needs, so a writer's prompt does not carry every rule of the
-   * project. Without an answer every rule goes in: a missing rule costs more than an extra one.
+   * project. Rules for the PM never reach a writer; rules marked for every task skip the question. Without an
+   * answer every rule of that chunk goes in: a missing rule costs more than an extra one.
    */
-  async function relevantRules<T extends { rule:string }>(rules:T[],task:Record<string,unknown>,hostId:string):Promise<T[]> {
-    if(rules.length===0) return rules;
-    const picked:T[]=[];
-    for(let start=0;start<rules.length;start+=8){
-      const chunk=rules.slice(start,start+8);
-      const judged=await host.call("councilJudge",{requestedHostId:hostId,state:JSON.stringify(ruleRelevanceState(task)).slice(0,60_000),questions:ruleRelevanceQuestions(chunk)},{hostId,timeoutMs:6_000}).catch(()=>null);
-      picked.push(...(judged?.status==="ok"?pickRelevantRules(chunk,judged.answers,judged.confidence??{}):chunk));
-    }
-    return picked;
+  async function relevantRules<T extends { rule:string; audience:string; always:boolean }>(rules:T[],task:Record<string,unknown>,hostId:string):Promise<T[]> {
+    const forWriter=rules.filter((rule)=>rule.audience!=="pm");
+    const asked=forWriter.filter((rule)=>!rule.always);
+    const chunks:T[][]=[];
+    for(let start=0;start<asked.length;start+=8) chunks.push(asked.slice(start,start+8));
+    const state=JSON.stringify(ruleRelevanceState(task)).slice(0,60_000);
+    // Chunks are independent questions; asking them together keeps the wait at one answer (~0.5–1 s).
+    const answered=await Promise.all(chunks.map(async(chunk)=>{
+      const judged=await host.call("councilJudge",{requestedHostId:hostId,state,questions:ruleRelevanceQuestions(chunk)},{hostId,timeoutMs:6_000}).catch(()=>null);
+      return judged?.status==="ok"?pickRelevantRules(chunk,judged.answers,judged.confidence??{},undefined,judged.probabilities??{}):chunk;
+    }));
+    const picked=new Set([...forWriter.filter((rule)=>rule.always),...answered.flat()]);
+    return forWriter.filter((rule)=>picked.has(rule));
   }
 
   async function spawnWriterAttempt(input: {

@@ -510,13 +510,17 @@ export const councilJudge: ExperimentalHostRpcHandlers<typeof hostContract>["cou
     if (!raw || typeof raw !== "object") return { hostId, status:"error", answers:{}, reason:"invalid_response" };
     const answers: Record<string, string> = {};
     const confidence: Record<string, number> = {};
-    for (const [name, answer] of Object.entries(raw as Record<string, { choice?: unknown; confidence?: unknown }>)) {
+    const probabilities: Record<string, Record<string, number>> = {};
+    for (const [name, answer] of Object.entries(raw as Record<string, { choice?: unknown; confidence?: unknown; probabilities?: unknown }>)) {
       if (answer && typeof answer === "object" && typeof answer.choice === "string") {
         answers[name] = answer.choice;
         if (typeof answer.confidence === "number") confidence[name] = answer.confidence;
+        if (answer.probabilities && typeof answer.probabilities === "object") {
+          probabilities[name] = Object.fromEntries(Object.entries(answer.probabilities as Record<string, unknown>).filter(([, value]) => typeof value === "number")) as Record<string, number>;
+        }
       }
     }
-    return { hostId, status:"ok", answers, confidence, reason:null };
+    return { hostId, status:"ok", answers, confidence, probabilities, reason:null };
   } catch (cause) {
     const timeout = cause instanceof Error && cause.name === "TimeoutError";
     return { hostId, status:timeout ? "timeout" : "error", answers:{}, reason:timeout ? "timeout" : "api_request_failed" };

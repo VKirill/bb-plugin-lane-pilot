@@ -14,6 +14,7 @@ type Proposal = {
   decidedBy: "owner" | "auto" | null; trialState: "trial" | "confirmed" | null; revision: number; retiredReason: string | null;
   trial: { applied: number; appliedAccepted: number; recurrences: number } | null;
   scope: string[]; scopeLabel: string;
+  audience: "writer" | "pm" | "both"; always: boolean;
 };
 type Scan = { state: "idle" | "running" | "done" | "failed"; startedAt: number | null; finishedAt: number | null; triaged: number; groups: number; proposals: number; reason: string | null;
   adopted?: number; confirmed?: number; revised?: number; retired?: number };
@@ -118,6 +119,33 @@ export function RuleProposals({ projectId, picker }: {
       {proposal.trial ? <span data-testid={`rule-trial-${proposal.id}`}>{t("rulesApplied")}: {proposal.trial.applied} · {t("rulesRecurred")}: {proposal.trial.recurrences}</span> : null}
     </div>
   );
+  // Who the rule is for: a PM rule never reaches a writer, an «every task» rule skips System One's per-task pick.
+  const setAudience = async (proposal: Proposal, audience: Proposal["audience"], always: boolean) => {
+    // Shown at once; the list reloads from the server either way, so a failed save puts the old value back.
+    setListed((current) => current ? { ...current, proposals: current.proposals.map((row) => row.id === proposal.id ? { ...row, audience, always } : row) } : current);
+    try { await rpc.call("rule_set_audience", { projectId, ruleId: proposal.id, audience, always }); }
+    catch (cause) { toast.error(t("rulesFailed"), { description: cause instanceof Error ? cause.message : String(cause) }); }
+    await load();
+  };
+  const audienceControls = (proposal: Proposal) => (
+    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground" data-testid={`rule-audience-${proposal.id}`}>
+      <label className="flex items-center gap-1">
+        <span>{t("rulesAudience")}:</span>
+        <select className="h-7 rounded-md border border-input bg-background px-1 text-xs text-foreground" value={proposal.audience}
+          data-testid={`rule-audience-select-${proposal.id}`}
+          onChange={(event) => void setAudience(proposal, event.target.value as Proposal["audience"], event.target.value === "pm" ? false : proposal.always)}>
+          {(["writer", "pm", "both"] as const).map((value) => <option key={value} value={value}>{t(`rulesAudience_${value}` as I18nKey)}</option>)}
+        </select>
+      </label>
+      {proposal.audience !== "pm" ? (
+        <label className="flex items-center gap-1" title={t("rulesAlwaysHint")}>
+          <input type="checkbox" checked={proposal.always} data-testid={`rule-always-${proposal.id}`}
+            onChange={(event) => void setAudience(proposal, proposal.audience, event.target.checked)} />
+          <span>{t("rulesAlways")}</span>
+        </label>
+      ) : null}
+    </div>
+  );
   const ruleText = (id: string) => proposals.find((row) => row.id === id)?.rule ?? id;
 
   const evidence = (proposal: Proposal) => proposal.evidence.length > 0 ? (
@@ -181,6 +209,7 @@ export function RuleProposals({ projectId, picker }: {
         {pending.map((proposal) => (
           <div key={proposal.id} className="lp-card max-w-xl space-y-2 p-3" data-testid={`rule-${proposal.id}`}>
             {meta(proposal)}
+            {audienceControls(proposal)}
             <textarea aria-label={t("rulesTitle")} className="min-h-20 w-full rounded-lg border border-[var(--lp-outline)] bg-[var(--lp-card)] p-2 text-sm"
               style={{ overflowWrap: "anywhere" }} maxLength={600} value={drafts[proposal.id] ?? proposal.rule}
               onChange={(event) => setDrafts((current) => ({ ...current, [proposal.id]: event.target.value }))} />
@@ -199,6 +228,7 @@ export function RuleProposals({ projectId, picker }: {
             <div className="min-w-0 space-y-1">
               <p className="text-sm" style={{ overflowWrap: "anywhere" }}>{proposal.rule}</p>
               {meta(proposal)}
+              {audienceControls(proposal)}
               {evidence(proposal)}
             </div>
             <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void decide(proposal, "revoke")}>{t("rulesRevoke")}</Button>

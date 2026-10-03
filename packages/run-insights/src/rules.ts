@@ -75,6 +75,20 @@ export const ruleTrialMigrations: readonly string[] = [
   `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN scope_json TEXT NOT NULL DEFAULT '[]'`,
 ];
 
+/**
+ * 0.1.97 statements, appended last by the host. Who a rule is for and whether it holds for every task: measured on
+ * 75 SelfyStudio tasks (2026-10-03), rules meant for the PM went to almost every writer and a rule for every task
+ * never did, because a per-task relevance question cannot see either; the rule's author states both.
+ */
+export const ruleAudienceMigrations: readonly string[] = [
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN audience TEXT NOT NULL DEFAULT 'writer'`,
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN always_on INTEGER NOT NULL DEFAULT 0`,
+];
+
+/** writer — the agent that edits code for one task; pm — planning, contracts, reviews, merges, deploys; both. */
+export type RuleAudience = "writer" | "pm" | "both";
+export const RULE_AUDIENCES: readonly RuleAudience[] = ["writer", "pm", "both"];
+
 export type RuleProposalState = "proposed" | "accepted" | "rejected" | "revoked";
 export type RuleProposalAuthor = "sweep" | "pm" | "owner" | "model";
 
@@ -113,6 +127,9 @@ export type RuleProposal = {
   retiredReason: string | null;
   /** Section chain the rule applies to, outermost first; empty for the whole project. */
   scope: string[];
+  audience: RuleAudience;
+  /** Given to every writer task without asking System One. */
+  always: boolean;
 };
 
 export function parseScope(json: string | null | undefined): string[] {
@@ -210,6 +227,7 @@ type Row = {
   first_seen_at: number; last_seen_at: number; updated_at: number; decided_at: number | null;
   decided_by: "owner" | "auto" | null; trial_state: "trial" | "confirmed" | null; revision: number; revision_started_at: number | null; retired_reason: string | null;
   scope_json?: string;
+  audience?: RuleAudience; always_on?: number;
 };
 
 function fromRow(row: Row): RuleProposal {
@@ -221,6 +239,7 @@ function fromRow(row: Row): RuleProposal {
     decidedBy: row.decided_by ?? null, trialState: row.trial_state ?? null, revision: row.revision ?? 1,
     revisionStartedAt: row.revision_started_at ?? null, retiredReason: row.retired_reason ?? null,
     scope: parseScope(row.scope_json),
+    audience: row.audience ?? "writer", always: row.always_on === 1,
   };
 }
 
@@ -292,7 +311,7 @@ export const LESSON_PROPOSALS_MAX = 30;
  * instead of a line in .agents/LESSONS.md, which grew without bound (≈150 entries in SelfyStudio, 2026-10-03).
  * A lesson close to a proposed or accepted rule counts as a repeat of it.
  */
-export function upsertLessonProposal(db: RulesDatabase, projectId: string, input: { rule: string; evidence?: string; scope?: readonly string[] }, now = Date.now()):
+export function upsertLessonProposal(db: RulesDatabase, projectId: string, input: { rule: string; evidence?: string; scope?: readonly string[]; audience?: RuleAudience; always?: boolean }, now = Date.now()):
   { id: string; created: boolean; repeatOf: string | null } {
   const rule = clip(input.rule, 600);
   const words = ruleWords(rule);
@@ -307,10 +326,10 @@ export function upsertLessonProposal(db: RulesDatabase, projectId: string, input
   const id = ruleProposalId(signature);
   const examples = input.evidence ? [clip(input.evidence, 300)] : [];
   db.prepare(`INSERT INTO lane_pilot_rule_proposal
-    (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json)
-    VALUES (?,?,?,?,'pm','proposed',1,0,?,'[]',NULL,?,?,?,NULL,?)
+    (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json,audience,always_on)
+    VALUES (?,?,?,?,'pm','proposed',1,0,?,'[]',NULL,?,?,?,NULL,?,?,?)
     ON CONFLICT(project_id,id) DO UPDATE SET occurrences=occurrences+1, last_seen_at=excluded.last_seen_at, updated_at=excluded.updated_at`)
-    .run(id, projectId, signature, rule, JSON.stringify(examples), now, now, now, JSON.stringify(scope));
+    .run(id, projectId, signature, rule, JSON.stringify(examples), now, now, now, JSON.stringify(scope), input.audience ?? "both", input.always ? 1 : 0);
   const waiting = db.prepare("SELECT id FROM lane_pilot_rule_proposal WHERE project_id=? AND state='proposed' AND signature LIKE 'lesson:%' ORDER BY last_seen_at DESC").all(projectId) as Array<{ id: string }>;
   for (const old of waiting.slice(LESSON_PROPOSALS_MAX)) {
     db.prepare("UPDATE lane_pilot_rule_proposal SET state='rejected', updated_at=?, decided_at=? WHERE project_id=? AND id=? AND state='proposed'").run(now, now, projectId, old.id);
@@ -333,6 +352,12 @@ export function getRuleProposal(db: RulesDatabase, projectId: string, id: string
   return row ? fromRow(row) : null;
 }
 
+/** Who a rule is for and whether every writer task gets it; any state, so the owner can correct a live rule. */
+export function setRuleAudience(db: RulesDatabase, projectId: string, id: string, audience: RuleAudience, always: boolean, now = Date.now()): boolean {
+  return db.prepare("UPDATE lane_pilot_rule_proposal SET audience=?, always_on=?, updated_at=? WHERE project_id=? AND id=?")
+    .run(audience, always ? 1 : 0, now, projectId, id).changes === 1;
+}
+
 /** Rewords a rule that is still waiting for the owner. */
 export function reviseRuleProposal(db: RulesDatabase, projectId: string, id: string, rule: string, author: RuleProposalAuthor, now = Date.now()): boolean {
   return db.prepare("UPDATE lane_pilot_rule_proposal SET rule=?, author=?, updated_at=? WHERE project_id=? AND id=? AND state='proposed'")
@@ -349,21 +374,23 @@ export function decideRuleProposal(db: RulesDatabase, projectId: string, id: str
 }
 
 /** Accepted rules whose memory record still exists: what every writer of the project must read. */
-export function acceptedRules(db: RulesDatabase, projectId: string, runChain?: readonly string[]): Array<{ id: string; rule: string; memoryId: string; scope: string[] }> {
-  const rows = (db.prepare(`SELECT p.id, p.rule, p.memory_id AS memoryId, p.scope_json AS scopeJson FROM lane_pilot_rule_proposal p
+export function acceptedRules(db: RulesDatabase, projectId: string, runChain?: readonly string[]): Array<{ id: string; rule: string; memoryId: string; scope: string[]; audience: RuleAudience; always: boolean }> {
+  const rows = (db.prepare(`SELECT p.id, p.rule, p.memory_id AS memoryId, p.scope_json AS scopeJson, p.audience, p.always_on AS alwaysOn FROM lane_pilot_rule_proposal p
     JOIN lane_pilot_memory m ON m.project_id=p.project_id AND m.id=p.memory_id
-    WHERE p.project_id=? AND p.state='accepted' ORDER BY p.decided_at`).all(projectId) as Array<{ id: string; rule: string; memoryId: string; scopeJson: string }>)
-    .map(({ scopeJson, ...row }) => ({ ...row, scope: parseScope(scopeJson) }));
+    WHERE p.project_id=? AND p.state='accepted' ORDER BY p.decided_at`).all(projectId) as Array<{ id: string; rule: string; memoryId: string; scopeJson: string; audience: RuleAudience; alwaysOn: number }>)
+    .map(({ scopeJson, alwaysOn, ...row }) => ({ ...row, scope: parseScope(scopeJson), always: alwaysOn === 1 }));
   // Without a chain every rule of the project is listed; a run's chain keeps only the rules of its sections.
   return runChain ? rows.filter((row) => scopeApplies(row.scope, runChain)) : rows;
 }
 
 /**
- * Which accepted rules a writer should read for one task. Calibrated on 60 SelfyStudio contracts and two
- * rules (2026-10-01): with interfaces and invariants in the state and p(yes) ≥ 0.3, 2 of 59 needed rules
- * were missed and 4 of 61 unneeded ones added. A missed rule costs more than an extra one, hence the low bar.
+ * Which accepted rules a writer should read for one task. Recalibrated 2026-10-03 on 75 SelfyStudio contracts
+ * and 8 task-dependent rules, each pair labelled by a separate reviewer, System One asked three times: p(yes)
+ * reads low on conditional rules («on error X do Y»), so 0.3 missed a third of the needed ones on unseen tasks.
+ * At 0.06 recall is 0.95 and precision 0.63 over the two calibration sets — a missed rule costs more than an
+ * extra line. Report: `.bb/chats/thr_tev4nistgf/artifacts/rule-eval/REPORT.md`.
  */
-export const RULE_RELEVANCE_THRESHOLD = 0.3;
+export const RULE_RELEVANCE_THRESHOLD = 0.06;
 
 export function ruleRelevanceState(task: Record<string, unknown>): Record<string, unknown> {
   const commands = (Array.isArray(task.verification) ? task.verification as Array<{ command?: unknown }> : [])
@@ -383,10 +410,17 @@ export function ruleRelevanceQuestions(rules: ReadonlyArray<{ rule: string }>): 
   }]));
 }
 
-/** Rules whose probability of «yes» reaches the threshold; an unanswered rule is kept. */
-export function pickRelevantRules<T>(rules: readonly T[], answers: Record<string, string>, confidence: Record<string, number>, threshold = RULE_RELEVANCE_THRESHOLD): T[] {
+/**
+ * Rules whose probability of «yes» reaches the threshold; an unanswered rule is kept. The threshold was
+ * calibrated on System One's `probabilities.yes`; its `confidence` is a different number (0.03 where p(yes)
+ * is 0.51), so it is only the fallback of a host that does not return probabilities.
+ */
+export function pickRelevantRules<T>(rules: readonly T[], answers: Record<string, string>, confidence: Record<string, number>,
+  threshold = RULE_RELEVANCE_THRESHOLD, probabilities: Record<string, Record<string, number>> = {}): T[] {
   return rules.filter((_, index) => {
     const key = `r${index + 1}`;
+    const yes = probabilities[key]?.yes;
+    if (typeof yes === "number") return yes >= threshold;
     const choice = answers[key];
     if (choice !== "yes" && choice !== "no") return true;
     const sure = confidence[key] ?? 1;

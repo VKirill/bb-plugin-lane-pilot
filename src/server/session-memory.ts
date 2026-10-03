@@ -55,8 +55,8 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       return { records: rows };
     },
     // A lesson is a rule proposal: a repeat of a live rule counts towards it, a new one goes on trial within the cap.
-    session_lesson: async ({ projectId, rule, evidence, scope }) => {
-      const result = upsertLessonProposal(db, projectId, { rule, evidence, scope });
+    session_lesson: async ({ projectId, rule, evidence, scope, audience, always }) => {
+      const result = upsertLessonProposal(db, projectId, { rule, evidence, scope, audience, always });
       const adopted = result.created ? Boolean(adoptRuleProposal(db, projectId, result.id)) : false;
       const proposal = getRuleProposal(db, projectId, result.id);
       return { proposalId: result.id, repeatOf: result.repeatOf, state: proposal?.state ?? "proposed", adopted };

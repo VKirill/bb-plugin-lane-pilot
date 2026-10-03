@@ -213,11 +213,12 @@ export function mountInsights(ctx: ServerContext): void {
   bb.agents.registerTool({
     name: "lane_pilot_lesson",
     description: "Record a lesson as a project rule on the hub: the owner corrected you, or an approach got burned.",
-    instructions: "Use instead of writing .agents/LESSONS.md, which is not kept any more. Write one imperative rule that prevents the mistake, in English, with evidence (run, task, test, date). A rule close to a live one counts as its repeat; a new one goes on trial for writers within the 12-rule cap. Only after a real correction or landmine — not per session.",
-    parameters: z.object({ runId: z.string().min(1), rule: z.string().min(8).max(600), evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional() }).strict(),
+    instructions: "Use instead of writing .agents/LESSONS.md, which is not kept any more. Write one imperative rule that prevents the mistake, in English, with evidence (run, task, test, date). `audience`: `pm` for your own work (planning, task contracts, reviewing reports, merging, deploying) — writers never see it; `writer` for how code is edited and checked inside one task; `both` when each must follow it. `always: true` only when the rule holds for every writer task whatever it changes (how to run or read any command); otherwise System One gives it to the tasks it fits. A rule close to a live one counts as its repeat; a new one goes on trial within the 12-rule cap. Only after a real correction or landmine — not per session.",
+    parameters: z.object({ runId: z.string().min(1), rule: z.string().min(8).max(600), audience: z.enum(["writer", "pm", "both"]), always: z.boolean().default(false),
+      evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional() }).strict(),
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
-      const result = upsertLessonProposal(db, context.projectId, { rule: params.rule, evidence: params.evidence, scope: params.scope });
+      const result = upsertLessonProposal(db, context.projectId, { rule: params.rule, evidence: params.evidence, scope: params.scope, audience: params.audience, always: params.always });
       const adopted = result.created ? Boolean(adoptRuleProposal(db, context.projectId, result.id)) : false;
       return JSON.stringify({ ...result, adopted, proposal: getRuleProposal(db, context.projectId, result.id) }, null, 2);
     },

@@ -46,6 +46,8 @@ const ruleProposalSchema = z.object({
   trial: z.object({ applied: z.number().int(), appliedAccepted: z.number().int(), recurrences: z.number().int() }).strict().nullable(),
   scope: z.array(z.string()),
   scopeLabel: z.string(),
+  audience: z.enum(["writer", "pm", "both"]),
+  always: z.boolean(),
 }).strict();
 
 const ruleScanSchema = z.object({
@@ -460,7 +462,9 @@ export const hostContract = defineRpcContract({
     }).strict(),
     output: z.object({
       hostId: z.string(), status: z.enum(["ok", "disabled", "timeout", "error"]),
-      answers: z.record(z.string(), z.string()), confidence: z.record(z.string(), z.number()).optional(), reason: z.string().nullable(),
+      answers: z.record(z.string(), z.string()), confidence: z.record(z.string(), z.number()).optional(),
+      // Per question, the probability of each criterion; `confidence` is not the probability of the chosen answer.
+      probabilities: z.record(z.string(), z.record(z.string(), z.number())).optional(), reason: z.string().nullable(),
     }).strict(),
   },
   inspectCritiqueCoverage: {
@@ -1177,8 +1181,14 @@ export const rpcContract = defineRpcContract({
     output: z.object({ records: z.array(z.object({ id: z.string(), content: z.string() }).strict()) }).strict(),
   },
   session_lesson: {
-    input: z.object({ projectId: z.string().min(1), rule: z.string().min(8).max(600), evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional() }).strict(),
+    // audience defaults to both for older lane-memory clients that do not send it.
+    input: z.object({ projectId: z.string().min(1), rule: z.string().min(8).max(600), evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional(),
+      audience: z.enum(["writer", "pm", "both"]).optional(), always: z.boolean().optional() }).strict(),
     output: z.object({ proposalId: z.string(), repeatOf: z.string().nullable(), state: z.string(), adopted: z.boolean() }).strict(),
+  },
+  rule_set_audience: {
+    input: z.object({ projectId: z.string().min(1), ruleId: z.string().min(1), audience: z.enum(["writer", "pm", "both"]), always: z.boolean() }).strict(),
+    output: z.object({ ok: z.boolean() }).strict(),
   },
   memory_records_list: {
     input: z.object({ projectId: z.string().min(1) }).strict(),

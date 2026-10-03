@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.97 — 2026-10-03
+
+Writers get the rules their task needs. Measured on 75 SelfyStudio task contracts and 11 rules, each pair labelled by a separate reviewer, System One asked three times per task.
+- **Who a rule is for.** Rules carry `audience` (`writer`, `pm`, `both`) and `always`. A PM rule (task contracts, reviews, merges, deploys) never reaches a writer — before, System One gave such rules to almost every writer. An `always` rule (how to run or read any command) reaches every writer without a question — before, System One never gave it, because no single task looks like it. `lane_pilot_lesson` asks for both, `session_lesson` takes them (older clients get `both`), and the Rules tab shows and changes them.
+- **The probability, not the confidence.** The pick now reads System One's `probabilities.yes`; the `confidence` it used is a different number (0.03 where p(yes) is 0.51 — 696 of 825 answers differed). `councilJudge` returns `probabilities` alongside; its other callers are unchanged.
+- **Threshold 0.06** instead of 0.3. Conditional rules («on error X do Y») read low; on 25 fresh tasks used for nothing else, recall went 0.53 → 0.91 and precision 0.52 → 0.74 against the old pick.
+- **One wait.** Chunks of 8 rules are asked together, not one after another (an answer takes 0.5–1 s).
+
 ## 0.1.96 — 2026-10-03
 
 - **`lane_pilot_lesson` for the PM.** A correction or a burned approach becomes a rule proposal on the hub — repeats merge, new ones go on trial within the 12-rule cap — instead of a `.agents/LESSONS.md` line. The PM instructions say so; `lane-memory lesson` (Lane Stack 1.64.0) does the same from terminal sessions.

@@ -1,5 +1,5 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStats, routingHint, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
+import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStats, routingHint, setRuleAudience, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
 import { rpcContract } from "../../contracts";
 import { loadProjectSettings } from "../../database";
 import { parseDocsSettings } from "../../stages/docs";
@@ -10,9 +10,9 @@ import type { Services } from "../services";
 
 const RISKS = ["low", "medium", "high", "critical"] as const;
 
-const ruleView = ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, scope }: RuleProposal,
+const ruleView = ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, scope, audience, always }: RuleProposal,
   trial: { applied: number; appliedAccepted: number; recurrences: number } | null = null, scopeLabel = "") =>
-  ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, trial, scope, scopeLabel });
+  ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, trial, scope, scopeLabel, audience, always });
 
 /** What the settings screen shows next to the writer picker: first-try acceptance per risk against the configured pair. */
 export function insightsRpc(ctx: ServerCore, services: Services) {
@@ -86,9 +86,10 @@ export function insightsRpc(ctx: ServerCore, services: Services) {
     /** The «Rescan» button; returns at once, the screen polls list_rule_proposals for progress. */
     start_rule_scan: async ({ projectId, locale }) => services.ruleScan.startScan(projectId, locale),
     save_rules_analyzer: async ({ projectId, analyzer }) => ({ analyzer: await services.ruleScan.saveAnalyzer(projectId, analyzer) }),
+    rule_set_audience: async ({ projectId, ruleId, audience, always }) => ({ ok: setRuleAudience(db, projectId, ruleId, audience, always) }),
     decide_rule_proposal: async ({ projectId, id, action, rule }) => {
       if (action === "accept") return { proposal: ruleView(acceptRuleProposal(db, projectId, id, rule ?? getRuleProposal(db, projectId, id)?.rule ?? "")) };
       return { proposal: ruleView(action === "reject" ? rejectRuleProposal(db, projectId, id) : revokeRule(db, projectId, id)) };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_routing_hint" | "list_rule_proposals" | "decide_rule_proposal" | "start_rule_scan" | "save_rules_analyzer" | "docs_overview" | "memory_records_list" | "memory_record_delete">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_routing_hint" | "list_rule_proposals" | "decide_rule_proposal" | "start_rule_scan" | "save_rules_analyzer" | "docs_overview" | "memory_records_list" | "memory_record_delete" | "rule_set_audience">;
 }

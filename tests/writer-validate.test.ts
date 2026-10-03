@@ -320,7 +320,8 @@ describe("BB writer validation on the server path", () => {
         if (call.method === "councilJudge") {
           judged.push(call.input as Record<string, unknown>);
           if (jev === "down") return { hostId:"host-test", status:"disabled", answers:{}, reason:"missing_typesafe_api_key" };
-          return { hostId:"host-test", status:"ok", reason:null, answers:{ r1:"yes", r2:"no" }, confidence:{ r1:0.95, r2:0.9 } };
+          return { hostId:"host-test", status:"ok", reason:null, answers:{ r1:"yes", r2:"no" }, confidence:{ r1:0.95, r2:0.9 },
+            probabilities:{ r1:{ yes:0.95, no:0.05 }, r2:{ yes:0.02, no:0.98 } } };
         }
         if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
@@ -338,6 +339,13 @@ describe("BB writer validation on the server path", () => {
         .run(`mem-${index}`, projectId, "", "core", "subagent", rule, '["rule"]', "s", index);
       db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at)
         VALUES (?,?,?,?,'owner','accepted',3,3,'[]',?,1,1,1,?)`).run(`rule-${index}`, projectId, `s${index}`, rule, `mem-${index}`, index);
+    });
+    // A PM's rule never reaches a writer; a rule for every task reaches it without a question to System One.
+    [["rule-pm", "Write owns_paths with every sibling test.", "pm", 0], ["rule-always", "Never read the exit code after a pipe.", "writer", 1]].forEach(([id, rule, audience, always], index) => {
+      db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)")
+        .run(`mem-${id}`, projectId, "", "core", "subagent", rule, '["rule"]', "s", 5 + index);
+      db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,audience,always_on)
+        VALUES (?,?,?,?,'pm','accepted',1,0,'[]',?,1,1,1,?,?,?)`).run(id, projectId, `s-${id}`, rule, `mem-${id}`, 5 + index, audience, always);
     });
     // A rule from another section of the project (another client) must never reach this run's writer.
     db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES('mem-other',?,'','core','subagent','Other client rule.','[]','s',9)").run(projectId);
@@ -358,7 +366,9 @@ describe("BB writer validation on the server path", () => {
     for (const rule of expected) expect(spawnedPrompt).toContain(rule);
     for (const rule of skipped) expect(spawnedPrompt).not.toContain(rule);
     expect(spawnedPrompt).not.toContain("Other client rule.");
-    expect(getReasoningTrace(db, dispatched.attemptId)?.dispatchContext?.rulesPicked).toEqual({ total:2, picked:jev === "ok" ? ["rule-0"] : ["rule-0", "rule-1"] });
+    expect(spawnedPrompt).not.toContain("Write owns_paths with every sibling test.");
+    expect(spawnedPrompt).toContain("Never read the exit code after a pipe.");
+    expect(getReasoningTrace(db, dispatched.attemptId)?.dispatchContext?.rulesPicked).toEqual({ total:4, picked:jev === "ok" ? ["rule-0", "rule-always"] : ["rule-0", "rule-1", "rule-always"] });
     await harness.lifecycle.dispose();
   });
 

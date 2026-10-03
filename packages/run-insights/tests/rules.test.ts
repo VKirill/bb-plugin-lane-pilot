@@ -2,6 +2,9 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import {
   ruleTrialMigrations,
+  ruleAudienceMigrations,
+  setRuleAudience,
+  upsertLessonProposal,
   acceptedRules, collectLessonSources, decideRuleProposal, getRuleProposal, lessonSignature, listRuleProposals,
   normalizeLessonText, repeatedLessons, reviseRuleProposal, ruleMigrations, ruleProposalId, upsertRuleProposals,
   type LessonSource,
@@ -16,7 +19,7 @@ function openDb() {
       provider_id TEXT, model TEXT, result_json TEXT, reason TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY(run_id, task_id, stage_id));
     CREATE TABLE lane_pilot_memory (id TEXT NOT NULL, project_id TEXT NOT NULL, UNIQUE(project_id,id));
   `);
-  for (const statement of [...ruleMigrations, ...ruleTrialMigrations]) db.exec(statement);
+  for (const statement of [...ruleMigrations, ...ruleTrialMigrations, ...ruleAudienceMigrations]) db.exec(statement);
   return db;
 }
 
@@ -87,7 +90,7 @@ describe("rule proposals", () => {
     expect(reviseRuleProposal(db, "p", id, "late edit", "pm")).toBe(false);
 
     expect(listRuleProposals(db, "p").map((row) => row.state)).toEqual(["proposed", "accepted"]);
-    expect(acceptedRules(db, "p")).toEqual([{ id, rule: "No network in verification.", memoryId: "mem-1", scope: [] }]);
+    expect(acceptedRules(db, "p")).toEqual([{ id, rule: "No network in verification.", memoryId: "mem-1", scope: [], audience: "writer", always: false }]);
 
     db.prepare("DELETE FROM lane_pilot_memory WHERE id='mem-1'").run();
     expect(acceptedRules(db, "p")).toEqual([]);
@@ -95,7 +98,7 @@ describe("rule proposals", () => {
 });
 
 describe("rule relevance", () => {
-  it("asks one yes/no question per rule and keeps a rule from p(yes) 0.3 up or when unanswered", async () => {
+  it("asks one yes/no question per rule and keeps a rule from the threshold up or when unanswered", async () => {
     const { pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } = await import("../src/index");
     const rules = [{ rule: "Run every verification command." }, { rule: "Check the healthcheck after a deploy." }, { rule: "Unanswered" }, { rule: "Unsure no" }];
     expect(Object.keys(ruleRelevanceQuestions(rules))).toEqual(["r1", "r2", "r3", "r4"]);
@@ -104,6 +107,31 @@ describe("rule relevance", () => {
     expect(picked.map((row) => row.rule)).toEqual(["Run every verification command.", "Unanswered", "Unsure no"]);
     const state = ruleRelevanceState({ title: "Release", invariants: ["rollback-safe"], interfaces: ["scripts/deploy.sh"], verification: [{ command: "npm test" }] });
     expect(state.task).toMatchObject({ invariants: ["rollback-safe"], interfaces: ["scripts/deploy.sh"], verification_commands: ["npm test"] });
+  });
+});
+
+describe("rule audience", () => {
+  it("decides by System One's probability of yes when the host returns it, not by its confidence", async () => {
+    const { pickRelevantRules, RULE_RELEVANCE_THRESHOLD } = await import("../src/index");
+    const rules = [{ rule: "a" }, { rule: "b" }, { rule: "c" }];
+    // Live answer of 2026-10-03: choice no, confidence 0.97, probabilities.yes 0.51 — the rule is relevant.
+    const picked = pickRelevantRules(rules, { r1: "no", r2: "no", r3: "yes" }, { r1: 0.97, r2: 0.5, r3: 0.9 }, RULE_RELEVANCE_THRESHOLD,
+      { r1: { yes: 0.51, no: 0.49 }, r2: { yes: 0.02, no: 0.98 } });
+    expect(picked.map((row) => row.rule)).toEqual(["a", "c"]);
+  });
+
+  it("stores who a lesson is for and lets the owner change it on a live rule", () => {
+    const db = openDb();
+    const pm = upsertLessonProposal(db, "p", { rule: "Write owns_paths to cover sibling tests and snapshots.", audience: "pm" }, 1);
+    const shell = upsertLessonProposal(db, "p", { rule: "Never read the exit code after a pipe; use pipefail.", audience: "writer", always: true }, 2);
+    const old = upsertLessonProposal(db, "p", { rule: "Older clients send no audience at all here." }, 3);
+    const byId = Object.fromEntries(listRuleProposals(db, "p").map((row) => [row.id, row]));
+    expect([byId[pm.id]!.audience, byId[pm.id]!.always]).toEqual(["pm", false]);
+    expect([byId[shell.id]!.audience, byId[shell.id]!.always]).toEqual(["writer", true]);
+    expect(byId[old.id]!.audience).toBe("both");
+    expect(setRuleAudience(db, "p", old.id, "writer", true)).toBe(true);
+    expect(listRuleProposals(db, "p").find((row) => row.id === old.id)).toMatchObject({ audience: "writer", always: true });
+    expect(setRuleAudience(db, "p", "missing", "pm", false)).toBe(false);
   });
 });
 
