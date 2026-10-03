@@ -90,7 +90,9 @@ export async function waitManagedWorktreeReady(input:{
   timeoutMs?:number;
   intervalMs?:number;
 }): Promise<{environmentId:string}> {
-  const timeoutMs = input.timeoutMs ?? 180_000;
+  // A holder thread can wait in BB's per-machine thread queue: five SelfyStudio tasks sent together (2026-10-03 03:22)
+  // all timed out at 3 minutes with no environment yet, and each was blocked instead of starting a little later.
+  const timeoutMs = input.timeoutMs ?? 600_000;
   const intervalMs = input.intervalMs ?? 500;
   const now = input.now ?? Date.now;
   const sleep = input.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));

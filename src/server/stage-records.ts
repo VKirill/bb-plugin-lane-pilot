@@ -20,7 +20,8 @@ export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:str
   saveStageReceipt(db, validateStageReceipt({
     contractVersion:1, runId:input.runId, taskId:input.taskId, stageId:input.stageId,
     state:input.state, inputSha256:sha256(input.input), outputSha256:output === null ? null : sha256(output),
-    attempt:input.attempt ?? 0, providerId:input.providerId ?? null, model:input.model ?? null,
+    // The receipt keeps 0-2; fallback writers (models 3 and 4 of the chain) made it 4 and the task ended internal_error.
+    attempt:Math.min(input.attempt ?? 0, 2), providerId:input.providerId ?? null, model:input.model ?? null,
     threadId:input.threadId ?? null, result, reason:input.reason ?? null, updatedAt:Date.now(),
   }));
 }

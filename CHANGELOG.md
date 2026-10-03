@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.110 — 2026-10-04
+
+What slowed SelfyStudio down on 2026-10-03 (37 tasks, 88 attempts, 31 accepted — 35%; report `.bb/chats/thr_tev4nistgf/artifacts/dev-speed/`):
+- **A bare file name in `expected_outputs` is found under owns_paths.** The PM wrote `CardMockCard.vue`; Lane Pilot looked for it at the repository root, so 22 of 57 failed attempts were writers whose file was in its folder — each such task failed every attempt and was sent again 3–5 times. The PM instructions now ask for repository paths and keep prose in `acceptance`.
+- **A missing expected file no longer runs the writer model chain.** It is the contract's problem; GLM 5.3 Flash spent a median 138 min per such task before failing the same way.
+- **The 3rd and 4th writer of the chain no longer end `internal_error`.** The stage receipt keeps attempts 0–2; fallback writers wrote 4 and the task blocked.
+- **A worktree waits up to 10 min to be provisioned** instead of 3: five tasks sent together waited in BB's thread queue and all blocked with `missing_environment_id`.
+
 ## 0.1.109 — 2026-10-03
 
 - **A browser check's verdict is not a Lane Pilot failure.** The 0.1.108 start-up adoption logs «Lane Pilot browser check <task> adopted after a reload: failed» when the product failed its check (gc-qa-free-session.5: SelfyStudio's «Выбрать» did nothing for designs the generator lacks). The self-repair watcher read the word «failed» in that line as Lane Pilot's own fault and opened a repair thread; such lines are now skipped like other non-faults.

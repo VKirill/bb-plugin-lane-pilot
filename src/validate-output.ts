@@ -47,7 +47,12 @@ export function classifyWriterOutput(input: {
   if (!fileOutputs.length && !input.produced.length) {
     return { ok:false, state:"empty_output", reason:"writer changed no files" };
   }
-  const missing = fileOutputs.filter((path) => {
+  // A bare file name («CardMockCard.vue») names the file wherever the task owns it, not a file at the repository
+  // root: 22 of 57 failed SelfyStudio attempts on 2026-10-03 were writers whose file was there under its folder.
+  const resolveOutput = (path: string) => path.includes("/") ? path
+    : input.produced.find((file) => file === path || file.endsWith(`/${path}`)) ?? path;
+  const missing = fileOutputs.filter((entry) => {
+    const path = resolveOutput(entry);
     const content = input.contents[path];
     return !input.produced.includes(path) || content === null || content === undefined;
   });
