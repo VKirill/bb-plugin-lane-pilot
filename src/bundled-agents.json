@@ -53,13 +53,8 @@
       "web-design",
       "ui-ux-pro-max",
       "app-architect",
-      "info",
       "page-prototype",
-      "agentmemory-recall",
-      "agentmemory-session-history",
-      "agentmemory-handoff",
-      "metamcp",
-      "browser-qa"
+      "metamcp"
     ],
     "mcpServers": [],
     "omittedNativeFields": [
@@ -303,8 +298,6 @@
       "mcp__bb-bridge__lane_pilot_gate_triage"
     ],
     "skills": [
-      "project-onboard",
-      "project-docs",
       "project-life"
     ],
     "mcpServers": [],

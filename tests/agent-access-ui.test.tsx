@@ -125,7 +125,7 @@ describe("Agent access tab", () => {
       for (const role of HELPER_ROLES) expect(slot.getByTestId(`access-role-${role.replace(/[:-]/g, "_")}`)).toBeTruthy();
       expect(slot.getByTestId("access-summary-writer").textContent).toBe("2 skills");
       expect(slot.getByTestId("access-summary-plan_critic").textContent).toBe(en.accessNothingExtra);
-      expect(slot.getByTestId("access-summary-browser_qa").textContent).toBe("2 skills · 1 BB plugin");
+      expect(slot.getByTestId("access-summary-browser_qa").textContent).toBe("1 skill · 1 BB plugin");
       expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_role);
       expect(slot.getByTestId("access-providers").textContent).toContain("Claude Code and Codex: everything.");
       expect(slot.getByTestId("access-providers").textContent).toContain("OpenCode: everything except CLI plugins.");
@@ -216,7 +216,7 @@ describe("Agent access tab", () => {
       const matrix = slot.getByTestId("access-matrix");
       expect(matrix.querySelectorAll("tbody tr[data-testid^=access-matrix-row-]")).toHaveLength(HELPER_ROLES.length);
       const cell = (role: string, column: string) => slot.getByTestId(`access-matrix-${role}-${column}`).textContent;
-      expect([cell("browser_qa", "skills"), cell("browser_qa", "bbPlugins"), cell("browser_qa", "mcpServers"), cell("browser_qa", "projectInstructions")]).toEqual(["2", "1", "—", "✓"]);
+      expect([cell("browser_qa", "skills"), cell("browser_qa", "bbPlugins"), cell("browser_qa", "mcpServers"), cell("browser_qa", "projectInstructions")]).toEqual(["1", "1", "—", "✓"]);
       expect([cell("plan_critic", "skills"), cell("plan_critic", "userInstructions")]).toEqual(["—", "—"]);
       expect([cell("docs_maintainer", "skills"), cell("specialist_seo_specialist", "skills")]).toEqual(["3", "17"]);
       // A change at this level: «all» for everything BB has, the changed count, the personal switch on.

@@ -91,11 +91,12 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "night-reviewer": READER,
   "gate-triage": READER,
   "pm-reader": READER,
-  "docs-maintainer": { bbPlugins: [], skills: ["docs-maintain", "docs-methodology", "wiki-methodology"], mcpServers: [] },
-  "onboarder": { bbPlugins: [], skills: ["project-onboard", "project-docs", "project-life"], mcpServers: [] },
-  "memory-maintainer": { bbPlugins: [], skills: ["lane-memory", "memory-discipline"], mcpServers: [] },
+  "docs-maintainer": { bbPlugins: [], skills: ["docs-maintain", "docs-methodology"], mcpServers: [] },
+  "onboarder": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
+  // It returns one JSON array and runs no tools; the memory skills told it to call CLIs (instructions audit 2026-10-03).
+  "memory-maintainer": READER,
   "project-life": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
-  "browser-qa": { bbPlugins: ["browser-automation"], skills: ["browser-automation", "browser-qa"], mcpServers: [] },
+  "browser-qa": { bbPlugins: ["browser-automation"], skills: ["browser-automation"], mcpServers: [] },
   // A PM's errand outside the code: a console, a mailbox, a recording. The browser on the browser machine, the fast
   // jev-ultrafast loop (computer-use) and Env Catalog for the accounts it needs; no code skills.
   "errand": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "computer-use", "env-catalog"], mcpServers: [] },
