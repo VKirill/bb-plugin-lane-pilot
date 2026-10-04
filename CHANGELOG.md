@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.130
+
+- **Writers at once per run: 10 by default (was 5), up to 15 (was 10).** Setting `ops.pool_size`; no project had its own value, so all get 10. A run that already started keeps the pool it froze; new runs and the PM's next batch use the new value.
+
 ## 0.1.129
 
 - Helper chips are icons again (the owner's choice): role icon and pulse, the task on hover, click opens the chat; «+N» past three and the badge kept on one line stay.

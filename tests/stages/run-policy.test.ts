@@ -16,7 +16,7 @@ describe("run-v2 policy adapter",()=>{
   });
 
   it("rejects invalid pool snapshots and maps TaskV2 risk into the versioned run profile",()=>{
-    expect(()=>buildRunPolicy({"ops.pool_size":11})).toThrow(/1 to 10/);
+    expect(()=>buildRunPolicy({"ops.pool_size":16})).toThrow(/1 to 15/);
     expect(()=>parseRunPolicy({schemaVersion:2,pools:{provider:1,verification:1}})).toThrow();
     expect(buildRunExecutionProfile("critical",buildRunPolicy({}))).toMatchObject({score:10,risk:"high",sourceRisk:"critical",scoreAdapter:"task-risk-v1"});
   });

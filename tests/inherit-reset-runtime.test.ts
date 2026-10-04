@@ -55,7 +55,7 @@ describe("inherited dispatch after override-row delete", () => {
     );
     expect(live.values["writer.provider"]).toBe("kimi");
     expect(live.inherited).toContain("writer.provider");
-    expect(buildRunPolicy(live.values).pools.provider).toBe(5);
+    expect(buildRunPolicy(live.values).pools.provider).toBe(10);
 
     const screen = await harness.behavior.callRpc("get_screen", { projectId }) as {
       values: Record<string, unknown>;

@@ -2,22 +2,25 @@ import { z } from "zod";
 
 const runPolicySchema=z.object({
   schemaVersion:z.literal(1),
-  pools:z.object({provider:z.number().int().min(1).max(10),verification:z.number().int().min(1).max(10)}).strict(),
+  pools:z.object({provider:z.number().int().min(1).max(15),verification:z.number().int().min(1).max(10)}).strict(),
 }).strict();
 
 export type RunPolicy=z.infer<typeof runPolicySchema>;
 export type RunExecutionProfile={schemaVersion:1;pools:RunPolicy["pools"];score:number;risk:"low"|"medium"|"high";sourceRisk:string;scoreAdapter:"task-risk-v1"};
 
+/** Writers at once per run; 10 by default since 2026-10-04 (the owner runs batches of 10-15 tasks), at most 15. */
+const MAX_POOL=15;
+
 function configuredPool(value:unknown,key:string,fallback:number):number {
   if(value===undefined||value===null||value==="")return fallback;
   const parsed=typeof value==="string"&&/^\d+$/.test(value)?Number(value):value;
-  if(typeof parsed!=="number"||!Number.isInteger(parsed)||parsed<1||parsed>10)throw new Error(`${key} must be an integer from 1 to 10`);
+  if(typeof parsed!=="number"||!Number.isInteger(parsed)||parsed<1||parsed>MAX_POOL)throw new Error(`${key} must be an integer from 1 to ${MAX_POOL}`);
   return parsed;
 }
 
 export function buildRunPolicy(settings:Record<string,unknown>):RunPolicy {
   return runPolicySchema.parse({schemaVersion:1,pools:{
-    provider:configuredPool(settings["ops.pool_size"],"ops.pool_size",5),
+    provider:configuredPool(settings["ops.pool_size"],"ops.pool_size",10),
     verification:configuredPool(settings["ops.verify_pool_size"],"ops.verify_pool_size",2),
   }});
 }
