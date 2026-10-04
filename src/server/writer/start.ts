@@ -121,6 +121,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (row.task_id === input.taskId || row.project_id !== input.projectId) return false;
           if (base && getRun(db,row.run_id)?.writer_workspace_path !== base) return false;
           const parsed = taskV2Schema.safeParse(getTask(db,row.task_id)?.contract);
+          // A task that depends on this one waits for it anyway; waiting for it back is a deadlock
+          // (live 2026-10-03: price-watermark.5 depends_on how.5, how.5 queued behind price-watermark.5).
+          if (parsed.success && dependsOnTask(parsed.data.depends_on, input.taskId)) return false;
           return parsed.success && ownsPathsOverlap(parsed.data.owns_paths, input.task.owns_paths);
         });
         if (!blocker) return;
@@ -398,4 +401,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   }
 
   return { startWriterTask };
+}
+
+/** Whether `dependsOn` names `taskId`, either exactly or by its base id («P1» names a redispatched «P1.2»). */
+export function dependsOnTask(dependsOn:readonly string[] | undefined, taskId:string):boolean {
+  return (dependsOn ?? []).some((dep) => dep === taskId || (taskId.startsWith(`${dep}.`) && /^\d+$/.test(taskId.slice(dep.length + 1))));
 }

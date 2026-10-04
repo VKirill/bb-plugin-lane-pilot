@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.112
+
+- Fix: a task no longer waits on an overlapping task that itself depends on it (owns_paths overlap × depends_on deadlock seen live on SelfyStudio `gc-native-price-watermark.5` / `gc-native-how.5`).
+
 ## 0.1.111 — 2026-10-04
 
 - **A task that expects a file outside its owns_paths is stopped before a writer runs** (structural finding `output_unowned`): no attempt could pass it, and such contracts were sent again 3–5 times on 2026-10-03.
