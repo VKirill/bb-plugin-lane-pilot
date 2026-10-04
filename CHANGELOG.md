@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.131
+
+- **15 writers at once per run by default** (the owner's choice), also the most `ops.pool_size` takes. The writer pool and the bounded-concurrency helper had their own cap of 10; both follow the same limit now.
+
 ## 0.1.130
 
 - **Writers at once per run: 10 by default (was 5), up to 15 (was 10).** Setting `ops.pool_size`; no project had its own value, so all get 10. A run that already started keeps the pool it froze; new runs and the PM's next batch use the new value.

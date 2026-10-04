@@ -8,7 +8,7 @@ const runPolicySchema=z.object({
 export type RunPolicy=z.infer<typeof runPolicySchema>;
 export type RunExecutionProfile={schemaVersion:1;pools:RunPolicy["pools"];score:number;risk:"low"|"medium"|"high";sourceRisk:string;scoreAdapter:"task-risk-v1"};
 
-/** Writers at once per run; 10 by default since 2026-10-04 (the owner runs batches of 10-15 tasks), at most 15. */
+/** Writers at once per run: 15 by default and at most since 2026-10-04 (the owner runs batches of 10-15 tasks). */
 const MAX_POOL=15;
 
 function configuredPool(value:unknown,key:string,fallback:number):number {
@@ -20,7 +20,7 @@ function configuredPool(value:unknown,key:string,fallback:number):number {
 
 export function buildRunPolicy(settings:Record<string,unknown>):RunPolicy {
   return runPolicySchema.parse({schemaVersion:1,pools:{
-    provider:configuredPool(settings["ops.pool_size"],"ops.pool_size",10),
+    provider:configuredPool(settings["ops.pool_size"],"ops.pool_size",15),
     verification:configuredPool(settings["ops.verify_pool_size"],"ops.verify_pool_size",2),
   }});
 }
@@ -62,7 +62,7 @@ export function buildRunExecutionProfile(risk:unknown,policy:RunPolicy):RunExecu
 }
 
 export async function mapBounded<T,R>(items:readonly T[],limit:number,work:(item:T,index:number)=>Promise<R>):Promise<R[]> {
-  if(!Number.isInteger(limit)||limit<1||limit>10)throw new Error("concurrency limit must be an integer from 1 to 10");
+  if(!Number.isInteger(limit)||limit<1||limit>MAX_POOL)throw new Error(`concurrency limit must be an integer from 1 to ${MAX_POOL}`);
   const results=new Array<R>(items.length);
   let cursor=0;
   const worker=async()=>{
@@ -81,7 +81,7 @@ export class RunWriterPool {
   private readonly waiting=new Map<string,Array<()=>void>>();
 
   async acquire(runId:string,limit:number):Promise<()=>void> {
-    if(!Number.isInteger(limit)||limit<1||limit>10)throw new Error("provider pool limit must be an integer from 1 to 10");
+    if(!Number.isInteger(limit)||limit<1||limit>MAX_POOL)throw new Error(`provider pool limit must be an integer from 1 to ${MAX_POOL}`);
     const count=this.active.get(runId)??0;
     if(count<limit)this.active.set(runId,count+1);
     else await new Promise<void>(resolve=>{

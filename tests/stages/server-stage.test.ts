@@ -499,10 +499,10 @@ describe("stage → native writer → receipt", () => {
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
     expect(result.state).toBe("accepted");
     expect(JSON.parse((await import("../../src/database")).getRun(db,"stage-run")!.run_policy_json))
-      .toEqual({schemaVersion:1,pools:{provider:10,verification:2}});
+      .toEqual({schemaVersion:1,pools:{provider:15,verification:2}});
     const receipt=(await import("../../src/database")).listStageReceipts(db,"stage-run",task.id)
       .find((row)=>row.stageId==="writer-agent")?.result as {runV2?:unknown};
-    expect(receipt.runV2).toMatchObject({schemaVersion:1,pools:{provider:10,verification:2},score:2,risk:"low",sourceRisk:"low"});
+    expect(receipt.runV2).toMatchObject({schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low"});
     expect((listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="writer-agent")?.result as {produced?:string[]})?.produced)
       .toEqual(["note.txt","tracked.txt"]);
     expect(listGateEvents(db,{projectId, since:0, gate:"owns-paths"}).at(-1)?.status).toBe("passed");
@@ -1433,7 +1433,7 @@ describe("stage → native writer → receipt", () => {
     expect(receipts.find((row) => row.stageId === "verification")?.result).toEqual({
       produced:["note.txt"], verification:[{ command:"test -f note.txt", exitCode:0, stdout:"", stderr:"",
         sandboxBackend:"macos-seatbelt",policySha256:"c".repeat(64),workspacePath:config.writerWorkspacePath }],
-      runV2:{schemaVersion:1,pools:{provider:10,verification:2},score:2,risk:"low",sourceRisk:"low",scoreAdapter:"task-risk-v1"},
+      runV2:{schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low",scoreAdapter:"task-risk-v1"},
     });
     expect(sandboxRequests).toHaveLength(1);
     expect(sandboxRequests[0]).toMatchObject({backend:"auto",requestedHostId:config.hostId,workspacePath:task.project_cwd});
@@ -1461,7 +1461,7 @@ describe("stage → native writer → receipt", () => {
     },{threadId:pmThreadId,projectId})));
     expect(completed.state,JSON.stringify(completed)).toBe("accepted");
     const receipts=listStageReceipts(db,"stage-run",criticalTask.id);
-    const expectedProfile={schemaVersion:1,pools:{provider:10,verification:2},score:10,risk:"high",sourceRisk:"critical",scoreAdapter:"task-risk-v1"};
+    const expectedProfile={schemaVersion:1,pools:{provider:15,verification:2},score:10,risk:"high",sourceRisk:"critical",scoreAdapter:"task-risk-v1"};
     expect(receipts.find((row)=>row.stageId==="verification")?.result).toMatchObject({runV2:expectedProfile});
     expect(receipts.find((row)=>row.stageId==="writer-agent")?.result).toMatchObject({runV2:expectedProfile});
     expect(completed.stages.filter((row:{taskId:string})=>row.taskId===criticalTask.id)).toEqual(receipts.map((row) => ({ taskId:row.taskId, stageId:row.stageId, state:row.state, ...(row.reason ? { reason:row.reason.slice(0, 400) } : {}) })));
