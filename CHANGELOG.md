@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.115
+
+- **Fix: a failed attempt's retry was blocked with `reconcile_page_cap`** (SelfyStudio, 4 tasks on 2026-10-04 right after 0.1.114). Before a retry Lane Pilot scanned every thread of the project for the attempt's writer although that thread is stored; the scan now runs only when it is not, over unarchived threads.
+
 ## 0.1.114
 
 - **Fix: every SelfyStudio task was blocked with `attempt_worktree_holder_ambiguous:page_cap`** (2026-10-04, 13 of 15 tasks of one batch). Each fresh attempt scanned every thread of the project, reading each one's metadata, for a worktree holder it could not have yet: over a minute per attempt once the project had ~1000 Lane Pilot threads, then a hard block past 1000. The scan now runs only for an attempt whose holder spawn had begun (KV `holder-spawn:<attempt>`, set before the spawn, cleared once the holder id is stored) — the one case a holder can be lost — and the holder and critic scans list unarchived threads only.

@@ -234,10 +234,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const attempt = getAttempt(db, attemptId);
         if (attempt?.state === "spawn_unknown" || attempt?.state === "spawn_requested") {
           writerThreadId = await services.reconcileAttemptThread(input.projectId, attempt).catch(() => "");
-        } else if (attempt) {
+        } else if (attempt && !attempt.thread_id) {
+          // An attempt whose writer thread is stored needs no scan; scanning every thread of the project here blocked
+          // retries with reconcile_page_cap once SelfyStudio passed 1000 threads (live 2026-10-04).
           const scanned = await reconcile({
             list: async ({ limit, offset }) => (await bb.sdk.threads.list({
-              projectId:input.projectId, originPluginId:"lane-pilot", includeHidden:true, limit, offset,
+              projectId:input.projectId, originPluginId:"lane-pilot", includeHidden:true, archived:false, limit, offset,
             })).map((thread) => ({ id:thread.id })),
             metadata: async (threadId) => bb.sdk.threads.getPluginMetadata({ threadId }),
           }, { lanePilotRunId:attempt.run_id, lanePilotTaskId:attempt.task_id, attemptId:attempt.id });
