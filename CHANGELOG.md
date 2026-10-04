@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.111 — 2026-10-04
+
+- **A task that expects a file outside its owns_paths is stopped before a writer runs** (structural finding `output_unowned`): no attempt could pass it, and such contracts were sent again 3–5 times on 2026-10-03.
+- **The PM sends a batch's dispatch calls side by side in one message**, so their plan checks (median 68 s each) run at once. Measured: the PM waited 59 min of wall time on dispatch calls over 37 tasks; making dispatch asynchronous would not start writers sooner (the check must pass first), so it stays synchronous.
+- Measured and not a bottleneck (2026-10-03, SelfyStudio): worktree provisioning (median 40 s), writers' own test runs (≈36 s per attempt, full suites 8 times a day), Lane Pilot's verification (median 6 s per command).
+
 ## 0.1.110 — 2026-10-04
 
 What slowed SelfyStudio down on 2026-10-03 (37 tasks, 88 attempts, 31 accepted — 35%; report `.bb/chats/thr_tev4nistgf/artifacts/dev-speed/`):

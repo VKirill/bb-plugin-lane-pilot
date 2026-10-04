@@ -602,6 +602,16 @@ describe("stage → native writer → receipt", () => {
       .toMatchObject({state:"blocked",reason:"structural_plan_critique_blocked",result:{structuralFindings:[expect.objectContaining({code:"task_placeholder",path:`tasks/${placeholderTask.id}/objective`,severity:"error"})]}});
     await harness.lifecycle.dispose();
   });
+  it("blocks a task that expects a file outside its owns_paths before any writer runs",async()=>{
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Model approved","findings":[]}');
+    const outsideTask={...task,id:"outside-output",expected_outputs:[...task.expected_outputs,"apps/other/Missing.vue"]};
+    const raw=String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write the fixture",task:outsideTask},{threadId:pmThreadId,projectId}));
+    expect(JSON.parse(raw)).toMatchObject({state:"blocked",reason:"structural_plan_critique_blocked"});
+    expect(spawned.some((row)=>(row.pluginMetadata as Record<string,unknown>).role==="writer")).toBe(false);
+    expect(listStageReceipts(db,"stage-run",outsideTask.id).find((row)=>row.stageId==="plan-critique"))
+      .toMatchObject({result:{structuralFindings:[expect.objectContaining({code:"output_unowned",severity:"error"})]}});
+    await harness.lifecycle.dispose();
+  });
   it("routes docs maintenance through its configured native provider and records a stage receipt",async()=>{
     const {db,harness,spawned,docsWrites}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
       "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,
