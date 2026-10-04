@@ -79,6 +79,9 @@ export default async function plugin(bb: BbPluginApi) {
   const sweepParked = () => services.stability.sweep().then(() => undefined,
     (cause) => bb.log.warn(`Lane Pilot parked-task sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   bb.background.schedule("parked-task-sweep", "*/5 * * * *", sweepParked);
+  // Mondays 05:00: away from the nightly docs (03:00) and rules (03:30) passes.
+  bb.background.schedule("stability-drill", "0 5 * * 1", () => services.stability.drill().then(() => undefined,
+    (cause) => bb.log.warn(`Lane Pilot fire drill skipped: ${cause instanceof Error ? cause.message : String(cause)}`)));
   // Recovery reads writer workspaces through the host, which is not callable while the factory registers; a service
   // starts once loading is done. (Run in the factory, a finished writer was failed with «host plugin calls are
   // unavailable during factory registration».)

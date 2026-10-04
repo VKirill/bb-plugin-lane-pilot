@@ -7,7 +7,10 @@ import type { ServerCore } from "./core";
 import type { Services } from "./services";
 
 const VERSION: string = packageJson.version;
-const PARKED_KEY = "stability:parked";
+export const PARKED_KEY = "stability:parked";
+export const BREAKERS_KEY = "stability:breakers";
+export const DRILL_KEY = "stability:drill";
+export type DrillOutcome = { at:number; version:string; checks:Array<{ name:string; ok:boolean; detail:string | null }> };
 /** Same harness fingerprint this many times in the window opens the project's breaker (Mergify pause, circuit breaker). */
 const BREAKER_THRESHOLD = 3;
 const BREAKER_WINDOW_MS = 15 * 60_000;
@@ -73,6 +76,8 @@ export function createStability(ctx:ServerCore, services:Services) {
     if (open && open.fingerprint === fingerprint) { open.openedAt = now; open.probing = false; return; }
     if (list.filter((row) => row.fingerprint === fingerprint).length >= BREAKER_THRESHOLD) {
       breakers.set(projectId, { fingerprint, openedAt:now, version:VERSION, probing:false });
+      // Kept for the self-repair watcher: a breaker open for long means the fix has not shipped.
+      void bb.storage.kv.set(BREAKERS_KEY, Object.fromEntries(breakers)).catch(() => undefined);
       bb.log.warn(`Lane Pilot breaker open for ${projectId}: ${BREAKER_THRESHOLD} tasks failed on «${fingerprint}»; new writers wait`);
     }
   }
@@ -100,7 +105,7 @@ export function createStability(ctx:ServerCore, services:Services) {
   function breakerHolds(projectId:string, now = Date.now()):string | null {
     const open = breakers.get(projectId);
     if (!open) return null;
-    if (open.version !== VERSION) { breakers.delete(projectId); return null; }
+    if (open.version !== VERSION) { breakers.delete(projectId); void bb.storage.kv.set(BREAKERS_KEY, Object.fromEntries(breakers)).catch(() => undefined); return null; }
     if (!open.probing && now - open.openedAt >= BREAKER_PROBE_MS) { open.probing = true; return null; }
     return `several tasks failed on one Lane Pilot fault («${open.fingerprint}»), waiting for its fix`;
   }
@@ -201,5 +206,24 @@ export function createStability(ctx:ServerCore, services:Services) {
     return adopted;
   }
 
-  return { stability:{ onTaskFailed, breakerHolds, diskHolds, sweep, loadParked, adoptBlockedByFaults } };
+  /**
+   * The weekly fire drill on every machine that ran a writer this week: the recovery from a stale git lock and a merge
+   * cut off midway must still work there. The outcome is kept for the self-repair watcher, which takes a failure on.
+   */
+  async function drill(now = Date.now()):Promise<Record<string, DrillOutcome>> {
+    const hosts = (db.prepare(`SELECT DISTINCT writer_host_id FROM lane_pilot_run WHERE writer_host_id IS NOT NULL AND created_at > ?`)
+      .all(now - 7 * 86400_000) as Array<{ writer_host_id:string }>).map((row) => row.writer_host_id);
+    const outcome:Record<string, DrillOutcome> = {};
+    for (const hostId of hosts) {
+      const ran = await ctx.host.call("stabilityDrill", { requestedHostId:hostId }, { hostId, timeoutMs:120_000 })
+        .catch((cause:unknown) => ({ checks:[{ name:"drill ran", ok:false, detail:cause instanceof Error ? cause.message : String(cause) }] }));
+      outcome[hostId] = { at:now, version:VERSION, checks:ran.checks };
+    }
+    await bb.storage.kv.set(DRILL_KEY, outcome);
+    const failed = Object.entries(outcome).flatMap(([hostId, row]) => row.checks.filter((check) => !check.ok).map((check) => `${hostId}: ${check.name}`));
+    bb.log.info(failed.length ? `Lane Pilot fire drill failed: ${failed.join("; ")}` : `Lane Pilot fire drill passed on ${hosts.length} machine(s)`);
+    return outcome;
+  }
+
+  return { stability:{ drill, onTaskFailed, breakerHolds, diskHolds, sweep, loadParked, adoptBlockedByFaults } };
 }

@@ -38,6 +38,9 @@ const ROLE_TITLES: Record<string, string> = {
   errand: "Lane Pilot errand",
 };
 
+/** Helpers whose threads show under the PM chat even in the default «in the plugin» placement. */
+export const OWNER_VISIBLE_ROLES:ReadonlySet<string> = new Set(["writer", "emergency-writer", "night-fixer", "specialist", "errand", "browser-qa"]);
+
 export function helperThreadTitle(role: string, taskTitle?: string): string {
   const base = ROLE_TITLES[role] ?? `Lane Pilot ${role}`;
   return taskTitle ? `${base}: ${taskTitle}` : base;
@@ -70,7 +73,9 @@ export function resolveHelperPlacement(input: {
     ...(sectionId ? { sectionId } : {}),
   };
   if (mode === "plugin") {
-    return { ok: true, placement: { ...base, visibility: "hidden" } };
+    // The owner opens these to watch the work; the rest (critics, readers, memory, docs) are bookkeeping, hundreds a
+    // day, and stay hidden. Before 2026-10-04 writers were hidden too, and their work looked like it ran outside BB.
+    return { ok: true, placement: { ...base, visibility: OWNER_VISIBLE_ROLES.has(input.role) ? "visible" : "hidden" } };
   }
   return {
     ok: true,

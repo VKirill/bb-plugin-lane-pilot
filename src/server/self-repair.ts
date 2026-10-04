@@ -7,6 +7,7 @@ import { fullAccessSpawn } from "./pm-spawn";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { stringAt } from "./values";
 import { writerBriefStats } from "../writer-brief";
+import { BREAKERS_KEY, DRILL_KEY, PARKED_KEY, type DrillOutcome, type ParkedTask } from "./stability";
 import { criticStats } from "../critic-stats";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../contracts";
@@ -47,7 +48,7 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
 
 export type Incident = {
   signature: string;
-  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage";
+  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill";
   projectId: string;
   runId: string;
   taskId: string;
@@ -256,6 +257,31 @@ export function createSelfRepair(ctx: ServerCore) {
       out.push({ signature: reasonSignature("stage", "stage left open after its task's attempts ended"), kind: "stage", projectId: row.project_id,
         runId: row.run_id, taskId: row.task_id, attemptId: `stage:${row.run_id}:${row.task_id}:${row.stage_id}`, pmThreadId: runPm(row.run_id), writerThreadId: null,
         reason: `stage ${row.stage_id} left ${row.state} ${Math.round((now - row.updated_at) / 60_000)} min after its task's attempts ended`, at: now });
+    }
+    // A task parked on a Lane Pilot fault for an hour: the fix has not shipped. A breaker open for 30 minutes: the
+    // project's writers wait on it. Both are the watcher's to fix, not the owner's.
+    const parked = await bb.storage.kv.get(PARKED_KEY).catch(() => null);
+    for (const row of (Array.isArray(parked) ? parked : []) as ParkedTask[]) {
+      if (ignored.has(row.projectId) || row.klass !== "harness" || now - row.at < 60 * 60_000) continue;
+      out.push({ signature: reasonSignature("parked", row.reason), kind: "parked", projectId: row.projectId, runId: row.runId, taskId: row.taskId,
+        attemptId: `parked:${row.runId}:${row.taskId}`, pmThreadId: row.pmThreadId, writerThreadId: null, version: VERSION,
+        reason: `task parked ${Math.round((now - row.at) / 60_000)} min on a Lane Pilot fault with no fix shipped: ${row.reason}`, at: now });
+    }
+    const breakers = await bb.storage.kv.get(BREAKERS_KEY).catch(() => null);
+    for (const [projectId, open] of Object.entries((breakers && typeof breakers === "object" ? breakers : {}) as Record<string, { fingerprint:string; openedAt:number; version:string }>)) {
+      if (ignored.has(projectId) || open.version !== VERSION || now - open.openedAt < 30 * 60_000) continue;
+      out.push({ signature: reasonSignature("breaker", open.fingerprint), kind: "breaker", projectId, runId: "-", taskId: "-",
+        attemptId: `breaker:${projectId}:${open.openedAt}`, pmThreadId: null, writerThreadId: null, version: VERSION,
+        reason: `the project's writers have been held ${Math.round((now - open.openedAt) / 60_000)} min: several tasks failed on «${open.fingerprint}»`, at: now });
+    }
+    const drill = await bb.storage.kv.get(DRILL_KEY).catch(() => null);
+    for (const [hostId, row] of Object.entries((drill && typeof drill === "object" ? drill : {}) as Record<string, DrillOutcome>)) {
+      if (row.version !== VERSION || row.at <= since) continue;
+      for (const check of row.checks.filter((item) => !item.ok)) {
+        out.push({ signature: reasonSignature("drill", check.name), kind: "drill", projectId: "-", runId: "-", taskId: "-",
+          attemptId: `drill:${hostId}:${row.at}:${check.name}`, pmThreadId: null, writerThreadId: null, version: VERSION,
+          reason: `weekly fire drill on ${hostId}: «${check.name}» failed: ${check.detail ?? ""}`, at: row.at });
+      }
     }
     // The same unfamiliar reason in several tasks within a day is a pattern, not one writer's mistake.
     const recent = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a

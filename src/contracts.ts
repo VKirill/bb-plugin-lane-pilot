@@ -176,6 +176,10 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/") }).strict(),
     output: z.object({ hostId:z.string(), removed:z.boolean() }).strict(),
   },
+  stabilityDrill: {
+    input: z.object({ requestedHostId:z.string().min(1) }).strict(),
+    output: z.object({ hostId:z.string(), checks:z.array(z.object({ name:z.string(), ok:z.boolean(), detail:z.string().nullable() }).strict()) }).strict(),
+  },
   diskFree: {
     input: z.object({ requestedHostId:z.string().min(1), path:z.string().startsWith("/") }).strict(),
     output: z.object({ hostId:z.string(), path:z.string(), freeBytes:z.number().nonnegative(), totalBytes:z.number().nonnegative() }).strict(),

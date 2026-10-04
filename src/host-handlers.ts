@@ -2,6 +2,7 @@ import { networkInterfaces } from "node:os";
 import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, snapshotWorktree } from "./verification/git-integrate";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "./verification/docs-jev";
 import { buildDocsFlows } from "./verification/docs-flows";
+import { runStabilityDrill } from "./verification/stability-drill";
 import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, revertPaths } from "./verification/git-docs";
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
@@ -66,6 +67,11 @@ export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract
 export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message,removeWorktree:input.removeWorktree,committedOnly:input.committedOnly}),
+});
+
+export const stabilityDrill: ExperimentalHostRpcHandlers<typeof hostContract>["stabilityDrill"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  checks:await runStabilityDrill(),
 });
 
 export const gitWorktreeSnapshot: ExperimentalHostRpcHandlers<typeof hostContract>["gitWorktreeSnapshot"] = async (input) => ({

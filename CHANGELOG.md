@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.124
+
+Handed to agents, not the owner:
+- **A retry knows why the last attempt failed.** The next writer gets the failure, the failing check with its output tail and the files the attempt changed, fenced as data (`<previous_attempt>`). Live: the retry of a sandbox task asked the exact question the failure raised.
+- **Main is checked after each merge (0.1.123).** The task's checks run again on main with everything merged so far; when main is red the work stays merged and Lane Pilot dispatches a repair task `<id>-mainfix` with the failing output in its plan, and tells the PM (a repair that breaks main again goes to the PM instead of chaining). Live: sandbox task accepted, check red on main, `-mainfix` dispatched by itself.
+- **Self-repair takes on the stability layer:** a task parked on a Lane Pilot fault for an hour (kind `parked`), a project breaker open for 30 minutes (`breaker`, kept in KV `stability:breakers`) and a failed fire drill (`drill`) become repair incidents.
+- **Weekly fire drill** (Mondays 05:00, host call `stabilityDrill`): on every machine that ran a writer this week, a scratch repository gets a stale `index.lock` and a merge cut off midway, and Lane Pilot's recovery must still merge; disk reading is checked too. The outcome is in KV `stability:drill`.
+- **Writers are visible.** In the default «in the plugin» placement every Lane Pilot thread was hidden, so writers' work looked like it ran outside BB. Writers, emergency and night fixers, specialists, errands and browser checks now show under the PM chat; critics, readers, memory, docs and worktree holders stay hidden.
+
 ## 0.1.122
 
 - **Rules no longer wait for the owner when the project is full.** SelfyStudio had 12 rules in force (the cap), so 5 new ones — 4 from the PM, 1 from the analyzer — sat in «awaiting your decision». Now:
