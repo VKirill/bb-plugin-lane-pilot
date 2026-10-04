@@ -1,9 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createAttempt, createRun, openDatabase } from "../../src/database";
 import { cleanupFinishedAttemptEnvironments } from "../../src/server/run-finish";
 
-async function sweep(snapshotStatus: "clean" | "saved" | "failed" = "clean") {
+async function sweep(snapshotStatus: "clean" | "saved" | "failed" = "clean", failure = "disk") {
   const deleted: string[] = [], snapshots: string[] = [];
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{
     environments:{
@@ -13,6 +13,8 @@ async function sweep(snapshotStatus: "clean" | "saved" | "failed" = "clean") {
     },
     threads:{ get:async ({ threadId }: { threadId:string }) => ({ id:threadId, environmentId:`env_of_${threadId}` }) },
   } as never });
+  const warns: string[] = [];
+  vi.spyOn(bb.log, "warn").mockImplementation((message: string) => { warns.push(message); });
   const db = openDatabase(bb);
   createRun(db, "run", "proj", "cli", "/repo");
   const now = 10_000_000;
@@ -33,9 +35,9 @@ async function sweep(snapshotStatus: "clean" | "saved" | "failed" = "clean") {
   attempt("f", "t-holder", null, "blocked", 3_600_000, "thr_holder");
   const removed = await cleanupFinishedAttemptEnvironments(bb, db, async (_host, path, name) => {
     snapshots.push(`${name}:${path}`);
-    return { status:snapshotStatus, path:snapshotStatus === "saved" ? `/released/${name}.patch` : null, reason:snapshotStatus === "failed" ? "disk" : null };
+    return { status:snapshotStatus, path:snapshotStatus === "saved" ? `/released/${name}.patch` : null, reason:snapshotStatus === "failed" ? failure : null };
   }, now);
-  return { removed:removed.sort(), deleted:deleted.sort(), snapshots };
+  return { removed:removed.sort(), deleted:deleted.sort(), snapshots, warns };
 }
 
 it("releases finished, replaced and unbound-holder worktrees; keeps live, recent and unreplaced failures", async () => {
@@ -48,4 +50,17 @@ it("keeps every worktree whose changes could not be saved", async () => {
   const { removed, deleted } = await sweep("failed");
   expect(removed).toEqual([]);
   expect(deleted).toEqual([]);
+});
+
+// A reload disposes this instance while its sweep waits on a host call; the next calls all fail with a stale handle or a
+// retired host generation. That is no lost save: the new instance sweeps the same worktrees (hub, 2026-10-04).
+it.each([
+  'plugin "lane-pilot" used a stale API handle — it was reloaded or disabled; re-entry happens via a fresh factory call',
+  "host plugin lane-pilot generation c7de82a9-b1ff-4676-a3f1-20bb08139816 is retired",
+])("stops quietly when a reload ends the plugin mid-sweep (%s)", async (failure) => {
+  const { removed, deleted, snapshots, warns } = await sweep("failed", failure);
+  expect(removed).toEqual([]);
+  expect(deleted).toEqual([]);
+  expect(snapshots).toHaveLength(1);
+  expect(warns).toEqual([]);
 });

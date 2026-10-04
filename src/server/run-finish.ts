@@ -72,6 +72,9 @@ export async function cleanupRunEnvironments(bb: BbPluginApi, db: ReturnType<typ
 const ENVIRONMENT_GRACE_MS = 30 * 60 * 1000;
 const FINAL = new Set(["accepted", "blocked", "canceled"]);
 
+/** A reload or a disabled plugin ended this instance: its host and API calls fail from now on, the next instance goes on. */
+export const pluginStopped = (cause: unknown) => /stale API handle|generation .* is retired|plugin .* (reloaded|disabled)/i.test(cause instanceof Error ? cause.message : String(cause));
+
 export type WorktreeSnapshot = (hostId:string, worktreePath:string, name:string) => Promise<{ status:"clean"|"saved"|"missing"|"failed"; path:string|null; reason:string|null }>;
 
 /**
@@ -111,6 +114,8 @@ export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: Re
     const hostId = stringAt(environment, "hostId"), path = stringAt(environment, "path");
     if (hostId && path) {
       const saved = await snapshot(hostId, path, environmentId).catch((cause: unknown) => ({ status:"failed" as const, path:null, reason:cause instanceof Error ? cause.message : String(cause) }));
+      // The sweep of an instance a reload ended stops here; the new instance sweeps the same worktrees.
+      if (saved.status === "failed" && pluginStopped(saved.reason)) return removed;
       if (saved.status === "failed") { bb.log.warn(`Lane Pilot kept worktree ${environmentId}: its changes could not be saved (${saved.reason})`); continue; }
       if (saved.status === "saved") bb.log.info(`Lane Pilot saved the changes of worktree ${environmentId} to ${saved.path}`);
     }

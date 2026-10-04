@@ -11,7 +11,7 @@ import { createReconcile } from "./src/server/reconcile";
 import { createStability } from "./src/server/stability";
 import { adoptWaitingRules } from "./src/server/insights";
 import { createRuleScan } from "./src/server/rule-scan";
-import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns } from "./src/server/run-finish";
+import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns, pluginStopped } from "./src/server/run-finish";
 import { registerRpc } from "./src/server/rpc";
 import type { Services } from "./src/server/services";
 import { createStageChildren } from "./src/server/stages/children";
@@ -74,7 +74,7 @@ export default async function plugin(bb: BbPluginApi) {
     await ctx.host.call("gitWorktreeSnapshot", { requestedHostId:hostId, worktreePath, name }, { hostId, timeoutMs:300_000 });
   const sweepEnvironments = () => cleanupFinishedAttemptEnvironments(bb, db, snapshotWorktree).then((removed) => {
     if (removed.length) bb.log.info(`Lane Pilot released ${removed.length} worktree(s) of finished attempts`);
-  }, (cause) => bb.log.warn(`Lane Pilot worktree sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
+  }, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot worktree sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   bb.background.schedule("attempt-worktree-sweep", "*/10 * * * *", sweepEnvironments);
   const sweepParked = () => services.stability.sweep().then(() => undefined,
     (cause) => bb.log.warn(`Lane Pilot parked-task sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));

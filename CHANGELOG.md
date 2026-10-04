@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.136
+
+From a self-repair of «kept worktree …: its changes could not be saved (… stale API handle …)» (2026-10-04):
+- **A reload no longer reads as a lost save.** A reload ended the plugin while its worktree sweep waited on a host snapshot; the old instance went on to the next worktree and logged «kept worktree … could not be saved» with a stale API handle or a retired host generation (4 + 14 lines on the hub today), and the self-repair watcher took them for failures. Nothing was lost: the new instance saved the same worktrees minutes later. The sweep now stops quietly when its plugin is gone, and its «sweep skipped» line stays out of the log in that case.
+
 ## 0.1.135
 
 From stopping SelfyStudio's run on the owner's request (2026-10-04):
