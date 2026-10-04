@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.128
+
+- Helper chips beside the agent badge keep to one line: a long task name is cut with an ellipsis at 11rem, and the badge itself no longer wraps on a narrow composer (seen live at the side-panel width).
+
 ## 0.1.127
 
 - **A working helper beside the agent badge now reads as one:** its role icon, a pulse and the task's name (cut to fit) instead of a bare 20 px square nobody took for a running writer; a click opens its chat in the side panel. Past three helpers the rest fold into «+N», which opens the list.

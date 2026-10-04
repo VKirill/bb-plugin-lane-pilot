@@ -81,11 +81,11 @@ export function HelperChips({ threads, frame }: { threads: HelperThread[]; frame
           aria-label={`${helperHint(row)}. ${t("helperOpen")}`}
           data-testid={`helper-chip-${row.id}`}
           onClick={() => open(row)}
-          className="relative inline-flex h-5 max-w-[11rem] cursor-pointer items-center gap-1 px-1.5 text-xs leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          style={{ ...frame, borderRadius: "0.375rem" }}
+          className="relative inline-flex h-5 cursor-pointer items-center gap-1 px-1.5 text-xs leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          style={{ ...frame, borderRadius: "0.375rem", maxWidth: "11rem", whiteSpace: "nowrap" }}
         >
           <Icon name={roleOf(row).icon} className="size-3 shrink-0" />
-          <span className="truncate">{row.title}</span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.title}</span>
           <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-primary" aria-hidden />
         </button>
       ))}

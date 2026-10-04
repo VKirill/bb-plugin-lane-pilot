@@ -56,6 +56,7 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
         padding: "0.125rem 0.5rem",
         // The box's own radius turns a 20px chip into a pill; this keeps the box's shape.
         borderRadius: "0.375rem",
+        whiteSpace: "nowrap",
       }}
       aria-label={t("composerAgentBadge")}
     >
