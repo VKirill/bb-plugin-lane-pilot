@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.121
+
+- **Fix: a reload could leave Lane Pilot «degraded: service startup-recovery did not stop».** The start-up recovery (resume, worktree sweep with snapshots, parking) ran inside the service and ignored the stop signal until it finished; under a deploy drain its snapshot calls waited, and the next reload found it still running. The recovery now runs beside the service, checks between steps whether to go on, and the service stops at once. Seen on the first drained deploy of 0.1.120; the push script now reloads a second time when BB reports another version.
+
 ## 0.1.120
 
 - **Deploy drain.** A reload stopped the host worker mid-call; a git merge killed there left `.git/index.lock` in SelfyStudio's main and failed every merge for an hour. New RPCs `deploy_drain {on}` and `deploy_status`: while draining, host calls that write to a checkout (merge, worktree create/remove/prepare, docs commit, snapshot, rollback, install, docs pages) wait, running ones finish, and the push script reloads once none is in flight (it falls back to the old acceptance wait on a Lane Pilot without drain). A drain nobody ends stops by itself after 20 minutes.

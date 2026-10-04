@@ -83,21 +83,28 @@ export default async function plugin(bb: BbPluginApi) {
   // unavailable during factory registration».)
   bb.background.service("startup-recovery", {
     async start(signal) {
-      await services.resumeOrphans().catch((cause) => {
-        bb.log.warn(`Lane Pilot resume on start skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
-      });
-      await sweepRuns();
-      await sweepEnvironments();
-      await services.stability.adoptBlockedByFaults().catch((cause) => bb.log.warn(`Lane Pilot parking of blocked tasks skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
-      await sweepParked();
-      try {
-        const closed = closeOrphanWriterStages(db, services.activeWriterTasks);
-        if (closed) bb.log.info(`Lane Pilot closed ${closed} writer stage(s) left open after their task ended`);
-      } catch (cause) { bb.log.warn(`Lane Pilot stage cleanup skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
-      try {
-        const adopted = services.resumeBrowserQaThreads();
-        if (adopted) bb.log.info(`Lane Pilot adopted ${adopted} browser check(s) left running by a reload`);
-      } catch (cause) { bb.log.warn(`Lane Pilot browser check recovery skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      // The recovery runs beside the service, not inside it: a reload must stop the service at once, and a step that
+      // waits on host calls (worktree snapshots, a deploy drain) kept it running past the reload, which left the
+      // plugin «degraded: service startup-recovery did not stop» (2026-10-04). Each step checks whether to go on.
+      const step = async (name:string, work:() => Promise<unknown> | unknown) => {
+        if (signal.aborted || ctx.isDisposed()) return;
+        try { await work(); } catch (cause) { bb.log.warn(`Lane Pilot ${name} skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      };
+      void (async () => {
+        await step("resume on start", () => services.resumeOrphans());
+        await step("run sweep", sweepRuns);
+        await step("worktree sweep", sweepEnvironments);
+        await step("parking of blocked tasks", () => services.stability.adoptBlockedByFaults());
+        await step("parked-task sweep", sweepParked);
+        await step("stage cleanup", () => {
+          const closed = closeOrphanWriterStages(db, services.activeWriterTasks);
+          if (closed) bb.log.info(`Lane Pilot closed ${closed} writer stage(s) left open after their task ended`);
+        });
+        await step("browser check recovery", () => {
+          const adopted = services.resumeBrowserQaThreads();
+          if (adopted) bb.log.info(`Lane Pilot adopted ${adopted} browser check(s) left running by a reload`);
+        });
+      })();
       await new Promise<void>((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
     },
   });
