@@ -22,7 +22,8 @@ export type RelayReminder = {
 export type RelayItem = RelayAsk | RelayReminder;
 
 /** Guards against two agents talking in circles or an agent snoozing for ever. */
-export const RELAY_LIMITS = { asksPerPairPerHour:6, openRemindersPerThread:10, remindersPerThreadPerDay:30, keepMs:7 * 86_400_000 };
+// A PM watching a day-long run sets a reminder per batch; 30 a day ran out on SelfyStudio (2026-10-04).
+export const RELAY_LIMITS = { asksPerPairPerHour:6, openRemindersPerThread:20, remindersPerThreadPerDay:150, keepMs:7 * 86_400_000 };
 
 export type RelayDeps = {
   load():Promise<RelayItem[]>;

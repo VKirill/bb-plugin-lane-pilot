@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.133
+
+From the SelfyStudio PM's bug report (2026-10-04):
+- **`lane_pilot_wait_writer` says what happened to each task.** A long run always has something running, so the answer was a bare `running` and two tasks blocked at 17:03 looked to the PM like they were still waiting, for two hours. A running result now carries `tasks`: every task touched in the last 3 hours with its state, its reason when it ended and what it waits for when queued; `stages` is cut to those tasks instead of every stage of the run.
+- **Reminders:** 150 a day and 20 open per PM thread (were 30 and 10), so a PM can follow a day-long run.
+
 ## 0.1.132
 
 - **The PM hears a writer's question at once.** Writers are quiet children, so a task blocked with `NEEDS_HUMAN` waited unseen (SelfyStudio `gc-sec-hub-d.2`: asked at 17:24, the PM found out two hours later). Lane Pilot now sends the PM the question as soon as the task stops.

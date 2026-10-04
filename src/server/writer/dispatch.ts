@@ -205,6 +205,24 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         pmReadNote:"The writer does not see these questions. If one changes what the writer should do, wait for this attempt's receipt and, if it is not accepted, dispatch again with the answer in the plan; otherwise the writer decides from the code." } : {}) };
   }
 
+  /**
+   * Each task of the run touched in the last 3 hours, by its latest attempt: a long run always has something
+   * running, so a bare «running» hid that tasks had ended blocked (SelfyStudio 2026-10-04: the PM took two blocked
+   * tasks for waiting ones for two hours).
+   */
+  function recentTaskSummary(runId:string) {
+    const since = Date.now() - 3 * 3600_000;
+    const rows = db.prepare(`SELECT task_id, state, reason, updated_at, created_at FROM lane_pilot_attempt WHERE run_id=? AND updated_at>=? ORDER BY created_at`)
+      .all(runId, since) as Array<{ task_id:string; state:string; reason:string|null; updated_at:number; created_at:number }>;
+    const latest = new Map(rows.map((row) => [row.task_id, row]));
+    const tasks = [...latest.values()].filter((row) => row.updated_at >= since).sort((a, b) => b.updated_at - a.updated_at).slice(0, 40).map((row) => {
+      const writer = listStageReceipts(db, runId, row.task_id).find((stage) => stage.stageId === "writer-agent");
+      const waiting = row.state === "queued" && writer?.state === "pending" ? writer.reason : null;
+      return { taskId:row.task_id, state:row.state, ...(row.reason ? { reason:row.reason.slice(0, 400) } : {}), ...(waiting ? { waiting } : {}) };
+    });
+    return { tasks, ids:new Set(tasks.map((row) => row.taskId)) };
+  }
+
   async function waitWriter(args:{threadId:string; projectId:string; runId:string; timeoutSec:number}): Promise<Record<string, unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm" || stringAt(metadata, "lanePilotRunId") !== args.runId) {
@@ -301,12 +319,14 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     }
     const attempts = listOpenAttempts(db).filter((attempt) => attempt.run_id === args.runId);
     const writerThreadId = attempts.at(-1)?.thread_id ?? null;
+    const recent = recentTaskSummary(args.runId);
     return {
       runId:args.runId,
       attemptId:attempts.at(-1)?.id ?? null,
       writerThreadId,
       state:"running",
-      stages:listStageReceipts(db, args.runId),
+      tasks:recent.tasks,
+      stages:listStageReceipts(db, args.runId).filter((row) => recent.ids.has(row.taskId)),
       ...(writerThreadId
         ? { message:"Писатель ещё работает. Вызови lane_pilot_wait_writer ещё раз с тем же runId." }
         : { writerStarted:false, message:"Писатель ещё не создан. Старт не закончен или не прошёл. Вызови lane_pilot_wait_writer ещё раз с тем же runId." }),
