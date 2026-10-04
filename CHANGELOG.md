@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.119
+
+- **Fix: start-up parking could pick work already done.** It took tasks by when their attempt was last touched, so a 2-day-old task a cleanup had touched the day before (`…-r3`, replaced by an accepted `…-r4`) was parked; its restart failed before a writer started, so nothing was redone. Parking now goes by when the attempt started (last 24 h), and a task counts as taken over when a sibling with the same name stem (`<id>.N` or `<id>-rN`) was accepted at any time or sent after the failed attempt started.
+
 ## 0.1.118
 
 - **Fix: a parked task's restart died on «illegal stage transition writer-agent: failed -> running».** Its writer stages had closed as failed; they are now set back to pending before the restart (`reopenWriterStages`). Seen live on the first three SelfyStudio restarts after 0.1.117 — the project breaker opened on it as designed and held new writers until this release.

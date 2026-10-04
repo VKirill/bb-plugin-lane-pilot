@@ -23,7 +23,12 @@ const DISK_MIN_FREE_SHARE = 0.05;
 export type ParkedTask = {
   projectId:string; runId:string; taskId:string; pmThreadId:string; klass:FailureClass;
   reason:string; fingerprint:string; version:string; at:number; redrives:number;
+  /** When the failed attempt started; a sibling dispatched after it took the task over. */
+  since?:number;
 };
+
+/** A task's name without its redispatch suffix: «P1.2», «fix-r4» and «fix» share one. */
+export const taskStem = (taskId:string) => taskId.replace(/(?:\.\d+|-r\d+)$/i, "");
 
 type Breaker = { fingerprint:string; openedAt:number; version:string; probing:boolean };
 
@@ -84,7 +89,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     const list = await loadParked();
     const previous = list.find((row) => row.runId === input.runId && row.taskId === input.taskId);
     const entry:ParkedTask = { projectId:input.projectId, runId:input.runId, taskId:input.taskId, pmThreadId:input.pmThreadId, klass,
-      reason:input.reason.slice(0, 400), fingerprint, version:VERSION, at:now, redrives:previous?.redrives ?? 0 };
+      reason:input.reason.slice(0, 400), fingerprint, version:VERSION, at:now, since:previous?.since, redrives:previous?.redrives ?? 0 };
     await saveParked([...list.filter((row) => row !== previous), entry]);
     bb.log.info(`Lane Pilot parked ${input.taskId} (${klass}: ${fingerprint})`);
     notePm(input.pmThreadId, `${input.taskId} hit ${klass === "harness" ? "a Lane Pilot fault" : "a machine fault"} (${input.reason.slice(0, 160)}); it is parked and restarts by itself ${klass === "harness" ? "once the fix ships" : "after a short wait"}.`);
@@ -100,13 +105,20 @@ export function createStability(ctx:ServerCore, services:Services) {
     return `several tasks failed on one Lane Pilot fault («${open.fingerprint}»), waiting for its fix`;
   }
 
-  /** A newer dispatch of the same task (`<id>.2`) or a later attempt of it means somebody already took it over. */
+  /**
+   * Somebody already took the task over: a later attempt of it, a sibling dispatch (`<id>.2`, `<id>-r4`) started after
+   * the failed attempt, or a sibling accepted at any time. Restarting then would redo work already in main.
+   */
   function superseded(row:ParkedTask):boolean {
-    const base = row.taskId.replace(/\.\d+$/, "");
-    const newer = db.prepare(`SELECT 1 FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-      WHERE r.project_id=? AND a.created_at>? AND (a.task_id=? OR a.task_id=? OR (substr(a.task_id,1,length(?)+1)=?||'.' AND substr(a.task_id,length(?)+2) NOT GLOB '*[^0-9]*'))
-      LIMIT 1`).get(row.projectId, row.at, row.taskId, base, base, base, base);
-    return Boolean(newer);
+    const stem = taskStem(row.taskId);
+    const since = row.since ?? row.at;
+    const rows = db.prepare(`SELECT a.task_id, a.state, a.created_at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+      WHERE r.project_id=? AND (a.task_id=? OR a.task_id LIKE ? ESCAPE '\\')`).all(row.projectId, stem, `${stem.replace(/[\\%_]/g, "\\$&")}%`) as
+      Array<{ task_id:string; state:string; created_at:number }>;
+    return rows.some((other) => taskStem(other.task_id) === stem && (
+      (other.task_id !== row.taskId && (other.state === "accepted" || other.created_at > since))
+      || (other.task_id === row.taskId && other.state === "accepted")
+      || (other.task_id === row.taskId && other.created_at > row.at)));
   }
 
   function dueForRedrive(row:ParkedTask, now:number):boolean {
@@ -165,18 +177,19 @@ export function createStability(ctx:ServerCore, services:Services) {
    * recognised as one, are parked once at start-up so they restart like any other (none of them is the task's fault).
    */
   async function adoptBlockedByFaults(now = Date.now()):Promise<string[]> {
-    const rows = db.prepare(`SELECT a.run_id, a.task_id, a.state, a.reason, a.updated_at, r.project_id, r.pm_thread_id
+    // By when the attempt started: a cleanup that touched an old attempt yesterday made a 2-day-old task look recent.
+    const rows = db.prepare(`SELECT a.run_id, a.task_id, a.state, a.reason, a.created_at, a.updated_at, r.project_id, r.pm_thread_id
       FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-      WHERE a.state='blocked' AND a.updated_at>? AND r.closed_at IS NULL
+      WHERE a.state='blocked' AND a.created_at>? AND r.closed_at IS NULL
         AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)`)
-      .all(now - 24 * 3600_000) as Array<{ run_id:string; task_id:string; state:string; reason:string|null; updated_at:number; project_id:string; pm_thread_id:string|null }>;
+      .all(now - 24 * 3600_000) as Array<{ run_id:string; task_id:string; state:string; reason:string|null; created_at:number; updated_at:number; project_id:string; pm_thread_id:string|null }>;
     const list = await loadParked();
     const adopted:string[] = [];
     for (const row of rows) {
       const klass = failureClass(row.state, row.reason);
       if (!PARKED_CLASSES.has(klass) || !row.pm_thread_id || list.some((entry) => entry.runId === row.run_id && entry.taskId === row.task_id)) continue;
       const entry:ParkedTask = { projectId:row.project_id, runId:row.run_id, taskId:row.task_id, pmThreadId:row.pm_thread_id, klass,
-        reason:(row.reason ?? "").slice(0, 400), fingerprint:failureFingerprint(row.reason), version:"before-adoption", at:row.updated_at, redrives:0 };
+        reason:(row.reason ?? "").slice(0, 400), fingerprint:failureFingerprint(row.reason), version:"before-adoption", at:row.updated_at, since:row.created_at, redrives:0 };
       if (superseded(entry)) continue;
       list.push(entry);
       adopted.push(row.task_id);

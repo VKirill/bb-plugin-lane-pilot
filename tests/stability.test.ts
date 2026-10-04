@@ -142,3 +142,24 @@ describe("restart reopens the writer stages", () => {
     expect(() => recordStage(db, { runId:"run", taskId:"T1", stageId:"writer-agent", state:"running", input:"plan" })).not.toThrow();
   });
 });
+
+describe("superseded work is never restarted", () => {
+  // Live 2026-10-04: «bot-preset-catalog-style-fallback-r3» (2 days old, replaced by an accepted «-r4») was adopted because
+  // a cleanup had touched it the day before, and a restart would have redone work already in main.
+  it("skips an old attempt and a task whose -rN or .N sibling was accepted or sent later", async () => {
+    const { db, stability } = setup();
+    const now = Date.now();
+    for (const task of ["fix-r3", "fix-r4", "G1", "G1.2"]) db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES(?,'run','bb','{}',1)").run(task);
+    const attempt = (id:string, task:string, state:"blocked"|"accepted", reason:string, created:number, updated = created) => {
+      createAttempt(db, { id, runId:"run", taskId:task });
+      db.prepare("UPDATE lane_pilot_attempt SET state=?, reason=?, created_at=?, updated_at=? WHERE id=?").run(state, reason, created, updated, id);
+    };
+    attempt("o1", "fix-r3", "blocked", "internal_error: x", now - 2 * 86400_000, now - 3600_000); // old, touched recently
+    attempt("o2", "fix-r4", "accepted", "", now - 86400_000 - 1);
+    attempt("o3", "G1", "blocked", "internal_error: y", now - 3600_000);
+    attempt("o4", "G1.2", "accepted", "", now - 7200_000); // accepted sibling, even earlier
+    expect(await stability.adoptBlockedByFaults(now)).toEqual([]);
+    const { taskStem } = await import("../src/server/stability");
+    expect([taskStem("fix-r4"), taskStem("G1.12"), taskStem("plain")]).toEqual(["fix", "G1", "plain"]);
+  });
+});
