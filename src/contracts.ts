@@ -1098,6 +1098,11 @@ export const rpcContract = defineRpcContract({
     }).strict(),
     output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
   },
+  /** Stops a whole run: cancels every open attempt and keeps the run out of parking and restarts until the PM sends a task again. */
+  halt_run: {
+    input: z.object({ runId: z.string().min(1) }).strict(),
+    output: z.object({ ok: z.boolean(), canceled: z.array(z.string()), left: z.array(z.string()) }).strict(),
+  },
   cancel_attempt: {
     input: z.object({ attemptId: z.string().min(1) }).strict(),
     output: z.object({ ok: z.boolean(), state: z.string(), reason: z.string().nullable() }).strict(),

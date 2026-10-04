@@ -3,6 +3,7 @@ import { PARKED_CLASSES, failureClass, failureFingerprint, type FailureClass } f
 import { createAttempt, getAttempt, getRun } from "../database";
 import { id } from "./values";
 import { reopenWriterStages } from "./stage-records";
+import { isRunHalted } from "./runs-halt";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 
@@ -88,7 +89,7 @@ export function createStability(ctx:ServerCore, services:Services) {
    */
   async function onTaskFailed(input:{ projectId:string; runId:string; taskId:string; pmThreadId:string; state:string; reason:string }, now = Date.now()):Promise<boolean> {
     const klass = failureClass(input.state, input.reason);
-    if (!PARKED_CLASSES.has(klass)) return false;
+    if (!PARKED_CLASSES.has(klass) || await isRunHalted(bb.storage.kv as never, input.runId)) return false;
     const fingerprint = failureFingerprint(input.reason);
     if (klass === "harness") noteHarnessFailure(input.projectId, fingerprint, now);
     const list = await loadParked();
@@ -140,7 +141,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     const perProject = new Map<string, number>();
     for (const row of list) {
       const run = getRun(db, row.runId);
-      if (!run || run.closed_at || superseded(row) || services.activeWriterTasks.has(`${row.runId}:${row.taskId}`)) continue;
+      if (!run || run.closed_at || superseded(row) || services.activeWriterTasks.has(`${row.runId}:${row.taskId}`) || await isRunHalted(bb.storage.kv as never, row.runId)) continue;
       const count = perProject.get(row.projectId) ?? 0;
       if (!dueForRedrive(row, now) || count >= REDRIVE_PER_SWEEP || breakerHolds(row.projectId, now)) {
         if (row.klass === "infra" && row.redrives >= INFRA_REDRIVE_LIMIT) {
@@ -193,6 +194,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     for (const row of rows) {
       const klass = failureClass(row.state, row.reason);
       if (!PARKED_CLASSES.has(klass) || !row.pm_thread_id || list.some((entry) => entry.runId === row.run_id && entry.taskId === row.task_id)) continue;
+      if (await isRunHalted(bb.storage.kv as never, row.run_id)) continue;
       const entry:ParkedTask = { projectId:row.project_id, runId:row.run_id, taskId:row.task_id, pmThreadId:row.pm_thread_id, klass,
         reason:(row.reason ?? "").slice(0, 400), fingerprint:failureFingerprint(row.reason), version:"before-adoption", at:row.updated_at, since:row.created_at, redrives:0 };
       if (superseded(entry)) continue;

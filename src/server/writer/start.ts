@@ -318,6 +318,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             stopConfirmed:failure.stopConfirmed === true,
           });
           if (!decision.run) break;
+          // A cancel stops the writer's thread, which reads as a provider failure; the chain must not take it as one
+          // and start the next model (2026-10-04: an owner's stop of SelfyStudio was followed by a new fallback writer).
+          if (typeof failure.attemptId === "string" && getAttempt(db, failure.attemptId)?.state === "canceled") break;
+          if (getAttempt(db, attemptId)?.state === "canceled") break;
           // A file the contract expects and the writer did not make is the task's problem, not the model's limit:
           // another model meets the same contract (GLM spent 138 min per such task on 2026-10-03).
           if (typeof failure.reason === "string" && failure.reason.startsWith("missing expected_outputs")) break;

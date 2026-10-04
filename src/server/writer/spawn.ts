@@ -59,7 +59,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     previousAttempt?:string;
   }): Promise<
     | { ok:true; threadId:string; providerId:string|null; model:string|null; reasoningLevel?:string; serviceTier?:"default"|"fast"|null; selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}; dirtBefore:import("../../cli-outcome").DirtSnapshot[]; workspacePath:string; executionPacketSha256?:string }
-    | { ok:false; status:"spawn_rejected"; reason:string; attemptId:string }
+    | { ok:false; status:"spawn_rejected" | "canceled"; reason:string; attemptId:string }
   > {
     let selectedProviderId:string|null=null;
     let selectedModel:string|null=null;
@@ -357,6 +357,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       }));
       const writerThreadId = stringAt(spawned, "id") ?? "";
       if (!writerThreadId) throw new Error("threads.spawn returned no writer thread id");
+      // Canceled while its thread was being made: stop the thread it got and end here.
+      if (getAttempt(db, input.attemptId)?.state === "cancel_requested") {
+        await bb.sdk.threads.stop({ threadId:writerThreadId }).catch(() => undefined);
+        transitionAttempt(db, input.attemptId, "canceled", { threadId:writerThreadId, reason:"canceled while its writer was starting" });
+        return { ok:false, status:"canceled", reason:"canceled while its writer was starting", attemptId:input.attemptId };
+      }
       transitionAttempt(db, input.attemptId, "running", { threadId:writerThreadId });
       setReasoningThread(db, input.attemptId, writerThreadId);
       const spawnedTrace = getReasoningTrace(db, input.attemptId);

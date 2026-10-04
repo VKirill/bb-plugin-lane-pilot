@@ -163,3 +163,19 @@ describe("superseded work is never restarted", () => {
     expect([taskStem("fix-r4"), taskStem("G1.12"), taskStem("plain")]).toEqual(["fix", "G1", "plain"]);
   });
 });
+
+describe("an owner's stop of a run", () => {
+  it("keeps a halted run out of parking and restarts", async () => {
+    const { setRunHalted } = await import("../src/server/runs-halt");
+    const { bb, stability, resumed } = setup();
+    await setRunHalted(bb.storage.kv as never, "run", true);
+    expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:"internal_error: x" }, 1000)).toBe(false);
+    await bb.storage.kv.set("stability:parked", [{ projectId:"proj", runId:"run", taskId:"T2", pmThreadId:"pm", klass:"harness", reason:"internal_error: y", fingerprint:"f", version:"0.0.1", at:1000, redrives:0 }]);
+    expect(await stability.sweep(2000)).toEqual([]);
+    expect(resumed).toEqual([]);
+    // The stop dropped the run's parked tasks: sending work again starts only what the PM sends.
+    expect(await stability.loadParked()).toEqual([]);
+    await setRunHalted(bb.storage.kv as never, "run", false);
+    expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:"internal_error: x" }, 4000)).toBe(true);
+  });
+});

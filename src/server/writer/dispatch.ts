@@ -1,4 +1,5 @@
 import { loadBlockedBy } from "../blocked-by";
+import { setRunHalted } from "../runs-halt";
 import { pmReadBrief } from "../../writer-brief";
 import { buildCliInvocation } from "../../argv-builder";
 import { requiredCliFlags } from "../../cli-flags";
@@ -28,6 +29,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
+    // The PM sending a task again is the restart after an owner's stop.
+    if (runId) await setRunHalted(bb.storage.kv as never, runId, false);
     if (!runId) throw new Error("PM thread has no lanePilotRunId");
     const run = getRun(db, runId);
     if (!run || run.project_id !== args.projectId || run.pm_thread_id !== args.threadId) {

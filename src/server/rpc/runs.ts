@@ -1,4 +1,6 @@
 import { t } from "../../../i18n";
+import { setRunHalted } from "../runs-halt";
+import { PARKED_KEY } from "../stability";
 import { agentPickerLabel } from "../../agent-display";
 import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../agent-profile";
 import { countAttempts, createAttempt, getActivation, getAttempt, getTask, getTaskPlan, listStageReceipts, transitionAttempt } from "../../database";
@@ -18,7 +20,7 @@ import type { Services } from "../services";
 
 export function runsRpc(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, nativeInstaller, ownedAgents } = ctx;
-  return {
+  const handlers = {
     finish_run: async ({ projectId, runId }) => {
       await finishRunSafely(bb, db, projectId, runId, "rpc");
       return { projectId, finishedRunIds: [runId], closed: true };
@@ -158,6 +160,18 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       }
       return { ok: true, state: "canceled", reason: null };
     },
+    halt_run: async ({ runId }) => {
+      await setRunHalted(bb.storage.kv as never, runId, true);
+      const open = db.prepare(`SELECT id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')`).all(runId) as Array<{ id:string }>;
+      const canceled:string[] = [], left:string[] = [];
+      for (const { id } of open) {
+        const result = await handlers.cancel_attempt({ attemptId:id }).catch(() => ({ ok:false }));
+        (result.ok ? canceled : left).push(id);
+      }
+      const parked = await bb.storage.kv.get(PARKED_KEY).catch(() => null);
+      if (Array.isArray(parked)) await bb.storage.kv.set(PARKED_KEY, parked.filter((row) => (row as { runId?:string }).runId !== runId));
+      return { ok:left.length === 0, canceled, left };
+    },
     retry_attempt: ({ attemptId }) => {
       const attempt = getAttempt(db, attemptId);
       if (!attempt) return { ok: false, state: "missing", attemptId, reason: "attempt does not exist" };
@@ -175,5 +189,6 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "native_thread" | "activation_context" | "cancel_attempt" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "native_thread" | "activation_context" | "cancel_attempt" | "halt_run" | "retry_attempt" | "resume_runs">;
+  return handlers;
 }

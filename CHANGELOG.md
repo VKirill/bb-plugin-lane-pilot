@@ -2,6 +2,13 @@
 
 ## 0.1.134
 
+From stopping SelfyStudio's run on the owner's request (2026-10-04):
+- **A cancel ends the fallback chain.** Stopping a fallback writer's thread read as a provider failure and the chain started the next model; it now stops when the attempt was canceled.
+- **An attempt whose writer is still starting can be canceled.** It was refused («attempt has no writer thread»); it is now marked, and the spawn stops the thread it gets and ends the attempt canceled.
+- **`halt_run {runId}`** stops a whole run: cancels every open attempt, drops its parked tasks and keeps it out of parking, restarts and post-merge repair tasks, until the PM sends a task in that run again.
+
+## 0.1.134
+
 - **A finished task survives a reload during its acceptance.** Lane Pilot writes its receipt (`.agents/runs/<run>/artifacts/<task>/acceptance.json`) into the attempt's worktree before the merge; when a deploy reloaded the plugin in that window, the resumed check read the receipt as the writer's own change and failed the task with `owns_paths rejected …/acceptance.json` (SelfyStudio `gc-hub-port-full.2`, and `gc-scenarios-wishes-pixel.2` twice until its retries ran out, 2026-10-04). The final output check now sees the same files as the ownership gate: bookkeeping under `.agents/`, `.bb/` and tool caches counts only when the task owns it.
 
 ## 0.1.133

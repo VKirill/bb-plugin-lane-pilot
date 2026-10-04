@@ -16,6 +16,7 @@ import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, threadFailure, waitThrea
 import { join, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
+import { isRunHalted } from "../runs-halt";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
@@ -471,7 +472,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
    */
   async function checkMainAfterMerge(input:{ projectId:string; pmThreadId:string; config:Parameters<typeof services.runVerification>[0];
     runId:string; task:TaskV2; basePath:string; worktreePath:string }) {
-    if (!input.task.verification.length || !input.pmThreadId) return;
+    if (!input.task.verification.length || !input.pmThreadId || await isRunHalted(bb.storage.kv as never, input.runId)) return;
     const onBase = (cwd:string) => resolve(cwd).startsWith(resolve(input.worktreePath)) ? join(input.basePath, relative(input.worktreePath, cwd)) : cwd;
     const onMain = { ...input.task, project_cwd:input.basePath, verification:input.task.verification.map((command) => ({ ...command, cwd:onBase(command.cwd) })) };
     const checks = await services.runVerification(input.config, onMain, input.runId).catch((cause:unknown) => {
