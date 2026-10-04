@@ -60,13 +60,20 @@ export function useOpenHelper() {
   };
 }
 
-/** One square per working helper, next to the agent badge: role icon, a pulse while it works, the task on hover. */
+/**
+ * The working helpers beside the agent badge: role icon, a pulse, and the task's name, so a running writer reads as
+ * one at a glance (a bare 20 px square went unnoticed, 2026-10-04); click opens its chat. Past three, the rest fold
+ * into a «+N» that opens the list.
+ */
 export function HelperChips({ threads, frame }: { threads: HelperThread[]; frame?: CSSProperties }) {
   const open = useOpenHelper();
+  const navigate = useBbNavigate();
   if (!threads.length) return null;
+  const shown = threads.slice(0, 3);
+  const rest = threads.length - shown.length;
   return (
     <span className="pointer-events-auto flex items-center gap-1" data-testid="helper-chips">
-      {threads.map((row) => (
+      {shown.map((row) => (
         <button
           key={row.id}
           type="button"
@@ -74,13 +81,20 @@ export function HelperChips({ threads, frame }: { threads: HelperThread[]; frame
           aria-label={`${helperHint(row)}. ${t("helperOpen")}`}
           data-testid={`helper-chip-${row.id}`}
           onClick={() => open(row)}
-          className="relative inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="relative inline-flex h-5 max-w-[11rem] cursor-pointer items-center gap-1 px-1.5 text-xs leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           style={{ ...frame, borderRadius: "0.375rem" }}
         >
-          <Icon name={roleOf(row).icon} className="size-3" />
+          <Icon name={roleOf(row).icon} className="size-3 shrink-0" />
+          <span className="truncate">{row.title}</span>
           <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-primary" aria-hidden />
         </button>
       ))}
+      {rest > 0 ? (
+        <button type="button" data-testid="helper-chips-more" aria-label={t("helperMore").replace("{n}", String(rest))}
+          onClick={() => navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
+          className="inline-flex h-5 cursor-pointer items-center px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
+          style={{ ...frame, borderRadius: "0.375rem" }}>+{rest}</button>
+      ) : null}
     </span>
   );
 }

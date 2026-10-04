@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.127
+
+- **A working helper beside the agent badge now reads as one:** its role icon, a pulse and the task's name (cut to fit) instead of a bare 20 px square nobody took for a running writer; a click opens its chat in the side panel. Past three helpers the rest fold into «+N», which opens the list.
+
 ## 0.1.126
 
 - **Writers no longer stop for a tool the project's rules name but the worktree lacks.** SelfyStudio's AGENTS.md requires a GitNexus impact check before edits; writers had no GitNexus and answered «restore GitNexus access» (NEEDS_HUMAN), blocking a 6-task chain on 2026-10-04. The brief now says such a rule is no reason to stop: read the code yourself and go on.
