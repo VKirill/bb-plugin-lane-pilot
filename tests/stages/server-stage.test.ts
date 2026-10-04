@@ -602,6 +602,26 @@ describe("stage → native writer → receipt", () => {
       .toMatchObject({state:"blocked",reason:"structural_plan_critique_blocked",result:{structuralFindings:[expect.objectContaining({code:"task_placeholder",path:`tasks/${placeholderTask.id}/objective`,severity:"error"})]}});
     await harness.lifecycle.dispose();
   });
+  it("blocks a dispatch whose depends_on names itself or closes a loop with an open task, and only warns on a binary output",async()=>{
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Model approved","findings":[]}');
+    const dispatch=async(candidate:TaskV2)=>{
+      const raw=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write the fixture",task:candidate},{threadId:pmThreadId,projectId})));
+      return {raw,findings:(listStageReceipts(db,"stage-run",raw.taskId).find((row)=>row.stageId==="plan-critique")?.result as {structuralFindings?:Array<{code:string;severity:string}>}|undefined)?.structuralFindings??[]};
+    };
+    const self=await dispatch({...task,id:"loop-self",depends_on:["loop-self"]});
+    expect(self.raw).toMatchObject({state:"blocked",reason:"structural_plan_critique_blocked"});
+    expect(self.findings).toEqual([expect.objectContaining({code:"depends_self",severity:"error"})]);
+    const open={...task,id:"loop-b",depends_on:["loop-a"]};
+    createTask(db,{id:open.id,runId:"stage-run",kind:"bb",contract:open});
+    createAttempt(db,{id:"loop-b-attempt",runId:"stage-run",taskId:open.id});
+    const cycle=await dispatch({...task,id:"loop-a",depends_on:["loop-b"]});
+    expect(cycle.raw).toMatchObject({state:"blocked",reason:"structural_plan_critique_blocked"});
+    expect(cycle.findings).toEqual(expect.arrayContaining([expect.objectContaining({code:"depends_cycle",severity:"error"})]));
+    const binary=await dispatch({...task,id:"binary-output",expected_outputs:["note.txt","note.woff2"],owns_paths:["note.txt","note.woff2"]});
+    expect(binary.raw.reason).not.toBe("structural_plan_critique_blocked");
+    expect(binary.findings).toEqual(expect.arrayContaining([expect.objectContaining({code:"output_binary",severity:"warning"})]));
+    await harness.lifecycle.dispose();
+  });
   it("blocks a task that expects a file outside its owns_paths before any writer runs",async()=>{
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Model approved","findings":[]}');
     const outsideTask={...task,id:"outside-output",expected_outputs:[...task.expected_outputs,"apps/other/Missing.vue"]};

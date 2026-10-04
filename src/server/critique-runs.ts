@@ -1,8 +1,8 @@
 import { isOutputPath } from "../validate-output";
 import { fileAllowedByOwns } from "../owns-paths";
-import { hostContract } from "../contracts";
+import { hostContract, taskV2Schema } from "../contracts";
 import type { PrototypeConfig, TaskV2 } from "../contracts";
-import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, listLiveTasksForRun, listStageReceipts, loadProjectSettings, openDatabase } from "../database";
+import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, loadProjectSettings, openDatabase } from "../database";
 import { bbServiceTier, writerExecutionSelection, writerServiceTier } from "../jev-reasoning";
 import { qaSpawnClaimed } from "../qa-host";
 import { reconcileCritic } from "../reconcile";
@@ -11,7 +11,7 @@ import { codeCritiquePrompt, codeCritiqueSource, critiqueFromStageResult, critiq
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../stages/code-critique";
 import { sha256 } from "../stages/contract";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../stages/critique";
-import { findTaskPlaceholderPaths } from "../stages/critique-coverage";
+import { binaryOutputs, findTaskPlaceholderPaths } from "../stages/critique-coverage";
 import type { CoverageFinding } from "../stages/critique-coverage";
 import { buildExecutionPacket, renderPacketExcerpts } from "../stages/execution-packet";
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../stages/pm-read";
@@ -23,6 +23,7 @@ import { fullAccessSpawn } from "./pm-spawn";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { recordStage } from "./stage-records";
 import { stringAt } from "./values";
+import { dependsOnTask } from "./writer/start";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
@@ -109,6 +110,26 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   }
 }
 
+/** depends_on that can never be satisfied: the task names itself, or an open task of the project that waits for it back. */
+export function dependencyFindings(task:{id:string;depends_on?:readonly string[]},open:readonly {id:string;depends_on?:readonly string[]}[]):CoverageFinding[] {
+  const path=`tasks/${task.id}/depends_on`,found:CoverageFinding[]=[];
+  if(dependsOnTask(task.depends_on,task.id))
+    found.push({code:"depends_self",path,severity:"error",finding:`Task ${task.id} lists itself in depends_on, so it would wait for itself forever; remove that entry`});
+  const seen=new Set([task.id]);
+  const walk=(node:{depends_on?:readonly string[]},trail:string[]):string[]|null=>{
+    for(const next of open.filter((row)=>!seen.has(row.id)&&(node.depends_on??[]).some((dep)=>dependsOnTask([dep],row.id)))) {
+      if(dependsOnTask(next.depends_on,task.id))return [...trail,next.id];
+      seen.add(next.id);
+      const cycle=walk(next,[...trail,next.id]);if(cycle)return cycle;
+    }
+    return null;
+  };
+  const cycle=walk(task,[]);
+  if(cycle)found.push({code:"depends_cycle",path,severity:"error",
+    finding:`Task ${task.id} depends_on ${cycle[0]}, and ${[...cycle,task.id].join(" -> ")} closes a loop of open tasks, so none of them can start; drop one depends_on edge`});
+  return found;
+}
+
 export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string})
   : Promise<{allowed:boolean;reason?:string;critique?:unknown}> {
   const settings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
@@ -124,14 +145,24 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     severity:"error" as const,finding:`Task ${task.id} contains unresolved REPLACE_ME at ${path}`}))).slice(0,10);
   // An expected file the task may not write fails every attempt (SelfyStudio 2026-10-03): caught here, before a writer runs.
   const unownedOutputs=input.task.expected_outputs.filter((entry)=>entry.includes("/")&&isOutputPath(entry)&&!fileAllowedByOwns(entry.replace(/^\.\//,""),input.task.owns_paths));
-  structuralFindings=[...unownedOutputs.slice(0,5).map((entry)=>({code:"output_unowned" as const,path:`tasks/${input.task.id}/expected_outputs`,severity:"error" as const,
-    finding:`Task ${input.task.id} expects ${entry}, which is outside its owns_paths: the writer may not create it, so no attempt can pass`})),...structuralFindings].slice(0,10);
+  const openTasks:Array<{id:string;depends_on:string[]}>=[];
+  for(const row of listOpenAttempts(input.db)) {
+    if(row.project_id!==input.projectId||row.task_id===input.task.id||openTasks.some((open)=>open.id===row.task_id))continue;
+    const parsed=taskV2Schema.safeParse(getTask(input.db,row.task_id)?.contract);
+    if(parsed.success)openTasks.push({id:row.task_id,depends_on:parsed.data.depends_on});
+  }
+  const planFindings:CoverageFinding[]=[...dependencyFindings(input.task,openTasks),
+    ...binaryOutputs(input.task.expected_outputs).slice(0,3).map((entry)=>({code:"output_binary" as const,path:`tasks/${input.task.id}/expected_outputs`,severity:"warning" as const,
+      finding:`Task ${input.task.id} expects ${entry}, a binary file a model cannot author; say in the plan where it is copied from (a package, a URL, an existing file) or drop it from expected_outputs`}))];
+  structuralFindings=[...planFindings.filter((finding)=>finding.severity==="error"),...unownedOutputs.slice(0,5).map((entry)=>({code:"output_unowned" as const,path:`tasks/${input.task.id}/expected_outputs`,severity:"error" as const,
+    finding:`Task ${input.task.id} expects ${entry}, which is outside its owns_paths: the writer may not create it, so no attempt can pass`})),...structuralFindings,...planFindings.filter((finding)=>finding.severity!=="error")].slice(0,10);
   try {
     const coverageHost=input.bb.hosts.experimental_client({contract:hostContract});
     const scan=await coverageHost.call("inspectCritiqueCoverage",{requestedHostId:input.config.hostId,workspacePath:input.task.project_cwd,
       plan:input.plan,tasks:runTasks.map((task)=>({id:task.id,lane:task.lane??"write",ownsPaths:task.owns_paths??[],hasVerification:task.verify==="none"||!!task.verification?.length,
         verification:(task.verification??[]).map((command)=>({command:command.command,timeoutSec:command.timeout_sec??undefined}))}))},{hostId:input.config.hostId,timeoutMs:30_000});
-    coverageStatus=scan.status;coveragePathCount=scan.pathCount;structuralFindings=[...structuralFindings,...scan.findings].slice(0,10);
+    coverageStatus=scan.status;coveragePathCount=scan.pathCount;// A bad command of a task already running must not block an unrelated dispatch of the run.
+    structuralFindings=[...structuralFindings,...scan.findings.map((finding)=>finding.code==="verify_filter_ignored"&&finding.path!==`tasks/${input.task.id}`?{...finding,severity:"warning" as const}:finding)].slice(0,10);
   } catch {
     coverageStatus="unavailable";
   }

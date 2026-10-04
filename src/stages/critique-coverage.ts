@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, sep } from "node:path";
 
-export type CoverageFinding={code:"plan_path_unowned"|"owns_gap"|"coverage_scan_truncated"|"owns_overlap"|"verify_missing"|"verify_heavy"|"owns_empty"|"plan_missing"|"no_tasks"|"caller_unowned"|"task_placeholder"|"output_unowned";path:string;severity:"error"|"warning"|"info";finding:string};
+export type CoverageFinding={code:"plan_path_unowned"|"owns_gap"|"coverage_scan_truncated"|"owns_overlap"|"verify_missing"|"verify_heavy"|"owns_empty"|"plan_missing"|"no_tasks"|"caller_unowned"|"task_placeholder"|"output_unowned"|"output_binary"|"verify_filter_ignored"|"depends_cycle"|"depends_self";path:string;severity:"error"|"warning"|"info";finding:string};
 export type CoverageScan={status:"complete"|"truncated";pathCount:number;findings:CoverageFinding[]};
 const SKIP=new Set([".git","node_modules",".agents",".bb",".claude",".lane-pilot","dist","build","vendor","__pycache__",".venv",".tox","coverage"]);
 const TEXT=new Set([".ts",".tsx",".js",".jsx",".mjs",".cjs",".py",".md",".json",".yaml",".yml",".sh",".go",".rs"]);
@@ -58,6 +58,30 @@ function heavyVerification(command:string):boolean {
   if(value.includes(" -- ")||/\s--\s+\S/.test(value))return false;
   if(/(?:test:unit|vitest|jest).+\.(?:ts|tsx|js|mjs|cjs|py)\b/i.test(value))return false;
   return true;
+}
+const BINARY=/\.(?:woff2?|ttf|otf|eot|png|jpe?g|gif|webp|avif|ico|pdf|zip|gz|mp3|mp4|mov|wasm)$/i;
+/** Expected outputs a model cannot author (fonts, images, archives, media, wasm). */
+export function binaryOutputs(outputs:readonly string[]):string[] {return outputs.filter((entry)=>BINARY.test(entry.trim()));}
+/** `npm -w ws run test -- args` / `pnpm --filter ws test -- args`: the workspace and the script that receives a filter after «--». */
+export function filteredScriptRun(command:string):{ws:string;script:string}|null {
+  for(const part of command.split(/&&|;|\|\|/)) {
+    const tokens=part.trim().split(/\s+/),manager=tokens[0],cut=tokens.indexOf("--");
+    if((manager!=="npm"&&manager!=="pnpm")||cut<0||cut===tokens.length-1)continue;
+    const flag=manager==="npm"?/^(?:-w|--workspace)$/:/^(?:-F|--filter)$/,words:string[]=[];let ws="";
+    for(let i=1;i<cut;i++) {
+      const token=tokens[i]!,inline=/^(?:--workspace|--filter)=(.+)$/.exec(token);
+      if(inline)ws=inline[1]!;else if(flag.test(token))ws=tokens[++i]??"";else if(!token.startsWith("-"))words.push(token);
+    }
+    ws=ws.replace(/^["']|["']$/g,"");
+    const verb=words[0],script=verb==="run"||verb==="run-script"?words[1]:verb==="t"?"test":manager==="pnpm"||verb==="test"?verb:undefined;
+    if(ws&&script)return {ws,script};
+  }
+  return null;
+}
+/** A script whose last command is `node --test`: npm appends the filter after «--», and that runner runs every file anyway. */
+export function ignoresTrailingFilter(script:string):boolean {
+  const last=script.split(/&&|;|\|\|/).pop()!.trim();
+  return /(?:^|\s)(?:node|tsx)\s(?:\S+\s)*?--test(?:\s|$)/.test(last);
 }
 function jsonFromCli(stdout:string):Record<string,unknown>|null {
   const start=stdout.indexOf("{");if(start<0)return null;
@@ -155,6 +179,27 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
     const command=verification.command??"";
     if((verification.timeout_sec??0)>900||heavyVerification(command))
       add(findings,"verify_heavy",`tasks/${task.id??"unknown"}`,`Task ${task.id??"unknown"} verification[${index}] looks like a full-package check; keep the dispatch check focused and reserve broad validation for the integration gate`,"warning");
+  }
+  const packageScripts=new Map<string,Record<string,unknown>|null>();
+  const workspaceScripts=async(ws:string):Promise<Record<string,unknown>|null>=>{
+    if(packageScripts.has(ws))return packageScripts.get(ws)!;
+    const dir=ws.replace(/^\.\//,"").replace(/\/$/,"");let found:Record<string,unknown>|null=null;
+    for(const file of files.filter((path)=>/^(?:[^/]+\/){0,4}package\.json$/.test(path)).slice(0,40)) {
+      const handle=await open(join(root,...file.split("/")),constants.O_RDONLY|constants.O_NOFOLLOW).catch(()=>null);
+      if(!handle)continue;
+      try {
+        const info=await handle.stat();if(!info.isFile()||info.size>65_536)continue;
+        const pkg=JSON.parse(await handle.readFile("utf8")) as {name?:unknown;scripts?:unknown};
+        if((pkg.name===ws||file===`${dir}/package.json`)&&pkg.scripts&&typeof pkg.scripts==="object"){found=pkg.scripts as Record<string,unknown>;break;}
+      } catch {/* unreadable package.json: no fact, no finding */} finally {await handle.close();}
+    }
+    packageScripts.set(ws,found);return found;
+  };
+  for(const task of input.tasks)for(const [index,verification] of (task.verification??[]).entries()) {
+    const run=filteredScriptRun(verification.command??"");if(!run)continue;
+    const script=(await workspaceScripts(run.ws))?.[run.script];
+    if(typeof script==="string"&&ignoresTrailingFilter(script))
+      add(findings,"verify_filter_ignored",`tasks/${task.id??"unknown"}`,`Task ${task.id??"unknown"} verification[${index}] passes a filter after «--», but the ${run.ws} ${run.script} script («${script.slice(0,80)}») ignores it and runs the whole suite; call the runner on the file directly (for example «node --test <file>» in that workspace)`,"error");
   }
   for(let left=0;left<writers.length;left++)for(let right=left+1;right<writers.length;right++) {
     const a=writers[left]!,b=writers[right]!;

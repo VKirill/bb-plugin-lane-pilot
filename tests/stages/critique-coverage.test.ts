@@ -2,7 +2,8 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { collectGitNexusCallerPaths, findTaskPlaceholderPaths, scanCritiqueCoverage } from "../../src/stages/critique-coverage";
+import { dependencyFindings } from "../../src/server/critique-runs";
+import { binaryOutputs,collectGitNexusCallerPaths, filteredScriptRun, findTaskPlaceholderPaths, ignoresTrailingFilter, scanCritiqueCoverage } from "../../src/stages/critique-coverage";
 
 const roots:string[]=[];
 async function workspace():Promise<string>{const path=await mkdtemp(join(tmpdir(),"lane-pilot-critique-"));roots.push(path);return path;}
@@ -123,5 +124,58 @@ describe("bounded structural critique coverage scan",()=>{
     expect(collectGitNexusCallerPaths({byDepth:{"1":[
       {filePath:"src/consumer.ts"},{filePath:"/workspace/tests/consumer.test.ts"},{filePath:"../../outside.ts"},
     ]}},"/workspace")).toEqual(["src/consumer.ts","tests/consumer.test.ts"]);
+  });
+
+  it("lists binary expected outputs a model cannot author",()=>{
+    expect(binaryOutputs(["public/fonts/Inter.woff2","src/a.ts","assets/Logo.PNG","docs/spec.pdf","data.json"])).toEqual(["public/fonts/Inter.woff2","assets/Logo.PNG","docs/spec.pdf"]);
+  });
+
+  it("recognises npm and pnpm script runs that pass a filter after --",()=>{
+    expect(filteredScriptRun("npm -w @app/server run test -- tests/a.test.ts")).toEqual({ws:"@app/server",script:"test"});
+    expect(filteredScriptRun("npm run test --workspace packages/web -- a.test.ts")).toEqual({ws:"packages/web",script:"test"});
+    expect(filteredScriptRun("cd x && npm test --workspace=web -- a")).toEqual({ws:"web",script:"test"});
+    expect(filteredScriptRun("pnpm --filter web test -- a.test.ts")).toEqual({ws:"web",script:"test"});
+    expect(filteredScriptRun("npm -w web run test")).toBeNull();
+    expect(filteredScriptRun("npm -w web run test --")).toBeNull();
+    expect(filteredScriptRun("npm run test -- a")).toBeNull();
+    expect(filteredScriptRun("npx vitest run -w web -- a")).toBeNull();
+  });
+
+  it("knows which test scripts ignore a trailing filter",()=>{
+    expect(ignoresTrailingFilter("node --test tests/")).toBe(true);
+    expect(ignoresTrailingFilter("npm run build && node --import tsx --test tests/*.ts")).toBe(true);
+    expect(ignoresTrailingFilter("vitest run")).toBe(false);
+    expect(ignoresTrailingFilter("node --test tests/ && vitest run")).toBe(false);
+  });
+
+  it("blocks a filtered workspace test whose package.json script ignores the filter, found by name or by directory",async()=>{
+    const root=await workspace();
+    await mkdir(join(root,"packages/server"),{recursive:true});await mkdir(join(root,"packages/web"),{recursive:true});
+    await writeFile(join(root,"packages/server/package.json"),JSON.stringify({name:"@app/server",scripts:{test:"node --test tests/"}}));
+    await writeFile(join(root,"packages/web/package.json"),JSON.stringify({name:"@app/web",scripts:{test:"vitest run"}}));
+    const task=(id:string,command:string)=>({id,lane:"writer",owns_paths:["src/x.ts"],has_verification:true,verification:[{command}]});
+    const result=await scanCritiqueCoverage({workspacePath:root,plan:"Edit",tasks:[
+      task("by-name","npm -w @app/server run test -- tests/a.test.ts"),task("by-dir","npm run test --workspace packages/server -- a"),
+      task("honoured","npm -w @app/web run test -- a.test.ts"),task("unknown","npm -w @app/none run test -- a"),task("plain","npm -w @app/server run test")]});
+    const flagged=result.findings.filter((finding)=>finding.code==="verify_filter_ignored");
+    expect(flagged.map((finding)=>[finding.path,finding.severity])).toEqual([["tasks/by-name","error"],["tasks/by-dir","error"]]);
+    expect(flagged[0]!.finding).toContain("node --test");
+  });
+});
+
+describe("depends_on findings",()=>{
+  it("flags self and base-id self references",()=>{
+    expect(dependencyFindings({id:"P1",depends_on:["P1"]},[]).map((f)=>f.code)).toEqual(["depends_self"]);
+    expect(dependencyFindings({id:"P1.2",depends_on:["P1"]},[]).map((f)=>f.code)).toEqual(["depends_self"]);
+    expect(dependencyFindings({id:"P2",depends_on:["P1"]},[])).toEqual([]);
+  });
+  it("flags direct and transitive loops with open tasks, resolving base ids",()=>{
+    expect(dependencyFindings({id:"A",depends_on:["B"]},[{id:"B",depends_on:["A"]}]).map((f)=>f.code)).toEqual(["depends_cycle"]);
+    const chain=dependencyFindings({id:"P1.2",depends_on:["P2"]},[{id:"P2.1",depends_on:["P3"]},{id:"P3",depends_on:["P1"]}]);
+    expect(chain.map((f)=>f.code)).toEqual(["depends_cycle"]);
+    expect(chain[0]!.finding).toContain("P2.1 -> P3 -> P1.2");
+  });
+  it("leaves a plain chain alone",()=>{
+    expect(dependencyFindings({id:"C",depends_on:["B"]},[{id:"B",depends_on:["A"]},{id:"A",depends_on:[]}])).toEqual([]);
   });
 });
