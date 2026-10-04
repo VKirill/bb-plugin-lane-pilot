@@ -1114,6 +1114,25 @@ export const rpcContract = defineRpcContract({
     input: z.object({ projectId: z.string().min(1), since: z.number().int(), until: z.number().int().optional() }).strict(),
     output: z.unknown(),
   },
+  /** How much each critic is worth in a project: blocks, what became of blocked tasks, misses, first-try acceptance. */
+  critic_stats: {
+    input: z.object({ projectId:z.string().min(1), days:z.number().int().min(1).max(90).default(7) }).strict(),
+    output: z.object({ days:z.number(), stats:z.array(z.object({
+      stage:z.string(), runs:z.number(), approved:z.number(), blocked:z.number(), skipped:z.number(), blockShare:z.number().nullable(),
+      afterBlock:z.object({ fixedAndAccepted:z.number(), sentAgainNotAccepted:z.number(), dropped:z.number() }),
+      missed:z.object({ count:z.number(), examples:z.array(z.object({ taskId:z.string(), reason:z.string() })) }),
+      firstTryAccepted:z.object({ reviewed:z.object({ tasks:z.number(), share:z.number().nullable() }), notReviewed:z.object({ tasks:z.number(), share:z.number().nullable() }) }),
+    })) }),
+  },
+  /** Before a deploy: hold new checkout-writing host calls and report the ones still running. */
+  deploy_drain: {
+    input: z.object({ on:z.boolean() }).strict(),
+    output: z.unknown(),
+  },
+  deploy_status: {
+    input: z.object({}).strict(),
+    output: z.unknown(),
+  },
   self_repair_status: {
     input: z.object({}).strict(),
     output: z.unknown(),

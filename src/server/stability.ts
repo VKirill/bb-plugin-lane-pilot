@@ -27,8 +27,8 @@ export type ParkedTask = {
   since?:number;
 };
 
-/** A task's name without its redispatch suffix: «P1.2», «fix-r4» and «fix» share one. */
-export const taskStem = (taskId:string) => taskId.replace(/(?:\.\d+|-r\d+)$/i, "");
+export { taskStem } from "../task-stem";
+import { taskStem } from "../task-stem";
 
 type Breaker = { fingerprint:string; openedAt:number; version:string; probing:boolean };
 

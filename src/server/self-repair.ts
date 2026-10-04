@@ -7,6 +7,7 @@ import { fullAccessSpawn } from "./pm-spawn";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { stringAt } from "./values";
 import { writerBriefStats } from "../writer-brief";
+import { criticStats } from "../critic-stats";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../contracts";
 import type { ServerCore } from "./core";
@@ -398,11 +399,14 @@ export function createSelfRepair(ctx: ServerCore) {
 export function selfRepairRpc(ctx: ServerCore) {
   const repair = createSelfRepair(ctx);
   return {
+    critic_stats: async ({ projectId, days }) => ({ days, stats:criticStats(ctx.db, projectId, Date.now() - days * 86400_000) }),
+    deploy_drain: async ({ on }) => ({ version:VERSION, ...ctx.deployDrain.set(on) }),
+    deploy_status: async () => ({ version:VERSION, ...ctx.deployDrain.status() }),
     self_repair_status: async () => repair.status(),
     self_repair_configure: async (patch) => repair.setConfig(patch),
     self_repair_tick: async ({ dryRun, since }) => repair.tick({ dryRun, since }),
     writer_brief_stats: async ({ projectId, since, until }) => writerBriefStats(ctx.db, projectId, since, until ?? Date.now()),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "self_repair_status" | "self_repair_configure" | "self_repair_tick" | "writer_brief_stats">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "critic_stats" | "deploy_drain" | "deploy_status" | "self_repair_status" | "self_repair_configure" | "self_repair_tick" | "writer_brief_stats">;
 }
 
 export type SelfRepair = ReturnType<typeof createSelfRepair>;

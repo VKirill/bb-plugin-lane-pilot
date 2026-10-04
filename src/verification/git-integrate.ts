@@ -64,6 +64,20 @@ export async function recoverStaleGitLock(cwd:string):Promise<string|null> {
 }
 
 /**
+ * A merge cut off midway (its process killed) leaves MERGE_HEAD, and every later merge refuses to start. Under the
+ * integration lock nobody else merges here, so one older than 10 minutes is aborted.
+ */
+export async function abortStaleMerge(cwd:string):Promise<boolean> {
+  const dir=git(cwd,["rev-parse","--absolute-git-dir"]);
+  if(!dir.ok||!dir.stdout.trim()) return false;
+  const info=await stat(join(dir.stdout.trim(),"MERGE_HEAD")).catch(()=>null);
+  if(!info||Date.now()-info.mtimeMs<=600_000) return false;
+  const aborted=git(cwd,["merge","--abort"]).ok;
+  console.warn(`lane-pilot: ${aborted?"aborted":"could not abort"} a merge left unfinished in ${cwd} (${Math.round((Date.now()-info.mtimeMs)/60_000)} min old)`);
+  return aborted;
+}
+
+/**
  * One integration at a time per base checkout. The lock names its process; a lock whose process is gone
  * (the host restarted mid-merge) is taken over at once, and any lock older than 10 minutes is stale.
  */
@@ -120,6 +134,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   try {
     result=await withBaseLock(input.basePath,async()=>{
       await recoverStaleGitLock(input.basePath);
+      await abortStaleMerge(input.basePath);
       const before=git(input.basePath,["rev-parse","HEAD"]).stdout.trim();
       const merged=merge(input.basePath,sha,input.message);
       if(merged.status==="merged"&&before) merged.rebuilt=await rebuildChangedPackages(input.basePath,before);

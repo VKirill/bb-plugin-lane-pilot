@@ -102,3 +102,20 @@ describe("a merge blocked by a lock", () => {
     expect((await integrateWorktree({ basePath:base, worktreePath:path, message:"t" })).status).toBe("merged");
   });
 });
+
+describe("a merge cut off midway", () => {
+  it("is aborted once older than 10 minutes, so the next merge can run", async () => {
+    const { abortStaleMerge } = await import("../../src/verification/git-integrate");
+    const { base, worktree } = await repo();
+    const path = await worktree("w3");
+    await writeFile(join(path, "server.ts"), "theirs\n"); git(path, "commit", "-qam", "theirs");
+    await writeFile(join(base, "server.ts"), "ours\n"); git(base, "commit", "-qam", "ours");
+    spawnSync("git", ["merge", "--no-edit", "bb/w3"], { cwd: base }); // conflicts: MERGE_HEAD stays
+    const head = join(base, ".git", "MERGE_HEAD");
+    expect(existsSync(head)).toBe(true);
+    expect(await abortStaleMerge(base)).toBe(false); // fresh: maybe someone is resolving it
+    await aged(head, 3600);
+    expect(await abortStaleMerge(base)).toBe(true);
+    expect(existsSync(head)).toBe(false);
+  });
+});

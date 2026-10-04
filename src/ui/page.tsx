@@ -55,6 +55,7 @@ import { userVisibleProjects } from "../project-scope";
 import { CONTROL_H } from "./control-row";
 import { Disclosure } from "./disclosure";
 import { RuleProposals } from "./rule-proposals";
+import { CriticValue } from "./critic-value";
 import { AgentAccess } from "./agent-access";
 import { MemoryRecords } from "./memory-records";
 import { DocsPlaces } from "./docs-places";
@@ -1818,6 +1819,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </TabsContent>
           </> : null}
           <TabsContent value="checks" forceMount={true} className="space-y-6" hidden={tab !== "checks"} data-testid="checks-panel">
+            {!isGlobal && projectId ? <CriticValue projectId={projectId} /> : null}
             <CheckGroup testId="plan-critique-settings" title={t("stagePlanCritique")} help={t("planCritiqueHelp")} toggle={(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               <div className="max-w-xl">{modelPicker(planCritiquePickerValue, (next) => { void savePlanCritiqueSelection(next); })}</div>
               <AdvancedRows show={advanced}>

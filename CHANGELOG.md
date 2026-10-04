@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.120
+
+- **Deploy drain.** A reload stopped the host worker mid-call; a git merge killed there left `.git/index.lock` in SelfyStudio's main and failed every merge for an hour. New RPCs `deploy_drain {on}` and `deploy_status`: while draining, host calls that write to a checkout (merge, worktree create/remove/prepare, docs commit, snapshot, rollback, install, docs pages) wait, running ones finish, and the push script reloads once none is in flight (it falls back to the old acceptance wait on a Lane Pilot without drain). A drain nobody ends stops by itself after 20 minutes.
+- **An unfinished merge is aborted:** before a merge, a `MERGE_HEAD` older than 10 minutes in the base checkout (a merge whose process died) is aborted under the integration lock, so later merges can start.
+- **What the checks are worth** (Checks tab, RPC `critic_stats`): per critic, over 7 or 30 days — tasks checked and blocked, what became of a blocked task (fixed and accepted, sent again without acceptance, dropped), contract mistakes it let through (with examples), and first-try acceptance of checked vs unchecked tasks. SelfyStudio, last 7 days: plan critique checked 140 and blocked 8 (5 then fixed and accepted); checked tasks were accepted on the first attempt 40% of the time vs 18% without the check.
+
 ## 0.1.119
 
 - **Fix: start-up parking could pick work already done.** It took tasks by when their attempt was last touched, so a 2-day-old task a cleanup had touched the day before (`…-r3`, replaced by an accepted `…-r4`) was parked; its restart failed before a writer started, so nothing was redone. Parking now goes by when the attempt started (last 24 h), and a task counts as taken over when a sibling with the same name stem (`<id>.N` or `<id>-rN`) was accepted at any time or sent after the failed attempt started.

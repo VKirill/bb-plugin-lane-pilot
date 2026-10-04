@@ -1,4 +1,5 @@
 import { parseOwnedAgents } from "../agent-profile";
+import { createDeployDrain } from "./deploy-drain";
 import { aggregateRun } from "../aggregation";
 import { TARGET_SHA } from "../constants";
 import { hostContract } from "../contracts";
@@ -45,14 +46,16 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     jevKeyCache = { value, at: Date.now() };
     return value;
   }
+  const deployDrain = createDeployDrain(() => state.disposed);
   const host = {
     ...rawHost,
-    call: (async (method: string, input: unknown, options: unknown) => {
+    call: (async (method: string, input: unknown, options: unknown) => await deployDrain.around(method, async () => {
       const key = JEV_METHODS.has(method) ? await catalogJevKey() : undefined;
       return await (rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>)(method,
         key ? { ...(input as Record<string, unknown>), jevApiKey:key } : input, options);
-    }) as typeof rawHost.call,
+    })) as typeof rawHost.call,
   } as typeof rawHost;
+
 
   const nativeInstaller = createNativeInstaller({
     supported: (bb.server as unknown as { experimental_vkPluginLifecycle?: boolean }).experimental_vkPluginLifecycle === true,
@@ -298,7 +301,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
 
   const writerBindingKey = (projectId: string) => `writer-binding:${projectId}`;
 
-  return { bb, db, state, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
+  return { bb, db, state, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }
 
 export type ServerCore = ReturnType<typeof createCore>;
