@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.122
+
+- **Rules no longer wait for the owner when the project is full.** SelfyStudio had 12 rules in force (the cap), so 5 new ones — 4 from the PM, 1 from the analyzer — sat in «awaiting your decision». Now:
+  - writer rules and PM rules have separate caps of 12 (PM rules never reach the writer's brief);
+  - a new rule in a full pool takes the slot of the weakest rule on trial for 3+ days — for writers the one given to the fewest attempts, for the PM the oldest; confirmed rules and the owner's are never displaced, and the journal records `displaced by a newer rule`;
+  - waiting rules try again at start-up and on every rule scan — the PM's too (only the analyzer's were retried before).
+
 ## 0.1.121
 
 - **Fix: a reload could leave Lane Pilot «degraded: service startup-recovery did not stop».** The start-up recovery (resume, worktree sweep with snapshots, parking) ran inside the service and ignored the stop signal until it finished; under a deploy drain its snapshot calls waited, and the next reload found it still running. The recovery now runs beside the service, checks between steps whether to go on, and the service stops at once. Seen on the first drained deploy of 0.1.120; the push script now reloads a second time when BB reports another version.

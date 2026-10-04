@@ -377,8 +377,8 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
           for (const id of written) if (getRuleProposal(db, projectId, id)?.state === "proposed" && adoptRuleProposal(db, projectId, id)) adopted++;
           await setScan(projectId, { proposals, adopted });
         }
-        // Proposals the analyzer wrote in earlier scans (or before rules adopted themselves) join the trial too.
-        for (const row of listRuleProposals(db, projectId, { state: "proposed", limit: 100 }).filter((item) => item.author === "model")) {
+        // Proposals written earlier (by the analyzer or the PM) that waited for a slot join the trial too.
+        for (const row of listRuleProposals(db, projectId, { state: "proposed", limit: 100 })) {
           if (adoptRuleProposal(db, projectId, row.id)) adopted++;
         }
         await setScan(projectId, { adopted });

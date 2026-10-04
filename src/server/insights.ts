@@ -4,7 +4,7 @@ import { memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRe
 import {
   collectLessonSources, decideRuleProposal, getRuleProposal, lessonCandidates, listRuleProposals, logRuleEvent, parseGoldenCases, repeatedLessons,
   reviseAdoptedRule, reviseRuleProposal, routingHint, RULE_TRIAL, runGoldenEval, setRuleTrial, upsertRuleProposals, writerAcceptanceStats, type RuleProposal,
-  upsertLessonProposal,
+  upsertLessonProposal, ruleTrialStats,
 } from "@lane-pilot/run-insights";
 import { loadProjectSettings, type LanePilotDatabase } from "../database";
 import { configuredSetting, requirePmRun, type ServerContext } from "./context";
@@ -66,19 +66,52 @@ export function acceptRuleProposal(db: LanePilotDatabase, projectId: string, id:
   return getRuleProposal(db, projectId, id)!;
 }
 
+/** A rule on trial this young has not had its chance yet and is not displaced. */
+const DISPLACE_AFTER_MS = 3 * 24 * 3_600_000;
+/** Writer rules share the writer's brief; PM rules go to the PM chat only, so each side has its own cap. */
+const rulePool = (rule: Pick<RuleProposal, "audience">) => rule.audience === "pm" ? "pm" : "writer";
+
 /**
- * The system adopts a rule the analyzer wrote: it goes into force on trial. Over the cap of rules in force it
- * stays proposed and the journal says why.
+ * The weakest rule of a pool that a new one may replace: on trial (never a confirmed rule or one the owner took), on
+ * trial for three days at least; for writers the one given to the fewest attempts, for the PM (no usage is recorded
+ * there) the oldest.
+ */
+function weakestTrialRule(db: LanePilotDatabase, projectId: string, pool: RuleProposal[], now: number): RuleProposal | null {
+  const candidates = pool.filter((rule) => rule.trialState === "trial" && rule.decidedBy === "auto"
+    && (rule.revisionStartedAt ?? now) <= now - DISPLACE_AFTER_MS);
+  const score = (rule: RuleProposal) => rulePool(rule) === "writer" ? ruleTrialStats(db, projectId, rule.id, rule.revisionStartedAt ?? 0).applied : 0;
+  return candidates.map((rule) => ({ rule, applied:score(rule) }))
+    .sort((a, b) => a.applied - b.applied || (a.rule.revisionStartedAt ?? 0) - (b.rule.revisionStartedAt ?? 0))[0]?.rule ?? null;
+}
+
+/**
+ * The system adopts a rule: it goes into force on trial, without the owner. When its pool is full it takes the slot of
+ * the weakest rule on trial; only when every rule there is confirmed, the owner's or too young does it wait, and the
+ * journal says why (it is tried again at start-up and on every rule scan).
  */
 export function adoptRuleProposal(db: LanePilotDatabase, projectId: string, id: string, now = Date.now()): RuleProposal | null {
   const proposal = getRuleProposal(db, projectId, id);
   if (!proposal || proposal.state !== "proposed") return null;
-  const inForce = listRuleProposals(db, projectId, { state: "accepted", limit: 500 }).length;
-  if (inForce >= RULE_TRIAL.maxActive) {
-    logRuleEvent(db, projectId, id, "cap_reached", `${inForce} rules in force`, now);
-    return null;
+  const pool = listRuleProposals(db, projectId, { state: "accepted", limit: 500 }).filter((rule) => rulePool(rule) === rulePool(proposal));
+  if (pool.length >= RULE_TRIAL.maxActive) {
+    const weakest = weakestTrialRule(db, projectId, pool, now);
+    if (!weakest) {
+      logRuleEvent(db, projectId, id, "cap_reached", `${pool.length} ${rulePool(proposal)} rules in force, none on trial old enough to replace`, now);
+      return null;
+    }
+    retireAdoptedRule(db, projectId, weakest.id, `displaced by a newer rule (${id})`, now);
   }
   return acceptRuleProposal(db, projectId, id, proposal.rule, "auto", now);
+}
+
+/** Every waiting rule of every project tries to go on trial again. */
+export function adoptWaitingRules(db: LanePilotDatabase, now = Date.now()): number {
+  const projects = db.prepare("SELECT DISTINCT project_id FROM lane_pilot_rule_proposal WHERE state='proposed'").all() as Array<{ project_id: string }>;
+  let adopted = 0;
+  for (const { project_id } of projects) {
+    for (const row of listRuleProposals(db, project_id, { state: "proposed", limit: 100 })) if (adoptRuleProposal(db, project_id, row.id, now)) adopted++;
+  }
+  return adopted;
 }
 
 /** Takes a rule out of force on the system's own judgement; the journal keeps the reason. */
@@ -213,7 +246,7 @@ export function mountInsights(ctx: ServerContext): void {
   bb.agents.registerTool({
     name: "lane_pilot_lesson",
     description: "Record a lesson as a project rule on the hub: the owner corrected you, or an approach got burned.",
-    instructions: "Use instead of writing .agents/LESSONS.md, which is not kept any more. Write one imperative rule that prevents the mistake, in English, with evidence (run, task, test, date). `audience`: `pm` for your own work (planning, task contracts, reviewing reports, merging, deploying) — writers never see it; `writer` for how code is edited and checked inside one task; `both` when each must follow it. `always: true` only when the rule holds for every writer task whatever it changes (how to run or read any command); otherwise System One gives it to the tasks it fits. A rule close to a live one counts as its repeat; a new one goes on trial at once while fewer than 12 rules are in force, and otherwise waits until one retires (trial, confirmation and retirement run nightly) — so write only rules that matter. Only after a real correction or landmine — not per session.",
+    instructions: "Use instead of writing .agents/LESSONS.md, which is not kept any more. Write one imperative rule that prevents the mistake, in English, with evidence (run, task, test, date). `audience`: `pm` for your own work (planning, task contracts, reviewing reports, merging, deploying) — writers never see it; `writer` for how code is edited and checked inside one task; `both` when each must follow it. `always: true` only when the rule holds for every writer task whatever it changes (how to run or read any command); otherwise System One gives it to the tasks it fits. A rule close to a live one counts as its repeat; a new one goes on trial at once: writer rules and PM rules each hold up to 12, and when full the new rule takes the slot of the weakest rule on trial (trial, confirmation and retirement run nightly) — so write only rules that matter. Only after a real correction or landmine — not per session.",
     parameters: z.object({ runId: z.string().min(1), rule: z.string().min(8).max(600), audience: z.enum(["writer", "pm", "both"]), always: z.boolean().default(false),
       evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional() }).strict(),
     execute: async (params, context) => {

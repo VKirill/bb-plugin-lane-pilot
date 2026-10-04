@@ -9,6 +9,7 @@ import { mountNativeWiring } from "./src/server/native-wiring";
 import { createProbes } from "./src/server/probes";
 import { createReconcile } from "./src/server/reconcile";
 import { createStability } from "./src/server/stability";
+import { adoptWaitingRules } from "./src/server/insights";
 import { createRuleScan } from "./src/server/rule-scan";
 import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns } from "./src/server/run-finish";
 import { registerRpc } from "./src/server/rpc";
@@ -96,6 +97,10 @@ export default async function plugin(bb: BbPluginApi) {
         await step("worktree sweep", sweepEnvironments);
         await step("parking of blocked tasks", () => services.stability.adoptBlockedByFaults());
         await step("parked-task sweep", sweepParked);
+        await step("adoption of waiting rules", () => {
+          const adopted = adoptWaitingRules(db);
+          if (adopted) bb.log.info(`Lane Pilot put ${adopted} waiting rule(s) on trial`);
+        });
         await step("stage cleanup", () => {
           const closed = closeOrphanWriterStages(db, services.activeWriterTasks);
           if (closed) bb.log.info(`Lane Pilot closed ${closed} writer stage(s) left open after their task ended`);
