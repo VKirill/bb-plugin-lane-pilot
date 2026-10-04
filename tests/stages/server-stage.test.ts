@@ -1087,13 +1087,14 @@ describe("stage → native writer → receipt", () => {
     holderBindAfterGets=1;
     holderReadyAfterGets=2;
     try {
-      const {db,harness,spawned,stopCalls}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,
+      const {bb,db,harness,spawned,stopCalls}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,
         {"adoc.040":"auto","adoc.041":4,"adoc.042":true},undefined,undefined,undefined,undefined,undefined,[[],[]]);
       const highRiskTask={...task,id:"stage-task-holder-lost-ack",risk:"high" as const};
       createTask(db,{id:highRiskTask.id,runId:"stage-run",kind:"bb",contract:highRiskTask});
       saveTaskPlan(db,highRiskTask.id,"Recover holder after spawn ack was lost");
       createAttempt(db,{id:"holder-lost-ack-attempt",runId:"stage-run",taskId:highRiskTask.id});
       transitionAttempt(db,"holder-lost-ack-attempt","spawn_requested");
+      await bb.storage.kv.set("holder-spawn:holder-lost-ack-attempt",Date.now()); // the holder spawn had begun
       seededThreadMeta.set("workspace-provisioner-thread",{
         role:"workspace-provisioner",
         lanePilotRunId:"stage-run",

@@ -15,7 +15,7 @@ import { WORKSPACE_DIRT_COMMAND } from "../../workspace-dirt";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, waitManagedWorktreeReady } from "../../workspace/routing";
 import { fullAccessSpawn } from "../pm-spawn";
 import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
-import { stringAt } from "../values";
+import { holderSpawnKey, stringAt } from "../values";
 import { planDigest, writerPrompt } from "../writer-task";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
@@ -239,6 +239,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           holderThreadId=await services.recoverLostHolderThread(input.projectId, current);
         }
         if(!holderThreadId) {
+          await bb.storage.kv.set(holderSpawnKey(input.attemptId),Date.now());
           const holder = await spawnWithSeam(() => fullAccessSpawn(bb, {
             projectId:input.projectId, ...execution,
             prompt:"Make no file changes and reply with the single word OK.",
@@ -248,7 +249,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           holderThreadId=stringAt(holder,"id");
           spawnEnvironmentId=stringAt(holder,"environmentId");
           if(!holderThreadId) throw new WriterSelectionError("attempt_worktree_provision_missing_thread");
-          if(!setAttemptHolderThread(db,input.attemptId,holderThreadId)) {
+          const recorded=setAttemptHolderThread(db,input.attemptId,holderThreadId);
+          if(recorded) await bb.storage.kv.delete(holderSpawnKey(input.attemptId)).catch(()=>undefined);
+          if(!recorded) {
             const persisted=getAttempt(db,input.attemptId)?.holder_thread_id;
             if(!persisted) throw new WriterSelectionError("attempt_worktree_holder_cas_conflict");
             if(persisted!==holderThreadId) {

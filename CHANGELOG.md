@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.114
+
+- **Fix: every SelfyStudio task was blocked with `attempt_worktree_holder_ambiguous:page_cap`** (2026-10-04, 13 of 15 tasks of one batch). Each fresh attempt scanned every thread of the project, reading each one's metadata, for a worktree holder it could not have yet: over a minute per attempt once the project had ~1000 Lane Pilot threads, then a hard block past 1000. The scan now runs only for an attempt whose holder spawn had begun (KV `holder-spawn:<attempt>`, set before the spawn, cleared once the holder id is stored) — the one case a holder can be lost — and the holder and critic scans list unarchived threads only.
+
 ## 0.1.113
 
 - Guard (bundled from Lane Stack 1.64.8): deleting for good outside regenerated folders is refused with a pointer to `~/.agents/bin/agent-trash`, which moves files to the Trash; rm inside quoted text no longer trips it.

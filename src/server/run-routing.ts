@@ -95,6 +95,7 @@ export function criticReconcilePort(bb: BbPluginApi, projectId: string) {
       projectId,
       originPluginId: "lane-pilot",
       includeHidden: true,
+      archived: false,
       limit,
       offset,
     })).map((thread) => ({ id: thread.id })),

@@ -7,7 +7,7 @@ import { reconcile, reconcileHolder } from "../reconcile";
 import type { IdempotencyTriple } from "../reconcile";
 import { shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../stages/run-policy";
 import { WriterSelectionError } from "./run-routing";
-import { stringAt } from "./values";
+import { holderSpawnKey, stringAt } from "./values";
 import type { ServerCore } from "./core";
 import type { ReconcilePort } from "../reconcile";
 import type { Services } from "./services";
@@ -21,6 +21,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
         projectId,
         originPluginId:"lane-pilot",
         includeHidden:true,
+        archived:false,
         limit,
         offset,
       })).map((thread) => ({ id:thread.id })),
@@ -32,6 +33,10 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     projectId:string,
     attempt:NonNullable<ReturnType<typeof getAttempt>>,
   ): Promise<string|null> {
+    // Only an attempt that began spawning a holder can have lost one. Scanning for every fresh attempt read the
+    // metadata of every thread of the project: a minute per dispatch on SelfyStudio (1000+ threads), then
+    // attempt_worktree_holder_ambiguous:page_cap for every task once the project passed 1000 (live 2026-10-04).
+    if (!await bb.storage.kv.get(holderSpawnKey(attempt.id)).catch(() => null)) return null;
     const result = await reconcileHolder(threadReconcilePort(projectId), {
       lanePilotRunId:attempt.run_id,
       lanePilotTaskId:attempt.task_id,

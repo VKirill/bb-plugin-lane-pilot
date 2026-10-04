@@ -355,3 +355,26 @@ describe("production spawn_unknown reconciliation", () => {
     await harness.lifecycle.dispose();
   });
 });
+
+describe("lost worktree holder scan", () => {
+  it("runs only for an attempt whose holder spawn had begun", async () => {
+    const { createReconcile } = await import("../src/server/reconcile");
+    const { openDatabase, createRun, getAttempt } = await import("../src/database");
+    let listed = 0;
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: {
+      list: async () => { listed += 1; return [{ id: "holder" }]; },
+      getPluginMetadata: async () => ({ role: "workspace-provisioner", lanePilotRunId: "run", lanePilotTaskId: "t", workspaceAttemptId: "lost" }),
+    } } as never });
+    const db = openDatabase(bb);
+    createRun(db, "run", "proj", "cli", "/repo");
+    db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES('t','run','bb','{}',1)").run();
+    createAttempt(db, { id: "fresh", runId: "run", taskId: "t" });
+    createAttempt(db, { id: "lost", runId: "run", taskId: "t" });
+    const api = createReconcile({ bb, db } as never, {} as never);
+    expect(await api.recoverLostHolderThread("proj", getAttempt(db, "fresh")!)).toBeNull();
+    expect(listed).toBe(0);
+    await bb.storage.kv.set("holder-spawn:lost", Date.now());
+    expect(await api.recoverLostHolderThread("proj", getAttempt(db, "lost")!)).toBe("holder");
+    expect(listed).toBe(1);
+  });
+});
