@@ -160,16 +160,18 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         return;
       }
       if (!inPlace) await waitForOverlappingTasks();
-      // Several tasks failed on the same Lane Pilot fault just now: starting more only burns them too.
+      // Several tasks failed on the same Lane Pilot fault just now, or the disk is nearly full: starting more only burns them too.
       for (let noted = ""; ;) {
         if (ctx.isDisposed()) return;
-        const held = services.stability.breakerHolds(input.projectId);
+        const base = getRun(db, input.runId)?.writer_workspace_path;
+        const held = services.stability.breakerHolds(input.projectId)
+          ?? (!inPlace && base ? await services.stability.diskHolds(input.config.hostId, base) : null);
         if (!held) break;
         if (noted !== held) {
           noted = held;
-          ctx.log(`writer ${input.taskId} waits: breaker open on «${held}»`);
+          ctx.log(`writer ${input.taskId} waits: ${held}`);
           recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-            reason:`waiting: several tasks failed on a Lane Pilot fault (${held}); starts once it is fixed` });
+            reason:`waiting: ${held}; starts by itself once it clears` });
         }
         await new Promise((wake) => setTimeout(wake, 30_000));
       }

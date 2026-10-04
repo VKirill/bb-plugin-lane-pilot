@@ -16,6 +16,8 @@ const BREAKER_PROBE_MS = 30 * 60_000;
 const REDRIVE_PER_SWEEP = 3;
 const INFRA_BACKOFF_MS = 10 * 60_000;
 const INFRA_REDRIVE_LIMIT = 3;
+const DISK_MIN_FREE_BYTES = 15 * 2 ** 30;
+const DISK_MIN_FREE_SHARE = 0.05;
 
 export type ParkedTask = {
   projectId:string; runId:string; taskId:string; pmThreadId:string; klass:FailureClass;
@@ -94,7 +96,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     if (!open) return null;
     if (open.version !== VERSION) { breakers.delete(projectId); return null; }
     if (!open.probing && now - open.openedAt >= BREAKER_PROBE_MS) { open.probing = true; return null; }
-    return open.fingerprint;
+    return `several tasks failed on one Lane Pilot fault («${open.fingerprint}»), waiting for its fix`;
   }
 
   /** A newer dispatch of the same task (`<id>.2`) or a later attempt of it means somebody already took it over. */
@@ -144,5 +146,16 @@ export function createStability(ctx:ServerCore, services:Services) {
     return started;
   }
 
-  return { stability:{ onTaskFailed, breakerHolds, sweep, loadParked } };
+  /**
+   * Whether the writer host has too little free disk for another worktree (≈2 GB each on SelfyStudio): a full OVH disk
+   * stopped its BB host daemon on 2026-10-03. Null when there is room or the host cannot say.
+   */
+  async function diskHolds(hostId:string, path:string):Promise<string | null> {
+    const free = await ctx.host.call("diskFree", { requestedHostId:hostId, path }, { hostId, timeoutMs:15_000 }).catch(() => null);
+    if (!free || !free.totalBytes) return null;
+    const low = free.freeBytes < Math.max(DISK_MIN_FREE_BYTES, free.totalBytes * DISK_MIN_FREE_SHARE);
+    return low ? `only ${Math.round(free.freeBytes / 2 ** 30)} GB free on ${hostId}` : null;
+  }
+
+  return { stability:{ onTaskFailed, breakerHolds, diskHolds, sweep, loadParked } };
 }
