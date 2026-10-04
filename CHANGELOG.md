@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.125
+
+- **Working helpers show beside the PM chat's agent badge again.** The squares listed the PM's children one page of 50, oldest first; a long chat (SelfyStudio: 335 children) never reached the working writers. It now reads unarchived children, every page.
+- **Writers are hidden again** (reverts the visibility part of 0.1.124): the owner wanted the working writers beside the badge, not as separate threads in the project tree.
+
 ## 0.1.124
 
 Handed to agents, not the owner:

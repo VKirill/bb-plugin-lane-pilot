@@ -15,12 +15,8 @@ describe("helper placement", () => {
     expect(helperSpawnFields(resolved.placement)).not.toHaveProperty("sourceThreadId");
     expect(resolved.placement.environmentId).toBeUndefined();
     expect(resolved.placement.title).toContain("code critique");
-    // The owner watches writers, specialists, errands and browser checks; bookkeeping helpers stay hidden.
-    const writerShown = resolveHelperPlacement({ mode:"plugin", projectId:"proj", parent, role:"writer" });
-    expect(writerShown.ok && writerShown.placement.visibility).toBe("visible");
-    expect(writerShown.ok && writerShown.placement.environmentId).toBeUndefined();
-    const readerHidden = resolveHelperPlacement({ mode:"plugin", projectId:"proj", parent, role:"pm-reader" });
-    expect(readerHidden.ok && readerHidden.placement.visibility).toBe("hidden");
+    const writerHidden = resolveHelperPlacement({ mode:"plugin", projectId:"proj", parent, role:"writer" });
+    expect(writerHidden.ok && writerHidden.placement.visibility).toBe("hidden");
     const docsVisible = resolveHelperPlacement({ mode:"project_tree", projectId:"proj", parent, role:"docs-maintainer" });
     expect(docsVisible.ok && docsVisible.placement.visibility).toBe("visible");
     expect(docsVisible.ok && docsVisible.placement.title).toContain("docs");

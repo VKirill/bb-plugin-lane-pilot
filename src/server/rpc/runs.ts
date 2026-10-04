@@ -38,7 +38,14 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     },
     // The PM chat's helpers that are still working: writers, specialists, the browser check, council seats, critics.
     list_helper_threads: async ({ threadId }) => {
-      const rows = await bb.sdk.threads.list({ parentThreadId: threadId, includeHidden: true, limit: 50 }).catch(() => []);
+      // A long PM chat has hundreds of finished helpers (SelfyStudio: 335); one page of 50 held old ones only, so a
+      // working writer never got its square next to the badge. Unarchived ones, every page.
+      const rows:unknown[] = [];
+      for (let offset = 0; offset < 2_000; offset += 200) {
+        const page = await bb.sdk.threads.list({ parentThreadId: threadId, includeHidden: true, archived: false, limit: 200, offset }).catch(() => []);
+        rows.push(...page);
+        if (page.length < 200) break;
+      }
       const working = (rows as unknown as Array<Record<string, unknown>>)
         .filter((row) => typeof row.id === "string" && !row.archivedAt && !["idle", "error", "stopped", "completed"].includes(String(row.status)));
       const threads = await Promise.all(working.map(async (row) => {
