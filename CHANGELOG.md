@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.126
+
+- **Writers no longer stop for a tool the project's rules name but the worktree lacks.** SelfyStudio's AGENTS.md requires a GitNexus impact check before edits; writers had no GitNexus and answered «restore GitNexus access» (NEEDS_HUMAN), blocking a 6-task chain on 2026-10-04. The brief now says such a rule is no reason to stop: read the code yourself and go on.
+
 ## 0.1.125
 
 - **Working helpers show beside the PM chat's agent badge again.** The squares listed the PM's children one page of 50, oldest first; a long chat (SelfyStudio: 335 children) never reached the working writers. It now reads unarchived children, every page.

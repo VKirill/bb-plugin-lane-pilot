@@ -68,8 +68,9 @@ export function needsHumanQuestion(output: string): string | null {
  */
 export const WRITER_SETUP_LINES = [
     "Work only inside owns_paths and never touch never_touch. New files too: every path you create must match an owns_paths pattern, so put helpers next to the code you change; acceptance rejects the whole attempt for one stray file.",
-    "Dependencies are installed from the lockfile: do not run npm install or anything else that rewrites package.json or a lockfile unless they are in owns_paths; a missing package is a blocker to report, not to reinstall.",
-    "You work in your own git worktree. Do not commit, push, merge, rebase or switch branches: Lane Pilot commits and merges your accepted changes into main under a lock; a conflict sends the task back to be redone on the new main.",
+    "Dependencies are installed from the lockfile: do not run npm install or anything else that rewrites package.json or a lockfile unless they are in owns_paths; a missing package is a blocker to report.",
+    "A project rule needing a tool you lack (GitNexus, an MCP server) is no reason to stop: read the code yourself, go on.",
+    "You work in your own git worktree. Do not commit, push, merge, rebase or switch branches: Lane Pilot commits and merges your accepted changes into main.",
     "Secrets come from Env Catalog (env_get); never print or write one down. Delete with `~/.agents/bin/agent-trash <path>` (rm's flags), not rm.",
 ];
 
