@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.129
+
+- Helper chips are icons again (the owner's choice): role icon and pulse, the task on hover, click opens the chat; «+N» past three and the badge kept on one line stay.
+
 ## 0.1.128
 
 - Helper chips beside the agent badge keep to one line: a long task name is cut with an ellipsis at 11rem, and the badge itself no longer wraps on a narrow composer (seen live at the side-panel width).

@@ -61,9 +61,8 @@ export function useOpenHelper() {
 }
 
 /**
- * The working helpers beside the agent badge: role icon, a pulse, and the task's name, so a running writer reads as
- * one at a glance (a bare 20 px square went unnoticed, 2026-10-04); click opens its chat. Past three, the rest fold
- * into a «+N» that opens the list.
+ * The working helpers beside the agent badge: one square each with the role icon and a pulse, the task on hover
+ * (the owner wants icons only); click opens its chat. Past three, the rest fold into a «+N» that opens the list.
  */
 export function HelperChips({ threads, frame }: { threads: HelperThread[]; frame?: CSSProperties }) {
   const open = useOpenHelper();
@@ -81,11 +80,10 @@ export function HelperChips({ threads, frame }: { threads: HelperThread[]; frame
           aria-label={`${helperHint(row)}. ${t("helperOpen")}`}
           data-testid={`helper-chip-${row.id}`}
           onClick={() => open(row)}
-          className="relative inline-flex h-5 cursor-pointer items-center gap-1 px-1.5 text-xs leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          style={{ ...frame, borderRadius: "0.375rem", maxWidth: "11rem", whiteSpace: "nowrap" }}
+          className="relative inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          style={{ ...frame, borderRadius: "0.375rem" }}
         >
-          <Icon name={roleOf(row).icon} className="size-3 shrink-0" />
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.title}</span>
+          <Icon name={roleOf(row).icon} className="size-3" />
           <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-primary" aria-hidden />
         </button>
       ))}
