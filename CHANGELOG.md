@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.134
+## 0.1.135
 
 From stopping SelfyStudio's run on the owner's request (2026-10-04):
 - **A cancel ends the fallback chain.** Stopping a fallback writer's thread read as a provider failure and the chain started the next model; it now stops when the attempt was canceled.
