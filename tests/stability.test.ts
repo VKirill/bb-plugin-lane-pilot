@@ -127,3 +127,18 @@ describe("adoption at start-up", () => {
     expect(await stability.adoptBlockedByFaults(now)).toEqual([]);
   });
 });
+
+describe("restart reopens the writer stages", () => {
+  // Live 2026-10-04: three restarted SelfyStudio tasks died on «illegal stage transition writer-agent: failed -> running».
+  it("sets failed writer stages back to pending so the writer can run again", async () => {
+    const { recordStage } = await import("../src/server/stage-records");
+    const { listStageReceipts } = await import("../src/database");
+    const { bb, db, stability } = setup();
+    for (const state of ["pending", "running", "failed"] as const) recordStage(db, { runId:"run", taskId:"T1", stageId:"writer-agent", state, input:"plan" });
+    await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:"internal_error: x" }, 1000);
+    await bb.storage.kv.set("stability:parked", (await stability.loadParked()).map((row) => ({ ...row, version:"0.0.1" })));
+    expect(await stability.sweep(2000)).toEqual(["T1"]);
+    expect(listStageReceipts(db, "run", "T1").find((row) => row.stageId === "writer-agent")?.state).toBe("pending");
+    expect(() => recordStage(db, { runId:"run", taskId:"T1", stageId:"writer-agent", state:"running", input:"plan" })).not.toThrow();
+  });
+});

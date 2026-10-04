@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.118
+
+- **Fix: a parked task's restart died on «illegal stage transition writer-agent: failed -> running».** Its writer stages had closed as failed; they are now set back to pending before the restart (`reopenWriterStages`). Seen live on the first three SelfyStudio restarts after 0.1.117 — the project breaker opened on it as designed and held new writers until this release.
+
 ## 0.1.117
 
 - **Fix: a merge git refused for another reason was reported as a merge conflict with no files.** On SelfyStudio a stale `.git/index.lock` in main (from 09:29 UTC, no holder) failed every merge for an hour; each read «merge_conflict: main changed since this attempt started:» while main never moved, and the tasks spent their attempts on it. Such a merge is now `merge_failed: git merge failed: <git's error>` — a machine fault when it names `index.lock` — and since 0.1.116 the stale lock is moved aside before the next merge.

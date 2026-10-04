@@ -6,12 +6,15 @@ import type { StageId, StageState } from "../stages/contract";
 export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:string;taskId:string;stageId:StageId;state:StageState;input:string;attempt?:number;
   providerId?:string|null;model?:string|null;threadId?:string|null;result?:unknown|null;reason?:string|null;replaceOnNewInput?:boolean;
   /** Starts a stage over from blocked or skipped; only for a stage whose work never ran, so no verdict is lost. */
-  restart?:boolean}): void {
+  restart?:boolean;
+  /** Opens a writer stage that ended failed again, for a parked task restarting after a Lane Pilot or machine fault. */
+  reopen?:boolean}): void {
   const previous = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === input.stageId);
   const nextInputSha = sha256(input.input);
   const replace = Boolean(input.replaceOnNewInput && previous && previous.inputSha256 !== nextInputSha
     && ["passed", "failed", "blocked", "skipped"].includes(previous.state) && input.state === "pending");
-  const restart = Boolean(input.restart && previous && ["blocked", "skipped"].includes(previous.state) && input.state === "pending");
+  const restart = Boolean(previous && input.state === "pending" && ((input.restart && ["blocked", "skipped"].includes(previous.state))
+    || (input.reopen && ["failed", "blocked", "skipped"].includes(previous.state))));
   if (previous && !replace && !restart && !stageTransition(previous.state, input.state)) {
     throw new Error(`illegal stage transition ${input.stageId}: ${previous.state} -> ${input.state}`);
   }
@@ -33,6 +36,15 @@ export function recordGateEvaluation(db:ReturnType<typeof openDatabase>,input:{p
 }
 
 const WRITER_STAGES = ["writer-agent", "verification", "acceptance-receipt"] as const;
+
+/** Sets a task's writer stages back to pending so a parked task can run its writer again from there. */
+export function reopenWriterStages(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, reason:string):void {
+  const plan = getTaskPlan(db, taskId) ?? "";
+  for (const stageId of WRITER_STAGES) {
+    const current = listStageReceipts(db, runId, taskId).find((row) => row.stageId === stageId);
+    if (current && ["failed", "blocked", "skipped"].includes(current.state)) recordStage(db, { runId, taskId, stageId, state:"pending", input:plan, reason, reopen:true });
+  }
+}
 
 /**
  * Closes the writer stages of a task that ended outside the start loop — an attempt finished after a reload, or

@@ -2,6 +2,7 @@ import packageJson from "../../package.json";
 import { PARKED_CLASSES, failureClass, failureFingerprint, type FailureClass } from "../failure-class";
 import { createAttempt, getAttempt, getRun } from "../database";
 import { id } from "./values";
+import { reopenWriterStages } from "./stage-records";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 
@@ -133,6 +134,8 @@ export function createStability(ctx:ServerCore, services:Services) {
         continue;
       }
       const attemptId = id("lpattempt");
+      // The stages closed failed when the task stopped; without reopening them the restart died on «failed -> running».
+      reopenWriterStages(db, row.runId, row.taskId, `restarting after ${row.klass} fault`);
       createAttempt(db, { id:attemptId, runId:row.runId, taskId:row.taskId });
       const attempt = getAttempt(db, attemptId);
       const ok = attempt ? await services.enqueueResumedWriter(row.projectId, attempt).catch(() => false) : false;
