@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.116
+
+Stability, after the 2026-10-04 incidents and a survey of how merge queues, workflow engines, CI and agent harnesses handle failures (`.bb/chats/thr_tev4nistgf/artifacts/failure-practices/REPORT.md`).
+
+- **Failure classes** (`src/failure-class.ts`): every failed attempt is task, provider, merge, harness (Lane Pilot's fault), infra (machine), contract or judgment. Only task and provider failures spend the task's two attempts; a merge conflict or a Lane Pilot or machine fault is retried for free, at most 3 extra times (as Kubernetes `podFailurePolicy: Ignore`, Buildkite automatic retry).
+- **Parked tasks restart by themselves.** A task ended by Lane Pilot's own fault is parked with the fault's fingerprint and restarts from its writer stage once a newer Lane Pilot runs; a machine fault restarts after 10/20/40 min. At most 3 restarts per project per 5-minute pass; a task the PM already sent again is left alone. The PM gets one message listing what was parked and restarted (Temporal, Step Functions redrive, SQS redrive).
+- **Project breaker:** three tasks failing on the same Lane Pilot fault within 15 minutes hold the project's new writers until the fix ships, letting one through after 30 minutes.
+- **Disk guard:** a writer waits while its host has less than 15 GB or 5% free (new host call `diskFree`).
+- **Stale git lock:** before a merge and before creating or removing a worktree, an `index.lock` older than 60 s with no live holder is moved aside.
+- **Flaky checks:** a failing verification command runs once more; passing on the re-run counts as passed with `flaky: true`. A command killed by its time limit is not re-run (the host sandbox now reports a timeout as exit 124).
+- **Contract checks before a writer:** `output_binary` (warning) for fonts, images, archives a model cannot author; `verify_filter_ignored` (error) for `npm -w <ws> run test -- <filter>` when the script is `node --test`, which ignores the filter; `depends_self` and `depends_cycle` (errors).
+- PM prompt: merge conflicts and parked tasks are handled by Lane Pilot; the PM does not redispatch them.
+
 ## 0.1.115
 
 - **Fix: a failed attempt's retry was blocked with `reconcile_page_cap`** (SelfyStudio, 4 tasks on 2026-10-04 right after 0.1.114). Before a retry Lane Pilot scanned every thread of the project for the attempt's writer although that thread is stored; the scan now runs only when it is not, over unarchived threads.
