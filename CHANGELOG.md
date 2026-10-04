@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.134
+
+- **A finished task survives a reload during its acceptance.** Lane Pilot writes its receipt (`.agents/runs/<run>/artifacts/<task>/acceptance.json`) into the attempt's worktree before the merge; when a deploy reloaded the plugin in that window, the resumed check read the receipt as the writer's own change and failed the task with `owns_paths rejected …/acceptance.json` (SelfyStudio `gc-hub-port-full.2`, and `gc-scenarios-wishes-pixel.2` twice until its retries ran out, 2026-10-04). The final output check now sees the same files as the ownership gate: bookkeeping under `.agents/`, `.bb/` and tool caches counts only when the task owns it.
+
 ## 0.1.133
 
 From the SelfyStudio PM's bug report (2026-10-04):

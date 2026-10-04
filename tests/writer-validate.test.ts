@@ -241,6 +241,57 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("accepts a resumed attempt whose worktree holds Lane Pilot's own receipt from the pass a reload cut off (live: gc-hub-port-full.2)", async () => {
+    let snapshots = 0;
+    const receipt = ".agents/runs/run-resumed-receipt/artifacts/resumed-task/acceptance.json";
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{
+        threads:{
+          getPluginMetadata:async ({ threadId }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:"run-resumed-receipt" } : { role:"writer" },
+          spawn:async () => ({ id:"writer-resumed-receipt" }),
+          wait:async () => ({ matched:true, thread:{ status:"idle" } }),
+          get:withPm(async () => ({ id:"writer-resumed-receipt", status:"idle" })),
+          output:async () => ({ text:"created hello.txt" }),
+          list:async () => [] as never,
+        },
+        providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
+        files:{
+          read:async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" }
+            : path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
+          write:async () => ({ ok:true }),
+        },
+      },
+      experimental_callHostRpc:(call) => {
+        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if (call.method === "classifyPlan") throw new Error("RPC transport failed");
+        const command = String((call.input as { command?:string }).command ?? "");
+        if (command.includes("porcelain")) {
+          snapshots += 1;
+          return { hostId:"host-test", exitCode:0, stdout:JSON.stringify(snapshots === 1 ? []
+            : [{ path:"hello.txt", sha256:"new-file" }, { path:receipt, sha256:"receipt" }]), stderr:"" };
+        }
+        return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
+      },
+    });
+    const db = openDatabase(bb);
+    saveLegacyWriterConfig(db);
+    createRun(db, "run-resumed-receipt", projectId, "bb", config.writerWorkspacePath);
+    setRunThread(db, "run-resumed-receipt", pmThreadId);
+    await plugin(bb);
+    await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer",
+      { confirm:true, plan:"Complete plan for resumed receipt test", task:{ ...task, id:"resumed-task", verify:"none", verification:[] } },
+      { threadId:pmThreadId, projectId },
+    );
+    const result = JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_wait_writer", { runId:"run-resumed-receipt", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+    )));
+    expect(listAttemptsForTask(db, "run-resumed-receipt", "resumed-task").map((row) => getAttempt(db, row.id)?.reason ?? null)).toEqual([null]);
+    expect(result.state).toBe("accepted");
+    await harness.lifecycle.dispose();
+  });
+
   it("closes the stages of a task blocked by a blocked depends_on (live: gc-native-price-watermark.4)", async () => {
     let spawns = 0;
     const { bb, harness } = createFakePluginHost({

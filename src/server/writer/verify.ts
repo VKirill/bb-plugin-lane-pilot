@@ -268,7 +268,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const verifies = await runVerification(input.config, input.task, input.runId, input.writerThreadId);
     recordGateEvaluation(db,{...input,gate:"verification",status:verifies.length===0?"skipped":verifies.every((row)=>row.exitCode===0)?"passed":"failed",
       input:JSON.stringify(input.task),summary:{commandCount:verifies.length,failedCount:verifies.filter((row)=>row.exitCode!==0).length}});
-    const classified = classifyWriterOutput({ task:input.task, produced, contents, verifies });
+    // Same attribution as the run-scope gate: Lane Pilot's own receipt from a pass a reload cut off (.agents/runs/…)
+    // is no writer change, and read as one it failed finished SelfyStudio tasks on resume (2026-10-04).
+    const classified = classifyWriterOutput({ task:input.task, produced:attributed, contents, verifies });
     if (input.task.expected_outputs.includes("hello.txt") && input.task.expected_outputs.includes("tests/hello.test.txt")) {
       const helloOk = contents["hello.txt"] === "hello from native BB writer\n";
       const testOk = contents["tests/hello.test.txt"] === "hello from native BB writer\n";
