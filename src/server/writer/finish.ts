@@ -13,7 +13,7 @@ import { recordGateEvaluation, recordStage } from "../stage-records";
 import { stringAt } from "../values";
 import { needsHumanQuestion, outputText, WRITER_SETUP_LINES, writerContextBlocks } from "../writer-task";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
-import { resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
@@ -446,6 +446,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             attemptId:input.attemptId, writerThreadId };
         }
         integration = { status:merged.status, commit:merged.commit, conflicts:[] };
+        if (merged.status === "merged") void checkMainAfterMerge({ projectId:input.projectId, pmThreadId:input.pmThreadId, config:input.config,
+          runId:input.runId, task:input.task, basePath, worktreePath:bound.workspace_path });
       }
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
         attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration}});
@@ -459,6 +461,39 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       throw cause;
     }
+  }
+
+  /**
+   * The task's checks again on main once it is merged: green alone, two tasks can break main together (merge queues
+   * test the merged result). The work stays merged — nothing is thrown away — and a follow-up task makes main green
+   * on top of it, so an agent repairs it rather than the owner or the PM. A follow-up that breaks main again is
+   * reported to the PM instead of chaining.
+   */
+  async function checkMainAfterMerge(input:{ projectId:string; pmThreadId:string; config:Parameters<typeof services.runVerification>[0];
+    runId:string; task:TaskV2; basePath:string; worktreePath:string }) {
+    if (!input.task.verification.length || !input.pmThreadId) return;
+    const onBase = (cwd:string) => resolve(cwd).startsWith(resolve(input.worktreePath)) ? join(input.basePath, relative(input.worktreePath, cwd)) : cwd;
+    const onMain = { ...input.task, project_cwd:input.basePath, verification:input.task.verification.map((command) => ({ ...command, cwd:onBase(command.cwd) })) };
+    const checks = await services.runVerification(input.config, onMain, input.runId).catch((cause:unknown) => {
+      ctx.log(`post-merge check of ${input.task.id} could not run: ${cause instanceof Error ? cause.message : String(cause)}`);
+      return null;
+    });
+    const red = checks?.filter((check) => check.exitCode !== 0) ?? [];
+    if (!red.length) return;
+    const tail = (check:typeof red[number]) => `${check.stderr ?? ""}\n${check.stdout ?? ""}`.trim().slice(-1200);
+    ctx.log(`post-merge check of ${input.task.id} failed on main: ${red.map((check) => check.command).join(", ")}`);
+    const tell = (text:string) => bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never).catch(() => undefined);
+    if (/-mainfix\d*$/.test(input.task.id)) {
+      await tell(`Lane Pilot: ${input.task.id} fixed main once already and main is red again after it (${red[0]!.command}). Look at what else merged meanwhile and dispatch the fix yourself.`);
+      return;
+    }
+    const fix:TaskV2 = { ...onMain, id:`${input.task.id}-mainfix`.slice(0, 128), title:`Make main green after ${input.task.id}`.slice(0, 200),
+      depends_on:[], risk:input.task.risk === "low" ? "medium" : input.task.risk,
+      objective:`Main is red after merging ${input.task.id} (${input.task.title}): ${red.map((check) => `\`${check.command}\``).join(", ")} fails on main while it passed in the task's own worktree, so it clashes with work merged meanwhile. Make the check pass on main keeping what ${input.task.id} and the work merged before it intended; change the least code that does it.`,
+      acceptance:[...red.map((check) => `\`${check.command}\` passes on main`), `${input.task.id}'s acceptance still holds: ${input.task.acceptance.join("; ")}`.slice(0, 600)] };
+    const plan = `Post-merge repair, dispatched by Lane Pilot. Failing on main:\n${red.map((check) => `$ ${check.command} (exit ${check.exitCode})\n${tail(check)}`).join("\n\n")}\n\nRead the failure, find which merged change clashes (git log -5 on main), fix within owns_paths, run the checks.`;
+    const sent = await services.dispatchWriter({ threadId:input.pmThreadId, projectId:input.projectId, task:fix, plan }).catch((cause:unknown) => ({ state:"rejected", reason:cause instanceof Error ? cause.message : String(cause) }));
+    await tell(`Lane Pilot: ${input.task.id} is merged, but ${red.map((check) => check.command).join(", ")} fails on main with it. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
   }
 
   return { finishWriterAttempt };
