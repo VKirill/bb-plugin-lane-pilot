@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.132
+
+- **The PM hears a writer's question at once.** Writers are quiet children, so a task blocked with `NEEDS_HUMAN` waited unseen (SelfyStudio `gc-sec-hub-d.2`: asked at 17:24, the PM found out two hours later). Lane Pilot now sends the PM the question as soon as the task stops.
+- **Dependents wait for a fixed dependency instead of failing.** A task whose `depends_on` ended blocked keeps waiting up to 6 hours for that task to be sent again (`<id>.2`) and accepted, then starts by itself; before, the whole chain failed at once and the PM had to resend every link. A canceled dependency still ends the wait at once.
+
 ## 0.1.131
 
 - **15 writers at once per run by default** (the owner's choice), also the most `ops.pool_size` takes. The writer pool and the bounded-concurrency helper had their own cap of 10; both follow the same limit now.

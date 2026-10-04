@@ -273,11 +273,10 @@ describe("BB writer validation on the server path", () => {
       { confirm:true, plan:"Plan that waits for dep-task", task:{ ...task, id:"dependent", depends_on:["dep-task"], verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
-    await vi.waitFor(() => expect(getAttempt(db, dispatched.attemptId)?.state).toBe("blocked"));
-    const blockedBy = ["failed", "depends_on dep-task: that task ended blocked"];
-    await vi.waitFor(() => expect(Object.fromEntries(listStageReceipts(db, "run-depends", "dependent")
-      .filter((row) => ["writer-agent", "verification", "acceptance-receipt"].includes(row.stageId))
-      .map((row) => [row.stageId, [row.state, row.reason]]))).toEqual({ "writer-agent":blockedBy, verification:blockedBy, "acceptance-receipt":blockedBy }));
+    // A blocked dependency is usually fixed and sent again: the dependent waits for that instead of failing at once.
+    await vi.waitFor(() => expect(listStageReceipts(db, "run-depends", "dependent").find((row) => row.stageId === "writer-agent"))
+      .toMatchObject({ state:"pending", reason:expect.stringContaining("dep-task ended blocked; starts once it is sent again and accepted") }));
+    expect(getAttempt(db, dispatched.attemptId)?.state).toBe("queued");
     expect(spawns).toBe(0);
     await harness.lifecycle.dispose();
   });

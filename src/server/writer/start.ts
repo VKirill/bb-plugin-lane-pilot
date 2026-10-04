@@ -10,6 +10,10 @@ import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import { FREE_RETRY_LIMIT } from "../../failure-class";
 import { previousAttemptBrief } from "../writer-task";
+import { failureClass } from "../../failure-class";
+
+/** How long a task waits for a blocked dependency to be sent again and accepted. */
+const DEPENDENCY_REDO_WAIT_MS = 6 * 3600_000;
 import type { AttemptState } from "../../state-machine";
 import { parseWorkspaceMode } from "../../workspace/routing";
 import { closeWriterStages, recordStage } from "../stage-records";
@@ -80,12 +84,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let releaseWriterSlot:(()=>void)|undefined;
     /**
      * depends_on: the task starts only once every task it names is accepted (its work is in main). A blocked
-     * dependency blocks this task too; a name no one dispatched is a planning mistake and blocks at once.
+     * dependency is usually fixed and sent again (`<id>.2`), which the name follows, so the task keeps waiting for it
+     * up to six hours instead of failing at once and making the PM resend the whole chain (SelfyStudio 2026-10-04).
+     * A canceled dependency, or a name no one dispatched, ends the wait at once.
      */
     const waitForDependencies = async (): Promise<string | null> => {
       const deps = [...new Set((input.task.depends_on ?? []).filter((dep) => dep && dep !== input.taskId))];
       let noted = "";
       const since = Date.now();
+      const blockedSince = new Map<string, number>();
       for (;;) {
         if (ctx.isDisposed()) return null;
         const pending: string[] = [];
@@ -94,7 +101,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (state === "accepted") continue;
           // A batch may dispatch the dependent before its dependency: give the name two minutes to appear.
           if (state === null && Date.now() - since > 120_000) return `depends_on ${dep}: no such task was dispatched in this project`;
-          if (state === "blocked" || state === "canceled") return `depends_on ${dep}: that task ended ${state}`;
+          if (state === "canceled") return `depends_on ${dep}: that task ended canceled`;
+          if (state === "blocked") {
+            blockedSince.set(dep, blockedSince.get(dep) ?? Date.now());
+            if (Date.now() - blockedSince.get(dep)! > DEPENDENCY_REDO_WAIT_MS) return `depends_on ${dep}: that task ended blocked and was not sent again within 6 hours`;
+          } else blockedSince.delete(dep);
           pending.push(dep);
         }
         if (!pending.length) return null;
@@ -104,8 +115,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           ctx.log(`writer ${input.taskId} waits for depends_on ${key}`);
           const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
           if (!stage || stage.state === "pending") {
+            const redo = pending.filter((dep) => blockedSince.has(dep));
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:`waiting for depends_on: ${key}` });
+              reason:redo.length ? `waiting for depends_on: ${key} (${redo.join(", ")} ended blocked; starts once it is sent again and accepted)` : `waiting for depends_on: ${key}` });
           }
         }
         await new Promise((wake) => setTimeout(wake, 10_000));
@@ -357,6 +369,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
       const accepted = last.status === "accepted";
       const reason = accepted ? undefined : String(last.reason ?? last.status ?? "writer_failed");
+      // A writer's question would wait unseen: writers are quiet children and do not wake the PM.
+      if (!accepted && reason && failureClass(String(last.status), reason) === "judgment" && input.pmThreadId) {
+        void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
+          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it from the code or docs if they settle it (else ask the owner once), then send the task again with the answer in its plan; tasks that depend on it wait for that.\n${reason.slice(0, 1200)}` }] } as never).catch(() => undefined);
+      }
       if (!accepted && last.status !== "canceled") {
         void services.stability.onTaskFailed({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,
           pmThreadId:input.pmThreadId, state:String(last.status), reason:reason ?? "" }).catch(() => false);
