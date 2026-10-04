@@ -88,6 +88,7 @@ export default async function plugin(bb: BbPluginApi) {
       });
       await sweepRuns();
       await sweepEnvironments();
+      await services.stability.adoptBlockedByFaults().catch((cause) => bb.log.warn(`Lane Pilot parking of blocked tasks skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
       await sweepParked();
       try {
         const closed = closeOrphanWriterStages(db, services.activeWriterTasks);

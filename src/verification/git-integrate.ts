@@ -166,6 +166,9 @@ function merge(basePath:string,sha:string,message:string):GitIntegration {
     const overwritten=merged.reason.split("\n").filter((line)=>/^\t/.test(line)).map((line)=>line.trim()).filter(Boolean);
     if(overwritten.length) return {status:"conflict",commit:null,conflicts:overwritten,reason:"base checkout has uncommitted changes in files this attempt also changes"};
   }
+  // A merge that failed without conflicted files is not a conflict: a stale index.lock, a hook, a refused checkout. Called a
+  // conflict, it read as «main changed» and spent every SelfyStudio task's attempts on 2026-10-04 while main never moved.
+  if(!conflicts.length) return {status:"failed",commit:null,conflicts:[],reason:`git merge failed: ${merged.reason.split("\n").slice(-4).join("\n")}`};
   return {status:"conflict",commit:null,conflicts,reason:merged.reason.split("\n").slice(-4).join("\n")};
 }
 

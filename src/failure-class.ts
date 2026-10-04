@@ -9,7 +9,9 @@
 export type FailureClass = "task" | "provider" | "merge" | "harness" | "infra" | "contract" | "judgment";
 
 const JUDGMENT = /needs_human/i;
-const MERGE = /^merge_conflict/i;
+const MERGE = /(^|: )merge_conflict/i;
+// Before 0.1.117 a merge that git refused for another reason (a stale index.lock) was called a conflict with no files.
+const MISLABELED_MERGE = /merge_conflict: main changed since this attempt started:\s*$/i;
 const INFRA = /ENOSPC|no space left|disk_low|index\.lock|host is not connected|host offline|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED/i;
 // Same list the self-repair watcher treats as Lane Pilot's own fault, plus the thread lookups that broke on 2026-10-04.
 const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing|reconcile_|attempt_worktree_|attempt_workspace_|writer reconcile|its retry was lost/i;
@@ -19,6 +21,7 @@ const PROVIDER_STATES = new Set(["provider_error", "timeout", "empty_output"]);
 export function failureClass(state:string, reason:string | null | undefined):FailureClass {
   const text = reason ?? "";
   if (JUDGMENT.test(text)) return "judgment";
+  if (MISLABELED_MERGE.test(text)) return "harness";
   if (MERGE.test(text)) return "merge";
   if (INFRA.test(text)) return "infra";
   if (HARNESS.test(text)) return "harness";

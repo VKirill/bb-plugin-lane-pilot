@@ -78,3 +78,27 @@ describe("stale git index.lock recovery", () => {
     expect(existsSync(lock)).toBe(false);
   });
 });
+
+describe("a merge blocked by a lock", () => {
+  // SelfyStudio 2026-10-04: a fresh-looking index.lock in main failed every merge, reported as «merge_conflict … main changed».
+  it("is a failed merge naming git's error, not a conflict with no files", async () => {
+    const { base, worktree } = await repo();
+    const path = await worktree("w1");
+    await writeFile(join(path, "new.ts"), "x\n");
+    await writeFile(lockOf(base), "");
+    await aged(lockOf(base), 5); // fresh: recovery leaves it, so git refuses
+    const result = await integrateWorktree({ basePath:base, worktreePath:path, message:"t" });
+    expect(result.status).toBe("failed");
+    expect(result.conflicts).toEqual([]);
+    expect(result.reason).toMatch(/git merge failed: .*index\.lock/s);
+  });
+
+  it.skipIf(!hasLsof)("merges once a stale lock is moved aside", async () => {
+    const { base, worktree } = await repo();
+    const path = await worktree("w2");
+    await writeFile(join(path, "new.ts"), "x\n");
+    await writeFile(lockOf(base), "");
+    await aged(lockOf(base), 3600);
+    expect((await integrateWorktree({ basePath:base, worktreePath:path, message:"t" })).status).toBe("merged");
+  });
+});

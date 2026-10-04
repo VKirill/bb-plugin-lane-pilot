@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.117
+
+- **Fix: a merge git refused for another reason was reported as a merge conflict with no files.** On SelfyStudio a stale `.git/index.lock` in main (from 09:29 UTC, no holder) failed every merge for an hour; each read «merge_conflict: main changed since this attempt started:» while main never moved, and the tasks spent their attempts on it. Such a merge is now `merge_failed: git merge failed: <git's error>` — a machine fault when it names `index.lock` — and since 0.1.116 the stale lock is moved aside before the next merge.
+- **Tasks already blocked by a Lane Pilot or machine fault are parked at start-up** (last 24 h, latest attempt, not sent again by the PM) and restart by themselves like any parked task.
+
 ## 0.1.116
 
 Stability, after the 2026-10-04 incidents and a survey of how merge queues, workflow engines, CI and agent harnesses handle failures (`.bb/chats/thr_tev4nistgf/artifacts/failure-practices/REPORT.md`).

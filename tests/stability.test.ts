@@ -15,6 +15,8 @@ describe("failure class of real reasons", () => {
     ["validation_failed", "missing expected_outputs: Manrope-ExtraBold.woff2", "contract"],
     ["blocked", "depends_on gc-section-shell-native: that task ended blocked", "contract"],
     ["blocked", "needs_human: which price applies?", "judgment"],
+    ["blocked", "retry limit 2 exhausted: merge_conflict: main changed since this attempt started: ", "harness"],
+    ["blocked", "merge_failed: git merge failed: fatal: Unable to create '/repo/.git/index.lock': File exists.", "infra"],
     ["empty_output", "writer returned no output", "provider"],
     ["validation_failed", "verification failed: npx vitest run greeting-card exited 1", "task"],
     ["validation_failed", "changed paths outside owns_paths: apps/api/x.ts", "task"],
@@ -102,5 +104,26 @@ describe("breaker", () => {
     expect(stability.breakerHolds("other", 4000)).toBeNull();
     expect(stability.breakerHolds("proj", 3000 + 31 * 60_000)).toBeNull(); // half-open: one task may try
     expect(stability.breakerHolds("proj", 3000 + 32 * 60_000)).toContain("page_cap");
+  });
+});
+
+describe("adoption at start-up", () => {
+  it("parks a task blocked by a Lane Pilot fault before parking existed, not one the PM sent again or a task's own failure", async () => {
+    const { db, stability } = setup();
+    const block = (id:string, task:string, reason:string, at:number) => {
+      createAttempt(db, { id, runId:"run", taskId:task });
+      transitionAttempt(db, id, "spawn_requested");
+      transitionAttempt(db, id, "blocked", { reason });
+      db.prepare("UPDATE lane_pilot_attempt SET created_at=?, updated_at=? WHERE id=?").run(at, at, id);
+    };
+    const now = Date.now();
+    block("x1", "T1", "retry limit 2 exhausted: merge_conflict: main changed since this attempt started: ", now - 60_000);
+    block("x2", "T2", "retry limit 2 exhausted: verification failed: exit 1", now - 60_000);
+    block("x3", "T3", "attempt_worktree_holder_ambiguous:page_cap", now - 60_000);
+    createAttempt(db, { id:"x4", runId:"run", taskId:"T1.2" }); // the PM already sent T1 again
+    db.prepare("UPDATE lane_pilot_attempt SET created_at=? WHERE id='x4'").run(now - 1000);
+    expect(await stability.adoptBlockedByFaults(now)).toEqual(["T3"]);
+    expect((await stability.loadParked()).map((row) => row.taskId)).toEqual(["T3"]);
+    expect(await stability.adoptBlockedByFaults(now)).toEqual([]);
   });
 });

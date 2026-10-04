@@ -157,5 +157,33 @@ export function createStability(ctx:ServerCore, services:Services) {
     return low ? `only ${Math.round(free.freeBytes / 2 ** 30)} GB free on ${hostId}` : null;
   }
 
-  return { stability:{ onTaskFailed, breakerHolds, diskHolds, sweep, loadParked } };
+  /**
+   * Tasks blocked in the last day by a Lane Pilot or machine fault before parking existed, or before the fault was
+   * recognised as one, are parked once at start-up so they restart like any other (none of them is the task's fault).
+   */
+  async function adoptBlockedByFaults(now = Date.now()):Promise<string[]> {
+    const rows = db.prepare(`SELECT a.run_id, a.task_id, a.state, a.reason, a.updated_at, r.project_id, r.pm_thread_id
+      FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+      WHERE a.state='blocked' AND a.updated_at>? AND r.closed_at IS NULL
+        AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)`)
+      .all(now - 24 * 3600_000) as Array<{ run_id:string; task_id:string; state:string; reason:string|null; updated_at:number; project_id:string; pm_thread_id:string|null }>;
+    const list = await loadParked();
+    const adopted:string[] = [];
+    for (const row of rows) {
+      const klass = failureClass(row.state, row.reason);
+      if (!PARKED_CLASSES.has(klass) || !row.pm_thread_id || list.some((entry) => entry.runId === row.run_id && entry.taskId === row.task_id)) continue;
+      const entry:ParkedTask = { projectId:row.project_id, runId:row.run_id, taskId:row.task_id, pmThreadId:row.pm_thread_id, klass,
+        reason:(row.reason ?? "").slice(0, 400), fingerprint:failureFingerprint(row.reason), version:"before-adoption", at:row.updated_at, redrives:0 };
+      if (superseded(entry)) continue;
+      list.push(entry);
+      adopted.push(row.task_id);
+    }
+    if (adopted.length) {
+      await saveParked(list);
+      bb.log.info(`Lane Pilot parked ${adopted.length} task(s) blocked by a Lane Pilot or machine fault: ${adopted.join(", ")}`);
+    }
+    return adopted;
+  }
+
+  return { stability:{ onTaskFailed, breakerHolds, diskHolds, sweep, loadParked, adoptBlockedByFaults } };
 }
