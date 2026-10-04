@@ -17,6 +17,20 @@ import { outputText, writerPatchFromOutput } from "../writer-task";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
+/**
+ * A verification command that fails is run once more: a check that fails once and passes on a re-run (a cold cache, a
+ * port still held by the previous run) is flaky, not the writer's fault. Exit 124 is a timeout (the terminal and the
+ * host sandbox both report it so) and is not repeated: it would only double the wait.
+ */
+export async function runWithFlakyRerun<T extends {exitCode:number}>(command:string,run:()=>Promise<T>,log:(line:string)=>void):Promise<T&{flaky?:true}> {
+  const first=await run();
+  if(first.exitCode===0||first.exitCode===124) return first;
+  const again=await run();
+  if(again.exitCode!==0) return first;
+  log(`verification command passed on re-run (flaky): ${command}`);
+  return {...again,flaky:true};
+}
+
 export function createWriterVerify(ctx: ServerCore, services: Services) {
   const { bb, db, host, runPolicyFor } = ctx;
 
@@ -65,13 +79,14 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
   }
 
   async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string): Promise<Array<VerifyResult & {
-    sandboxBackend:string|null; policySha256:string|null; workspacePath:string;
+    sandboxBackend:string|null; policySha256:string|null; workspacePath:string; flaky?:true;
   }>> {
     const policy=runId?runPolicyFor(runId):buildRunPolicy(loadProjectSettings(db,config.projectId));
     const verificationScopes=runId?getRunSettingsScopes(db,runId):[];
     return mapBounded(task.verification,policy.pools.verification,async(command)=>{
       const release=await services.runWriterPool.acquire(`verification:${runId??config.projectId}`,policy.pools.verification);
       try {
+      return await runWithFlakyRerun(command.command,async()=>{
       const backend=(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto";
       // The sandbox gives a command 120 s when the task names no limit; waiting only 30 s cut longer checks short.
       const timeoutSec=command.timeout_sec ?? 120;
@@ -104,6 +119,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       }
       return {command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?ran.stdout:"",stderr:typeof ran.stderr==="string"?ran.stderr:"",
         sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath};
+      },(line)=>bb.log.info(line));
       } finally { release(); }
     });
   }

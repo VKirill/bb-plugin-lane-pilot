@@ -776,7 +776,8 @@ describe("BB writer validation on the server path", () => {
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
     )));
-    expect(ran.filter((command) => command === "true" || command === "false")).toEqual(["true", "false", "true", "false"]);
+    // A failing check runs once more before it counts as failed.
+    expect(ran.filter((command) => command === "true" || command === "false")).toEqual(["true", "false", "false", "true", "false", "false"]);
     expect(maxActiveVerifications).toBe(2);
     expect(JSON.parse(getRun(db,"run-v")!.run_policy_json)).toMatchObject({pools:{verification:2}});
     expect(result.state).toBe("blocked");

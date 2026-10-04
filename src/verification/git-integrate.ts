@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 
 export type GitIntegration = {
@@ -43,6 +43,27 @@ function ownerAlive(pid:number):boolean {
 }
 
 /**
+ * A git process killed mid-write leaves <git-dir>/index.lock, and every later git command in that checkout fails on it
+ * (a deploy waited 5+ minutes on one, 2026-10-04). A lock older than 60 s that no live process holds is renamed aside,
+ * never deleted. Without lsof nothing proves it is free, so only a lock older than 10 minutes counts. A fresh lock is a live git.
+ */
+export async function recoverStaleGitLock(cwd:string):Promise<string|null> {
+  const dir=git(cwd,["rev-parse","--absolute-git-dir"]);
+  if(!dir.ok||!dir.stdout.trim()) return null;
+  const lock=join(dir.stdout.trim(),"index.lock");
+  const info=await stat(lock).catch(()=>null);
+  const age=info?Date.now()-info.mtimeMs:0;
+  if(!info||age<=60_000) return null;
+  const held=spawnSync("lsof",[lock],{encoding:"utf8",timeout:10_000,windowsHide:true});
+  const lsofRan=!held.error&&(held.status===0||held.status===1);
+  if(lsofRan?held.status===0&&held.stdout.trim()!=="":age<=600_000) return null;
+  const aside=`${lock}.stale-${Date.now()}`;
+  if(!await rename(lock,aside).then(()=>true,()=>false)) return null;
+  console.warn(`lane-pilot: moved stale git lock ${lock} (${Math.round(age/1000)}s old, no live holder) to ${aside}`);
+  return aside;
+}
+
+/**
  * One integration at a time per base checkout. The lock names its process; a lock whose process is gone
  * (the host restarted mid-merge) is taken over at once, and any lock older than 10 minutes is stale.
  */
@@ -80,6 +101,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   /** Merge only what is committed: the docs worktree holds other units' unchecked pages beside the commit. */
   committedOnly?:boolean}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
+  await recoverStaleGitLock(input.worktreePath);
   const dirty=input.committedOnly?{ok:true as const,stdout:"",reason:""}:git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
   if(!dirty.ok) return fail(`worktree status: ${dirty.reason}`);
   if(dirty.stdout.trim()) {
@@ -97,6 +119,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   let result:GitIntegration;
   try {
     result=await withBaseLock(input.basePath,async()=>{
+      await recoverStaleGitLock(input.basePath);
       const before=git(input.basePath,["rev-parse","HEAD"]).stdout.trim();
       const merged=merge(input.basePath,sha,input.message);
       if(merged.status==="merged"&&before) merged.rebuilt=await rebuildChangedPackages(input.basePath,before);
@@ -122,6 +145,7 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
   if(!top.ok) return {status:"failed",path:null,branch:null,reason:`not a git checkout: ${top.reason}`};
   const branch=`lane/${input.name}`;
   await mkdir(join(input.targetPath,".."),{recursive:true});
+  await recoverStaleGitLock(input.basePath);
   const added=git(input.basePath,["worktree","add","-q","-b",branch,input.targetPath,"HEAD"]);
   if(!added.ok) return {status:"failed",path:null,branch:null,reason:added.reason};
   return {status:"ready",path:input.targetPath,branch,reason:null};
@@ -295,6 +319,7 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
 export async function removeLaneWorktree(input:{basePath:string;worktreePath:string}):Promise<{removed:boolean}> {
   const branch=git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"]).stdout.trim();
   if(!branch.startsWith("lane/")) return {removed:false};
+  await recoverStaleGitLock(input.basePath);
   const removed=git(input.basePath,["worktree","remove","--force",input.worktreePath]).ok;
   if(removed) git(input.basePath,["branch","-D",branch]);
   return {removed};

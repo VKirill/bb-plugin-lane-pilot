@@ -6,7 +6,7 @@ import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts a
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { chmod, lstat, mkdir, open, readFile, readlink, readdir, realpath, rename, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, statfs, readFile, readlink, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
@@ -77,6 +77,12 @@ export const gitRemoveWorktree: ExperimentalHostRpcHandlers<typeof hostContract>
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await removeLaneWorktree({basePath:input.basePath,worktreePath:input.worktreePath}),
 });
+
+/** Free space for whoever decides before a spawn: a full disk (OVH, 2026-10-03) killed the BB host daemon. */
+export const diskFree: ExperimentalHostRpcHandlers<typeof hostContract>["diskFree"] = async (input) => {
+  const fs = await statfs(input.path);
+  return { hostId:process.env.BB_HOST_ID??input.requestedHostId, path:input.path, freeBytes:Number(fs.bavail)*Number(fs.bsize), totalBytes:Number(fs.blocks)*Number(fs.bsize) };
+};
 
 /**
  * Writer worktrees live in ~/.lane-pilot/worktrees on the host. BB refuses to start a thread in a folder inside its
