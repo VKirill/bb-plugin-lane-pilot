@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.113
+
+- Guard (bundled from Lane Stack 1.64.8): deleting for good outside regenerated folders is refused with a pointer to `~/.agents/bin/agent-trash`, which moves files to the Trash; rm inside quoted text no longer trips it.
+- Writer brief: delete with agent-trash, not rm (it used to say rm -f was blocked and suggest unlink / find -delete).
+
 ## 0.1.112
 
 - Fix: a task no longer waits on an overlapping task that itself depends on it (owns_paths overlap × depends_on deadlock seen live on SelfyStudio `gc-native-price-watermark.5` / `gc-native-how.5`).

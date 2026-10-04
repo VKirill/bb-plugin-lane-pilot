@@ -224,8 +224,8 @@ describe("writer brief", () => {
     expect(brief).toContain("Do not commit, push, merge, rebase or switch branches");
     expect(brief).toContain("Lane Pilot commits and merges your accepted changes into main");
     expect(brief).toContain("Env Catalog (env_get)");
-    expect(brief).toContain("rm -f and rm -rf are blocked");
-    expect(brief).toContain("find <path> -delete");
+    expect(brief).toContain("agent-trash");
+    expect(brief).not.toContain("find <path> -delete");
     expect(brief).not.toContain("use npm ci");
   });
 
