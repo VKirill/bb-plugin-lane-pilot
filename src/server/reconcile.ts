@@ -1,6 +1,7 @@
 import { taskV2Schema } from "../contracts";
-import { countAttempts, createAttempt, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../database";
+import { countAttempts, countChargedAttempts, createAttempt, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../database";
 import { closeWriterStages } from "./stage-records";
+import { FREE_RETRY_LIMIT } from "../failure-class";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "../state-machine";
 import { randomUUID } from "node:crypto";
 import { reconcile, reconcileHolder } from "../reconcile";
@@ -149,7 +150,8 @@ export function createReconcile(ctx: ServerCore, services: Services) {
       services.maintainProjectLifeAfterAcceptance(input.projectId, input.attempt.run_id, input.attempt.task_id, run.pm_thread_id ?? "");
     } else if (outcome === "canceled") {
       close("canceled", "writer attempt canceled");
-    } else if (RETRY_ELIGIBLE.includes(outcome as AttemptState) && attempts < MAIN_ATTEMPT_LIMIT && run.pm_thread_id) {
+    } else if (RETRY_ELIGIBLE.includes(outcome as AttemptState) && countChargedAttempts(db, input.attempt.run_id, input.attempt.task_id) < MAIN_ATTEMPT_LIMIT
+      && attempts < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT && run.pm_thread_id) {
       const retryId = `lpattempt_${randomUUID().replaceAll("-", "")}`;
       createAttempt(db, { id:retryId, runId:input.attempt.run_id, taskId:input.attempt.task_id });
       const fresh = acceptedTaskWorkspace(input.attempt.run_id, input.attempt.task_id, run.writer_workspace_path, parsed.data);

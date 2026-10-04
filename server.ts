@@ -8,6 +8,7 @@ import { createDocsNightly } from "./src/server/docs-nightly";
 import { mountNativeWiring } from "./src/server/native-wiring";
 import { createProbes } from "./src/server/probes";
 import { createReconcile } from "./src/server/reconcile";
+import { createStability } from "./src/server/stability";
 import { createRuleScan } from "./src/server/rule-scan";
 import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns } from "./src/server/run-finish";
 import { registerRpc } from "./src/server/rpc";
@@ -60,6 +61,7 @@ export default async function plugin(bb: BbPluginApi) {
     createWriterHost(ctx),
     { council: createCouncil(ctx) },
     { ruleScan: createRuleScan(ctx, services) },
+    createStability(ctx, services),
   );
   registerRpc(ctx, services);
   registerTools(ctx, services);
@@ -73,6 +75,9 @@ export default async function plugin(bb: BbPluginApi) {
     if (removed.length) bb.log.info(`Lane Pilot released ${removed.length} worktree(s) of finished attempts`);
   }, (cause) => bb.log.warn(`Lane Pilot worktree sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   bb.background.schedule("attempt-worktree-sweep", "*/10 * * * *", sweepEnvironments);
+  const sweepParked = () => services.stability.sweep().then(() => undefined,
+    (cause) => bb.log.warn(`Lane Pilot parked-task sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
+  bb.background.schedule("parked-task-sweep", "*/5 * * * *", sweepParked);
   // Recovery reads writer workspaces through the host, which is not callable while the factory registers; a service
   // starts once loading is done. (Run in the factory, a finished writer was failed with «host plugin calls are
   // unavailable during factory registration».)
@@ -83,6 +88,7 @@ export default async function plugin(bb: BbPluginApi) {
       });
       await sweepRuns();
       await sweepEnvironments();
+      await sweepParked();
       try {
         const closed = closeOrphanWriterStages(db, services.activeWriterTasks);
         if (closed) bb.log.info(`Lane Pilot closed ${closed} writer stage(s) left open after their task ended`);

@@ -4,6 +4,7 @@ import type { createActivation } from "./activation";
 import type { createDocsNightly } from "./docs-nightly";
 import type { createProbes } from "./probes";
 import type { createReconcile } from "./reconcile";
+import type { createStability } from "./stability";
 import type { createStageChildren } from "./stages/children";
 import type { createDocsStage } from "./stages/docs";
 import type { createMemoryStage } from "./stages/memory";
@@ -111,6 +112,7 @@ export interface Services {
   startCancelProbe: ProbesApi["startCancelProbe"];
   startProviderErrorProbe: ProbesApi["startProviderErrorProbe"];
   startWriterTask: WriterStartApi["startWriterTask"];
+  stability: ReturnType<typeof createStability>["stability"];
   threadReconcilePort: ReconcileApi["threadReconcilePort"];
   unitWritable: DocsNightlyApi["unitWritable"];
   updateDocsUnitsIndex: DocsNightlyApi["updateDocsUnitsIndex"];

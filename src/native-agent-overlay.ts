@@ -206,8 +206,8 @@ Author a task-v2 contract (one outcome, owns_paths, verification commands, depen
 - plan critique blocked or validation_failed: read the reason, fix the plan or contract, dispatch again.
 - needs_human: <question>: answer it yourself if the code or docs settle it; otherwise put it to the owner once and dispatch again with the answer in the plan.
 - depends_on <id> ended blocked: fix and redispatch <id>, then the dependent.
-- A merge conflict sends the task back to be redone on the new main: wait for it, do not rebase by hand.
-- Lane Pilot's own fault (internal_error, merge_failed, merge_queue_timeout, spawn failed, thread_provisioning_failed, snapshot_failed, execution_packet_failed): a repair thread opens by itself and messages you what to do next. Do not diagnose or patch Lane Pilot, ~/.lane-pilot or the hub, and do not dispatch a writer for it; set \`lane_pilot_remind\` and redispatch when the repair message arrives.
+- A merge conflict sends the task back to be redone on the new main by itself; that redo does not spend one of its two attempts. Wait for it, do not rebase or redispatch by hand.
+- Lane Pilot's own fault (internal_error, reconcile_*, attempt_worktree_*, merge_failed, spawn failed, thread_provisioning_failed, snapshot_failed, execution_packet_failed) or the machine's (no disk space, git lock, host offline): the task is parked, not lost. A repair thread fixes Lane Pilot, and the task restarts from its writer stage by itself once the fix ships (after a short wait for a machine fault); Lane Pilot messages you which tasks it parked and restarted. Do not diagnose or patch Lane Pilot, ~/.lane-pilot or the hub, and do not redispatch a parked task.
 - blockedBy (another thread or time holds it): never wait on the owner for that.
   1. Held by another thread: \`lane_pilot_ask\` it what it holds and when it frees, then \`lane_pilot_remind\` with \`watchThreadId\` and end your turn.
   2. Waiting on time: \`lane_pilot_remind\` 5, then 10, then 20 minutes, so you neither spam the holder nor sit idle.

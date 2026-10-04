@@ -1,13 +1,14 @@
 import { breakerKey, classifyFailure, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, countChargedAttempts, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "../../owns-paths";
 import { reconcile } from "../../reconcile";
 import { emergencyFallbackDecision } from "../../stages/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
+import { FREE_RETRY_LIMIT } from "../../failure-class";
 import type { AttemptState } from "../../state-machine";
 import { parseWorkspaceMode } from "../../workspace/routing";
 import { closeWriterStages, recordStage } from "../stage-records";
@@ -159,6 +160,19 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         return;
       }
       if (!inPlace) await waitForOverlappingTasks();
+      // Several tasks failed on the same Lane Pilot fault just now: starting more only burns them too.
+      for (let noted = ""; ;) {
+        if (ctx.isDisposed()) return;
+        const held = services.stability.breakerHolds(input.projectId);
+        if (!held) break;
+        if (noted !== held) {
+          noted = held;
+          ctx.log(`writer ${input.taskId} waits: breaker open on «${held}»`);
+          recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
+            reason:`waiting: several tasks failed on a Lane Pilot fault (${held}); starts once it is fixed` });
+        }
+        await new Promise((wake) => setTimeout(wake, 30_000));
+      }
       releaseWriterSlot=await services.runWriterPool.acquire(input.runId,inPlace?1:policy.pools.provider);
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){
@@ -170,7 +184,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
       recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"running",
         input:input.plan, attempt:countAttempts(db, input.runId, input.taskId) });
-      while (countAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT) {
+      // A merge conflict or a fault of Lane Pilot or the machine does not spend an attempt; free retries are capped too.
+      const attemptsLeft = () => countChargedAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT
+        && countAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
+      while (attemptsLeft()) {
         if (!writerThreadId) {
           budget.noteAttempt();
           const budgetCheck=budget.check();
@@ -249,7 +266,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             break;
           }
         }
-        if (countAttempts(db, input.runId, input.taskId) >= MAIN_ATTEMPT_LIMIT) {
+        if (countChargedAttempts(db, input.runId, input.taskId) >= MAIN_ATTEMPT_LIMIT
+          || countAttempts(db, input.runId, input.taskId) >= MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) {
             const exhausted = `retry limit 2 exhausted${typeof last.reason === "string" && last.reason ? `: ${last.reason}` : ""}`;
@@ -335,6 +353,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
       const accepted = last.status === "accepted";
       const reason = accepted ? undefined : String(last.reason ?? last.status ?? "writer_failed");
+      if (!accepted && last.status !== "canceled") {
+        void services.stability.onTaskFailed({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+          pmThreadId:input.pmThreadId, state:String(last.status), reason:reason ?? "" }).catch(() => false);
+      }
       for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
         const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
         if (current?.state === "pending") {
@@ -377,6 +399,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (attempt && ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "provider_error", "timeout", "empty_output", "validation_failed"].includes(attempt.state)) {
           transitionAttempt(db, attemptId, "blocked", { threadId:writerThreadId, reason });
         }
+        void services.stability.onTaskFailed({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+          pmThreadId:input.pmThreadId, state:"blocked", reason }).catch(() => false);
         for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
           const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
           if (!current || current.state === "passed" || current.state === "failed" || current.state === "skipped") continue;
