@@ -154,6 +154,9 @@ async function realDirectory(path:string, label:string):Promise<string> {
   return realpath(path);
 }
 
+/** spawnSync killed the command at its time limit: reported as 124 like timeout(1), so a caller can tell it from a failure. */
+const timedOut=(child:{error?:Error})=>(child.error as NodeJS.ErrnoException|undefined)?.code==="ETIMEDOUT";
+
 export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Promise<SandboxedCommandResult> {
   const requestedBackend=input.backend ?? "auto";
   const seatbeltAvailable=await access(SANDBOX_EXEC).then(()=>true,()=>false);
@@ -181,7 +184,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       if (child.error && ["EPERM","EACCES","ENOENT"].includes(String((child.error as NodeJS.ErrnoException).code))) {
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
       }
-      return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? 1,
+      return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
         policySha256,stdout:(child.stdout ?? "").slice(0,200_000),stderr:(child.stderr ?? child.error?.message ?? "").slice(0,12_000)};
     }
     const profile = buildSeatbeltProfile(workspacePath,tempPath);
@@ -203,7 +206,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     }
     return {
       hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,
-      exitCode:child.status ?? 1,policySha256,
+      exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,
       stdout:(child.stdout ?? "").slice(0,200_000),stderr:(child.stderr ?? child.error?.message ?? "").slice(0,12_000),
     };
   } finally {

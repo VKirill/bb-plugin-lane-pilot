@@ -1,0 +1,80 @@
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdtemp, symlink, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { integrateWorktree, recoverStaleGitLock } from "../../src/verification/git-integrate";
+
+const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
+
+async function repo() {
+  const base = join(await mkdtemp(join(tmpdir(), "lp-lock-")), "main");
+  execFileSync("git", ["init", "-q", "-b", "main", base]);
+  await writeFile(join(base, "server.ts"), "line1\n");
+  git(base, "add", "-A"); git(base, "commit", "-qm", "base");
+  const worktree = async (name: string) => { const path = join(base, "..", name); git(base, "worktree", "add", "-q", "-b", `bb/${name}`, path, "main"); return path; };
+  return { base, worktree };
+}
+
+const hasLsof = spawnSync("lsof", ["-v"]).error === undefined;
+const aged = async (path: string, seconds: number) => { const t = new Date(Date.now() - seconds * 1000); await utimes(path, t, t); };
+const lockOf = (base: string) => join(base, ".git", "index.lock");
+
+describe("stale git index.lock recovery", () => {
+  it("leaves a fresh lock alone", async () => {
+    const { base } = await repo();
+    await writeFile(lockOf(base), "");
+    await aged(lockOf(base), 30);
+    expect(await recoverStaleGitLock(base)).toBeNull();
+    expect(existsSync(lockOf(base))).toBe(true);
+  });
+
+  it.skipIf(!hasLsof)("moves aside a lock older than 60 s that no process holds", async () => {
+    const { base } = await repo();
+    await writeFile(lockOf(base), "");
+    await aged(lockOf(base), 120);
+    const aside = await recoverStaleGitLock(base);
+    expect(aside).toMatch(/index\.lock\.stale-\d+$/);
+    expect(existsSync(lockOf(base))).toBe(false);
+    expect(existsSync(aside!)).toBe(true);
+  });
+
+  it.skipIf(!hasLsof)("does not touch an old lock while a process holds it open", async () => {
+    const { base } = await repo();
+    await writeFile(lockOf(base), "");
+    const holder = spawn("sh", ["-c", `exec 3<"${lockOf(base)}"; sleep 30`], { stdio: "ignore" });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await aged(lockOf(base), 3600);
+      expect(await recoverStaleGitLock(base)).toBeNull();
+      expect(existsSync(lockOf(base))).toBe(true);
+    } finally { holder.kill(); }
+  });
+
+  it("without lsof only a lock older than 10 minutes counts", async () => {
+    const { base } = await repo();
+    const bin = await mkdtemp(join(tmpdir(), "lp-nolsof-"));
+    await symlink(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
+    const path = process.env.PATH;
+    process.env.PATH = bin;
+    try {
+      await writeFile(lockOf(base), "");
+      await aged(lockOf(base), 300);
+      expect(await recoverStaleGitLock(base)).toBeNull();
+      await aged(lockOf(base), 700);
+      expect(await recoverStaleGitLock(base)).toMatch(/index\.lock\.stale-\d+$/);
+    } finally { process.env.PATH = path; }
+  });
+
+  it.skipIf(!hasLsof)("finds a worktree's own lock, so the merge goes through", async () => {
+    const { base, worktree } = await repo();
+    const a = await worktree("a");
+    const lock = join(git(a, "rev-parse", "--absolute-git-dir").trim(), "index.lock");
+    await writeFile(lock, "");
+    await aged(lock, 3600);
+    await writeFile(join(a, "lib.ts"), "export const x = 1;\n");
+    expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "task a" })).status).toBe("merged");
+    expect(existsSync(lock)).toBe(false);
+  });
+});

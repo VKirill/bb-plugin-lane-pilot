@@ -19,6 +19,17 @@ it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))
   },
 );
 
+it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))(
+  "reports a command killed at its time limit as exit 124, not as a plain failure",
+  async () => {
+    const workspace = await realpath(await mkdtemp(join(tmpdir(), "lp-sandbox-ws-")));
+    const result = await runSandboxedCommandOnHost({
+      requestedHostId: "host", workspacePath: workspace, cwd: workspace, backend: "auto", command: "sleep 30", timeoutSec: 1,
+    } as never);
+    expect(result.exitCode).toBe(124);
+  },
+);
+
 it("finds the bb CLI folder from BB_CLI or PATH so sandboxed checks can run bb plugin build", async () => {
   const { bbCliDir } = await import("../../src/verification/sandbox");
   expect(bbCliDir({ BB_CLI: "/opt/bb/dist/bb" })).toBe("/opt/bb/dist");
