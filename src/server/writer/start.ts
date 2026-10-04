@@ -9,6 +9,7 @@ import { emergencyFallbackDecision } from "../../stages/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import { FREE_RETRY_LIMIT } from "../../failure-class";
+import { previousAttemptBrief } from "../writer-task";
 import type { AttemptState } from "../../state-machine";
 import { parseWorkspaceMode } from "../../workspace/routing";
 import { closeWriterStages, recordStage } from "../stage-records";
@@ -203,6 +204,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
             config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
+            previousAttempt:previousAttemptBrief(last.status ? last : null),
           });
           if (!spawned.ok) {
             last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };

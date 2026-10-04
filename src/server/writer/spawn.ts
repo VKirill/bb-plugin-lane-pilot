@@ -55,6 +55,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     config:PrototypeConfig; task:TaskV2; plan:string; pmThreadId:string; pmReadContext?:string;
     /** A fallback writer: its model, and its effort when it is one of the writer's fallbacks (the PM's model has none). */
     emergency?:{providerId:string;model:string;reason:string;reasoningLevel?:string}; retryIndex?:number;
+    /** The previous attempt's failure, for a retry (`previousAttemptBrief`). */
+    previousAttempt?:string;
   }): Promise<
     | { ok:true; threadId:string; providerId:string|null; model:string|null; reasoningLevel?:string; serviceTier?:"default"|"fast"|null; selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}; dirtBefore:import("../../cli-outcome").DirtSnapshot[]; workspacePath:string; executionPacketSha256?:string }
     | { ok:false; status:"spawn_rejected"; reason:string; attemptId:string }
@@ -315,7 +317,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
       const writerBrief = writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
         ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
-        : undefined,writerAgent,input.pmReadContext ?? "",rulesText);
+        : undefined,writerAgent,input.pmReadContext ?? "",rulesText,input.previousAttempt ?? "");
       const existingTrace = getReasoningTrace(db, input.attemptId);
       if (existingTrace) {
         saveReasoningTrace(db, {

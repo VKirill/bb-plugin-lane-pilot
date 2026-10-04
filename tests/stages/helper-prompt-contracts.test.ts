@@ -341,3 +341,18 @@ describe("other helper prompts", () => {
     expect(prompt).toContain("return it as a task for a writer");
   });
 });
+
+describe("retry brief", () => {
+  it("tells the next writer why the last attempt failed, as data", async () => {
+    const { previousAttemptBrief, writerPrompt } = await import("../../src/server/writer-task");
+    const task = buildTask({ writerWorkspacePath: "/tmp/w" } as never, "T-1");
+    const brief = previousAttemptBrief({ status:"validation_failed", reason:"verification failed", produced:["src/a.ts"],
+      verification:[{ command:"npm test", exitCode:0 }, { command:"npx vitest run a", exitCode:1, stderr:"Expected 3, got 4" }] });
+    expect(brief).toContain("Failing check: npx vitest run a (exit 1)");
+    expect(brief).toContain("Expected 3, got 4");
+    expect(brief).toContain("src/a.ts");
+    expect(previousAttemptBrief({ status:"accepted" })).toBe("");
+    expect(writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", brief)).toContain("<previous_attempt>");
+    expect(writerPrompt(task)).not.toContain("<previous_attempt>");
+  });
+});
