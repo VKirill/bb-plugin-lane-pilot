@@ -1330,7 +1330,7 @@ export const rpcContract = defineRpcContract({
         lastError: z.string().nullable(),
       }).strict(),
       byProject: z.array(z.object({
-        projectId: z.string(), total: z.number(), share: z.number(), topModel: z.string(), costUsd: z.number().nullable(),
+        projectId: z.string(), projectName: z.string(), total: z.number(), share: z.number(), topModel: z.string(), costUsd: z.number().nullable(),
       }).strict()),
       costUsd: z.number().nullable(),
     }).strict(),

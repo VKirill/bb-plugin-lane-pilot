@@ -9,6 +9,7 @@ export const TOKEN_USAGE_SCHEDULE = "token-usage-sync";
 export const TOKEN_USAGE_LAST_SYNC_KEY = "token-usage:last-sync-at";
 export const TOKEN_USAGE_DIAGNOSTICS_KEY = "token-usage:diagnostics";
 export const TOKEN_USAGE_CURSOR_RESET_KEY = "token-usage:reset-cursors-0.1.152";
+export const TOKEN_USAGE_CACHE_SPLIT_RESET_KEY = "token-usage:reset-cursors-0.1.159";
 export const TOKEN_USAGE_EVENT_TYPES = [
   "thread/tokenUsage/updated",
   "client/turn/requested",
@@ -19,7 +20,9 @@ const THREAD_PAGE = 200;
 export const EVENT_PAGE = 100;
 const DAY_MS = 86_400_000;
 
-export type TokenBreakdown = { input: number; output: number; cached: number; total: number };
+export type TokenBreakdown = {
+  input: number; output: number; cached: number; total: number; cacheRead: number; cacheWrite: number;
+};
 export type TokenUsageRange = "7d" | "14d" | "30d" | "month";
 export type TokenUsageQuery = {
   range: TokenUsageRange;
@@ -36,7 +39,7 @@ export type TokenUsageDiagnostics = {
 export type TokenUsageResult = {
   byModel: Array<{ providerId: string; model: string; input: number; output: number; cached: number; total: number; costUsd: number | null }>;
   series: Array<{ day: string; models: Array<{ providerId: string; model: string; total: number }> }>;
-  byProject: Array<{ projectId: string; total: number; share: number; topModel: string; costUsd: number | null }>;
+  byProject: Array<{ projectId: string; projectName: string; total: number; share: number; topModel: string; costUsd: number | null }>;
   months: string[];
   lastSyncAt: number | null;
   noDataProviders: string[];
@@ -48,7 +51,7 @@ const EMPTY_DIAGNOSTICS: TokenUsageDiagnostics = {
   threadsSeen: 0, threadsWithUsage: 0, threadsFailed: 0, lastError: null,
 };
 
-const ZERO: TokenBreakdown = { input: 0, output: 0, cached: 0, total: 0 };
+const ZERO: TokenBreakdown = { input: 0, output: 0, cached: 0, total: 0, cacheRead: 0, cacheWrite: 0 };
 
 export function utcDay(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
@@ -72,24 +75,26 @@ export function rangeBounds(input: TokenUsageQuery, now = Date.now()): { from: s
 
 export function tokenBreakdown(raw: unknown): TokenBreakdown {
   if (!raw || typeof raw !== "object") return { ...ZERO };
-  const n = (key: string) => {
+  const nMaybe = (key: string) => {
     const value = Reflect.get(raw, key);
-    return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+    return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : undefined;
   };
-  return {
-    input: n("inputTokens"),
-    output: n("outputTokens"),
-    cached: n("cachedInputTokens") || n("cacheReadInputTokens"),
-    total: n("totalTokens"),
-  };
+  const cached = nMaybe("cachedInputTokens") ?? nMaybe("cacheReadInputTokens") ?? 0;
+  const output = nMaybe("outputTokens") ?? 0;
+  const total = nMaybe("totalTokens") ?? 0;
+  const input = nMaybe("inputTokens") ?? 0;
+  const cacheWrite = nMaybe("cacheWriteInputTokens") ?? 0;
+  const cacheRead = nMaybe("cacheReadInputTokens") ?? cached;
+  return { input, output, cached, total, cacheRead, cacheWrite };
 }
 
 function hasTokens(row: TokenBreakdown): boolean {
-  return row.total > 0 || row.input > 0 || row.output > 0 || row.cached > 0;
+  return row.total > 0 || row.input > 0 || row.output > 0 || row.cached > 0 || row.cacheRead > 0 || row.cacheWrite > 0;
 }
 
 function sameTokens(a: TokenBreakdown, b: TokenBreakdown): boolean {
-  return a.input === b.input && a.output === b.output && a.cached === b.cached && a.total === b.total;
+  return a.input === b.input && a.output === b.output && a.cached === b.cached && a.total === b.total
+    && a.cacheRead === b.cacheRead && a.cacheWrite === b.cacheWrite;
 }
 
 function subTokens(a: TokenBreakdown, b: TokenBreakdown): TokenBreakdown {
@@ -98,7 +103,26 @@ function subTokens(a: TokenBreakdown, b: TokenBreakdown): TokenBreakdown {
     output: Math.max(0, a.output - b.output),
     cached: Math.max(0, a.cached - b.cached),
     total: Math.max(0, a.total - b.total),
+    cacheRead: Math.max(0, a.cacheRead - b.cacheRead),
+    cacheWrite: Math.max(0, a.cacheWrite - b.cacheWrite),
   };
+}
+
+function asBreakdown(row?: TokenBreakdown | null): TokenBreakdown {
+  return { ...ZERO, ...row };
+}
+
+function billedFrom(delta: TokenBreakdown): {
+  uncached: number; cacheRead: number; cacheWrite: number; output: number; input: number; cached: number; total: number;
+} {
+  const cached = delta.cached > 0 ? delta.cached : delta.cacheRead + delta.cacheWrite;
+  const uncached = Math.max(0, delta.total - delta.output - cached);
+  const cacheRead = delta.cacheRead;
+  const cacheWrite = delta.cacheWrite;
+  const input = uncached + cacheRead + cacheWrite;
+  const cachedOut = cacheRead + cacheWrite;
+  const total = delta.total > 0 ? delta.total : input + delta.output;
+  return { uncached, cacheRead, cacheWrite, output: delta.output, input, cached: cachedOut, total };
 }
 
 /** Per-turn delta from `last`; consecutive `total` only when last is missing or a re-emit. Never add cumulative totals. */
@@ -107,12 +131,14 @@ export function tokenDelta(
   prev: { last: TokenBreakdown; total: TokenBreakdown; turnId: string },
   turnId = "",
 ): TokenBreakdown {
-  const last = usage.last ?? ZERO;
-  const total = usage.total ?? ZERO;
-  if (turnId && turnId === prev.turnId && hasTokens(last)) return subTokens(last, prev.last);
-  if (hasTokens(last) && !sameTokens(last, prev.last)) return last;
-  if (hasTokens(total) && hasTokens(prev.total)) return subTokens(total, prev.total);
-  if (hasTokens(total) && !hasTokens(last) && !hasTokens(prev.total)) return total;
+  const last = asBreakdown(usage.last);
+  const total = asBreakdown(usage.total);
+  const prevLast = asBreakdown(prev.last);
+  const prevTotal = asBreakdown(prev.total);
+  if (turnId && turnId === prev.turnId && hasTokens(last)) return subTokens(last, prevLast);
+  if (hasTokens(last) && !sameTokens(last, prevLast)) return last;
+  if (hasTokens(total) && hasTokens(prevTotal)) return subTokens(total, prevTotal);
+  if (hasTokens(total) && !hasTokens(last) && !hasTokens(prevTotal)) return total;
   if (hasTokens(last)) return last;
   return { ...ZERO };
 }
@@ -241,14 +267,19 @@ function parseDiagnostics(raw: unknown): TokenUsageDiagnostics {
   };
 }
 
-async function resetBrokenCursors(ctx: { bb: BbPluginApi; db: LanePilotDatabase }): Promise<void> {
-  const done = await ctx.bb.storage.kv.get(TOKEN_USAGE_CURSOR_RESET_KEY).catch(() => null);
+async function resetCursorsOnce(ctx: { bb: BbPluginApi; db: LanePilotDatabase }, key: string): Promise<void> {
+  const done = await ctx.bb.storage.kv.get(key).catch(() => null);
   if (done) return;
   ctx.db.transaction(() => {
     ctx.db.prepare(`DELETE FROM lane_pilot_token_cursor`).run();
     ctx.db.prepare(`DELETE FROM lane_pilot_token_daily`).run();
   })();
-  await ctx.bb.storage.kv.set(TOKEN_USAGE_CURSOR_RESET_KEY, 1);
+  await ctx.bb.storage.kv.set(key, 1);
+}
+
+async function resetBrokenCursors(ctx: { bb: BbPluginApi; db: LanePilotDatabase }): Promise<void> {
+  await resetCursorsOnce(ctx, TOKEN_USAGE_CURSOR_RESET_KEY);
+  await resetCursorsOnce(ctx, TOKEN_USAGE_CACHE_SPLIT_RESET_KEY);
 }
 
 type CursorRow = {
@@ -268,7 +299,10 @@ function parseBreakdown(raw: string): TokenBreakdown {
       const value = Reflect.get(parsed, key);
       return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
     };
-    const stored = { input: n("input"), output: n("output"), cached: n("cached"), total: n("total") };
+    const stored = {
+      input: n("input"), output: n("output"), cached: n("cached"), total: n("total"),
+      cacheRead: n("cacheRead"), cacheWrite: n("cacheWrite"),
+    };
     return hasTokens(stored) ? stored : tokenBreakdown(parsed);
   } catch { return { ...ZERO }; }
 }
@@ -282,16 +316,22 @@ function loadCursor(db: LanePilotDatabase, threadId: string): CursorRow {
 function addDaily(db: LanePilotDatabase, row: {
   day: string; projectId: string; providerId: string; model: string; delta: TokenBreakdown;
 }): void {
-  if (!hasTokens(row.delta)) return;
+  const billed = billedFrom(row.delta);
+  if (billed.uncached <= 0 && billed.cacheRead <= 0 && billed.cacheWrite <= 0 && billed.output <= 0 && billed.total <= 0) return;
   db.prepare(`INSERT INTO lane_pilot_token_daily
-    (day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens)
-    VALUES (?,?,?,?,?,?,?,?)
+    (day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens,
+     uncached_tokens, cache_read_tokens, cache_write_tokens)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(day, project_id, provider_id, model) DO UPDATE SET
       input_tokens = input_tokens + excluded.input_tokens,
       output_tokens = output_tokens + excluded.output_tokens,
       cached_tokens = cached_tokens + excluded.cached_tokens,
-      total_tokens = total_tokens + excluded.total_tokens`)
-    .run(row.day, row.projectId, row.providerId, row.model, row.delta.input, row.delta.output, row.delta.cached, row.delta.total);
+      total_tokens = total_tokens + excluded.total_tokens,
+      uncached_tokens = uncached_tokens + excluded.uncached_tokens,
+      cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
+      cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens`)
+    .run(row.day, row.projectId, row.providerId, row.model, billed.input, billed.output, billed.cached, billed.total,
+      billed.uncached, billed.cacheRead, billed.cacheWrite);
 }
 
 function saveCursor(db: LanePilotDatabase, thread: ListedThread, cursor: CursorRow, now: number): void {
@@ -314,6 +354,20 @@ function daysOn(from: string, to: string): string[] {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return days;
   for (let ms = start; ms <= end; ms += DAY_MS) days.push(utcDay(ms));
   return days;
+}
+
+async function projectNames(bb: BbPluginApi): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const add = (rows: unknown) => {
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const id = stringAt(row, "id");
+      const name = stringAt(row, "name");
+      if (id && name) names.set(id, name);
+    }
+  };
+  add(await bb.sdk.projects.list({ includePersonal: true } as never).catch(() => []));
+  add(await bb.sdk.projects.list({ includePersonal: true, archived: true } as never).catch(() => []));
+  return names;
 }
 
 export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatabase }, input: { sinceDays: number } = { sinceDays: 90 }): Promise<TokenUsageDiagnostics> {
@@ -397,23 +451,34 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
   const { from, to } = rangeBounds(input, now);
   const projectId = input.projectId;
   const daily = (projectId
-    ? ctx.db.prepare(`SELECT day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens
+    ? ctx.db.prepare(`SELECT day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens,
+        uncached_tokens, cache_read_tokens, cache_write_tokens
         FROM lane_pilot_token_daily WHERE day>=? AND day<=? AND project_id=?`).all(from, to, projectId)
-    : ctx.db.prepare(`SELECT day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens
+    : ctx.db.prepare(`SELECT day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens,
+        uncached_tokens, cache_read_tokens, cache_write_tokens
         FROM lane_pilot_token_daily WHERE day>=? AND day<=?`).all(from, to)) as Array<{
-    day: string; project_id: string; provider_id: string; model: string; input_tokens: number; output_tokens: number; cached_tokens: number; total_tokens: number;
+    day: string; project_id: string; provider_id: string; model: string; input_tokens: number; output_tokens: number;
+    cached_tokens: number; total_tokens: number; uncached_tokens: number; cache_read_tokens: number; cache_write_tokens: number;
   }>;
-  const byKey = new Map<string, TokenUsageResult["byModel"][number]>();
+  const names = await projectNames(ctx.bb);
+  type ModelAgg = TokenUsageResult["byModel"][number] & { uncached: number; cacheRead: number; cacheWrite: number };
+  const byKey = new Map<string, ModelAgg>();
   const byDay = new Map<string, TokenUsageResult["series"][number]["models"]>();
   const byProjectMap = new Map<string, { total: number; models: Map<string, number>; costUsd: number | null }>();
   for (const row of daily) {
     const model = normalizeModel(row.model);
     const key = `${row.provider_id}\0${model}`;
-    const current = byKey.get(key) ?? { providerId: row.provider_id, model, input: 0, output: 0, cached: 0, total: 0, costUsd: null };
+    const current = byKey.get(key) ?? {
+      providerId: row.provider_id, model, input: 0, output: 0, cached: 0, total: 0, costUsd: null,
+      uncached: 0, cacheRead: 0, cacheWrite: 0,
+    };
     current.input += row.input_tokens;
     current.output += row.output_tokens;
     current.cached += row.cached_tokens;
     current.total += row.total_tokens;
+    current.uncached += row.uncached_tokens;
+    current.cacheRead += row.cache_read_tokens;
+    current.cacheWrite += row.cache_write_tokens;
     byKey.set(key, current);
     const dayModels = byDay.get(row.day) ?? [];
     const existing = dayModels.find((item) => item.providerId === row.provider_id && item.model === model);
@@ -423,14 +488,23 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
     const project = byProjectMap.get(row.project_id) ?? { total: 0, models: new Map<string, number>(), costUsd: null };
     project.total += row.total_tokens;
     project.models.set(model, (project.models.get(model) ?? 0) + row.total_tokens);
-    const rowCost = costUsd(model, { input: row.input_tokens, cached: row.cached_tokens, output: row.output_tokens });
+    const rowCost = costUsd(model, {
+      uncached: row.uncached_tokens, cacheRead: row.cache_read_tokens, cacheWrite: row.cache_write_tokens, output: row.output_tokens,
+    });
     if (rowCost !== null) project.costUsd = (project.costUsd ?? 0) + rowCost;
     byProjectMap.set(row.project_id, project);
   }
   for (const row of byKey.values()) {
-    row.costUsd = costUsd(row.model, row);
+    row.costUsd = costUsd(row.model, {
+      uncached: row.uncached, cacheRead: row.cacheRead, cacheWrite: row.cacheWrite, output: row.output,
+    });
   }
-  const byModel = [...byKey.values()].sort((a, b) => b.total - a.total || a.model.localeCompare(b.model));
+  const byModel = [...byKey.values()]
+    .sort((a, b) => b.total - a.total || a.model.localeCompare(b.model))
+    .map((row) => ({
+      providerId: row.providerId, model: row.model, input: row.input, output: row.output,
+      cached: row.cached, total: row.total, costUsd: row.costUsd,
+    }));
   const series = daysOn(from, to).map((day) => ({
     day,
     models: (byDay.get(day) ?? []).sort((a, b) => b.total - a.total || a.model.localeCompare(b.model)),
@@ -451,7 +525,14 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
   const projectTotal = [...byProjectMap.values()].reduce((sum, row) => sum + row.total, 0);
   const byProject = [...byProjectMap.entries()].map(([id, row]) => {
     const topModel = [...row.models.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? "";
-    return { projectId: id, total: row.total, share: projectTotal > 0 ? row.total / projectTotal : 0, topModel, costUsd: row.costUsd };
+    return {
+      projectId: id,
+      projectName: names.get(id) ?? id,
+      total: row.total,
+      share: projectTotal > 0 ? row.total / projectTotal : 0,
+      topModel,
+      costUsd: row.costUsd,
+    };
   }).sort((a, b) => b.total - a.total || a.projectId.localeCompare(b.projectId));
   const priced = byModel.map((row) => row.costUsd).filter((value): value is number => value !== null);
   const totalCost = priced.length > 0 ? priced.reduce((sum, value) => sum + value, 0) : null;

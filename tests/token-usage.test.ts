@@ -4,7 +4,8 @@ import { openDatabase } from "../src/database";
 import plugin from "../server";
 import { costUsd } from "../src/model-prices";
 import {
-  EVENT_PAGE, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE, normalizeModel, queryTokenUsage, syncTokenUsage, tokenDelta, utcDay,
+  EVENT_PAGE, TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE,
+  normalizeModel, queryTokenUsage, syncTokenUsage, tokenDelta, utcDay,
 } from "../src/server/token-usage";
 
 let dispose: (() => Promise<void> | void) | null = null;
@@ -21,13 +22,13 @@ type ListArgs = { threadId: string; afterSeq?: string; types?: readonly string[]
 function host(
   events: Record<string, unknown[]>,
   threads: Array<Record<string, unknown>> = [{ id: "thr_a", projectId: "proj_a", providerId: "codex" }],
-  extra: { failThread?: string } = {},
+  extra: { failThread?: string; projects?: Array<Record<string, unknown>> } = {},
 ) {
   const listed: ListArgs[] = [];
   const { bb } = createFakePluginHost({
     pluginId: "lane-pilot",
     sdk: {
-      projects: { list: async () => [{ id: "proj_a", name: "A" }] },
+      projects: { list: async () => extra.projects ?? [{ id: "proj_a", name: "A" }] },
       threads: {
         list: async () => threads,
         events: { list: async (args: ListArgs) => {
@@ -52,27 +53,27 @@ function host(
 }
 
 describe("token deltas", () => {
-  const zero = { input: 0, output: 0, cached: 0, total: 0 };
+  const zero = { input: 0, output: 0, cached: 0, total: 0, cacheRead: 0, cacheWrite: 0 };
   it("uses last as the per-turn delta and does not add cumulative totals", () => {
-    const first = tokenDelta({ last: { input: 10, output: 4, cached: 2, total: 14 }, total: { input: 10, output: 4, cached: 2, total: 14 } }, { last: zero, total: zero, turnId: "" });
-    const second = tokenDelta({ last: { input: 6, output: 2, cached: 1, total: 8 }, total: { input: 16, output: 6, cached: 3, total: 22 } }, { last: first, total: { input: 10, output: 4, cached: 2, total: 14 }, turnId: "" });
-    expect(first).toEqual({ input: 10, output: 4, cached: 2, total: 14 });
-    expect(second).toEqual({ input: 6, output: 2, cached: 1, total: 8 });
+    const first = tokenDelta({ last: { input: 10, output: 4, cached: 2, total: 14, cacheRead: 0, cacheWrite: 0 }, total: { input: 10, output: 4, cached: 2, total: 14, cacheRead: 0, cacheWrite: 0 } }, { last: zero, total: zero, turnId: "" });
+    const second = tokenDelta({ last: { input: 6, output: 2, cached: 1, total: 8, cacheRead: 0, cacheWrite: 0 }, total: { input: 16, output: 6, cached: 3, total: 22, cacheRead: 0, cacheWrite: 0 } }, { last: first, total: { input: 10, output: 4, cached: 2, total: 14, cacheRead: 0, cacheWrite: 0 }, turnId: "" });
+    expect(first).toEqual({ input: 10, output: 4, cached: 2, total: 14, cacheRead: 0, cacheWrite: 0 });
+    expect(second).toEqual({ input: 6, output: 2, cached: 1, total: 8, cacheRead: 0, cacheWrite: 0 });
     expect(first.total + second.total).toBe(22);
   });
   it("falls back to consecutive totals when last is missing and never sums totals", () => {
-    const first = tokenDelta({ total: { input: 100, output: 20, cached: 10, total: 120 } }, { last: zero, total: zero, turnId: "" });
-    const second = tokenDelta({ total: { input: 250, output: 50, cached: 20, total: 300 } }, { last: zero, total: first, turnId: "" });
-    const again = tokenDelta({ total: { input: 250, output: 50, cached: 20, total: 300 } }, { last: zero, total: { input: 250, output: 50, cached: 20, total: 300 }, turnId: "" });
-    expect(first).toEqual({ input: 100, output: 20, cached: 10, total: 120 });
-    expect(second).toEqual({ input: 150, output: 30, cached: 10, total: 180 });
+    const first = tokenDelta({ total: { input: 100, output: 20, cached: 10, total: 120, cacheRead: 0, cacheWrite: 0 } }, { last: zero, total: zero, turnId: "" });
+    const second = tokenDelta({ total: { input: 250, output: 50, cached: 20, total: 300, cacheRead: 0, cacheWrite: 0 } }, { last: zero, total: first, turnId: "" });
+    const again = tokenDelta({ total: { input: 250, output: 50, cached: 20, total: 300, cacheRead: 0, cacheWrite: 0 } }, { last: zero, total: { input: 250, output: 50, cached: 20, total: 300, cacheRead: 0, cacheWrite: 0 }, turnId: "" });
+    expect(first).toEqual({ input: 100, output: 20, cached: 10, total: 120, cacheRead: 0, cacheWrite: 0 });
+    expect(second).toEqual({ input: 150, output: 30, cached: 10, total: 180, cacheRead: 0, cacheWrite: 0 });
     expect(again).toEqual(zero);
     expect(first.total + second.total).toBe(300);
   });
   it("does not recount last when the same last is re-emitted with a higher total", () => {
-    const first = tokenDelta({ last: { input: 10, output: 4, cached: 2, total: 14 }, total: { input: 10, output: 4, cached: 2, total: 14 } }, { last: zero, total: zero, turnId: "" });
-    const repeat = tokenDelta({ last: { input: 10, output: 4, cached: 2, total: 14 }, total: { input: 20, output: 8, cached: 4, total: 28 } }, { last: first, total: first, turnId: "" });
-    expect(repeat).toEqual({ input: 10, output: 4, cached: 2, total: 14 });
+    const first = tokenDelta({ last: { input: 10, output: 4, cached: 2, total: 14, cacheRead: 0, cacheWrite: 0 }, total: { input: 10, output: 4, cached: 2, total: 14, cacheRead: 0, cacheWrite: 0 } }, { last: zero, total: zero, turnId: "" });
+    const repeat = tokenDelta({ last: { input: 10, output: 4, cached: 2, total: 14, cacheRead: 0, cacheWrite: 0 }, total: { input: 20, output: 8, cached: 4, total: 28, cacheRead: 0, cacheWrite: 0 } }, { last: first, total: first, turnId: "" });
+    expect(repeat).toEqual({ input: 10, output: 4, cached: 2, total: 14, cacheRead: 0, cacheWrite: 0 });
   });
 });
 
@@ -253,32 +254,33 @@ describe("token usage sync", () => {
     await syncTokenUsage({ bb, db }, { sinceDays: 90 });
     const result = await queryTokenUsage({ bb, db }, { range: "7d" });
     expect(result.byProject).toEqual([
-      { projectId: "proj_a", total: 14, share: 0.7, topModel: "gpt-5", costUsd: null },
-      { projectId: "proj_b", total: 6, share: 0.3, topModel: "opus", costUsd: null },
+      { projectId: "proj_a", projectName: "A", total: 14, share: 0.7, topModel: "gpt-5", costUsd: null },
+      { projectId: "proj_b", projectName: "proj_b", total: 6, share: 0.3, topModel: "opus", costUsd: null },
     ]);
     const one = await queryTokenUsage({ bb, db }, { range: "7d", projectId: "proj_b" });
-    expect(one.byProject).toEqual([{ projectId: "proj_b", total: 6, share: 1, topModel: "opus", costUsd: null }]);
+    expect(one.byProject).toEqual([{ projectId: "proj_b", projectName: "proj_b", total: 6, share: 1, topModel: "opus", costUsd: null }]);
     expect(one.byModel[0]?.model).toBe("opus");
   });
 
   it("merges context-window variants at read time without rewriting stored rows", async () => {
     const { bb, db } = host({});
     const insert = db.prepare(`INSERT INTO lane_pilot_token_daily
-      (day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens)
-      VALUES (?,?,?,?,?,?,?,?)`);
-    insert.run(day, "proj_a", "claude-code", "claude-opus-5-5", 10, 4, 1, 14);
-    insert.run(day, "proj_a", "claude-code", "claude-opus-5-5[1m]", 20, 6, 2, 26);
-    insert.run(day, "proj_b", "claude-code", "claude-opus-5", 8, 2, 0, 10);
-    insert.run(day, "proj_b", "claude-code", "claude-opus-5[1m]", 12, 3, 1, 15);
-    insert.run(day, "proj_a", "codex", "gpt-5", 5, 1, 0, 6);
+      (day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens,
+       uncached_tokens, cache_read_tokens, cache_write_tokens)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+    insert.run(day, "proj_a", "claude-code", "claude-opus-5-5", 10, 4, 1, 14, 9, 1, 0);
+    insert.run(day, "proj_a", "claude-code", "claude-opus-5-5[1m]", 20, 6, 2, 26, 18, 2, 0);
+    insert.run(day, "proj_b", "claude-code", "claude-opus-5", 8, 2, 0, 10, 8, 0, 0);
+    insert.run(day, "proj_b", "claude-code", "claude-opus-5[1m]", 12, 3, 1, 15, 11, 1, 0);
+    insert.run(day, "proj_a", "codex", "gpt-5", 5, 1, 0, 6, 5, 0, 0);
     const stored = db.prepare(`SELECT model FROM lane_pilot_token_daily ORDER BY model`).all() as Array<{ model: string }>;
     const result = await queryTokenUsage({ bb, db }, { range: "7d" });
     const month = await queryTokenUsage({ bb, db }, { range: "month", month: day.slice(0, 7) });
     expect(stored.map((row) => row.model)).toEqual([
       "claude-opus-5", "claude-opus-5-5", "claude-opus-5-5[1m]", "claude-opus-5[1m]", "gpt-5",
     ]);
-    const opus55 = costUsd("claude-opus-5-5", { input: 30, cached: 3, output: 10 });
-    const opus5 = costUsd("claude-opus-5", { input: 20, cached: 1, output: 5 });
+    const opus55 = costUsd("claude-opus-5-5", { uncached: 27, cacheRead: 3, cacheWrite: 0, output: 10 });
+    const opus5 = costUsd("claude-opus-5", { uncached: 19, cacheRead: 1, cacheWrite: 0, output: 5 });
     expect(result.byModel).toEqual([
       { providerId: "claude-code", model: "claude-opus-5-5", input: 30, output: 10, cached: 3, total: 40, costUsd: opus55 },
       { providerId: "claude-code", model: "claude-opus-5", input: 20, output: 5, cached: 1, total: 25, costUsd: opus5 },
@@ -290,14 +292,76 @@ describe("token usage sync", () => {
       { providerId: "codex", model: "gpt-5", total: 6 },
     ]);
     expect(result.byProject).toEqual([
-      { projectId: "proj_a", total: 46, share: 46 / 71, topModel: "claude-opus-5-5", costUsd: opus55 },
-      { projectId: "proj_b", total: 25, share: 25 / 71, topModel: "claude-opus-5", costUsd: opus5 },
+      { projectId: "proj_a", projectName: "A", total: 46, share: 46 / 71, topModel: "claude-opus-5-5", costUsd: opus55 },
+      { projectId: "proj_b", projectName: "proj_b", total: 25, share: 25 / 71, topModel: "claude-opus-5", costUsd: opus5 },
     ]);
     expect(month.byModel.reduce((sum, row) => sum + row.total, 0)).toBe(71);
     expect(month.byModel.map((row) => row.model)).toEqual(["claude-opus-5-5", "claude-opus-5", "gpt-5"]);
     expect(result.byModel.reduce((sum, row) => sum + row.total, 0)).toBe(71);
     expect(result.costUsd).toBeCloseTo((opus55 ?? 0) + (opus5 ?? 0), 10);
     expect(month.costUsd).toBeCloseTo((opus55 ?? 0) + (opus5 ?? 0), 10);
+  });
+
+  it("prices the hub claude-code sample as a positive hand-computed cost and leaves the codex sample on the 0.1.158 formula", async () => {
+    const claudeUsage = {
+      totalTokens: 397855, inputTokens: 2, cachedInputTokens: 397697,
+      cacheReadInputTokens: 394582, cacheWriteInputTokens: 3115, outputTokens: 156,
+    };
+    const codexUsage = {
+      totalTokens: 1474178, inputTokens: 1461386, cachedInputTokens: 1366016,
+      cacheReadInputTokens: 1366016, cacheWriteInputTokens: 0, outputTokens: 12792,
+    };
+    const { bb, db } = host({
+      thr_a: [
+        { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "claude-opus-5-5", providerId: "claude-code" } } },
+        usage(2, { last: claudeUsage, total: claudeUsage }),
+      ],
+      thr_b: [
+        { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "gpt-6.1-sol", providerId: "codex" } } },
+        usage(2, { last: codexUsage, total: codexUsage }),
+      ],
+    }, [
+      { id: "thr_a", projectId: "proj_personal", providerId: "claude-code" },
+      { id: "thr_b", projectId: "proj_a", providerId: "codex" },
+    ], {
+      projects: [{ id: "proj_a", name: "A" }, { id: "proj_personal", name: "Personal" }],
+    });
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    const result = await queryTokenUsage({ bb, db }, { range: "7d" });
+    const claudeCost = (2 * 4 + 394582 * 0.2 + 3115 * 5 + 156 * 20) / 1_000_000;
+    const codexCost = ((1461386 - 1366016) * 2 + 1366016 * 0.1 + 12792 * 10) / 1_000_000;
+    const claude = result.byModel.find((row) => row.model === "claude-opus-5-5");
+    const codex = result.byModel.find((row) => row.model === "gpt-6.1-sol");
+    expect(claude).toMatchObject({ input: 397699, output: 156, cached: 397697, total: 397855 });
+    expect(claude?.costUsd).toBeCloseTo(claudeCost, 10);
+    expect(claude?.costUsd).toBeGreaterThan(0);
+    expect(codex).toMatchObject({ input: 1461386, output: 12792, cached: 1366016, total: 1474178 });
+    expect(codex?.costUsd).toBeCloseTo(codexCost, 10);
+    expect(result.byModel.every((row) => row.costUsd === null || row.costUsd >= 0)).toBe(true);
+    expect(result.byProject.find((row) => row.projectId === "proj_personal")?.projectName).toBe("Personal");
+    const stored = db.prepare(`SELECT uncached_tokens, cache_read_tokens, cache_write_tokens FROM lane_pilot_token_daily WHERE model='claude-opus-5-5'`).get() as {
+      uncached_tokens: number; cache_read_tokens: number; cache_write_tokens: number;
+    };
+    expect(stored).toEqual({ uncached_tokens: 2, cache_read_tokens: 394582, cache_write_tokens: 3115 });
+  });
+
+  it("resets cursors once for the cache-split columns and does not reset again", async () => {
+    const { bb, db } = host({
+      thr_a: [
+        { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "gpt-5" } } },
+        usage(2, { last, total: last }),
+      ],
+    });
+    await bb.storage.kv.set(TOKEN_USAGE_CURSOR_RESET_KEY, 1);
+    db.prepare(`INSERT INTO lane_pilot_token_cursor
+      (thread_id, project_id, provider_id, last_seq, last_json, total_json, last_model, last_provider, last_turn_id, updated_at)
+      VALUES ('thr_a','proj_a','codex',99,'{}','{}','','codex','',0)`).run();
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect((db.prepare(`SELECT last_seq FROM lane_pilot_token_cursor WHERE thread_id='thr_a'`).get() as { last_seq: number }).last_seq).toBe(2);
+    expect(await bb.storage.kv.get(TOKEN_USAGE_CACHE_SPLIT_RESET_KEY)).toBe(1);
+    db.prepare(`UPDATE lane_pilot_token_cursor SET last_seq=99 WHERE thread_id='thr_a'`).run();
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect((db.prepare(`SELECT last_seq FROM lane_pilot_token_cursor WHERE thread_id='thr_a'`).get() as { last_seq: number }).last_seq).toBe(99);
   });
 });
 

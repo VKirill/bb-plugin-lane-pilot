@@ -10,7 +10,7 @@ import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 type Range = "7d" | "14d" | "30d" | "month";
 type ModelRow = { providerId: string; model: string; input: number; output: number; cached: number; total: number; costUsd: number | null };
 type SeriesDay = { day: string; models: Array<{ providerId: string; model: string; total: number }> };
-type ProjectRow = { projectId: string; total: number; share: number; topModel: string; costUsd: number | null };
+type ProjectRow = { projectId: string; projectName: string; total: number; share: number; topModel: string; costUsd: number | null };
 type Diagnostics = { threadsSeen: number; threadsWithUsage: number; threadsFailed: number; lastError: string | null };
 type Payload = {
   byModel: ModelRow[]; series: SeriesDay[]; byProject: ProjectRow[]; months: string[];
@@ -205,7 +205,7 @@ export function TokenUsage({ projects }: { projects: Array<{ id: string; name: s
                 <tbody>
                   {data.byProject.map((row) => (
                     <tr key={row.projectId} className="border-b" data-testid={`token-usage-project-${row.projectId}`}>
-                      <td className="px-2 py-1.5">{projectName(row.projectId)}</td>
+                      <td className="px-2 py-1.5">{row.projectName || projectName(row.projectId)}</td>
                       <td className="px-2 py-1.5">{fmt(row.total)}</td>
                       <td className="px-2 py-1.5">{pct(row.share)}</td>
                       <td className="px-2 py-1.5">{row.topModel}</td>

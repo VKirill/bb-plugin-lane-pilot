@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.159
+
+- **«Токены» no longer shows a negative API cost for Claude.** Daily rows store uncached / cache-read / cache-write, and the estimate uses the 5-minute cache-write list price. Codex rows stay on the previous formula (its cache writes are zero). Project rows use BB project names, including personal and archived.
+
 ## 0.1.158
 
 - **«Токены» shows an estimated API dollar cost.** The last column of the model and project tables, and a total, use Anthropic and OpenAI public list prices as of 2026-10-06. Cached tokens are billed as cache reads only; unknown models show — and are left out of the total.

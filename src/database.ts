@@ -251,6 +251,9 @@ export const migrations = [
     last_turn_id TEXT NOT NULL DEFAULT '',
     updated_at INTEGER NOT NULL
   )`,
+  `ALTER TABLE lane_pilot_token_daily ADD COLUMN uncached_tokens INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE lane_pilot_token_daily ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE lane_pilot_token_daily ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
