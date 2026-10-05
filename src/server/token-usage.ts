@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../database";
 import { pluginStopped } from "./run-finish";
 import { stringAt, valueAt } from "./values";
+import { costUsd } from "../model-prices";
 import type { ServerCore } from "./core";
 
 export const TOKEN_USAGE_SCHEDULE = "token-usage-sync";
@@ -33,13 +34,14 @@ export type TokenUsageDiagnostics = {
   lastError: string | null;
 };
 export type TokenUsageResult = {
-  byModel: Array<{ providerId: string; model: string; input: number; output: number; cached: number; total: number }>;
+  byModel: Array<{ providerId: string; model: string; input: number; output: number; cached: number; total: number; costUsd: number | null }>;
   series: Array<{ day: string; models: Array<{ providerId: string; model: string; total: number }> }>;
-  byProject: Array<{ projectId: string; total: number; share: number; topModel: string }>;
+  byProject: Array<{ projectId: string; total: number; share: number; topModel: string; costUsd: number | null }>;
   months: string[];
   lastSyncAt: number | null;
   noDataProviders: string[];
   diagnostics: TokenUsageDiagnostics;
+  costUsd: number | null;
 };
 
 const EMPTY_DIAGNOSTICS: TokenUsageDiagnostics = {
@@ -50,6 +52,10 @@ const ZERO: TokenBreakdown = { input: 0, output: 0, cached: 0, total: 0 };
 
 export function utcDay(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
+}
+
+export function normalizeModel(model: string): string {
+  return model.replace(/\[[^\]]*\]$/, "");
 }
 
 export function rangeBounds(input: TokenUsageQuery, now = Date.now()): { from: string; to: string } {
@@ -399,24 +405,30 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
   }>;
   const byKey = new Map<string, TokenUsageResult["byModel"][number]>();
   const byDay = new Map<string, TokenUsageResult["series"][number]["models"]>();
-  const byProjectMap = new Map<string, { total: number; models: Map<string, number> }>();
+  const byProjectMap = new Map<string, { total: number; models: Map<string, number>; costUsd: number | null }>();
   for (const row of daily) {
-    const key = `${row.provider_id}\0${row.model}`;
-    const current = byKey.get(key) ?? { providerId: row.provider_id, model: row.model, input: 0, output: 0, cached: 0, total: 0 };
+    const model = normalizeModel(row.model);
+    const key = `${row.provider_id}\0${model}`;
+    const current = byKey.get(key) ?? { providerId: row.provider_id, model, input: 0, output: 0, cached: 0, total: 0, costUsd: null };
     current.input += row.input_tokens;
     current.output += row.output_tokens;
     current.cached += row.cached_tokens;
     current.total += row.total_tokens;
     byKey.set(key, current);
     const dayModels = byDay.get(row.day) ?? [];
-    const existing = dayModels.find((item) => item.providerId === row.provider_id && item.model === row.model);
+    const existing = dayModels.find((item) => item.providerId === row.provider_id && item.model === model);
     if (existing) existing.total += row.total_tokens;
-    else dayModels.push({ providerId: row.provider_id, model: row.model, total: row.total_tokens });
+    else dayModels.push({ providerId: row.provider_id, model, total: row.total_tokens });
     byDay.set(row.day, dayModels);
-    const project = byProjectMap.get(row.project_id) ?? { total: 0, models: new Map<string, number>() };
+    const project = byProjectMap.get(row.project_id) ?? { total: 0, models: new Map<string, number>(), costUsd: null };
     project.total += row.total_tokens;
-    project.models.set(row.model, (project.models.get(row.model) ?? 0) + row.total_tokens);
+    project.models.set(model, (project.models.get(model) ?? 0) + row.total_tokens);
+    const rowCost = costUsd(model, { input: row.input_tokens, cached: row.cached_tokens, output: row.output_tokens });
+    if (rowCost !== null) project.costUsd = (project.costUsd ?? 0) + rowCost;
     byProjectMap.set(row.project_id, project);
+  }
+  for (const row of byKey.values()) {
+    row.costUsd = costUsd(row.model, row);
   }
   const byModel = [...byKey.values()].sort((a, b) => b.total - a.total || a.model.localeCompare(b.model));
   const series = daysOn(from, to).map((day) => ({
@@ -439,9 +451,11 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
   const projectTotal = [...byProjectMap.values()].reduce((sum, row) => sum + row.total, 0);
   const byProject = [...byProjectMap.entries()].map(([id, row]) => {
     const topModel = [...row.models.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? "";
-    return { projectId: id, total: row.total, share: projectTotal > 0 ? row.total / projectTotal : 0, topModel };
+    return { projectId: id, total: row.total, share: projectTotal > 0 ? row.total / projectTotal : 0, topModel, costUsd: row.costUsd };
   }).sort((a, b) => b.total - a.total || a.projectId.localeCompare(b.projectId));
-  return { byModel, series, byProject, months: months.map((row) => row.month), lastSyncAt, noDataProviders, diagnostics };
+  const priced = byModel.map((row) => row.costUsd).filter((value): value is number => value !== null);
+  const totalCost = priced.length > 0 ? priced.reduce((sum, value) => sum + value, 0) : null;
+  return { byModel, series, byProject, months: months.map((row) => row.month), lastSyncAt, noDataProviders, diagnostics, costUsd: totalCost };
 }
 
 export function attachTokenUsage(ctx: ServerCore): { start: (sinceDays?: number) => boolean } {

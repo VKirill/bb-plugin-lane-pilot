@@ -2,23 +2,29 @@ import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t } from "../../i18n";
+import { PRICES_CHECKED_AT } from "../model-prices";
 import { Button } from "../../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 
 type Range = "7d" | "14d" | "30d" | "month";
-type ModelRow = { providerId: string; model: string; input: number; output: number; cached: number; total: number };
+type ModelRow = { providerId: string; model: string; input: number; output: number; cached: number; total: number; costUsd: number | null };
 type SeriesDay = { day: string; models: Array<{ providerId: string; model: string; total: number }> };
-type ProjectRow = { projectId: string; total: number; share: number; topModel: string };
+type ProjectRow = { projectId: string; total: number; share: number; topModel: string; costUsd: number | null };
 type Diagnostics = { threadsSeen: number; threadsWithUsage: number; threadsFailed: number; lastError: string | null };
 type Payload = {
   byModel: ModelRow[]; series: SeriesDay[]; byProject: ProjectRow[]; months: string[];
-  lastSyncAt: number | null; noDataProviders: string[]; diagnostics: Diagnostics;
+  lastSyncAt: number | null; noDataProviders: string[]; diagnostics: Diagnostics; costUsd: number | null;
 };
 
 const RANGES: Range[] = ["7d", "14d", "30d", "month"];
 const ALL_PROJECTS = "all";
 const fmt = (value: number) => value.toLocaleString();
+const fmtCost = (value: number | null) => {
+  if (value === null) return t("tokenUsageCostUnknown");
+  const digits = value !== 0 && Math.abs(value) < 0.01 ? 4 : 2;
+  return `$${value.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+};
 const hue = (index: number) => `oklch(0.62 0.12 ${index * 47})`;
 const pct = (share: number) => `${Math.round(share * 100)}%`;
 
@@ -130,6 +136,7 @@ export function TokenUsage({ projects }: { projects: Array<{ id: string; name: s
                     <th className="px-2 py-1.5 font-medium">{t("tokenUsageOutput")}</th>
                     <th className="px-2 py-1.5 font-medium">{t("tokenUsageCached")}</th>
                     <th className="px-2 py-1.5 font-medium">{t("tokenUsageTotal")}</th>
+                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageApiCost")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -140,12 +147,23 @@ export function TokenUsage({ projects }: { projects: Array<{ id: string; name: s
                       <td className="px-2 py-1.5">{fmt(row.output)}</td>
                       <td className="px-2 py-1.5">{fmt(row.cached)}</td>
                       <td className="px-2 py-1.5 font-medium">{fmt(row.total)}</td>
+                      <td className="px-2 py-1.5">{fmtCost(row.costUsd)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
+          {data && data.byModel.length > 0 ? (
+            <p className="text-xs text-muted-foreground" data-testid="token-usage-cost-total">
+              {t("tokenUsageCostTotal").replace("{amount}", fmtCost(data.costUsd))}
+            </p>
+          ) : null}
+          {data && data.byModel.length > 0 ? (
+            <p className="text-xs text-muted-foreground" data-testid="token-usage-cost-footnote">
+              {t("tokenUsageCostFootnote").replace("{date}", PRICES_CHECKED_AT)}
+            </p>
+          ) : null}
           {data && data.series.some((day) => day.models.some((row) => row.total > 0)) ? (
             <div className="space-y-1" data-testid="token-usage-chart">
               <p className="text-xs font-medium">{t("tokenUsageChart")}</p>
@@ -181,6 +199,7 @@ export function TokenUsage({ projects }: { projects: Array<{ id: string; name: s
                     <th className="px-2 py-1.5 font-medium">{t("tokenUsageTotal")}</th>
                     <th className="px-2 py-1.5 font-medium">{t("tokenUsageShare")}</th>
                     <th className="px-2 py-1.5 font-medium">{t("tokenUsageTopModel")}</th>
+                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageApiCost")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -190,6 +209,7 @@ export function TokenUsage({ projects }: { projects: Array<{ id: string; name: s
                       <td className="px-2 py-1.5">{fmt(row.total)}</td>
                       <td className="px-2 py-1.5">{pct(row.share)}</td>
                       <td className="px-2 py-1.5">{row.topModel}</td>
+                      <td className="px-2 py-1.5">{fmtCost(row.costUsd)}</td>
                     </tr>
                   ))}
                 </tbody>

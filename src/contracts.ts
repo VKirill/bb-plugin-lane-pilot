@@ -1314,6 +1314,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({
       byModel: z.array(z.object({
         providerId: z.string(), model: z.string(), input: z.number(), output: z.number(), cached: z.number(), total: z.number(),
+        costUsd: z.number().nullable(),
       }).strict()),
       series: z.array(z.object({
         day: z.string(),
@@ -1329,8 +1330,9 @@ export const rpcContract = defineRpcContract({
         lastError: z.string().nullable(),
       }).strict(),
       byProject: z.array(z.object({
-        projectId: z.string(), total: z.number(), share: z.number(), topModel: z.string(),
+        projectId: z.string(), total: z.number(), share: z.number(), topModel: z.string(), costUsd: z.number().nullable(),
       }).strict()),
+      costUsd: z.number().nullable(),
     }).strict(),
   },
   token_usage_sync: {

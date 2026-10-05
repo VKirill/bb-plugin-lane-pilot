@@ -2,8 +2,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/database";
 import plugin from "../server";
+import { costUsd } from "../src/model-prices";
 import {
-  EVENT_PAGE, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE, queryTokenUsage, syncTokenUsage, tokenDelta, utcDay,
+  EVENT_PAGE, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE, normalizeModel, queryTokenUsage, syncTokenUsage, tokenDelta, utcDay,
 } from "../src/server/token-usage";
 
 let dispose: (() => Promise<void> | void) | null = null;
@@ -93,8 +94,9 @@ describe("token usage sync", () => {
     expect(listed[0]?.afterSeq).toBeUndefined();
     const result = await queryTokenUsage({ bb, db }, { range: "7d" });
     expect(result.byModel).toEqual([
-      { providerId: "codex", model: "gpt-5", input: 15, output: 5, cached: 2, total: 20 },
+      { providerId: "codex", model: "gpt-5", input: 15, output: 5, cached: 2, total: 20, costUsd: null },
     ]);
+    expect(result.costUsd).toBeNull();
     expect(result.noDataProviders).toEqual(["claude-code"]);
     expect(result.series.find((row) => row.day === day)?.models).toEqual([
       { providerId: "codex", model: "gpt-5", total: 20 },
@@ -251,12 +253,59 @@ describe("token usage sync", () => {
     await syncTokenUsage({ bb, db }, { sinceDays: 90 });
     const result = await queryTokenUsage({ bb, db }, { range: "7d" });
     expect(result.byProject).toEqual([
-      { projectId: "proj_a", total: 14, share: 0.7, topModel: "gpt-5" },
-      { projectId: "proj_b", total: 6, share: 0.3, topModel: "opus" },
+      { projectId: "proj_a", total: 14, share: 0.7, topModel: "gpt-5", costUsd: null },
+      { projectId: "proj_b", total: 6, share: 0.3, topModel: "opus", costUsd: null },
     ]);
     const one = await queryTokenUsage({ bb, db }, { range: "7d", projectId: "proj_b" });
-    expect(one.byProject).toEqual([{ projectId: "proj_b", total: 6, share: 1, topModel: "opus" }]);
+    expect(one.byProject).toEqual([{ projectId: "proj_b", total: 6, share: 1, topModel: "opus", costUsd: null }]);
     expect(one.byModel[0]?.model).toBe("opus");
+  });
+
+  it("merges context-window variants at read time without rewriting stored rows", async () => {
+    const { bb, db } = host({});
+    const insert = db.prepare(`INSERT INTO lane_pilot_token_daily
+      (day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens)
+      VALUES (?,?,?,?,?,?,?,?)`);
+    insert.run(day, "proj_a", "claude-code", "claude-opus-5-5", 10, 4, 1, 14);
+    insert.run(day, "proj_a", "claude-code", "claude-opus-5-5[1m]", 20, 6, 2, 26);
+    insert.run(day, "proj_b", "claude-code", "claude-opus-5", 8, 2, 0, 10);
+    insert.run(day, "proj_b", "claude-code", "claude-opus-5[1m]", 12, 3, 1, 15);
+    insert.run(day, "proj_a", "codex", "gpt-5", 5, 1, 0, 6);
+    const stored = db.prepare(`SELECT model FROM lane_pilot_token_daily ORDER BY model`).all() as Array<{ model: string }>;
+    const result = await queryTokenUsage({ bb, db }, { range: "7d" });
+    const month = await queryTokenUsage({ bb, db }, { range: "month", month: day.slice(0, 7) });
+    expect(stored.map((row) => row.model)).toEqual([
+      "claude-opus-5", "claude-opus-5-5", "claude-opus-5-5[1m]", "claude-opus-5[1m]", "gpt-5",
+    ]);
+    const opus55 = costUsd("claude-opus-5-5", { input: 30, cached: 3, output: 10 });
+    const opus5 = costUsd("claude-opus-5", { input: 20, cached: 1, output: 5 });
+    expect(result.byModel).toEqual([
+      { providerId: "claude-code", model: "claude-opus-5-5", input: 30, output: 10, cached: 3, total: 40, costUsd: opus55 },
+      { providerId: "claude-code", model: "claude-opus-5", input: 20, output: 5, cached: 1, total: 25, costUsd: opus5 },
+      { providerId: "codex", model: "gpt-5", input: 5, output: 1, cached: 0, total: 6, costUsd: null },
+    ]);
+    expect(result.series.find((row) => row.day === day)?.models).toEqual([
+      { providerId: "claude-code", model: "claude-opus-5-5", total: 40 },
+      { providerId: "claude-code", model: "claude-opus-5", total: 25 },
+      { providerId: "codex", model: "gpt-5", total: 6 },
+    ]);
+    expect(result.byProject).toEqual([
+      { projectId: "proj_a", total: 46, share: 46 / 71, topModel: "claude-opus-5-5", costUsd: opus55 },
+      { projectId: "proj_b", total: 25, share: 25 / 71, topModel: "claude-opus-5", costUsd: opus5 },
+    ]);
+    expect(month.byModel.reduce((sum, row) => sum + row.total, 0)).toBe(71);
+    expect(month.byModel.map((row) => row.model)).toEqual(["claude-opus-5-5", "claude-opus-5", "gpt-5"]);
+    expect(result.byModel.reduce((sum, row) => sum + row.total, 0)).toBe(71);
+    expect(result.costUsd).toBeCloseTo((opus55 ?? 0) + (opus5 ?? 0), 10);
+    expect(month.costUsd).toBeCloseTo((opus55 ?? 0) + (opus5 ?? 0), 10);
+  });
+});
+
+describe("normalizeModel", () => {
+  it("strips a trailing context-window suffix and leaves other names", () => {
+    expect(normalizeModel("claude-opus-5-5[1m]")).toBe("claude-opus-5-5");
+    expect(normalizeModel("claude-opus-5[1m]")).toBe("claude-opus-5");
+    expect(normalizeModel("gpt-5")).toBe("gpt-5");
   });
 });
 

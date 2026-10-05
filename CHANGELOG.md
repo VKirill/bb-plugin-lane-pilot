@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.158
+
+- **«Токены» shows an estimated API dollar cost.** The last column of the model and project tables, and a total, use Anthropic and OpenAI public list prices as of 2026-10-06. Cached tokens are billed as cache reads only; unknown models show — and are left out of the total.
+
+## 0.1.157
+
+- **«Токены» merges context-window variants of a model.** `claude-opus-5-5` and `claude-opus-5-5[1m]` (and the same for `claude-opus-5`) are one row in by-model, daily series, project top model and month totals. Daily storage stays as ingested; the merge is at read time.
+
 ## 0.1.156
 
 - **«Токены» is its own left-nav entry**, after «Агенты», not a project tab. The page shows spend of every BB session: models, days, sync diagnostics, a per-project table (name, total, share, top model) and a project filter.
