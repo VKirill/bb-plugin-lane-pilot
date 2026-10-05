@@ -158,6 +158,14 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
 export async function createWorktree(input:{basePath:string;targetPath:string;name:string}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null}> {
   const top=git(input.basePath,["rev-parse","--show-toplevel"]);
   if(!top.ok) return {status:"failed",path:null,branch:null,reason:`not a git checkout: ${top.reason}`};
+  const repoTop=top.stdout.trim();
+  const [baseReal,topReal]=await Promise.all([
+    realpath(input.basePath).catch(()=>input.basePath),
+    realpath(repoTop).catch(()=>repoTop),
+  ]);
+  if(baseReal!==topReal){
+    return {status:"failed",path:null,branch:null,reason:`workspace_not_repo_root: ${input.basePath} is not the git repo root ${repoTop}. Open the Lane chat at ${repoTop}`};
+  }
   const branch=`lane/${input.name}`;
   await mkdir(join(input.targetPath,".."),{recursive:true});
   await recoverStaleGitLock(input.basePath);

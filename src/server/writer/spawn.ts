@@ -27,6 +27,11 @@ export async function isProjectRootCheckout(bb: { sdk: { projects: { get(args: {
   return (project?.sources ?? []).some((source) => source.hostId === hostId && typeof source.path === "string" && resolve(source.path) === resolve(path));
 }
 
+/** A subfolder workspace is a project-side block; other gitCreateWorktree failures stay Lane Pilot's. */
+export function worktreeCreateError(reason: string | null): string {
+  return reason?.startsWith("workspace_not_repo_root:") ? reason : `attempt_worktree_failed:${reason ?? "unknown"}`;
+}
+
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
 
@@ -211,7 +216,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           else {
             const created=await host.call("gitCreateWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,name:input.attemptId},
               {hostId:input.config.hostId,timeoutMs:60_000});
-            if(created.status!=="ready"||!created.path) throw new WriterSelectionError(`attempt_worktree_failed:${created.reason??"unknown"}`);
+            if(created.status!=="ready"||!created.path) throw new WriterSelectionError(worktreeCreateError(created.reason));
             workspacePath=created.path;
             await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,worktreePath:workspacePath},
               {hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);

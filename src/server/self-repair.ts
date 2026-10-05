@@ -79,7 +79,7 @@ const REPEAT_TASKS = 3;
 const FAILED_STATES = "'blocked','validation_failed','spawn_rejected','provider_error','empty_output'";
 const MUTE_MS = 7 * 86_400_000;
 /** Stops by design: a question for the PM or a dependency that ended blocked. */
-const NOT_A_FAULT = /needs_human|depends_on/i;
+const NOT_A_FAULT = /needs_human|depends_on|workspace_not_repo_root/i;
 export const VERSION: string = packageJson.version;
 /** When this code was loaded: a failure before it may be what this release fixed. */
 const LOADED_AT = Date.now();
