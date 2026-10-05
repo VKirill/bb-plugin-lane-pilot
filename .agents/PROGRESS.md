@@ -9,14 +9,14 @@
 - None recorded.
 
 ## Next
-- No active plans or open todos are recorded.
+- [ ] Resolve the remaining owner decisions in the harness engineering gaps plan.
 
 ## Last verify
-- command: `npx vitest run tests/git-worktree-subfolder.test.ts tests/self-repair.test.ts tests/spawn-seam.test.ts` (accepted run receipt)
-- result: green; 6 tests passed in the receipt; report also records 14 self-repair and spawn-seam tests passed
+- command: accepted receipt: targeted `npx vitest run` (34 files) and `npx tsc --noEmit` source check
+- result: green; 214 tests passed and no source type errors
 - when: 2026-10-05
 
 ## Pointers
 - Open todos: none (`.agents/todos/INDEX.md` is absent)
-- Active plans: none (`.agents/plans/` is absent)
+- Active plans: `2026-10-05-harness-engineering-gaps` — Harness engineering gaps — follow-up plan
 - Changelog: `.agents/CHANGELOG.md`
