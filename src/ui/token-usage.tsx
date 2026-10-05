@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t } from "../../i18n";
@@ -9,7 +9,8 @@ import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 type Range = "7d" | "14d" | "30d" | "month";
 type ModelRow = { providerId: string; model: string; input: number; output: number; cached: number; total: number };
 type SeriesDay = { day: string; models: Array<{ providerId: string; model: string; total: number }> };
-type Payload = { byModel: ModelRow[]; series: SeriesDay[]; months: string[]; lastSyncAt: number | null; noDataProviders: string[] };
+type Diagnostics = { threadsSeen: number; threadsWithUsage: number; threadsFailed: number; lastError: string | null };
+type Payload = { byModel: ModelRow[]; series: SeriesDay[]; months: string[]; lastSyncAt: number | null; noDataProviders: string[]; diagnostics: Diagnostics };
 
 const RANGES: Range[] = ["7d", "14d", "30d", "month"];
 const fmt = (value: number) => value.toLocaleString();
@@ -25,12 +26,19 @@ export function TokenUsage({ projectId }: { projectId?: string }) {
   const [month, setMonth] = useState(currentMonth);
   const [data, setData] = useState<Payload | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const projectRef = useRef(projectId);
+  projectRef.current = projectId;
+  const request = useCallback(() => rpc.call("token_usage", {
+    range, ...(range === "month" ? { month } : {}), ...(projectId ? { projectId } : {}),
+  }) as Promise<Payload>, [projectId, range, month, rpc]);
   const load = useCallback(async () => {
+    const forProject = projectId;
     try {
-      setData(await rpc.call("token_usage", { range, ...(range === "month" ? { month } : {}), ...(projectId ? { projectId } : {}) }) as Payload);
-    } catch { setData(null); }
-  }, [projectId, range, month, rpc]);
-  useEffect(() => { void load(); }, [load]);
+      const next = await request();
+      if (forProject === projectRef.current) setData(next);
+    } catch { if (forProject === projectRef.current) setData(null); }
+  }, [projectId, request]);
+  useEffect(() => { setData(null); void load(); }, [load]);
 
   const refresh = async () => {
     setSyncing(true);
@@ -39,7 +47,7 @@ export function TokenUsage({ projectId }: { projectId?: string }) {
       const started = Date.now();
       for (let i = 0; i < 30; i++) {
         await new Promise((resolve) => setTimeout(resolve, 1_000));
-        const next = await rpc.call("token_usage", { range, ...(range === "month" ? { month } : {}), ...(projectId ? { projectId } : {}) }) as Payload;
+        const next = await request();
         setData(next);
         if (next.lastSyncAt && next.lastSyncAt >= started - 2_000) break;
       }
@@ -51,6 +59,15 @@ export function TokenUsage({ projectId }: { projectId?: string }) {
   const lastSync = data?.lastSyncAt
     ? t("tokenUsageLastSync").replace("{time}", new Date(data.lastSyncAt).toLocaleString())
     : t("tokenUsageNeverSynced");
+  const syncStats = data
+    ? t("tokenUsageSyncStats")
+      .replace("{seen}", String(data.diagnostics.threadsSeen))
+      .replace("{withUsage}", String(data.diagnostics.threadsWithUsage))
+      .replace("{failed}", String(data.diagnostics.threadsFailed))
+    : "";
+  const lastError = data?.diagnostics.lastError
+    ? t("tokenUsageLastError").replace("{error}", data.diagnostics.lastError)
+    : "";
 
   return (
     <div className="space-y-4" data-testid="token-usage">
@@ -79,7 +96,9 @@ export function TokenUsage({ projectId }: { projectId?: string }) {
               </Select>
             ) : null}
           </div>
-          <p className="text-xs text-muted-foreground" data-testid="token-usage-sync">{lastSync} · {t("tokenUsageUtc")}</p>
+          <p className="text-xs text-muted-foreground" data-testid="token-usage-sync">
+            {lastSync} · {t("tokenUsageUtc")}{syncStats ? ` · ${syncStats}` : ""}{lastError ? ` · ${lastError}` : ""}
+          </p>
           {data?.noDataProviders.length ? (
             <p className="text-xs text-muted-foreground" data-testid="token-usage-no-data">
               {t("tokenUsageNoData").replace("{list}", data.noDataProviders.join(", "))}

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.153
+
+- **The «Токены» tab** (global and per-project) shows tokens by model from BB thread events, for 7/14/30 days or a calendar month, without calling provider APIs. Collection is incremental per thread, every 30 minutes and once on startup, in the background so other schedules keep their turn. On the live hub the tab stayed empty despite 6110 `thread/tokenUsage/updated` events: listing now uses the real SDK call (`threadId`, `order:"asc"`, string `limit`/`afterSeq`, types `thread/tokenUsage/updated`, `client/turn/requested`, `client/thread/start`, `provider/modelFallback`); a failed listing is counted, the first error is logged once per pass, and that thread's cursor is not advanced. The model comes from `client/turn/requested` `data.execution.model`, then `client/thread/start`, then `provider/modelFallback`. Cursors written by 0.1.151 are reset once so the next pass backfills 90 days. Sync diagnostics sit next to the last sync time; switching project scope reloads the open tab; the month picker lists every month that has data.
+
 ## 0.1.152
 
 From a self-repair of «attempt_workspace_snapshot_failed: cannot read writer-workspace git diff: host plugin call … exceeded its deadline» (SelfyStudio, 2026-10-05):

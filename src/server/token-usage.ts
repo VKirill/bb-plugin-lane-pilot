@@ -6,6 +6,14 @@ import type { ServerCore } from "./core";
 
 export const TOKEN_USAGE_SCHEDULE = "token-usage-sync";
 export const TOKEN_USAGE_LAST_SYNC_KEY = "token-usage:last-sync-at";
+export const TOKEN_USAGE_DIAGNOSTICS_KEY = "token-usage:diagnostics";
+export const TOKEN_USAGE_CURSOR_RESET_KEY = "token-usage:reset-cursors-0.1.152";
+export const TOKEN_USAGE_EVENT_TYPES = [
+  "thread/tokenUsage/updated",
+  "client/turn/requested",
+  "client/thread/start",
+  "provider/modelFallback",
+] as const;
 const PAGE = 200;
 const DAY_MS = 86_400_000;
 
@@ -17,12 +25,23 @@ export type TokenUsageQuery = {
   projectId?: string;
   now?: number;
 };
+export type TokenUsageDiagnostics = {
+  threadsSeen: number;
+  threadsWithUsage: number;
+  threadsFailed: number;
+  lastError: string | null;
+};
 export type TokenUsageResult = {
   byModel: Array<{ providerId: string; model: string; input: number; output: number; cached: number; total: number }>;
   series: Array<{ day: string; models: Array<{ providerId: string; model: string; total: number }> }>;
   months: string[];
   lastSyncAt: number | null;
   noDataProviders: string[];
+  diagnostics: TokenUsageDiagnostics;
+};
+
+const EMPTY_DIAGNOSTICS: TokenUsageDiagnostics = {
+  threadsSeen: 0, threadsWithUsage: 0, threadsFailed: 0, lastError: null,
 };
 
 const ZERO: TokenBreakdown = { input: 0, output: 0, cached: 0, total: 0 };
@@ -98,7 +117,14 @@ function eventBag(event: unknown): Record<string, unknown> {
 
 function eventSeq(event: unknown): number {
   const seq = valueAt(event, "seq") ?? valueAt(eventBag(event), "seq");
-  return typeof seq === "number" && Number.isFinite(seq) ? seq : 0;
+  if (typeof seq === "number" && Number.isFinite(seq)) return seq;
+  if (typeof seq === "string" && /^\d+$/.test(seq)) return Number(seq);
+  return 0;
+}
+
+function listingError(cause: unknown): string {
+  const text = cause instanceof Error ? cause.message : String(cause);
+  return text.replace(/\s+/g, " ").slice(0, 240);
 }
 
 function eventCreatedAt(event: unknown): number | null {
@@ -112,6 +138,10 @@ function eventType(event: unknown): string {
 
 function turnModel(event: unknown): string | null {
   const bag = eventBag(event);
+  const type = eventType(event);
+  if (type === "provider/modelFallback") {
+    return stringAt(bag, "fallbackModel") ?? stringAt(event, "fallbackModel");
+  }
   const request = valueAt(bag, "request");
   const params = request && typeof request === "object" ? valueAt(request, "params") : undefined;
   const execution = valueAt(bag, "execution") ?? valueAt(params ?? {}, "execution") ?? valueAt(params ?? {}, "options");
@@ -169,21 +199,48 @@ async function listThreadEvents(bb: BbPluginApi, threadId: string, afterSeq: num
   const events: unknown[] = [];
   let cursor = afterSeq;
   for (let pages = 0; pages < 200; pages++) {
-    const page = await bb.sdk.threads.events.list({
+    const listed = await bb.sdk.threads.events.list({
       threadId,
       order: "asc",
       limit: String(PAGE),
       ...(cursor > 0 ? { afterSeq: String(cursor) } : {}),
-      types: ["client/turn/start", "thread/tokenUsage/updated"],
-    }).catch(() => []) as unknown;
-    const rows = Array.isArray(page) ? page : [];
-    if (rows.length === 0) break;
-    events.push(...rows);
-    const last = eventSeq(rows[rows.length - 1]);
-    if (last <= cursor || rows.length < PAGE) break;
+      types: TOKEN_USAGE_EVENT_TYPES,
+    });
+    if (!Array.isArray(listed)) {
+      throw new Error(`events_list_invalid:threadId=${threadId};result=${listed === null ? "null" : typeof listed}`);
+    }
+    if (listed.length === 0) break;
+    events.push(...listed);
+    const last = eventSeq(listed[listed.length - 1]);
+    if (last <= cursor || listed.length < PAGE) break;
     cursor = last;
   }
   return events;
+}
+
+function parseDiagnostics(raw: unknown): TokenUsageDiagnostics {
+  if (!raw || typeof raw !== "object") return { ...EMPTY_DIAGNOSTICS };
+  const n = (key: string) => {
+    const value = Reflect.get(raw, key);
+    return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+  };
+  const lastError = Reflect.get(raw, "lastError");
+  return {
+    threadsSeen: n("threadsSeen"),
+    threadsWithUsage: n("threadsWithUsage"),
+    threadsFailed: n("threadsFailed"),
+    lastError: typeof lastError === "string" && lastError.length > 0 ? lastError : null,
+  };
+}
+
+async function resetBrokenCursors(ctx: { bb: BbPluginApi; db: LanePilotDatabase }): Promise<void> {
+  const done = await ctx.bb.storage.kv.get(TOKEN_USAGE_CURSOR_RESET_KEY).catch(() => null);
+  if (done) return;
+  ctx.db.transaction(() => {
+    ctx.db.prepare(`DELETE FROM lane_pilot_token_cursor`).run();
+    ctx.db.prepare(`DELETE FROM lane_pilot_token_daily`).run();
+  })();
+  await ctx.bb.storage.kv.set(TOKEN_USAGE_CURSOR_RESET_KEY, 1);
 }
 
 type CursorRow = {
@@ -196,7 +253,16 @@ type CursorRow = {
 };
 
 function parseBreakdown(raw: string): TokenBreakdown {
-  try { return tokenBreakdown(JSON.parse(raw) as unknown); } catch { return { ...ZERO }; }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return { ...ZERO };
+    const n = (key: string) => {
+      const value = Reflect.get(parsed, key);
+      return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+    };
+    const stored = { input: n("input"), output: n("output"), cached: n("cached"), total: n("total") };
+    return hasTokens(stored) ? stored : tokenBreakdown(parsed);
+  } catch { return { ...ZERO }; }
 }
 
 function loadCursor(db: LanePilotDatabase, threadId: string): CursorRow {
@@ -242,13 +308,31 @@ function daysOn(from: string, to: string): string[] {
   return days;
 }
 
-export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatabase }, input: { sinceDays: number } = { sinceDays: 90 }): Promise<void> {
+export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatabase }, input: { sinceDays: number } = { sinceDays: 90 }): Promise<TokenUsageDiagnostics> {
   const now = Date.now();
   const since = now - Math.max(1, input.sinceDays) * DAY_MS;
-  const threads = await listAllThreads(ctx.bb);
-  for (const thread of threads) {
+  const diagnostics: TokenUsageDiagnostics = { ...EMPTY_DIAGNOSTICS };
+  const saveDiagnostics = () => ctx.bb.storage.kv.set(TOKEN_USAGE_DIAGNOSTICS_KEY, diagnostics);
+  try {
+    await resetBrokenCursors(ctx);
+    const threads = await listAllThreads(ctx.bb);
+    diagnostics.threadsSeen = threads.length;
+    let loggedListingError = false;
+    for (const thread of threads) {
       const cursor = loadCursor(ctx.db, thread.id);
-      const events = await listThreadEvents(ctx.bb, thread.id, cursor.last_seq);
+      let events: unknown[];
+      try {
+        events = await listThreadEvents(ctx.bb, thread.id, cursor.last_seq);
+      } catch (cause) {
+        diagnostics.threadsFailed += 1;
+        const message = listingError(cause);
+        if (!diagnostics.lastError) diagnostics.lastError = message;
+        if (!loggedListingError) {
+          ctx.bb.log.warn(`Lane Pilot token usage listing failed: ${message}`);
+          loggedListingError = true;
+        }
+        continue;
+      }
       let model = cursor.last_model;
       let providerId = cursor.last_provider || thread.providerId;
       let prev = { last: parseBreakdown(cursor.last_json), total: parseBreakdown(cursor.total_json), turnId: cursor.last_turn_id };
@@ -257,7 +341,7 @@ export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDataba
         const type = eventType(event);
         const createdAt = eventCreatedAt(event);
         const tooOld = createdAt !== null && createdAt < since;
-        if (type === "client/turn/start") {
+        if (type === "client/turn/requested" || type === "client/thread/start" || type === "provider/modelFallback" || type === "client/turn/start") {
           model = turnModel(event) ?? model;
           providerId = turnProvider(event, providerId);
         } else if (type === "thread/tokenUsage/updated") {
@@ -287,8 +371,17 @@ export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDataba
         last_provider: providerId,
         last_turn_id: prev.turnId,
       }, now);
+    }
+    const usageCursors = ctx.db.prepare(`SELECT last_json, total_json FROM lane_pilot_token_cursor`).all() as Array<{ last_json: string; total_json: string }>;
+    diagnostics.threadsWithUsage = usageCursors.filter((row) => hasTokens(parseBreakdown(row.last_json)) || hasTokens(parseBreakdown(row.total_json))).length;
+    await ctx.bb.storage.kv.set(TOKEN_USAGE_LAST_SYNC_KEY, now);
+    await saveDiagnostics();
+    return diagnostics;
+  } catch (cause) {
+    if (!diagnostics.lastError) diagnostics.lastError = listingError(cause);
+    await saveDiagnostics();
+    throw cause;
   }
-  await ctx.bb.storage.kv.set(TOKEN_USAGE_LAST_SYNC_KEY, now);
 }
 
 export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatabase }, input: TokenUsageQuery): Promise<TokenUsageResult> {
@@ -323,17 +416,20 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
     day,
     models: (byDay.get(day) ?? []).sort((a, b) => b.total - a.total || a.model.localeCompare(b.model)),
   }));
-  const months = (ctx.db.prepare(`SELECT DISTINCT substr(day,1,7) AS month FROM lane_pilot_token_daily ORDER BY month DESC`)
-    .all() as Array<{ month: string }>).map((row) => row.month);
+  const months = (projectId
+    ? ctx.db.prepare(`SELECT DISTINCT substr(day,1,7) AS month FROM lane_pilot_token_daily WHERE project_id=? ORDER BY month DESC`).all(projectId)
+    : ctx.db.prepare(`SELECT DISTINCT substr(day,1,7) AS month FROM lane_pilot_token_daily ORDER BY month DESC`).all()
+  ) as Array<{ month: string }>;
   const lastSync = await ctx.bb.storage.kv.get(TOKEN_USAGE_LAST_SYNC_KEY).catch(() => null);
   const lastSyncAt = typeof lastSync === "number" && Number.isFinite(lastSync) ? lastSync : null;
+  const diagnostics = parseDiagnostics(await ctx.bb.storage.kv.get(TOKEN_USAGE_DIAGNOSTICS_KEY).catch(() => null));
   const seen = (projectId
     ? ctx.db.prepare(`SELECT DISTINCT provider_id FROM lane_pilot_token_cursor WHERE provider_id!='' AND project_id=?`).all(projectId)
     : ctx.db.prepare(`SELECT DISTINCT provider_id FROM lane_pilot_token_cursor WHERE provider_id!=''`).all()) as Array<{ provider_id: string }>;
   const withEvents = new Set((ctx.db.prepare(`SELECT DISTINCT provider_id FROM lane_pilot_token_daily`).all() as Array<{ provider_id: string }>)
     .map((row) => row.provider_id));
   const noDataProviders = [...new Set(seen.map((row) => row.provider_id).filter((id) => !withEvents.has(id)))].sort();
-  return { byModel, series, months, lastSyncAt, noDataProviders };
+  return { byModel, series, months: months.map((row) => row.month), lastSyncAt, noDataProviders, diagnostics };
 }
 
 export function attachTokenUsage(ctx: ServerCore): { start: (sinceDays?: number) => boolean } {

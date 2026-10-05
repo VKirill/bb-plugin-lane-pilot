@@ -1322,6 +1322,12 @@ export const rpcContract = defineRpcContract({
       months: z.array(z.string()),
       lastSyncAt: z.number().int().nullable(),
       noDataProviders: z.array(z.string()),
+      diagnostics: z.object({
+        threadsSeen: z.number().int(),
+        threadsWithUsage: z.number().int(),
+        threadsFailed: z.number().int(),
+        lastError: z.string().nullable(),
+      }).strict(),
     }).strict(),
   },
   token_usage_sync: {
