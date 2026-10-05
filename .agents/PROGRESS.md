@@ -12,8 +12,8 @@
 - [ ] Resolve the remaining owner decisions in the harness engineering gaps plan.
 
 ## Last verify
-- command: Lane Pilot acceptance receipts for `lp-harness-gaps-land.4` and `lp-token-usage-dashboard`
-- result: green; both tasks accepted
+- command: Lane Pilot acceptance receipts for `lp-harness-gaps-land.4`, `lp-token-usage-dashboard`, and `lp-token-usage-fix.2`
+- result: green; all three tasks accepted
 - when: 2026-10-05
 
 ## Pointers
