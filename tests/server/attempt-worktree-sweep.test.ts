@@ -64,3 +64,55 @@ it.each([
   expect(snapshots).toHaveLength(1);
   expect(warns).toEqual([]);
 });
+
+it("keeps an area's last accepted worktree for the sticky window, then releases it", async () => {
+  const { createTask } = await import("../../src/database");
+  const { STICKY_WINDOW_MS } = await import("../../src/server/writer/sticky");
+  const deleted: string[] = [];
+  const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{
+    environments:{
+      get:async ({ environmentId }: { environmentId:string }) => ({ id:environmentId, hostId:"ovh", path:`/wt/${environmentId}`, lifecycle:{ phase:"active" } }),
+      archiveThreads:async () => undefined,
+      delete:async ({ environmentId }: { environmentId:string }) => { deleted.push(environmentId); },
+    },
+  } as never });
+  const db = openDatabase(bb);
+  createRun(db, "run", "proj", "bb", "/repo");
+  createTask(db, { id:"page-task", runId:"run", kind:"bb", contract:{ area:"page:/cards" } });
+  createTask(db, { id:"plain-task", runId:"run", kind:"bb", contract:{} });
+  const now = 100_000_000;
+  for (const [id, task, env] of [["a", "page-task", "env_area"], ["b", "plain-task", "env_plain"]] as const) {
+    createAttempt(db, { id, runId:"run", taskId:task });
+    db.prepare("UPDATE lane_pilot_attempt SET environment_id=?, state='accepted', updated_at=? WHERE id=?").run(env, now - 3_600_000, id);
+  }
+  const clean = async () => "clean" as const;
+  const snapshot = async () => ({ status:await clean(), path:null, reason:null });
+  expect(await cleanupFinishedAttemptEnvironments(bb, db, snapshot, now)).toEqual(["env_plain"]);
+  // The fake host keeps listing a deleted environment; only the area one matters here.
+  expect(await cleanupFinishedAttemptEnvironments(bb, db, snapshot, now + STICKY_WINDOW_MS)).toContain("env_area");
+});
+
+it("removes Lane Pilot's own area worktrees after the sticky window, once, and never while an attempt works there", async () => {
+  const { createTask } = await import("../../src/database");
+  const { STICKY_WINDOW_MS } = await import("../../src/server/writer/sticky");
+  const { cleanupStickyLaneWorktrees } = await import("../../src/server/run-finish");
+  const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+  const db = openDatabase(bb);
+  createRun(db, "run", "proj", "bb", "/repo", "none", undefined, "ovh");
+  createTask(db, { id:"page-task", runId:"run", kind:"bb", contract:{ area:"page:/cards" } });
+  createTask(db, { id:"busy-task", runId:"run", kind:"bb", contract:{ area:"page:/faq" } });
+  const now = 100_000_000;
+  const at = (id:string, task:string, path:string, state:string) => {
+    createAttempt(db, { id, runId:"run", taskId:task });
+    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?, state=?, updated_at=? WHERE id=?").run(path, state, now - 60_000, id);
+  };
+  at("a", "page-task", "/lp/wt/a", "accepted");
+  at("b", "busy-task", "/lp/wt/b", "running");
+  const calls: string[] = [];
+  const remove = async (host:string, base:string, path:string) => { calls.push(`${host}:${base}:${path}`); return true; };
+  const released = new Set<string>();
+  expect(await cleanupStickyLaneWorktrees(db, remove, released, now)).toEqual([]);
+  expect(await cleanupStickyLaneWorktrees(db, remove, released, now + STICKY_WINDOW_MS)).toEqual(["/lp/wt/a"]);
+  expect(await cleanupStickyLaneWorktrees(db, remove, released, now + STICKY_WINDOW_MS)).toEqual([]);
+  expect(calls).toEqual(["ovh:/repo:/lp/wt/a"]);
+});

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 
 export type GitOwnershipBase = {
   status:"ready"|"not-git"|"invalid-ref"|"failed";
@@ -25,9 +25,41 @@ async function checkedRoot(projectCwd:string):Promise<string|null> {
     if(!info.isDirectory()||info.isSymbolicLink()) return null;
     const root=await realpath(projectCwd);
     const top=git(root,["rev-parse","--show-toplevel"]);
-    if(!top.ok||resolve(top.stdout.trim())!==resolve(root)) return null;
+    if(!top.ok) return null;
+    const prefix=relative(resolve(top.stdout.trim()),resolve(root)).replace(/\\/g,"/");
+    if(prefix.startsWith("..")) return null;
     return root;
   } catch { return null; }
+}
+
+function cwdRelativePaths(stdout:string):string[] {
+  return stdout.split("\0").map((path)=>path.replace(/^\.\//,"")).filter((path)=>path && !path.startsWith("../") && !path.split("/").includes(".."));
+}
+
+function workingTreeRelative(cwd:string):string[] {
+  const diff=git(cwd,["diff","--name-only","-z","--relative","HEAD"]);
+  const others=git(cwd,["ls-files","-o","--exclude-standard","-z"]);
+  return [...new Set([
+    ...(diff.ok?cwdRelativePaths(diff.stdout):[]),
+    ...(others.ok?cwdRelativePaths(others.stdout):[]),
+  ])];
+}
+
+function isNestedCheckout(cwd:string):boolean {
+  const top=git(cwd,["rev-parse","--show-toplevel"]);
+  return Boolean(top.ok && resolve(top.stdout.trim()) !== resolve(cwd));
+}
+
+/** Keep dirt that lives under a nested chat folder, with paths relative to that folder. */
+export function dirtInsideWorkspace<T extends {path:string}>(snapshots:T[], prefix:string):T[] {
+  if (!prefix) return snapshots;
+  const slash = prefix.endsWith("/") ? prefix : `${prefix}/`;
+  return snapshots.flatMap((row) => {
+    const path = row.path.replace(/^\.\//, "");
+    if (!path.startsWith(slash)) return [];
+    const relativePath = path.slice(slash.length);
+    return relativePath ? [{ ...row, path: relativePath }] : [];
+  });
 }
 
 function resolveCommit(cwd:string,ref:string) {
@@ -87,12 +119,15 @@ export async function gitOwnershipChangedPaths(input:{projectCwd:string;baseSha:
   if(!head.ok) return {status:"failed",headSha:null,paths:[],reason:"could not read current git HEAD"};
   const headSha=head.stdout.trim();
   if(!/^[a-f0-9]{40,64}$/.test(headSha)) return {status:"failed",headSha:null,paths:[],reason:"git returned an invalid HEAD commit id"};
-  if(!input.compareCommitted) return {status:"ready",headSha,paths:[],reason:null};
+  if(!input.compareCommitted) {
+    const paths=isNestedCheckout(cwd)?workingTreeRelative(cwd):[];
+    return {status:"ready",headSha,paths:input.unfiltered?[...new Set(paths)].sort():filterOwnershipNoise(paths),reason:null};
+  }
   if(!input.baseSha||!/^[a-f0-9]{40,64}$/.test(input.baseSha)) return {status:"failed",headSha,paths:[],reason:"frozen git base commit is missing or invalid"};
   const mergeBase=git(cwd,["merge-base",input.baseSha,headSha]);
   if(!mergeBase.ok) return {status:"failed",headSha,paths:[],reason:"git base and current HEAD have no merge base"};
-  const diff=git(cwd,["diff","--name-only","-z","--no-renames",`${mergeBase.stdout.trim()}...${headSha}`]);
+  const diff=git(cwd,["diff","--name-only","-z","--no-renames","--relative",`${mergeBase.stdout.trim()}...${headSha}`]);
   if(!diff.ok) return {status:"failed",headSha,paths:[],reason:"could not compute committed ownership diff"};
-  const paths=diff.stdout.split("\0").filter(Boolean);
+  const paths=cwdRelativePaths(diff.stdout);
   return {status:"ready",headSha,paths:input.unfiltered?[...new Set(paths)].sort():filterOwnershipNoise(paths),reason:null};
 }

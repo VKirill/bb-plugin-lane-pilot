@@ -90,12 +90,9 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
   }
 
   /** The thread and its workspace are still there, idle, and not used up. */
-  async function threadUsable(attempt: { thread_id: string | null; workspace_path: string | null; environment_id: string | null }, runId: string, merged: boolean): Promise<boolean> {
+  async function threadUsable(attempt: { thread_id: string | null; workspace_path: string | null; environment_id: string | null }): Promise<boolean> {
     if (!attempt.thread_id || !attempt.workspace_path) return false;
     if (threadTurns(attempt.thread_id) >= STICKY_MAX_TURNS) return false;
-    const base = getRun(db, runId)?.writer_workspace_path;
-    // Lane Pilot removes its own worktree once the work is merged; only a BB environment or the project folder stays.
-    if (merged && attempt.environment_id === null && base && resolve(attempt.workspace_path) !== resolve(base)) return false;
     const thread = await bb.sdk.threads.get({ threadId:attempt.thread_id }).catch(() => null);
     if (stringAt(thread, "status") !== "idle" || (thread as { archivedAt?: unknown } | null)?.archivedAt) return false;
     if (attempt.environment_id) {
@@ -112,7 +109,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
     if (!record || record.runId !== runId || Date.now() - record.acceptedAt > STICKY_WINDOW_MS) return null;
     const previous = getAttempt(db, record.attemptId);
     if (!previous || previous.state !== "accepted" || previous.thread_id !== record.threadId) return null;
-    if (!await threadUsable(previous, runId, true)) return null;
+    if (!await threadUsable(previous)) return null;
     return { threadId:record.threadId, attemptId:previous.id, workspacePath:previous.workspace_path!, environmentId:previous.environment_id,
       decision:previous.workspace_decision, turns:threadTurns(record.threadId) };
   }
@@ -124,7 +121,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
     // One redo per thread: a writer that failed twice in a row gets a fresh context (Claude Code best practices).
     const inThread = db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE thread_id=? AND task_id=?").get(failed.thread_id, failed.task_id) as { count: number };
     if (inThread.count >= 2) return null;
-    if (!await threadUsable(failed, runId, false)) return null;
+    if (!await threadUsable(failed)) return null;
     return { threadId:failed.thread_id, attemptId:failed.id, workspacePath:failed.workspace_path!, environmentId:failed.environment_id,
       decision:failed.workspace_decision, turns:threadTurns(failed.thread_id) };
   }

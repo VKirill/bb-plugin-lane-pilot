@@ -88,6 +88,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
   extraListPaths=[];
   writerControl = writerControl ?? {hold:false,states:new Map()};
   const spawned:Array<Record<string,unknown>> = [];
+  const followUps=new Map<string,{at:number;seq:number}>();
   const threadMeta=new Map<string,Record<string,unknown>>();
   let docsInventoryCalls=0;
   const fileReads:Array<{rootPath?:string;path:string}> = [];
@@ -145,6 +146,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           }
           if(role==="writer"&&writerControl.hold)writerControl.states.set(id,"active");
           threadMeta.set(id, (request.pluginMetadata as Record<string,unknown>) ?? { role });
+          request.threadIdAssigned=id;
           return { id };
         },
         wait:async ({ threadId, status }:{threadId:string;status?:string}) => {
@@ -194,11 +196,28 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
               eventListCounts.set(threadId,n);
               if(n===1) return [];
             }
+            const followUp=followUps.get(threadId);
             return [
               { type:"turn/started", threadId, seq:1 },
               { type:"turn/completed", threadId, seq:2, data:{ status:"completed" } },
+              ...(followUp ? [
+                { type:"client/turn/requested", threadId, seq:followUp.seq, createdAt:followUp.at },
+                { type:"turn/started", threadId, seq:followUp.seq+1 },
+                { type:"turn/completed", threadId, seq:followUp.seq+2, data:{ status:"completed" } },
+              ] : []),
             ];
           },
+        },
+        // A repair goes as a message into the writer's own thread: recorded like a spawn of that same writer, with a new turn.
+        send:async (args:{threadId:string;input:Array<{text?:string}>}) => {
+          if(throwOnRepairSpawn) throw new Error("repair_spawn_crashed");
+          const original=spawned.find((row)=>row.threadIdAssigned===args.threadId) ?? {};
+          const meta=(threadMeta.get(args.threadId) as Record<string,unknown>|undefined) ?? {};
+          const repairRound=Number(meta.repairRound ?? 0)+1;
+          threadMeta.set(args.threadId,{...meta,repairRound});
+          spawned.push({...original,via:"send",threadIdAssigned:args.threadId,prompt:args.input[0]?.text,pluginMetadata:{...(original.pluginMetadata as Record<string,unknown>??{}),repairRound}});
+          followUps.set(args.threadId,{at:Date.now(),seq:(followUps.get(args.threadId)?.seq??2)+3});
+          return {} as never;
         },
         stop:async ({ threadId }:{threadId:string}) => { stopCalls.push(threadId); return {ok:true} as never; },
         output:async ({ threadId }) => threadId === "pm-read-thread" ? {output:pmReadOutput} : threadId === "docs-thread" ? {output:docsControl.output??JSON.stringify([{path:"docs/fixture.md",expectedSha256:createHash("sha256").update(docsContent).digest("hex"),content:"# Updated documentation fixture\n"}])} : threadId === "onboarding-thread" ? {output:onboardingOutput??JSON.stringify({summary:"Add a concise project guide",edits:[{path:"docs/fixture.md",expectedSha256:createHash("sha256").update(docsContent).digest("hex"),content:"# Onboarding guide\n"}]})} : threadId === "memory-thread" ? {output:memoryOutput} : threadId === "night-thread" ? {output:nightOutput} : threadId === "night-fix-thread" ? {output:nightFixOutput} : threadId === "gate-triage-thread" ? {output:JSON.stringify({decision:"recommendations",summary:"Verification failures need receipt inspection.",recommendations:[{stageId:"verification",state:"failed",count:1,action:"Inspect the verification receipt for the affected task."}]})} : threadId === "critic-thread"
@@ -651,11 +670,13 @@ describe("stage → native writer → receipt", () => {
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
     expect(result.state).toBe("passed");
     expect(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance"))
-      .toMatchObject({providerId:"critic",model:"critic-model",reasoningLevel:"high",serviceTier:"default",environment:{type:"reuse",environmentId:"attempt-env"}});
+      .toMatchObject({providerId:"critic",model:"critic-model",reasoningLevel:"high",serviceTier:"default"});
+    // The accepted attempt's work is merged: docs go to the run workspace, not the attempt's kept worktree.
+    expect(JSON.stringify(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")?.environment)).not.toContain("attempt-env");
     expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance"))
       .toMatchObject({state:"passed",providerId:"critic",model:"critic-model",threadId:"docs-thread",result:{selected:1,since:"7 days ago",truncated:false,changed:[{path:"docs/fixture.md"}]}});
     expect(docsWrites).toHaveLength(1);
-    expect(docsWrites[0]).toMatchObject({path:"/tmp/lane-pilot-managed-attempt/docs/fixture.md",expectedSha256:createHash("sha256").update("# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n").digest("hex"),content:"# Updated documentation fixture\n"});
+    expect(docsWrites[0]).toMatchObject({path:`${config.writerWorkspacePath}/docs/fixture.md`,expectedSha256:createHash("sha256").update("# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n").digest("hex"),content:"# Updated documentation fixture\n"});
     const status=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_workspace_status",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
     expect(status).toMatchObject({state:"passed",result:{environmentId:"attempt-env",path:"/tmp/lane-pilot-managed-attempt"}});
     await harness.lifecycle.dispose();

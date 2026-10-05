@@ -1139,6 +1139,12 @@ export const rpcContract = defineRpcContract({
       firstTryAccepted:z.object({ reviewed:z.object({ tasks:z.number(), share:z.number().nullable() }), notReviewed:z.object({ tasks:z.number(), share:z.number().nullable() }) }),
     })) }),
   },
+  /** Whether writers carry their context: cold writer threads per accepted task, continued turns, time to acceptance. */
+  writer_reuse_stats: {
+    input: z.object({ projectId:z.string().min(1), days:z.number().int().min(1).max(90).default(7) }).strict(),
+    output: z.object({ days:z.number(), stats:z.object({ tasks:z.number(), accepted:z.number(), coldThreads:z.number(), continued:z.number(),
+      coldPerAccepted:z.number().nullable(), areaShare:z.number().nullable(), tasksPerArea:z.number().nullable(), medianMinutesToAccept:z.number().nullable() }) }),
+  },
   /** Before a deploy: hold new checkout-writing host calls and report the ones still running. */
   deploy_drain: {
     input: z.object({ on:z.boolean() }).strict(),

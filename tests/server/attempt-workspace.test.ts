@@ -41,3 +41,20 @@ describe("attempt workspace for a native run's own worktree", () => {
     expect(freshAttemptStart(plain, config, base).task).toBe(plain);
   });
 });
+
+describe("stages after acceptance", () => {
+  it("run in the run workspace once an attempt's BB worktree is merged, even while that worktree stays for the area", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const core = createCore(bb, db);
+    createRun(db, "run", "P", "bb", base);
+    createTask(db, { id: "bot-fix", runId: "run", kind: "bb", contract: task });
+    createAttempt(db, { id: "lpattempt_b", runId: "run", taskId: "bot-fix" });
+    setAttemptWorkspace(db, "lpattempt_b", { path: "/bb/env_b/selfystudio", environmentId: "env_b", decision: {} });
+    transitionAttempt(db, "lpattempt_b", "running", { threadId: "thr_writer" });
+    expect(core.acceptedTaskWorkspace("run", "bot-fix", base, task, "lpattempt_b")).toMatchObject({ path: "/bb/env_b/selfystudio", environmentId: "env_b" });
+    transitionAttempt(db, "lpattempt_b", "accepted");
+    expect(core.acceptedTaskWorkspace("run", "bot-fix", base, task)).toMatchObject({ path: base, environmentId: null });
+    await harness.lifecycle.dispose();
+  });
+});

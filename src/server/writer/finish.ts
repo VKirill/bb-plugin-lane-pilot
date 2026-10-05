@@ -173,7 +173,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           writerThreadId = ledger.repairThreadId;
           repairRound = ledger.repairRound;
           lastArtifact = ledger.artifactRevisionSha256 || lastArtifact;
-          await waitThreadIdle(bb,ledger.repairThreadId,"code_critique_repair_timeout");
+          await waitThreadIdle(bb,ledger.repairThreadId,"code_critique_repair_timeout",undefined,ledger.repairSentAt);
           candidate = await services.validateWriterResult({
             config:input.config, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
             attempt:countAttempts(db,input.runId,input.taskId), task:input.task, writerThreadId:ledger.repairThreadId,
@@ -271,6 +271,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
         }
         let repairThreadId = action === "wait" ? spawnLedger?.repairThreadId : undefined;
+        let repairSentAt = action === "wait" ? spawnLedger?.repairSentAt : undefined;
         const critiqueInput = codeCritiqueSource({ evidence, task:input.task, agent:critiqueSettings.agent });
         const ledgerBase = {
           ...parsed,
@@ -328,8 +329,23 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const placement = await helperChildPlacement({
             bb, db, projectId:input.projectId, runId:input.runId, role:"writer", taskTitle:input.task.title,
           });
+          // The writer that wrote the code fixes the findings in its own thread, with its context; a new thread only
+          // when that one is gone or busy.
+          const writerIdle = stringAt(await bb.sdk.threads.get({ threadId:writerThreadId }).catch(() => null), "status") === "idle";
+          if (writerIdle) {
+            const sentAt = Date.now();
+            recordStage(db, {
+              runId:input.runId, taskId:input.taskId, stageId:"code-critique",
+              state:"blocked", input:critiqueInput,
+              result:{ ...ledgerBase, spawnAttempted:true, repairThreadId:writerThreadId, repairSentAt:sentAt },
+              reason:critique.reason ?? "critique_changes_requested",
+            });
+            const sent = await Promise.resolve().then(() => bb.sdk.threads.send({ threadId:writerThreadId, mode:"queue-if-active",
+              input:[{ type:"text", text:repairPrompt, mentions:[] }] } as never)).then(() => true, () => false);
+            if (sent) { repairThreadId = writerThreadId; repairSentAt = sentAt; }
+          }
           let spawned: unknown;
-          try {
+          if (!repairThreadId) try {
             spawned = await fullAccessSpawn(bb, {
               ...placement,
               ...requiredPolicyField(bb, helperPolicy, writerSnapshot.providerId, "code-repair"),
@@ -359,7 +375,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             transitionAttempt(db, input.attemptId, "blocked", { reason });
             return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
           }
-          repairThreadId = stringAt(spawned, "id") ?? undefined;
+          if (!repairThreadId) repairThreadId = stringAt(spawned, "id") ?? undefined;
           if (!repairThreadId) {
             const reason = "code_critique_repair_unknown";
             recordStage(db, {
@@ -374,13 +390,13 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           recordStage(db, {
             runId:input.runId, taskId:input.taskId, stageId:"code-critique",
             state:"blocked", input:critiqueInput,
-            result:{ ...ledgerBase, spawnAttempted:true, repairThreadId },
+            result:{ ...ledgerBase, spawnAttempted:true, repairThreadId, ...(repairSentAt ? { repairSentAt } : {}) },
             reason:critique.reason ?? "critique_changes_requested",
           });
         }
         writerThreadId = repairThreadId;
         repairRound = nextRound;
-        await waitThreadIdle(bb,repairThreadId,"code_critique_repair_timeout");
+        await waitThreadIdle(bb,repairThreadId,"code_critique_repair_timeout",undefined,repairSentAt);
         candidate = await services.validateWriterResult({
           config:input.config, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
           attempt:countAttempts(db,input.runId,input.taskId), task:input.task, writerThreadId:repairThreadId,
@@ -395,7 +411,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         recordStage(db, {
           runId:input.runId, taskId:input.taskId, stageId:"code-critique",
           state:"blocked", input:critiqueInput,
-          result:{ ...ledgerBase, spawnAttempted:true, repairObserved:true, repairThreadId, repairRound:nextRound },
+          result:{ ...ledgerBase, spawnAttempted:true, repairObserved:true, repairThreadId, repairRound:nextRound, ...(repairSentAt ? { repairSentAt } : {}) },
           reason:critique.reason ?? "critique_changes_requested",
         });
         continue;
@@ -426,8 +442,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const integrate = () => host.call("gitIntegrate", {
           requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path!,
           message:`${input.task.id}: ${input.task.title}`.slice(0, 500),
-          // Only Lane Pilot's own worktree (no BB environment) is removed; a BB managed one belongs to BB.
-          removeWorktree:bound.environment_id === null,
+          // Only Lane Pilot's own worktree (no BB environment) is removed; a BB managed one belongs to BB. An area task
+          // keeps it for the area's next task (the attempt-worktree sweep removes it after the sticky window).
+          removeWorktree:bound.environment_id === null && !input.task.area,
         }, { hostId:input.config.hostId, timeoutMs:180_000 });
         // Another task merging into the same checkout is a queue, not a failure: wait for it and try again.
         let merged = await integrate();

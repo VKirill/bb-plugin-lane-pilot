@@ -1,6 +1,6 @@
 import { attemptProduced } from "../../cli-outcome";
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../database";
+import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listAttemptsForTask, listStageReceipts, loadProjectSettings } from "../../database";
 import { bbServiceTier, writerExecutionSelection } from "../../jev-reasoning";
 import { resolveStageWriterSelection } from "../../stage-writer-selection";
 import { readGateReport } from "../../stages/gate-report";
@@ -330,7 +330,9 @@ export function createNightStages(ctx: ServerCore, services: Services) {
     const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") throw new Error("task does not belong to this PM run and project");
     const taskContract=taskV2Schema.parse(taskRow.contract);
-    const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
+    // The status of the accepted attempt's own worktree, not of the run workspace its work was merged into.
+    const acceptedAttempt=[...listAttemptsForTask(db,args.runId,args.taskId)].reverse().find((attempt)=>attempt.state==="accepted")?.id;
+    const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract,acceptedAttempt);
     const task=workspace.task;
     const base={runId:args.runId,taskId:args.taskId,stageId:"workspace-status" as const,input:JSON.stringify({environmentId:workspace.environmentId,path:workspace.path})};
     const existing=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="workspace-status");

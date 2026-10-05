@@ -116,6 +116,8 @@ export type CodeCritiqueLedger = {
   spawnAttempted: boolean;
   repairObserved?: boolean;
   repairThreadId?: string;
+  /** When the repair went as a message into the writer's own thread: completion waits for a turn after it. */
+  repairSentAt?: number;
   writer?: WriterIdentity;
   reviewer?: ReviewerIdentity;
   findings?: CodeCritiqueFinding[];
@@ -554,6 +556,7 @@ export function repairLedgerFromResult(result: unknown): CodeCritiqueLedger | un
     spawnAttempted: row.spawnAttempted === true,
     ...(row.repairObserved === true ? { repairObserved: true } : {}),
     ...(typeof row.repairThreadId === "string" && row.repairThreadId ? { repairThreadId: row.repairThreadId } : {}),
+    ...(typeof row.repairSentAt === "number" && Number.isFinite(row.repairSentAt) ? { repairSentAt: row.repairSentAt } : {}),
     ...(writer ? { writer } : {}),
     ...(reviewer ? { reviewer } : {}),
     ...(Array.isArray(row.findings) ? { findings: row.findings as CodeCritiqueFinding[] } : {}),

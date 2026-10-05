@@ -179,17 +179,29 @@ export async function syncWorktree(input:{basePath:string;worktreePath:string}):
   return fail(conflicts.length?"conflict":"failed",conflicts.length?`conflicts: ${conflicts.slice(0,10).join(", ")}`:`git merge failed: ${merged.reason.split("\n").slice(-4).join("\n")}`);
 }
 
-/** Creates Lane Pilot's own worktree of a section repository on a fresh lane/<name> branch from its HEAD. */
-export async function createWorktree(input:{basePath:string;targetPath:string;name:string}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null}> {
-  const top=git(input.basePath,["rev-parse","--show-toplevel"]);
-  if(!top.ok) return {status:"failed",path:null,branch:null,reason:`not a git checkout: ${top.reason}`};
+/** Where a Lane chat folder sits in its git checkout: at the repo root, or nested inside a larger repo. */
+export async function workspaceGitLayout(workspacePath:string):Promise<
+  {ok:true;repoTop:string;nested:boolean;prefix:string} | {ok:false;reason:string}
+> {
+  const top=git(workspacePath,["rev-parse","--show-toplevel"]);
+  if(!top.ok||!top.stdout.trim()) return {ok:false,reason:top.reason||"not a git checkout"};
   const repoTop=top.stdout.trim();
-  const [baseReal,topReal]=await Promise.all([
-    realpath(input.basePath).catch(()=>input.basePath),
+  const [workspaceReal,topReal]=await Promise.all([
+    realpath(workspacePath).catch(()=>workspacePath),
     realpath(repoTop).catch(()=>repoTop),
   ]);
-  if(baseReal!==topReal){
-    return {status:"failed",path:null,branch:null,reason:`workspace_not_repo_root: ${input.basePath} is not the git repo root ${repoTop}. Open the Lane chat at ${repoTop}`};
+  const prefix=relative(topReal,workspaceReal).replace(/\\/g,"/");
+  if(prefix.startsWith("..")) return {ok:false,reason:"workspace is outside its git checkout"};
+  const nested=prefix!==""&&prefix!==".";
+  return {ok:true,repoTop,nested,prefix:nested?prefix:""};
+}
+
+/** Creates Lane Pilot's own worktree of a section repository on a fresh lane/<name> branch from its HEAD. */
+export async function createWorktree(input:{basePath:string;targetPath:string;name:string}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null}> {
+  const layout=await workspaceGitLayout(input.basePath);
+  if(!layout.ok) return {status:"failed",path:null,branch:null,reason:`not a git checkout: ${layout.reason}`};
+  if(layout.nested){
+    return {status:"failed",path:null,branch:null,reason:`workspace_not_repo_root: ${input.basePath} is not the git repo root ${layout.repoTop}. Open the Lane chat at ${layout.repoTop}`};
   }
   const branch=`lane/${input.name}`;
   await mkdir(join(input.targetPath,".."),{recursive:true});

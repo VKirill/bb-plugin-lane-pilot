@@ -18,6 +18,8 @@ import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, require
 import { holderSpawnKey, stringAt } from "../values";
 import { planDigest, writerPrompt } from "../writer-task";
 import { areaHistoryText, loadArea } from "./sticky";
+import { dirtInsideWorkspace } from "../../verification/git-ownership";
+import { workspaceGitLayout } from "../../verification/git-integrate";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
@@ -31,6 +33,18 @@ export async function isProjectRootCheckout(bb: { sdk: { projects: { get(args: {
 /** A subfolder workspace is a project-side block; other gitCreateWorktree failures stay Lane Pilot's. */
 export function worktreeCreateError(reason: string | null): string {
   return reason?.startsWith("workspace_not_repo_root:") ? reason : `attempt_worktree_failed:${reason ?? "unknown"}`;
+}
+
+/** True when the attempt already works in the run folder, so there is no worktree to merge or remove. */
+export function shouldMergeAttemptWorktree(workspacePath:string|null|undefined, basePath:string|null|undefined):boolean {
+  return Boolean(workspacePath && basePath && resolve(workspacePath) !== resolve(basePath));
+}
+
+function inPlaceEnvironment(hostId:string, workspacePath:string, environmentId:string|null):
+  {type:"reuse";environmentId:string}|{type:"host";hostId:string;workspace:{type:"unmanaged";path:string}} {
+  return environmentId
+    ? { type:"reuse", environmentId }
+    : { type:"host", hostId, workspace:{ type:"unmanaged", path:workspacePath } };
 }
 
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
@@ -215,22 +229,34 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         } else if (nativeRun && !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path)) {
           // BB's managed worktree always forks the project root; a Lane chat in a section with its own
           // repository gets a git worktree of that repository from Lane Pilot instead (~/.lane-pilot/worktrees).
-          if (bound?.workspace_path) workspacePath=bound.workspace_path;
-          else {
+          // A chat in a subfolder of a larger repo cannot take a worktree: the writer runs in that folder.
+          if (bound?.workspace_path) {
+            workspacePath=bound.workspace_path;
+            environment=inPlaceEnvironment(input.config.hostId,workspacePath,bound.environment_id);
+          } else {
             const created=await host.call("gitCreateWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,name:input.attemptId},
               {hostId:input.config.hostId,timeoutMs:60_000});
-            if(created.status!=="ready"||!created.path) throw new WriterSelectionError(worktreeCreateError(created.reason));
-            workspacePath=created.path;
-            await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,worktreePath:workspacePath},
-              {hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
-            const prepared=await workspaceDirt(input.config,workspacePath);
-            if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
-            dirtBefore=prepared.snapshots;
-            if(!setAttemptWorkspace(db,input.attemptId,{path:workspacePath,environmentId:null,decision:workspaceDecision})) {
-              throw new WriterSelectionError("attempt_workspace_cas_conflict");
+            if(created.status==="ready"&&created.path) {
+              workspacePath=created.path;
+              await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,worktreePath:workspacePath},
+                {hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
+              const prepared=await workspaceDirt(input.config,workspacePath);
+              if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
+              dirtBefore=prepared.snapshots;
+              if(!setAttemptWorkspace(db,input.attemptId,{path:workspacePath,environmentId:null,decision:workspaceDecision})) {
+                throw new WriterSelectionError("attempt_workspace_cas_conflict");
+              }
+              environment={type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:workspacePath}};
+            } else if (created.reason?.startsWith("workspace_not_repo_root:")) {
+              workspacePath=run.writer_workspace_path;
+              if(!setAttemptWorkspace(db,input.attemptId,{path:workspacePath,environmentId:run.writer_environment_id,decision:workspaceDecision})) {
+                throw new WriterSelectionError("attempt_workspace_cas_conflict");
+              }
+              environment=inPlaceEnvironment(input.config.hostId,workspacePath,run.writer_environment_id);
+            } else {
+              throw new WriterSelectionError(worktreeCreateError(created.reason));
             }
           }
-          environment={type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:workspacePath}};
         } else {
         try {
           requireManagedWorktreeProvider(await bb.sdk.environments.listProviders({
@@ -395,10 +421,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
   }
 
   async function workspaceDirt(config: PrototypeConfig, workspacePath = config.writerWorkspacePath): Promise<{ ok:true; paths:string[]; snapshots:DirtSnapshot[] } | { ok:false; reason:string }> {
+    const layout = await workspaceGitLayout(workspacePath);
+    const dirtCwd = layout.ok && layout.nested ? layout.repoTop : workspacePath;
     const ran = await host.call("runCommand", {
       requestedHostId: config.hostId,
       command: WORKSPACE_DIRT_COMMAND,
-      cwd: workspacePath,
+      cwd: dirtCwd,
       timeoutSec: 30,
     }, { hostId:config.hostId, timeoutMs:30_000 }).catch((cause: unknown) => ({
       hostId: config.hostId,
@@ -415,8 +443,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         || typeof (row as DirtSnapshot).path !== "string" || typeof (row as DirtSnapshot).sha256 !== "string")) {
         return { ok:false, reason:"cannot snapshot writer-workspace file contents" };
       }
-      const snapshots = parseDirtSnapshots(ran.stdout);
+      let snapshots = parseDirtSnapshots(ran.stdout);
       if (snapshots.length !== parsed.length) return { ok:false, reason:"incomplete writer-workspace content snapshot" };
+      if (layout.ok && layout.nested) snapshots = dirtInsideWorkspace(snapshots, layout.prefix);
       return { ok:true, paths:snapshots.map((row) => row.path), snapshots };
     } catch {
       return { ok:false, reason:"invalid writer-workspace content snapshot" };

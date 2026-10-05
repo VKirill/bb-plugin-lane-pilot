@@ -19,6 +19,8 @@ import type { AttemptState } from "../../state-machine";
 import { parseWorkspaceMode } from "../../workspace/routing";
 import { closeWriterStages, recordStage } from "../stage-records";
 import { id, stringAt } from "../values";
+import { shouldMergeAttemptWorktree } from "./spawn";
+import { workspaceGitLayout } from "../../verification/git-integrate";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";

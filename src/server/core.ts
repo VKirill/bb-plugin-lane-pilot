@@ -143,8 +143,12 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     // «ownership run scope invalid» (SelfyStudio, 2026-10-02).
     const inFlight=["queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(String(binding?.state));
     const ownWorktree=getRun(db,runId)?.kind==="cli"&&binding?.environment_id===null&&!(selected&&inFlight);
-    const path=ownWorktree?runWorkspacePath:(binding?.workspace_path??runWorkspacePath);
-    return {path,environmentId:binding?.environment_id??null,
+    // An accepted attempt's work is merged into the run workspace; its BB worktree may stay for the area's next task,
+    // and a stage writing there (PROGRESS.md after acceptance) slipped into that task's merge (SelfyStudio 2026-10-05).
+    // A caller naming the attempt (workspace status, reconcile) still gets that attempt's own worktree.
+    const merged=!attemptId&&binding?.state==="accepted"&&Boolean(binding.workspace_path)&&binding.workspace_path!==runWorkspacePath;
+    const path=ownWorktree||merged?runWorkspacePath:(binding?.workspace_path??runWorkspacePath);
+    return {path,environmentId:merged?getRun(db,runId)?.writer_environment_id??null:binding?.environment_id??null,
       task:{...contractTask,project_cwd:path,verification:contractTask.verification.map((command)=>({...command,cwd:path}))}};
   }
 

@@ -11,7 +11,7 @@ import { createReconcile } from "./src/server/reconcile";
 import { createStability } from "./src/server/stability";
 import { adoptWaitingRules } from "./src/server/insights";
 import { createRuleScan } from "./src/server/rule-scan";
-import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns, pluginStopped } from "./src/server/run-finish";
+import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/server/run-finish";
 import { registerRpc } from "./src/server/rpc";
 import type { Services } from "./src/server/services";
 import { createStageChildren } from "./src/server/stages/children";
@@ -75,7 +75,13 @@ export default async function plugin(bb: BbPluginApi) {
   const sweepEnvironments = () => cleanupFinishedAttemptEnvironments(bb, db, snapshotWorktree).then((removed) => {
     if (removed.length) bb.log.info(`Lane Pilot released ${removed.length} worktree(s) of finished attempts`);
   }, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot worktree sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
-  bb.background.schedule("attempt-worktree-sweep", "*/10 * * * *", sweepEnvironments);
+  const releasedLaneWorktrees = new Set<string>();
+  const removeLaneWorktree = async (hostId:string, basePath:string, worktreePath:string) =>
+    (await ctx.host.call("gitRemoveWorktree", { requestedHostId:hostId, basePath, worktreePath }, { hostId, timeoutMs:60_000 })).removed;
+  bb.background.schedule("attempt-worktree-sweep", "*/10 * * * *", () => Promise.all([sweepEnvironments(),
+    cleanupStickyLaneWorktrees(db, removeLaneWorktree, releasedLaneWorktrees).then((removed) => {
+      if (removed.length) bb.log.info(`Lane Pilot released ${removed.length} area worktree(s) after their sticky window`);
+    }, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot area worktree sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`))]).then(() => undefined));
   const sweepParked = () => services.stability.sweep().then(() => undefined,
     (cause) => bb.log.warn(`Lane Pilot parked-task sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   bb.background.schedule("parked-task-sweep", "*/5 * * * *", sweepParked);
