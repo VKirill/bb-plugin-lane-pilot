@@ -35,6 +35,7 @@ export type TokenUsageDiagnostics = {
 export type TokenUsageResult = {
   byModel: Array<{ providerId: string; model: string; input: number; output: number; cached: number; total: number }>;
   series: Array<{ day: string; models: Array<{ providerId: string; model: string; total: number }> }>;
+  byProject: Array<{ projectId: string; total: number; share: number; topModel: string }>;
   months: string[];
   lastSyncAt: number | null;
   noDataProviders: string[];
@@ -390,14 +391,15 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
   const { from, to } = rangeBounds(input, now);
   const projectId = input.projectId;
   const daily = (projectId
-    ? ctx.db.prepare(`SELECT day, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens
+    ? ctx.db.prepare(`SELECT day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens
         FROM lane_pilot_token_daily WHERE day>=? AND day<=? AND project_id=?`).all(from, to, projectId)
-    : ctx.db.prepare(`SELECT day, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens
+    : ctx.db.prepare(`SELECT day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens
         FROM lane_pilot_token_daily WHERE day>=? AND day<=?`).all(from, to)) as Array<{
-    day: string; provider_id: string; model: string; input_tokens: number; output_tokens: number; cached_tokens: number; total_tokens: number;
+    day: string; project_id: string; provider_id: string; model: string; input_tokens: number; output_tokens: number; cached_tokens: number; total_tokens: number;
   }>;
   const byKey = new Map<string, TokenUsageResult["byModel"][number]>();
   const byDay = new Map<string, TokenUsageResult["series"][number]["models"]>();
+  const byProjectMap = new Map<string, { total: number; models: Map<string, number> }>();
   for (const row of daily) {
     const key = `${row.provider_id}\0${row.model}`;
     const current = byKey.get(key) ?? { providerId: row.provider_id, model: row.model, input: 0, output: 0, cached: 0, total: 0 };
@@ -411,6 +413,10 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
     if (existing) existing.total += row.total_tokens;
     else dayModels.push({ providerId: row.provider_id, model: row.model, total: row.total_tokens });
     byDay.set(row.day, dayModels);
+    const project = byProjectMap.get(row.project_id) ?? { total: 0, models: new Map<string, number>() };
+    project.total += row.total_tokens;
+    project.models.set(row.model, (project.models.get(row.model) ?? 0) + row.total_tokens);
+    byProjectMap.set(row.project_id, project);
   }
   const byModel = [...byKey.values()].sort((a, b) => b.total - a.total || a.model.localeCompare(b.model));
   const series = daysOn(from, to).map((day) => ({
@@ -430,7 +436,12 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
   const withEvents = new Set((ctx.db.prepare(`SELECT DISTINCT provider_id FROM lane_pilot_token_daily`).all() as Array<{ provider_id: string }>)
     .map((row) => row.provider_id));
   const noDataProviders = [...new Set(seen.map((row) => row.provider_id).filter((id) => !withEvents.has(id)))].sort();
-  return { byModel, series, months: months.map((row) => row.month), lastSyncAt, noDataProviders, diagnostics };
+  const projectTotal = [...byProjectMap.values()].reduce((sum, row) => sum + row.total, 0);
+  const byProject = [...byProjectMap.entries()].map(([id, row]) => {
+    const topModel = [...row.models.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? "";
+    return { projectId: id, total: row.total, share: projectTotal > 0 ? row.total / projectTotal : 0, topModel };
+  }).sort((a, b) => b.total - a.total || a.projectId.localeCompare(b.projectId));
+  return { byModel, series, byProject, months: months.map((row) => row.month), lastSyncAt, noDataProviders, diagnostics };
 }
 
 export function attachTokenUsage(ctx: ServerCore): { start: (sinceDays?: number) => boolean } {

@@ -398,7 +398,7 @@ function StatusRow({ state, title, detail, action, testId }: { state: "ok" | "to
 
 const TAB_LABELS: Record<string, I18nKey> = {
   overview: "tabOverview", settings: "tabSettings", checks: "tabChecks", council: "tabCouncil",
-  memory: "tabMemory", access: "tabAccess", tokens: "tabTokens", rules: "tabRules", monitor: "tabMonitor", service: "tabService",
+  memory: "tabMemory", access: "tabAccess", rules: "tabRules", monitor: "tabMonitor", service: "tabService",
 };
 /** Tabs the Basic/Advanced switch applies to. */
 const SETTINGS_TABS = new Set(["settings", "checks", "council", "memory"]);
@@ -628,7 +628,7 @@ function canRetryAttempt(run: MonitorRun, attempt: MonitorAttempt): boolean {
     && run.attempts.filter((item) => item.task_id === attempt.task_id).length < MAIN_ATTEMPT_LIMIT;
 }
 
-export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" }) {
+export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" }) {
   const [activeScope, setActiveScope] = useState(scope);
   const rpc = useRpc<typeof rpcContract>();
   const { projectId: routeProjectId, threadId: routeThreadId } = useBbContext();
@@ -791,9 +791,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   }, [isGlobal]);
 
   // Runs and maintenance belong to the project and its machine; the global level has no overview or rules.
-  const tabs = isGlobal ? ["settings", "checks", "council", "memory", "access", "tokens"]
-    : selectedSectionId ? ["overview", "settings", "checks", "council", "memory", "access", "tokens", "rules"]
-      : ["overview", "settings", "checks", "council", "memory", "access", "tokens", "rules", "monitor", "service"];
+  const tabs = isGlobal ? ["settings", "checks", "council", "memory", "access"]
+    : selectedSectionId ? ["overview", "settings", "checks", "council", "memory", "access", "rules"]
+      : ["overview", "settings", "checks", "council", "memory", "access", "rules", "monitor", "service"];
   useEffect(() => {
     if (!tabs.includes(tab)) setTab(tabs[0]!);
   }, [tabs.join(), tab]);
@@ -1371,7 +1371,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           <Select
             value={mobileNavValue}
             onValueChange={(next) => {
-              if (next === "globals" || next === "agents") setActiveScope(next);
+              if (next === "globals" || next === "agents" || next === "tokens") setActiveScope(next);
               else if (next.startsWith("project:")) chooseProject(next.slice("project:".length));
               else if (next.startsWith("section:")) { setActiveScope("projects"); setSelectedSectionId(next.slice("section:".length)); }
             }}
@@ -1382,6 +1382,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             <SelectContent>
               <SelectItem value="globals">{t("navGlobals")}</SelectItem>
               <SelectItem value="agents">{t("navAgents")}</SelectItem>
+              <SelectItem value="tokens">{t("tabTokens")}</SelectItem>
               {projects.flatMap((project) => [
                 <SelectItem key={project.id} value={`project:${project.id}`}>{project.name}</SelectItem>,
                 ...(activeScope === "projects" && project.id === projectId ? flatSections.map((section) => (
@@ -1396,6 +1397,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         <div className="flex flex-col gap-1 pb-2" data-testid="scope-nav">
           <Button type="button" role="tab" size="sm" aria-selected={activeScope === "globals"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" onClick={() => setActiveScope("globals")}>{t("navGlobals")}</Button>
           <Button type="button" role="tab" size="sm" aria-selected={activeScope === "agents"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
+          <Button type="button" role="tab" size="sm" aria-selected={activeScope === "tokens"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" data-testid="scope-nav-tokens" onClick={() => setActiveScope("tokens")}>{t("tabTokens")}</Button>
         </div>
         <div className="border-t border-[var(--lp-hairline)] px-3 pb-1 pt-3"><span className="text-xs font-medium text-muted-foreground">{t("projects")}</span></div>
         <div className="min-h-0 flex-1 overflow-y-auto pb-2">
@@ -1443,7 +1445,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <div ref={contentRef} className="mx-auto w-full min-w-0 max-w-3xl space-y-6 px-4 py-5">
         <OwnedSettings scope={activeScope === "agents" ? "agents" : "projects"} locale={locale} />
-        <main hidden={activeScope === "agents"} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
+        {activeScope === "tokens" ? <TokenUsage projects={projects} /> : null}
+        <main hidden={activeScope === "agents" || activeScope === "tokens"} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
         {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
         <div className="lp-strip">
           {isGlobal ? <>
@@ -1813,9 +1816,6 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
               </div>} /> : null}
-          </TabsContent>
-          <TabsContent value="tokens" forceMount={true} className="space-y-6" hidden={tab !== "tokens"} data-testid="tokens-panel">
-            <TokenUsage projectId={isGlobal ? undefined : projectId ?? undefined} />
           </TabsContent>
 
           {tabs.includes("rules") ? <>

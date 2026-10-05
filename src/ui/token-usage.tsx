@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t } from "../../i18n";
@@ -9,35 +9,36 @@ import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 type Range = "7d" | "14d" | "30d" | "month";
 type ModelRow = { providerId: string; model: string; input: number; output: number; cached: number; total: number };
 type SeriesDay = { day: string; models: Array<{ providerId: string; model: string; total: number }> };
+type ProjectRow = { projectId: string; total: number; share: number; topModel: string };
 type Diagnostics = { threadsSeen: number; threadsWithUsage: number; threadsFailed: number; lastError: string | null };
-type Payload = { byModel: ModelRow[]; series: SeriesDay[]; months: string[]; lastSyncAt: number | null; noDataProviders: string[]; diagnostics: Diagnostics };
+type Payload = {
+  byModel: ModelRow[]; series: SeriesDay[]; byProject: ProjectRow[]; months: string[];
+  lastSyncAt: number | null; noDataProviders: string[]; diagnostics: Diagnostics;
+};
 
 const RANGES: Range[] = ["7d", "14d", "30d", "month"];
+const ALL_PROJECTS = "all";
 const fmt = (value: number) => value.toLocaleString();
 const hue = (index: number) => `oklch(0.62 0.12 ${index * 47})`;
+const pct = (share: number) => `${Math.round(share * 100)}%`;
 
 function currentMonth(now = Date.now()): string {
   return new Date(now).toISOString().slice(0, 7);
 }
 
-export function TokenUsage({ projectId }: { projectId?: string }) {
+export function TokenUsage({ projects }: { projects: Array<{ id: string; name: string }> }) {
   const rpc = useRpc<typeof rpcContract>();
   const [range, setRange] = useState<Range>("7d");
   const [month, setMonth] = useState(currentMonth);
+  const [filter, setFilter] = useState(ALL_PROJECTS);
   const [data, setData] = useState<Payload | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const projectRef = useRef(projectId);
-  projectRef.current = projectId;
   const request = useCallback(() => rpc.call("token_usage", {
-    range, ...(range === "month" ? { month } : {}), ...(projectId ? { projectId } : {}),
-  }) as Promise<Payload>, [projectId, range, month, rpc]);
+    range, ...(range === "month" ? { month } : {}), ...(filter !== ALL_PROJECTS ? { projectId: filter } : {}),
+  }) as Promise<Payload>, [filter, range, month, rpc]);
   const load = useCallback(async () => {
-    const forProject = projectId;
-    try {
-      const next = await request();
-      if (forProject === projectRef.current) setData(next);
-    } catch { if (forProject === projectRef.current) setData(null); }
-  }, [projectId, request]);
+    try { setData(await request()); } catch { setData(null); }
+  }, [request]);
   useEffect(() => { setData(null); void load(); }, [load]);
 
   const refresh = async () => {
@@ -68,16 +69,20 @@ export function TokenUsage({ projectId }: { projectId?: string }) {
   const lastError = data?.diagnostics.lastError
     ? t("tokenUsageLastError").replace("{error}", data.diagnostics.lastError)
     : "";
+  const projectName = (id: string) => projects.find((row) => row.id === id)?.name ?? id;
 
   return (
     <div className="space-y-4" data-testid="token-usage">
+      <div className="lp-strip">
+        <h1 className="break-words text-xl font-medium">{t("tabTokens")}</h1>
+        <p className="max-w-xl text-xs text-muted-foreground">{t("tokenUsageHelp")}</p>
+      </div>
       <Surface testId="token-usage-panel">
         <SurfaceHeader className="justify-between">
-          <h2 className="text-sm font-medium">{t("tabTokens")}</h2>
+          <h2 className="text-sm font-medium">{t("tokenUsageModel")}</h2>
           <Button size="sm" variant="outline" disabled={syncing} data-testid="token-usage-refresh" onClick={() => void refresh()}>{t("reload")}</Button>
         </SurfaceHeader>
         <SurfaceBody>
-          <p className="max-w-xl text-xs text-muted-foreground">{t("tokenUsageHelp")}</p>
           <div className="flex flex-wrap items-center gap-2">
             {RANGES.map((value) => (
               <Button key={value} size="sm" variant={range === value ? "secondary" : "ghost"} className="h-6 px-2 text-xs"
@@ -95,6 +100,15 @@ export function TokenUsage({ projectId }: { projectId?: string }) {
                 </SelectContent>
               </Select>
             ) : null}
+            <Select value={filter} onValueChange={setFilter}>
+              <SelectTrigger className="h-6 w-44 px-2 text-xs" data-testid="token-usage-project-filter" aria-label={t("tokenUsageAllProjects")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_PROJECTS}>{t("tokenUsageAllProjects")}</SelectItem>
+                {projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <p className="text-xs text-muted-foreground" data-testid="token-usage-sync">
             {lastSync} · {t("tokenUsageUtc")}{syncStats ? ` · ${syncStats}` : ""}{lastError ? ` · ${lastError}` : ""}
@@ -153,6 +167,37 @@ export function TokenUsage({ projectId }: { projectId?: string }) {
           ) : null}
         </SurfaceBody>
       </Surface>
+      {data && data.byProject.length > 0 ? (
+        <Surface testId="token-usage-projects">
+          <SurfaceHeader>
+            <h2 className="text-sm font-medium">{t("tokenUsageByProject")}</h2>
+          </SurfaceHeader>
+          <SurfaceBody>
+            <div className="overflow-x-auto">
+              <table className="w-full caption-bottom text-xs" data-testid="token-usage-project-table">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageProject")}</th>
+                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageTotal")}</th>
+                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageShare")}</th>
+                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageTopModel")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.byProject.map((row) => (
+                    <tr key={row.projectId} className="border-b" data-testid={`token-usage-project-${row.projectId}`}>
+                      <td className="px-2 py-1.5">{projectName(row.projectId)}</td>
+                      <td className="px-2 py-1.5">{fmt(row.total)}</td>
+                      <td className="px-2 py-1.5">{pct(row.share)}</td>
+                      <td className="px-2 py-1.5">{row.topModel}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SurfaceBody>
+        </Surface>
+      ) : null}
     </div>
   );
 }

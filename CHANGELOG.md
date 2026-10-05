@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.156
+
+- **«Токены» is its own left-nav entry**, after «Агенты», not a project tab. The page shows spend of every BB session: models, days, sync diagnostics, a per-project table (name, total, share, top model) and a project filter.
+
 ## 0.1.155
 
 From a self-repair of «missing expected_outputs: <path>» (SelfyStudio and content-factory, 2026-10-02…05):

@@ -233,6 +233,31 @@ describe("token usage sync", () => {
       model: "gpt-5", input: extra, output: 0, cached: 0, total: extra,
     });
   });
+
+  it("aggregates spend by project with share and top model", async () => {
+    const { bb, db } = host({
+      thr_a: [
+        { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "gpt-5" } } },
+        usage(2, { last, total: last }),
+      ],
+      thr_b: [
+        { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "opus" } } },
+        usage(2, { last: { inputTokens: 6, outputTokens: 0, cachedInputTokens: 0, totalTokens: 6 }, total: { inputTokens: 6, outputTokens: 0, cachedInputTokens: 0, totalTokens: 6 } }),
+      ],
+    }, [
+      { id: "thr_a", projectId: "proj_a", providerId: "codex" },
+      { id: "thr_b", projectId: "proj_b", providerId: "claude-code" },
+    ]);
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    const result = await queryTokenUsage({ bb, db }, { range: "7d" });
+    expect(result.byProject).toEqual([
+      { projectId: "proj_a", total: 14, share: 0.7, topModel: "gpt-5" },
+      { projectId: "proj_b", total: 6, share: 0.3, topModel: "opus" },
+    ]);
+    const one = await queryTokenUsage({ bb, db }, { range: "7d", projectId: "proj_b" });
+    expect(one.byProject).toEqual([{ projectId: "proj_b", total: 6, share: 1, topModel: "opus" }]);
+    expect(one.byModel[0]?.model).toBe("opus");
+  });
 });
 
 describe("token usage schedule", () => {

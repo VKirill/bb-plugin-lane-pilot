@@ -1328,6 +1328,9 @@ export const rpcContract = defineRpcContract({
         threadsFailed: z.number().int(),
         lastError: z.string().nullable(),
       }).strict(),
+      byProject: z.array(z.object({
+        projectId: z.string(), total: z.number(), share: z.number(), topModel: z.string(),
+      }).strict()),
     }).strict(),
   },
   token_usage_sync: {
