@@ -1963,6 +1963,21 @@ describe("stage → native writer → receipt", () => {
     return setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,codeOn,undefined,undefined,undefined,undefined,undefined,snapshots,false,0,undefined,undefined,undefined,undefined,undefined,undefined,extra?.idleWait,false,{},extra?.holdEvents??[],extra?.outputs,extra?.repair);
   }
 
+  it("a queued task waiting for its dependency does not hold an earlier-sent task of its area (no deadlock)",async()=>{
+    const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"adoc.040":"worktree"});
+    // A chain, as in the live run: area-b waits for area-c, which waits for area-a; area-a was sent last.
+    const middle={...task,id:"area-c",depends_on:["area-a"],area:"page:/cards"};
+    const later={...task,id:"area-b",depends_on:["area-c"],area:"page:/cards"};
+    const first={...task,id:"area-a",area:"page:/cards"};
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Third step of the page",task:later},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Second step of the page",task:middle},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"First step of the page",task:first},{threadId:pmThreadId,projectId});
+    const state=(id:string)=>(db.prepare("SELECT state FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(id) as {state:string}|undefined)?.state;
+    for (let i=0;i<120&&state("area-a")!=="accepted";i+=1) await new Promise((wake)=>setTimeout(wake,250));
+    expect(state("area-a")).toBe("accepted");
+    await harness.lifecycle.dispose();
+  },60_000);
+
   it("a task rejected before it ran does not fail the ownership check of the run's later tasks",async()=>{
     const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
     const poisoned={...task,id:"poisoned",read_first:["../other-plugin/server.ts"],owns_paths:["../other-plugin/","note.txt"]};

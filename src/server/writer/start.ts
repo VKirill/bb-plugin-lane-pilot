@@ -143,6 +143,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // A task that depends on this one waits for it anyway; waiting for it back is a deadlock
           // (live 2026-10-03: price-watermark.5 depends_on how.5, how.5 queued behind price-watermark.5).
           if (parsed.success && dependsOnTask(parsed.data.depends_on, input.taskId)) return false;
+          // A queued task still waiting for its own depends_on works on nothing yet, so it holds no one: through a
+          // chain (A waits on B's area, B depends on C, C on A) it was a deadlock of a whole run (BB-сервис 2026-10-05).
+          if (row.state === "queued" && parsed.success && (parsed.data.depends_on ?? [])
+            .some((dep) => dep !== row.task_id && latestTaskAttemptState(db, row.project_id, dep) !== "accepted")) return false;
           if (anyInFolder) {
             return blocksSharedFolderWriter(
               { task_id:row.task_id, project_id:row.project_id, folder:getRun(db,row.run_id)?.writer_workspace_path ?? null,
