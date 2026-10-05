@@ -5,7 +5,7 @@ import { resolveStageWriterSelection } from "../../stage-writer-selection";
 import { sha256 } from "../../stages/contract";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../../stages/memory";
 import { boundedAgentName } from "../../stages/role";
-import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot } from "../child-snapshots";
+import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../child-snapshots";
 import { configuredSetting } from "../context";
 import { fullAccessSpawn } from "../pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
@@ -124,6 +124,8 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       recordStage(db,{...base,state:"passed",providerId:memoryProviderId,model:memoryModel,threadId:childId,result:{...result,recordsAvailable:records.records.length}});
       return {runId:args.runId,taskId:args.taskId,state:"passed",result};
     };
+    // Set when this call won the spawn claim and when it asked BB for the child: until then no child can exist.
+    let claimedHere=false, spawnCalled=false;
     try {
       receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
       threadId=receipt?.threadId??null;
@@ -150,6 +152,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         if(receipt?.threadId) return await finishObservation(receipt.threadId,snapshot);
         return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"memory_spawn_claimed"};
       }
+      claimedHere=true;
       const [providers,catalog]=await Promise.all([
         bb.sdk.providers.list({hostId:config.hostId}),
         bb.sdk.providers.models({providerId:memoryProviderId,hostId:config.hostId}),
@@ -164,6 +167,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"memory-maintainer",
       });
+      spawnCalled=true;
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId, "memory-maintainer"),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
         prompt:memoryMaintenancePrompt({task,acceptedResult:accepted.result,settings:snapshot.settings,agent:snapshot.agent}),
@@ -180,6 +184,13 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       }
       const reason=cause instanceof Error?cause.message:String(cause);
       if(!threadId){
+        // A failure before the spawn request, or a spawn BB refused, leaves no child to wait for: kept running, the stage
+        // stayed open for good once its claim was taken (SelfyStudio, 2026-10-05: «HTTP 409: Environment unavailable»).
+        const neverSpawned=spawnCalled?spawnRefused(reason):claimedHere||childResultObject(current?.result).spawnAttempted!==true;
+        if(neverSpawned&&!ctx.state.disposed){
+          recordStage(db,{...base,state:"failed",providerId:memoryProviderId,model:memoryModel,reason,result:{error:reason}});
+          return {runId:args.runId,taskId:args.taskId,state:"failed",reason};
+        }
         const recovered=await services.reconcileStageChild(args.projectId,args.runId,args.taskId,"memory-maintenance","memory-maintainer").catch(()=>({kind:"error" as const,message:reason}));
         if(recovered.kind==="found"){
           persistRunning(recovered.threadId,{...childResultObject(receipt?.result),observing:reason});

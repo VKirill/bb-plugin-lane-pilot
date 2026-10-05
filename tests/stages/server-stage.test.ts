@@ -27,6 +27,7 @@ let holderBindAfterGets=0;
 let holderReadyAfterGets=0;
 let holderEnvStatusOverride:string|null=null;
 let throwOnRepairSpawn=false;
+let refuseStageSpawn:string|null=null;
 let mutateCritiqueSettingsOnFirstSpawn=false;
 let setupDb:ReturnType<typeof openDatabase>|undefined;
 const seededThreadMeta=new Map<string,Record<string,unknown>>();
@@ -124,6 +125,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           if(throwOnRepairSpawn && Number((request.pluginMetadata as Record<string,unknown>).repairRound) > 0) {
             throw new Error("repair_spawn_crashed");
           }
+          if(refuseStageSpawn && stageId === refuseStageSpawn) throw new Error("HTTP 409: Environment unavailable");
           if(role === "writer" && nextWriterFailure > 0) {
             nextWriterFailure-=1;
             const id=`writer-failed-${++nextThread}`;
@@ -927,6 +929,35 @@ describe("stage → native writer → receipt", () => {
     expect(second.stage.result.budgets.core).toBe(3072);
     expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")).toHaveLength(1);
     await harness.lifecycle.dispose();
+  });
+  it("fails a memory stage whose spawn BB refused instead of leaving it running",async()=>{
+    refuseStageSpawn="memory-maintenance";
+    try {
+      const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+        "memory.enabled":true,"memory.maintain":true,"memory.inject":true,"memory.audience":"subagent",
+        "memory.provider":"critic","memory.model":"critic-model","memory.reasoning_effort":"high",
+      });
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+      await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+      const failed=await until("memory stage to fail",()=>stageReceipt(db,task.id,"memory-maintenance")?.state==="failed" && stageReceipt(db,task.id,"memory-maintenance"));
+      expect(failed.reason).toBe("HTTP 409: Environment unavailable");
+      await harness.lifecycle.dispose();
+    } finally {
+      refuseStageSpawn=null;
+    }
+  });
+  it("fails a project-life stage whose spawn BB refused instead of leaving it running",async()=>{
+    refuseStageSpawn="project-life";
+    try {
+      const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"project_life.service_tier":"standard"});
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+      await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+      const failed=await until("project-life stage to fail",()=>stageReceipt(db,task.id,"project-life")?.state==="failed" && stageReceipt(db,task.id,"project-life"));
+      expect(failed.reason).toBe("HTTP 409: Environment unavailable");
+      await harness.lifecycle.dispose();
+    } finally {
+      refuseStageSpawn=null;
+    }
   });
   it("reconstructs memory recordIds after insert-before-receipt without duplicate FTS rows",async()=>{
     const entry={kind:"core" as const,content:"Durable deployment convention uses managed workspaces",concepts:["deployment","workspace"]};

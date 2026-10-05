@@ -3,7 +3,7 @@ import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listOpenAttempts, listStageReceipts, loadProjectSettings } from "../../database";
 import { bbServiceTier, writerExecutionSelection } from "../../jev-reasoning";
 import { PROJECT_LIFE_DEFAULT_WRITER, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeWriterSelection, shouldTriggerProjectLife } from "../../stages/project-life";
-import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot } from "../child-snapshots";
+import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../child-snapshots";
 import { configuredSetting } from "../context";
 import { fullAccessSpawn } from "../pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
@@ -136,6 +136,8 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
       recordStage(db,{...base,state:"passed",providerId:projectLifeProviderId,model:projectLifeModel,threadId:childId,result});
       return {runId:args.runId,taskId:args.taskId,state:"passed",result};
     };
+    // Set when this call won the spawn claim and when it asked BB for the child: until then no child can exist.
+    let claimedHere=false, spawnCalled=false;
     try {
       receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
       threadId=receipt?.threadId??null;
@@ -167,6 +169,7 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
         if(receipt?.threadId) return await finishObservation(receipt.threadId,snapshot);
         return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"project_life_spawn_claimed"};
       }
+      claimedHere=true;
       const [providers,catalog]=await Promise.all([
         bb.sdk.providers.list({hostId:config.hostId}),
         bb.sdk.providers.models({providerId:projectLifeProviderId,hostId:config.hostId}),
@@ -182,6 +185,7 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
         bb, db, projectId:args.projectId, runId:args.runId, role:"project-life-maintainer",
       });
       const artifactDirs=coveredTaskIds.map((id)=>acceptanceArtifactDir(workspace.path,args.runId,id));
+      spawnCalled=true;
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, projectLifeProviderId, "project-life"),
         ...writerExecutionSelection(projectLifeProviderId,projectLifeModel,projectLifeEffort,tier),
         prompt:projectLifePrompt({workspace:workspace.path,runId:args.runId,artifactDirs,tasks:snapshot.tasks,nowIso:new Date().toISOString()}),
@@ -198,6 +202,13 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
       }
       const reason=cause instanceof Error?cause.message:String(cause);
       if(!threadId){
+        // A failure before the spawn request, or a spawn BB refused, leaves no child to wait for: kept running, the stage
+        // stayed open for good once its claim was taken (SelfyStudio, 2026-10-05: «HTTP 409: Environment unavailable»).
+        const neverSpawned=spawnCalled?spawnRefused(reason):claimedHere||childResultObject(current?.result).spawnAttempted!==true;
+        if(neverSpawned&&!ctx.state.disposed){
+          recordStage(db,{...base,state:"failed",providerId:projectLifeProviderId,model:projectLifeModel,reason,result:{error:reason}});
+          return {runId:args.runId,taskId:args.taskId,state:"failed",reason};
+        }
         const recovered=await services.reconcileProjectLifeChild(args.projectId,args.runId,args.taskId).catch(()=>({kind:"error" as const,message:reason}));
         if(recovered.kind==="found"){
           persistRunning(recovered.threadId,{...childResultObject(receipt?.result),observing:reason});

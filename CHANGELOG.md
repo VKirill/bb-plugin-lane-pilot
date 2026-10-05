@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.138
+
+From the same self-repair, after 0.1.137 went live (2026-10-05):
+- **A memory or project-life stage that cannot get its child now fails instead of staying open.** Every error without a child thread was taken for «the spawn may have happened», so the stage stayed running and later rounds were refused their spawn claim. Now, when Lane Pilot is sure no child exists, the stage closes `failed` with the reason: the error came before the spawn request (`project_life_git_base_unavailable` on a cleaned worktree, an unsupported service tier, an unavailable model), or BB refused the spawn with an HTTP 4xx (`HTTP 409: Environment unavailable` for a task whose worktree was already removed). An unclear spawn outcome still waits for the child.
+
 ## 0.1.137
 
 From a self-repair of «stage memory-maintenance left running … after its task's attempts ended» (2026-10-05):

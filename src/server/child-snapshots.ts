@@ -43,6 +43,11 @@ export function childResultObject(result:unknown): Record<string, unknown> {
   return result && typeof result === "object" ? { ...result as Record<string, unknown> } : {};
 }
 
+/** BB refused the spawn request (e.g. «HTTP 409: Environment unavailable»), so no child thread exists. */
+export function spawnRefused(reason:string): boolean {
+  return /^HTTP 4\d\d\b/.test(reason);
+}
+
 export type OnboardingChildSnapshot = {
   pages:OnboardingInputPage[]; inputBytes:number; inputPageCount:number; availablePageCount:number;
   acceptanceSha256:string; agent:string; depth:"fast"|"deep"; dispatchInput?:unknown;
