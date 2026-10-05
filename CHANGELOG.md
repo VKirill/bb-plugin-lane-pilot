@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.137
+
+From a self-repair of «stage memory-maintenance left running … after its task's attempts ended» (2026-10-05):
+- **A post-acceptance stage no longer stays running forever in a large project.** Before spawning its child, every memory, docs, project-life, night-review and onboarding stage looked for a child lost in a reload by reading the metadata of every Lane Pilot thread of the project. SelfyStudio has 1255 of them, more than the 1000 the scan reads, so the scan returned `page_cap`, the stage recorded `observing: blocked` and never spawned. Each of 42 background loops repeated that full scan 60 times and then gave up with the stage still running (41 memory stages, 1 project-life stage, 2026-10-04). A stage that never claimed its spawn cannot have lost a child, so it now skips the scan. A stage whose spawn began before its thread id was stored is still scanned.
+
 ## 0.1.136
 
 From a self-repair of «kept worktree …: its changes could not be saved (… stale API handle …)» (2026-10-04):

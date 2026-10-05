@@ -1,6 +1,7 @@
 import { taskV2Schema } from "../../contracts";
 import { getTask, listStageReceipts } from "../../database";
 import { reconcile } from "../../reconcile";
+import type { ReconcileResult } from "../../reconcile";
 import type { StageId } from "../../stages/contract";
 import type { ProjectLifeTaskSummary } from "../../stages/project-life";
 import type { ServerCore } from "../core";
@@ -8,7 +9,13 @@ import type { ServerCore } from "../core";
 export function createStageChildren(ctx: ServerCore) {
   const { bb, db } = ctx;
 
-  async function reconcileStageChild(projectId:string, runId:string, taskId:string, stageId:StageId, role:string) {
+  async function reconcileStageChild(projectId:string, runId:string, taskId:string, stageId:StageId, role:string): Promise<ReconcileResult> {
+    // Only a stage that claimed its spawn can have lost a child. Scanning for every fresh stage read the metadata of
+    // every thread of the project and, once SelfyStudio passed 1000, returned page_cap for 42 memory stages that then
+    // stayed running for good (live 2026-10-04).
+    const receipt = listStageReceipts(db, runId, taskId).find((row) => row.stageId === stageId);
+    const result = receipt?.result && typeof receipt.result === "object" ? receipt.result as Record<string, unknown> : {};
+    if (result.spawnAttempted !== true) return { kind:"not_found" };
     return reconcile({
       list: async ({ limit, offset }) => (await bb.sdk.threads.list({
         projectId, originPluginId:"lane-pilot", includeHidden:true, limit, offset,
