@@ -3,15 +3,15 @@ import { setRunHalted } from "../runs-halt";
 import { PARKED_KEY } from "../stability";
 import { agentPickerLabel } from "../../agent-display";
 import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../agent-profile";
-import { countAttempts, createAttempt, getActivation, getAttempt, getTask, getTaskPlan, listStageReceipts, transitionAttempt } from "../../database";
+import { countAttempts, createAttempt, getActivation, getAttempt, transitionAttempt } from "../../database";
 import { detectRequiredSessionPolicyCapability } from "../../helper-context";
 import { storeNativeSelection } from "../native-profile";
 import { DEFAULT_NATIVE_AGENT, nativeAgentCliId, nativeSelectionSchema } from "../../native-session";
 import { userVisibleProjects } from "../../project-scope";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import type { AttemptState } from "../../state-machine";
-import { cancelRejection, finishRunSafely } from "../run-finish";
-import { recordStage } from "../stage-records";
+import { finishRunSafely } from "../run-finish";
+import { cancelAttemptById } from "../cancel";
 import { id, stringAt, valueAt } from "../values";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../contracts";
@@ -133,33 +133,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         requiredSessionPolicy: detectRequiredSessionPolicyCapability((bb as { agents?: { experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {}) ? "required" : "none",
       };
     },
-    cancel_attempt: async ({ attemptId }) => {
-      const attempt = getAttempt(db, attemptId);
-      if (!attempt) return { ok: false, state: "missing", reason: "attempt does not exist" };
-      if (!attempt.thread_id) return cancelQueuedAttempt(attempt);
-      const rejection = cancelRejection(db, attempt);
-      if (rejection) return { ok:false, state:attempt.state, reason:rejection };
-      transitionAttempt(db, attempt.id, "cancel_requested", { threadId: attempt.thread_id });
-      await bb.sdk.threads.stop({ threadId: attempt.thread_id });
-      const observed = await bb.sdk.threads.get({ threadId: attempt.thread_id });
-      const status = stringAt(observed, "status");
-      const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{ id: string }>> }).listRunning;
-      const running = listRunning ? await listRunning({}) : [];
-      const stillRunning = running.some((thread) => thread.id === attempt.thread_id)
-        || status === "active" || status === "running";
-      if (stillRunning) return { ok: false, state: "cancel_requested", reason: `writer stop was not independently observed (status=${status ?? "unknown"})` };
-      transitionAttempt(db, attempt.id, "canceled", { threadId: attempt.thread_id });
-      const task = getTask(db, attempt.task_id);
-      const plan = getTaskPlan(db, attempt.task_id) ?? (task?.kind === "bb" ? valueAt(task.contract, "objective") : "") as string;
-      for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
-        const current = listStageReceipts(db, attempt.run_id, attempt.task_id).find((row) => row.stageId === stageId);
-        if (current && (current.state === "pending" || current.state === "running")) {
-          recordStage(db, { runId:attempt.run_id, taskId:attempt.task_id, stageId, state:"canceled", input:plan,
-            attempt:attempt.attempt_no, threadId:attempt.thread_id, reason:"writer stop observed" });
-        }
-      }
-      return { ok: true, state: "canceled", reason: null };
-    },
+    cancel_attempt: async ({ attemptId }) => cancelAttemptById(ctx, attemptId),
     halt_run: async ({ runId }) => {
       await setRunHalted(bb.storage.kv as never, runId, true);
       const open = db.prepare(`SELECT id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')`).all(runId) as Array<{ id:string }>;

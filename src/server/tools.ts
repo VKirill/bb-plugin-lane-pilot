@@ -1,7 +1,8 @@
 import { mountErrands } from "./errands";
+import { cancelAttemptById } from "./cancel";
 import { LANE_PILOT_READ_NAME } from "../bounded-read";
 import { taskV2Schema } from "../contracts";
-import { getRun, getRunSettingsScopes, loadProjectSettings, loadPrototypeConfig } from "../database";
+import { getRun, getRunSettingsScopes, listOpenAttempts, loadProjectSettings, loadPrototypeConfig } from "../database";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../native-run";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../native-session-hooks";
 import { readGateReport } from "../stages/gate-report";
@@ -68,6 +69,26 @@ export function registerTools(ctx: ServerCore, services: Services) {
       null,
       2,
     ),
+  });
+
+  bb.agents.registerTool({
+    name:"lane_pilot_cancel_task",
+    description:"Cancel tasks of this PM's run that are no longer wanted: a queued one at once, a running one once its writer stops.",
+    instructions:"Use only from a Lane Pilot PM thread, for tasks a newer task supersedes or the owner dropped. Name the task ids you sent; tasks that depend on a canceled one stop waiting for it. Cancel does not undo work already merged into main.",
+    parameters:z.object({ taskIds:z.array(z.string().min(1)).min(1).max(50) }).strict(),
+    execute: async (params, context) => {
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
+      const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
+      if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) throw new Error("caller is not a Lane Pilot PM thread");
+      const open = listOpenAttempts(db).filter((row) => row.run_id === runId);
+      const results = [];
+      for (const taskId of params.taskIds) {
+        const attempts = open.filter((row) => row.task_id === taskId);
+        if (!attempts.length) { results.push({ taskId, ok:false, state:"not_open", reason:"no open attempt of this task in this run" }); continue; }
+        for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id) });
+      }
+      return JSON.stringify({ runId, results });
+    },
   });
 
   bb.agents.registerTool({

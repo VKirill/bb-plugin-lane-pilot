@@ -13,6 +13,7 @@ export const BB_BRIDGE_MCP_SERVER = "bb-bridge";
 export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_read",
   "lane_pilot_dispatch_writer",
+  "lane_pilot_cancel_task",
   "lane_pilot_wait_writer",
   "lane_pilot_dispatch_cli",
   "lane_pilot_browser_qa",
@@ -56,6 +57,7 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
 export const NATIVE_LP_BRIDGE_PM_TOOLS = [
   "lane_pilot_read",
   "lane_pilot_dispatch_writer",
+  "lane_pilot_cancel_task",
   "lane_pilot_wait_writer",
   "lane_pilot_browser_qa",
   "lane_pilot_memory_context",

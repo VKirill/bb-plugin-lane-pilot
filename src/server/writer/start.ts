@@ -8,7 +8,7 @@ import { reconcile } from "../../reconcile";
 import { emergencyFallbackDecision } from "../../stages/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
-import { FREE_RETRY_LIMIT } from "../../failure-class";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES } from "../../failure-class";
 import { previousAttemptBrief, stickyTurnPrompt } from "../writer-task";
 import { createWriterSticky } from "./sticky";
 import { failureClass } from "../../failure-class";
@@ -114,15 +114,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           pending.push(dep);
         }
         if (!pending.length) return null;
-        const key = pending.join(",");
+        // The text names which dependencies ended blocked; a restart of one of them changes it, so it is part of the key.
+        const key = `${pending.join(",")}|${pending.filter((dep) => blockedSince.has(dep)).join(",")}`;
         if (noted !== key) {
           noted = key;
-          ctx.log(`writer ${input.taskId} waits for depends_on ${key}`);
+          ctx.log(`writer ${input.taskId} waits for depends_on ${pending.join(",")}`);
           const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
           if (!stage || stage.state === "pending") {
             const redo = pending.filter((dep) => blockedSince.has(dep));
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:redo.length ? `waiting for depends_on: ${key} (${redo.join(", ")} ended blocked; starts once it is sent again and accepted)` : `waiting for depends_on: ${key}` });
+              reason:redo.length ? `waiting for depends_on: ${pending.join(",")} (${redo.join(", ")} ended blocked; starts once it is sent again and accepted)` : `waiting for depends_on: ${pending.join(",")}` });
           }
         }
         await new Promise((wake) => setTimeout(wake, 10_000));
@@ -222,14 +223,18 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"running",
         input:input.plan, attempt:countAttempts(db, input.runId, input.taskId) });
       // A merge conflict or a fault of Lane Pilot or the machine does not spend an attempt; free retries are capped too.
+      // Free retries are counted within this start: a task restarted after a Lane Pilot fix gets its full share,
+      // while attempts burned on the fault before it stay out of the count (BB-сервис 2026-10-05: five fault attempts
+      // left the restarted task no attempt at all, and it sat queued with its stages failed).
+      let attemptsHere = 0;
       const attemptsLeft = () => countChargedAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT
-        && countAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
+        && attemptsHere < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
       let halfBound = false;
       /** Another attempt follows this failure: the same conditions the loop checks below before it creates one. */
       const attemptsLeftAfter = (binding:ReturnType<typeof getAttempt>) => Boolean(binding?.thread_id)
         && RETRY_ELIGIBLE.includes(String(last.status) as AttemptState)
         && countChargedAttempts(db, input.runId, input.taskId) < MAIN_ATTEMPT_LIMIT
-        && countAttempts(db, input.runId, input.taskId) < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
+        && attemptsHere + 1 < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
       /** Takes over an existing writer thread for this attempt; false leaves the attempt to a fresh spawn. */
       const continueWith = async (writer:NonNullable<Awaited<ReturnType<typeof sticky.hotWriter>>>, kind:"next-task"|"retry", previousAttempt:string, keepDirt?:DirtSnapshot[]):Promise<boolean> => {
         const bound = {...freshTask,project_cwd:writer.workspacePath,verification:freshTask.verification.map(command=>({...command,cwd:writer.workspacePath}))};
@@ -263,6 +268,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (hot) await continueWith(hot, "next-task", "");
       }
       while (attemptsLeft()) {
+        attemptsHere += 1;
         if (!writerThreadId && !halfBound) {
           budget.noteAttempt();
           const budgetCheck=budget.check();
@@ -347,8 +353,17 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             break;
           }
         }
+        // A fault of Lane Pilot or the machine is not redone here: another writer meets the same fault. The task is
+        // parked and restarts once a fix ships or the machine recovers.
+        const failedClass = failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null);
+        if (PARKED_CLASSES.has(failedClass)) {
+          const latest = getAttempt(db, attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
+          last = { ...last, status:"blocked" };
+          break;
+        }
         if (countChargedAttempts(db, input.runId, input.taskId) >= MAIN_ATTEMPT_LIMIT
-          || countAttempts(db, input.runId, input.taskId) >= MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT) {
+          || attemptsHere >= MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) {
             const exhausted = `retry limit 2 exhausted${typeof last.reason === "string" && last.reason ? `: ${last.reason}` : ""}`;
@@ -370,6 +385,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (redo && !await continueWith(redo, "retry", previousAttemptBrief({ ...failedLast, produced:[] }), failedBinding?.dirt_before)) {
           await removeFailedWorktree();
         }
+      }
+      // No attempt was left for this start: end the queued attempt instead of leaving it queued with failed stages.
+      if (attemptsHere === 0 && getAttempt(db, attemptId)?.state === "queued") {
+        const exhausted = "retry limit 2 exhausted: the task's attempts were spent before this start";
+        transitionAttempt(db, attemptId, "blocked", { reason:exhausted });
+        last = { status:"blocked", reason:exhausted, attemptId };
       }
       if (last.status !== "accepted" && primaryFailure) {
         const settings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
