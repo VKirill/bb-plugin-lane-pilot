@@ -192,7 +192,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       };
     }
     let produced = attemptProduced(dirt.snapshots, input.dirtBefore);
-    const runTasks = listTasksForRun(db,input.runId);
+    // A task rejected before it ever ran (preflight, plan critique) claims no files; its contract may even be unsafe
+    // («../other-repo/» in owns_paths), and kept in the scope it failed every later task of the run (BB-сервис 2026-10-05).
+    const attempted = new Set((db.prepare("SELECT DISTINCT task_id FROM lane_pilot_attempt WHERE run_id=?").all(input.runId) as Array<{ task_id:string }>).map((row) => row.task_id));
+    const runTasks = listTasksForRun(db,input.runId).filter((row) => row.id === input.taskId || attempted.has(row.id));
     const runOwnershipTasks = runTasks.flatMap((row) => {
       if (row.kind !== "bb") return [];
       const parsed = taskV2Schema.safeParse(row.contract);

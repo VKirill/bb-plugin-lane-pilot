@@ -1963,6 +1963,18 @@ describe("stage → native writer → receipt", () => {
     return setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,codeOn,undefined,undefined,undefined,undefined,undefined,snapshots,false,0,undefined,undefined,undefined,undefined,undefined,undefined,extra?.idleWait,false,{},extra?.holdEvents??[],extra?.outputs,extra?.repair);
   }
 
+  it("a task rejected before it ran does not fail the ownership check of the run's later tasks",async()=>{
+    const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    const poisoned={...task,id:"poisoned",read_first:["../other-plugin/server.ts"],owns_paths:["../other-plugin/","note.txt"]};
+    const rejected=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Reach into a sibling repo",task:poisoned},{threadId:pmThreadId,projectId})));
+    expect(rejected.state).toBe("blocked");
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
+    expect(waited.reason ?? "").not.toContain("ownership run scope invalid");
+    expect((db.prepare("SELECT state FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(task.id) as {state:string}).state).toBe("accepted");
+    await harness.lifecycle.dispose();
+  },20_000);
+
   it("skips code critique by default and accepts without a repair writer",async()=>{
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
