@@ -7,6 +7,7 @@ import { settingsRpc } from "./rpc/settings";
 import { selectionsRpc } from "./rpc/selections";
 import { stackRpc } from "./rpc/stack";
 import { insightsRpc } from "./rpc/insights";
+import { tokenUsageRpc } from "./rpc/token-usage";
 import { councilRpc } from "./council";
 import { selfRepairRpc } from "./self-repair";
 import { sessionMemoryRpc } from "./session-memory";
@@ -20,6 +21,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...selectionsRpc(ctx, services),
     ...stackRpc(ctx),
     ...insightsRpc(ctx, services),
+    ...tokenUsageRpc(ctx),
     ...councilRpc(ctx.db, services.council),
     ...selfRepairRpc(ctx),
     ...sessionMemoryRpc(ctx, services),

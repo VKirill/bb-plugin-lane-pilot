@@ -228,6 +228,29 @@ export const migrations = [
     refused INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_attempt_transition_attempt ON lane_pilot_attempt_transition(attempt_id, at)`,
   ...ruleAudienceMigrations,
+  `CREATE TABLE lane_pilot_token_daily (
+    day TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cached_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, project_id, provider_id, model)
+  ) WITHOUT ROWID`,
+  `CREATE TABLE lane_pilot_token_cursor (
+    thread_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL DEFAULT '',
+    provider_id TEXT NOT NULL DEFAULT '',
+    last_seq INTEGER NOT NULL DEFAULT 0,
+    last_json TEXT NOT NULL DEFAULT '{}',
+    total_json TEXT NOT NULL DEFAULT '{}',
+    last_model TEXT NOT NULL DEFAULT '',
+    last_provider TEXT NOT NULL DEFAULT '',
+    last_turn_id TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL
+  )`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

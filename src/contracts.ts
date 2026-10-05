@@ -1305,4 +1305,27 @@ export const rpcContract = defineRpcContract({
     }).strict(),
     output: z.object({ proposal: ruleProposalSchema }).strict(),
   },
+  token_usage: {
+    input: z.object({
+      range: z.enum(["7d", "14d", "30d", "month"]),
+      month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+      projectId: z.string().min(1).optional(),
+    }).strict(),
+    output: z.object({
+      byModel: z.array(z.object({
+        providerId: z.string(), model: z.string(), input: z.number(), output: z.number(), cached: z.number(), total: z.number(),
+      }).strict()),
+      series: z.array(z.object({
+        day: z.string(),
+        models: z.array(z.object({ providerId: z.string(), model: z.string(), total: z.number() }).strict()),
+      }).strict()),
+      months: z.array(z.string()),
+      lastSyncAt: z.number().int().nullable(),
+      noDataProviders: z.array(z.string()),
+    }).strict(),
+  },
+  token_usage_sync: {
+    input: z.object({}).strict(),
+    output: z.object({ started: z.boolean() }).strict(),
+  },
 });

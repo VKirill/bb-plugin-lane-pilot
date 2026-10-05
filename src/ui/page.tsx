@@ -58,6 +58,7 @@ import { RuleProposals } from "./rule-proposals";
 import { CriticValue } from "./critic-value";
 import { WriterReuse } from "./writer-reuse";
 import { AgentAccess } from "./agent-access";
+import { TokenUsage } from "./token-usage";
 import { MemoryRecords } from "./memory-records";
 import { DocsPlaces } from "./docs-places";
 import { DOCS_DEFAULT_SELECTION } from "../stages/docs-defaults";
@@ -397,7 +398,7 @@ function StatusRow({ state, title, detail, action, testId }: { state: "ok" | "to
 
 const TAB_LABELS: Record<string, I18nKey> = {
   overview: "tabOverview", settings: "tabSettings", checks: "tabChecks", council: "tabCouncil",
-  memory: "tabMemory", access: "tabAccess", rules: "tabRules", monitor: "tabMonitor", service: "tabService",
+  memory: "tabMemory", access: "tabAccess", tokens: "tabTokens", rules: "tabRules", monitor: "tabMonitor", service: "tabService",
 };
 /** Tabs the Basic/Advanced switch applies to. */
 const SETTINGS_TABS = new Set(["settings", "checks", "council", "memory"]);
@@ -790,9 +791,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   }, [isGlobal]);
 
   // Runs and maintenance belong to the project and its machine; the global level has no overview or rules.
-  const tabs = isGlobal ? ["settings", "checks", "council", "memory", "access"]
-    : selectedSectionId ? ["overview", "settings", "checks", "council", "memory", "access", "rules"]
-      : ["overview", "settings", "checks", "council", "memory", "access", "rules", "monitor", "service"];
+  const tabs = isGlobal ? ["settings", "checks", "council", "memory", "access", "tokens"]
+    : selectedSectionId ? ["overview", "settings", "checks", "council", "memory", "access", "tokens", "rules"]
+      : ["overview", "settings", "checks", "council", "memory", "access", "tokens", "rules", "monitor", "service"];
   useEffect(() => {
     if (!tabs.includes(tab)) setTab(tabs[0]!);
   }, [tabs.join(), tab]);
@@ -1812,6 +1813,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
               </div>} /> : null}
+          </TabsContent>
+          <TabsContent value="tokens" forceMount={true} className="space-y-6" hidden={tab !== "tokens"} data-testid="tokens-panel">
+            <TokenUsage projectId={isGlobal ? undefined : projectId ?? undefined} />
           </TabsContent>
 
           {tabs.includes("rules") ? <>
