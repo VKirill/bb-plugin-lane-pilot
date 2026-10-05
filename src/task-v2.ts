@@ -42,7 +42,7 @@ export function validateTaskV2(value: unknown): { ok:true; task:TaskV2 } | { ok:
     return { ok:false, errors:parsed.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`) };
   }
   const record = value as Record<string, unknown>;
-  const extras = Object.keys(record).filter((key) => !(TASK_V2_REQUIRED as readonly string[]).includes(key) && key !== "skills");
+  const extras = Object.keys(record).filter((key) => !(TASK_V2_REQUIRED as readonly string[]).includes(key) && key !== "skills" && key !== "area");
   if (extras.length > 0) return { ok:false, errors:extras.map((key) => `${key}: additionalProperties is false`) };
   return { ok:true, task:parsed.data };
 }

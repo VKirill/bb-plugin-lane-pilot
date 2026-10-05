@@ -154,6 +154,31 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   return result;
 }
 
+/**
+ * Brings a writer's worktree up to the base checkout's HEAD, so the same writer can take the area's next task there:
+ * a fast-forward when main only moved ahead (its own work was merged), else a merge. A conflict is undone and named:
+ * the caller then starts a fresh writer instead.
+ */
+export async function syncWorktree(input:{basePath:string;worktreePath:string}):Promise<{status:"synced"|"up-to-date"|"dirty"|"conflict"|"failed";head:string|null;reason:string|null}> {
+  const fail=(status:"dirty"|"conflict"|"failed",reason:string)=>({status,head:null,reason});
+  await recoverStaleGitLock(input.worktreePath);
+  const dirty=git(input.worktreePath,["status","--porcelain","--untracked-files=no"]);
+  if(!dirty.ok) return fail("failed",`worktree status: ${dirty.reason}`);
+  if(dirty.stdout.trim()) return fail("dirty",`uncommitted changes: ${dirty.stdout.trim().split("\n").slice(0,5).join("; ")}`);
+  const main=git(input.basePath,["rev-parse","HEAD"]);
+  if(!main.ok) return fail("failed",`base head: ${main.reason}`);
+  const sha=main.stdout.trim();
+  const head=()=>git(input.worktreePath,["rev-parse","HEAD"]).stdout.trim()||null;
+  if(git(input.worktreePath,["merge-base","--is-ancestor",sha,"HEAD"]).ok) return {status:"up-to-date",head:head(),reason:null};
+  if(git(input.worktreePath,["merge","--ff-only","-q",sha]).ok) return {status:"synced",head:head(),reason:null};
+  const merged=git(input.worktreePath,[...identity(input.worktreePath),"merge","--no-edit","-q",sha]);
+  if(merged.ok) return {status:"synced",head:head(),reason:null};
+  const unmerged=git(input.worktreePath,["diff","--name-only","--diff-filter=U"]);
+  git(input.worktreePath,["merge","--abort"]);
+  const conflicts=unmerged.ok?unmerged.stdout.split("\n").map((line)=>line.trim()).filter(Boolean):[];
+  return fail(conflicts.length?"conflict":"failed",conflicts.length?`conflicts: ${conflicts.slice(0,10).join(", ")}`:`git merge failed: ${merged.reason.split("\n").slice(-4).join("\n")}`);
+}
+
 /** Creates Lane Pilot's own worktree of a section repository on a fresh lane/<name> branch from its HEAD. */
 export async function createWorktree(input:{basePath:string;targetPath:string;name:string}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null}> {
   const top=git(input.basePath,["rev-parse","--show-toplevel"]);

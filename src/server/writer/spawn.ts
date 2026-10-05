@@ -17,6 +17,7 @@ import { fullAccessSpawn } from "../pm-spawn";
 import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
 import { holderSpawnKey, stringAt } from "../values";
 import { planDigest, writerPrompt } from "../writer-task";
+import { areaHistoryText, loadArea } from "./sticky";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
@@ -93,10 +94,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
       const rules=await relevantRules(allRules,input.task as unknown as Record<string,unknown>,input.config.hostId);
       const rulesText=rules.map((rule)=>`- ${rule.rule}`).join("\n");
+      // A fresh writer of an area hears what its earlier tasks decided, in place of the thread that remembered it.
+      const areaHistory=input.task.area?areaHistoryText(await loadArea(bb.storage.kv,input.projectId,input.task.area)):"";
       // The writer gets at most three notes that name a path of this task; other helpers keep the budgeted context.
-      const relevantMemory={text:memoryOn
+      const relevantMemory={text:[areaHistory,memoryOn
         ? writerMemory(searchMemoryRecords(db,input.projectId,taskMemoryQuery,100,memorySettings.searchEngine,"subagent",memorySettings.personalBot).filter((record)=>!ruleMemoryIds.has(record.id)),input.task)
-        : ""};
+        : ""].filter(Boolean).join("\n\n")};
       const writerProviderId = input.emergency?.providerId ?? (typeof settings["writer.provider"] === "string"
         ? settings["writer.provider"] as string : input.config.writerProviderId);
       const writerModel = input.emergency?.model ?? (typeof settings["writer.model"] === "string" && settings["writer.model"]

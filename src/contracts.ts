@@ -84,6 +84,8 @@ export const taskV2Schema = z.object({
     cwd: z.string().startsWith("/"),
     timeout_sec: z.number().int().min(1).max(7200).optional(),
   }).strict()),
+  /** The page or feature the task belongs to («page:/tools/cards»): one writer at a time per area, and the area's writer continues its next task. */
+  area: z.string().trim().min(1).max(120).optional(),
 }).strict();
 
 export type TaskV2 = z.infer<typeof taskV2Schema>;
@@ -175,6 +177,10 @@ export const hostContract = defineRpcContract({
   gitRemoveWorktree: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/") }).strict(),
     output: z.object({ hostId:z.string(), removed:z.boolean() }).strict(),
+  },
+  gitSyncWorktree: {
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/") }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["synced","up-to-date","dirty","conflict","failed"]), head:z.string().nullable(), reason:z.string().nullable() }).strict(),
   },
   stabilityDrill: {
     input: z.object({ requestedHostId:z.string().min(1) }).strict(),

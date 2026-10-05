@@ -14,6 +14,7 @@ import {
   gitPrepareWorktree,
   gitCreateWorktree,
   gitRemoveWorktree,
+  gitSyncWorktree,
   diskFree,
   stabilityDrill,
   gitWorktreeSnapshot,
@@ -64,7 +65,7 @@ export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     nativeInstall: nativeInstallHost,
-    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, docsAnchors:withJevKey(docsAnchors), docsFlows:withJevKey(docsFlows), docsDepth:withJevKey(docsDepth), docsVerifyCitations:withJevKey(docsVerifyCitations), docsStaleness:withJevKey(docsStalenessHandler), gitIntegrate, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, writeDocsPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan:withJevKey(classifyPlan), inspectCritiqueCoverage,
+    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, docsAnchors:withJevKey(docsAnchors), docsFlows:withJevKey(docsFlows), docsDepth:withJevKey(docsDepth), docsVerifyCitations:withJevKey(docsVerifyCitations), docsStaleness:withJevKey(docsStalenessHandler), gitIntegrate, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, readOpenCodeTelemetry, readBoundedFile, listDocsPages, applyOnboardingPages, writeDocsPages, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan:withJevKey(classifyPlan), inspectCritiqueCoverage,
     councilJudge:withJevKey(councilJudge), browserGoal, runCli, runCommand, runSandboxedCommand, sandboxCommandLine, sandboxRelease, vpnAddress, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
   },

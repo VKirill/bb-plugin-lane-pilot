@@ -1,5 +1,5 @@
 import { networkInterfaces } from "node:os";
-import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, snapshotWorktree } from "./verification/git-integrate";
+import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, syncWorktree, snapshotWorktree } from "./verification/git-integrate";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "./verification/docs-jev";
 import { buildDocsFlows } from "./verification/docs-flows";
 import { runStabilityDrill } from "./verification/stability-drill";
@@ -82,6 +82,11 @@ export const gitWorktreeSnapshot: ExperimentalHostRpcHandlers<typeof hostContrac
 export const gitRemoveWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitRemoveWorktree"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await removeLaneWorktree({basePath:input.basePath,worktreePath:input.worktreePath}),
+});
+
+export const gitSyncWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitSyncWorktree"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await syncWorktree({basePath:input.basePath,worktreePath:input.worktreePath}),
 });
 
 /** Free space for whoever decides before a spawn: a full disk (OVH, 2026-10-03) killed the BB host daemon. */

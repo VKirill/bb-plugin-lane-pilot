@@ -9,7 +9,8 @@ import { emergencyFallbackDecision } from "../../stages/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import { FREE_RETRY_LIMIT } from "../../failure-class";
-import { previousAttemptBrief } from "../writer-task";
+import { previousAttemptBrief, stickyTurnPrompt } from "../writer-task";
+import { createWriterSticky } from "./sticky";
 import { failureClass } from "../../failure-class";
 
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
@@ -33,6 +34,7 @@ export function freshAttemptStart(task:TaskV2, config:PrototypeConfig, runWorksp
 
 export function createWriterStart(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host, markCanceledWriterStages, refreshRun, runPolicyFor } = ctx;
+  const sticky = createWriterSticky(ctx, services);
 
   /** The breaker learns from provider trouble only; the budget learns the thread's token total. */
   async function noteAttemptOutcome(input:{ budget:RunBudget; writerThreadId:string; writerSelection?:{providerId:string;model:string}; status:string; reason:string|null }): Promise<void> {
@@ -80,6 +82,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let executionPacketSha256:string|null = null;
     let last: Record<string, unknown> = {};
     let primaryFailure:Record<string,unknown>|null=null;
+    let acceptedAttemptId:string|null=null;
     const pmReadContext=input.pmReadContext ?? stringAt(listStageReceipts(db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read")?.result,"summary") ?? "";
     let releaseWriterSlot:(()=>void)|undefined;
     /**
@@ -138,6 +141,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // A task that depends on this one waits for it anyway; waiting for it back is a deadlock
           // (live 2026-10-03: price-watermark.5 depends_on how.5, how.5 queued behind price-watermark.5).
           if (parsed.success && dependsOnTask(parsed.data.depends_on, input.taskId)) return false;
+          // One writer at a time per area: the next task of a page continues in its writer's thread once it is free.
+          if (parsed.success && sameArea(parsed.data.area, input.task.area)) return true;
           return parsed.success && ownsPathsOverlap(parsed.data.owns_paths, input.task.owns_paths);
         });
         if (!blocker) return;
@@ -147,7 +152,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
           if (!stage || stage.state === "pending") {
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:`waiting for ${blocker.task_id} (thread ${blocker.thread_id ?? "not started"}): owns_paths overlap` });
+              reason:`waiting for ${blocker.task_id} (thread ${blocker.thread_id ?? "not started"}): ${input.task.area ? "same area or " : ""}owns_paths overlap` });
           }
         }
         await new Promise((wake) => setTimeout(wake, 10_000));
@@ -202,8 +207,46 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // A merge conflict or a fault of Lane Pilot or the machine does not spend an attempt; free retries are capped too.
       const attemptsLeft = () => countChargedAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT
         && countAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
+      let halfBound = false;
+      /** Another attempt follows this failure: the same conditions the loop checks below before it creates one. */
+      const attemptsLeftAfter = (binding:ReturnType<typeof getAttempt>) => Boolean(binding?.thread_id)
+        && RETRY_ELIGIBLE.includes(String(last.status) as AttemptState)
+        && countChargedAttempts(db, input.runId, input.taskId) < MAIN_ATTEMPT_LIMIT
+        && countAttempts(db, input.runId, input.taskId) < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
+      /** Takes over an existing writer thread for this attempt; false leaves the attempt to a fresh spawn. */
+      const continueWith = async (writer:NonNullable<Awaited<ReturnType<typeof sticky.hotWriter>>>, kind:"next-task"|"retry", previousAttempt:string, keepDirt?:DirtSnapshot[]):Promise<boolean> => {
+        const bound = {...freshTask,project_cwd:writer.workspacePath,verification:freshTask.verification.map(command=>({...command,cwd:writer.workspacePath}))};
+        const turn = await sticky.continueInThread({ runId:input.runId, taskId:input.taskId, attemptId, config:freshConfig, writer, kind, dirtBefore:keepDirt,
+          prompt:stickyTurnPrompt({ kind, task:bound, previousAttempt }) });
+        if (!turn.ok) {
+          ctx.log(`writer ${input.taskId}: ${kind} in thread ${writer.threadId} not possible (${turn.reason}); a fresh writer starts`);
+          // A half-bound attempt cannot take a fresh spawn: it ends as Lane Pilot's fault and the retry spawns.
+          if (turn.bound) {
+            transitionAttempt(db, attemptId, "spawn_rejected", { reason:turn.reason });
+            last = { status:"spawn_rejected", reason:turn.reason, attemptId };
+            halfBound = true;
+          }
+          return false;
+        }
+        writerThreadId = writer.threadId;
+        const trace = getReasoningTrace(db, attemptId);
+        writerSelection = trace ? { providerId:trace.providerId, model:trace.model, reasoningLevel:trace.effectiveReasoningLevel,
+          serviceTier:trace.serviceTier, selectionSource:trace.selectionSource } : undefined;
+        activeConfig = freshConfig;
+        activeTask = bound;
+        dirtBefore = turn.dirtBefore;
+        baselineDirtBefore ??= [...turn.dirtBefore];
+        baselineWorkspacePath ??= turn.workspacePath;
+        executionPacketSha256 = null;
+        return true;
+      };
+      // The area's writer from an earlier task of this run takes this one in its own thread.
+      if (!writerThreadId && input.task.area) {
+        const hot = await sticky.hotWriter(input.projectId, input.runId, input.task.area);
+        if (hot) await continueWith(hot, "next-task", "");
+      }
       while (attemptsLeft()) {
-        if (!writerThreadId) {
+        if (!writerThreadId && !halfBound) {
           budget.noteAttempt();
           const budgetCheck=budget.check();
           if (!budgetCheck.ok) {
@@ -245,14 +288,19 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision}};
           await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
         }
-        if (last.status === "accepted") break;
-        // A failed attempt's own worktree is never merged; the next attempt starts from a fresh one.
+        if (last.status === "accepted") { acceptedAttemptId = attemptId; break; }
+        // A failure the writer can fix itself is redone in its own thread and worktree, with the reason.
         const failedBinding=getAttempt(db,attemptId);
-        const failedBase=getRun(db,input.runId)?.writer_workspace_path;
-        if(failedBinding?.workspace_path&&failedBinding.environment_id===null&&failedBase&&resolve(failedBinding.workspace_path)!==resolve(failedBase)) {
-          await host.call("gitRemoveWorktree",{requestedHostId:input.config.hostId,basePath:failedBase,worktreePath:failedBinding.workspace_path},
-            {hostId:input.config.hostId,timeoutMs:60_000}).catch((cause)=>bb.log.warn(`Lane Pilot could not remove worktree of ${attemptId}: ${cause instanceof Error?cause.message:String(cause)}`));
-        }
+        const redo = attemptsLeftAfter(failedBinding) ? await sticky.retryWriter(attemptId, input.runId) : null;
+        // A failed attempt's own worktree is never merged; the next attempt starts from a fresh one.
+        const removeFailedWorktree = async () => {
+          const failedBase=getRun(db,input.runId)?.writer_workspace_path;
+          if(failedBinding?.workspace_path&&failedBinding.environment_id===null&&failedBase&&resolve(failedBinding.workspace_path)!==resolve(failedBase)) {
+            await host.call("gitRemoveWorktree",{requestedHostId:input.config.hostId,basePath:failedBase,worktreePath:failedBinding.workspace_path},
+              {hostId:input.config.hostId,timeoutMs:60_000}).catch((cause)=>bb.log.warn(`Lane Pilot could not remove worktree of ${failedBinding.id}: ${cause instanceof Error?cause.message:String(cause)}`));
+          }
+        };
+        if (!redo) await removeFailedWorktree();
         if (last.status === "spawn_rejected" && typeof last.reason === "string"
           && (last.reason.startsWith("execution_packet_failed:") || last.reason.startsWith("attempt_worktree_")
             || last.reason.startsWith("attempt_workspace_"))) {
@@ -292,6 +340,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           }
           break;
         }
+        halfBound = false;
+        const failedLast = last;
         attemptId = id("lpattempt");
         createAttempt(db, { id:attemptId, runId:input.runId, taskId:input.taskId });
         writerThreadId = undefined;
@@ -300,6 +350,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         activeTask = freshTask;
         dirtBefore = [];
         executionPacketSha256 = null;
+        if (redo && !await continueWith(redo, "retry", previousAttemptBrief({ ...failedLast, produced:[] }), failedBinding?.dirt_before)) {
+          await removeFailedWorktree();
+        }
       }
       if (last.status !== "accepted" && primaryFailure) {
         const settings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
@@ -366,7 +419,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
                 environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision}};
               await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
-              if (last.status === "accepted") break;
+              if (last.status === "accepted") { acceptedAttemptId=emergencyAttemptId; break; }
               failure=last;
             }
         }
@@ -406,6 +459,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             : last : null, reason:accepted ? undefined : reason });
       }
       refreshRun(input.runId);
+      if (accepted && acceptedAttemptId) void sticky.noteAccepted(input.projectId, input.runId, input.task, acceptedAttemptId,
+        Array.isArray(last.produced) ? (last.produced as unknown[]).filter((path):path is string => typeof path === "string") : [])
+        .catch((cause) => ctx.log(`area record of ${input.taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`));
       if (accepted) services.maintainMemoryAfterAcceptance(input.projectId, input.runId, input.taskId, input.pmThreadId);
       if (accepted) services.maintainProjectLifeAfterAcceptance(input.projectId, input.runId, input.taskId, input.pmThreadId);
     })().catch((cause: unknown) => {
@@ -452,6 +508,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   }
 
   return { startWriterTask };
+}
+
+/** Two tasks of the same page or feature, by their contract's `area`. */
+export function sameArea(a:string | undefined, b:string | undefined):boolean {
+  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
 }
 
 /** Whether `dependsOn` names `taskId`, either exactly or by its base id («P1» names a redispatched «P1.2»). */

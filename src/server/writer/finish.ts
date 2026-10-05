@@ -17,6 +17,7 @@ import { join, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 import { isRunHalted } from "../runs-halt";
+import { loadFollowUp } from "./sticky";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
@@ -40,6 +41,18 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
   }): Promise<Record<string,unknown>> {
     try {
+      // A continued thread is idle from its previous task until the new turn starts: wait for the turn sent after `since`.
+      const followUpSince = await loadFollowUp(bb.storage.kv, input.attemptId);
+      if (followUpSince !== null) {
+        try {
+          await waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince);
+        } catch (cause) {
+          if (ctx.state.disposed) throw new Error("Lane Pilot was reloaded while the writer ran");
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          transitionAttempt(db, input.attemptId, "provider_error", { reason });
+          return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+        }
+      }
       // No stopwatch: a writer runs as long as it works, and BB's events say when it has failed.
       let completedThread: unknown;
       for (;;) {
