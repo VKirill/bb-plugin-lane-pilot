@@ -40,6 +40,8 @@ it("asks the folder's chats by name to commit blocking edits, at most once an ho
   expect(sent).toHaveLength(1);
   expect(sent[0]!.text).toContain("host/rpc.ts");
   expect(sent[0]!.text).toContain("Если правки не твои — не трогай их");
+  // A guest that could not commit reverted its own edit in the live check; it must never discard work for a merge.
+  expect(sent[0]!.text).toContain("Никогда не выбрасывай и не откатывай правки");
   expect(await askGuestsToCommit(bb, "/repo/plugin", ["host/rpc.ts"], "wp-publish")).toEqual(["thr_owner"]);
   expect(sent).toHaveLength(1);
 });

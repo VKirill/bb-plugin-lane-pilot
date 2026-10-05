@@ -67,7 +67,7 @@ export async function askGuestsToCommit(bb: BbPluginApi, path: string, files: st
     if (typeof last === "number" && now - last < ASK_EVERY_MS) { asked.push(guest.threadId); continue; }
     await bb.storage.kv.set(ASKED(guest.threadId, path), now as never);
     const sent = await bb.sdk.threads.send({ threadId:guest.threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-      text:`Lane Pilot: в папке ${resolve(path)} лежат незакоммиченные правки в файлах ${files.join(", ")}. Из-за них не вливается готовая задача ${taskId} координатора разработки. Если это твои правки и они готовы — закоммить их сейчас. Если не готовы — закоммить, как будут готовы, или перенеси работу в отдельную рабочую копию. Если правки не твои — не трогай их и ответь, что они не твои. Lane Pilot вольёт задачу сам, как только файлы будут закоммичены.` }] } as never).then(() => true, () => false);
+      text:`Lane Pilot: в папке ${resolve(path)} лежат незакоммиченные правки в файлах ${files.join(", ")}. Из-за них не вливается готовая задача ${taskId} координатора разработки. Если это твои правки и они готовы — закоммить их сейчас. Если не готовы — закоммить, как будут готовы. Никогда не выбрасывай и не откатывай правки ради этого (никаких git checkout/restore/reset/stash drop): если закоммитить не можешь или не должен, оставь их как есть и скажи владельцу. Если правки не твои — не трогай их и ответь, что они не твои. Lane Pilot вольёт задачу сам, как только файлы будут закоммичены, и подождёт до 2 часов.` }] } as never).then(() => true, () => false);
     if (sent) asked.push(guest.threadId);
   }
   return asked;
