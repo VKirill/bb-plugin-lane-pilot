@@ -319,6 +319,16 @@ export async function handleNativeDispatch(
         );
       }
     }
+    // A chat already bound with a launcher needs no host call here: BB gives this hook 10 s, a busy host took up
+    // to 36 s to prepare, and every message into the PM (owner's or a relay reminder) failed with «did not decide».
+    // nativeContributedEnv refreshes the launcher on the same send.
+    if (bound) {
+      const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(`native-env:${ctx.thread.id}`);
+      if (cached?.length) {
+        traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "bound_cached_env" });
+        return { action: "proceed" };
+      }
+    }
     traceNativeDispatch(bb.log, "host.call", { ...base, reason: "prepareNativeClaude", host: workspace.hostId });
     const prepared = await host.call("prepareNativeClaude", {
       cwd: workspace.workspacePath,
@@ -337,6 +347,9 @@ export async function handleNativeDispatch(
     return reject("exception", (error as Error).message);
   }
 }
+
+/** How long contributeEnv waits for a fresh launcher when a cached one exists; BB's own limit is 5 s. */
+export const NATIVE_ENV_REFRESH_BUDGET_MS = 2_500;
 
 export async function nativeContributedEnv(
   bb: BbPluginApi,
@@ -365,17 +378,27 @@ export async function nativeContributedEnv(
           host: envHost,
           phase: "contributeEnv",
         });
-        const prepared = await host.call("prepareNativeClaude", {
-          cwd: path,
-          agentId: selected.agentId,
-          agentsJson: selected.agentsJson,
-        }, { hostId: envHost }) as {
-          env: ExperimentalPluginProviderEnvEntry[];
-          agentId: string;
-        };
-        await bb.storage.kv.set(`native-env:${ctx.threadId}`, prepared.env);
-        await bb.storage.kv.set(`native-agent-type:${ctx.threadId}`, prepared.agentId);
-        return prepared.env;
+        const refresh = (async () => {
+          const prepared = await host.call("prepareNativeClaude", {
+            cwd: path,
+            agentId: selected.agentId,
+            agentsJson: selected.agentsJson,
+          }, { hostId: envHost }) as {
+            env: ExperimentalPluginProviderEnvEntry[];
+            agentId: string;
+          };
+          await bb.storage.kv.set(`native-env:${ctx.threadId}`, prepared.env);
+          await bb.storage.kv.set(`native-agent-type:${ctx.threadId}`, prepared.agentId);
+          return prepared.env;
+        })();
+        if (!cached?.length) return await refresh;
+        // BB drops this plugin's env after 5 s, and the PM would start without its agent: a slow host gets the
+        // cached launcher now, and the refresh still lands in the cache for the next turn.
+        refresh.catch(() => undefined);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), NATIVE_ENV_REFRESH_BUDGET_MS); });
+        const fresh = await Promise.race([refresh, late]).finally(() => clearTimeout(timer));
+        return fresh ?? cached;
       } catch {
         if (cached?.length) return cached;
       }

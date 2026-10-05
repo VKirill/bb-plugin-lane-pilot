@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.150
+
+From a self-repair of «relay sweep failed: HTTP 502: The "lane-pilot" plugin's message.dispatch hook failed: did not decide within 10000ms» (2026-10-05):
+- **A message into a Lane Pilot chat no longer waits for the host.** For every message into a PM chat, the `message.dispatch` hook prepared the Claude launcher on the host again (`claude --version` and `claude --help`). BB gives that hook 10 s. On a busy OVH host this took up to 36 s: 15 of 629 sends went over the limit, and BB refused the message with HTTP 502. Relay reminders to the SelfyStudio PM failed this way 6 times on 2026-10-05, and owner messages were open to the same failure. A chat that is already bound and has a prepared launcher now proceeds at once. The launcher is refreshed in `contributeEnv` on the same send, as before.
+- **A slow refresh no longer takes the PM's agent away.** BB drops a plugin's provider env after 5 s. When the host does not answer within 2.5 s, `contributeEnv` returns the cached launcher, and the refresh still updates the cache for the next turn.
+
 ## 0.1.149
 
 From a harness-engineering guide review (2026-10-05):

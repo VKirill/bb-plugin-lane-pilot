@@ -34,8 +34,10 @@ async function setup(input?: {
   thread?: unknown;
   environmentPath?: string;
   failPrepareWithCwd?: boolean;
+  hangPrepare?: { on: boolean };
 }) {
   const failPrepareWithCwd = input?.failPrepareWithCwd;
+  const hangPrepare = input?.hangPrepare;
   const rpcCalls: Array<{ method: string; input: unknown }> = [];
   const prepareCalls: Array<{ cwd: string | null; agentId: string; agentsJson: string | null }> = [];
   const metadata: Array<{ threadId: string; set: Record<string, unknown> }> = [];
@@ -85,6 +87,7 @@ async function setup(input?: {
         const agentId = String((input as { agentId: string }).agentId);
         const agentsJson = (input as { agentsJson: string | null }).agentsJson ?? null;
         prepareCalls.push({ cwd, agentId, agentsJson });
+        if (hangPrepare?.on) return await new Promise(() => undefined);
         if (failPrepareWithCwd && cwd) throw new Error("late prepare failed");
         return {
           env: [{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/launcher", reason: `Lane Pilot native: ${agentId}` }],
@@ -185,6 +188,29 @@ it("resumes the same agent_type without a second mention", async () => {
     agentType: "dev-orchestrator",
   });
 });
+
+it("a message into a bound chat does not wait for a slow host, and its env comes from the cache", async () => {
+  const hang = { on: false };
+  const fake = await setup({ hangPrepare: hang, environmentPath: "/workspace" });
+  const { token } = await fake.harness.behavior.callRpc("prepare_native_session", {
+    projectId: "project_a",
+    agentId: "dev-orchestrator",
+  }) as { token: string };
+  const hook = fake.harness.registrations.hooks["message.dispatch"]!;
+  expect(await hook(context("thr_busy", nativeSelectionMarker(token)))).toEqual({ action: "proceed" });
+  // The host stops answering, as OVH did for 10–36 s under load (relay reminders failed with «did not decide»).
+  hang.on = true;
+  const calls = fake.prepareCalls.length;
+  const started = Date.now();
+  expect(await hook(context("thr_busy", "Напоминание Lane Pilot"))).toEqual({ action: "proceed" });
+  expect(fake.prepareCalls.length).toBe(calls);
+  expect(await fake.harness.behavior.resolveProviderEnv("claude-code", {
+    threadId: "thr_busy",
+    hostId: "host_a",
+    projectId: "project_a",
+  })).toEqual([expect.objectContaining({ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/launcher" })]);
+  expect(Date.now() - started).toBeLessThan(4_000);
+}, 10_000);
 
 it("rejects a missing profile before contributing env", async () => {
   const fake = await setup();
