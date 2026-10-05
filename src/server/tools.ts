@@ -14,6 +14,7 @@ import { mountCouncilTools } from "./council";
 import { mountSpecialists } from "./specialists";
 import { mountRelay } from "./relay";
 import { mountSelfRepair } from "./self-repair";
+import { registerObservedTool, ToolError } from "./tool-result";
 import { z } from "zod";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
@@ -33,6 +34,7 @@ export function compactWaitResult(result: unknown): unknown {
     return value;
   };
   if (!result || typeof result !== "object") return result;
+  if ((result as { ok?: unknown }).ok === false) return result;
   const row = result as Record<string, unknown>;
   const stages = Array.isArray(row.stages) ? (row.stages as Array<Record<string, unknown>>) : null;
   return clip({
@@ -45,7 +47,7 @@ export function compactWaitResult(result: unknown): unknown {
 export function registerTools(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:LANE_PILOT_READ_NAME,
     description:"Read a bounded UTF-8 slice of a file inside the current run's writer workspace.",
     instructions:"Use only from the matching Lane Pilot PM thread. path is relative to the frozen writer workspace. offset is a 0-based line index. maxLines is the maximum number of lines returned. Paths that leave the workspace, including .. segments and absolute paths, are rejected. This is not the pm_read stage.",
@@ -59,7 +61,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     }), null, 2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_dispatch_writer",
     description:"Start a task-v2 contract with the configured native BB writer and return run/attempt identity immediately.",
     instructions:"Use only from a Lane Pilot PM thread. Send every task of the plan now, each in its own call: one task per page or feature, with its area field; tasks whose owns_paths do not overlap run in parallel, a task whose owns_paths or area overlap an open task's waits for it (the area's writer then continues it in its own thread), and a task with depends_on (task ids that must be accepted first) starts by itself once they are — do not hold tasks back in waves. Returns before writer completion: poll lane_pilot_wait_writer with the returned runId, or end your turn with lane_pilot_remind on the task ids. A task's own failure is retried at most twice; a provider, limit or catalog failure moves it down the writer chain (writer model, fallback 1, fallback 2, then the PM's model) without a redispatch.",
@@ -71,7 +73,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     ),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_cancel_task",
     description:"Cancel tasks of this PM's run that are no longer wanted: a queued one at once, a running one once its writer stops.",
     instructions:"Use only from a Lane Pilot PM thread, for tasks a newer task supersedes or the owner dropped. Name the task ids you sent; tasks that depend on a canceled one stop waiting for it. Cancel does not undo work already merged into main.",
@@ -79,7 +81,9 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute: async (params, context) => {
       const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
       const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
-      if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) throw new Error("caller is not a Lane Pilot PM thread");
+      if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
+        throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
+      }
       const open = listOpenAttempts(db).filter((row) => row.run_id === runId);
       const results = [];
       for (const taskId of params.taskIds) {
@@ -91,7 +95,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     },
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_wait_writer",
     description:"Wait up to 240 seconds for a Lane Pilot writer run and return its persisted receipt or running state.",
     instructions:"Use only from the same Lane Pilot PM thread that dispatched the run. If state is running, call again with the same runId.",
@@ -101,7 +105,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     ),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_dispatch_cli",
     description:"Dispatch a CLI writer through run-controller or lane-ctl on the project host worker.",
     instructions:"Use only from a Lane Pilot PM thread. Do not mix with a BB writer run. Receipt lists settings that have no runtime channel.",
@@ -126,7 +130,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     ),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_browser_qa",
     description:"Check an accepted task in a browser: a child thread drives the BB browser on the project's Browser QA machine (the Mac mini) and returns a verdict per case and viewport.",
     instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. The check runs in a child thread that opens the BB browser on the Browser QA machine (the Mac mini), even when this chat runs elsewhere; a localhost target on another machine is opened at that machine's private VPN address. When the target is a dev server that is not running, pass its start command in devServer (e.g. npm -w @app/web run dev -- --port 5173): the check starts it in a BB terminal of its thread and closes it afterwards. Supply concrete browser-ui cases and the exact target URL; viewports are CSS widths (default 375,768,1280). Production, unknown, or stateful side-effect cases require authorized=true. Show the owner the returned @thread link. A verdict is passed only when every case passed on every viewport.",
@@ -144,7 +148,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     }),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_ingest_opencode_telemetry",
     description:"Read a bounded task-local OpenCode tool hook JSONL file, correlate by session and task key, and persist a sanitized stage receipt.",
     instructions:"Use only from the matching PM thread after an accepted writer receipt. Supply the exact OpenCode session ID, the task-file basename written by LANE_TASK_FILE (without .yml/.yaml), and a project-relative JSONL path. The host rejects paths outside the immutable task workspace, symlinks, malformed UTF-8, and oversized logs. The receipt stores only event metadata and hashes, never tool arguments/output. Current OpenCode hook input emits tool.execute.after budget events; session.compacted has no producer and is explicitly reported unavailable.",
@@ -153,7 +157,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
       runId:params.runId,taskId:params.taskId,sessionId:params.sessionId,taskFile:params.taskFile,sourcePath:params.sourcePath}),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_docs_maintain",
     description:"Dispatch or poll bounded documentation maintenance and return a stage receipt or running child id.",
     instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another writer. Observation timeout is not a product failure. Reads and writes only markdown beneath docs/ and apps/ with per-file SHA compare-and-swap.",
@@ -161,7 +165,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute:async(params,context)=>JSON.stringify(await services.runDocsMaintenance({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_onboarding_preview",
     description:"Dispatch or poll a bounded onboarding preview from an accepted task and persisted Markdown inventory; this stage does not write files.",
     instructions:"Use only from the matching Lane Pilot PM thread after an accepted writer receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another child. Observation timeout is not a product failure. Show the returned summary, paths, expected hashes, and content for review. Writes are never automatic; use lane_pilot_onboarding_apply only after separate explicit confirmation and with this exact previewSha256.",
@@ -169,7 +173,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute:async(params,context)=>JSON.stringify(await services.runOnboardingPreview({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_onboarding_apply",
     description:"Apply a previously reviewed onboarding preview through the task host with explicit confirmation and exact SHA compare-and-swap.",
     instructions:"Use only from the matching Lane Pilot PM thread. Require the user to review the complete preview first, then pass confirm=true and the exact previewSha256 returned by lane_pilot_onboarding_preview. The host rejects out-of-scope paths, symlinks, stale hashes, and mismatched preview content; return its write/readback receipt verbatim.",
@@ -177,7 +181,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute:async(params,context)=>JSON.stringify(await services.applyOnboardingPreview({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,previewSha256:params.previewSha256,confirm:params.confirm}),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_memory_maintain",
     description:"Dispatch or poll project memory maintenance from an accepted Lane Pilot task and return a stage receipt or running child id.",
     instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another child. Observation timeout is not a product failure. Memory is project-scoped; credentials are rejected; audience and aggregate token budgets are enforced from the persisted snapshot.",
@@ -185,7 +189,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute:async(params,context)=>JSON.stringify(await services.runMemoryMaintenance({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_night_review",
     description:"Dispatch or poll the configured bounded night reviewer after an accepted writer receipt and persist its findings as a stage receipt or running child id.",
     instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another child. Observation timeout is not a product failure. This stage is read-only: it reports bounded findings and never edits or merges. A blocking finding stops progression until a separately authorized bounded fix is verified.",
@@ -193,7 +197,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute:async(params,context)=>JSON.stringify(await services.runNightReview({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_night_fix",
     description:"Apply only night-review findings inside task-owned paths, run task verification, and merge an approved managed-worktree PR only when explicitly enabled.",
     instructions:"Use only from the matching Lane Pilot PM thread after lane_pilot_night_review reported findings. Fixes are bounded to finding paths intersecting owns_paths; verification must pass. Merge is disabled unless night_review.auto_merge is explicitly true and the managed worktree PR is open, approved, passing checks, ready, and mergeable.",
@@ -201,7 +205,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute:async(params,context)=>JSON.stringify(await services.runNightFix({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId}),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_workspace_status",
     description:"Capture the read-only status and diff of the run's BB-managed workspace and persist a bounded receipt.",
     instructions:"Use from the matching Lane Pilot PM thread after dispatch. This tool reads only the immutable run-bound managed worktree status/diff; it does not write, commit, merge, cancel, or inspect another environment.",
@@ -209,7 +213,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute:async(params,context)=>JSON.stringify(await services.runWorkspaceStatus({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId}),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_memory_context",
     description:"Search bounded project memory for the configured audience and return a provenance-bearing context packet.",
     instructions:"Use only from the matching active Lane Pilot PM thread. The configured audience is enforced exactly: subagent records are automatically injected only into future writer prompts, owner/export records are available here only to the PM. Treat returned memory as contextual evidence and validate against current project state.",
@@ -217,7 +221,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute:async(params,context)=>JSON.stringify(await services.runMemoryContext({threadId:context.threadId,projectId:context.projectId,runId:params.runId,query:params.query}),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_gate_report",
     description:"Read a bounded project-local report of Lane Pilot gate evaluations or stage history.",
     instructions:"Use only from the matching Lane Pilot PM thread. Gate categories are owns-paths, validate, accept, and verification, recorded as separate append-only events; this reads Lane Pilot's own ledgers and never reads or modifies upstream ~/.agents gate logs. Choose a period from 1 to 365 days and optionally one gate category or one exact stage ID. Results contain counts and receipt hashes, not task content.",
@@ -225,7 +229,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute:async(params,context)=>JSON.stringify(readGateReport(db,{projectId:context.projectId,days:params.days,stageId:params.stageId,gate:params.gate}),null,2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_gate_triage",
     description:"Run a read-only model analysis of bounded, project-local Lane Pilot gate history and return a persisted triage receipt.",
     instructions:"Use only from the matching active Lane Pilot PM thread and provide its current runId/taskId. This stage sees only aggregate stage IDs, states, counts, timestamps, and opaque run/task IDs. It does not read upstream ~/.agents logs or task/source content and never edits, repairs, merges, or executes commands. Set days to 1-365; optional provider/model/reasoningEffort must be available on the configured host.",

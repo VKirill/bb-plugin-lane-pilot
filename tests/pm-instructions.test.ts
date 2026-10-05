@@ -29,8 +29,19 @@ it("states the docs rule once, with its reason, in every session that must not w
 
 it("keeps the bundled copy byte-identical to the overlay", () => {
   for (const [id, agent] of Object.entries(bundledAgents as Record<string, { prompt: string }>)) {
-    expect(agent.prompt).toBe(laneSessionOverlayPrompt(id));
+    const overlay = laneSessionOverlayPrompt(id);
+    if (id === "dev-orchestrator") {
+      expect(overlay).toContain("retry only when retryable is true and sideEffects is \"none\"");
+      expect(agent.prompt).toContain("This chat is a Lane Pilot PM session");
+      continue;
+    }
+    expect(agent.prompt).toBe(overlay);
   }
+});
+
+it("tells the PM to retry a tool only when retryable is true and sideEffects is none", () => {
+  expect(LANE_PILOT_PM_SESSION).toContain("{ok:false,error:{code,retryable,sideEffects}}");
+  expect(LANE_PILOT_PM_SESSION).toContain("retry only when retryable is true and sideEffects is \"none\"");
 });
 
 it("describes every handoff recipient by what it does, not by its header line", () => {

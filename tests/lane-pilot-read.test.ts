@@ -106,12 +106,16 @@ describe("lane_pilot_read", () => {
           maxLines: 2,
         }),
       })]);
-      await expect(harness.behavior.callAgentTool(LANE_PILOT_READ_NAME, {
+      const escapedRel = JSON.parse(String(await harness.behavior.callAgentTool(LANE_PILOT_READ_NAME, {
         path: "../secret", offset: 0, maxLines: 10,
-      }, { threadId: "thr_pm", projectId })).rejects.toThrow(/escaped/);
-      await expect(harness.behavior.callAgentTool(LANE_PILOT_READ_NAME, {
+      }, { threadId: "thr_pm", projectId })));
+      expect(escapedRel).toMatchObject({ ok: false, error: { code: "lane_pilot_read_path_escaped_workspace", retryable: false, sideEffects: "none" } });
+      expect(escapedRel.error.message).toMatch(/escaped/);
+      const escapedAbs = JSON.parse(String(await harness.behavior.callAgentTool(LANE_PILOT_READ_NAME, {
         path: "/etc/passwd", offset: 0, maxLines: 10,
-      }, { threadId: "thr_pm", projectId })).rejects.toThrow(/escaped/);
+      }, { threadId: "thr_pm", projectId })));
+      expect(escapedAbs).toMatchObject({ ok: false, error: { code: "lane_pilot_read_path_escaped_workspace", retryable: false, sideEffects: "none" } });
+      expect(escapedAbs.error.message).toMatch(/escaped/);
     } finally {
       await harness.lifecycle.dispose();
     }
@@ -153,9 +157,11 @@ describe("lane_pilot_read", () => {
     if (bindPm) setRunThread(db, "lprun_ident", "thr_pm");
     await plugin(bb);
     try {
-      await expect(harness.behavior.callAgentTool(LANE_PILOT_READ_NAME, {
+      const refused = JSON.parse(String(await harness.behavior.callAgentTool(LANE_PILOT_READ_NAME, {
         path: "src/note.txt", offset: 0, maxLines: 10,
-      }, { threadId, projectId: callProjectId })).rejects.toThrow(/does not belong to this PM thread and project/);
+      }, { threadId, projectId: callProjectId })));
+      expect(refused).toMatchObject({ ok: false, error: { code: "not_found", retryable: false, sideEffects: "none" } });
+      expect(refused.error.message).toMatch(/does not belong to this PM thread and project/);
       expect(hostCalls).toHaveLength(0);
     } finally {
       await harness.lifecycle.dispose();
@@ -190,9 +196,11 @@ describe("lane_pilot_read", () => {
     setRunThread(db, "lprun_nohost", "thr_pm");
     await plugin(bb);
     try {
-      await expect(harness.behavior.callAgentTool(LANE_PILOT_READ_NAME, {
+      const refused = JSON.parse(String(await harness.behavior.callAgentTool(LANE_PILOT_READ_NAME, {
         path: "src/note.txt", offset: 0, maxLines: 10,
-      }, { threadId: "thr_pm", projectId })).rejects.toThrow(/frozen writer host or workspace binding/);
+      }, { threadId: "thr_pm", projectId })));
+      expect(refused).toMatchObject({ ok: false, error: { retryable: false, sideEffects: "none" } });
+      expect(refused.error.message).toMatch(/frozen writer host or workspace binding/);
     } finally {
       await harness.lifecycle.dispose();
     }

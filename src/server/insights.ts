@@ -8,6 +8,7 @@ import {
 } from "@lane-pilot/run-insights";
 import { loadProjectSettings, type LanePilotDatabase } from "../database";
 import { configuredSetting, requirePmRun, type ServerContext } from "./context";
+import { registerObservedTool } from "./tool-result";
 
 export const INSIGHTS_TOOLS = ["lane_pilot_routing_stats", "lane_pilot_lessons_sweep", "lane_pilot_rule_propose", "lane_pilot_lesson", "lane_pilot_memory_golden"] as const;
 
@@ -202,7 +203,7 @@ function activeProjects(db: LanePilotDatabase, since: number): string[] {
 export function mountInsights(ctx: ServerContext): void {
   const { bb, db } = ctx;
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_routing_stats",
     description: "Which provider and model got tasks accepted at the first try in this project, per task risk, with a recommendation.",
     instructions: "Use from the active Lane Pilot PM thread when the owner asks which writer model is accepted most often, or before telling the owner that a risky task type needs another writer in Lane Pilot settings (you cannot pick the model per task). Statistics need at least five tasks per pair to recommend.",
@@ -220,7 +221,7 @@ export function mountInsights(ctx: ServerContext): void {
     },
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_lessons_sweep",
     description: "Count recent night review findings, rejected acceptances and failed attempts, and list the ones that keep repeating as rule proposals.",
     instructions: "Use from the active Lane Pilot PM thread. Failures are not stored as memory; what repeats becomes a rule. ruleProposals lists lessons that keep repeating; reword each as one imperative rule with lane_pilot_rule_propose and tell the owner it waits in Lane Pilot settings.",
@@ -231,7 +232,7 @@ export function mountInsights(ctx: ServerContext): void {
     },
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_rule_propose",
     description: "Reword a repeated lesson as a short rule for future writers. The project owner accepts or rejects it in Lane Pilot settings.",
     instructions: "Use from the active Lane Pilot PM thread with a proposal id from lane_pilot_lessons_sweep. Write one imperative rule that prevents the failure, not a description of it. Only proposals still waiting for the owner can be reworded; accepting is the owner's decision.",
@@ -243,7 +244,7 @@ export function mountInsights(ctx: ServerContext): void {
     },
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_lesson",
     description: "Record a lesson as a project rule on the hub: the owner corrected you, or an approach got burned.",
     instructions: "Use instead of writing .agents/LESSONS.md, which is not kept any more. Write one imperative rule that prevents the mistake, in English, with evidence (run, task, test, date). `audience`: `pm` for your own work (planning, task contracts, reviewing reports, merging, deploying) — writers never see it; `writer` for how code is edited and checked inside one task; `both` when each must follow it. `always: true` only when the rule holds for every writer task whatever it changes (how to run or read any command); otherwise System One gives it to the tasks it fits. A rule close to a live one counts as its repeat; a new one goes on trial at once: writer rules and PM rules each hold up to 12, and when full the new rule takes the slot of the weakest rule on trial (trial, confirmation and retirement run nightly) — so write only rules that matter. Only after a real correction or landmine — not per session.",
@@ -257,7 +258,7 @@ export function mountInsights(ctx: ServerContext): void {
     },
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_memory_golden",
     description: "Score project memory retrieval against a golden set of queries and the record ids each must return.",
     instructions: "Use from the active Lane Pilot PM thread after memory changes. `cases` is a JSON array of {query, mustHit} or the `- query -> id1, id2` lines of GOLDEN.yaml.",

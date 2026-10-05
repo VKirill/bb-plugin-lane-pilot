@@ -1,5 +1,7 @@
 import type { PrototypeConfig } from "../contracts";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { RunBudgetExceeded, type RunBudget } from "@lane-pilot/resilience";
+
 export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = false, native = false): string {
   if (native) {
     return [
@@ -26,8 +28,32 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
  */
 
 export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]) {
+  enforceRunChildBudget(bb, args);
   return bb.sdk.threads.spawn({ ...quietHelper(args), permissionMode:"full",
     executionInputSources:{ ...args.executionInputSources, permissionMode:"explicit" } });
+}
+
+type ChildBudgetLookup = (runId: string) => RunBudget | null;
+
+const childBudgetByApi = new WeakMap<BbPluginApi, ChildBudgetLookup>();
+
+/** Plugin start binds this so every run-bound helper spawn shares the run's budget. */
+export function bindRunChildBudget(bb: BbPluginApi, budgetFor: ChildBudgetLookup): void {
+  childBudgetByApi.set(bb, budgetFor);
+}
+
+function enforceRunChildBudget(bb: BbPluginApi, args: Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]): void {
+  const meta = args.pluginMetadata;
+  if (!meta || typeof meta !== "object") return;
+  const runId = meta.lanePilotRunId;
+  const role = meta.role;
+  if (typeof runId !== "string" || !runId || role === "pm") return;
+  const budget = childBudgetByApi.get(bb)?.(runId);
+  if (!budget) return;
+  const check = budget.check();
+  if (!check.ok) throw new RunBudgetExceeded(check);
+  const reserved = budget.reserveChild();
+  if (!reserved.ok) throw new RunBudgetExceeded(reserved);
 }
 
 /** Children the PM itself waits for or talks to; every other helper is watched by Lane Pilot. */

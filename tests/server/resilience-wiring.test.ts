@@ -25,7 +25,9 @@ describe("resilience wiring", () => {
 
     const health = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_run_health", { runId }, { threadId: pmThreadId, projectId })));
     expect(health).toEqual({ runId, budget: null, providers: [] });
-    await expect(harness.behavior.callAgentTool("lane_pilot_run_health", { runId }, { threadId: "other", projectId })).rejects.toThrow(/does not belong/);
+    const refused = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_run_health", { runId }, { threadId: "other", projectId })));
+    expect(refused).toMatchObject({ ok: false, error: { code: "not_found", retryable: false, sideEffects: "none" } });
+    expect(refused.error.message).toMatch(/does not belong/);
 
     const cli = JSON.parse(String((await harness.behavior.runCli(["health"])).stdout));
     expect(cli).toEqual({ providers: [], runs: [] });

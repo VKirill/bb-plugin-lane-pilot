@@ -88,6 +88,7 @@ export function createStability(ctx:ServerCore, services:Services) {
    * returns whether it did.
    */
   async function onTaskFailed(input:{ projectId:string; runId:string; taskId:string; pmThreadId:string; state:string; reason:string }, now = Date.now()):Promise<boolean> {
+    if (input.reason.startsWith("run_budget_exceeded:")) return false;
     const klass = failureClass(input.state, input.reason);
     if (!PARKED_CLASSES.has(klass) || await isRunHalted(bb.storage.kv as never, input.runId)) return false;
     const fingerprint = failureFingerprint(input.reason);

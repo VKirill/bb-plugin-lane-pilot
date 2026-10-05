@@ -33,6 +33,7 @@ import { fullAccessSpawn } from "./pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { outputText } from "./writer-task";
 import { stringAt } from "./values";
+import { fenceOutside, registerObservedTool } from "./tool-result";
 
 export const COUNCIL_TOOLS = ["lane_pilot_council_start", "lane_pilot_council_status", "lane_pilot_council_stop"] as const;
 
@@ -352,7 +353,15 @@ export type CouncilApi = ReturnType<typeof createCouncil>;
 
 export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
   const { bb, db } = ctx;
-  bb.agents.registerTool({
+  function fenceView(view: ReturnType<CouncilApi["councilView"]>) {
+    return {
+      ...view,
+      messages: view.messages.map((message) => (
+        message.kind === "owner" ? message : { ...message, text: fenceOutside(`council:${message.seatId}`, message.text) }
+      )),
+    };
+  }
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_council_start",
     description: "Convene a council of directors on a product or business question: role-bound seats on different models argue it through evidence and rounds; the chair writes a decision page under docs/decisions and hands next tasks over.",
     instructions: "Use from the active Lane Pilot PM thread when the owner asks for a council, or a product question the owner delegated to you is open (how to raise repeat purchases, which features the collected requests ask for). Put exports and notes into the workspace and name them in `materials`. Default mode is `room`: seats speak when they have something to add and the owner may join at any time with lane_pilot_council_say; `rounds` is a fixed-round debate. `judge` (default on) asks Jev whether a seat wants the floor and whether the room is done; off means the built-in rule. A session takes tens of minutes: do not poll it, set lane_pilot_remind with inMinutes 20 and read lane_pilot_council_status when woken; then dispatch the tasks its decision names or report the decision to the owner.",
@@ -368,10 +377,10 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
       const session = await council.startCouncil({ projectId: context.projectId, runId: params.runId, pmThreadId: context.threadId, question: params.question, roles: params.roles, materials: params.materials, maxRounds: params.maxRounds, mode: params.mode, judge: params.judge });
-      return JSON.stringify(council.councilView(session), null, 2);
+      return JSON.stringify(fenceView(council.councilView(session)), null, 2);
     },
   });
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_council_status",
     description: "The state of a council session and its feed: agenda, every seat's statements, the moderator's verdicts and the decision.",
     instructions: "Use from the active Lane Pilot PM thread. Pass afterSeq to read only new messages.",
@@ -381,10 +390,10 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
       if (!params.councilId) return JSON.stringify({ councils: council.listCouncils(context.projectId, params.runId).map((session) => ({ id: session.id, question: session.question, state: session.state, round: session.round, updatedAt: session.updatedAt })) }, null, 2);
       const session = getCouncilSession(db, params.councilId);
       if (!session || session.projectId !== context.projectId) throw new Error("council does not belong to this project");
-      return JSON.stringify(council.councilView(session, params.afterSeq), null, 2);
+      return JSON.stringify(fenceView(council.councilView(session, params.afterSeq)), null, 2);
     },
   });
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_council_say",
     description: "Say something to a running council as the owner, or ask it to decide now.",
     instructions: "Use from the active Lane Pilot PM thread. Name a seat (for example «Скептик, …») to make it answer next. `decide: true` asks the chair to write the decision after the current turn.",
@@ -398,7 +407,7 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
       return JSON.stringify({ id: session.id, state: session.state, said: said ? { seq: said.seq } : null, decideRequested: Boolean(decided) }, null, 2);
     },
   });
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_council_stop",
     description: "Stop a running council session after its current turn.",
     instructions: "Use from the active Lane Pilot PM thread.",

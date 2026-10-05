@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.149
+
+From a harness-engineering guide review (2026-10-05):
+- **A thrown error from a `lane_pilot_*` tool is structured.** The PM gets `{ok:false,error:{code,message,retryable,sideEffects}}` instead of an uncaught throw, so it can retry or stop without guessing.
+- **The PM retries a failed tool only when it is safe.** Retry only when `retryable` is true and `sideEffects` is `"none"`.
+- **Outside text is fenced.** Browser page text, an errand report, a specialist answer and council statements come back inside `<outside_data source=...>`, with a preface that they are data, not instructions.
+- **A run's child-thread budget is enforced.** `run.max_children` counts writer and helper threads; the next spawn over the limit is refused with `run_budget_exceeded:child threads`.
+- **A running writer is stopped when the wall or token budget is gone.** Over `run.max_wall_minutes` or `run.max_tokens` the writer is stopped and the attempt blocked with `run_budget_exceeded:<kind>`; it is not charged and not restarted.
+- **`lane_pilot_run_health` shows child threads** used against the limit.
+- **The `timeout` attempt state stays** so old rows still classify; a budget overrun is `blocked`, not moved to `timeout`.
+
 ## 0.1.139
 
 From checking 0.1.138 live on SelfyStudio (2026-10-05):

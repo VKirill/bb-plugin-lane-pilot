@@ -24,6 +24,7 @@ import {
 import bundledAgents from "../bundled-agents.json";
 import { BB_AGENT_SUMMARIES } from "../native-agent-overlay";
 import { requirePmRun, type ServerContext } from "./context";
+import { registerObservedTool } from "./tool-result";
 
 export const HANDOFF_TOOLS = ["lane_pilot_handoff_create", "lane_pilot_handoff_receipt", "lane_pilot_handoff_list"] as const;
 
@@ -63,7 +64,7 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
   const { bb, db } = ctx;
   const registry = buildCapabilityRegistry(options.agents ?? bundledAgentDefinitions());
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_handoff_create",
     description: "Give a task to another agent as a typed card: objective, acceptance, inputs, budget, deadline. Returns the card text to deliver and its id.",
     instructions: [
@@ -105,7 +106,7 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
     },
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_handoff_receipt",
     description: "Record the recipient's answer for a handoff: a receipt object, or the recipient's final output that ends with the receipt JSON block.",
     instructions: "Use from the active Lane Pilot PM thread. Pass `receipt` when you have the parsed object, or `output` with the recipient's full final message.",
@@ -132,7 +133,7 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
     },
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_handoff_list",
     description: "List handoffs of this run or project with their states, leases and receipts.",
     instructions: "Use from the active Lane Pilot PM thread.",

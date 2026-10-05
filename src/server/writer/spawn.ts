@@ -1,4 +1,4 @@
-import { breakerKey } from "@lane-pilot/resilience";
+import { breakerKey, RunBudgetExceeded } from "@lane-pilot/resilience";
 import { writerMemory } from "../../writer-brief";
 import { parseDirtSnapshots } from "../../cli-outcome";
 import type { DirtSnapshot } from "../../cli-outcome";
@@ -79,7 +79,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     previousAttempt?:string;
   }): Promise<
     | { ok:true; threadId:string; providerId:string|null; model:string|null; reasoningLevel?:string; serviceTier?:"default"|"fast"|null; selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}; dirtBefore:import("../../cli-outcome").DirtSnapshot[]; workspacePath:string; executionPacketSha256?:string }
-    | { ok:false; status:"spawn_rejected" | "canceled"; reason:string; attemptId:string }
+    | { ok:false; status:"spawn_rejected" | "canceled" | "blocked"; reason:string; attemptId:string }
   > {
     let selectedProviderId:string|null=null;
     let selectedModel:string|null=null;
@@ -405,6 +405,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         reasoningLevel:lastExecution?.reasoningLevel, serviceTier:lastExecution?.serviceTier, selectionSource:lastExecution?.selectionSource,
         dirtBefore, workspacePath, executionPacketSha256 };
     } catch (cause) {
+      if (cause instanceof RunBudgetExceeded) {
+        const reason = cause.message;
+        transitionAttempt(db, input.attemptId, "blocked", { reason });
+        return { ok:false, status:"blocked", reason, attemptId:input.attemptId };
+      }
       if (cause instanceof WriterSelectionError) {
         const reason = cause.message;
         transitionAttempt(db, input.attemptId, "spawn_rejected", { reason });

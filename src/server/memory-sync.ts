@@ -14,6 +14,7 @@ import {
 } from "@lane-pilot/memory-core";
 import { getRun, type LanePilotDatabase } from "../database";
 import { requirePmRun } from "./context";
+import { registerObservedTool } from "./tool-result";
 import type { ServerCore } from "./core";
 import { memorySettingsFor } from "./insights";
 
@@ -121,7 +122,7 @@ export async function exportFileMemory(ctx: ServerCore, input: { projectId: stri
 
 export function mountMemorySync(ctx: ServerCore): void {
   const { bb, db } = ctx;
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_memory_import",
     description: "Import the project's file memory (.agents/memory/*.md written by claude-lane) into Lane Pilot's project memory on the hub.",
     instructions: "Use from the active Lane Pilot PM thread, once per project or after the CLI side wrote new records. Sensitivity maps to audience: public → export, internal → subagent, sensitive → owner. Duplicates are not stored twice.",
@@ -131,7 +132,7 @@ export function mountMemorySync(ctx: ServerCore): void {
       return JSON.stringify(await importFileMemory(ctx, { projectId: context.projectId, runId: params.runId }), null, 2);
     },
   });
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_memory_export",
     description: "Mirror Lane Pilot's project memory (the source of truth) into .agents/memory files so terminal claude-lane sessions read the same memory.",
     instructions: "Use from the active Lane Pilot PM thread after maintenance or rule decisions. New records are written, lp-* files whose record is gone are removed; hand-written files are never touched. The CLI's lane-memory rebuilds its index on the next run.",

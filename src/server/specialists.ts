@@ -9,6 +9,7 @@ import { storeNativeSelection } from "./native-profile";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { stringAt } from "./values";
 import { outputText } from "./writer-task";
+import { fenceOutside, registerObservedTool } from "./tool-result";
 import type { ServerCore } from "./core";
 
 /** The specialists a PM may hand work to; Explore and Plan stay Claude Code subagents inside the PM session. */
@@ -68,15 +69,15 @@ export function mountSpecialists(ctx: ServerCore): void {
       const observed = await observeStageChild(bb, input.threadId, Math.min(WAIT_STEP_MS, Math.max(1, deadline - Date.now())));
       if (observed.kind === "completed") {
         const raw = (await bb.sdk.threads.output({ threadId: input.threadId })).output;
-        return { threadId: input.threadId, state: "done" as const, output: typeof raw === "string" ? raw : outputText(raw) };
+        return { threadId: input.threadId, state: "done" as const, output: fenceOutside("specialist", typeof raw === "string" ? raw : outputText(raw)) };
       }
-      if (observed.kind === "product_failure") return { threadId: input.threadId, state: "failed" as const, output: `${observed.via}: ${observed.detail}` };
+      if (observed.kind === "product_failure") return { threadId: input.threadId, state: "failed" as const, output: fenceOutside("specialist", `${observed.via}: ${observed.detail}`) };
       detail = observed.detail;
     }
-    return { threadId: input.threadId, state: "running" as const, output: detail };
+    return { threadId: input.threadId, state: "running" as const, output: fenceOutside("specialist", detail) };
   }
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_specialist",
     description: "Hand work to a specialist (design-lead, copy-lead, seo-specialist, tavily) as a child thread of this PM chat that the owner can open.",
     instructions: "Use from a Lane Pilot PM chat instead of the Agent tool for these four roles. Give the whole task: goal, context, files to read, the deliverable and where to write it. Returns at once with the thread; then call lane_pilot_wait_specialist with that threadId, again while it reports running. Show the owner the returned @thread link. Specialists never change product code; implementation still goes through lane_pilot_dispatch_writer.",
@@ -91,7 +92,7 @@ export function mountSpecialists(ctx: ServerCore): void {
     },
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name: "lane_pilot_wait_specialist",
     description: "Wait for a specialist thread started with lane_pilot_specialist and return its answer.",
     instructions: "Call with the threadId from lane_pilot_specialist (timeoutSec at most 240). While state is running, call it again.",

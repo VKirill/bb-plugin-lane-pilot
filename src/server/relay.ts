@@ -2,6 +2,7 @@ import { latestTaskAttemptState } from "../database";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { ServerContext } from "./context";
+import { registerObservedTool } from "./tool-result";
 
 /**
  * Lane Pilot's relay: agents ask other threads, answer back and set themselves reminders, and the plugin server
@@ -292,7 +293,7 @@ export function mountRelay(ctx:ServerContext):Relay {
 
   const refreshAfter = <T>(result:T) => { void refreshWatched(); return result; };
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_ask",
     description:"Ask another BB thread a question (who holds a block, when it frees, how something works). The answer comes back into this chat as a message.",
     instructions:[
@@ -308,7 +309,7 @@ export function mountRelay(ctx:ServerContext):Relay {
     })), null, 2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_reply",
     description:"Answer a question another thread asked you through Lane Pilot (askId from the question).",
     instructions:"Use only for a question that reached this thread with an askId. Answer briefly and concretely, then continue your own work.",
@@ -316,7 +317,7 @@ export function mountRelay(ctx:ServerContext):Relay {
     execute:async (params, context) => JSON.stringify(refreshAfter(await relay.reply({ askId:params.askId, fromThreadId:context.threadId, answer:params.answer })), null, 2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_remind",
     description:"Set yourself a reminder: Lane Pilot writes into this chat after the given minutes, or earlier when a watched thread finishes its turn.",
     instructions:[
@@ -337,7 +338,7 @@ export function mountRelay(ctx:ServerContext):Relay {
     })), null, 2),
   });
 
-  bb.agents.registerTool({
+  registerObservedTool(bb.agents, {
     name:"lane_pilot_relay_list",
     description:"List this chat's reminders and the questions it asked or was asked, with their states.",
     instructions:"Use to see what you are waiting for. Cancel a reminder you no longer need with cancelReminderId.",

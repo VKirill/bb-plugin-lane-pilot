@@ -1,4 +1,4 @@
-import { breakerKey, classifyFailure, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
+import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { countAttempts, countChargedAttempts, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
@@ -93,13 +93,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
      * up to six hours instead of failing at once and making the PM resend the whole chain (SelfyStudio 2026-10-04).
      * A canceled dependency, or a name no one dispatched, ends the wait at once.
      */
-    const waitForDependencies = async (): Promise<string | null> => {
+    const waitForDependencies = async (shouldStop?:()=>string|null): Promise<string | null> => {
       const deps = [...new Set((input.task.depends_on ?? []).filter((dep) => dep && dep !== input.taskId))];
       let noted = "";
       const since = Date.now();
       const blockedSince = new Map<string, number>();
       for (;;) {
         if (ctx.isDisposed()) return null;
+        const stop = shouldStop?.();
+        if (stop) return stop;
         const pending: string[] = [];
         for (const dep of deps) {
           const state = latestTaskAttemptState(db, input.projectId, dep);
@@ -129,11 +131,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         await new Promise((wake) => setTimeout(wake, 10_000));
       }
     };
-    const waitForOverlappingTasks = async (anyInFolder=false) => {
+    const waitForOverlappingTasks = async (anyInFolder=false, shouldStop?:()=>string|null) => {
       const base = getRun(db,input.runId)?.writer_workspace_path;
       let noted = "";
       for (;;) {
         if (ctx.isDisposed()) return;
+        const stop = shouldStop?.();
+        if (stop) return stop;
         const open = listOpenAttempts(db);
         const mine = open.findIndex((row) => row.id === attemptId);
         if (mine < 0) return;
@@ -182,23 +186,32 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const nestedLayout=runRow?.kind==="cli"&&runRow.writer_workspace_path?await workspaceGitLayout(runRow.writer_workspace_path):null;
       const shareFolder=inPlace||(nestedLayout?.ok===true&&nestedLayout.nested);
       const budget=services.runBudgetFor(input.runId,runSettings);
+      const wallOrTokenStop = () => runningWriterBudgetStop(budget.check());
+      const blockBeforeWriter = (reason:string) => {
+        transitionAttempt(db, attemptId, "blocked", { reason });
+        last = { status:"blocked", reason, attemptId };
+        closeWriterStages(db, { runId:input.runId, taskId:input.taskId, plan:input.plan, terminal:"failed",
+          attempt:countAttempts(db, input.runId, input.taskId), reason });
+        refreshRun(input.runId);
+      };
       // Tasks run side by side only when they cannot touch the same files: one whose owns_paths overlap an
       // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
       // A subfolder in-place fallback shares the whole folder, so any earlier attempt there is a blocker.
-      const dependency = await waitForDependencies();
+      const dependency = await waitForDependencies(wallOrTokenStop);
       if (dependency) {
-        transitionAttempt(db, attemptId, "blocked", { reason: dependency });
-        last = { status:"blocked", reason: dependency, attemptId };
-        // The writer never starts: close its stages here, or they stay pending for good.
-        closeWriterStages(db, { runId:input.runId, taskId:input.taskId, plan:input.plan, terminal:"failed",
-          attempt:countAttempts(db, input.runId, input.taskId), reason:dependency });
-        refreshRun(input.runId);
+        blockBeforeWriter(dependency);
         return;
       }
-      await waitForOverlappingTasks(shareFolder);
+      const overlapStop = await waitForOverlappingTasks(shareFolder, wallOrTokenStop);
+      if (overlapStop) {
+        blockBeforeWriter(overlapStop);
+        return;
+      }
       // Several tasks failed on the same Lane Pilot fault just now, or the disk is nearly full: starting more only burns them too.
       for (let noted = ""; ;) {
         if (ctx.isDisposed()) return;
+        const budgetStop = wallOrTokenStop();
+        if (budgetStop) { blockBeforeWriter(budgetStop); return; }
         const base = getRun(db, input.runId)?.writer_workspace_path;
         const held = services.stability.breakerHolds(input.projectId)
           ?? (!shareFolder && base ? await services.stability.diskHolds(input.config.hostId, base) : null);
@@ -269,11 +282,18 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
       while (attemptsLeft()) {
         attemptsHere += 1;
+        const budgetCheck=budget.check();
+        if (!budgetCheck.ok) {
+          const reason=budgetStopReason(budgetCheck.exceeded);
+          transitionAttempt(db, attemptId, "blocked", { reason });
+          last = { status:"blocked", reason, attemptId };
+          break;
+        }
         if (!writerThreadId && !halfBound) {
           budget.noteAttempt();
-          const budgetCheck=budget.check();
-          if (!budgetCheck.ok) {
-            const reason=`run_budget_exceeded:${budgetCheck.reason}`;
+          const afterAttempt=budget.check();
+          if (!afterAttempt.ok) {
+            const reason=budgetStopReason(afterAttempt.exceeded);
             transitionAttempt(db, attemptId, "blocked", { reason });
             last = { status:"blocked", reason, attemptId };
             break;

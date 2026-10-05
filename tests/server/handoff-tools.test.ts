@@ -79,8 +79,12 @@ describe("handoff tools", () => {
     const { harness, call } = await setup();
     dispose = () => harness.lifecycle.dispose();
 
-    await expect(call("lane_pilot_handoff_list", { runId }, "someone-else")).rejects.toThrow(/does not belong/);
+    const listed = await call("lane_pilot_handoff_list", { runId }, "someone-else");
+    expect(listed).toMatchObject({ ok: false, error: { code: "not_found", retryable: false, sideEffects: "none" } });
+    expect(listed.error.message).toMatch(/does not belong/);
     const created = await call("lane_pilot_handoff_create", { runId, toAgent: "design-lead", title: "t", objective: "o", acceptance: ["a"] });
-    await expect(call("lane_pilot_handoff_receipt", { runId, handoffId: created.handoff.id, output: "no block here" })).rejects.toThrow(/no receipt block/);
+    const receipt = await call("lane_pilot_handoff_receipt", { runId, handoffId: created.handoff.id, output: "no block here" });
+    expect(receipt).toMatchObject({ ok: false, error: { retryable: false, sideEffects: "none" } });
+    expect(receipt.error.message).toMatch(/no receipt block/);
   });
 });

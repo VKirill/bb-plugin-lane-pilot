@@ -1,5 +1,6 @@
+import { runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
 import { saveBlockedBy, type BlockedBy } from "../blocked-by";
 import { relayFor } from "../relay";
 import type { HelperPolicySnapshot } from "../../helper-context";
@@ -9,7 +10,7 @@ import type { WriterIdentity } from "../../stages/code-critique";
 import { runCodeCritique } from "../critique-runs";
 import { fullAccessSpawn } from "../pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
-import { recordGateEvaluation, recordStage } from "../stage-records";
+import { closeWriterStages, recordGateEvaluation, recordStage } from "../stage-records";
 import { stringAt } from "../values";
 import { needsHumanQuestion, outputText, WRITER_SETUP_LINES, writerContextBlocks } from "../writer-task";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -46,11 +47,47 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
   }): Promise<Record<string,unknown>> {
     try {
+      const budget = services.runBudgetFor(input.runId, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
+      const watchBudget = budget.snapshot().limits.maxWallMs !== undefined || budget.snapshot().limits.maxTokens !== undefined;
+      const noteWriterTokens = async () => {
+        if (budget.snapshot().limits.maxTokens === undefined) return;
+        try {
+          const usageListed = await bb.sdk.threads.events.list({ threadId:input.writerThreadId, types:["thread/tokenUsage/updated"], order:"desc", limit:"50" });
+          const usage = Array.isArray(usageListed) ? tokenUsageFromEvent(usageListed[0]) : null;
+          if (usage) budget.noteTokens(usage.threadId, usage.totalTokens);
+        } catch {
+          // Usage is informational; a host that cannot list events does not fail the attempt.
+        }
+      };
+      const stopRunningWriter = async (reason:string) => {
+        const current = await getThreadBounded(input.writerThreadId).catch(() => null);
+        const status = stringAt(current, "status");
+        if (["active", "starting"].includes(status ?? "")) await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
+        transitionAttempt(db, input.attemptId, "blocked", { reason });
+        closeWriterStages(db, {
+          runId:input.runId, taskId:input.taskId, plan:getTaskPlan(db, input.taskId) ?? "",
+          terminal:"failed", attempt:countAttempts(db, input.runId, input.taskId), reason, threadId:input.writerThreadId,
+        });
+        return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      };
       // A continued thread is idle from its previous task until the new turn starts: wait for the turn sent after `since`.
       const followUpSince = await loadFollowUp(bb.storage.kv, input.attemptId);
       if (followUpSince !== null) {
         try {
-          await waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince);
+          if (!watchBudget) {
+            await waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince);
+          } else {
+            let waiting = true;
+            const idle = waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince)
+              .finally(() => { waiting = false; });
+            while (waiting) {
+              await noteWriterTokens();
+              const budgetStop = runningWriterBudgetStop(budget.check());
+              if (budgetStop) return await stopRunningWriter(budgetStop);
+              await Promise.race([idle, new Promise((wake) => setTimeout(wake, 2_000))]);
+            }
+            await idle;
+          }
         } catch (cause) {
           if (ctx.state.disposed) throw new Error("Lane Pilot was reloaded while the writer ran");
           const reason = cause instanceof Error ? cause.message : String(cause);
@@ -58,7 +95,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
         }
       }
-      // No stopwatch: a writer runs as long as it works, and BB's events say when it has failed.
+      // A writer runs as long as it works, unless the run's wall or token budget is gone; BB's events say when it has failed.
       let completedThread: unknown;
       for (;;) {
         if (ctx.state.disposed) throw new Error("Lane Pilot was reloaded while the writer ran");
@@ -75,6 +112,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         if (currentStatus === "idle") {
           completedThread = currentThread;
           break;
+        }
+        if (watchBudget) {
+          await noteWriterTokens();
+          const budgetStop = runningWriterBudgetStop(budget.check());
+          if (budgetStop) return await stopRunningWriter(budgetStop);
         }
         await new Promise((resolve) => setTimeout(resolve, Math.max(0, 2_000 - (Date.now() - pollStarted))));
       }

@@ -15,6 +15,31 @@ export type RunBudgetSnapshot = { attempts: number; children: number; tokens: nu
 
 const LABEL: Record<BudgetKind, string> = { maxAttempts: "attempts", maxWallMs: "wall-clock ms", maxTokens: "tokens", maxChildren: "child threads" };
 
+/** Attempt / spawn reason prefix: `run_budget_exceeded:child threads`, `run_budget_exceeded:tokens`, … */
+export function budgetStopReason(kind: BudgetKind): string {
+  return `run_budget_exceeded:${LABEL[kind]}`;
+}
+
+/** Wall-clock and token overruns stop a running writer; child/attempt overruns refuse the next spawn instead. */
+export function runningWriterBudgetStop(check: BudgetCheck): string | null {
+  if (check.ok) return null;
+  if (check.exceeded === "maxWallMs" || check.exceeded === "maxTokens") return budgetStopReason(check.exceeded);
+  return null;
+}
+
+export class RunBudgetExceeded extends Error {
+  readonly exceeded: BudgetKind;
+  readonly used: number;
+  readonly limit: number;
+  constructor(check: Extract<BudgetCheck, { ok: false }>) {
+    super(budgetStopReason(check.exceeded));
+    this.name = "RunBudgetExceeded";
+    this.exceeded = check.exceeded;
+    this.used = check.used;
+    this.limit = check.limit;
+  }
+}
+
 export function createRunBudget(limits: RunBudgetLimits, startedAt = Date.now()) {
   let attempts = 0;
   let children = 0;
@@ -24,6 +49,16 @@ export function createRunBudget(limits: RunBudgetLimits, startedAt = Date.now())
 
   function noteAttempt(): number { return ++attempts; }
   function noteChild(): number { return ++children; }
+  /** Counts a new child if it would stay within `maxChildren`; otherwise leaves the count and fails the check. */
+  function reserveChild(): BudgetCheck {
+    const limit = limits.maxChildren;
+    const used = children + 1;
+    if (limit !== undefined && used > limit) {
+      return { ok: false, exceeded: "maxChildren", used, limit, reason: `run budget exceeded: ${used} ${LABEL.maxChildren} > ${limit}` };
+    }
+    noteChild();
+    return { ok: true };
+  }
   /** BB reports a running total per thread; the run total is the sum of the latest per thread. */
   function noteTokens(threadId: string, total: number): number {
     if (Number.isFinite(total) && total >= 0) tokensByThread.set(threadId, Math.max(total, tokensByThread.get(threadId) ?? 0));
@@ -45,7 +80,7 @@ export function createRunBudget(limits: RunBudgetLimits, startedAt = Date.now())
     return { attempts, children, tokens: tokens(), elapsedMs: now - startedAt, limits: { ...limits } };
   }
 
-  return { noteAttempt, noteChild, noteTokens, check, snapshot };
+  return { noteAttempt, noteChild, reserveChild, noteTokens, check, snapshot };
 }
 
 export type RunBudget = ReturnType<typeof createRunBudget>;

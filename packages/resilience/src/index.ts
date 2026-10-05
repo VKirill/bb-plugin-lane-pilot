@@ -11,8 +11,11 @@ export {
   type ProviderBreakerOptions,
 } from "./breaker";
 export {
+  budgetStopReason,
   createRunBudget,
   parseRunBudgetLimits,
+  RunBudgetExceeded,
+  runningWriterBudgetStop,
   tokenUsageFromEvent,
   type BudgetCheck,
   type BudgetKind,
