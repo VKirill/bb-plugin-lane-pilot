@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.155
+
+From a self-repair of «missing expected_outputs: <path>» (SelfyStudio and content-factory, 2026-10-02…05):
+- **A folder in expected_outputs is met by a file the writer changed in it.** A PM may name a folder (`…/greeting-cards`, `…/greeting-cards/` or `…/greeting-cards/**`). Lane Pilot looked for a changed file with exactly that path, which a folder never is. On 2026-10-05 the writer of SelfyStudio `cards-preview-lightbox-fullscreen` changed three files in the folder, and the task was blocked after two attempts.
+- **A `-mainfix` task no longer inherits the merged task's expected_outputs.** Those files are already in main, and the repair may be in another owned file or need no change. The writer of `cards-checkout-typecheck-fix-mainfix` found main green and edited `routes.ts` only so that the required file would be in the diff. When every check already passes before any change, the repair writer now changes nothing and answers `NEEDS_HUMAN: main is already green, nothing to fix`, so the PM can close the task.
+
 ## 0.1.154
 
 - **Token sync reads BB events in pages of 100.** `events.list` with `limit` above 100 is HTTP 400 on the live hub, so a thread's 6110 usage rows never arrived. Paging stops on a short page.

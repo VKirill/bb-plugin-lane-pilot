@@ -28,6 +28,22 @@ const MERGE_QUEUE_MS = 15 * 60_000;
 const DIRTY_BASE_WAIT_MS = 2 * 3600_000;
 const dirtyBase = (merged:{ status:string; reason?:string|null }) => merged.status === "conflict" && Boolean(merged.reason?.startsWith("base checkout has uncommitted changes"));
 
+/**
+ * The follow-up task that makes main green after a merge. It keeps the merged task's scope and checks but not its
+ * expected_outputs (a prose entry names no file): those files are already in main, and the fix may sit in another owned
+ * file or nowhere. Inherited, they made the writer of a green main edit routes.ts only to «put the required file in the
+ * diff» (SelfyStudio cards-checkout-typecheck-fix-mainfix, 2026-10-05).
+ */
+export function postMergeRepair(onMain:TaskV2, red:Array<{ command:string; exitCode:number; stdout?:string; stderr?:string }>):{ fix:TaskV2; plan:string } {
+  const tail = (check:typeof red[number]) => `${check.stderr ?? ""}\n${check.stdout ?? ""}`.trim().slice(-1200);
+  const fix:TaskV2 = { ...onMain, id:`${onMain.id}-mainfix`.slice(0, 128), title:`Make main green after ${onMain.id}`.slice(0, 200),
+    depends_on:[], risk:onMain.risk === "low" ? "medium" : onMain.risk, expected_outputs:["the checks that fail on main pass"],
+    objective:`Main is red after merging ${onMain.id} (${onMain.title}): ${red.map((check) => `\`${check.command}\``).join(", ")} fails on main while it passed in the task's own worktree, so it clashes with work merged meanwhile. Make the check pass on main keeping what ${onMain.id} and the work merged before it intended; change the least code that does it.`,
+    acceptance:[...red.map((check) => `\`${check.command}\` passes on main`), `${onMain.id}'s acceptance still holds: ${onMain.acceptance.join("; ")}`.slice(0, 600)] };
+  const plan = `Post-merge repair, dispatched by Lane Pilot. Failing on main:\n${red.map((check) => `$ ${check.command} (exit ${check.exitCode})\n${tail(check)}`).join("\n\n")}\n\nRead the failure, find which merged change clashes (git log -5 on main), fix within owns_paths, run the checks. If every check already passes in your worktree before you change anything, main is green now: change no files and answer with the first line \`NEEDS_HUMAN: main is already green, nothing to fix\`.`;
+  return { fix, plan };
+}
+
 export function createWriterFinish(ctx: ServerCore, services: Services) {
   const { bb, db, getThreadBounded, host } = ctx;
 
@@ -589,18 +605,13 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     if (unrun.length) ctx.log(`post-merge check of ${input.task.id} could not run on the host: ${unrun.map((check) => `${check.command} (${check.stderr.slice(0, 160)})`).join(", ")}`);
     const red = checks?.filter((check) => check.exitCode !== 0 && !check.hostError) ?? [];
     if (!red.length) return;
-    const tail = (check:typeof red[number]) => `${check.stderr ?? ""}\n${check.stdout ?? ""}`.trim().slice(-1200);
     ctx.log(`post-merge check of ${input.task.id} failed on main: ${red.map((check) => check.command).join(", ")}`);
     const tell = (text:string) => bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never).catch(() => undefined);
     if (/-mainfix\d*$/.test(input.task.id)) {
       await tell(`Lane Pilot: ${input.task.id} fixed main once already and main is red again after it (${red[0]!.command}). Look at what else merged meanwhile and dispatch the fix yourself.`);
       return;
     }
-    const fix:TaskV2 = { ...onMain, id:`${input.task.id}-mainfix`.slice(0, 128), title:`Make main green after ${input.task.id}`.slice(0, 200),
-      depends_on:[], risk:input.task.risk === "low" ? "medium" : input.task.risk,
-      objective:`Main is red after merging ${input.task.id} (${input.task.title}): ${red.map((check) => `\`${check.command}\``).join(", ")} fails on main while it passed in the task's own worktree, so it clashes with work merged meanwhile. Make the check pass on main keeping what ${input.task.id} and the work merged before it intended; change the least code that does it.`,
-      acceptance:[...red.map((check) => `\`${check.command}\` passes on main`), `${input.task.id}'s acceptance still holds: ${input.task.acceptance.join("; ")}`.slice(0, 600)] };
-    const plan = `Post-merge repair, dispatched by Lane Pilot. Failing on main:\n${red.map((check) => `$ ${check.command} (exit ${check.exitCode})\n${tail(check)}`).join("\n\n")}\n\nRead the failure, find which merged change clashes (git log -5 on main), fix within owns_paths, run the checks.`;
+    const { fix, plan } = postMergeRepair(onMain, red);
     const sent = await services.dispatchWriter({ threadId:input.pmThreadId, projectId:input.projectId, task:fix, plan }).catch((cause:unknown) => ({ state:"rejected", reason:cause instanceof Error ? cause.message : String(cause) }));
     await tell(`Lane Pilot: ${input.task.id} is merged, but ${red.map((check) => check.command).join(", ")} fails on main with it. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
   }

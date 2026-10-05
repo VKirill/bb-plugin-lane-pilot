@@ -51,7 +51,11 @@ export function classifyWriterOutput(input: {
   // root: 22 of 57 failed SelfyStudio attempts on 2026-10-03 were writers whose file was there under its folder.
   const resolveOutput = (path: string) => path.includes("/") ? path
     : input.produced.find((file) => file === path || file.endsWith(`/${path}`)) ?? path;
+  // A folder («…/greeting-cards», «…/greeting-cards/», «…/greeting-cards/**») is met by any changed file under it:
+  // SelfyStudio cards-preview-lightbox-fullscreen (2026-10-05) was blocked twice with three changed files in the folder.
+  const folder = (entry: string) => `${entry.replace(/\/\*\*$/, "").replace(/\/+$/, "")}/`;
   const missing = fileOutputs.filter((entry) => {
+    if (input.produced.some((file) => file.startsWith(folder(entry)))) return false;
     const path = resolveOutput(entry);
     const content = input.contents[path];
     return !input.produced.includes(path) || content === null || content === undefined;
