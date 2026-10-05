@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.160
+
+- **«Токены»: the cost column header is `$`.**
+
 ## 0.1.159
 
 - **«Токены» no longer shows a negative API cost for Claude.** Daily rows store uncached / cache-read / cache-write, and the estimate uses the 5-minute cache-write list price. Codex rows stay on the previous formula (its cache writes are zero). Project rows use BB project names, including personal and archived.
