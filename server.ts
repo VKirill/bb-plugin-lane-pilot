@@ -95,6 +95,14 @@ export default async function plugin(bb: BbPluginApi) {
         try { await work(); } catch (cause) { bb.log.warn(`Lane Pilot ${name} skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
       };
       void (async () => {
+        // A reload drops the loops that watch background helpers; the stages are idempotent and find their child thread
+        // again. Started in the factory, their first host call failed with «unavailable during factory registration».
+        await step("resume of background helpers", () => {
+          for (const stage of listUnfinishedStages(db, ["memory-maintenance", "project-life"])) {
+            if (stage.stageId === "memory-maintenance") services.maintainMemoryAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
+            else services.maintainProjectLifeAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
+          }
+        });
         await step("resume on start", () => services.resumeOrphans());
         await step("run sweep", sweepRuns);
         await step("worktree sweep", sweepEnvironments);
@@ -117,10 +125,5 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
   bb.background.schedule("runs-sweep", "*/15 * * * *", sweepRuns);
-  // A reload drops the loops that watch background helpers; the stages are idempotent and find their child thread again.
-  for (const stage of listUnfinishedStages(db, ["memory-maintenance", "project-life"])) {
-    if (stage.stageId === "memory-maintenance") services.maintainMemoryAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
-    else services.maintainProjectLifeAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
-  }
   bb.log.info("Lane Pilot PM-to-writer pipeline loaded");
 }

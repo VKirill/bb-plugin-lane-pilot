@@ -28,6 +28,7 @@ let holderReadyAfterGets=0;
 let holderEnvStatusOverride:string|null=null;
 let throwOnRepairSpawn=false;
 let refuseStageSpawn:string|null=null;
+let projectLifeHostHiccup=false;
 let mutateCritiqueSettingsOnFirstSpawn=false;
 let setupDb:ReturnType<typeof openDatabase>|undefined;
 const seededThreadMeta=new Map<string,Record<string,unknown>>();
@@ -282,6 +283,10 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
         })};
       }
       if(call.method==="gitOwnershipBase") {
+        if(projectLifeHostHiccup && setupDb && stageReceipt(setupDb,task.id,"project-life")) {
+          projectLifeHostHiccup=false;
+          throw new Error("host plugin calls are unavailable during factory registration; call from a handler, service, or timer");
+        }
         const baseRef=(call.input as {baseRef?:string}).baseRef;
         if(!baseRef) return {hostId:config.hostId,status:"not-git",branch:null,headSha:null,baseRef:null,baseSha:null,compareCommitted:false,reason:"synthetic workspace has no git repository"};
         return {hostId:config.hostId,status:"ready",branch:"main",headSha:"a".repeat(40),baseRef:baseRef??null,baseSha:baseRef?"b".repeat(40):null,compareCommitted:!!baseRef,reason:null};
@@ -957,6 +962,20 @@ describe("stage → native writer → receipt", () => {
       await harness.lifecycle.dispose();
     } finally {
       refuseStageSpawn=null;
+    }
+  });
+  it("retries a project-life stage after a host hiccup before its spawn claim",async()=>{
+    projectLifeHostHiccup=true;
+    try {
+      const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"project_life.service_tier":"standard"});
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+      await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+      await until("project-life child to be spawned",()=>spawned.some((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="project-life"));
+      expect(projectLifeHostHiccup).toBe(false);
+      expect(stageReceipt(db,task.id,"project-life")?.reason).not.toContain("factory registration");
+      await harness.lifecycle.dispose();
+    } finally {
+      projectLifeHostHiccup=false;
     }
   });
   it("reconstructs memory recordIds after insert-before-receipt without duplicate FTS rows",async()=>{

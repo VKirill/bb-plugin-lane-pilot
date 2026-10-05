@@ -186,7 +186,9 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       if(!threadId){
         // A failure before the spawn request, or a spawn BB refused, leaves no child to wait for: kept running, the stage
         // stayed open for good once its claim was taken (SelfyStudio, 2026-10-05: «HTTP 409: Environment unavailable»).
-        const neverSpawned=spawnCalled?spawnRefused(reason):claimedHere||childResultObject(current?.result).spawnAttempted!==true;
+        // A host hiccup before the claim is retried by the next round; after this call's own claim nothing would retry it.
+        const transient=["events_list_error","host","disconnect","ECONN","502"].some((word)=>reason.includes(word));
+        const neverSpawned=spawnCalled?spawnRefused(reason):claimedHere||(!transient&&childResultObject(current?.result).spawnAttempted!==true);
         if(neverSpawned&&!ctx.state.disposed){
           recordStage(db,{...base,state:"failed",providerId:memoryProviderId,model:memoryModel,reason,result:{error:reason}});
           return {runId:args.runId,taskId:args.taskId,state:"failed",reason};

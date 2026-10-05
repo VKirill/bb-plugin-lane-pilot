@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.139
+
+From checking 0.1.138 live on SelfyStudio (2026-10-05):
+- **Memory and project-life stages resume after the plugin has loaded.** Their loops were restarted inside the plugin factory, so after every reload the first host call failed with «host plugin calls are unavailable during factory registration». Until 0.1.138 that went unnoticed: the next round retried it. 0.1.138 made such an early error final and failed a project-life stage with that reason. The loops now start as the first step of the `startup-recovery` service, like the rest of the recovery since 0.1.60.
+- **A host hiccup before the spawn claim is retried, not final.** An error before the claim that names the host, a disconnect, ECONN, 502 or `events_list_error` keeps the stage running for the next round, as the stage already does for its child thread. Other early errors and HTTP 4xx spawn refusals still end the stage `failed`.
+
 ## 0.1.138
 
 From the same self-repair, after 0.1.137 went live (2026-10-05):
