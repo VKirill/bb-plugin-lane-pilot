@@ -3,7 +3,7 @@
 - Runs coordinate parallel work, retries, blocked-thread handoffs and reminders, recovery, and self-repair.
 - Browser QA, specialist agents, and director councils support product checks and decisions.
 - Project memory, learned rules, documentation maintenance, and project-life snapshots support ongoing work.
-- The settings UI and CLI manage projects, writer and verification settings, enrolled hosts, installs, run health, diagnostics, and a global token-usage dashboard by model and time range synced from BB events.
+- The settings UI and CLI manage projects, writer and verification settings, enrolled hosts, installs, run health, and diagnostics; a standalone Tokens view shows global BB token spend by model, time range, and project.
 
 ## Blocked
 - None recorded.
@@ -12,8 +12,8 @@
 - [ ] Resolve the remaining owner decisions in the harness engineering gaps plan.
 
 ## Last verify
-- command: Lane Pilot acceptance receipts for `lp-harness-gaps-land.4`, `lp-token-usage-dashboard`, `lp-token-usage-fix.2`, and `lp-token-usage-page-limit`
-- result: green; all four tasks accepted
+- command: Lane Pilot acceptance receipts for all five tasks in `lprun_a09b70b8c84744e9804b1774ccd4b1c0`
+- result: green; all five tasks accepted
 - when: 2026-10-05
 
 ## Pointers
