@@ -267,6 +267,16 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   }
 }
 
+/**
+ * The BB environment the task's attempt works in. BB refuses a thread at a path inside an environment's directory
+ * (HTTP 409 «reuse that environment instead»), so a critic of a worktree attempt runs in that environment.
+ */
+export function attemptEnvironment(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, path:string):{ type:"reuse"; environmentId:string } | null {
+  const row = db.prepare(`SELECT environment_id AS environmentId FROM lane_pilot_attempt
+    WHERE run_id=? AND task_id=? AND workspace_path=? AND environment_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(runId, taskId, path) as { environmentId:string } | undefined;
+  return row ? { type:"reuse", environmentId:row.environmentId } : null;
+}
+
 export async function runCodeCritique(input:{
   bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;
   config:PrototypeConfig;task:TaskV2;evidence:CandidateEvidence;disputes?:unknown;frozenPolicy?:FrozenCritiquePolicy;
@@ -465,8 +475,8 @@ export async function runCodeCritique(input:{
       ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
       ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
       prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes }),
-      environment:{ type:"host", hostId:input.config.hostId,
-        workspace:{ type:"unmanaged", path:input.task.project_cwd } },
+      environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
+        ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
       pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
         stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
         revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
