@@ -18,6 +18,7 @@ import type { ServerCore } from "../core";
 import type { Services } from "../services";
 import { isRunHalted } from "../runs-halt";
 import { loadFollowUp } from "./sticky";
+import { shouldMergeAttemptWorktree } from "./spawn";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
@@ -438,7 +439,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const bound = getAttempt(db, input.attemptId);
       const basePath = getRun(db, input.runId)?.writer_workspace_path;
       let integration: { status:string; commit:string|null; conflicts:string[] } | null = null;
-      if (bound?.workspace_path && basePath && resolve(bound.workspace_path) !== resolve(basePath)) {
+      if (bound?.workspace_path && basePath && shouldMergeAttemptWorktree(bound.workspace_path, basePath)) {
         const integrate = () => host.call("gitIntegrate", {
           requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path!,
           message:`${input.task.id}: ${input.task.title}`.slice(0, 500),

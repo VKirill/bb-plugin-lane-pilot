@@ -9,7 +9,8 @@ import { openDatabase } from "../src/database";
 import { createSelfRepair } from "../src/server/self-repair";
 import type { ServerCore } from "../src/server/core";
 import { worktreeCreateError } from "../src/server/writer/spawn";
-import { createWorktree } from "../src/verification/git-integrate";
+import { createWorktree, workspaceGitLayout } from "../src/verification/git-integrate";
+import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../src/verification/git-ownership";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 
@@ -35,6 +36,8 @@ it("refuses a writer worktree when the chat folder is a subfolder of a git repo"
   expect(created.reason).toContain(nested);
   expect(created.reason).toContain(base);
   expect(created.reason).toMatch(/Open the Lane chat at /);
+  const layout = await workspaceGitLayout(nested);
+  expect(layout).toMatchObject({ ok: true, nested: true, prefix: "apps/bot" });
 });
 
 it("creates a writer worktree when the chat folder is the git repo root", async () => {
@@ -42,6 +45,7 @@ it("creates a writer worktree when the chat folder is the git repo root", async 
   const target = join(base, "..", "own", "main");
   const created = await createWorktree({ basePath: base, targetPath: target, name: "lpattempt_root" });
   expect(created).toMatchObject({ status: "ready", path: target, branch: "lane/lpattempt_root", reason: null });
+  expect(await workspaceGitLayout(base)).toMatchObject({ ok: true, nested: false, prefix: "" });
 });
 
 it("keeps the subfolder refusal as a task-side block, not a Lane Pilot fault", async () => {
@@ -70,4 +74,25 @@ it("does not pick the subfolder refusal for self-repair, even across several tas
   }
   const rows = await createSelfRepair(ctx).collect(0, await createSelfRepair(ctx).config());
   expect(rows).toEqual([]);
+});
+
+it("ownership in a nested folder sees the writer's new and changed files relative to that folder", async () => {
+  const { base, nested } = await nestedWorkspace();
+  const frozen = await resolveGitOwnershipBase({ projectCwd: nested });
+  expect(frozen).toMatchObject({ status: "ready", branch: "main", compareCommitted: false });
+  await writeFile(join(nested, "index.ts"), "export const changed = 1;\n");
+  await writeFile(join(nested, "new.ts"), "export {};\n");
+  await mkdir(join(base, "apps", "other"), { recursive: true });
+  await writeFile(join(base, "apps", "other", "skip.ts"), "export {};\n");
+  const dirty = await gitOwnershipChangedPaths({ projectCwd: nested, baseSha: null, compareCommitted: false });
+  expect(dirty.status).toBe("ready");
+  expect(dirty.paths.sort()).toEqual(["index.ts", "new.ts"]);
+  git(base, "switch", "-q", "-c", "feature");
+  git(base, "add", "-A");
+  git(base, "commit", "-qm", "writer");
+  const committed = await gitOwnershipChangedPaths({
+    projectCwd: nested, baseSha: frozen.headSha, compareCommitted: true,
+  });
+  expect(committed.status).toBe("ready");
+  expect(committed.paths.sort()).toEqual(["index.ts", "new.ts"]);
 });

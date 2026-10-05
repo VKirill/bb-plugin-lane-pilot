@@ -128,7 +128,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         await new Promise((wake) => setTimeout(wake, 10_000));
       }
     };
-    const waitForOverlappingTasks = async () => {
+    const waitForOverlappingTasks = async (anyInFolder=false) => {
       const base = getRun(db,input.runId)?.writer_workspace_path;
       let noted = "";
       for (;;) {
@@ -143,6 +143,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // A task that depends on this one waits for it anyway; waiting for it back is a deadlock
           // (live 2026-10-03: price-watermark.5 depends_on how.5, how.5 queued behind price-watermark.5).
           if (parsed.success && dependsOnTask(parsed.data.depends_on, input.taskId)) return false;
+          if (anyInFolder) {
+            return blocksSharedFolderWriter(
+              { task_id:row.task_id, project_id:row.project_id, folder:getRun(db,row.run_id)?.writer_workspace_path ?? null,
+                dependsOn:parsed.success ? parsed.data.depends_on : undefined },
+              { taskId:input.taskId, projectId:input.projectId, folder:base ?? null },
+            );
+          }
           // One writer at a time per area: the next task of a page continues in its writer's thread once it is free.
           if (parsed.success && sameArea(parsed.data.area, input.task.area)) return true;
           return parsed.success && ownsPathsOverlap(parsed.data.owns_paths, input.task.owns_paths);
@@ -150,11 +157,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (!blocker) return;
         if (noted !== blocker.id) {
           noted = blocker.id;
-          ctx.log(`writer ${input.taskId} waits for ${blocker.task_id}: their owns_paths overlap`);
+          ctx.log(`writer ${input.taskId} waits for ${blocker.task_id}: ${anyInFolder ? "same folder" : "their owns_paths overlap"}`);
           const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
           if (!stage || stage.state === "pending") {
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:`waiting for ${blocker.task_id} (thread ${blocker.thread_id ?? "not started"}): ${input.task.area ? "same area or " : ""}owns_paths overlap` });
+              reason:`waiting for ${blocker.task_id} (thread ${blocker.thread_id ?? "not started"}): ${anyInFolder ? "same folder" : `${input.task.area ? "same area or " : ""}owns_paths overlap`}` });
           }
         }
         await new Promise((wake) => setTimeout(wake, 10_000));
@@ -166,9 +173,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // because a parallel writer's half-done edits would land in this writer's diff and checks.
       const runSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
       const inPlace=parseWorkspaceMode(runSettings["adoc.040"])==="in_place";
+      const runRow=getRun(db,input.runId);
+      const nestedLayout=runRow?.kind==="cli"&&runRow.writer_workspace_path?await workspaceGitLayout(runRow.writer_workspace_path):null;
+      const shareFolder=inPlace||(nestedLayout?.ok===true&&nestedLayout.nested);
       const budget=services.runBudgetFor(input.runId,runSettings);
       // Tasks run side by side only when they cannot touch the same files: one whose owns_paths overlap an
       // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
+      // A subfolder in-place fallback shares the whole folder, so any earlier attempt there is a blocker.
       const dependency = await waitForDependencies();
       if (dependency) {
         transitionAttempt(db, attemptId, "blocked", { reason: dependency });
@@ -179,13 +190,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         refreshRun(input.runId);
         return;
       }
-      if (!inPlace) await waitForOverlappingTasks();
+      await waitForOverlappingTasks(shareFolder);
       // Several tasks failed on the same Lane Pilot fault just now, or the disk is nearly full: starting more only burns them too.
       for (let noted = ""; ;) {
         if (ctx.isDisposed()) return;
         const base = getRun(db, input.runId)?.writer_workspace_path;
         const held = services.stability.breakerHolds(input.projectId)
-          ?? (!inPlace && base ? await services.stability.diskHolds(input.config.hostId, base) : null);
+          ?? (!shareFolder && base ? await services.stability.diskHolds(input.config.hostId, base) : null);
         if (!held) break;
         if (noted !== held) {
           noted = held;
@@ -195,7 +206,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
         await new Promise((wake) => setTimeout(wake, 30_000));
       }
-      releaseWriterSlot=await services.runWriterPool.acquire(input.runId,inPlace?1:policy.pools.provider);
+      releaseWriterSlot=await services.runWriterPool.acquire(input.runId,shareFolder?1:policy.pools.provider);
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){
         if(latestAttempt?.state==="canceled"){
@@ -297,7 +308,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A failed attempt's own worktree is never merged; the next attempt starts from a fresh one.
         const removeFailedWorktree = async () => {
           const failedBase=getRun(db,input.runId)?.writer_workspace_path;
-          if(failedBinding?.workspace_path&&failedBinding.environment_id===null&&failedBase&&resolve(failedBinding.workspace_path)!==resolve(failedBase)) {
+          if(failedBinding?.workspace_path&&failedBinding.environment_id===null&&failedBase&&shouldMergeAttemptWorktree(failedBinding.workspace_path,failedBase)) {
             await host.call("gitRemoveWorktree",{requestedHostId:input.config.hostId,basePath:failedBase,worktreePath:failedBinding.workspace_path},
               {hostId:input.config.hostId,timeoutMs:60_000}).catch((cause)=>bb.log.warn(`Lane Pilot could not remove worktree of ${failedBinding.id}: ${cause instanceof Error?cause.message:String(cause)}`));
           }
@@ -520,4 +531,15 @@ export function sameArea(a:string | undefined, b:string | undefined):boolean {
 /** Whether `dependsOn` names `taskId`, either exactly or by its base id («P1» names a redispatched «P1.2»). */
 export function dependsOnTask(dependsOn:readonly string[] | undefined, taskId:string):boolean {
   return (dependsOn ?? []).some((dep) => dep === taskId || (taskId.startsWith(`${dep}.`) && /^\d+$/.test(taskId.slice(dep.length + 1))));
+}
+
+/** True when an earlier open attempt already occupies this folder, so a second in-place writer must wait. */
+export function blocksSharedFolderWriter(
+  earlier:{task_id:string;project_id:string;folder:string|null;dependsOn?:readonly string[]},
+  mine:{taskId:string;projectId:string;folder:string|null},
+):boolean {
+  if (earlier.task_id === mine.taskId || earlier.project_id !== mine.projectId) return false;
+  if (!mine.folder || earlier.folder !== mine.folder) return false;
+  if (dependsOnTask(earlier.dependsOn, mine.taskId)) return false;
+  return true;
 }
