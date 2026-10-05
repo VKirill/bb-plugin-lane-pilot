@@ -15,7 +15,7 @@ const MISLABELED_MERGE = /merge_conflict: main changed since this attempt starte
 const INFRA = /ENOSPC|no space left|disk_low|index\.lock|host is not connected|host offline|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED/i;
 // Same list the self-repair watcher treats as Lane Pilot's own fault, plus the thread lookups that broke on 2026-10-04.
 const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing|reconcile_|attempt_worktree_|attempt_workspace_|writer reconcile|its retry was lost|sticky_send_failed|sticky_failed/i;
-const CONTRACT = /^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
+const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const PROVIDER_STATES = new Set(["provider_error", "timeout", "empty_output"]);
 
 export function failureClass(state:string, reason:string | null | undefined):FailureClass {

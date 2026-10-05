@@ -22,6 +22,9 @@ import { shouldMergeAttemptWorktree } from "./spawn";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
+/** How long finished work waits for someone's uncommitted edits in the base checkout to be committed or put away. */
+const DIRTY_BASE_WAIT_MS = 2 * 3600_000;
+const dirtyBase = (merged:{ status:string; reason?:string|null }) => merged.status === "conflict" && Boolean(merged.reason?.startsWith("base checkout has uncommitted changes"));
 
 export function createWriterFinish(ctx: ServerCore, services: Services) {
   const { bb, db, getThreadBounded, host } = ctx;
@@ -466,6 +469,30 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             .catch((cause) => ctx.log(`merge-block reminder failed: ${cause instanceof Error ? cause.message : String(cause)}`));
           transitionAttempt(db, input.attemptId, "blocked", { reason });
           return { status:"blocked", reason, blockedBy, attemptId:input.attemptId, writerThreadId };
+        }
+        // Someone's uncommitted edits in main block the merge: a redo would meet the same edits, so the finished work
+        // waits for main to be clean and merges then (content-factory 2026-10-05: one task was rewritten three times).
+        if (dirtyBase(merged)) {
+          const files = merged.conflicts.join(", ");
+          ctx.log(`writer ${input.taskId} waits for uncommitted edits in ${basePath} to be committed: ${files}`);
+          void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
+            text:`Lane Pilot: задача ${input.taskId} готова, но в основной папке ${basePath} лежат чужие незакоммиченные правки в тех же файлах: ${files}. Попроси владельца закоммитить или убрать их (или сделай это сам, если это работа этого чата). Lane Pilot вольёт задачу сам, как только папка очистится (ждёт до 2 часов); отправлять задачу заново не нужно.` }] } as never).catch(() => undefined);
+          const since = Date.now();
+          // Another task's merge may hold the checkout meanwhile: that is a wait too, never an acceptance without a merge.
+          while ((dirtyBase(merged) || merged.status === "busy") && Date.now() - since < DIRTY_BASE_WAIT_MS && !ctx.isDisposed()) {
+            await new Promise((wake) => setTimeout(wake, 60_000));
+            merged = await integrate();
+          }
+          if (dirtyBase(merged) || merged.status === "busy") {
+            const reason = `merge_blocked: base checkout has uncommitted changes in files this task changes: ${merged.conflicts.join(", ") || files}`;
+            const blockedBy:BlockedBy = { kind:"human", holderTaskId:null, holderThreadId:null, holderAttemptId:null,
+              since:new Date(since).toISOString(), retryAfterSec:600, detail:merged.conflicts.join(", ") };
+            await saveBlockedBy(bb.storage.kv, input.attemptId, blockedBy);
+            recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"failed",
+              attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged,blockedBy}});
+            transitionAttempt(db, input.attemptId, "blocked", { reason });
+            return { status:"blocked", reason, blockedBy, attemptId:input.attemptId, writerThreadId };
+          }
         }
         if (merged.status === "conflict" || merged.status === "failed") {
           const reason = merged.status === "conflict"

@@ -179,3 +179,8 @@ describe("an owner's stop of a run", () => {
     expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:"internal_error: x" }, 4000)).toBe(true);
   });
 });
+
+it("never redoes a task whose finished work only waits for uncommitted edits in main", async () => {
+  const { failureClass } = await import("../src/failure-class");
+  expect(failureClass("blocked", "merge_blocked: base checkout has uncommitted changes in files this task changes: host/rpc.ts")).toBe("contract");
+});

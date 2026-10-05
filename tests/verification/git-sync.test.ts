@@ -64,3 +64,17 @@ it("refuses a worktree with uncommitted edits", async () => {
   expect(synced.status).toBe("dirty");
   expect(await readFile(join(a, "page.vue"), "utf8")).toBe("half done\n");
 });
+
+it("keeps Lane Pilot's own worktree with its committed work when uncommitted edits in main block the merge, and merges it once main is clean", async () => {
+  const { base, worktree } = await repo();
+  const a = worktree("a");
+  await writeFile(join(a, "page.vue"), "hero from a\nhow\nfaq\n");
+  await writeFile(join(base, "page.vue"), "someone's unfinished edit\n");
+  const blocked = await integrateWorktree({ basePath: base, worktreePath: a, message: "a", removeWorktree: true });
+  expect(blocked).toMatchObject({ status: "conflict", conflicts: ["page.vue"] });
+  expect(blocked.reason).toMatch(/^base checkout has uncommitted changes/);
+  expect(await readFile(join(a, "page.vue"), "utf8")).toBe("hero from a\nhow\nfaq\n");
+  git(base, "checkout", "--", "page.vue");
+  expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "a", removeWorktree: true })).status).toBe("merged");
+  expect(await readFile(join(base, "page.vue"), "utf8")).toBe("hero from a\nhow\nfaq\n");
+});

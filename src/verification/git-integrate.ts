@@ -146,8 +146,9 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
     // The writer's work stays committed in its worktree; the next try merges it.
     return {status:"busy",commit:sha,conflicts:[],reason:error.message,holder:error.holder};
   }
-  // Lane Pilot's own worktree is done once its work is in main, or once main moved past it (a conflict is redone fresh).
-  if(input.removeWorktree&&result.status!=="failed") {
+  // Lane Pilot's own worktree is done once its work is in main. A conflict keeps it: uncommitted edits in main block
+  // the merge without anything to redo, and the committed work there is merged as soon as main is clean.
+  if(input.removeWorktree&&(result.status==="merged"||result.status==="up-to-date")) {
     git(input.basePath,["worktree","remove","--force",input.worktreePath]);
     if(branch.startsWith("lane/")) git(input.basePath,["branch","-D",branch]);
   }
