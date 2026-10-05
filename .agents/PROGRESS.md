@@ -3,7 +3,7 @@
 - Runs coordinate parallel work, retries, blocked-thread handoffs and reminders, recovery, and self-repair.
 - Browser QA, specialist agents, and director councils support product checks and decisions.
 - Project memory, learned rules, documentation maintenance, and project-life snapshots support ongoing work.
-- Settings and CLI manage projects, writer and verification settings, enrolled hosts, installs, run health, and diagnostics; the standalone Tokens view shows global spend by model and project with date ranges, monthly views, merged context-window variants, and estimated API list-price costs.
+- Settings and CLI manage projects, writer and verification settings, enrolled hosts, installs, run health, and diagnostics; the standalone Tokens view shows global spend by model and project with date ranges, monthly views, merged context-window variants, provider-correct cache accounting, and estimated API list-price costs.
 
 ## Blocked
 - None recorded.
@@ -12,8 +12,8 @@
 - [ ] Resolve the remaining owner decisions in the harness engineering gaps plan.
 
 ## Last verify
-- command: Lane Pilot acceptance receipts for all seven tasks in `lprun_a09b70b8c84744e9804b1774ccd4b1c0`
-- result: green; all seven tasks accepted
+- command: Lane Pilot acceptance receipts for all eight tasks in `lprun_a09b70b8c84744e9804b1774ccd4b1c0`
+- result: green; all eight tasks accepted
 - when: 2026-10-05
 
 ## Pointers
