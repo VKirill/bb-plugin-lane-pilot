@@ -18,6 +18,7 @@ import type { ServerCore } from "../core";
 import type { Services } from "../services";
 import { isRunHalted } from "../runs-halt";
 import { loadFollowUp } from "./sticky";
+import { askGuestsToCommit } from "../checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
@@ -475,8 +476,12 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         if (dirtyBase(merged)) {
           const files = merged.conflicts.join(", ");
           ctx.log(`writer ${input.taskId} waits for uncommitted edits in ${basePath} to be committed: ${files}`);
+          // The chats that work in this folder are asked by name; the PM hears who was asked, or that nobody is known.
+          const asked = await askGuestsToCommit(bb, basePath, merged.conflicts, input.taskId).catch(() => [] as string[]);
           void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-            text:`Lane Pilot: задача ${input.taskId} готова, но в основной папке ${basePath} лежат чужие незакоммиченные правки в тех же файлах: ${files}. Попроси владельца закоммитить или убрать их (или сделай это сам, если это работа этого чата). Lane Pilot вольёт задачу сам, как только папка очистится (ждёт до 2 часов); отправлять задачу заново не нужно.` }] } as never).catch(() => undefined);
+            text:asked.length
+              ? `Lane Pilot: задача ${input.taskId} готова, но в основной папке ${basePath} лежат незакоммиченные правки в тех же файлах: ${files}. Lane Pilot попросил закоммитить их чаты, которые работают в этой папке: ${asked.map((thread) => `@thread:${thread}`).join(", ")}. Задача вольётся сама, как только файлы будут закоммичены (ждёт до 2 часов); отправлять её заново не нужно.`
+              : `Lane Pilot: задача ${input.taskId} готова, но в основной папке ${basePath} лежат чужие незакоммиченные правки в тех же файлах: ${files}. Чей это чат, Lane Pilot не знает: попроси владельца закоммитить или убрать их (или сделай это сам, если это работа этого чата). Задача вольётся сама, как только папка очистится (ждёт до 2 часов); отправлять её заново не нужно.` }] } as never).catch(() => undefined);
           const since = Date.now();
           // Another task's merge may hold the checkout meanwhile: that is a wait too, never an acceptance without a merge.
           while ((dirtyBase(merged) || merged.status === "busy") && Date.now() - since < DIRTY_BASE_WAIT_MS && !ctx.isDisposed()) {

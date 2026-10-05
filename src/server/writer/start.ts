@@ -236,10 +236,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         && countChargedAttempts(db, input.runId, input.taskId) < MAIN_ATTEMPT_LIMIT
         && attemptsHere + 1 < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
       /** Takes over an existing writer thread for this attempt; false leaves the attempt to a fresh spawn. */
-      const continueWith = async (writer:NonNullable<Awaited<ReturnType<typeof sticky.hotWriter>>>, kind:"next-task"|"retry", previousAttempt:string, keepDirt?:DirtSnapshot[]):Promise<boolean> => {
+      const continueWith = async (writer:NonNullable<Awaited<ReturnType<typeof sticky.hotWriter>>>, kind:"next-task"|"retry"|"merge", previousAttempt:string, keepDirt?:DirtSnapshot[]):Promise<boolean> => {
         const bound = {...freshTask,project_cwd:writer.workspacePath,verification:freshTask.verification.map(command=>({...command,cwd:writer.workspacePath}))};
         const turn = await sticky.continueInThread({ runId:input.runId, taskId:input.taskId, attemptId, config:freshConfig, writer, kind, dirtBefore:keepDirt,
-          prompt:stickyTurnPrompt({ kind, task:bound, previousAttempt }) });
+          prompt:(conflicts) => stickyTurnPrompt({ kind, task:bound, previousAttempt:kind === "merge" ? "" : previousAttempt, conflicts }) });
         if (!turn.ok) {
           ctx.log(`writer ${input.taskId}: ${kind} in thread ${writer.threadId} not possible (${turn.reason}); a fresh writer starts`);
           // A half-bound attempt cannot take a fresh spawn: it ends as Lane Pilot's fault and the retry spawns.
@@ -382,7 +382,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         activeTask = freshTask;
         dirtBefore = [];
         executionPacketSha256 = null;
-        if (redo && !await continueWith(redo, "retry", previousAttemptBrief({ ...failedLast, produced:[] }), failedBinding?.dirt_before)) {
+        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief({ ...failedLast, produced:[] }), failedBinding?.dirt_before)) {
           await removeFailedWorktree();
         }
       }

@@ -160,7 +160,9 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
  * a fast-forward when main only moved ahead (its own work was merged), else a merge. A conflict is undone and named:
  * the caller then starts a fresh writer instead.
  */
-export async function syncWorktree(input:{basePath:string;worktreePath:string}):Promise<{status:"synced"|"up-to-date"|"dirty"|"conflict"|"failed";head:string|null;reason:string|null}> {
+export async function syncWorktree(input:{basePath:string;worktreePath:string;
+  /** Leave a conflicted merge in place for the writer to resolve, instead of undoing it. */
+  keepConflicts?:boolean}):Promise<{status:"synced"|"up-to-date"|"dirty"|"conflict"|"failed";head:string|null;reason:string|null;conflicts?:string[]}> {
   const fail=(status:"dirty"|"conflict"|"failed",reason:string)=>({status,head:null,reason});
   await recoverStaleGitLock(input.worktreePath);
   const dirty=git(input.worktreePath,["status","--porcelain","--untracked-files=no"]);
@@ -175,8 +177,10 @@ export async function syncWorktree(input:{basePath:string;worktreePath:string}):
   const merged=git(input.worktreePath,[...identity(input.worktreePath),"merge","--no-edit","-q",sha]);
   if(merged.ok) return {status:"synced",head:head(),reason:null};
   const unmerged=git(input.worktreePath,["diff","--name-only","--diff-filter=U"]);
-  git(input.worktreePath,["merge","--abort"]);
   const conflicts=unmerged.ok?unmerged.stdout.split("\n").map((line)=>line.trim()).filter(Boolean):[];
+  // The writer that made the work resolves the conflict in its worktree (Copilot, Devin and Vibe Kanban do the same).
+  if(input.keepConflicts&&conflicts.length) return {status:"conflict",head:head(),reason:`conflicts: ${conflicts.slice(0,10).join(", ")}`,conflicts};
+  git(input.worktreePath,["merge","--abort"]);
   return fail(conflicts.length?"conflict":"failed",conflicts.length?`conflicts: ${conflicts.slice(0,10).join(", ")}`:`git merge failed: ${merged.reason.split("\n").slice(-4).join("\n")}`);
 }
 

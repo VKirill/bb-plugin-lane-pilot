@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { noteCheckoutGuest } from "./server/checkout-guests";
 import type { BbPluginApi, ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { LanePilotDatabase } from "./database";
@@ -14,6 +15,7 @@ import {
   type NativeSelection,
 } from "./native-session";
 import {
+  projectCheckoutIntentPath,
   attachNativeLaneClaim,
   claimNativeLaneRun,
   finalizeNativeLaneBinding,
@@ -216,6 +218,8 @@ export async function handleNativeDispatch(
     if (inherited) traceNativeDispatch(bb.log, "dispatch.handoff", { ...base, reason: "inherited", token: inherited.token });
     if (!tokens.length && !bound && !inherited) {
       traceNativeDispatch(bb.log, "dispatch.skip", { ...base, reason: "no_token_or_bound" });
+      // An ordinary chat in a folder where a Lane Pilot run merges: remembered, and told once to commit as it goes.
+      void noteCheckoutGuest(bb, db, ctx.thread.id, ctx.environment?.path ?? projectCheckoutIntentPath(ctx.environmentIntent)).catch(() => undefined);
       return { action: "proceed" };
     }
     if (ctx.requestedExecution.providerId !== "claude-code") {

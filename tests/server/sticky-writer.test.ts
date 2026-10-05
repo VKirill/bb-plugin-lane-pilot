@@ -190,12 +190,28 @@ describe("continuing a writer thread", () => {
     expect(await env.sticky.retryWriter("f2", "run")).toBeNull();
   });
 
-  it("never redoes a merge or Lane Pilot failure in the same thread", async () => {
+  it("gives a conflict with main back to its writer to resolve, but never Lane Pilot faults or someone's uncommitted edits", async () => {
     const env = setup();
     createTask(env.db, { id: "t", runId: "run", kind: "bb", contract: task("t") });
-    createAttempt(env.db, { id: "f1", runId: "run", taskId: "t" });
-    setAttemptWorkspace(env.db, "f1", { path: base, environmentId: null, decision: {} });
-    transitionAttempt(env.db, "f1", "validation_failed", { threadId: "thr_r", reason: "merge_conflict: main changed since this attempt started: page.vue" });
-    expect(await env.sticky.retryWriter("f1", "run")).toBeNull();
+    const failed = (id: string, reason: string) => {
+      createAttempt(env.db, { id, runId: "run", taskId: "t" });
+      setAttemptWorkspace(env.db, id, { path: base, environmentId: null, decision: {} });
+      transitionAttempt(env.db, id, "validation_failed", { threadId: `thr_${id}`, reason });
+    };
+    failed("m1", "merge_conflict: main changed since this attempt started: page.vue");
+    expect(await env.sticky.retryWriter("m1", "run")).toMatchObject({ kind: "merge", threadId: "thr_m1" });
+    failed("m2", "merge_conflict: base checkout has uncommitted changes in files this attempt also changes: page.vue");
+    expect(await env.sticky.retryWriter("m2", "run")).toBeNull();
+    failed("m3", "merge_failed: git merge failed: index.lock");
+    expect(await env.sticky.retryWriter("m3", "run")).toBeNull();
+    failed("m4", "merge_conflict: main changed since this attempt started: ");
+    expect(await env.sticky.retryWriter("m4", "run")).toBeNull();
+  });
+
+  it("tells the writer which files conflict and to keep main's work", () => {
+    const text = stickyTurnPrompt({ kind: "merge", task: task("t"), conflicts: ["page.vue", "faq.vue"] });
+    expect(text).toContain("conflicts in: page.vue, faq.vue");
+    expect(text).toContain("never drop main's changes");
+    expect(text).toContain("NEEDS_HUMAN");
   });
 });

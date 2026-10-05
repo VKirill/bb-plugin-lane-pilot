@@ -179,8 +179,8 @@ export const hostContract = defineRpcContract({
     output: z.object({ hostId:z.string(), removed:z.boolean() }).strict(),
   },
   gitSyncWorktree: {
-    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/") }).strict(),
-    output: z.object({ hostId:z.string(), status:z.enum(["synced","up-to-date","dirty","conflict","failed"]), head:z.string().nullable(), reason:z.string().nullable() }).strict(),
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), keepConflicts:z.boolean().optional() }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["synced","up-to-date","dirty","conflict","failed"]), head:z.string().nullable(), reason:z.string().nullable(), conflicts:z.array(z.string()).optional() }).strict(),
   },
   stabilityDrill: {
     input: z.object({ requestedHostId:z.string().min(1) }).strict(),

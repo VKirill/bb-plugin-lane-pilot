@@ -73,6 +73,11 @@ export function areaHistoryText(record: AreaRecord | null): string {
   ].filter(Boolean).join("\n");
 }
 
+/** Main moved under the task and git found conflicting lines: the writer that made the work resolves them. */
+export function resolveInSameThread(state: string, reason: string | null | undefined): boolean {
+  return state === "validation_failed" && /^merge_conflict: main changed since this attempt started: \S/.test(reason ?? "");
+}
+
 /** A failure the same writer can fix in place: its own work, not git, Lane Pilot, the machine or a question. */
 export function retryInSameThread(state: string, reason: string | null | undefined): boolean {
   if (state !== "validation_failed" && state !== "empty_output") return false;
@@ -114,16 +119,17 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       decision:previous.workspace_decision, turns:threadTurns(record.threadId) };
   }
 
-  /** The failed attempt's thread, when the same writer can redo the task in place. */
-  async function retryWriter(failedAttemptId: string, runId: string): Promise<HotWriter | null> {
+  /** The failed attempt's thread, when the same writer can redo the task in place or resolve its merge conflict. */
+  async function retryWriter(failedAttemptId: string, runId: string): Promise<(HotWriter & { kind:"retry"|"merge" }) | null> {
     const failed = getAttempt(db, failedAttemptId);
-    if (!failed?.thread_id || !retryInSameThread(failed.state, failed.reason)) return null;
+    const kind = resolveInSameThread(failed?.state ?? "", failed?.reason) ? "merge" as const : "retry" as const;
+    if (!failed?.thread_id || (kind === "retry" && !retryInSameThread(failed.state, failed.reason))) return null;
     // One redo per thread: a writer that failed twice in a row gets a fresh context (Claude Code best practices).
     const inThread = db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE thread_id=? AND task_id=?").get(failed.thread_id, failed.task_id) as { count: number };
     if (inThread.count >= 2) return null;
     if (!await threadUsable(failed)) return null;
     return { threadId:failed.thread_id, attemptId:failed.id, workspacePath:failed.workspace_path!, environmentId:failed.environment_id,
-      decision:failed.workspace_decision, turns:threadTurns(failed.thread_id) };
+      decision:failed.workspace_decision, turns:threadTurns(failed.thread_id), kind };
   }
 
   /** Compacts a thread whose context is mostly used, then waits for the compaction to finish. */
@@ -147,17 +153,20 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
    */
   async function continueInThread(input: {
     runId: string; taskId: string; attemptId: string; config: PrototypeConfig; writer: HotWriter;
-    prompt: string; kind: "next-task" | "retry"; dirtBefore?: DirtSnapshot[];
+    prompt: string | ((conflicts: string[]) => string); kind: "next-task" | "retry" | "merge"; dirtBefore?: DirtSnapshot[];
   }): Promise<{ ok: true; workspacePath: string; dirtBefore: DirtSnapshot[] } | { ok: false; reason: string; bound: boolean }> {
     const { writer } = input;
     const base = getRun(db, input.runId)?.writer_workspace_path;
     if (!base) return { ok:false, reason:"run has no workspace", bound:false };
     try {
       transitionAttempt(db, input.attemptId, "spawn_requested");
-      if (input.kind === "next-task" && resolve(writer.workspacePath) !== resolve(base)) {
-        const synced = await host.call("gitSyncWorktree", { requestedHostId:input.config.hostId, basePath:base, worktreePath:writer.workspacePath },
-          { hostId:input.config.hostId, timeoutMs:120_000 });
-        if (synced.status !== "synced" && synced.status !== "up-to-date") return { ok:false, reason:`worktree_sync_${synced.status}:${synced.reason ?? ""}`, bound:false };
+      let conflicts: string[] = [];
+      if (input.kind !== "retry" && resolve(writer.workspacePath) !== resolve(base)) {
+        const synced = await host.call("gitSyncWorktree", { requestedHostId:input.config.hostId, basePath:base, worktreePath:writer.workspacePath,
+          ...(input.kind === "merge" ? { keepConflicts:true } : {}) }, { hostId:input.config.hostId, timeoutMs:120_000 });
+        conflicts = synced.conflicts ?? [];
+        const usable = synced.status === "synced" || synced.status === "up-to-date" || (input.kind === "merge" && synced.status === "conflict");
+        if (!usable) return { ok:false, reason:`worktree_sync_${synced.status}:${synced.reason ?? ""}`, bound:false };
         await host.call("gitPrepareWorktree", { requestedHostId:input.config.hostId, basePath:base, worktreePath:writer.workspacePath },
           { hostId:input.config.hostId, timeoutMs:600_000 }).catch(() => undefined);
       }
@@ -179,7 +188,8 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       const since = Date.now();
       await saveFollowUp(bb.storage.kv, input.attemptId, since);
       try {
-        await bb.sdk.threads.send({ threadId:writer.threadId, mode:"queue-if-active", input:[{ type:"text", text:input.prompt, mentions:[] }] } as never);
+        const text = typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt;
+        await bb.sdk.threads.send({ threadId:writer.threadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never);
       } catch (cause) {
         return { ok:false, reason:`sticky_send_failed:${cause instanceof Error ? cause.message : String(cause)}`, bound:true };
       }

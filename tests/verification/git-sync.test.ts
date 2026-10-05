@@ -78,3 +78,17 @@ it("keeps Lane Pilot's own worktree with its committed work when uncommitted edi
   expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "a", removeWorktree: true })).status).toBe("merged");
   expect(await readFile(join(base, "page.vue"), "utf8")).toBe("hero from a\nhow\nfaq\n");
 });
+
+it("leaves a conflicted merge of main in the worktree for its writer to resolve, when asked", async () => {
+  const { base, worktree } = await repo();
+  const a = worktree("a");
+  await writeFile(join(a, "page.vue"), "hero A\nhow\nfaq\n"); git(a, "add", "-A"); git(a, "commit", "-qm", "a");
+  await writeFile(join(base, "page.vue"), "hero MAIN\nhow\nfaq\n"); git(base, "add", "-A"); git(base, "commit", "-qm", "main");
+  const synced = await syncWorktree({ basePath: base, worktreePath: a, keepConflicts: true });
+  expect(synced).toMatchObject({ status: "conflict", conflicts: ["page.vue"] });
+  expect(await readFile(join(a, "page.vue"), "utf8")).toContain("<<<<<<<");
+  // The writer resolves both intents; Lane Pilot's integration commits the merge and main takes it.
+  await writeFile(join(a, "page.vue"), "hero A and MAIN\nhow\nfaq\n");
+  expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "a" })).status).toBe("merged");
+  expect(await readFile(join(base, "page.vue"), "utf8")).toBe("hero A and MAIN\nhow\nfaq\n");
+});

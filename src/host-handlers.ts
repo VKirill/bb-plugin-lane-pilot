@@ -86,7 +86,7 @@ export const gitRemoveWorktree: ExperimentalHostRpcHandlers<typeof hostContract>
 
 export const gitSyncWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitSyncWorktree"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await syncWorktree({basePath:input.basePath,worktreePath:input.worktreePath}),
+  ...await syncWorktree({basePath:input.basePath,worktreePath:input.worktreePath,keepConflicts:input.keepConflicts}),
 });
 
 /** Free space for whoever decides before a spawn: a full disk (OVH, 2026-10-03) killed the BB host daemon. */
