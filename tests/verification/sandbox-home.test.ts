@@ -30,6 +30,22 @@ it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))
   },
 );
 
+it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))(
+  "keeps the host worker answering while a sandboxed check runs",
+  async () => {
+    const workspace = await realpath(await mkdtemp(join(tmpdir(), "lp-sandbox-ws-")));
+    let ticks = 0;
+    const timer = setInterval(() => { ticks += 1; }, 20);
+    try {
+      const result = await runSandboxedCommandOnHost({
+        requestedHostId: "host", workspacePath: workspace, cwd: workspace, backend: "auto", command: "sleep 0.5",
+      } as never);
+      expect(result.exitCode).toBe(0);
+    } finally { clearInterval(timer); }
+    expect(ticks).toBeGreaterThan(5);
+  },
+);
+
 it("finds the bb CLI folder from BB_CLI or PATH so sandboxed checks can run bb plugin build", async () => {
   const { bbCliDir } = await import("../../src/verification/sandbox");
   expect(bbCliDir({ BB_CLI: "/opt/bb/dist/bb" })).toBe("/opt/bb/dist");

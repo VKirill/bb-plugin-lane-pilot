@@ -80,6 +80,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
 
   async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string): Promise<Array<VerifyResult & {
     sandboxBackend:string|null; policySha256:string|null; workspacePath:string; flaky?:true;
+    /** The host call itself failed (worker killed, host offline): the command's own verdict is unknown. */
+    hostError?:true;
   }>> {
     const policy=runId?runPolicyFor(runId):buildRunPolicy(loadProjectSettings(db,config.projectId));
     const verificationScopes=runId?getRunSettingsScopes(db,runId):[];
@@ -112,13 +114,14 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         backend:null as "macos-seatbelt"|"linux-bubblewrap"|null,
         policySha256:null as string|null,
         workspacePath:task.project_cwd,
+        hostError:true as const,
       }));
       if (ran.hostId !== config.hostId) {
         return {command:command.command,exitCode:1,stdout:"",stderr:"sandbox result host did not match the configured host",
           sandboxBackend:null,policySha256:null,workspacePath:task.project_cwd};
       }
       return {command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?ran.stdout:"",stderr:typeof ran.stderr==="string"?ran.stderr:"",
-        sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath};
+        sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,...("hostError" in ran?{hostError:true as const}:{})};
       },(line)=>bb.log.info(line));
       } finally { release(); }
     });

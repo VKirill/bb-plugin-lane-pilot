@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.152
+
+From a self-repair of «attempt_workspace_snapshot_failed: cannot read writer-workspace git diff: host plugin call … exceeded its deadline» (SelfyStudio, 2026-10-05):
+- **Long commands no longer freeze Lane Pilot's host worker.** Checks run on the host (`runSandboxedCommand`), `runCommand`, `runCli`, browser QA and the `npm ci` / `npm run build` of a merge used `spawnSync`. While one ran, the worker could take no other call and could not answer the daemon's cancel. A short call queued behind it missed its deadline, and the daemon SIGKILLed the worker, the running check with it. On OVH this happened 15 times on 2026-10-05: each time a post-merge `vitest` on SelfyStudio main blocked the worker. The writer's workspace snapshot (30 s) hit the deadline and the task was parked. These commands now run asynchronously (`src/spawn-async.ts`), with the same limits and the same result.
+- **A post-merge check that could not run no longer reads as a red main.** The killed check came back as exit 1 with «host plugin worker exited (SIGKILL)». Lane Pilot then dispatched a `-mainfix` task for a green main: 6 on SelfyStudio that day, and their writers found nothing to fix. A check whose host call failed is now logged as «could not run» and dispatches nothing.
+
 ## 0.1.150
 
 From a self-repair of «relay sweep failed: HTTP 502: The "lane-pilot" plugin's message.dispatch hook failed: did not decide within 10000ms» (2026-10-05):

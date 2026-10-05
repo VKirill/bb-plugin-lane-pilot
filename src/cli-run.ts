@@ -1,8 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { assertSafeArgv } from "./argv-builder";
 import { agentsDir, expandHomePath, resolveHome } from "./paths";
+import { spawnAsync } from "./spawn-async";
 
 const FORBIDDEN = /(?:^|\s)(--apply(?:[= ]|$)|(?:^|\s)setup(?:\s|$))/;
 
@@ -47,10 +47,9 @@ export async function runCliOnHost(input: {
 }> {
   assertSafeArgv(input.argv);
   const binaryPath = await resolveLaneBinary(input.binary, input.homeDir);
-  const result = spawnSync(binaryPath, input.argv, {
+  const result = await spawnAsync(binaryPath, input.argv, {
     cwd: input.cwd,
     env: { ...process.env, ...input.env },
-    encoding: "utf8",
     timeout: input.timeoutMs ?? 120_000,
   });
   return {
@@ -65,23 +64,22 @@ export async function runCliOnHost(input: {
   };
 }
 
-export function runCommandOnHost(input: {
+export async function runCommandOnHost(input: {
   requestedHostId: string;
   command: string;
   cwd: string;
   timeoutSec?: number;
-}): {
+}): Promise<{
   hostId: string;
   exitCode: number;
   stdout: string;
   stderr: string;
-} {
+}> {
   if (FORBIDDEN.test(input.command) || input.command.includes("--apply") || /\bsetup\b/.test(input.command)) {
     throw new Error("refusing host command: --apply/setup are forbidden in Mode 2");
   }
-  const result = spawnSync("/bin/bash", ["-lc", input.command], {
+  const result = await spawnAsync("/bin/bash", ["-lc", input.command], {
     cwd: input.cwd,
-    encoding: "utf8",
     timeout: (input.timeoutSec ?? 30) * 1000,
     // A dirty workspace snapshot runs to megabytes; the 1 MB default killed it with no message.
     maxBuffer: 64 * 1024 * 1024,

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
+import { spawnAsync } from "../spawn-async";
 
 export type GitIntegration = {
   status:"merged"|"up-to-date"|"conflict"|"failed"|"busy";
@@ -251,9 +252,7 @@ const installing=new Map<string,Promise<void>>();
 async function installBaseDependencies(basePath:string):Promise<void> {
   if((await stat(join(basePath,"node_modules")).catch(()=>null))?.isDirectory()) return;
   if(!(await stat(join(basePath,"package-lock.json")).catch(()=>null))?.isFile()) return;
-  const running=installing.get(basePath)??Promise.resolve().then(()=>{
-    spawnSync("npm",["ci","--no-audit","--no-fund"],{cwd:basePath,encoding:"utf8",timeout:540_000,maxBuffer:16<<20});
-  }).finally(()=>installing.delete(basePath));
+  const running=installing.get(basePath)??spawnAsync("npm",["ci","--no-audit","--no-fund"],{cwd:basePath,timeout:540_000,maxBuffer:16<<20}).then(()=>undefined).finally(()=>installing.delete(basePath));
   installing.set(basePath,running);
   await running;
 }
@@ -274,7 +273,7 @@ async function rebuildChangedPackages(basePath:string,before:string):Promise<Arr
     if(!(await stat(join(basePath,dir,"dist")).catch(()=>null))?.isDirectory()) continue;
     const manifest=await readFile(join(basePath,dir,"package.json"),"utf8").then((text)=>JSON.parse(text) as {scripts?:Record<string,string>}).catch(()=>null);
     if(!manifest?.scripts?.build) continue;
-    const run=spawnSync("npm",["run","build"],{cwd:join(basePath,dir),encoding:"utf8",timeout:300_000,maxBuffer:16<<20});
+    const run=await spawnAsync("npm",["run","build"],{cwd:join(basePath,dir),timeout:300_000,maxBuffer:16<<20});
     const ok=run.status===0;
     out.push({dir,ok,detail:ok?null:`${run.error?.message??""}${(run.stderr||run.stdout||"").trim().split("\n").slice(-6).join("\n")}`.slice(0,800)});
   }

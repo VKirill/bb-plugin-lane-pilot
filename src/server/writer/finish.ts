@@ -584,7 +584,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       ctx.log(`post-merge check of ${input.task.id} could not run: ${cause instanceof Error ? cause.message : String(cause)}`);
       return null;
     });
-    const red = checks?.filter((check) => check.exitCode !== 0) ?? [];
+    // A check whose host call failed says nothing about main: read as red, it dispatched a mainfix for a green main.
+    const unrun = checks?.filter((check) => check.hostError) ?? [];
+    if (unrun.length) ctx.log(`post-merge check of ${input.task.id} could not run on the host: ${unrun.map((check) => `${check.command} (${check.stderr.slice(0, 160)})`).join(", ")}`);
+    const red = checks?.filter((check) => check.exitCode !== 0 && !check.hostError) ?? [];
     if (!red.length) return;
     const tail = (check:typeof red[number]) => `${check.stderr ?? ""}\n${check.stdout ?? ""}`.trim().slice(-1200);
     ctx.log(`post-merge check of ${input.task.id} failed on main: ${red.map((check) => check.command).join(", ")}`);

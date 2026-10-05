@@ -1,9 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
+import { spawnAsync } from "../spawn-async";
 
 export const browserQaInputSchema = z.object({
   requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), url:z.string().url(),
@@ -114,7 +114,7 @@ export async function runBrowserQaOnHost(raw:BrowserQaInput):Promise<BrowserQaRe
     argv.push("--model", input.model);
     argv.push("--reasoning-effort", input.reasoningEffort);
   }
-  const completed = spawnSync(binary, argv, { cwd:project, encoding:"utf8", timeout:input.timeoutSec * 1000, maxBuffer:4_000_000 });
+  const completed = await spawnAsync(binary, argv, { cwd:project, timeout:input.timeoutSec * 1000, maxBuffer:4_000_000 });
   const exitCode = completed.status ?? 1;
   let artifacts:Array<{path:string; sha256:string; size:number}> = [];
   let reportText:string|null = null;

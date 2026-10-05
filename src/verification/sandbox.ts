@@ -1,9 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { accessSync, constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
 import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { spawnAsync } from "../spawn-async";
 
 export type SandboxedCommandInput = {
   requestedHostId:string; workspacePath:string; cwd:string; command:string; backend?:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec?:number;
@@ -154,7 +154,7 @@ async function realDirectory(path:string, label:string):Promise<string> {
   return realpath(path);
 }
 
-/** spawnSync killed the command at its time limit: reported as 124 like timeout(1), so a caller can tell it from a failure. */
+/** The command was killed at its time limit: reported as 124 like timeout(1), so a caller can tell it from a failure. */
 const timedOut=(child:{error?:Error})=>(child.error as NodeJS.ErrnoException|undefined)?.code==="ETIMEDOUT";
 
 export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Promise<SandboxedCommandResult> {
@@ -178,8 +178,8 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       releaseGuards=()=>releaseGuardPaths(created);
       const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
       const policySha256=createHash("sha256").update(JSON.stringify(args),"utf8").digest("hex");
-      const child=spawnSync(bubblewrapPath!,[...args,input.command],{
-        cwd,env:{},encoding:"utf8",timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
+      const child=await spawnAsync(bubblewrapPath!,[...args,input.command],{
+        cwd,env:{},timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
       });
       if (child.error && ["EPERM","EACCES","ENOENT"].includes(String((child.error as NodeJS.ErrnoException).code))) {
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
@@ -189,14 +189,14 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     }
     const profile = buildSeatbeltProfile(workspacePath,tempPath);
     const policySha256 = createHash("sha256").update(profile,"utf8").digest("hex");
-    const child = spawnSync(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],{
+    const child = await spawnAsync(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],{
       cwd,
       env:{
         PATH:sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"),
         HOME:tempPath,TMPDIR:tempPath,TMP:tempPath,TEMP:tempPath,BB_DATA_DIR:bbDataDir(),
         LANG:"C",LC_ALL:"C",
       },
-      encoding:"utf8",timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
+      timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
     });
     if (child.error && ["EPERM","EACCES","ENOENT"].includes(String((child.error as NodeJS.ErrnoException).code))) {
       throw new Error("sandbox_backend_unavailable: Seatbelt launch was denied by the host");
