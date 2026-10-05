@@ -3,7 +3,7 @@
 - Runs coordinate parallel work, retries, blocked-thread handoffs and reminders, recovery, and self-repair.
 - Browser QA, specialist agents, and director councils support product checks and decisions.
 - Project memory, learned rules, documentation maintenance, and project-life snapshots support ongoing work.
-- The settings UI and CLI manage projects, writer and verification settings, enrolled hosts, installs, run health, and diagnostics.
+- The settings UI and CLI manage projects, writer and verification settings, enrolled hosts, installs, run health, diagnostics, and a global token-usage dashboard by model and time range.
 
 ## Blocked
 - None recorded.
@@ -12,8 +12,8 @@
 - [ ] Resolve the remaining owner decisions in the harness engineering gaps plan.
 
 ## Last verify
-- command: accepted receipt: targeted `npx vitest run` (34 files) and `npx tsc --noEmit` source check
-- result: green; 214 tests passed and no source type errors
+- command: Lane Pilot acceptance receipts for `lp-harness-gaps-land.4` and `lp-token-usage-dashboard`
+- result: green; both tasks accepted
 - when: 2026-10-05
 
 ## Pointers
