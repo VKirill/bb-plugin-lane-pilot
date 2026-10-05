@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/database";
 import plugin from "../server";
 import {
-  TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE, queryTokenUsage, syncTokenUsage, tokenDelta, utcDay,
+  EVENT_PAGE, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE, queryTokenUsage, syncTokenUsage, tokenDelta, utcDay,
 } from "../src/server/token-usage";
 
 let dispose: (() => Promise<void> | void) | null = null;
@@ -31,6 +31,8 @@ function host(
         list: async () => threads,
         events: { list: async (args: ListArgs) => {
           listed.push(args);
+          const limit = Number(args.limit);
+          if (!Number.isFinite(limit) || limit > 100) throw new Error("HTTP 400: limit exceeds 100");
           if (extra.failThread && args.threadId === extra.failThread) throw new Error("events_list_error:boom");
           const after = args.afterSeq ? Number(args.afterSeq) : 0;
           const allowed = new Set(args.types ?? []);
@@ -40,7 +42,7 @@ function host(
             if (seq <= after) return false;
             if (allowed.size && !allowed.has(type)) return false;
             return true;
-          });
+          }).slice(0, limit);
         } },
       },
     } as never,
@@ -86,7 +88,7 @@ describe("token usage sync", () => {
     await syncTokenUsage({ bb, db }, { sinceDays: 90 });
     await syncTokenUsage({ bb, db }, { sinceDays: 90 });
     expect(listed[0]).toMatchObject({
-      threadId: "thr_a", order: "asc", limit: "200", types: [...TOKEN_USAGE_EVENT_TYPES],
+      threadId: "thr_a", order: "asc", limit: String(EVENT_PAGE), types: [...TOKEN_USAGE_EVENT_TYPES],
     });
     expect(listed[0]?.afterSeq).toBeUndefined();
     const result = await queryTokenUsage({ bb, db }, { range: "7d" });
@@ -207,6 +209,28 @@ describe("token usage sync", () => {
     await syncTokenUsage({ bb, db }, { sinceDays: 90 });
     expect((await queryTokenUsage({ bb, db }, { range: "7d" })).byModel[0]).toMatchObject({
       model: "opus", input: 300, output: 40, cached: 90, total: 340,
+    });
+  });
+
+  it("pages events at most 100 at a time and still collects every row", async () => {
+    const turn = { inputTokens: 1, outputTokens: 0, cachedInputTokens: 0, totalTokens: 1 };
+    const rows: unknown[] = [
+      { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "gpt-5" } } },
+    ];
+    const extra = 205;
+    for (let i = 0; i < extra; i++) {
+      rows.push(usage(i + 2, {
+        last: turn,
+        total: { inputTokens: i + 1, outputTokens: 0, cachedInputTokens: 0, totalTokens: i + 1 },
+      }));
+    }
+    const { bb, db, listed } = host({ thr_a: rows });
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(listed.every((call) => Number(call.limit) <= 100)).toBe(true);
+    expect(listed.length).toBeGreaterThan(1);
+    expect(listed.map((call) => call.limit)).toEqual(Array(listed.length).fill(String(EVENT_PAGE)));
+    expect((await queryTokenUsage({ bb, db }, { range: "7d" })).byModel[0]).toMatchObject({
+      model: "gpt-5", input: extra, output: 0, cached: 0, total: extra,
     });
   });
 });

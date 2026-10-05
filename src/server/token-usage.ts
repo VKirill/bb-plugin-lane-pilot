@@ -14,7 +14,8 @@ export const TOKEN_USAGE_EVENT_TYPES = [
   "client/thread/start",
   "provider/modelFallback",
 ] as const;
-const PAGE = 200;
+const THREAD_PAGE = 200;
+export const EVENT_PAGE = 100;
 const DAY_MS = 86_400_000;
 
 export type TokenBreakdown = { input: number; output: number; cached: number; total: number };
@@ -174,9 +175,9 @@ async function listAllThreads(bb: BbPluginApi): Promise<ListedThread[]> {
   const found: ListedThread[] = [];
   const seen = new Set<string>();
   for (const archived of [false, true]) {
-    for (let offset = 0; offset < 50_000; offset += PAGE) {
+    for (let offset = 0; offset < 50_000; offset += THREAD_PAGE) {
       const page = await bb.sdk.threads.list({
-        includeHidden: true, archived, limit: PAGE, offset,
+        includeHidden: true, archived, limit: THREAD_PAGE, offset,
       } as never).catch(() => []) as unknown;
       const rows = Array.isArray(page) ? page : [];
       for (const row of rows) {
@@ -189,7 +190,7 @@ async function listAllThreads(bb: BbPluginApi): Promise<ListedThread[]> {
           providerId: stringAt(row, "providerId") ?? "",
         });
       }
-      if (rows.length < PAGE) break;
+      if (rows.length < THREAD_PAGE) break;
     }
   }
   return found;
@@ -202,7 +203,7 @@ async function listThreadEvents(bb: BbPluginApi, threadId: string, afterSeq: num
     const listed = await bb.sdk.threads.events.list({
       threadId,
       order: "asc",
-      limit: String(PAGE),
+      limit: String(EVENT_PAGE),
       ...(cursor > 0 ? { afterSeq: String(cursor) } : {}),
       types: TOKEN_USAGE_EVENT_TYPES,
     });
@@ -212,7 +213,7 @@ async function listThreadEvents(bb: BbPluginApi, threadId: string, afterSeq: num
     if (listed.length === 0) break;
     events.push(...listed);
     const last = eventSeq(listed[listed.length - 1]);
-    if (last <= cursor || listed.length < PAGE) break;
+    if (last <= cursor || listed.length < EVENT_PAGE) break;
     cursor = last;
   }
   return events;
