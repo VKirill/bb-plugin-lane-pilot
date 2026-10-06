@@ -1,4 +1,4 @@
-import { listUnfinishedStages, openDatabase } from "./src/database";
+import { getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadProjectSettings, openDatabase } from "./src/database";
 import { closeOrphanWriterStages } from "./src/server/stage-records";
 import { createActivation } from "./src/server/activation";
 import { registerCli } from "./src/server/cli";
@@ -13,6 +13,7 @@ import { adoptWaitingRules } from "./src/server/insights";
 import { createRuleScan } from "./src/server/rule-scan";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/server/run-finish";
 import { registerRpc } from "./src/server/rpc";
+import { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./src/server/writer-silence";
 import type { Services } from "./src/server/services";
 import { createStageChildren } from "./src/server/stages/children";
 import { createDocsStage } from "./src/server/stages/docs";
@@ -85,6 +86,15 @@ export default async function plugin(bb: BbPluginApi) {
   const sweepParked = () => services.stability.sweep().then(() => undefined,
     (cause) => bb.log.warn(`Lane Pilot parked-task sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   bb.background.schedule("parked-task-sweep", "*/5 * * * *", sweepParked);
+  const sweepSilentWriters = () => sweepWriterSilence({
+    bb, getThread:(threadId) => ctx.getThreadBounded(threadId), isDisposed:ctx.isDisposed, log:(line) => bb.log.info(line),
+    openAttempts:() => listOpenAttempts(db),
+    silenceMinutes:(projectId, runId) => {
+      const minutes = Number(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))["writer.silence_nudge_min"]);
+      return Number.isFinite(minutes) && minutes >= 1 ? minutes : DEFAULT_SILENCE_NUDGE_MIN;
+    },
+  }).then(() => undefined, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot writer silence sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
+  bb.background.schedule("writer-silence-sweep", "*/5 * * * *", sweepSilentWriters);
   // Mondays 05:00: away from the nightly docs (03:00) and rules (03:30) passes.
   bb.background.schedule("stability-drill", "0 5 * * 1", () => services.stability.drill().then(() => undefined,
     (cause) => bb.log.warn(`Lane Pilot fire drill skipped: ${cause instanceof Error ? cause.message : String(cause)}`)));

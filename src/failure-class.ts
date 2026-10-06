@@ -24,6 +24,10 @@ const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run s
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const BUDGET = /^run_budget_exceeded:/;
 const LIMIT = /writer_provider_limit:|^writer_provider_unavailable:breaker_open/;
+/** A writer that stayed silent through its nudges (writer-silence.ts): the provider's session hung, not the task's work. */
+export const WRITER_SILENT_REASON = "writer_silent_after_nudge";
+const SILENT = /^writer_silent_after_nudge/;
+export const isWriterSilent = (reason:string | null | undefined):boolean => SILENT.test(reason ?? "");
 // An empty_output is a provider fault only when the writer gave no answer; an answer with no files is the task's.
 const PROVIDER_STATES = new Set(["provider_error", "timeout"]);
 
@@ -32,6 +36,7 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   if (JUDGMENT.test(text)) return "judgment";
   if (BUDGET.test(text)) return "budget";
   if (LIMIT.test(text)) return "limit";
+  if (SILENT.test(text)) return "provider";
   if (MISLABELED_MERGE.test(text)) return "harness";
   if (MERGE.test(text)) return "merge";
   if (INFRA.test(text)) return "infra";

@@ -18,6 +18,7 @@ import { runPlanCritique, runPmRead, runSpecialistReview } from "../critique-run
 import { recordStage } from "../stage-records";
 import { id, stringAt, valueAt } from "../values";
 import { buildTask } from "../writer-task";
+import { countRunNudges } from "../writer-silence";
 import { isAbsolute, relative, resolve } from "node:path";
 import { parseIntegrationGateSettings } from "../integration-gate";
 import type { ServerCore } from "../core";
@@ -368,7 +369,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         const blockedBy = (await Promise.all([...latestByTask.values()].filter((attempt) => attempt.state === "blocked")
           .map(async (attempt) => { const found = await loadBlockedBy(bb.storage.kv, attempt.id); return found ? { taskId:attempt.task_id, ...found } : null; })))
           .filter((row) => row !== null);
-        return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), ...(reasons.length ? { reason:reasons.join("; ") } : {}),
+        const nudged = await countRunNudges(bb.storage.kv, (listedRun?.attempts ?? []).map((row) => row.id));
+        return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), nudged, ...(reasons.length ? { reason:reasons.join("; ") } : {}),
           ...(blockedBy.length ? { blockedBy } : {}) };
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -381,6 +383,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       attemptId:attempts.at(-1)?.id ?? null,
       writerThreadId,
       state:"running",
+      nudged:await countRunNudges(bb.storage.kv, listRunsWithAttempts(db, args.projectId).find((item) => item.id === args.runId)?.attempts.map((row) => row.id) ?? []),
       tasks:recent.tasks,
       stages:listStageReceipts(db, args.runId).filter((row) => recent.ids.has(row.taskId)),
       ...(writerThreadId

@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { FREE_CLASSES, failureClass } from "./failure-class";
+import { FREE_CLASSES, failureClass, isWriterSilent } from "./failure-class";
 import { handoffMigrations } from "@lane-pilot/handoff";
 import { councilMigrations } from "@lane-pilot/council";
 import { ruleAudienceMigrations, ruleMigrations, ruleTrialMigrations, triageMigrations } from "@lane-pilot/run-insights";
@@ -658,13 +658,13 @@ export function countAttempts(db: LanePilotDatabase, runId: string, taskId: stri
 }
 
 /**
- * Attempts that count against the task's limit: a merge conflict, Lane Pilot's own fault or the machine's does not
- * spend one (an attempt still running counts, its outcome is not known yet).
+ * Attempts that count against the task's limit: a merge conflict, Lane Pilot's own fault, the machine's or a
+ * silent writer's does not spend one (an attempt still running counts, its outcome is not known yet).
  */
 export function countChargedAttempts(db: LanePilotDatabase, runId: string, taskId: string): number {
   const rows = db.prepare("SELECT state, reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(runId, taskId) as
     Array<{ state:string; reason:string|null }>;
-  return rows.filter((row) => !(row.reason && FREE_CLASSES.has(failureClass(row.state, row.reason)))).length;
+  return rows.filter((row) => !(row.reason && (FREE_CLASSES.has(failureClass(row.state, row.reason)) || isWriterSilent(row.reason)))).length;
 }
 
 export function listAttemptsForTask(db: LanePilotDatabase, runId: string, taskId: string): Array<{

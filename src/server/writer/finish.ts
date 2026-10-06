@@ -23,6 +23,8 @@ import { isRunHalted } from "../runs-halt";
 import { loadFollowUp } from "./sticky";
 import { askGuestsToCommit } from "../checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
+import { loadWriterNudge } from "../writer-silence";
+import { WRITER_SILENT_REASON } from "../../failure-class";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
@@ -130,6 +132,14 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const pollStarted = Date.now();
         const currentThread = await getThreadBounded(input.writerThreadId);
         const currentStatus = stringAt(currentThread, "status");
+        // The silence sweep nudged this writer twice and it stayed silent: the attempt ends and the task moves on.
+        const nudge = await loadWriterNudge(bb.storage.kv, input.attemptId);
+        if (nudge?.ended) {
+          const reason = `${WRITER_SILENT_REASON}: no activity after ${nudge.count} nudges`;
+          transitionAttempt(db, input.attemptId, "provider_error", { reason });
+          if (["active", "starting"].includes(currentStatus ?? "")) await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
+          return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+        }
         const listed = currentStatus === "idle" ? null : await listThreadEventsRaw(bb, { threadId:input.writerThreadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50" });
         const failure = currentStatus === "error" ? "writer thread status error" : listed?.ok ? threadFailure(listed.events) : null;
         if (failure) {

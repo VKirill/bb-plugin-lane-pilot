@@ -8,7 +8,7 @@ import { reconcile } from "../../reconcile";
 import { emergencyFallbackDecision } from "../../stages/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, repeatedFailureReason, taskFamily } from "../../failure-class";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, isWriterSilent, repeatedFailureReason, taskFamily } from "../../failure-class";
 import { previousAttemptBrief, stickyTurnPrompt } from "../writer-task";
 import { isMainfixTask } from "../../validate-output";
 import { openDatabase } from "../../database";
@@ -391,7 +391,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const failedClass = failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null);
         // A provider that takes no work fails every retry the same way: the writer chain below takes the task now.
         // The attempt ends blocked with its limit reason (uncharged); primaryFailure keeps the state the chain reads.
-        if (failedClass === "limit") {
+        // A writer that stayed silent through its nudges is handed on the same way: its session hung, not the task.
+        if (failedClass === "limit" || isWriterSilent(typeof last.reason === "string" ? last.reason : null)) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
           last = { ...last, status:"blocked" };
