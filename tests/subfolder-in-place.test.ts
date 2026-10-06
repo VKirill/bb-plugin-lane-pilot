@@ -131,7 +131,7 @@ it("keeps dirt paths relative to a nested chat folder", () => {
   ]);
 });
 
-it("snapshots nested-folder dirt from the repo root then strips the prefix", async () => {
+it("snapshots nested-folder dirt in the folder itself, where the host answers workspace-relative paths", async () => {
   const root = await mkdtemp(join(tmpdir(), "lp-inplace-"));
   const base = join(root, "main");
   execFileSync("git", ["init", "-q", "-b", "main", base]);
@@ -149,10 +149,7 @@ it("snapshots nested-folder dirt from the repo root then strips the prefix", asy
       call: async (method: string, input: { cwd?: string }) => {
         if (method === "runCommand") {
           hostCwds.push(input.cwd ?? "");
-          return { hostId: "h", exitCode: 0, stdout: JSON.stringify([
-            { path: "apps/bot/index.ts", sha256: "aa" },
-            { path: "root.ts", sha256: "cc" },
-          ]), stderr: "" };
+          return { hostId: "h", exitCode: 0, stdout: JSON.stringify([{ path: "index.ts", sha256: "aa" }]), stderr: "" };
         }
         return {};
       },
@@ -162,5 +159,5 @@ it("snapshots nested-folder dirt from the repo root then strips the prefix", asy
   const { workspaceDirt } = createWriterSpawn(ctx as never, { providerBreaker: { decide: () => ({ allow: true }) } } as never);
   const dirt = await workspaceDirt({ ...config, writerWorkspacePath: nested }, nested);
   expect(dirt).toEqual({ ok: true, paths: ["index.ts"], snapshots: [{ path: "index.ts", sha256: "aa" }] });
-  expect(await realpath(hostCwds[0]!)).toBe(await realpath(base));
+  expect(await realpath(hostCwds[0]!)).toBe(await realpath(nested));
 });

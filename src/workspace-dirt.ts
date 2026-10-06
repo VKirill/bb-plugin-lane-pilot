@@ -1,8 +1,16 @@
-/** Lists the writer workspace's dirty paths with a content hash each; run by python3 in the workspace. */
+/**
+ * Lists the writer workspace's dirty paths with a content hash each; run by python3 in the workspace. Paths are
+ * relative to the workspace, also when it is a subfolder of a larger repo: git prints them from the repo root, and
+ * only the workspace's host can tell the prefix (treba-sites on OVH, 2026-10-06, read from the hub as repo-relative).
+ */
 export const WORKSPACE_DIRT_SCRIPT = String.raw`import hashlib, json, os, subprocess
-raw = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], check=True, stdout=subprocess.PIPE).stdout
+prefix = subprocess.run(["git", "rev-parse", "--show-prefix"], check=True, stdout=subprocess.PIPE).stdout.strip()
+raw = subprocess.run(["git", "status", "--porcelain", "-z", "-uall", "--", "."], check=True, stdout=subprocess.PIPE).stdout
 parts = raw.split(bytes([0]))
 paths = []
+def keep(name):
+    if name.startswith(prefix) and name[len(prefix):]:
+        paths.append(name[len(prefix):])
 i = 0
 while i < len(parts) and parts[i]:
     item = parts[i]
@@ -10,11 +18,11 @@ while i < len(parts) and parts[i]:
     name = item[3:]
     if not name:
         raise ValueError("empty git path")
-    paths.append(name)
+    keep(name)
     if item[0:1] in (b"R", b"C") or item[1:2] in (b"R", b"C"):
         if i >= len(parts) or not parts[i]:
             raise ValueError("missing rename source")
-        paths.append(parts[i])
+        keep(parts[i])
         i += 1
 rows = []
 for raw_path in sorted(set(paths)):

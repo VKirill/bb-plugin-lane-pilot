@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.164
+
+From a self-repair of «missing expected_outputs: <path>» (treba-sites, SelfyStudio, content-factory, Lane Pilot; 2026-10-06):
+- **A workspace that is a subfolder of a larger repo is checked in its own paths, on every machine.** treba-sites works in `templates/max_landing` and `templates/blog` inside the `/home/ubuntu/sites/treba-sites` repo on OVH. git lists dirty files from the repo root, and Lane Pilot looked for the subfolder with git on the hub, which cannot see an OVH folder. So the writer's change read as `templates/max_landing/index.html` and was hashed against a file that does not exist (sometimes against the wrong file of the same name). A contract written relative to the folder got «missing expected_outputs», then «outside owns_paths». When the PM rewrote it relative to the repo, the file read as missing. `hero-buttons-polish.2` and `admin-white-full-url.4` were blocked after two attempts each. The dirt snapshot now runs `git status -- .` in the workspace on its host. It keeps only the workspace's files, with the subfolder prefix removed, before hashing them. The server no longer strips the prefix a second time; in a folder the hub can see, that dropped every changed file. Contracts in such a workspace name paths relative to the folder (`index.html`, `admin/index.php`).
+
 ## 0.1.163
 
 At the request of the content-factory PM (editor-policy-ui, 2026-10-06):

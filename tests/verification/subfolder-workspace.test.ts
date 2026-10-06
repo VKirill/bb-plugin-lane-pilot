@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +15,7 @@ import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace
 import { createWriterVerify } from "../../src/server/writer/verify";
 import { buildRunPolicy } from "../../src/stages/run-policy";
 import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../../src/verification/git-integrate";
+import { WORKSPACE_DIRT_SCRIPT } from "../../src/workspace-dirt";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 
@@ -33,14 +33,9 @@ async function subfolderRepo() {
   return { root, repo, sub };
 }
 
-/** Repo-relative dirt rows with a hash each, as the dirt command reports when it runs at the repo root. */
-function repoDirt(repo: string): DirtSnapshot[] {
-  const raw = execFileSync("git", ["status", "--porcelain", "-z", "-uall"], { cwd: repo, encoding: "utf8" });
-  const paths = [...new Set(raw.split("\0").filter(Boolean).map((entry) => entry.slice(3)).filter(Boolean))];
-  return paths.sort().map((path) => {
-    const file = join(repo, path);
-    return { path, sha256: existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : "" };
-  });
+/** The workspace's dirt rows as the host reports them: the real dirt script, run in the subfolder workspace. */
+function workspaceDirt(sub: string): DirtSnapshot[] {
+  return JSON.parse(execFileSync("python3", ["-c", WORKSPACE_DIRT_SCRIPT], { cwd: sub, encoding: "utf8" })) as DirtSnapshot[];
 }
 
 const task = (taskId: string, sub: string): TaskV2 => ({
@@ -141,12 +136,12 @@ it("accepts an owned change while bb chat noise is dirty before and after and un
   await mkdir(join(sub, ".bb", "chats", "thr_before"), { recursive: true });
   await writeFile(join(sub, ".bb", "chats", "thr_before", "README.md"), "chat bookkeeping\n");
   await writeFile(join(repo, "outside.txt"), "dirty before the attempt\n");
-  const dirtBefore = repoDirt(repo);
+  const dirtBefore = workspaceDirt(sub);
   await writeFile(join(sub, "owned.ts"), "two\n");
   await mkdir(join(sub, ".bb", "chats", "thr_after"), { recursive: true });
   await writeFile(join(sub, ".bb", "chats", "thr_after", "history.json"), "[]\n");
   const result = await writerVerify({
-    sub, taskId: "sub-task-3", dirtBefore, dirtAfter: repoDirt(repo),
+    sub, taskId: "sub-task-3", dirtBefore, dirtAfter: workspaceDirt(sub),
     fileContents: { "owned.ts": "two\n" },
   });
   expect(result.status).toBe("accepted");
@@ -160,14 +155,14 @@ it("accepts an owned change while bb chat noise is dirty before and after and un
 
 it("ignores unhashable bb bookkeeping in the pre-existing dirt instead of blocking the attempt on it", async () => {
   const { repo, sub } = await subfolderRepo();
-  const dirtBefore = repoDirt(repo);
+  const dirtBefore = workspaceDirt(sub);
   await mkdir(join(sub, ".bb", "chats", "thr_ghost"), { recursive: true });
   await writeFile(join(sub, ".bb", "chats", "thr_ghost", "thread.json"), "{}\n");
   await writeFile(join(sub, "owned.ts"), "two\n");
-  // The baseline row the leak produced: repo-relative, no hash, and the file still there after the attempt.
-  const leaked = [...dirtBefore, { path: "templates/blog/.bb/chats/thr_ghost/thread.json", sha256: "" }];
+  // A bookkeeping baseline row with no hash, and the file still there after the attempt.
+  const leaked = [...dirtBefore, { path: ".bb/chats/thr_ghost/thread.json", sha256: "" }];
   const result = await writerVerify({
-    sub, taskId: "sub-task-4", dirtBefore: leaked, dirtAfter: repoDirt(repo),
+    sub, taskId: "sub-task-4", dirtBefore: leaked, dirtAfter: workspaceDirt(sub),
     fileContents: { "owned.ts": "two\n" },
   });
   expect(result.status).toBe("accepted");
@@ -179,11 +174,11 @@ it("still rejects a writer change outside owns_paths inside the subfolder, named
   await mkdir(join(sub, ".bb", "chats", "thr_before"), { recursive: true });
   await writeFile(join(sub, ".bb", "chats", "thr_before", "README.md"), "chat bookkeeping\n");
   await writeFile(join(repo, "outside.txt"), "dirty before the attempt\n");
-  const dirtBefore = repoDirt(repo);
+  const dirtBefore = workspaceDirt(sub);
   await writeFile(join(sub, "owned.ts"), "two\n");
   await writeFile(join(sub, "stray.ts"), "not owned\n");
   const result = await writerVerify({
-    sub, taskId: "sub-task-5", dirtBefore, dirtAfter: repoDirt(repo),
+    sub, taskId: "sub-task-5", dirtBefore, dirtAfter: workspaceDirt(sub),
     fileContents: { "owned.ts": "two\n", "stray.ts": "not owned\n" },
   });
   expect(result.status).toBe("validation_failed");

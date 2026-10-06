@@ -74,4 +74,21 @@ describe("workspace dirt snapshot", () => {
     expect(rows[0].sha256).toBe("");
     expect(rows[1].sha256).toHaveLength(64);
   });
+
+  it("answers paths relative to a workspace that is a subfolder of the repo, and only its own", () => {
+    // treba-sites on OVH (2026-10-06): the workspace templates/max_landing sits inside the repo; the hub cannot see
+    // the folder, so only this script on the host can make the paths workspace-relative.
+    const root = repo();
+    const sub = join(root, "templates", "max_landing");
+    mkdirSync(join(sub, ".bb", "chats", "thr_x"), { recursive:true });
+    writeFileSync(join(sub, "index.html"), "<h1>one</h1>\n");
+    git(root, "add", "-A");
+    git(root, "commit", "-qm", "landing");
+    writeFileSync(join(sub, "index.html"), "<h1>two</h1>\n");
+    writeFileSync(join(sub, ".bb", "chats", "thr_x", "README.md"), "chat\n");
+    writeFileSync(join(root, "a.txt"), "outside the workspace\n");
+    const rows = dirt(sub);
+    expect(rows.map((row) => row.path)).toEqual([".bb/chats/thr_x/README.md", "index.html"]);
+    expect(rows.every((row) => row.sha256.length === 64)).toBe(true);
+  });
 });

@@ -19,7 +19,6 @@ import { holderSpawnKey, stringAt } from "../values";
 import { snapshotDirectoryHashes } from "../../hash";
 import { planDigest, writerPrompt, type TaskFolderBrief } from "../writer-task";
 import { areaHistoryText, loadArea } from "./sticky";
-import { dirtInsideWorkspace } from "../../verification/git-ownership";
 import { taskFolderRel, workspaceGitLayout } from "../../verification/git-integrate";
 import { join, resolve } from "node:path";
 import type { ServerCore } from "../core";
@@ -465,12 +464,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
   }
 
   async function workspaceDirt(config: PrototypeConfig, workspacePath = config.writerWorkspacePath): Promise<{ ok:true; paths:string[]; snapshots:DirtSnapshot[] } | { ok:false; reason:string }> {
-    const layout = await workspaceGitLayout(workspacePath);
-    const dirtCwd = layout.ok && layout.nested ? layout.repoTop : workspacePath;
+    // The command runs in the workspace on its own host and answers workspace-relative paths, also for a subfolder
+    // of a larger repo; the server may not see that folder at all.
     const ran = await host.call("runCommand", {
       requestedHostId: config.hostId,
       command: WORKSPACE_DIRT_COMMAND,
-      cwd: dirtCwd,
+      cwd: workspacePath,
       timeoutSec: 30,
     }, { hostId:config.hostId, timeoutMs:30_000 }).catch((cause: unknown) => ({
       hostId: config.hostId,
@@ -487,9 +486,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         || typeof (row as DirtSnapshot).path !== "string" || typeof (row as DirtSnapshot).sha256 !== "string")) {
         return { ok:false, reason:"cannot snapshot writer-workspace file contents" };
       }
-      let snapshots = parseDirtSnapshots(ran.stdout);
+      const snapshots = parseDirtSnapshots(ran.stdout);
       if (snapshots.length !== parsed.length) return { ok:false, reason:"incomplete writer-workspace content snapshot" };
-      if (layout.ok && layout.nested) snapshots = dirtInsideWorkspace(snapshots, layout.prefix);
       return { ok:true, paths:snapshots.map((row) => row.path), snapshots };
     } catch {
       return { ok:false, reason:"invalid writer-workspace content snapshot" };

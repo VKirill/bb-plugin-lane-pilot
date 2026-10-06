@@ -227,17 +227,12 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       if (committed?.status === "ready") {
         produced = committed.paths;
       } else {
-        const prefix = layout.ok && layout.nested ? layout.prefix : "";
-        const dirtBefore = workspaceRelativeDirt(input.dirtBefore, prefix);
-        const dirtAfter = workspaceRelativeDirt(dirt.snapshots, prefix);
-        produced = attemptProduced(dirtAfter, dirtBefore);
+        produced = attemptProduced(workspaceRelativeDirt(dirt.snapshots, ""), workspaceRelativeDirt(input.dirtBefore, ""));
       }
     } else {
-      // Shared checkout / test fixtures running in place on a git repo
-      const prefix = layout.ok && layout.nested ? layout.prefix : "";
-      const dirtBefore = workspaceRelativeDirt(input.dirtBefore, prefix);
-      const dirtAfter = workspaceRelativeDirt(dirt.snapshots, prefix);
-      produced = attemptProduced(dirtAfter, dirtBefore);
+      // Shared checkout / test fixtures running in place on a git repo. The dirt snapshot is already relative to the
+      // workspace (made so on its host); stripping a subfolder prefix again here dropped every path.
+      produced = attemptProduced(workspaceRelativeDirt(dirt.snapshots, ""), workspaceRelativeDirt(input.dirtBefore, ""));
     }
     // A task rejected before it ever ran (preflight, plan critique) claims no files; its contract may even be unsafe
     // («../other-repo/» in owns_paths), and kept in the scope it failed every later task of the run (BB-сервис 2026-10-05).
