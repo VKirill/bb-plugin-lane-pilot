@@ -77,15 +77,13 @@ describe("workspace routing", () => {
     expect(() => requireManagedWorktreeProvider(undefined)).toThrow(/listProviders/);
   });
 
-  it("routes auto work by validated risk score and multi-write policy, preserving explicit modes", () => {
+  it("routes auto work by validated risk score and multi-write policy, preserving explicit worktree mode", () => {
     expect(resolveAttemptWorkspace({mode:"auto",risk:"high",expectedOutputCount:1,minScore:4,multiWriteEnabled:true}))
       .toMatchObject({score:8,strategy:"provision_attempt_worktree",reason:"risk_threshold"});
     expect(resolveAttemptWorkspace({mode:"auto",risk:"low",expectedOutputCount:2,minScore:4,multiWriteEnabled:true}))
       .toMatchObject({score:2,multiWrite:true,strategy:"provision_attempt_worktree",reason:"multi_write"});
     expect(resolveAttemptWorkspace({mode:"auto",risk:"low",expectedOutputCount:2,minScore:4,multiWriteEnabled:false}))
       .toMatchObject({strategy:"inherit_run",reason:"below_threshold"});
-    expect(resolveAttemptWorkspace({mode:"in_place",risk:"critical",expectedOutputCount:4,minScore:4,multiWriteEnabled:true}))
-      .toMatchObject({strategy:"inherit_run",reason:"explicit_in_place"});
     expect(resolveAttemptWorkspace({mode:"worktree",risk:"low",expectedOutputCount:1,minScore:9,multiWriteEnabled:false}))
       .toMatchObject({strategy:"inherit_run",reason:"explicit_worktree"});
     expect(()=>resolveAttemptWorkspace({mode:"auto",risk:"unknown",expectedOutputCount:1,minScore:4,multiWriteEnabled:true})).toThrow(/unsupported task risk/);

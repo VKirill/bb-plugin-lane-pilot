@@ -18,11 +18,9 @@ import { failureClass } from "../../failure-class";
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
 const DEPENDENCY_REDO_WAIT_MS = 6 * 3600_000;
 import type { AttemptState } from "../../state-machine";
-import { parseWorkspaceMode } from "../../workspace/routing";
 import { closeWriterStages, recordStage } from "../stage-records";
 import { id, stringAt } from "../values";
 import { shouldMergeAttemptWorktree } from "./spawn";
-import { workspaceGitLayout } from "../../verification/git-integrate";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
@@ -146,7 +144,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         await new Promise((wake) => setTimeout(wake, 10_000));
       }
     };
-    const waitForOverlappingTasks = async (anyInFolder=false, shouldStop?:()=>string|null) => {
+    const waitForOverlappingTasks = async (shouldStop?:()=>string|null) => {
       const base = getRun(db,input.runId)?.writer_workspace_path;
       let noted = "";
       for (;;) {
@@ -167,13 +165,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // chain (A waits on B's area, B depends on C, C on A) it was a deadlock of a whole run (BB-сервис 2026-10-05).
           if (row.state === "queued" && parsed.success && (parsed.data.depends_on ?? [])
             .some((dep) => dep !== row.task_id && latestTaskAttemptState(db, row.project_id, dep) !== "accepted")) return false;
-          if (anyInFolder) {
-            return blocksSharedFolderWriter(
-              { task_id:row.task_id, project_id:row.project_id, folder:getRun(db,row.run_id)?.writer_workspace_path ?? null,
-                dependsOn:parsed.success ? parsed.data.depends_on : undefined },
-              { taskId:input.taskId, projectId:input.projectId, folder:base ?? null },
-            );
-          }
           // One writer at a time per area: the next task of a page continues in its writer's thread once it is free.
           if (parsed.success && sameArea(parsed.data.area, input.task.area)) return true;
           return parsed.success && ownsPathsOverlap(parsed.data.owns_paths, input.task.owns_paths);
@@ -181,11 +172,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (!blocker) return;
         if (noted !== blocker.id) {
           noted = blocker.id;
-          ctx.log(`writer ${input.taskId} waits for ${blocker.task_id}: ${anyInFolder ? "same folder" : "their owns_paths overlap"}`);
+          ctx.log(`writer ${input.taskId} waits for ${blocker.task_id}: their owns_paths overlap`);
           const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
           if (!stage || stage.state === "pending") {
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:`waiting for ${blocker.task_id} (thread ${blocker.thread_id ?? "not started"}): ${anyInFolder ? "same folder" : `${input.task.area ? "same area or " : ""}owns_paths overlap`}` });
+              reason:`waiting for ${blocker.task_id} (thread ${blocker.thread_id ?? "not started"}): ${input.task.area ? "same area or " : ""}owns_paths overlap` });
           }
         }
         await new Promise((wake) => setTimeout(wake, 10_000));
@@ -193,13 +184,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     };
     void (async () => {
       const policy=runPolicyFor(input.runId);
-      // "In the project folder" shares one checkout: writers there go one at a time, whatever the pool says,
-      // because a parallel writer's half-done edits would land in this writer's diff and checks.
       const runSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
-      const inPlace=parseWorkspaceMode(runSettings["adoc.040"])==="in_place";
-      const runRow=getRun(db,input.runId);
-      const nestedLayout=runRow?.kind==="cli"&&runRow.writer_workspace_path?await workspaceGitLayout(runRow.writer_workspace_path):null;
-      const shareFolder=inPlace||(nestedLayout?.ok===true&&nestedLayout.nested);
       const budget=services.runBudgetFor(input.runId,runSettings);
       const wallOrTokenStop = () => runningWriterBudgetStop(budget.check());
       const blockBeforeWriter = (reason:string) => {
@@ -211,13 +196,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       };
       // Tasks run side by side only when they cannot touch the same files: one whose owns_paths overlap an
       // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
-      // A subfolder in-place fallback shares the whole folder, so any earlier attempt there is a blocker.
       const dependency = await waitForDependencies(wallOrTokenStop);
       if (dependency) {
         blockBeforeWriter(dependency);
         return;
       }
-      const overlapStop = await waitForOverlappingTasks(shareFolder, wallOrTokenStop);
+      const overlapStop = await waitForOverlappingTasks(wallOrTokenStop);
       if (overlapStop) {
         blockBeforeWriter(overlapStop);
         return;
@@ -229,7 +213,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (budgetStop) { blockBeforeWriter(budgetStop); return; }
         const base = getRun(db, input.runId)?.writer_workspace_path;
         const held = services.stability.breakerHolds(input.projectId)
-          ?? (!shareFolder && base ? await services.stability.diskHolds(input.config.hostId, base) : null);
+          ?? (base ? await services.stability.diskHolds(input.config.hostId, base) : null);
         if (!held) break;
         if (noted !== held) {
           noted = held;
@@ -239,7 +223,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
         await new Promise((wake) => setTimeout(wake, 30_000));
       }
-      releaseWriterSlot=await services.runWriterPool.acquire(input.runId,shareFolder?1:policy.pools.provider);
+      releaseWriterSlot=await services.runWriterPool.acquire(input.runId,policy.pools.provider);
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){
         if(latestAttempt?.state==="canceled"){
@@ -632,13 +616,3 @@ export function dependsOnTask(dependsOn:readonly string[] | undefined, taskId:st
   return (dependsOn ?? []).some((dep) => dep === taskId || (taskId.startsWith(`${dep}.`) && /^\d+$/.test(taskId.slice(dep.length + 1))));
 }
 
-/** True when an earlier open attempt already occupies this folder, so a second in-place writer must wait. */
-export function blocksSharedFolderWriter(
-  earlier:{task_id:string;project_id:string;folder:string|null;dependsOn?:readonly string[]},
-  mine:{taskId:string;projectId:string;folder:string|null},
-):boolean {
-  if (earlier.task_id === mine.taskId || earlier.project_id !== mine.projectId) return false;
-  if (!mine.folder || earlier.folder !== mine.folder) return false;
-  if (dependsOnTask(earlier.dependsOn, mine.taskId)) return false;
-  return true;
-}

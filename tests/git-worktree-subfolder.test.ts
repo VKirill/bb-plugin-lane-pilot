@@ -1,15 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { PARKED_CLASSES, failureClass } from "../src/failure-class";
 import { openDatabase } from "../src/database";
 import { createSelfRepair } from "../src/server/self-repair";
 import type { ServerCore } from "../src/server/core";
 import { worktreeCreateError } from "../src/server/writer/spawn";
-import { createWorktree, workspaceGitLayout } from "../src/verification/git-integrate";
+import { createWorktree, integrateWorktree, workspaceGitLayout } from "../src/verification/git-integrate";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../src/verification/git-ownership";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
@@ -27,17 +27,19 @@ async function nestedWorkspace() {
   return { root, base, nested };
 }
 
-it("refuses a writer worktree when the chat folder is a subfolder of a git repo", async () => {
+// Worktree-only (decision 2026-10-06): a subfolder chat no longer runs in place; it gets a worktree of the repo.
+it("gives a subfolder chat a worktree of its repo, merges the writer's work into main and removes the worktree", async () => {
   const { base, nested } = await nestedWorkspace();
-  const created = await createWorktree({ basePath: nested, targetPath: join(base, "..", "own", "bot"), name: "lpattempt_sub" });
-  expect(created.status).toBe("failed");
-  expect(created.path).toBeNull();
-  expect(created.reason).toMatch(/^workspace_not_repo_root:/);
-  expect(created.reason).toContain(nested);
-  expect(created.reason).toContain(base);
-  expect(created.reason).toMatch(/Open the Lane chat at /);
-  const layout = await workspaceGitLayout(nested);
-  expect(layout).toMatchObject({ ok: true, nested: true, prefix: "apps/bot" });
+  const target = join(base, "..", "own", "bot");
+  const created = await createWorktree({ basePath: nested, targetPath: target, name: "lpattempt_sub" });
+  expect(created).toMatchObject({ status: "ready", path: join(target, "apps", "bot"), branch: "lane/lpattempt_sub", reason: null });
+  expect(await workspaceGitLayout(created.path!)).toMatchObject({ ok: true, nested: true, prefix: "apps/bot" });
+  await writeFile(join(created.path!, "index.ts"), "export const changed = 1;\n");
+  const merged = await integrateWorktree({ basePath: nested, worktreePath: created.path!, message: "sub: edit", removeWorktree: true });
+  expect(merged.status).toBe("merged");
+  expect(await readFile(join(nested, "index.ts"), "utf8")).toBe("export const changed = 1;\n");
+  expect(existsSync(target)).toBe(false);
+  expect(git(base, "branch", "--list", "lane/lpattempt_sub").trim()).toBe("");
 });
 
 it("creates a writer worktree when the chat folder is the git repo root", async () => {
@@ -48,14 +50,9 @@ it("creates a writer worktree when the chat folder is the git repo root", async 
   expect(await workspaceGitLayout(base)).toMatchObject({ ok: true, nested: false, prefix: "" });
 });
 
-it("keeps the subfolder refusal as a task-side block, not a Lane Pilot fault", async () => {
-  const reason = worktreeCreateError("workspace_not_repo_root: /chat/apps/bot is not the git repo root /chat (2 uncommitted files)");
-  expect(reason.startsWith("workspace_not_repo_root:")).toBe(true);
-  expect(reason.startsWith("attempt_worktree_failed:")).toBe(false);
+it("names any worktree creation failure as Lane Pilot's", () => {
   expect(worktreeCreateError("fatal: already exists")).toBe("attempt_worktree_failed:fatal: already exists");
-  const klass = failureClass("spawn_rejected", reason);
-  expect(klass).toBe("task");
-  expect(PARKED_CLASSES.has(klass)).toBe(false);
+  expect(worktreeCreateError(null)).toBe("attempt_worktree_failed:unknown");
 });
 
 it("does not pick the subfolder refusal for self-repair, even across several tasks", async () => {

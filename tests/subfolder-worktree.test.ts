@@ -7,10 +7,11 @@ import { expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, setAttemptWorkspace, setRunThread } from "../src/database";
 import { createWriterSpawn, shouldMergeAttemptWorktree } from "../src/server/writer/spawn";
-import { blocksSharedFolderWriter } from "../src/server/writer/start";
 import { dirtInsideWorkspace } from "../src/verification/git-ownership";
 
 const folder = "/repo/apps/bot";
+/** Where the host's gitCreateWorktree puts a nested chat folder: the same subfolder inside a worktree of the repo. */
+const worktreeFolder = "/home/me/.lane-pilot/worktrees/a1/bot/apps/bot";
 const config: PrototypeConfig = {
   projectId: "P", hostId: "h", pmWorkspacePath: folder, writerWorkspacePath: folder,
   pmProviderId: "codex", pmModel: "codex-test", writerProviderId: "codex", writerModel: "codex-test",
@@ -30,7 +31,7 @@ function spawnEnv(options: { bound?: boolean; createReason?: string } = {}) {
   createTask(db, { id: "t1", runId: "run", kind: "bb", contract: task });
   createAttempt(db, { id: "a1", runId: "run", taskId: "t1" });
   if (options.bound) {
-    setAttemptWorkspace(db, "a1", { path: folder, environmentId: null, decision: { strategy: "provision_attempt_worktree" } });
+    setAttemptWorkspace(db, "a1", { path: worktreeFolder, environmentId: null, decision: { strategy: "provision_attempt_worktree" } });
   }
   const hostCalls: string[] = [];
   const spawned: unknown[] = [];
@@ -59,10 +60,9 @@ function spawnEnv(options: { bound?: boolean; createReason?: string } = {}) {
         hostCalls.push(method);
         if (method === "runCommand") return { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" };
         if (method === "gitCreateWorktree") {
-          return {
-            status: "failed", path: null,
-            reason: options.createReason ?? "workspace_not_repo_root: /repo/apps/bot is not the git repo root /repo. Open the Lane chat at /repo",
-          };
+          return options.createReason
+            ? { status: "failed", path: null, branch: null, reason: options.createReason }
+            : { status: "ready", path: worktreeFolder, branch: "lane/a1", reason: null };
         }
         return {};
       },
@@ -73,27 +73,28 @@ function spawnEnv(options: { bound?: boolean; createReason?: string } = {}) {
   return { db, hostCalls, spawned, writer: createWriterSpawn(ctx as never, services as never) };
 }
 
-it("runs in place when gitCreateWorktree refuses a nested chat folder", async () => {
+// Worktree-only (decision 2026-10-06): a nested chat folder no longer runs in place; it gets a worktree of its repo.
+it("gives a nested chat folder a worktree of its repo and runs the writer in the same subfolder there", async () => {
   const { db, hostCalls, spawned, writer } = spawnEnv();
   const result = await writer.spawnWriterAttempt({
     projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "edit the bot", pmThreadId: "pm",
   });
-  expect(result).toMatchObject({ ok: true, workspacePath: folder, threadId: "writer-1" });
+  expect(result).toMatchObject({ ok: true, workspacePath: worktreeFolder, threadId: "writer-1" });
   expect(hostCalls.filter((method) => method === "gitCreateWorktree")).toHaveLength(1);
-  expect(hostCalls).not.toContain("gitPrepareWorktree");
-  expect(getAttempt(db, "a1")).toMatchObject({ workspace_path: folder, environment_id: null, state: "running" });
+  expect(hostCalls).toContain("gitPrepareWorktree");
+  expect(getAttempt(db, "a1")).toMatchObject({ workspace_path: worktreeFolder, environment_id: null, state: "running" });
   expect((spawned[0] as { environment: unknown }).environment)
-    .toEqual({ type: "host", hostId: "h", workspace: { type: "unmanaged", path: folder } });
+    .toEqual({ type: "host", hostId: "h", workspace: { type: "unmanaged", path: worktreeFolder } });
 });
 
-it("does not retry the worktree on resume of an in-place fallback", async () => {
+it("resumes a bound attempt in its recorded worktree without making another", async () => {
   const { db, hostCalls, writer } = spawnEnv({ bound: true });
   const result = await writer.spawnWriterAttempt({
     projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "edit the bot", pmThreadId: "pm",
   });
-  expect(result).toMatchObject({ ok: true, workspacePath: folder });
+  expect(result).toMatchObject({ ok: true, workspacePath: worktreeFolder });
   expect(hostCalls).not.toContain("gitCreateWorktree");
-  expect(getAttempt(db, "a1")?.workspace_path).toBe(folder);
+  expect(getAttempt(db, "a1")?.workspace_path).toBe(worktreeFolder);
 });
 
 it("still rejects other gitCreateWorktree failures", async () => {
@@ -109,15 +110,6 @@ it("does not merge or remove a worktree when the attempt stayed in the run folde
   expect(shouldMergeAttemptWorktree("/repo/apps/bot/", folder)).toBe(false);
   expect(shouldMergeAttemptWorktree("/home/me/.lane-pilot/worktrees/a1/bot", folder)).toBe(true);
   expect(shouldMergeAttemptWorktree(null, folder)).toBe(false);
-});
-
-it("blocks a second in-place writer in the same folder", () => {
-  const earlier = { task_id: "t1", project_id: "P", folder };
-  const mine = { taskId: "t2", projectId: "P", folder };
-  expect(blocksSharedFolderWriter(earlier, mine)).toBe(true);
-  expect(blocksSharedFolderWriter({ ...earlier, folder: "/other" }, mine)).toBe(false);
-  expect(blocksSharedFolderWriter(earlier, { ...mine, taskId: "t1" })).toBe(false);
-  expect(blocksSharedFolderWriter({ ...earlier, dependsOn: ["t2"] }, mine)).toBe(false);
 });
 
 it("keeps dirt paths relative to a nested chat folder", () => {

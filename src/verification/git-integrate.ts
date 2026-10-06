@@ -204,7 +204,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   // Lane Pilot's own worktree is done once its work is in main. A conflict keeps it: uncommitted edits in main block
   // the merge without anything to redo, and the committed work there is merged as soon as main is clean.
   if(input.removeWorktree&&(result.status==="merged"||result.status==="up-to-date")) {
-    git(input.basePath,["worktree","remove","--force",input.worktreePath]);
+    git(input.basePath,["worktree","remove","--force",worktreeTop(input.worktreePath)]);
     if(branch.startsWith("lane/")) git(input.basePath,["branch","-D",branch]);
   }
   return result;
@@ -256,7 +256,10 @@ export async function workspaceGitLayout(workspacePath:string):Promise<
   return {ok:true,repoTop,nested,prefix:nested?prefix:""};
 }
 
-/** Creates Lane Pilot's own worktree of a section repository on a fresh lane/<name> branch from its HEAD. */
+/**
+ * Creates Lane Pilot's own worktree of a section repository on a fresh lane/<name> branch from its HEAD. A chat folder
+ * nested in a larger repo gets a worktree of that repo; `path` is then the same subfolder inside it, where the writer works.
+ */
 export async function createWorktree(input:{basePath:string;targetPath:string;name:string}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null}> {
   const layout=await workspaceGitLayout(input.basePath);
   if(!layout.ok) return {status:"failed",path:null,branch:null,reason:`not a git checkout: ${layout.reason}`};
@@ -266,7 +269,10 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
   await recoverStaleGitLock(repoRoot);
   const added=git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,"HEAD"]);
   if(!added.ok) return {status:"failed",path:null,branch:null,reason:added.reason};
-  return {status:"ready",path:input.targetPath,branch,reason:null};
+  const path=layout.nested?join(input.targetPath,layout.prefix):input.targetPath;
+  // A subfolder with no tracked file yet is not in the checkout.
+  if(layout.nested) await mkdir(path,{recursive:true});
+  return {status:"ready",path,branch,reason:null};
 }
 
 export const BOOKKEEPING_PATHS = [".agents/PROGRESS.md", ".agents/CHANGELOG.md"];
@@ -503,12 +509,17 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   return {linked};
 }
 
+/** The worktree's own top folder: a subfolder workspace's path is not what `git worktree remove` takes. */
+function worktreeTop(worktreePath:string):string {
+  return git(worktreePath,["rev-parse","--show-toplevel"]).stdout.trim()||worktreePath;
+}
+
 /** Removes Lane Pilot's own worktree and its lane/ branch; other worktrees are left alone. */
 export async function removeLaneWorktree(input:{basePath:string;worktreePath:string}):Promise<{removed:boolean}> {
   const branch=git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"]).stdout.trim();
   if(!branch.startsWith("lane/")) return {removed:false};
   await recoverStaleGitLock(input.basePath);
-  const removed=git(input.basePath,["worktree","remove","--force",input.worktreePath]).ok;
+  const removed=git(input.basePath,["worktree","remove","--force",worktreeTop(input.worktreePath)]).ok;
   if(removed) git(input.basePath,["branch","-D",branch]);
   return {removed};
 }

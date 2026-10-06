@@ -118,12 +118,10 @@ describe("run-bound helper spawn", () => {
       db,
       host: { call: async (method: string) => {
         if (method === "runCommand") return { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" };
-        if (method === "gitCreateWorktree") {
-          return { status: "failed", path: null, reason: "workspace_not_repo_root: /repo is not the git repo root /repo" };
-        }
+        if (method === "gitCreateWorktree") return { status: "ready", path: "/wt/a1/repo", branch: "lane/a1", reason: null };
         return {};
       } },
-      effectiveProjectSettings: async () => ({ values: { "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "adoc.040": "in_place" } }),
+      effectiveProjectSettings: async () => ({ values: { "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "adoc.040": "auto" } }),
     };
     bindRunChildBudget(ctx.bb as never, () => budget);
     const writer = createWriterSpawn(ctx as never, {
