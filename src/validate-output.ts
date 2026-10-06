@@ -33,11 +33,23 @@ export function isOutputPath(entry: string): boolean {
   return Boolean(text) && !/\s/.test(text) && (text.includes("/") || /\.[A-Za-z0-9]{1,8}$/.test(text));
 }
 
+/** A post-merge repair task and its redispatches («x-mainfix», «x-mainfix.2»). */
+export function isMainfixTask(taskId: string): boolean {
+  return /-mainfix(\.\d+)*$/.test(taskId);
+}
+
+/** The reason recorded when the writer gave no answer at all; the only empty_output that reads as a provider fault. */
+export const NO_ANSWER_REASON = "writer returned no output";
+
 export function classifyWriterOutput(input: {
   task: TaskV2;
   produced: string[];
   contents: Record<string, string | null>;
   verifies?: VerifyResult[];
+  /** Whether the writer's answer carried any text; without it an empty_output reads as a provider fault. */
+  answered?: boolean;
+  /** Owned files already dirty with known content when the attempt started (work the contract inherited). */
+  preexisting?: string[];
 }): OutputCheck {
   const produced = input.produced.filter((file) => !isTaskFolderFile(file));
   // Every stray file at once: the same-thread retry fixes what the reason names, and naming one of two cost
@@ -51,8 +63,15 @@ export function classifyWriterOutput(input: {
   }
   // A Lane PM may describe an output in prose; only path-like entries name a file to check.
   const fileOutputs = input.task.expected_outputs.filter(isOutputPath);
+  // A mainfix names no files to chase: its expected_outputs are the failing commands, and its whole acceptance is
+  // green checks on main (even with zero changed files). A command like `bin/check.sh` is still a command, so no
+  // expected_output of a mainfix can reject it; the stray-file checks above still hold.
+  if (isMainfixTask(input.task.id)) {
+    return { ok:true };
+  }
   if (!fileOutputs.length && !produced.length) {
-    return { ok:false, state:"empty_output", reason:"writer changed no files" };
+    return { ok:false, state:"empty_output",
+      reason: input.answered === false ? NO_ANSWER_REASON : "writer answered but changed no files" };
   }
   // A bare file name («CardMockCard.vue») names the file wherever the task owns it, not a file at the repository
   // root: 22 of 57 failed SelfyStudio attempts on 2026-10-03 were writers whose file was there under its folder.
@@ -65,6 +84,10 @@ export function classifyWriterOutput(input: {
     if (produced.some((file) => file.startsWith(folder(entry)))) return false;
     const path = resolveOutput(entry);
     const content = input.contents[path];
+    // A named output that already sat in the workspace with content when the attempt started (work this contract
+    // inherited, e.g. a sibling attempt's edits the PM lists as this task's output) is met once the attempt produced
+    // its other outputs. A writer that produced nothing still fails, so pre-existing dirt never substitutes for work.
+    if (input.preexisting?.includes(path) && produced.length > 0) return false;
     return !produced.includes(path) || content === null || content === undefined;
   });
   if (fileOutputs.length && missing.length === fileOutputs.length) {

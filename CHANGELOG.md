@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.162
+
+- **Each task has a folder the writer can read.** The PM's canonical plan goes to `.agents/plans/items/<task id>/PLAN.md` in the workspace (excluded from git and never counted as produced), and the writer's brief points at it; the compact contract below the pointer stays the source of truth for owns_paths and checks.
+- **Retries tell the writer what failed and what to do.** The previous attempt's record now opens with a `Result:` line followed by one «what failed → what to do» bullet per problem (failing check with its exit code, missing outputs, never_touch and outside-owns files, an answered-but-empty result), keeps the failing check's output tail and names the full log path. A check's full output is saved under the task folder `logs/`, so the retry reads it instead of rerunning blind.
+- **A mainfix closes itself when main is already green.** Before spawning a writer, the repair task runs its checks on main: green, it is closed as accepted and the PM is told no action is needed. Otherwise its objective carries each failing command with its output tail, the full output goes to the task folder `logs/`, and expected_outputs hold the commands (never prose, never a file to chase) — a mainfix is accepted with zero changed files when its checks pass, and a command like `bin/check.sh` can no longer make it reject itself. A mainfix that breaks main again still only notifies the PM.
+- **Two attempts failing the same way stop the task.** Two consecutive attempts of a task family (a task, its redispatches and mainfixes) with the same failure class and normalized reason block the task with `repeated_failure: <reason>` — no third writer and no fallback model, which would only repeat them.
+- **An in-place redispatch counts its own family's leftover edits, never anyone else's.** Only the files an earlier attempt of the same task family produced leave the dirt baseline and count as produced; owner or other-task dirt in an owned file keeps its baseline.
+- **An output the attempt inherited is met, not missing.** When the contract names a file that already sits in the workspace with content (a sibling attempt's work), it stops failing «missing expected_outputs» once the attempt produced its other outputs; a writer that produced nothing still fails.
+- **A contract failure repeats and stops like any other.** Two attempts of a task family failing the same contract way (the same «missing expected_outputs», the same unmet name) now block with `repeated_failure` instead of burning a third writer.
+- **An answered empty_output is the task's failure.** A writer that answers but changes no files fails as a task (the same failure twice stops the task); a writer that returns no output stays a provider failure and still moves down the writer chain.
+
 ## 0.1.161
 
 From a self-repair of «owns_paths rejected <path>» (SelfyStudio and content-factory, 2026-10-04…06):

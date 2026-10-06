@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { taskV2Schema } from "../src/contracts";
 import { compactContract, pathAnchors, pmReadBrief, writerMemory } from "../src/writer-brief";
-import { stickyTurnPrompt, writerPrompt } from "../src/server/writer-task";
+import { stickyTurnPrompt, writerPrompt, previousAttemptBrief } from "../src/server/writer-task";
 
 // The real brief SelfyStudio's writer got for gc-pages-polish-2 on 2026-10-02 (4130 tokens, 64% memory).
 const original = readFileSync(join(__dirname, "fixtures/writer-brief-gc-pages-polish-2.md"), "utf8");
@@ -82,6 +82,47 @@ describe("writer brief", () => {
     expect(sticky).toContain(`- notes.md`);
     expect(sticky).toContain("the compact contract below stays the source of truth");
     expect(sticky).toContain(task.objective);
+  });
+
+  it("feeds the retry back as a Result line with one what-failed → what-to-do bullet per problem", () => {
+    const brief = previousAttemptBrief({
+      status:"validation_failed",
+      reason:"verification failed (npm run typecheck): error TS2345",
+      verification:[{ command:"npm run typecheck", exitCode:2, stdout:"", stderr:"error TS2345: 'x' is unknown" }],
+      produced:["src/a.ts"],
+      checkLogPath:".agents/plans/items/t1/logs/npm-run-typecheck.log",
+    });
+    const lines = brief.split("\n");
+    expect(lines[0]).toBe("Result: validation_failed: verification failed (npm run typecheck): error TS2345");
+    const bullets = lines.filter((line) => line.startsWith("- "));
+    expect(bullets).toHaveLength(1);
+    expect(bullets[0]).toContain("the check `npm run typecheck` failed (exit 2) → run `npm run typecheck` yourself");
+    expect(bullets[0]).toContain("full log: .agents/plans/items/t1/logs/npm-run-typecheck.log");
+    expect(brief).toContain("Output tail of `npm run typecheck`:");
+    expect(brief).toContain("error TS2345: 'x' is unknown");
+    expect(brief).toContain("src/a.ts");
+    expect(previousAttemptBrief({ status:"accepted" })).toBe("");
+    expect(previousAttemptBrief(null)).toBe("");
+  });
+
+  it("names one bullet per problem when the reason lists several", () => {
+    const brief = previousAttemptBrief({
+      status:"validation_failed",
+      reason:"never_touch matched src/secret.ts; owns_paths rejected src/other.ts; missing expected_outputs: src/new.ts",
+      verification:[],
+      produced:["src/secret.ts", "src/other.ts"],
+    });
+    const bullets = brief.split("\n").filter((line) => line.startsWith("- "));
+    expect(bullets).toHaveLength(3);
+    expect(bullets.find((line) => line.includes("never_touch"))).toMatch(/→ /);
+    expect(bullets.find((line) => line.includes("outside owns_paths"))).toContain("src/other.ts");
+    expect(bullets.find((line) => line.includes("missing"))).toContain("src/new.ts");
+    // An answered empty_output and a no-answer one get their own advice.
+    const answered = previousAttemptBrief({ status:"empty_output", reason:"writer answered but changed no files", verification:[], produced:[] });
+    expect(answered.split("\n")[0]).toBe("Result: empty_output: writer answered but changed no files");
+    expect(answered).toMatch(/→ change the files the contract's expected_outputs name/);
+    const silent = previousAttemptBrief({ status:"empty_output", reason:"writer returned no output", verification:[], produced:[] });
+    expect(silent).toMatch(/→ /);
   });
 
   it("no write path stores a credential or an instruction override", async () => {

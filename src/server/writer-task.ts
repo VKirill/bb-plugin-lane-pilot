@@ -110,19 +110,40 @@ export function writerContextBlocks(task: TaskV2, memoryText="", executionPacket
  * task follows once, without repeats: workspace, read list, PM read facts, task memory, rules, the compact contract.
  */
 /**
- * What the previous attempt of this task left behind, for the next writer: why it failed, the failing check's output
- * tail and the files it touched (Stripe, Aider and Anthropic feed the failure back; a retry that starts blind repeats it).
+ * What the previous attempt of this task left behind, for the next writer: a `Result:` line, one
+ * «<what failed> → <what to do>» bullet per problem, the failing check's output tail and, when a check failed, the
+ * full log's path under the task folder (Stripe, Aider and Anthropic feed the failure back; a retry that starts
+ * blind repeats it).
  */
 export function previousAttemptBrief(last:Record<string, unknown> | null | undefined):string {
   if (!last || last.status === "accepted") return "";
-  const reason = typeof last.reason === "string" ? last.reason.slice(0, 600) : String(last.status ?? "");
+  const status = String(last.status ?? "failed");
+  const reason = typeof last.reason === "string" ? last.reason.slice(0, 400) : "";
+  const logPath = typeof last.checkLogPath === "string" ? last.checkLogPath : "";
   const checks = Array.isArray(last.verification) ? last.verification as Array<{ command?:string; exitCode?:number; stdout?:string; stderr?:string }> : [];
   const failed = checks.find((check) => typeof check.exitCode === "number" && check.exitCode !== 0);
   const tail = failed ? `${failed.stderr ?? ""}\n${failed.stdout ?? ""}`.trim().slice(-1500) : "";
+  const commands = /verification failed \((.+?)\)/.exec(reason)?.[1] ?? (failed?.command ?? "");
+  const bullets:string[] = [];
+  if (commands) {
+    bullets.push(`the check \`${commands}\` failed${failed ? ` (exit ${failed.exitCode})` : ""} → run \`${commands}\` yourself, read its output, fix what it names${logPath ? `; full log: ${logPath}` : ""}`);
+  }
+  const missing = /missing expected_outputs: (.+)/.exec(reason)?.[1];
+  if (missing) bullets.push(`expected outputs missing (${missing}) → create or change those exact paths inside owns_paths`);
+  const never = /never_touch matched (.+?)(;|$)/.exec(reason)?.[1]
+    ?? /writer changed paths outside owns_paths or inside never_touch: (.+)/.exec(reason)?.[1];
+  const unowned = /owns_paths rejected (.+?)(;|$)/.exec(reason)?.[1];
+  if (never) bullets.push(`never_touch files (${never}) → move the change into owns_paths or drop it`);
+  if (unowned) bullets.push(`files outside owns_paths (${unowned}) → change only files under owns_paths, or drop them`);
+  if (/changed no files|returned no (answer|output)/.test(reason)) {
+    bullets.push(`it ${/returned no (answer|output)/.test(reason) ? "gave no answer" : "answered without changing files"} → change the files the contract's expected_outputs name, then answer with the changed paths`);
+  }
+  if (!bullets.length) bullets.push(`${status}${reason ? `: ${reason.slice(0, 200)}` : ""} → fix what the reason names and do not repeat it`);
   const produced = Array.isArray(last.produced) ? (last.produced as unknown[]).filter((path):path is string => typeof path === "string").slice(0, 30) : [];
   return [
-    `Failure: ${reason}`,
-    failed ? `Failing check: ${failed.command} (exit ${failed.exitCode})\n${tail}` : "",
+    `Result: ${status}${reason ? `: ${reason}` : ""}`,
+    ...bullets.map((bullet) => `- ${bullet}`),
+    tail ? `Output tail of \`${failed!.command}\`:\n${tail}` : "",
     produced.length ? `Files it changed (not in this worktree; you start fresh from main): ${produced.join(", ")}` : "",
   ].filter(Boolean).join("\n");
 }

@@ -49,3 +49,52 @@ it("takes a folder in expected_outputs as met by a file the writer changed under
   expect(classifyWriterOutput({ task: task(["apps/marketing/app/components/greeting"]), produced, contents }))
     .toMatchObject({ ok: false, reason: "missing expected_outputs: apps/marketing/app/components/greeting" });
 });
+
+it("accepts a mainfix with zero changed files, other tasks still fail on them", () => {
+  const mainfix = { ...task(["npm run typecheck"]), id: "cards-fix-mainfix" };
+  expect(classifyWriterOutput({ task: mainfix, produced: [], contents: {} })).toEqual({ ok: true });
+  expect(classifyWriterOutput({ task: { ...mainfix, id: "cards-fix-mainfix.2" }, produced: [], contents: {} })).toEqual({ ok: true });
+  // A mainfix never fails on its own expected_outputs: even a command with «/» and no spaces reads path-like, and an
+  // inherited file name must not send the writer chasing a file. Green checks are its whole acceptance.
+  expect(classifyWriterOutput({ task: { ...mainfix, expected_outputs: ["bin/check.sh"] }, produced: [], contents: {} })).toEqual({ ok: true });
+  expect(classifyWriterOutput({ task: { ...mainfix, expected_outputs: ["src/a.ts"] }, produced: [], contents: {} })).toEqual({ ok: true });
+  // A stray file is still rejected before the mainfix branch: an out-of-owns change is blocked.
+  expect(classifyWriterOutput({ task: mainfix, produced: ["src/stray.ts"], contents: {} }))
+    .toMatchObject({ ok: false, state: "validation_failed" });
+  expect(classifyWriterOutput({ task: task(["src/a.ts"]), produced: [], contents: {} }))
+    .toMatchObject({ ok: false, state: "empty_output" });
+});
+
+it("splits empty_output by the writer's answer: a task failure with an answer, provider without", () => {
+  expect(classifyWriterOutput({ task: task([]), produced: [], contents: {}, answered: true }))
+    .toMatchObject({ ok: false, state: "empty_output", reason: "writer answered but changed no files" });
+  expect(classifyWriterOutput({ task: task([]), produced: [], contents: {}, answered: false }))
+    .toMatchObject({ ok: false, state: "empty_output", reason: "writer returned no output" });
+});
+
+it("meets a named output the attempt inherited, once it produced its other outputs", () => {
+  const site = (expected: string[]) => ({
+    expected_outputs: expected, owns_paths: ["apps/site/src/"], never_touch: [], verify: "none", verification: [],
+  }) as unknown as TaskV2;
+  // The contract names two files; one arrived before the attempt started (a sibling attempt's edits), the writer
+  // produced the other: met, not missing.
+  const both = site(["apps/site/src/a.ts", "apps/site/src/b.ts"]);
+  expect(classifyWriterOutput({
+    task: both, produced: ["apps/site/src/a.ts"], contents: { "apps/site/src/a.ts": "x", "apps/site/src/b.ts": "old" },
+    preexisting: ["apps/site/src/b.ts"],
+  })).toEqual({ ok: true });
+  // With nothing produced the relief never applies: pre-existing dirt does not substitute for work.
+  expect(classifyWriterOutput({
+    task: both, produced: [], contents: { "apps/site/src/b.ts": "old" }, preexisting: ["apps/site/src/b.ts"],
+  })).toMatchObject({ ok: false, state: "empty_output" });
+  // Owner dirt in an owned file the contract does not name changes nothing.
+  expect(classifyWriterOutput({
+    task: site(["apps/site/src/a.ts"]), produced: ["apps/site/src/a.ts"],
+    contents: { "apps/site/src/a.ts": "x" }, preexisting: ["apps/site/src/owner-edit.ts"],
+  })).toEqual({ ok: true });
+  // A genuinely missing output still fails even when others were produced and other dirt sat in the workspace.
+  expect(classifyWriterOutput({
+    task: both, produced: ["apps/site/src/a.ts"], contents: { "apps/site/src/a.ts": "x" },
+    preexisting: ["apps/site/src/owner-edit.ts"],
+  })).toMatchObject({ ok: false, state: "validation_failed", reason: "missing expected_outputs: apps/site/src/b.ts" });
+});

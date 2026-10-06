@@ -9,6 +9,8 @@
  */
 export type FailureClass = "task" | "provider" | "merge" | "harness" | "infra" | "contract" | "judgment" | "budget";
 
+import { NO_ANSWER_REASON } from "./validate-output";
+
 const JUDGMENT = /needs_human/i;
 const MERGE = /(^|: )merge_conflict/i;
 // Before 0.1.117 a merge that git refused for another reason (a stale index.lock) was called a conflict with no files.
@@ -18,7 +20,8 @@ const INFRA = /ENOSPC|no space left|disk_low|index\.lock|host is not connected|h
 const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing|reconcile_|attempt_worktree_|attempt_workspace_|writer reconcile|its retry was lost|sticky_send_failed|sticky_failed/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const BUDGET = /^run_budget_exceeded:/;
-const PROVIDER_STATES = new Set(["provider_error", "timeout", "empty_output"]);
+// An empty_output is a provider fault only when the writer gave no answer; an answer with no files is the task's.
+const PROVIDER_STATES = new Set(["provider_error", "timeout"]);
 
 export function failureClass(state:string, reason:string | null | undefined):FailureClass {
   const text = reason ?? "";
@@ -30,7 +33,37 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   if (HARNESS.test(text)) return "harness";
   if (CONTRACT.test(text)) return "contract";
   if (PROVIDER_STATES.has(state) || /^(writer_provider_unavailable|writer_model_unavailable|writer_service_tier_unavailable)/.test(text)) return "provider";
+  if (state === "empty_output") return text.includes(NO_ANSWER_REASON) ? "provider" : "task";
   return "task";
+}
+
+/**
+ * Two consecutive attempts of a task family failing the same way will not get better on a third: the task is blocked
+ * for the PM instead of spending another writer (and no fallback writer is started). Only the task's and the
+ * provider's classes stop here — free classes have their own parks and caps.
+ */
+export function repeatedFailureReason(
+  previous:{ state:string; reason:string | null | undefined } | null | undefined,
+  current:{ state:string; reason:string | null | undefined },
+):string | null {
+  if (!previous) return null;
+  const cls = failureClass(previous.state, previous.reason);
+  // A contract failure repeats too (a contract naming outputs or paths no attempt can meet failed the same way
+  // twice); free classes keep their own parks and caps, and judgment stops on its own.
+  if (cls !== "task" && cls !== "provider" && cls !== "contract") return null;
+  if (failureClass(current.state, current.reason) !== cls) return null;
+  if (failureFingerprint(previous.reason) !== failureFingerprint(current.reason)) return null;
+  return `repeated_failure: ${String(current.reason ?? current.state).slice(0, 600)}`;
+}
+
+/** A task and its redispatches and mainfixes share one family: «P1», «P1.2», «x-mainfix.2» are of «P1» / «x». */
+export function taskFamily(taskId:string):string {
+  let family = taskId;
+  for (;;) {
+    const next = family.replace(/(\.\d+)+$/, "").replace(/-mainfix$/, "");
+    if (next === family) return family;
+    family = next;
+  }
 }
 
 /** Failures that do not spend one of the task's attempts. */

@@ -8,8 +8,10 @@ import { reconcile } from "../../reconcile";
 import { emergencyFallbackDecision } from "../../stages/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES } from "../../failure-class";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, repeatedFailureReason, taskFamily } from "../../failure-class";
 import { previousAttemptBrief, stickyTurnPrompt } from "../writer-task";
+import { isMainfixTask } from "../../validate-output";
+import { openDatabase } from "../../database";
 import { createWriterSticky } from "./sticky";
 import { failureClass } from "../../failure-class";
 
@@ -32,6 +34,17 @@ export function freshAttemptStart(task:TaskV2, config:PrototypeConfig, runWorksp
     task:{...task,project_cwd:runWorkspace,verification:task.verification.map((command)=>({...command,cwd:runWorkspace}))},
     config:{...config,writerWorkspacePath:runWorkspace},
   };
+}
+
+/** The latest charged failure of a task's family (its redispatches and mainfixes), to seed the repeated-failure stop. */
+export function familyFailureRecord(db:ReturnType<typeof openDatabase>, runId:string, taskId:string):{ state:string; reason:string|null } | null {
+  const family = taskFamily(taskId);
+  const rows = db.prepare(`SELECT task_id, state, reason FROM lane_pilot_attempt
+    WHERE run_id=? AND state IN ('provider_error','timeout','empty_output','validation_failed','spawn_rejected')
+    ORDER BY created_at`).all(runId) as Array<{ task_id:string; state:string; reason:string|null }>;
+  const other = rows.filter((row) => row.task_id !== taskId && taskFamily(row.task_id) === family);
+  const last = other.at(-1);
+  return last ? { state:last.state, reason:last.reason } : null;
 }
 
 export function createWriterStart(ctx: ServerCore, services: Services) {
@@ -84,6 +97,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let executionPacketSha256:string|null = null;
     let last: Record<string, unknown> = {};
     let primaryFailure:Record<string,unknown>|null=null;
+    // An earlier task of the same family (a redispatch, a mainfix) that failed the same way stops the next one early.
+    let familyFailure = familyFailureRecord(db, input.runId, input.taskId);
     let acceptedAttemptId:string|null=null;
     const pmReadContext=input.pmReadContext ?? stringAt(listStageReceipts(db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read")?.result,"summary") ?? "";
     let releaseWriterSlot:(()=>void)|undefined;
@@ -289,7 +304,21 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           last = { status:"blocked", reason, attemptId };
           break;
         }
-        if (!writerThreadId && !halfBound) {
+        // A mainfix runs only while main is still red: when its failing checks already pass on current main (another
+        // task fixed it), it closes as accepted without a writer and the PM hears why.
+        if (attemptsHere === 1 && !writerThreadId && isMainfixTask(input.task.id) && freshTask.verification.length > 0) {
+          const checks = await services.runVerification(freshConfig, freshTask, input.runId).catch(() => null);
+          if (checks && checks.length > 0 && checks.every((check) => check.exitCode === 0)) {
+            ctx.log(`mainfix ${input.taskId}: its checks already pass on main; closing accepted without a writer`);
+            transitionAttempt(db, attemptId, "accepted");
+            last = { status:"accepted", attemptId, produced:[], verification:checks,
+              mainfixPreflight:"the failing checks already pass on current main" };
+            if (input.pmThreadId) void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active",
+              input:[{ type:"text", mentions:[],
+                text:`Lane Pilot: задача ${input.taskId} закрыта принятой без писателя — её проверки уже проходят на текущем main, main починила другая задача. Действий не нужно.` }] } as never).catch(() => undefined);
+          }
+        }
+        if (!writerThreadId && !halfBound && last.status !== "accepted") {
           budget.noteAttempt();
           const afterAttempt=budget.check();
           if (!afterAttempt.ok) {
@@ -392,6 +421,17 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           }
           break;
         }
+        // Two attempts of the task family failing the same way stop the task: a third attempt and a fallback writer
+        // would only repeat them. The blocked reason names it for the PM.
+        const repeated = repeatedFailureReason(familyFailure, { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
+        if (repeated) {
+          const latest = getAttempt(db, attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:repeated });
+          last = { ...last, status:"blocked", reason:repeated };
+          primaryFailure = { ...last };
+          break;
+        }
+        familyFailure = { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null };
         halfBound = false;
         const failedLast = last;
         attemptId = id("lpattempt");
@@ -418,10 +458,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
         const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
         // The writer's fallbacks in turn, then the PM's model; each takes over only while the failure is the model's, not the task's.
-        const chain=writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection);
+        // Only a provider, limit or catalog fault moves down the writer chain: a task's own failure (an answered
+        // empty_output, a repeated failure) gets no fallback writer — another model meets the same task.
+        const primaryClass = failureClass(String(primaryFailure.status), typeof primaryFailure.reason === "string" ? primaryFailure.reason : null);
+        const chain = primaryClass === "provider"
+          ? writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection)
+          : [];
         let failure:Record<string, unknown>=primaryFailure;
         const primaryAttemptId=typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId;
-        if (!chain.length) last={...last,emergencyFallback:{state:"skipped",reason:"configured_pm_selection_matches_primary"}};
+        if (!chain.length) last={...last,emergencyFallback:{state:"skipped",
+          reason:primaryClass === "provider" ? "configured_pm_selection_matches_primary" : `failure is not a provider fault (${primaryClass})`}};
         for (const fallback of chain) {
           const decision=emergencyFallbackDecision({
             state:String(failure.status ?? "unknown"),

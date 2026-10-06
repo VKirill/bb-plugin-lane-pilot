@@ -9,6 +9,8 @@ import { parseReadFirstHints } from "../../stages/read-first";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../stages/run-policy";
 import { classifyWriterOutput, isOutputPath } from "../../validate-output";
 import type { VerifyResult } from "../../validate-output";
+import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../../owns-paths";
+import { taskFamily } from "../../failure-class";
 import { filterOwnershipNoise } from "../../verification/git-ownership";
 import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../verification/ownership";
 import { recordGateEvaluation } from "../stage-records";
@@ -29,6 +31,19 @@ export async function runWithFlakyRerun<T extends {exitCode:number}>(command:str
   if(again.exitCode!==0) return first;
   log(`verification command passed on re-run (flaky): ${command}`);
   return {...again,flaky:true};
+}
+
+/**
+ * The baseline dirt an attempt's changes are measured against: everything the contract does not own, plus owned files
+ * no earlier attempt of this task family produced. Only edits an earlier attempt of the same task family produced
+ * leave the baseline, so an in-place redispatch counts its family's leftover work as produced, while owner or
+ * other-task dirt in an owned file is never counted as produced.
+ */
+export function familyDirtBaseline(task:Pick<TaskV2,"owns_paths"|"never_touch">, dirtBefore:import("../../cli-outcome").DirtSnapshot[], familyProduced:ReadonlySet<string> = new Set<string>()):import("../../cli-outcome").DirtSnapshot[] {
+  return dirtBefore.filter((row) => {
+    const owned = fileAllowedByOwns(row.path, task.owns_paths) && !fileBlockedByNeverTouch(row.path, task.never_touch);
+    return !(owned && familyProduced.has(row.path));
+  });
 }
 
 export function createWriterVerify(ctx: ServerCore, services: Services) {
@@ -176,14 +191,25 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
 
   async function validateWriterResult(input: {
     config:PrototypeConfig; projectId:string; runId:string; taskId:string; attempt:number; task:TaskV2; writerThreadId:string; attemptId:string; dirtBefore:import("../../cli-outcome").DirtSnapshot[];
-  }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[]; verification:VerifyResult[];runV2?:ReturnType<typeof buildRunExecutionProfile> }> {
+  }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[]; verification:VerifyResult[]; checkLogPath?:string; runV2?:ReturnType<typeof buildRunExecutionProfile> }> {
     const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
     const dirt = await services.workspaceDirt(input.config, input.task.project_cwd);
     if (!dirt.ok) {
       recordGateEvaluation(db,{...input,gate:"owns-paths",status:"failed",input:JSON.stringify(input.task),summary:{reason:"workspace_snapshot_unavailable"}});
       return { status:"validation_failed", reason:dirt.reason, output:outputText(output), produced:[], verification:[] };
     }
-    const unverifiable = input.dirtBefore
+    // In in_place mode an earlier attempt of the same task family leaves its edits in the shared checkout. Only the
+    // files those attempts produced count as this family's produced work; dirt from other tasks or the owner keeps
+    // its baseline, so it is never counted as produced.
+    const familyProduced = new Set<string>();
+    for (const row of db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND id<>?")
+      .all(input.runId, input.attemptId) as Array<{ id:string; task_id:string }>) {
+      if (taskFamily(row.task_id) !== taskFamily(input.taskId)) continue;
+      const saved = await bb.storage.kv.get(`writer-produced:${row.id}`).catch(() => null);
+      if (Array.isArray(saved)) for (const path of saved) if (typeof path === "string") familyProduced.add(path);
+    }
+    const comparable = familyDirtBaseline(input.task, input.dirtBefore, familyProduced);
+    const unverifiable = comparable
       .filter((before) => !before.sha256 && dirt.snapshots.some((after) => after.path === before.path))
       .map((file) => file.path);
     if (unverifiable.length > 0) {
@@ -194,7 +220,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         output:outputText(output), produced:[], verification:[],
       };
     }
-    let produced = attemptProduced(dirt.snapshots, input.dirtBefore);
+    let produced = attemptProduced(dirt.snapshots, comparable);
+    // The files this attempt's changes produced, for the next attempt of the task family: only these may later
+    // leave a redispatch's dirt baseline.
+    void bb.storage.kv.set(`writer-produced:${input.attemptId}`, produced as never).catch(() => undefined);
     // A task rejected before it ever ran (preflight, plan critique) claims no files; its contract may even be unsafe
     // («../other-repo/» in owns_paths), and kept in the scope it failed every later task of the run (BB-сервис 2026-10-05).
     const attempted = new Set((db.prepare("SELECT DISTINCT task_id FROM lane_pilot_attempt WHERE run_id=?").all(input.runId) as Array<{ task_id:string }>).map((row) => row.task_id));
@@ -277,9 +306,27 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const verifies = await runVerification(input.config, input.task, input.runId, input.writerThreadId);
     recordGateEvaluation(db,{...input,gate:"verification",status:verifies.length===0?"skipped":verifies.every((row)=>row.exitCode===0)?"passed":"failed",
       input:JSON.stringify(input.task),summary:{commandCount:verifies.length,failedCount:verifies.filter((row)=>row.exitCode!==0).length}});
+    // A failing check's full output goes under the task folder logs/, so the retry reads it instead of rerunning blind.
+    const failedVerify = verifies.find((row) => row.exitCode !== 0);
+    let checkLogPath:string|undefined;
+    if (failedVerify) {
+      const slug = failedVerify.command.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "check";
+      checkLogPath = `.agents/plans/items/${input.taskId}/logs/${slug}.log`;
+      const saved = await bb.sdk.files.write({ hostId:input.config.hostId, rootPath:input.task.project_cwd, path:`${input.task.project_cwd}/${checkLogPath}`,
+        content:`$ ${failedVerify.command}\nexit ${failedVerify.exitCode}\n\n${failedVerify.stdout}\n${failedVerify.stderr}`.trim() + "\n",
+        contentEncoding:"utf8", createParents:true, expectedSha256:null }).catch(() => null);
+      if (!saved) checkLogPath = undefined;
+    }
     // Same attribution as the run-scope gate: Lane Pilot's own receipt from a pass a reload cut off (.agents/runs/…)
     // is no writer change, and read as one it failed finished SelfyStudio tasks on resume (2026-10-04).
-    const classified = classifyWriterOutput({ task:input.task, produced:attributed, contents, verifies });
+    const answerText = outputText(output);
+    // Owned files that already carried content at the attempt's start: the contract may name them as outputs the
+    // attempt inherited (a sibling attempt's edits), so they are met, not missing, once real work was produced.
+    const preexisting = input.dirtBefore
+      .filter((row) => row.sha256 && fileAllowedByOwns(row.path, input.task.owns_paths) && !fileBlockedByNeverTouch(row.path, input.task.never_touch))
+      .map((row) => row.path);
+    const classified = classifyWriterOutput({ task:input.task, produced:attributed, contents, verifies,
+      answered:answerText.trim().length > 0, preexisting });
     if (input.task.expected_outputs.includes("hello.txt") && input.task.expected_outputs.includes("tests/hello.test.txt")) {
       const helloOk = contents["hello.txt"] === "hello from native BB writer\n";
       const testOk = contents["tests/hello.test.txt"] === "hello from native BB writer\n";
@@ -295,7 +342,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     }
     if (!classified.ok) {
       recordGateEvaluation(db,{...input,gate:"validate",status:"rejected",input:JSON.stringify(input.task),summary:{reason:"writer_output_not_accepted"}});
-      return { status:classified.state, reason:classified.reason, output:outputText(output), produced:checkedPaths, verification:verifies };
+      return { status:classified.state, reason:classified.reason, output:answerText, produced:checkedPaths, verification:verifies,
+        ...(checkLogPath ? { checkLogPath } : {}) };
     }
     recordGateEvaluation(db,{...input,gate:"validate",status:"passed",input:JSON.stringify(input.task),summary:{producedCount:checkedPaths.length}});
     return { status:"accepted", output:outputText(output), produced:checkedPaths, verification:verifies,

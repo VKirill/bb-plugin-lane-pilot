@@ -19,3 +19,32 @@ it("dispatches the main repair without the merged task's expected files", () => 
   expect(classifyWriterOutput({ task:{ ...fix, verify:"none" }, produced:[ownedFile], contents:{ [ownedFile]:"x" } })).toEqual({ ok:true });
   expect(plan).toContain("NEEDS_HUMAN: main is already green");
 });
+
+const red = [
+  { command:"npx vitest run --root apps/api", exitCode:1, stdout:"PASS src/a.test.ts\nFAIL src/b.test.ts", stderr:"1 failed" },
+  { command:"npm run typecheck", exitCode:2, stdout:"", stderr:"error TS2345 in src/site.ts" },
+];
+
+it("carries each failing command and its output tail in the objective, and no prose in expected_outputs", () => {
+  const { fix } = postMergeRepair(merged, red);
+  for (const check of red) {
+    expect(fix.objective).toContain(`\`${check.command}\``);
+    expect(fix.objective).toContain(check.stderr);
+    expect(fix.acceptance.some((line) => line.includes(check.command))).toBe(true);
+  }
+  expect(fix.expected_outputs).toEqual(red.map((check) => check.command));
+  // A command is not a file path, so the mainfix is accepted with zero changed files when its checks pass.
+  expect(classifyWriterOutput({ task:fix, produced:[], contents:{} })).toEqual({ ok:true });
+});
+
+it("saves the full output of every failing check under the task folder logs/", () => {
+  const { fix, logs } = postMergeRepair(merged, red);
+  expect(logs).toHaveLength(red.length);
+  for (const [index, log] of logs.entries()) {
+    expect(log.path).toBe(`.agents/plans/items/${fix.id}/logs/${String(index + 1).padStart(2, "0")}-`
+      + `${red[index]!.command.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60)}.log`);
+    expect(log.content).toContain(`$ ${red[index]!.command}`);
+    expect(log.content).toContain(red[index]!.stdout ?? "");
+    expect(log.content).toContain(red[index]!.stderr ?? "");
+  }
+});

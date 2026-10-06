@@ -22,6 +22,32 @@ import {
 } from "../src/database";
 import type { TaskV2 } from "../src/contracts";
 import { validateAcceptanceV2 } from "../src/acceptance-v2";
+import { familyDirtBaseline } from "../src/server/writer/verify";
+
+// An in-place redispatch counts only the edits an earlier attempt of the same task family produced; owner or
+// other-task dirt in an owned file keeps its baseline and is never counted as produced.
+it("releases only family-produced files from the dirt baseline, keeps owner and other-task dirt", () => {
+  const contract = { owns_paths:["apps/site/src/"], never_touch:[".git/**"] } as Pick<TaskV2, "owns_paths" | "never_touch">;
+  const dirt = [
+    { path:"apps/site/src/family-leftover.vue", sha256:"aaa" },
+    { path:"apps/site/src/owner-edit.vue", sha256:"bbb" },
+    { path:"apps/other/sibling-edit.md", sha256:"ccc" },
+    { path:"unowned.txt", sha256:"ddd" },
+  ];
+  // No earlier attempt of the family produced anything: every pre-existing file keeps its baseline.
+  expect(familyDirtBaseline(contract, dirt)).toEqual(dirt);
+  // Only the family-produced file leaves the baseline; the owner's edit in the same owned folder, the other task's
+  // dirt and the unowned file do not.
+  expect(familyDirtBaseline(contract, dirt, new Set(["apps/site/src/family-leftover.vue"]))).toEqual([
+    { path:"apps/site/src/owner-edit.vue", sha256:"bbb" },
+    { path:"apps/other/sibling-edit.md", sha256:"ccc" },
+    { path:"unowned.txt", sha256:"ddd" },
+  ]);
+  // never_touch files never count as produced, family-produced or not.
+  expect(familyDirtBaseline({ owns_paths:["apps/site/src/"], never_touch:[".git/**", "apps/site/src/locked.vue"] }, [
+    { path:"apps/site/src/locked.vue", sha256:"eee" },
+  ], new Set(["apps/site/src/locked.vue"]))).toEqual([{ path:"apps/site/src/locked.vue", sha256:"eee" }]);
+});
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";
