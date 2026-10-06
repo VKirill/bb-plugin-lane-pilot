@@ -108,26 +108,27 @@ describe("dispatch answers early and is idempotent", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("keeps the old behaviour for another contract or plan under the same id: a new id", async () => {
+  // §2: while the first task is still open, another contract or plan under its id starts no second writer.
+  it("refuses another contract or plan under the same id while the first task is open, with no new task", async () => {
     const { db, harness, dispatch, releaseBase } = await setup();
     await dispatch();
     const otherContract = await dispatch({ objective:"create hello, then something else" });
-    expect(otherContract).toMatchObject({ taskId:"suite-green.2" });
-    expect(otherContract.deduplicated).toBeUndefined();
+    expect(otherContract).toMatchObject({ ok:false, error:{ code:"task_in_progress" }, runningTaskId:"suite-green" });
     const otherPlan = await dispatch({}, "A different plan under the same contract");
-    expect(otherPlan).toMatchObject({ taskId:"suite-green.3" });
-    expect(taskCount(db)).toBe(3);
+    expect(otherPlan).toMatchObject({ ok:false, error:{ code:"task_in_progress" } });
+    expect(taskCount(db)).toBe(1);
     releaseBase();
     await harness.lifecycle.dispose();
   });
 
-  it("does not deduplicate after 30 minutes", async () => {
+  it("does not deduplicate after 30 minutes: an open task then refuses the resend instead", async () => {
     const { db, harness, dispatch, releaseBase } = await setup();
     await dispatch();
     db.prepare("UPDATE lane_pilot_task SET created_at=? WHERE id='suite-green'").run(Date.now() - 31 * 60_000);
     const later = await dispatch();
-    expect(later).toMatchObject({ taskId:"suite-green.2" });
     expect(later.deduplicated).toBeUndefined();
+    expect(later).toMatchObject({ ok:false, error:{ code:"task_in_progress" } });
+    expect(taskCount(db)).toBe(1);
     releaseBase();
     await harness.lifecycle.dispose();
   });
