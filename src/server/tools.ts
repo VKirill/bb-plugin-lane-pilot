@@ -66,7 +66,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   registerObservedTool(bb.agents, {
     name:"lane_pilot_dispatch_writer",
     description:"Start a task-v2 contract with the configured native BB writer and return run/attempt identity immediately.",
-    instructions:"Use only from a Lane Pilot PM thread. Send every task of the plan now, each in its own call: one task per page or feature, with its area field; tasks whose owns_paths do not overlap run in parallel, a task whose owns_paths or area overlap an open task's waits for it (the area's writer then continues it in its own thread), and a task with depends_on (task ids that must be accepted first) starts by itself once they are — do not hold tasks back in waves. Returns before writer completion: poll lane_pilot_wait_writer with the returned runId, or end your turn with lane_pilot_remind on the task ids. A task's own failure is retried at most twice; a provider, limit or catalog failure moves it down the writer chain (writer model, fallback 1, fallback 2, then the PM's model) without a redispatch.",
+    instructions:"Use only from a Lane Pilot PM thread. Send every task of the plan now, each in its own call: one task per page or feature, with its area field; tasks whose owns_paths do not overlap run in parallel, a task whose owns_paths or area overlap an open task's waits for it (the area's writer then continues it in its own thread), and a task with depends_on (task ids that must be accepted first) starts by itself once they are — do not hold tasks back in waves. Returns before writer completion: poll lane_pilot_wait_writer with the returned runId, or end your turn with lane_pilot_remind on the task ids. A task's own failure goes back to its writer as feedback turns in the same thread (up to 5 turns or 120 minutes); sending a task again while one of its family runs or is parked returns task_in_progress. A provider, limit or catalog failure moves it down the writer chain (writer model, fallback 1, fallback 2, then the PM's model) without a redispatch.",
     parameters:z.object({ confirm:z.literal(true), plan:z.string().min(1), task:taskV2Schema.optional(), baseRef:z.string().trim().min(1).max(240).optional() }).strict(),
     execute: async (params, context) => JSON.stringify(
       await services.dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task, plan:params.plan, baseRef:params.baseRef }),
@@ -101,11 +101,12 @@ export function registerTools(ctx: ServerCore, services: Services) {
   registerObservedTool(bb.agents, {
     name:"lane_pilot_update_task",
     description:"Update the contract or plan of a queued task that has not started yet in place under the same id.",
-    instructions:"Use only from a Lane Pilot PM thread to correct a task before its writer begins. Keeps the task id, queue position and depends_on edges, rewrites PLAN.md, and reruns pm-read and plan critique. If the task has already started, returns task_started (use lane_pilot_answer_writer if it stopped with a question, or cancel and redispatch).",
+    instructions:"Use only from a Lane Pilot PM thread to correct a task before its writer begins. Keeps the task id, queue position and depends_on edges, rewrites PLAN.md, and reruns pm-read and plan critique. If the task has already started, returns task_started (use lane_pilot_answer_writer if it stopped with a question, or cancel and redispatch). With satisfied:true (no task or plan) a BLOCKED task whose work you verified yourself counts as done for the tasks that depend on it, so they start without a dummy follow-up task; the task itself stays blocked in the record.",
     parameters:z.object({
       taskId:z.string().min(1),
       task:taskV2Schema.optional(),
       plan:z.string().min(1).optional(),
+      satisfied:z.boolean().optional(),
     }).strict(),
     execute: async (params, context) => {
       const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
@@ -121,6 +122,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
           taskId:params.taskId,
           task:params.task,
           plan:params.plan,
+          satisfied:params.satisfied,
         }),
         null,
         2,

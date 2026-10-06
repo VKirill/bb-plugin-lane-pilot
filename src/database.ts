@@ -662,9 +662,16 @@ export function countAttempts(db: LanePilotDatabase, runId: string, taskId: stri
  * silent writer's does not spend one (an attempt still running counts, its outcome is not known yet).
  */
 export function countChargedAttempts(db: LanePilotDatabase, runId: string, taskId: string): number {
-  const rows = db.prepare("SELECT state, reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(runId, taskId) as
-    Array<{ state:string; reason:string|null }>;
-  return rows.filter((row) => !(row.reason && (FREE_CLASSES.has(failureClass(row.state, row.reason)) || isWriterSilent(row.reason)))).length;
+  const rows = db.prepare("SELECT state, reason, thread_id FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(runId, taskId) as
+    Array<{ state:string; reason:string|null; thread_id:string|null }>;
+  // One writer session is one attempt: the feedback turns sent into the same thread are not charged again.
+  return new Set(rows.filter((row) => !(row.reason && (FREE_CLASSES.has(failureClass(row.state, row.reason)) || isWriterSilent(row.reason))))
+    .map((row, index) => row.thread_id ?? `#${index}`)).size;
+}
+
+/** Turns one writer thread took for this task: its first answer and every feedback turn after it. */
+export function countThreadTurns(db: LanePilotDatabase, runId: string, taskId: string, threadId: string): number {
+  return (db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND thread_id=?").get(runId, taskId, threadId) as {count:number}).count;
 }
 
 export function listAttemptsForTask(db: LanePilotDatabase, runId: string, taskId: string): Array<{
@@ -690,10 +697,13 @@ export function listTaskTerminalStates(db: LanePilotDatabase, runId: string): st
  * (live 2026-10-03: P3 depends_on P1, P1 was blocked by the plan check and sent again as P1.2).
  */
 export function latestTaskAttemptState(db: LanePilotDatabase, projectId: string, taskId: string): string | null {
-  const row = db.prepare(`SELECT a.state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE r.project_id=? AND (a.task_id=? OR (substr(a.task_id,1,length(?)+1)=?||'.' AND substr(a.task_id,length(?)+2) GLOB '[0-9]*' AND substr(a.task_id,length(?)+2) NOT GLOB '*[^0-9]*'))
-    ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT 1`).get(projectId, taskId, taskId, taskId, taskId, taskId) as { state: string } | undefined;
-  return row?.state ?? null;
+  // Naming «P1.2» also follows its later redispatches («P1.3», «P1.2.2»): the family is the id without its numeric suffixes.
+  const base = taskId.replace(/(\.\d+)+$/, "") || taskId;
+  const rows = db.prepare(`SELECT a.task_id, a.state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE r.project_id=? AND (a.task_id=? OR a.task_id LIKE ? ESCAPE '\\')
+    ORDER BY a.created_at DESC, a.attempt_no DESC`).all(projectId, taskId, `${base.replace(/[\\%_]/g, "\\$&")}.%`) as Array<{ task_id:string; state:string }>;
+  const member = (id:string) => id === taskId || (id.startsWith(`${base}.`) && /^(\.\d+)+$/.test(id.slice(base.length)));
+  return rows.find((row) => member(row.task_id))?.state ?? null;
 }
 
 export function listOpenAttempts(db: LanePilotDatabase): Array<{

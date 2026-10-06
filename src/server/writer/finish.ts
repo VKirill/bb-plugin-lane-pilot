@@ -1,6 +1,6 @@
 import { runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
 import { saveBlockedBy, type BlockedBy } from "../blocked-by";
 import { relayFor } from "../relay";
 import type { HelperPolicySnapshot } from "../../helper-context";
@@ -525,6 +525,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         attempt:countAttempts(db, input.runId, input.taskId), attemptId:input.attemptId,
         pmThreadId:input.pmThreadId, writerThreadId, output:candidate.output, verification:candidate.verification,
         emergencyFallback:input.emergencyFallback, review,
+        warnings:candidate.warnings, turns:countThreadTurns(db, input.runId, input.taskId, input.writerThreadId),
       });
       // Work in the attempt's own worktree counts only once it is in the run's base checkout (main).
       // A conflict fails the attempt, so the retry redoes the task on a fresh worktree of the new main.

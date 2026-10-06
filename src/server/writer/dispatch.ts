@@ -10,6 +10,8 @@ import type { TaskV2 } from "../../contracts";
 import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
 import { sha256 } from "../../stages/contract";
 import { parseReadFirstHints, readFirstKindError } from "../../stages/read-first";
+import { taskFamily } from "../../failure-class";
+import { isMainfixTask } from "../../validate-output";
 import { validateTaskV2 } from "../../task-v2";
 import { validateOwnershipContract } from "../../verification/ownership";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
@@ -87,6 +89,16 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       note:"This task id with the same contract and plan was already dispatched in the last 30 minutes; this is that task, nothing new was created. Poll lane_pilot_wait_writer or end your turn with lane_pilot_remind on the task id." };
   }
 
+  /** A member of the task's family («P1», «P1.2») with an open attempt or parked for a restart, in this project; mainfixes are their own work. */
+  async function runningFamilyMember(projectId:string, taskId:string):Promise<{ taskId:string; parked:boolean } | null> {
+    const family = taskFamily(taskId);
+    const same = (other:string) => !isMainfixTask(other) && taskFamily(other) === family;
+    const open = listOpenAttempts(db).find((row) => row.project_id === projectId && same(row.task_id));
+    if (open) return { taskId:open.task_id, parked:false };
+    const parked = (await services.stability.loadParked()).find((row) => row.projectId === projectId && same(row.taskId) && getRun(db, row.runId)?.closed_at == null);
+    return parked ? { taskId:parked.taskId, parked:true } : null;
+  }
+
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
@@ -138,6 +150,13 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // The PM sending the same task again (its call ended «terminated» while the stages went on) gets the task it already has.
     const duplicate = args.task ? findLiveDuplicate(runId, args.task.id, valid.task, canonicalPlan) : null;
     if (duplicate) return duplicate;
+    // A task is one writer session that restarts itself after a machinery fault: sending another member of its family
+    // (`<id>.N`) while one runs or is parked would start a second writer on the same work.
+    const inProgress = args.task && !isMainfixTask(args.task.id) ? await runningFamilyMember(args.projectId, args.task.id) : null;
+    if (inProgress) {
+      const hint = `${inProgress.taskId} of the same task is ${inProgress.parked ? "parked and restarts by itself" : "running"}: use lane_pilot_update_task / lane_pilot_answer_writer; redispatch only to change the contract, and cancel it first with lane_pilot_cancel_task`;
+      return { ok:false, error:{ code:"task_in_progress", retryable:false, sideEffects:"none", hint }, runningTaskId:inProgress.taskId, hint };
+    }
     createTask(db, { id:taskId, runId, kind:"bb", contract:valid.task });
     saveTaskPlan(db, taskId, canonicalPlan);
     const rejectPreflight = (reason:string):Record<string,unknown> => {
