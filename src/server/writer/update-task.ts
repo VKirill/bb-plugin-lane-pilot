@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { DISPATCH_STAGES_PENDING } from "../../constants";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import {
@@ -61,6 +62,12 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     }
 
     const attempt = getAttempt(db, latestAttempt.id);
+    if (attempt?.reason === DISPATCH_STAGES_PENDING) {
+      return {
+        ok: false,
+        error: { code: "dispatch_in_progress", retryable: true, sideEffects: "none", hint: "The task's pm-read and plan critique are still running; update it once they finish." },
+      };
+    }
     if (attempt?.thread_id || attempt?.state !== "queued") {
       return {
         ok: false,

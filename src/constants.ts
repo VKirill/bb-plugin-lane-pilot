@@ -37,3 +37,8 @@ export function cliReceiptAttemptKey(attemptId: string): string {
 export const PLUGIN_ID = "lane-pilot";
 export const INSTALLED_GUARD = "~/.agents/hooks/guard_shell.py";
 export const MAIN_ATTEMPT_LIMIT = 2;
+
+/** Reason of a queued attempt whose dispatch still waits for pm-read and plan critique; a reload ends such an attempt. */
+export const DISPATCH_STAGES_PENDING = "dispatch_stages_pending: pm-read and plan critique are still running";
+/** The same task id with the same contract and plan inside this window is the same dispatch, not a new task. */
+export const DISPATCH_IDEMPOTENT_WINDOW_MS = 30 * 60_000;
