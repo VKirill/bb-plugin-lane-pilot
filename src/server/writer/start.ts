@@ -1,14 +1,15 @@
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, countChargedAttempts, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "../../owns-paths";
 import { reconcile } from "../../reconcile";
 import { emergencyFallbackDecision } from "../../stages/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, repeatedFailureReason, taskFamily } from "../../failure-class";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, SESSION_MAX_MS, repeatedFailureReason, taskFamily, turnFailureKey } from "../../failure-class";
+import { isTaskSatisfied } from "../blocked-by";
 import { previousAttemptBrief, stickyTurnPrompt } from "../writer-task";
 import { isMainfixTask } from "../../validate-output";
 import { openDatabase } from "../../database";
@@ -123,6 +124,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (state === null && Date.now() - since > 120_000) return `depends_on ${dep}: no such task was dispatched in this project`;
           if (state === "canceled") return `depends_on ${dep}: that task ended canceled`;
           if (state === "blocked") {
+            // The PM verified this blocked task by hand (lane_pilot_update_task satisfied:true): its dependents go on.
+            if (await isTaskSatisfied(bb.storage.kv as never, input.projectId, dep)) continue;
             blockedSince.set(dep, blockedSince.get(dep) ?? Date.now());
             if (Date.now() - blockedSince.get(dep)! > DEPENDENCY_REDO_WAIT_MS) return `depends_on ${dep}: that task ended blocked and was not sent again within 6 hours`;
           } else blockedSince.delete(dep);
@@ -242,6 +245,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const attemptsLeft = () => countChargedAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT
         && attemptsHere < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
       let halfBound = false;
+      // A task is ONE writer session: a failure of the task's own goes back to the same writer as a feedback turn (a new
+      // attempt row in its thread, not a new charged attempt) until the checks pass, the turn cap (SESSION_MAX_TURNS) or
+      // the wall cap (SESSION_MAX_MS) is reached, or two turns in a row leave both the failure and the diff unchanged.
+      // Only a provider or limit fault, or a thread that cannot take the turn, starts another writer.
+      let inSession = false;
+      let sessionStartedAt = Date.now();
+      let previousTurn:{ failure:string; diff:string|null } | null = null;
       /** Another attempt follows this failure: the same conditions the loop checks below before it creates one. */
       const attemptsLeftAfter = (binding:ReturnType<typeof getAttempt>) => Boolean(binding?.thread_id)
         && RETRY_ELIGIBLE.includes(String(last.status) as AttemptState)
@@ -280,7 +290,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (hot) await continueWith(hot, "next-task", "");
       }
       while (attemptsLeft()) {
-        attemptsHere += 1;
+        if (!inSession) { attemptsHere += 1; sessionStartedAt = Date.now(); previousTurn = null; }
         const budgetCheck=budget.check();
         if (!budgetCheck.ok) {
           const reason=budgetStopReason(budgetCheck.exceeded);
@@ -347,7 +357,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (last.status === "accepted") { acceptedAttemptId = attemptId; break; }
         // A failure the writer can fix itself is redone in its own thread and worktree, with the reason.
         const failedBinding=getAttempt(db,attemptId);
-        const redo = attemptsLeftAfter(failedBinding) ? await sticky.retryWriter(attemptId, input.runId) : null;
+        const moreAttempts = attemptsLeftAfter(failedBinding);
+        let sessionEnd = moreAttempts ? sticky.sessionLimit(attemptId) : null;
+        let redo = moreAttempts && !sessionEnd ? await sticky.retryWriter(attemptId, input.runId) : null;
+        const turn = { failure:turnFailureKey(last), diff:typeof last.diffKey === "string" ? last.diffKey : null };
+        if (redo && Date.now() - sessionStartedAt >= SESSION_MAX_MS) sessionEnd = `wall limit ${SESSION_MAX_MS / 60_000} min reached`;
+        else if (redo && previousTurn && turn.diff && previousTurn.diff === turn.diff && previousTurn.failure === turn.failure) {
+          sessionEnd = "no progress: the same failure and the same diff in two turns in a row";
+        }
+        if (sessionEnd) redo = null;
+        previousTurn = turn;
         // A failed attempt's own worktree is never merged; the next attempt starts from a fresh one.
         const removeFailedWorktree = async () => {
           const failedBase=getRun(db,input.runId)?.writer_workspace_path;
@@ -403,6 +422,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           last = { ...last, status:"blocked" };
           break;
         }
+        // The session ended: the turn cap, the wall cap or no progress. The task is blocked with its last reason; another
+        // writer meets the same task, so none is started.
+        if (sessionEnd) {
+          const latest = getAttempt(db, attemptId);
+          const ended = `${sessionEnd}: ${String(last.reason ?? last.status)}`;
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:ended });
+          last = { ...last, status:"blocked", reason:ended };
+          break;
+        }
         if (countChargedAttempts(db, input.runId, input.taskId) >= MAIN_ATTEMPT_LIMIT
           || attemptsHere >= MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT) {
           const latest = getAttempt(db, attemptId);
@@ -415,7 +443,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
         // Two attempts of the task family failing the same way stop the task: a third attempt and a fallback writer
         // would only repeat them. The blocked reason names it for the PM.
-        const repeated = repeatedFailureReason(familyFailure, { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
+        // A turn in the same thread is not stopped by it: the session's own early stop (same failure, same diff) is above.
+        const repeated = redo ? null : repeatedFailureReason(familyFailure, { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
         if (repeated) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:repeated });
@@ -437,6 +466,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief({ ...failedLast, produced:[] }, freshTask), failedBinding?.dirt_before)) {
           await removeFailedWorktree();
         }
+        inSession = Boolean(redo && writerThreadId);
       }
       // No attempt was left for this start: end the queued attempt instead of leaving it queued with failed stages.
       if (attemptsHere === 0 && getAttempt(db, attemptId)?.state === "queued") {
@@ -520,6 +550,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             }
         }
       }
+      // The writer's turns on this task (its first answer and every feedback turn), kept in the stage receipt.
+      const turns = writerThreadId ? countThreadTurns(db, input.runId, input.taskId, writerThreadId) : 0;
+      if (turns) last = { ...last, turns };
       const accepted = last.status === "accepted";
       const reason = accepted ? undefined : String(last.reason ?? last.status ?? "writer_failed");
       // A writer's question would wait unseen: writers are quiet children and do not wake the PM.

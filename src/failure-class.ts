@@ -11,6 +11,7 @@
  */
 export type FailureClass = "task" | "provider" | "merge" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit";
 
+import { cleanCheckOutput } from "./output-excerpt";
 import { NO_ANSWER_REASON } from "./validate-output";
 
 const JUDGMENT = /needs_human/i;
@@ -20,7 +21,7 @@ const MISLABELED_MERGE = /merge_conflict: main changed since this attempt starte
 // Linux git 2.43 names no lock in «Unable to write index» (OVH 2026-10-06); the wording is added beside index.lock.
 const INFRA = /ENOSPC|no space left|disk_low|index\.lock|unable to write (new )?index|host is not connected|host offline|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED/i;
 // Same list the self-repair watcher treats as Lane Pilot's own fault, plus the thread lookups that broke on 2026-10-04.
-const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing|reconcile_|attempt_worktree_|attempt_workspace_|writer reconcile|its retry was lost|sticky_send_failed|sticky_failed/i;
+const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing|reconcile_|attempt_worktree_|attempt_workspace_|writer reconcile|its retry was lost|reconcile completed on a short page|sticky_send_failed|sticky_failed/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const BUDGET = /^run_budget_exceeded:/;
 const LIMIT = /writer_provider_limit:|^writer_provider_unavailable:breaker_open/;
@@ -79,11 +80,26 @@ export const PARKED_CLASSES:ReadonlySet<FailureClass> = new Set(["harness", "inf
 export const FREE_RETRY_LIMIT = 3;
 
 /** A reason with ids, hashes, numbers and paths taken out: the same fault on different tasks reads the same. */
-export function failureFingerprint(reason:string | null | undefined):string {
+export function failureFingerprint(reason:string | null | undefined, max = 120):string {
   return (reason ?? "").toLowerCase()
     .replace(/\b(lp(attempt|run)|thr|env|term|host|proj|ask)_[a-z0-9]+/g, "<id>")
     .replace(/\b[0-9a-f]{12,}\b/g, "<hash>")
     .replace(/(\/[\w.@-]+)+/g, "<path>")
     .replace(/\d+/g, "<n>")
-    .replace(/\s+/g, " ").trim().slice(0, 120);
+    .replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/** One writer session's feedback turns: the cap, the wall-time cap, and what makes two turns the same. */
+export const SESSION_MAX_TURNS = 5;
+export const SESSION_MAX_MS = 120 * 60_000;
+
+/**
+ * What a failed turn failed with: the reason and the failing check's output, read the same across ids, paths, numbers
+ * and timings. Two consecutive turns with this key and the writer's diff both unchanged made no progress.
+ */
+export function turnFailureKey(last:{ reason?:unknown; verification?:unknown }):string {
+  const checks = Array.isArray(last.verification) ? last.verification as Array<{ exitCode?:number; stdout?:string; stderr?:string }> : [];
+  const failed = checks.find((check) => typeof check.exitCode === "number" && check.exitCode !== 0);
+  const output = failed ? cleanCheckOutput(`${failed.stderr ?? ""}\n${failed.stdout ?? ""}`).slice(-4000) : "";
+  return failureFingerprint(typeof last.reason === "string" ? last.reason : "", 400) + "|" + failureFingerprint(output, 4000);
 }

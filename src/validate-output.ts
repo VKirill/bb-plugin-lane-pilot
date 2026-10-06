@@ -8,7 +8,7 @@ export function isTaskFolderFile(path:string):boolean {
 }
 
 export type OutputCheck =
-  | { ok:true }
+  | { ok:true; warnings?:string[] }
   | { ok:false; state:"empty_output"|"validation_failed"; reason:string };
 
 export type VerifyResult = { command:string; exitCode:number; stdout:string; stderr:string; flaky?:true };
@@ -91,6 +91,12 @@ export function classifyWriterOutput(input: {
     if (input.preexisting?.includes(path) && produced.length > 0) return false;
     return !produced.includes(path) || content === null || content === undefined;
   });
+  // A shape-only gate: with real work inside owns_paths (checked above) and every check green, the writer met the task
+  // another way, so a named output it did not make is a warning in the receipt, not a rejection.
+  const checksGreen = (input.verifies ?? []).length > 0 && (input.verifies ?? []).every((verify) => verify.exitCode === 0);
+  if (missing.length > 0 && produced.length > 0 && checksGreen) {
+    return { ok:true, warnings:[`missing expected_outputs: ${missing.join(", ")} (checks are green and every changed file is inside owns_paths)`] };
+  }
   if (fileOutputs.length && missing.length === fileOutputs.length) {
     return { ok:false, state:"empty_output", reason:`missing expected_outputs: ${missing.join(", ")}` };
   }

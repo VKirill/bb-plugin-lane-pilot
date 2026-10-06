@@ -1,7 +1,7 @@
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { getAttempt, getReasoningTrace, getRun, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt } from "../../database";
-import { failureClass } from "../../failure-class";
+import { SESSION_MAX_TURNS, failureClass } from "../../failure-class";
 import { stringAt } from "../values";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
@@ -78,10 +78,10 @@ export function resolveInSameThread(state: string, reason: string | null | undef
   return state === "validation_failed" && /^merge_conflict: main changed since this attempt started: \S/.test(reason ?? "");
 }
 
-/** A failure the same writer can fix in place: its own work, not git, Lane Pilot, the machine or a question. */
+/** A failure the same writer can fix in place: its own work, not git, Lane Pilot, the machine, a question or its provider. */
 export function retryInSameThread(state: string, reason: string | null | undefined): boolean {
   if (state !== "validation_failed" && state !== "empty_output") return false;
-  return ["task", "contract", "provider"].includes(failureClass(state, reason));
+  return ["task", "contract"].includes(failureClass(state, reason));
 }
 
 export type HotWriter = { threadId: string; attemptId: string; workspacePath: string; environmentId: string | null; decision: unknown; turns: number };
@@ -94,10 +94,13 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
     return row.count;
   }
 
-  /** The thread and its workspace are still there, idle, and not used up. */
-  async function threadUsable(attempt: { thread_id: string | null; workspace_path: string | null; environment_id: string | null }): Promise<boolean> {
+  /**
+   * The thread and its workspace are still there, idle, and not used up. A task's own session is bounded by its turn cap
+   * instead of the area's: the feedback turns are the same work, and a full context is compacted before each.
+   */
+  async function threadUsable(attempt: { thread_id: string | null; workspace_path: string | null; environment_id: string | null }, inSession = false): Promise<boolean> {
     if (!attempt.thread_id || !attempt.workspace_path) return false;
-    if (threadTurns(attempt.thread_id) >= STICKY_MAX_TURNS) return false;
+    if (!inSession && threadTurns(attempt.thread_id) >= STICKY_MAX_TURNS) return false;
     const thread = await bb.sdk.threads.get({ threadId:attempt.thread_id }).catch(() => null);
     if (stringAt(thread, "status") !== "idle" || (thread as { archivedAt?: unknown } | null)?.archivedAt) return false;
     if (attempt.environment_id) {
@@ -119,15 +122,30 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       decision:previous.workspace_decision, turns:threadTurns(record.threadId) };
   }
 
-  /** The failed attempt's thread, when the same writer can redo the task in place or resolve its merge conflict. */
-  async function retryWriter(failedAttemptId: string, runId: string): Promise<(HotWriter & { kind:"retry"|"merge" }) | null> {
+  /** Turns the failed attempt's thread took for its task: its first answer and every feedback turn after it. */
+  function sessionTurns(failed: { thread_id: string | null; task_id: string }): number {
+    const row = db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE thread_id=? AND task_id=?").get(failed.thread_id, failed.task_id) as { count: number };
+    return row.count;
+  }
+
+  /** Why a failed attempt gets no more feedback turns in its writer's thread (the turn cap); null while it may. */
+  function sessionLimit(failedAttemptId: string, maxTurns = SESSION_MAX_TURNS): string | null {
+    const failed = getAttempt(db, failedAttemptId);
+    if (!failed?.thread_id) return null;
+    const sameThread = resolveInSameThread(failed.state, failed.reason) || retryInSameThread(failed.state, failed.reason);
+    return sameThread && sessionTurns(failed) >= maxTurns ? `turn limit ${maxTurns} reached` : null;
+  }
+
+  /**
+   * The failed attempt's thread, when the same writer can redo the task in place or resolve its merge conflict. A task is
+   * one writer session: the failure goes back to the writer as a feedback turn until the checks pass or the turn cap.
+   */
+  async function retryWriter(failedAttemptId: string, runId: string, maxTurns = SESSION_MAX_TURNS): Promise<(HotWriter & { kind:"retry"|"merge" }) | null> {
     const failed = getAttempt(db, failedAttemptId);
     const kind = resolveInSameThread(failed?.state ?? "", failed?.reason) ? "merge" as const : "retry" as const;
     if (!failed?.thread_id || (kind === "retry" && !retryInSameThread(failed.state, failed.reason))) return null;
-    // One redo per thread: a writer that failed twice in a row gets a fresh context (Claude Code best practices).
-    const inThread = db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE thread_id=? AND task_id=?").get(failed.thread_id, failed.task_id) as { count: number };
-    if (inThread.count >= 2) return null;
-    if (!await threadUsable(failed)) return null;
+    if (sessionTurns(failed) >= maxTurns) return null;
+    if (!await threadUsable(failed, true)) return null;
     return { threadId:failed.thread_id, attemptId:failed.id, workspacePath:failed.workspace_path!, environmentId:failed.environment_id,
       decision:failed.workspace_decision, turns:threadTurns(failed.thread_id), kind };
   }
@@ -212,5 +230,5 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
     }) as never);
   }
 
-  return { hotWriter, retryWriter, continueInThread, noteAccepted };
+  return { hotWriter, retryWriter, sessionLimit, continueInThread, noteAccepted };
 }

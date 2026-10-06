@@ -24,3 +24,17 @@ export async function loadBlockedBy(kv: Kv, attemptId: string): Promise<BlockedB
   const value = await kv.get(key(attemptId)).catch(() => null);
   return value && typeof value === "object" ? value as BlockedBy : null;
 }
+
+/**
+ * A blocked task the PM verified by hand (its work is in main or was checked another way): dependents that name it, or
+ * any redispatch of it, stop waiting. Keyed by the id without its numeric suffixes, like a dependency's family.
+ */
+const satisfiedKey = (projectId: string, taskId: string) => `task-satisfied:${projectId}:${taskId.replace(/(\.\d+)+$/, "") || taskId}`;
+
+export async function markTaskSatisfied(kv: Kv, projectId: string, taskId: string, note: string): Promise<void> {
+  await kv.set(satisfiedKey(projectId, taskId), { taskId, note, at: Date.now() } as never);
+}
+
+export async function isTaskSatisfied(kv: Kv, projectId: string, taskId: string): Promise<boolean> {
+  return Boolean(await kv.get(satisfiedKey(projectId, taskId)).catch(() => null));
+}

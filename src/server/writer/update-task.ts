@@ -18,6 +18,7 @@ import {
 import { findSandboxUnsafeMissingExcludes, parseSandboxUnsafePatterns } from "../../stages/critique-coverage";
 import { runPlanCritique, runPmRead } from "../critique-runs";
 import { recordStage } from "../stage-records";
+import { markTaskSatisfied } from "../blocked-by";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 import { validateTaskV2 } from "../../task-v2";
@@ -35,6 +36,8 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     taskId: string;
     task?: TaskV2;
     plan?: string;
+    /** The task is blocked and the PM verified its work: tasks that depend on it go on without a follow-up task. */
+    satisfied?: boolean;
   }): Promise<Record<string, unknown>> {
     const run = getRun(db, input.runId);
     if (!run || run.project_id !== input.projectId || run.pm_thread_id !== input.pmThreadId) {
@@ -58,6 +61,19 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
         ok: false,
         error: { code: "task_not_found", retryable: false, sideEffects: "none", hint: `task has no attempts: ${input.taskId}` },
       };
+    }
+
+    if (input.satisfied) {
+      if (input.task || input.plan) {
+        return { ok: false, error: { code: "validation_failed", retryable: false, sideEffects: "none", hint: "satisfied:true takes no task or plan" } };
+      }
+      if (latestAttempt.state !== "blocked") {
+        return { ok: false, error: { code: "not_blocked", retryable: false, sideEffects: "none", hint: `only a blocked task can be marked satisfied; ${input.taskId} is ${latestAttempt.state}` } };
+      }
+      await markTaskSatisfied(bb.storage.kv as never, input.projectId, input.taskId, "verified by the PM");
+      ctx.log(`task ${input.taskId} marked satisfied by its PM: its dependents proceed`);
+      return { ok: true, runId: input.runId, taskId: input.taskId, state: "satisfied",
+        hint: "Tasks that depend on it start by themselves; the task itself stays blocked in the record." };
     }
 
     const attempt = getAttempt(db, latestAttempt.id);

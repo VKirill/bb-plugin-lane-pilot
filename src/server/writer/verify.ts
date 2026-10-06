@@ -148,6 +148,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     attemptId:string; pmThreadId:string; writerThreadId:string; output:string; verification:VerifyResult[];
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
     review?:"passed"|"not_required";
+    /** Shape-only gates that did not reject (a missing expected output with green checks), and the writer's turns. */
+    warnings?:string[]; turns?:number;
   }): Promise<Record<string,unknown>> {
     const reportText = bbWriterReportMarkdown(input.task, input.attempt);
     const reasoningTrace = getReasoningTrace(db, input.attemptId);
@@ -168,6 +170,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       runV2:buildRunExecutionProfile(input.task.risk,runPolicyFor(input.runId)),
       reasoning:reasoningTrace ? [reasoningTrace] : [],
       emergencyFallback:input.emergencyFallback ?? null,
+      ...(input.warnings?.length ? { warnings:input.warnings } : {}),
+      ...(input.turns ? { turns:input.turns } : {}),
     };
     for (const [name, content] of [
       ["report.md", reportText],
@@ -192,7 +196,11 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
 
   async function validateWriterResult(input: {
     config:PrototypeConfig; projectId:string; runId:string; taskId:string; attempt:number; task:TaskV2; writerThreadId:string; attemptId:string; dirtBefore:import("../../cli-outcome").DirtSnapshot[];
-  }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[]; verification:VerifyResult[]; checkLogPath?:string; runV2?:ReturnType<typeof buildRunExecutionProfile> }> {
+  }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[]; verification:VerifyResult[]; checkLogPath?:string; runV2?:ReturnType<typeof buildRunExecutionProfile>;
+    /** Receipt warnings of an accepted result (a shape-only gate that did not reject). */
+    warnings?:string[];
+    /** Hash of the content of the files the attempt changed: two turns with the same one left the diff as it was. */
+    diffKey?:string }> {
     const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
     const dirt = await services.workspaceDirt(input.config, input.task.project_cwd);
     if (!dirt.ok) {
@@ -223,6 +231,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       };
     }
     let produced = attemptProduced(dirt.snapshots, comparable);
+    const diffKey = sha256(produced.map((path) => `${path}:${dirt.snapshots.find((row) => row.path === path)?.sha256 ?? ""}`).join("\n"));
     // The files this attempt's changes produced, for the next attempt of the task family: only these may later
     // leave a redispatch's dirt baseline.
     void bb.storage.kv.set(`writer-produced:${input.attemptId}`, produced as never).catch(() => undefined);
@@ -292,7 +301,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       recordGateEvaluation(db,{...input,gate:"owns-paths",status:"rejected",input:JSON.stringify(input.task),summary:{unownedCount:unowned.length}});
       recordGateEvaluation(db,{...input,gate:"validate",status:"skipped",input:JSON.stringify(input.task),summary:{reason:"ownership_rejected"}});
       return { status:"validation_failed", reason:`writer changed paths outside owns_paths or inside never_touch: ${unowned.join(", ")}`,
-        output:outputText(output), produced:checkedPaths, verification:[] };
+        output:outputText(output), produced:checkedPaths, verification:[], diffKey };
     }
     recordGateEvaluation(db,{...input,gate:"owns-paths",status:"passed",input:JSON.stringify(input.task),summary:{changedPathCount:checkedPaths.length,branchChangedPathCount:branchChanges.length,scope:"run",taskCount:ownershipScope.taskIds.length,gitBase:gitBase?{ref:gitBase.base_ref,sha:gitBase.base_sha,branch:gitBase.branch,compareCommitted:!!gitBase.compare_committed,pathsSha256:sha256(branchChanges.join("\0"))}:null}});
     const contents: Record<string, string | null> = {};
@@ -344,11 +353,12 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     }
     if (!classified.ok) {
       recordGateEvaluation(db,{...input,gate:"validate",status:"rejected",input:JSON.stringify(input.task),summary:{reason:"writer_output_not_accepted"}});
-      return { status:classified.state, reason:classified.reason, output:answerText, produced:checkedPaths, verification:verifies,
+      return { status:classified.state, reason:classified.reason, output:answerText, produced:checkedPaths, verification:verifies, diffKey,
         ...(checkLogPath ? { checkLogPath } : {}) };
     }
-    recordGateEvaluation(db,{...input,gate:"validate",status:"passed",input:JSON.stringify(input.task),summary:{producedCount:checkedPaths.length}});
-    return { status:"accepted", output:outputText(output), produced:checkedPaths, verification:verifies,
+    recordGateEvaluation(db,{...input,gate:"validate",status:"passed",input:JSON.stringify(input.task),summary:{producedCount:checkedPaths.length,...(classified.warnings?.length?{warnings:classified.warnings}:{})}});
+    return { status:"accepted", output:outputText(output), produced:checkedPaths, verification:verifies, diffKey,
+      ...(classified.warnings?.length ? { warnings:classified.warnings } : {}),
       runV2:buildRunExecutionProfile(input.task.risk,runPolicyFor(input.runId)) };
   }
 

@@ -171,7 +171,7 @@ describe("continuing a writer thread", () => {
     expect(env.sent).toEqual([]);
   });
 
-  it("redoes a failed check in the same thread once, keeping the worktree unsynced", async () => {
+  it("redoes a failed check in the same thread, keeping the worktree unsynced", async () => {
     const env = setup();
     createTask(env.db, { id: "t", runId: "run", kind: "bb", contract: task("t") });
     createAttempt(env.db, { id: "f1", runId: "run", taskId: "t" });
@@ -186,8 +186,11 @@ describe("continuing a writer thread", () => {
     expect(turn.ok).toBe(true);
     expect(env.calls).not.toContain("gitSyncWorktree");
     transitionAttempt(env.db, "f2", "validation_failed", { reason: "verification failed (npm test): exit 1" });
-    // A second failure in the same thread goes to a fresh writer.
-    expect(await env.sticky.retryWriter("f2", "run")).toBeNull();
+    // One writer session: a second failure is another feedback turn in the same thread, up to the turn cap (then a stop, no fresh writer).
+    expect(await env.sticky.retryWriter("f2", "run")).toMatchObject({ threadId: "thr_r", turns: 2 });
+    expect(env.sticky.sessionLimit("f2")).toBeNull();
+    expect(await env.sticky.retryWriter("f2", "run", 2)).toBeNull();
+    expect(env.sticky.sessionLimit("f2", 2)).toBe("turn limit 2 reached");
   });
 
   it("gives a conflict with main back to its writer to resolve, but never Lane Pilot faults or someone's uncommitted edits", async () => {

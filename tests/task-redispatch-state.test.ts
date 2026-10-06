@@ -16,6 +16,7 @@ it("a dependency named by the plan id follows its latest redispatch, and only th
   expect(latestTaskAttemptState(db, "proj", "P1")).toBe("running");
   attempt("a4", "P1.3", "accepted", 5);
   expect(latestTaskAttemptState(db, "proj", "P1")).toBe("accepted");
-  expect(latestTaskAttemptState(db, "proj", "P1.2")).toBe("running");
+  // Naming «P1.2» follows its later redispatch «P1.3» too (one writer session per task: the family's next member counts).
+  expect(latestTaskAttemptState(db, "proj", "P1.2")).toBe("accepted");
   expect(latestTaskAttemptState(db, "proj", "P2")).toBeNull();
 });
