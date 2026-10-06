@@ -3,6 +3,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { spawnAsync } from "../spawn-async";
+import { isBookkeepingPath } from "../bookkeeping-paths";
 
 export type GitIntegration = {
   status:"merged"|"up-to-date"|"conflict"|"failed"|"busy";
@@ -11,6 +12,8 @@ export type GitIntegration = {
   reason:string|null;
   /** With «busy»: what the integration holding the base checkout merges (its commit message). */
   holder?:string|null;
+  /** The attempt was replayed on a main that had moved, and merged without another writer turn. */
+  rebased?:boolean;
   /** Workspace packages rebuilt in the base checkout after the merge, with how each build ended. */
   rebuilt?:Array<{dir:string;ok:boolean;detail:string|null}>;
 };
@@ -163,12 +166,28 @@ export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>,labe
 }
 
 /**
+ * Replays the attempt's commits on the base checkout's current HEAD, in the attempt's own worktree. Returns the new tip,
+ * or null when there was nothing to replay or a commit conflicts: the rebase is then undone, the branch is as it was.
+ */
+function rebaseOntoBase(worktreePath:string, baseHead:string):string|null {
+  if(git(worktreePath,["merge-base","--is-ancestor",baseHead,"HEAD"]).ok) return null;
+  if(!git(worktreePath,[...identity(worktreePath),"rebase",baseHead]).ok) {
+    git(worktreePath,["rebase","--abort"]);
+    return null;
+  }
+  const tip=git(worktreePath,["rev-parse","HEAD"]);
+  return tip.ok&&tip.stdout.trim()?tip.stdout.trim():null;
+}
+
+/**
  * Commits the writer's worktree and merges it into the run's base checkout (main).
  * A conflict leaves main untouched and names the files, so the task can be redone on the new main.
  */
 export async function integrateWorktree(input:{basePath:string;worktreePath:string;message:string;removeWorktree?:boolean;lockWaitMs?:number;
   /** Merge only what is committed: the docs worktree holds other units' unchecked pages beside the commit. */
-  committedOnly?:boolean}):Promise<GitIntegration> {
+  committedOnly?:boolean;
+  /** The project's own bookkeeping patterns (bookkeeping.paths), settled to main's version in the merge. */
+  bookkeeping?:string[]}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
   await recoverStaleGitLock(input.worktreePath);
   const dirty=input.committedOnly?{ok:true as const,stdout:"",reason:""}:git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
@@ -191,7 +210,11 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
       await recoverStaleGitLock(input.basePath);
       await abortStaleMerge(input.basePath);
       const before=git(input.basePath,["rev-parse","HEAD"]).stdout.trim();
-      const merged=merge(input.basePath,sha,input.message);
+      // Main moved while the writer worked: replay the attempt on the current main first. Clean, it merges without
+      // another writer turn; a real conflict is left as it was and the merge below reports it for the free redo.
+      const rebased=branch.startsWith("lane/")&&before?rebaseOntoBase(input.worktreePath,before):null;
+      const merged=merge(input.basePath,rebased??sha,input.message,input.bookkeeping);
+      if(rebased&&merged.status==="merged") merged.rebased=true;
       if(merged.status==="merged"&&before) merged.rebuilt=await rebuildChangedPackages(input.basePath,before);
       return merged;
     },input.message,input.lockWaitMs);
@@ -275,47 +298,46 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
   return {status:"ready",path,branch,reason:null};
 }
 
-export const BOOKKEEPING_PATHS = [".agents/PROGRESS.md", ".agents/CHANGELOG.md"];
-
-function resolveBookkeepingToMain(basePath:string, sha:string):string {
-  const diff = git(basePath, ["diff", "--name-only", `HEAD..${sha}`]);
-  if (!diff.ok) return sha;
-  const changed = diff.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
-  const changedBookkeeping = BOOKKEEPING_PATHS.filter((path) => changed.includes(path));
-  if (!changedBookkeeping.length) return sha;
+/**
+ * The commit to merge in place of the writer's: its tree with every bookkeeping file (src/bookkeeping-paths.ts) set to
+ * what main has. A hook or sibling agent edits those files in the base checkout meanwhile, and a merge that touched
+ * them stopped on «local changes would be overwritten» or on a conflict nobody could redo away.
+ */
+function resolveBookkeepingToMain(basePath:string, sha:string, extra:readonly string[]):string {
+  const raw = git(basePath, ["diff", "--raw", "--no-abbrev", "-z", "--no-renames", "HEAD", sha]);
+  if (!raw.ok) return sha;
+  const prefix = git(basePath, ["rev-parse", "--show-prefix"]).stdout.trim();
+  const parts = raw.stdout.split("\0");
+  const entries:string[] = [];
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const meta = /^:(\d+) \d+ ([0-9a-f]+) [0-9a-f]+ \w+$/.exec(parts[i] ?? "");
+    const path = parts[i + 1]!;
+    if (!meta || !path.startsWith(prefix) || !isBookkeepingPath(path.slice(prefix.length), extra)) continue;
+    // main's version (old side of the diff); a file main lacks is removed from the merged tree.
+    entries.push(/^0+$/.test(meta[2]!) ? `0 ${meta[2]}\t${path}` : `${meta[1]} ${meta[2]}\t${path}`);
+  }
+  if (!entries.length) return sha;
 
   const gitDir = git(basePath, ["rev-parse", "--absolute-git-dir"]);
   const dir = gitDir.ok && gitDir.stdout.trim() ? gitDir.stdout.trim() : join(basePath, ".git");
   const tempIndex = join(dir, `temp-idx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
+  const run = (args:string[], input?:string) => spawnSync("git", args, { cwd: basePath, env, encoding: "utf8", timeout: 30_000, input });
 
   try {
-    const read = spawnSync("git", ["read-tree", sha], { cwd: basePath, env, encoding: "utf8", timeout: 30_000 });
-    if (read.status !== 0) return sha;
-    for (const bPath of changedBookkeeping) {
-      const ls = git(basePath, ["ls-tree", "HEAD", bPath]);
-      if (ls.ok && ls.stdout.trim()) {
-        const parts = ls.stdout.trim().split(/\s+/);
-        const mode = parts[0]!;
-        const blobSha = parts[2]!.split("\t")[0]!;
-        const path = ls.stdout.trim().split("\t")[1]!;
-        spawnSync("git", ["update-index", "--cacheinfo", `${mode},${blobSha},${path}`], { cwd: basePath, env, encoding: "utf8", timeout: 30_000 });
-      } else {
-        spawnSync("git", ["update-index", "--force-remove", bPath], { cwd: basePath, env, encoding: "utf8", timeout: 30_000 });
-      }
-    }
-    const writeTree = spawnSync("git", ["write-tree"], { cwd: basePath, env, encoding: "utf8", timeout: 30_000 });
+    if (run(["read-tree", sha]).status !== 0) return sha;
+    if (run(["update-index", "-z", "--index-info"], `${entries.join("\0")}\0`).status !== 0) return sha;
+    const writeTree = run(["write-tree"]);
     if (writeTree.status !== 0 || !writeTree.stdout.trim()) return sha;
-    const treeSha = writeTree.stdout.trim();
-    const commitTree = git(basePath, [...identity(basePath), "commit-tree", treeSha, "-p", sha, "-m", "resolve bookkeeping to main"]);
+    const commitTree = git(basePath, [...identity(basePath), "commit-tree", writeTree.stdout.trim(), "-p", sha, "-m", "resolve bookkeeping to main"]);
     return commitTree.ok && commitTree.stdout.trim() ? commitTree.stdout.trim() : sha;
   } finally {
     try { unlinkSync(tempIndex); } catch {}
   }
 }
 
-function merge(basePath:string,sha:string,message:string):GitIntegration {
-  const targetSha = resolveBookkeepingToMain(basePath, sha);
+function merge(basePath:string,sha:string,message:string,bookkeeping:readonly string[]=[]):GitIntegration {
+  const targetSha = resolveBookkeepingToMain(basePath, sha, bookkeeping);
   if(git(basePath,["merge-base","--is-ancestor",targetSha,"HEAD"]).ok) {
     return {status:"up-to-date",commit:git(basePath,["rev-parse","HEAD"]).stdout.trim()||null,conflicts:[],reason:null};
   }

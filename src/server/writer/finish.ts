@@ -24,7 +24,8 @@ import { loadFollowUp } from "./sticky";
 import { askGuestsToCommit } from "../checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "../writer-silence";
-import { WRITER_SILENT_REASON } from "../../failure-class";
+import { WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../failure-class";
+import { bookkeepingSetting } from "../../bookkeeping-paths";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
@@ -531,7 +532,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       // A conflict fails the attempt, so the retry redoes the task on a fresh worktree of the new main.
       const bound = getAttempt(db, input.attemptId);
       const basePath = getRun(db, input.runId)?.writer_workspace_path;
-      let integration: { status:string; commit:string|null; conflicts:string[] } | null = null;
+      let integration: { status:string; commit:string|null; conflicts:string[]; rebased?:boolean } | null = null;
       if (bound?.workspace_path && basePath && shouldMergeAttemptWorktree(bound.workspace_path, basePath)) {
         const integrate = () => host.call("gitIntegrate", {
           requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path!,
@@ -539,6 +540,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           // Only Lane Pilot's own worktree (no BB environment) is removed; a BB managed one belongs to BB. An area task
           // keeps it for the area's next task (the attempt-worktree sweep removes it after the sticky window).
           removeWorktree:bound.environment_id === null && !input.task.area,
+          bookkeeping:bookkeepingSetting(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))),
         }, { hostId:input.config.hostId, timeoutMs:180_000 });
         // Another task merging into the same checkout is a queue, not a failure: wait for it and try again.
         let merged = await integrate();
@@ -598,7 +600,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification,
             attemptId:input.attemptId, writerThreadId };
         }
-        integration = { status:merged.status, commit:merged.commit, conflicts:[] };
+        integration = { status:merged.status, commit:merged.commit, conflicts:[], ...(merged.rebased ? { rebased:true } : {}) };
         if (merged.status === "merged") {
           const settings = loadProjectSettings(db, input.projectId);
           const gateSettings = parseIntegrationGateSettings(settings);
@@ -656,10 +658,23 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     // A check whose host call failed says nothing about main: read as red, it dispatched a mainfix for a green main.
     const unrun = checks?.filter((check) => check.hostError) ?? [];
     if (unrun.length) ctx.log(`post-merge check of ${input.task.id} could not run on the host: ${unrun.map((check) => `${check.command} (${check.stderr.slice(0, 160)})`).join(", ")}`);
-    const red = checks?.filter((check) => check.exitCode !== 0 && !check.hostError) ?? [];
+    const failing = checks?.filter((check) => check.exitCode !== 0 && !check.hostError) ?? [];
+    const tell = (text:string) => bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never).catch(() => undefined);
+    // A check the machine broke (EACCES, EPERM, EEXIST: root-owned files after a deploy) is no clash of merged work, and
+    // no writer can fix it inside owns_paths: an infra incident and one message to the PM, no -mainfix.
+    const environment = failing.filter((check) => isEnvironmentCheckFailure(check));
+    if (environment.length) {
+      const evidence = `${environment[0]!.stderr ?? ""}\n${environment[0]!.stdout ?? ""}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr:line }))?.trim().slice(0, 300) ?? "";
+      ctx.log(`infra: post-merge check of ${input.task.id} is red on main from the environment, no repair task: ${environment.map((check) => check.command).join(", ")} (${evidence})`);
+      const noted = `post-merge-infra:${input.runId}:${failureFingerprint(evidence)}`;
+      if (!await bb.storage.kv.get(noted).catch(() => null)) {
+        await bb.storage.kv.set(noted, Date.now() as never).catch(() => undefined);
+        await tell(`Lane Pilot: ${input.task.id} is merged, but ${environment.map((check) => check.command).join(", ")} is red on main because of the machine, not the code: ${evidence}. No repair task was created (a writer cannot fix file permissions). Fix it in ${input.basePath} (for example chown the root-owned files back to the Lane Pilot user), then run the check again.`);
+      }
+    }
+    const red = failing.filter((check) => !isEnvironmentCheckFailure(check));
     if (!red.length) return;
     ctx.log(`post-merge check of ${input.task.id} failed on main: ${red.map((check) => check.command).join(", ")}`);
-    const tell = (text:string) => bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never).catch(() => undefined);
     if (isMainfixTask(input.task.id)) {
       await tell(`Lane Pilot: ${input.task.id} fixed main once already and main is red again after it (${red[0]!.command}). Look at what else merged meanwhile and dispatch the fix yourself.`);
       return;
@@ -674,5 +689,5 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     await tell(`Lane Pilot: ${input.task.id} is merged, but ${red.map((check) => check.command).join(", ")} fails on main with it. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
   }
 
-  return { finishWriterAttempt };
+  return { finishWriterAttempt, checkMainAfterMerge };
 }

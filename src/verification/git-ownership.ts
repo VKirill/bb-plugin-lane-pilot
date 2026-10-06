@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
 import { relative, resolve } from "node:path";
+import { filterOwnershipNoise } from "../bookkeeping-paths";
 
 export type GitOwnershipBase = {
   status:"ready"|"not-git"|"invalid-ref"|"failed";
@@ -71,22 +72,7 @@ function resolveCommit(cwd:string,ref:string) {
   return {ok:true as const,sha};
 }
 
-/** Cache folders tools write at any depth while checks run. */
-export const TOOL_CACHE_DIRS=new Set(["node_modules",".vite",".vitest",".turbo",".cache",".parcel-cache",".eslintcache",".pytest_cache",".mypy_cache",".ruff_cache","__pycache__"]);
-
-/** Bookkeeping the harness, hooks and sibling agents write into a workspace; never a writer's change. */
-export function filterOwnershipNoise(paths:string[]):string[] {
-  const prefixes=[".agents/",".bb/",".repowise/",".worktrees/",".claude/worktrees/","node_modules/",".npm-cache/","npm-cache/",".npm/",".pnpm-store/","pnpm-store/",".yarn/cache/",".yarn/unplugged/",".cache/",".turbo/",".next/cache/","coverage/",".git/"];
-  const files=new Set(["PROGRESS.md","LESSONS.md","AGENTS.md","CLAUDE.md"]);
-  return [...new Set(paths.map((path)=>path.replace(/^\.\//, "")).filter((path)=>{
-    if(prefixes.some((prefix)=>path.startsWith(prefix))||files.has(path)) return false;
-    const parts=path.split("/");
-    // Tool caches inside a package of a monorepo (packages/contracts/.vite/vitest/…) are written by the checks
-    // themselves, not by the writer (SelfyStudio, 2026-10-02).
-    if(parts.slice(0,-1).some((part)=>TOOL_CACHE_DIRS.has(part))) return false;
-    return !parts.includes("__pycache__")&&!parts.includes(".pytest_cache")&&!parts.includes(".mypy_cache")&&!parts.includes(".ruff_cache")&&!path.endsWith(".pyc")&&!path.endsWith(".pyo");
-  }))].sort();
-}
+export { TOOL_CACHE_DIRS, filterOwnershipNoise } from "../bookkeeping-paths";
 
 /**
  * One normalisation before every ownership decision: dirt outside the workspace dropped, the rest made
@@ -94,9 +80,9 @@ export function filterOwnershipNoise(paths:string[]):string[] {
  * A snapshot may arrive repo-relative with paths of other agents (a workspace nested in a larger repo,
  * OVH 2026-10-06); no check below may ever see those.
  */
-export function workspaceRelativeDirt<T extends {path:string}>(snapshots:T[], prefix:string):T[] {
+export function workspaceRelativeDirt<T extends {path:string}>(snapshots:T[], prefix:string, extra:readonly string[]=[]):T[] {
   const inside=dirtInsideWorkspace(snapshots, prefix);
-  const clean=new Set(filterOwnershipNoise(inside.map((row)=>row.path)));
+  const clean=new Set(filterOwnershipNoise(inside.map((row)=>row.path),extra));
   return inside.filter((row)=>clean.has(row.path));
 }
 
@@ -124,7 +110,7 @@ export async function resolveGitOwnershipBase(input:{projectCwd:string;baseRef?:
 }
 
 /** `unfiltered` keeps .agents/ and memory files: the project-life stage must see exactly those. */
-export async function gitOwnershipChangedPaths(input:{projectCwd:string;baseSha:string|null;compareCommitted:boolean;unfiltered?:boolean}):Promise<{status:"ready"|"not-git"|"failed";headSha:string|null;paths:string[];reason:string|null}> {
+export async function gitOwnershipChangedPaths(input:{projectCwd:string;baseSha:string|null;compareCommitted:boolean;unfiltered?:boolean;bookkeeping?:string[]}):Promise<{status:"ready"|"not-git"|"failed";headSha:string|null;paths:string[];reason:string|null}> {
   const cwd=await checkedRoot(input.projectCwd);
   if(!cwd) return {status:"not-git",headSha:null,paths:[],reason:"ownership base requires a real git worktree root"};
   const head=git(cwd,["rev-parse","--verify","HEAD^{commit}"]);
@@ -133,7 +119,7 @@ export async function gitOwnershipChangedPaths(input:{projectCwd:string;baseSha:
   if(!/^[a-f0-9]{40,64}$/.test(headSha)) return {status:"failed",headSha:null,paths:[],reason:"git returned an invalid HEAD commit id"};
   if(!input.compareCommitted) {
     const paths=isNestedCheckout(cwd)?workingTreeRelative(cwd):[];
-    return {status:"ready",headSha,paths:input.unfiltered?[...new Set(paths)].sort():filterOwnershipNoise(paths),reason:null};
+    return {status:"ready",headSha,paths:input.unfiltered?[...new Set(paths)].sort():filterOwnershipNoise(paths,input.bookkeeping),reason:null};
   }
   if(!input.baseSha||!/^[a-f0-9]{40,64}$/.test(input.baseSha)) return {status:"failed",headSha,paths:[],reason:"frozen git base commit is missing or invalid"};
   const mergeBase=git(cwd,["merge-base",input.baseSha,headSha]);
@@ -141,5 +127,5 @@ export async function gitOwnershipChangedPaths(input:{projectCwd:string;baseSha:
   const diff=git(cwd,["diff","--name-only","-z","--no-renames","--relative",`${mergeBase.stdout.trim()}...${headSha}`]);
   if(!diff.ok) return {status:"failed",headSha,paths:[],reason:"could not compute committed ownership diff"};
   const paths=cwdRelativePaths(diff.stdout);
-  return {status:"ready",headSha,paths:input.unfiltered?[...new Set(paths)].sort():filterOwnershipNoise(paths),reason:null};
+  return {status:"ready",headSha,paths:input.unfiltered?[...new Set(paths)].sort():filterOwnershipNoise(paths,input.bookkeeping),reason:null};
 }

@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BOOKKEEPING_PATHS, integrateWorktree } from "../../src/verification/git-integrate";
+import { BOOKKEEPING_PATHS } from "../../src/bookkeeping-paths";
+import { integrateWorktree } from "../../src/verification/git-integrate";
 
 describe("bookkeeping merge collision", () => {
   let base: string;
@@ -90,6 +91,65 @@ describe("bookkeeping merge collision", () => {
     expect(res.reason).toBe("base checkout has uncommitted changes in files this attempt also changes");
     // Base content kept
     expect(await readFile(join(base, "service.ts"), "utf8")).toBe("export const service = 'dirty-base';\n");
+  });
+
+  it("a branch's episodes, run receipts and lock notes never stop a merge, whatever the base holds at the same paths", async () => {
+    const paths = [".agents/memory/episodes/e1.json", ".agents/runs/lprun_1/receipt.json", "notes/lock/w.lock", ".bb/chats/thr_1/n.md"];
+    await writeFile(join(wt, "product.ts"), "export const product = 1;\n");
+    for (const path of paths) {
+      await mkdir(join(wt, path, ".."), { recursive: true });
+      await writeFile(join(wt, path), `branch ${path}\n`);
+    }
+    git(wt, "add", "-A", "-f");
+    git(wt, "commit", "-m", "feat: product with hook bookkeeping");
+    // The same files already sit in the base checkout, untracked, written by a hook there.
+    for (const path of paths) {
+      await mkdir(join(base, path, ".."), { recursive: true });
+      await writeFile(join(base, path), `base ${path}\n`);
+    }
+
+    const res = await integrateWorktree({ basePath: base, worktreePath: wt, message: "product with bookkeeping" });
+
+    expect(res.status).toBe("merged");
+    expect(await readFile(join(base, "product.ts"), "utf8")).toBe("export const product = 1;\n");
+    for (const path of paths) expect(await readFile(join(base, path), "utf8")).toBe(`base ${path}\n`);
+    // Main's history never carried the branch's bookkeeping.
+    expect(git(base, "ls-tree", "-r", "--name-only", "HEAD").split("\n")).not.toContain("notes/lock/w.lock");
+  });
+
+  it("a project's own bookkeeping pattern is settled the same way, and a real file beside it still lands", async () => {
+    await mkdir(join(wt, "tmp"), { recursive: true });
+    await writeFile(join(wt, "tmp/out.log"), "branch log\n");
+    await writeFile(join(wt, "feature.ts"), "export const feature = 1;\n");
+    git(wt, "add", "-A");
+    git(wt, "commit", "-m", "feat: feature and a log");
+    await mkdir(join(base, "tmp"), { recursive: true });
+    await writeFile(join(base, "tmp/out.log"), "base log\n");
+
+    const blocked = await integrateWorktree({ basePath: base, worktreePath: wt, message: "x" });
+    // Not tracked in base and untracked there: git refuses to overwrite it.
+    expect(blocked.status).not.toBe("merged");
+
+    const res = await integrateWorktree({ basePath: base, worktreePath: wt, message: "x", bookkeeping: ["tmp/**"] });
+    expect(res.status).toBe("merged");
+    expect(await readFile(join(base, "feature.ts"), "utf8")).toBe("export const feature = 1;\n");
+    expect(await readFile(join(base, "tmp/out.log"), "utf8")).toBe("base log\n");
+  });
+
+  it("bookkeeping main changed meanwhile and the branch changed too is taken from main, with no conflict", async () => {
+    await writeFile(join(wt, ".agents/PROGRESS.md"), "branch progress\n");
+    await writeFile(join(wt, "product.ts"), "export const product = 2;\n");
+    git(wt, "add", "-A");
+    git(wt, "commit", "-m", "feat: product and progress");
+    await writeFile(join(base, ".agents/PROGRESS.md"), "main progress v2\n");
+    git(base, "add", "-A");
+    git(base, "commit", "-m", "chore(progress): v2");
+
+    const res = await integrateWorktree({ basePath: base, worktreePath: wt, message: "x" });
+
+    expect(res.status).toBe("merged");
+    expect(await readFile(join(base, ".agents/PROGRESS.md"), "utf8")).toBe("main progress v2\n");
+    expect(await readFile(join(base, "product.ts"), "utf8")).toBe("export const product = 2;\n");
   });
 
   it("project-life/memory commits never happen inside an attempt or area worktree (test)", async () => {

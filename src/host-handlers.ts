@@ -66,7 +66,7 @@ export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract
 
 export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message,removeWorktree:input.removeWorktree,committedOnly:input.committedOnly}),
+  ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message,removeWorktree:input.removeWorktree,committedOnly:input.committedOnly,bookkeeping:input.bookkeeping}),
 });
 
 export const stabilityDrill: ExperimentalHostRpcHandlers<typeof hostContract>["stabilityDrill"] = async (input) => ({
@@ -154,7 +154,7 @@ export const gitCommitDocs: ExperimentalHostRpcHandlers<typeof hostContract>["gi
 
 export const gitOwnershipChanges: ExperimentalHostRpcHandlers<typeof hostContract>["gitOwnershipChanges"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await gitOwnershipChangedPaths({projectCwd:input.projectCwd,baseSha:input.baseSha,compareCommitted:input.compareCommitted,unfiltered:input.unfiltered}),
+  ...await gitOwnershipChangedPaths({projectCwd:input.projectCwd,baseSha:input.baseSha,compareCommitted:input.compareCommitted,unfiltered:input.unfiltered,bookkeeping:input.bookkeeping}),
 });
 
 export const readOpenCodeTelemetry: ExperimentalHostRpcHandlers<typeof hostContract>["readOpenCodeTelemetry"] = async (input) => {
