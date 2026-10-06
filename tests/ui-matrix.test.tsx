@@ -7,6 +7,9 @@ import { en, ru, setLocaleOverride, t, validationMessage } from "../i18n";
 import { EXTERNAL_OPS } from "../src/constants";
 import { toast } from "sonner";
 
+// Heavy UI file: under a loaded machine single tests passed 20 s (2026-10-07), like agent-access-ui.
+vi.setConfig({ testTimeout: 60_000 });
+
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
 // Under load React updates and debounced saves settle after the 1 s default; await the real condition instead.
