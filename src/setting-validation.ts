@@ -23,6 +23,7 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
     : key === "plan_critique.min_write_tasks" ? 1
     : key === "code_critique.max_rounds" ? 1
     : key.startsWith("run.max_") ? 1
+    : key === "writer.silence_nudge_min" ? 1
     : key === "council.max_rounds" ? 1 : null;
   if (key === "code_critique.max_rounds" && value !== undefined && value !== null && value !== "") {
     const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
