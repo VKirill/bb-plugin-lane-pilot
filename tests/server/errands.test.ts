@@ -12,7 +12,7 @@ describe("errands", () => {
     expect(readOnly).toContain("--machine host_mini");
     expect(readOnly).toContain("`ERRAND: done` or `ERRAND: blocked: <why>`");
     expect(readOnly).not.toContain("done | blocked");
-    expect(errandPrompt({ task: "Remove the analytics scope", browserHostId: "host_mini", authorized: true })).toContain("make them, and only those");
+    expect(errandPrompt({ task: "Remove the analytics scope", browserHostId: "host_mini", authorized: true })).toContain("Authorization follows the owner's goal");
     expect(errandPrompt({ task: "x".repeat(20), browserHostId: null, authorized: false })).toContain("No browser machine is set");
   });
 });

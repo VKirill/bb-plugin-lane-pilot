@@ -1222,7 +1222,7 @@ def main() -> None:
     if re.search(r"\b(drop\s+(table|database|schema)|truncate\s+table)\b", low):
         emit_deny(client, "[agent-guard] DROP/TRUNCATE blocked. Run schema changes through project migrations or have the owner review them explicitly.")
 
-    if re.search(r"\bdelete\s+from\s+\w+\s*;?\s*$", low) and "where" not in low:
+    if re.search(r"\bdelete\s+from\s+\w+\b", low) and "where" not in low:
         emit_deny(client, "[agent-guard] DELETE without WHERE blocked. Add a WHERE clause scoping the deleted rows, or use TRUNCATE via migrations if a table wipe is intended.")
 
     # Deleting for good (rm, unlink, shred, find -delete) outside regenerated folders: the Trash can be undone.

@@ -547,7 +547,7 @@ describe("PM tool gating", () => {
       origin:{ pluginId:"other" },
       pluginMetadata:{ role:"pm", lanePilotRunId:"run-x" },
     } as never);
-    expect(pm.tools.map((tool) => tool.name)).toEqual(["lane_pilot_read","lane_pilot_dispatch_writer","lane_pilot_cancel_task","lane_pilot_wait_writer","lane_pilot_browser_qa","lane_pilot_workspace_status","lane_pilot_memory_context","lane_pilot_routing_stats","lane_pilot_lessons_sweep","lane_pilot_rule_propose","lane_pilot_lesson","lane_pilot_run_health","lane_pilot_council_start","lane_pilot_council_status","lane_pilot_council_say","lane_pilot_council_stop","lane_pilot_specialist","lane_pilot_wait_specialist","lane_pilot_browser","lane_pilot_errand","lane_pilot_wait_errand","lane_pilot_ask","lane_pilot_reply","lane_pilot_remind","lane_pilot_relay_list"]);
+    expect(pm.tools.map((tool) => tool.name)).toEqual(["lane_pilot_read","lane_pilot_dispatch_writer","lane_pilot_cancel_task","lane_pilot_update_task","lane_pilot_wait_writer","lane_pilot_answer_writer","lane_pilot_browser_qa","lane_pilot_workspace_status","lane_pilot_memory_context","lane_pilot_routing_stats","lane_pilot_lessons_sweep","lane_pilot_rule_propose","lane_pilot_lesson","lane_pilot_run_health","lane_pilot_council_start","lane_pilot_council_status","lane_pilot_council_say","lane_pilot_council_stop","lane_pilot_specialist","lane_pilot_wait_specialist","lane_pilot_browser","lane_pilot_errand","lane_pilot_wait_errand","lane_pilot_ask","lane_pilot_reply","lane_pilot_remind","lane_pilot_relay_list"]);
     expect(writer.tools).toEqual([]);
     expect(ordinary.tools).toEqual([]);
     createRun(db,"gate-report-run",config.projectId);

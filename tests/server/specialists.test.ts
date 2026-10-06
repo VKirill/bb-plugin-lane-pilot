@@ -24,6 +24,9 @@ describe("specialist threads", () => {
           events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
           output: async () => ({ output: "Mockup written to .agents/design/wizard.html" }),
         },
+        environments: {
+          get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }),
+        },
       },
     });
     await plugin(bb);

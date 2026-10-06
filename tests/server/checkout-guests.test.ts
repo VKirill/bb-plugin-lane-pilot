@@ -22,7 +22,7 @@ it("remembers an ordinary chat working in a run's folder and tells it once to co
   await noteCheckoutGuest(bb, db, "thr_owner", "/repo/plugin");
   await noteCheckoutGuest(bb, db, "thr_owner", "/repo/plugin/");
   expect(sent.map((row) => row.threadId)).toEqual(["thr_owner"]);
-  expect(sent[0]!.text).toContain("Коммить свои правки сразу");
+  expect(sent[0]!.text).toContain("Commit your changes immediately");
   expect((await listGuests(bb.storage.kv, "/repo/plugin")).map((row) => row.threadId)).toEqual(["thr_owner"]);
   // Lane Pilot's own threads, the PM and folders without a run are not guests.
   await noteCheckoutGuest(bb, db, "thr_writer", "/repo/plugin");
@@ -39,9 +39,9 @@ it("asks the folder's chats by name to commit blocking edits, at most once an ho
   expect(await askGuestsToCommit(bb, "/repo/plugin", ["host/rpc.ts"], "wp-publish")).toEqual(["thr_owner"]);
   expect(sent).toHaveLength(1);
   expect(sent[0]!.text).toContain("host/rpc.ts");
-  expect(sent[0]!.text).toContain("Если правки не твои — не трогай их");
+  expect(sent[0]!.text).toContain("If the changes are not yours, do not touch them");
   // A guest that could not commit reverted its own edit in the live check; it must never discard work for a merge.
-  expect(sent[0]!.text).toContain("Никогда не выбрасывай и не откатывай правки");
+  expect(sent[0]!.text).toContain("Never drop or revert changes");
   expect(await askGuestsToCommit(bb, "/repo/plugin", ["host/rpc.ts"], "wp-publish")).toEqual(["thr_owner"]);
   expect(sent).toHaveLength(1);
 });
