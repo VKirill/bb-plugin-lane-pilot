@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.168
+
+- **One writer session per task.** A failed check, a missing output or a stray file goes back to the same writer as a feedback turn in its own thread: what failed, what to do, and the full log path. The cap is 5 turns or 120 minutes. The session stops early only when the failure and the diff are both unchanged between two turns. A new writer (the next model in the chain) takes over only on a provider or limit failure. One session counts as one attempt.
+- **A missing expected output is a warning when the checks are green.** The writer must have produced work, all of it inside owns_paths, and at least one check must have run and passed.
+- **No second writer on the same work.** Sending another member of a task's family (`<id>.N`) while one runs or is parked returns `task_in_progress` with the running id. The hint says to use `lane_pilot_update_task` / `lane_pilot_answer_writer`.
+- **A PM-verified blocked dependency can be marked satisfied** with `lane_pilot_update_task {taskId, satisfied:true}`, and its dependents start without a dummy follow-up task. A dependent also follows later members of a numbered dependency (`D1.2` → `D1.3`).
+- **Dispatch answers at once and is idempotent.** Before, the PM got `{error: terminated}` while pm-read and plan critique still ran, and its resend created `.2`, `.2.2` and `.2.3`. Now the task and its queued attempt are saved before the long stages, and the call returns `state: queued` within 15 s. The same id with the same contract and plan, sent again within 30 minutes, returns the existing task (`deduplicated: true`). A reload in the middle of the stages blocks the attempt instead of starting a writer that skipped critique.
+- **A silent writer gets nudged.** Every 5 minutes, a running writer whose thread is active with no event for `writer.silence_nudge_min` minutes (default 20) gets a steer: «no activity, continue; stop a hung command». It is nudged twice. On the third silence the attempt ends as `writer_silent_after_nudge` (class provider, uncharged) and the task moves down the writer chain. Wait receipts show `nudged`.
+- **Wait receipts name the next step** for each task that did not end accepted, by its failure class: answer the writer, parked, moves down the chain, fix the contract, or dispatch again. The PM instructions describe the final loop: the integration gate runs the whole suite once per batch. Writers are told that the PM answers `NEEDS_HUMAN` in their own thread.
+- **Writers' searches no longer fail on a 61 KB line.** `src/native-hook-sources.ts` is now generated line by line from `lane-stack/hooks` (`scripts/gen-native-hook-sources.mjs`). A root `.ignore` hides `dist/`, maps, run artifacts, `.bb/`, `.gitnexus/` and `node_modules/` from ripgrep.
+- The workspace isolation setting offers only «auto» and «worktree».
+
 ## 0.1.167
 
 - **Writers always work in their own git worktree (P1, decision 2026-10-06).** The project setting «В папке проекта» (`in_place`) is gone; a saved value reads as auto. Every writer attempt of a Lane chat gets its own worktree, and acceptance merges it into main. Plugin-page runs keep the risk-threshold rule for now.
