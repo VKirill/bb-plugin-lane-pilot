@@ -79,6 +79,20 @@ export function taskFamily(taskId:string):string {
 
 /** Failures that do not spend one of the task's attempts. */
 export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "harness", "infra", "budget", "limit"]);
+/** What the PM does next about a task that did not end accepted, by its failure class; shown in wait receipts. */
+export function nextStep(state:string, reason:string | null | undefined):string {
+  if (["queued", "running", "spawn_requested", "validating"].includes(state)) return "wait: the writer is still on it";
+  switch (failureClass(state, reason)) {
+    case "judgment": return "answer_writer: answer its question with lane_pilot_answer_writer (taskId, answer); the writer continues in its thread";
+    case "harness": case "infra": return "parked: restarts by itself once the fault clears; do nothing";
+    case "limit": return "moves down the writer chain by itself; do nothing";
+    case "merge": return "redone on the new main by itself; do nothing";
+    case "contract": return "fix the contract: lane_pilot_update_task if it has not started, else dispatch it again with the changed contract";
+    case "budget": return "the run hit its budget: raise run.max_* or finish the run";
+    default: return "its writer session ended without green checks: read the reason, fix the plan or contract and dispatch it again";
+  }
+}
+
 /** Parked failures: the task waits for a fix or the machine, then restarts by itself. */
 export const PARKED_CLASSES:ReadonlySet<FailureClass> = new Set(["harness", "infra"]);
 /** Free retries a task may take on top of its two attempts, so a repeating free failure still ends. */

@@ -10,7 +10,7 @@ import type { TaskV2 } from "../../contracts";
 import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
 import { sha256 } from "../../stages/contract";
 import { parseReadFirstHints, readFirstKindError } from "../../stages/read-first";
-import { taskFamily } from "../../failure-class";
+import { nextStep, taskFamily } from "../../failure-class";
 import { isMainfixTask } from "../../validate-output";
 import { validateTaskV2 } from "../../task-v2";
 import { validateOwnershipContract } from "../../verification/ownership";
@@ -451,7 +451,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           .map(async (attempt) => { const found = await loadBlockedBy(bb.storage.kv, attempt.id); return found ? { taskId:attempt.task_id, ...found } : null; })))
           .filter((row) => row !== null);
         const nudged = await countRunNudges(bb.storage.kv, (listedRun?.attempts ?? []).map((row) => row.id));
+        const next = [...latestByTask.values()].filter((attempt) => attempt.state !== "accepted")
+          .map((attempt) => ({ taskId:attempt.task_id, state:attempt.state, next:nextStep(attempt.state, attempt.reason) }));
         return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), nudged, ...(reasons.length ? { reason:reasons.join("; ") } : {}),
+          ...(next.length ? { next } : {}),
           ...(blockedBy.length ? { blockedBy } : {}) };
       }
       await new Promise((resolve) => setTimeout(resolve, 500));

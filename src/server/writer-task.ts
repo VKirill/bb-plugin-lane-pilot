@@ -88,6 +88,7 @@ export const WRITER_SETUP_LINES = [
     "If the project has a GitNexus index (a `.gitnexus/` folder) and you have the gitnexus tools, find code with them first: `query` for a concept, `context` for a symbol's callers and callees, `impact` before changing a shared function. Use grep for literals and when the index has no answer. For a library's API use the context7 docs (through metamcp) before guessing. If you lack a tool, read the code yourself; that is no reason to stop.",
     "You work in your own git worktree. Do not commit, push, merge, rebase or switch branches: Lane Pilot commits and merges your accepted changes into main.",
     "Secrets come from Env Catalog (env_get); never print or write one down. Delete with `~/.agents/bin/agent-trash <path>` (rm's flags), not rm.",
+    "If you need a decision, end with `NEEDS_HUMAN: <one question>`; the PM answers in this thread and you continue.",
     "Lane Pilot runs the contract's verification itself, in a sandbox. If a check fails because of the sandbox rather than your code (a missing network, port, binary or a read-only path), change nothing more and answer with the first line `NEEDS_HUMAN: check <command> cannot run in the sandbox: <error>`; do not edit code to get around it.",
 ];
 
