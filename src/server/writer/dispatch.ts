@@ -1,4 +1,4 @@
-import { loadBlockedBy } from "../blocked-by";
+import { isTaskSatisfied, loadBlockedBy } from "../blocked-by";
 import { setRunHalted } from "../runs-halt";
 import { pmReadBrief } from "../../writer-brief";
 import { buildCliInvocation } from "../../argv-builder";
@@ -7,15 +7,15 @@ import { classifyCliOutcome } from "../../cli-outcome";
 import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../constants";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
+import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
 import { sha256 } from "../../stages/contract";
-import { parseReadFirstHints, readFirstKindError } from "../../stages/read-first";
 import { nextStep, taskFamily } from "../../failure-class";
 import { isMainfixTask } from "../../validate-output";
 import { validateTaskV2 } from "../../task-v2";
-import { validateOwnershipContract } from "../../verification/ownership";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
-import { findSandboxUnsafeMissingExcludes, parseSandboxUnsafePatterns } from "../../stages/critique-coverage";
+import { parseSandboxUnsafePatterns } from "../../stages/critique-coverage";
+import { lintContract, lintProbePaths, lintReply } from "../contract-lint";
+import type { LintOpenTask, PathKind } from "../contract-lint";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../critique-runs";
 import { closeWriterStages, recordStage } from "../stage-records";
 import { id, stringAt, valueAt } from "../values";
@@ -99,6 +99,38 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return parked ? { taskId:parked.taskId, parked:true } : null;
   }
 
+  /** The contract lint's inputs: the machine's view of the paths, the project's open tasks, and the tasks depends_on names that cannot finish. */
+  async function lintTask(projectId:string, runId:string, task:TaskV2, workspacePath:string, hostId:string): Promise<ReturnType<typeof lintContract>> {
+    let kinds:Map<string, PathKind> | null = null;
+    const probes = lintProbePaths(task, workspacePath);
+    if (probes.length) {
+      try {
+        const snapshot = await host.call("snapshotDryRun", { requestedHostId:hostId, paths:probes }, { hostId, timeoutMs:15_000 });
+        kinds = new Map(snapshot.entries.map((entry) => [entry.path, entry.kind]));
+      } catch {
+        // Listing is best-effort; a spawn still fail-closes on a read_first it cannot read.
+      }
+    }
+    const openTasks:LintOpenTask[] = [];
+    for (const row of listOpenAttempts(db)) {
+      if (row.project_id !== projectId || row.task_id === task.id || openTasks.some((open) => open.id === row.task_id)) continue;
+      const parsed = taskV2Schema.safeParse(getTask(db, row.task_id)?.contract);
+      if (parsed.success) openTasks.push({ id:row.task_id, owns_paths:parsed.data.owns_paths, never_touch:parsed.data.never_touch, depends_on:parsed.data.depends_on });
+    }
+    const parked = task.depends_on.length ? await services.stability.loadParked() : [];
+    const deadDependencies:Array<{ id:string; state:"blocked" | "canceled" }> = [];
+    for (const dep of new Set(task.depends_on)) {
+      const state = latestTaskAttemptState(db, projectId, dep);
+      if (state !== "blocked" && state !== "canceled") continue;
+      // Parked for a machinery fault, vouched for by the PM, or restarted under another member of its family: not dead.
+      if (parked.some((row) => row.projectId === projectId && taskFamily(row.taskId) === taskFamily(dep))) continue;
+      if (state === "blocked" && await isTaskSatisfied(bb.storage.kv as never, projectId, dep)) continue;
+      deadDependencies.push({ id:dep, state });
+    }
+    const sandboxUnsafe = parseSandboxUnsafePatterns(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))["verification.sandbox_unsafe"]);
+    return lintContract({ task, workspacePath, hostId, kinds, sandboxUnsafe, openTasks, deadDependencies });
+  }
+
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
@@ -130,23 +162,6 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       return { runId, state:"rejected", reason, unapplied:[{ key:"task.project_cwd", reason }] };
     }
     valid.task.project_cwd = workspacePath;
-    const projectSettings = loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId));
-    const sandboxUnsafePatterns = parseSandboxUnsafePatterns(projectSettings["verification.sandbox_unsafe"]);
-    if (sandboxUnsafePatterns.length) {
-      for (const v of valid.task.verification ?? []) {
-        const missing = findSandboxUnsafeMissingExcludes(v.command, sandboxUnsafePatterns);
-        if (missing.length) {
-          const excludeFlags = missing.map((pat) => `--exclude "${pat}"`).join(" ");
-          return {
-            runId,
-            state: "validation_failed",
-            reason: `verification command "${v.command}" runs a full test suite without excluding sandbox-unsafe tests; add missing exclusions: ${excludeFlags}`,
-            missingExcludes: missing,
-            suggestedFlags: excludeFlags,
-          };
-        }
-      }
-    }
     // The PM sending the same task again (its call ended «terminated» while the stages went on) gets the task it already has.
     const duplicate = args.task ? findLiveDuplicate(runId, args.task.id, valid.task, canonicalPlan) : null;
     if (duplicate) return duplicate;
@@ -157,49 +172,12 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       const hint = `${inProgress.taskId} of the same task is ${inProgress.parked ? "parked and restarts by itself" : "running"}: use lane_pilot_update_task / lane_pilot_answer_writer; redispatch only to change the contract, and cancel it first with lane_pilot_cancel_task`;
       return { ok:false, error:{ code:"task_in_progress", retryable:false, sideEffects:"none", hint }, runningTaskId:inProgress.taskId, hint };
     }
+    // Contract lint: every contract mistake a helper or writer would only trip over later goes back to the PM now,
+    // in one message with the fix, before a task or an attempt exists.
+    const lint = await lintTask(args.projectId, runId, valid.task, workspacePath, config.hostId);
+    if (lint.errors.length) return lintReply(runId, lint.errors);
     createTask(db, { id:taskId, runId, kind:"bb", contract:valid.task });
     saveTaskPlan(db, taskId, canonicalPlan);
-    const rejectPreflight = (reason:string):Record<string,unknown> => {
-      recordStage(db, { runId, taskId, stageId:"plan-critique", state:"blocked", input:canonicalPlan, reason });
-      recordStage(db, { runId, taskId, stageId:"pm-read", state:"skipped", input:canonicalPlan,
-        reason:"task preflight failed before stage execution" });
-      recordStage(db, { runId, taskId, stageId:"specialist-review", state:"skipped", input:canonicalPlan, reason:"task preflight failed before stage execution" });
-      for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
-        recordStage(db, { runId, taskId, stageId, state:"skipped", input:canonicalPlan,
-          reason:"task preflight failed before stage execution" });
-      }
-      setRunState(db, runId, "blocked");
-      refreshRun(runId);
-      return { runId, taskId, state:"blocked", reason, stages:listStageReceipts(db, runId, taskId) };
-    };
-    let readFirstHints: ReturnType<typeof parseReadFirstHints>;
-    try {
-      readFirstHints = parseReadFirstHints(valid.task.read_first);
-    } catch (cause) {
-      return rejectPreflight(cause instanceof Error ? cause.message : String(cause));
-    }
-    if (readFirstHints.length) {
-      try {
-        const snapshot = await host.call("snapshotDryRun", {
-          requestedHostId:config.hostId,
-          paths:readFirstHints.map((hint) => resolve(workspacePath, hint.path)),
-        }, { hostId:config.hostId, timeoutMs:30_000 });
-        for (const hint of readFirstHints) {
-          const entry = snapshot.entries.find((row) => row.path === resolve(workspacePath, hint.path));
-          if (entry?.kind === "directory") {
-            const kindError = readFirstKindError(hint.path, "directory");
-            if (kindError) return rejectPreflight(kindError);
-          }
-          if (entry?.kind === "symlink" || entry?.kind === "other") {
-            return rejectPreflight(`read_first is not a regular file (${entry.kind}): ${hint.path}`);
-          }
-        }
-      } catch {
-        // Listing is best-effort; spawn still fail-closes if the source cannot be read.
-      }
-    }
-    const ownershipError = validateOwnershipContract(valid.task);
-    if (ownershipError) return rejectPreflight(ownershipError);
     if (run.run_gate === "pre-merge") {
       const reason = "explicit_review_gate_requires_operator";
       recordStage(db,{runId,taskId,stageId:"run-gate",state:"blocked",input:JSON.stringify({gate:run.run_gate,planSha256:sha256(canonicalPlan)}),
@@ -311,7 +289,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       const openQuestions = pmRead.summary ? pmReadBrief(pmRead.summary).openQuestions : [];
       const settings = loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId));
       const gateSettings = parseIntegrationGateSettings(settings);
-      const warnings: string[] = [];
+      const warnings: string[] = lint.warnings.map((warning) => warning.message);
       if (gateSettings.gateCommand) {
         for (const [idx, v] of (valid.task.verification ?? []).entries()) {
           const cmd = v.command.trim();

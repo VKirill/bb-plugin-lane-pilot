@@ -658,10 +658,11 @@ describe("stage → native writer → receipt", () => {
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Model approved","findings":[]}');
     const outsideTask={...task,id:"outside-output",expected_outputs:[...task.expected_outputs,"apps/other/Missing.vue"]};
     const raw=String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write the fixture",task:outsideTask},{threadId:pmThreadId,projectId}));
-    expect(JSON.parse(raw)).toMatchObject({state:"blocked",reason:"structural_plan_critique_blocked"});
-    expect(spawned.some((row)=>(row.pluginMetadata as Record<string,unknown>).role==="writer")).toBe(false);
-    expect(listStageReceipts(db,"stage-run",outsideTask.id).find((row)=>row.stageId==="plan-critique"))
-      .toMatchObject({result:{structuralFindings:[expect.objectContaining({code:"output_unowned",severity:"error"})]}});
+    // The contract lint answers before a task, an attempt or a critique exists.
+    expect(JSON.parse(raw)).toMatchObject({state:"validation_failed",findings:[expect.objectContaining({code:"output_unowned"})]});
+    expect(JSON.parse(raw).reason).toContain("apps/other/Missing.vue");
+    expect(spawned).toHaveLength(0);
+    expect(listStageReceipts(db,"stage-run",outsideTask.id)).toEqual([]);
     await harness.lifecycle.dispose();
   });
   it("routes docs maintenance through its configured native provider and records a stage receipt",async()=>{
@@ -1724,33 +1725,28 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("records blocked and skipped receipts when task preflight rejects unsafe read_first", async () => {
+  it("sends back a contract whose read_first leaves the project, with no task and no receipts", async () => {
     const { db, harness, spawned } = await setup('{"decision":"approve","summary":"Checked","findings":[]}');
     const unsafeTask = { ...task, read_first:["../outside.md L1-L2"] };
     const result = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
       { confirm:true, plan:"Create the fixture", task:unsafeTask }, { threadId:pmThreadId, projectId })));
-    expect(result.state).toBe("blocked");
+    expect(result.state).toBe("validation_failed");
     expect(result.reason).toContain("project-relative");
     expect(spawned).toHaveLength(0);
-    expect(listStageReceipts(db, "stage-run", task.id).map((row) => [row.stageId,row.state]))
-      .toEqual([["acceptance-receipt","skipped"],["plan-critique","blocked"],["pm-read","skipped"],["specialist-review","skipped"],["verification","skipped"],["writer-agent","skipped"]]);
+    expect(listStageReceipts(db, "stage-run", task.id)).toEqual([]);
     await harness.lifecycle.dispose();
   });
 
-  it("blocks dispatch before spawn when read_first is a directory", async () => {
+  it("sends back a contract whose read_first is a directory", async () => {
     const { db, harness, spawned } = await setup('{"decision":"approve","summary":"Checked","findings":[]}');
     extraListPaths=[{kind:"directory",name:"src",path:"src",positions:[],score:1}];
     const directoryTask = { ...task, read_first:["src"] };
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
       { confirm:true, plan:"Create the fixture", task:directoryTask }, { threadId:pmThreadId, projectId })));
-    expect(dispatched.state).toBe("blocked");
+    expect(dispatched.state).toBe("validation_failed");
     expect(dispatched.reason).toContain("directory, not a file");
     expect(spawned).toHaveLength(0);
-    const waited = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",
-      { runId:"stage-run", timeoutSec:1 }, { threadId:pmThreadId, projectId })));
-    expect(waited.state).toBe("blocked");
-    expect(waited.reason).toContain("directory, not a file");
-    expect(listStageReceipts(db, "stage-run", String(dispatched.taskId)).find((row)=>row.stageId==="writer-agent")?.state).toBe("skipped");
+    expect(listStageReceipts(db, "stage-run", task.id)).toEqual([]);
     await harness.lifecycle.dispose();
   });
 
@@ -2007,7 +2003,7 @@ describe("stage → native writer → receipt", () => {
     const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
     const poisoned={...task,id:"poisoned",read_first:["../other-plugin/server.ts"],owns_paths:["../other-plugin/","note.txt"]};
     const rejected=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Reach into a sibling repo",task:poisoned},{threadId:pmThreadId,projectId})));
-    expect(rejected.state).toBe("blocked");
+    expect(rejected.state).toBe("validation_failed");
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
     expect(waited.reason ?? "").not.toContain("ownership run scope invalid");

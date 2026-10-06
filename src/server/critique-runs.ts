@@ -1,5 +1,4 @@
-import { isOutputPath } from "../validate-output";
-import { fileAllowedByOwns } from "../owns-paths";
+import { unownedExpectedOutputs } from "../validate-output";
 import { hostContract, taskV2Schema } from "../contracts";
 import type { PrototypeConfig, TaskV2 } from "../contracts";
 import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, loadProjectSettings, openDatabase } from "../database";
@@ -144,7 +143,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   let structuralFindings:CoverageFinding[]=runTasks.flatMap((task)=>findTaskPlaceholderPaths(task).map((path)=>({code:"task_placeholder" as const,path:`tasks/${task.id}/${path}`,
     severity:"error" as const,finding:`Task ${task.id} contains unresolved REPLACE_ME at ${path}`}))).slice(0,10);
   // An expected file the task may not write fails every attempt (SelfyStudio 2026-10-03): caught here, before a writer runs.
-  const unownedOutputs=input.task.expected_outputs.filter((entry)=>entry.includes("/")&&isOutputPath(entry)&&!fileAllowedByOwns(entry.replace(/^\.\//,""),input.task.owns_paths));
+  const unownedOutputs=unownedExpectedOutputs(input.task);
   const openTasks:Array<{id:string;depends_on:string[]}>=[];
   for(const row of listOpenAttempts(input.db)) {
     if(row.project_id!==input.projectId||row.task_id===input.task.id||openTasks.some((open)=>open.id===row.task_id))continue;

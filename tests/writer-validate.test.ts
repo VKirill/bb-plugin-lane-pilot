@@ -319,7 +319,7 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("closes the stages of a task blocked by a blocked depends_on (live: gc-native-price-watermark.4)", async () => {
+  it("sends a task whose depends_on is already blocked back to the PM to replan instead of queuing it (live: gc-native-price-watermark.4)", async () => {
     let spawns = 0;
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
@@ -351,10 +351,10 @@ describe("BB writer validation on the server path", () => {
       { confirm:true, plan:"Plan that waits for dep-task", task:{ ...task, id:"dependent", depends_on:["dep-task"], verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
-    // A blocked dependency is usually fixed and sent again: the dependent waits for that instead of failing at once.
-    await vi.waitFor(() => expect(listStageReceipts(db, "run-depends", "dependent").find((row) => row.stageId === "writer-agent"))
-      .toMatchObject({ state:"pending", reason:expect.stringContaining("dep-task ended blocked; starts once it is sent again and accepted") }));
-    expect(getAttempt(db, dispatched.attemptId)?.state).toBe("queued");
+    // The contract lint sends the PM back to replan: no task, no attempt, no cascade of blocked receipts.
+    expect(dispatched).toMatchObject({ state:"validation_failed", replan:true });
+    expect(dispatched.reason).toContain("replan: depends_on dep-task ended blocked");
+    expect(listStageReceipts(db, "run-depends", "dependent")).toEqual([]);
     expect(spawns).toBe(0);
     await harness.lifecycle.dispose();
   });

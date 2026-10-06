@@ -14,7 +14,7 @@ export type RunOwnershipScope =
   | { ok:true; task:OwnershipTask; tasks:OwnershipTask[]; taskIds:string[] }
   | { ok:false; reason:string };
 
-function safeRelative(value:string):string|null {
+export function safeRelative(value:string):string|null {
   if (!value || value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) return null;
   const normalized = posix.normalize(value);
   if (normalized === "." || normalized === ".." || normalized.startsWith("../")) return null;

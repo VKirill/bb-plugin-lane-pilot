@@ -34,6 +34,11 @@ export function isOutputPath(entry: string): boolean {
   return Boolean(text) && !/\s/.test(text) && (text.includes("/") || /\.[A-Za-z0-9]{1,8}$/.test(text));
 }
 
+/** Expected files the task may not write: no attempt can produce them. */
+export function unownedExpectedOutputs(task:Pick<TaskV2, "expected_outputs" | "owns_paths">):string[] {
+  return task.expected_outputs.filter((entry) => entry.includes("/") && isOutputPath(entry) && !fileAllowedByOwns(entry.replace(/^\.\//, ""), task.owns_paths));
+}
+
 /** A post-merge repair task and its redispatches («x-mainfix», «x-mainfix.2»). */
 export function isMainfixTask(taskId: string): boolean {
   return /-mainfix(\.\d+)*$/.test(taskId);
