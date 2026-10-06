@@ -4,10 +4,10 @@ import { pmReadBrief } from "../../writer-brief";
 import { buildCliInvocation } from "../../argv-builder";
 import { requiredCliFlags } from "../../cli-flags";
 import { classifyCliOutcome } from "../../cli-outcome";
-import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../constants";
+import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../constants";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { createAttempt, createTask, freeTaskId, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
+import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
 import { sha256 } from "../../stages/contract";
 import { parseReadFirstHints, readFirstKindError } from "../../stages/read-first";
 import { validateTaskV2 } from "../../task-v2";
@@ -15,13 +15,26 @@ import { validateOwnershipContract } from "../../verification/ownership";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
 import { findSandboxUnsafeMissingExcludes, parseSandboxUnsafePatterns } from "../../stages/critique-coverage";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../critique-runs";
-import { recordStage } from "../stage-records";
+import { closeWriterStages, recordStage } from "../stage-records";
 import { id, stringAt, valueAt } from "../values";
 import { buildTask } from "../writer-task";
 import { isAbsolute, relative, resolve } from "node:path";
 import { parseIntegrationGateSettings } from "../integration-gate";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
+
+/** How long a dispatch waits for its stages before it answers «queued» and lets them go on in the background. */
+const dispatchAnswerMs = () => {
+  const set = Number(process.env.LANE_PILOT_DISPATCH_ANSWER_MS);
+  return process.env.LANE_PILOT_DISPATCH_ANSWER_MS && Number.isFinite(set) && set >= 0 ? set : 15_000;
+};
+
+function canonicalJson(value:unknown): string {
+  const sorted = (item:unknown): unknown => Array.isArray(item) ? item.map(sorted)
+    : item && typeof item === "object" ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a < b ? -1 : 1).map(([k, v]) => [k, sorted(v)]))
+    : item;
+  return JSON.stringify(sorted(value));
+}
 
 export function createWriterDispatch(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, cliSettingsFor, configForRun, db, ensureRunScopes, getThreadBounded, host, refreshRun } = ctx;
@@ -55,6 +68,22 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     }, { hostId, timeoutMs: 15_000 });
     if (file.hostId !== hostId) throw new Error("lane_pilot_read_host_mismatch");
     return file;
+  }
+
+  /** An open or accepted task of this run with the same id, contract and plan, created in the last 30 minutes. */
+  function findLiveDuplicate(runId:string, requestedId:string, contract:TaskV2, plan:string): Record<string,unknown>|null {
+    const row = db.prepare("SELECT contract_json, created_at FROM lane_pilot_task WHERE id=? AND run_id=?").get(requestedId, runId) as
+      {contract_json:string; created_at:number}|undefined;
+    if (!row || Date.now() - row.created_at > DISPATCH_IDEMPOTENT_WINDOW_MS) return null;
+    if (canonicalJson(JSON.parse(row.contract_json)) !== canonicalJson({ ...contract, id:requestedId })) return null;
+    if (sha256(getTaskPlan(db, requestedId) ?? "") !== sha256(plan)) return null;
+    const latest = listAttemptsForTask(db, runId, requestedId).at(-1);
+    // A task that ended blocked or canceled is dispatched again under a new id, as before. One without an attempt yet is still in preflight.
+    if (latest ? ["blocked", "canceled"].includes(latest.state)
+      : db.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('blocked','failed') LIMIT 1").get(runId, requestedId)) return null;
+    return { runId, taskId:requestedId, attemptId:latest?.id ?? null, writerThreadId:latest?.thread_id ?? null, state:latest?.state ?? "queued", deduplicated:true,
+      stages:listStageReceipts(db, runId, requestedId),
+      note:"This task id with the same contract and plan was already dispatched in the last 30 minutes; this is that task, nothing new was created. Poll lane_pilot_wait_writer or end your turn with lane_pilot_remind on the task id." };
   }
 
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string}): Promise<Record<string,unknown>> {
@@ -105,6 +134,9 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         }
       }
     }
+    // The PM sending the same task again (its call ended «terminated» while the stages went on) gets the task it already has.
+    const duplicate = args.task ? findLiveDuplicate(runId, args.task.id, valid.task, canonicalPlan) : null;
+    if (duplicate) return duplicate;
     createTask(db, { id:taskId, runId, kind:"bb", contract:valid.task });
     saveTaskPlan(db, taskId, canonicalPlan);
     const rejectPreflight = (reason:string):Record<string,unknown> => {
@@ -158,107 +190,137 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       setRunState(db,runId,"blocked");
       return {runId,taskId,state:"blocked",reason,gate:run.run_gate,writerDispatched:false,stages:listStageReceipts(db,runId,taskId)};
     }
-    const pmRead=await runPmRead({bb,db,projectId:args.projectId,runId,taskId,pmThreadId:args.threadId,config:runConfig,task:valid.task});
-    if(pmRead.state==="failed") {
-      const reason=`pm_read_failed:${pmRead.reason ?? "unknown"}`;
-      recordStage(db,{runId,taskId,stageId:"plan-critique",state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
-      recordStage(db,{runId,taskId,stageId:"specialist-review",state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
-      for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
-      setRunState(db,runId,"blocked");
-      refreshRun(runId);
-      return {runId,taskId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
-    }
-    const critique = await runPlanCritique({ bb, db, projectId:args.projectId, runId, taskId,
-      config:runConfig, task:valid.task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined });
-    if (!critique.allowed) {
-      recordStage(db, { runId, taskId, stageId:"specialist-review", state:"skipped", input:canonicalPlan,
-        reason:"plan-critique did not allow dispatch" });
-      for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
-        recordStage(db, { runId, taskId, stageId, state:"skipped", input:canonicalPlan,
-          reason:"upstream plan-critique stage did not pass" });
-      }
-      setRunState(db, runId, "blocked");
-      return { runId, taskId, state:"blocked", reason:critique.reason, stages:listStageReceipts(db, runId, taskId) };
-    }
-    const specialist = await runSpecialistReview({bb,db,projectId:args.projectId,runId,taskId,
-      config:runConfig,task:valid.task,plan:canonicalPlan});
-    if (!specialist.allowed) {
-      for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
-        recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"specialist review did not allow dispatch"});
-      }
-      setRunState(db,runId,"blocked");
-      return {runId,taskId,state:"blocked",reason:specialist.reason,stages:listStageReceipts(db,runId,taskId)};
-    }
-    const gitBase=await host.call("gitOwnershipBase",{
-      requestedHostId:config.hostId,projectCwd:workspacePath,...(args.baseRef===undefined?{}:{baseRef:args.baseRef}),
-    },{hostId:config.hostId,timeoutMs:30_000});
-    if(gitBase.status!=="ready"&&(args.baseRef!==undefined||gitBase.status!=="not-git")) {
-      const reason=`git ownership base unavailable: ${gitBase.reason??gitBase.status}`;
-      recordStage(db,{runId,taskId,stageId:"run-gate",state:"blocked",input:canonicalPlan,
-        result:{decision:"ownership_base_unavailable",baseRef:args.baseRef??null},reason});
-      for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) {
-        recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"git ownership base preflight failed"});
-      }
-      setRunState(db,runId,"blocked");
-      refreshRun(runId);
-      return {runId,taskId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
-    }
-    if(gitBase.status==="ready"&&!saveTaskGitBase(db,taskId,{
-      baseRef:gitBase.baseRef,baseSha:gitBase.baseSha,initialHeadSha:gitBase.headSha!,branch:gitBase.branch!,compareCommitted:gitBase.compareCommitted,
-    })) {
-      const reason="could not persist immutable git ownership base snapshot";
-      recordStage(db,{runId,taskId,stageId:"run-gate",state:"blocked",input:canonicalPlan,result:{decision:"ownership_base_persist_failed"},reason});
-      for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason});
-      setRunState(db,runId,"blocked");refreshRun(runId);
-      return {runId,taskId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
-    }
-    try {
-      await persistTaskFolder({
-        taskId, plan:canonicalPlan,
-        // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
-        // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
-        exclude: async (line) => {
-          const ran=await host.call("runCommand",{
-            requestedHostId:config.hostId,cwd:workspacePath,command:appendExcludeCommand(line),timeoutSec:30,
-          },{hostId:config.hostId,timeoutMs:30_000});
-          if(ran.exitCode!==0) throw new Error(ran.stderr.trim()||`git exited ${ran.exitCode}`);
-        },
-        writeFile: async (rel, content) => {
-          await bb.sdk.files.write({
-            hostId:config.hostId, rootPath:workspacePath, path:`${workspacePath}/${rel}`,
-            content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
-          });
-        },
-      });
-    } catch (cause) {
-      bb.log.warn(`Lane Pilot could not persist task folder for ${taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
-    }
+    // The attempt exists before the long stages: pm-read and plan critique each wait for a helper thread for minutes,
+    // and the tool call used to end «terminated» in that wait while the dispatch went on unseen (live 2026-10-06, §6.1).
+    const attemptId = id("lpattempt");
+    createAttempt(db, { id:attemptId, runId, taskId });
+    transitionAttempt(db, attemptId, "queued", { reason:DISPATCH_STAGES_PENDING });
     for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
       recordStage(db, { runId, taskId, stageId, state:"pending", input:canonicalPlan });
     }
-    const attemptId = id("lpattempt");
-    createAttempt(db, { id:attemptId, runId, taskId });
-    services.startWriterTask({
-      projectId:args.projectId, runId, taskId, firstAttemptId:attemptId,
-      pmThreadId:args.threadId, config:runConfig, task:valid.task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined,
-    });
-    // The writer's brief carries the read stage's facts, not its open questions: those are the PM's to settle.
-    const openQuestions = pmRead.summary ? pmReadBrief(pmRead.summary).openQuestions : [];
-    const settings = loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId));
-    const gateSettings = parseIntegrationGateSettings(settings);
-    const warnings: string[] = [];
-    if (gateSettings.gateCommand) {
-      for (const [idx, v] of (valid.task.verification ?? []).entries()) {
-        const cmd = v.command.trim();
-        if (/(?:^|[;&|]\s*)(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test)(?:\s|$)/i.test(cmd) && !cmd.includes("related") && !cmd.includes("-- ")) {
-          warnings.push(`Verification command [${idx}] looks like a full test suite while an integration gate is configured. Consider a focused check (e.g. \`npx vitest related <files> --run\`).`);
+    const runStages = async (): Promise<Record<string,unknown>> => {
+      const pmRead=await runPmRead({bb,db,projectId:args.projectId,runId,taskId,pmThreadId:args.threadId,config:runConfig,task:valid.task});
+      if(pmRead.state==="failed") {
+        const reason=`pm_read_failed:${pmRead.reason ?? "unknown"}`;
+        recordStage(db,{runId,taskId,stageId:"plan-critique",state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
+        recordStage(db,{runId,taskId,stageId:"specialist-review",state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
+        for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
+        transitionAttempt(db,attemptId,"blocked",{reason});
+        setRunState(db,runId,"blocked");
+        refreshRun(runId);
+        return {runId,taskId,attemptId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
+      }
+      const critique = await runPlanCritique({ bb, db, projectId:args.projectId, runId, taskId,
+        config:runConfig, task:valid.task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined });
+      if (!critique.allowed) {
+        recordStage(db, { runId, taskId, stageId:"specialist-review", state:"skipped", input:canonicalPlan,
+          reason:"plan-critique did not allow dispatch" });
+        for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
+          recordStage(db, { runId, taskId, stageId, state:"skipped", input:canonicalPlan,
+            reason:"upstream plan-critique stage did not pass" });
+        }
+        transitionAttempt(db, attemptId, "blocked", { reason:critique.reason ?? "plan-critique did not allow dispatch" });
+        setRunState(db, runId, "blocked");
+        return { runId, taskId, attemptId, state:"blocked", reason:critique.reason, stages:listStageReceipts(db, runId, taskId) };
+      }
+      const specialist = await runSpecialistReview({bb,db,projectId:args.projectId,runId,taskId,
+        config:runConfig,task:valid.task,plan:canonicalPlan});
+      if (!specialist.allowed) {
+        for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
+          recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"specialist review did not allow dispatch"});
+        }
+        transitionAttempt(db,attemptId,"blocked",{reason:specialist.reason ?? "specialist review did not allow dispatch"});
+        setRunState(db,runId,"blocked");
+        return {runId,taskId,attemptId,state:"blocked",reason:specialist.reason,stages:listStageReceipts(db,runId,taskId)};
+      }
+      const gitBase=await host.call("gitOwnershipBase",{
+        requestedHostId:config.hostId,projectCwd:workspacePath,...(args.baseRef===undefined?{}:{baseRef:args.baseRef}),
+      },{hostId:config.hostId,timeoutMs:30_000});
+      if(gitBase.status!=="ready"&&(args.baseRef!==undefined||gitBase.status!=="not-git")) {
+        const reason=`git ownership base unavailable: ${gitBase.reason??gitBase.status}`;
+        recordStage(db,{runId,taskId,stageId:"run-gate",state:"blocked",input:canonicalPlan,
+          result:{decision:"ownership_base_unavailable",baseRef:args.baseRef??null},reason});
+        for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) {
+          recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"git ownership base preflight failed"});
+        }
+        transitionAttempt(db,attemptId,"blocked",{reason});
+        setRunState(db,runId,"blocked");
+        refreshRun(runId);
+        return {runId,taskId,attemptId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
+      }
+      if(gitBase.status==="ready"&&!saveTaskGitBase(db,taskId,{
+        baseRef:gitBase.baseRef,baseSha:gitBase.baseSha,initialHeadSha:gitBase.headSha!,branch:gitBase.branch!,compareCommitted:gitBase.compareCommitted,
+      })) {
+        const reason="could not persist immutable git ownership base snapshot";
+        recordStage(db,{runId,taskId,stageId:"run-gate",state:"blocked",input:canonicalPlan,result:{decision:"ownership_base_persist_failed"},reason});
+        for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason});
+        transitionAttempt(db,attemptId,"blocked",{reason});
+        setRunState(db,runId,"blocked");refreshRun(runId);
+        return {runId,taskId,attemptId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
+      }
+      try {
+        await persistTaskFolder({
+          taskId, plan:canonicalPlan,
+          // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
+          // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
+          exclude: async (line) => {
+            const ran=await host.call("runCommand",{
+              requestedHostId:config.hostId,cwd:workspacePath,command:appendExcludeCommand(line),timeoutSec:30,
+            },{hostId:config.hostId,timeoutMs:30_000});
+            if(ran.exitCode!==0) throw new Error(ran.stderr.trim()||`git exited ${ran.exitCode}`);
+          },
+          writeFile: async (rel, content) => {
+            await bb.sdk.files.write({
+              hostId:config.hostId, rootPath:workspacePath, path:`${workspacePath}/${rel}`,
+              content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
+            });
+          },
+        });
+      } catch (cause) {
+        bb.log.warn(`Lane Pilot could not persist task folder for ${taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+      // A cancel during the stages ends the queued attempt: the writer must not start for it.
+      const waiting = getAttempt(db, attemptId);
+      if (waiting?.state !== "queued") return { runId, taskId, attemptId, state:waiting?.state ?? "canceled", reason:waiting?.reason ?? "attempt ended before its stages finished", stages:listStageReceipts(db, runId, taskId) };
+      transitionAttempt(db, attemptId, "queued");
+      services.startWriterTask({
+        projectId:args.projectId, runId, taskId, firstAttemptId:attemptId,
+        pmThreadId:args.threadId, config:runConfig, task:valid.task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined,
+      });
+      // The writer's brief carries the read stage's facts, not its open questions: those are the PM's to settle.
+      const openQuestions = pmRead.summary ? pmReadBrief(pmRead.summary).openQuestions : [];
+      const settings = loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId));
+      const gateSettings = parseIntegrationGateSettings(settings);
+      const warnings: string[] = [];
+      if (gateSettings.gateCommand) {
+        for (const [idx, v] of (valid.task.verification ?? []).entries()) {
+          const cmd = v.command.trim();
+          if (/(?:^|[;&|]\s*)(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test)(?:\s|$)/i.test(cmd) && !cmd.includes("related") && !cmd.includes("-- ")) {
+            warnings.push(`Verification command [${idx}] looks like a full test suite while an integration gate is configured. Consider a focused check (e.g. \`npx vitest related <files> --run\`).`);
+          }
         }
       }
-    }
-    return { runId, attemptId, writerThreadId:null, state:"queued", stages:listStageReceipts(db, runId, taskId),
-      ...(warnings.length ? { warnings } : {}),
-      ...(openQuestions.length ? { pmReadOpenQuestions:openQuestions,
-        pmReadNote:"The writer does not see these questions. If one changes what the writer should do, wait for this attempt's receipt and, if it is not accepted, dispatch again with the answer in the plan; otherwise the writer decides from the code." } : {}) };
+      return { runId, taskId, attemptId, writerThreadId:null, state:"queued", stages:listStageReceipts(db, runId, taskId),
+        ...(warnings.length ? { warnings } : {}),
+        ...(openQuestions.length ? { pmReadOpenQuestions:openQuestions,
+          pmReadNote:"The writer does not see these questions. If one changes what the writer should do, wait for this attempt's receipt and, if it is not accepted, dispatch again with the answer in the plan; otherwise the writer decides from the code." } : {}) };
+    };
+    const work = runStages().catch((cause): Record<string,unknown> => {
+      const reason = `dispatch_failed:${cause instanceof Error ? cause.message : String(cause)}`;
+      bb.log.warn(`Lane Pilot dispatch of ${taskId} failed: ${reason}`);
+      transitionAttempt(db, attemptId, "blocked", { reason });
+      closeWriterStages(db, { runId, taskId, plan:canonicalPlan, terminal:"failed", attempt:0, reason });
+      setRunState(db, runId, "blocked");
+      refreshRun(runId);
+      return { runId, taskId, attemptId, state:"blocked", reason, stages:listStageReceipts(db, runId, taskId) };
+    });
+    // Stages that finish within the budget answer as before; slower ones go on in the background and the PM polls.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const early = await Promise.race([work, new Promise<null>((done) => { timer = setTimeout(() => done(null), dispatchAnswerMs()); })]);
+    clearTimeout(timer);
+    if (early) return early;
+    return { runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),
+      note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn with lane_pilot_remind on the task id. Do not send the task again: the same id and contract returns this task." };
   }
 
   /**

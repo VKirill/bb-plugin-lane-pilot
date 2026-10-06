@@ -1,3 +1,4 @@
+import { DISPATCH_STAGES_PENDING } from "../constants";
 import { taskV2Schema } from "../contracts";
 import { countAttempts, countChargedAttempts, createAttempt, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../database";
 import { closeWriterStages } from "./stage-records";
@@ -175,6 +176,13 @@ export function createReconcile(ctx: ServerCore, services: Services) {
       const attempt = getAttempt(db, row.id);
       if (!attempt) continue;
       try {
+        // A dispatch whose pm-read / plan critique died with the reload never passed its gate: the writer must not start.
+        if (attempt.state === "queued" && !attempt.thread_id && attempt.reason === DISPATCH_STAGES_PENDING) {
+          transitionAttempt(db, attempt.id, "blocked", { reason:"dispatch interrupted by a reload before pm-read and plan critique finished; send the task again" });
+          refreshRun(attempt.run_id);
+          skipped.push(row.id);
+          continue;
+        }
         // A queued attempt has not requested a provider thread yet. Do not feed it
         // through thread reconciliation, which correctly rejects a missing spawn;
         // resume it directly through the persisted run pool after reload.
