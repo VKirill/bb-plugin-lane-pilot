@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.161
+
+From a self-repair of «owns_paths rejected <path>» (SelfyStudio and content-factory, 2026-10-04…06):
+- **A rejected attempt names every file outside the task's owns_paths, not just the first.** When a writer changed a file no task of the run owns and a file a sibling task owns, the reason named only the first. The writer restored that file on its same-thread retry, and the retry then failed on the second. SelfyStudio `cards-retention-1day.4` and `cards-checkout-cabinet-chips.2` were blocked with «retry limit 2 exhausted» this way on 2026-10-05. Now both checks list the files that are outside owns_paths and the files that are in never_touch, all in one reason, so one retry can fix all of them.
+
 ## 0.1.160
 
 - **«Токены»: the cost column header is `$`.**

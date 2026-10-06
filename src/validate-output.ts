@@ -34,13 +34,14 @@ export function classifyWriterOutput(input: {
   contents: Record<string, string | null>;
   verifies?: VerifyResult[];
 }): OutputCheck {
-  for (const file of input.produced) {
-    if (fileBlockedByNeverTouch(file, input.task.never_touch)) {
-      return { ok:false, state:"validation_failed", reason:`never_touch matched ${file}` };
-    }
-    if (!fileAllowedByOwns(file, input.task.owns_paths)) {
-      return { ok:false, state:"validation_failed", reason:`owns_paths rejected ${file}` };
-    }
+  // Every stray file at once: the same-thread retry fixes what the reason names, and naming one of two cost
+  // SelfyStudio cards-retention-1day.4 and cards-checkout-cabinet-chips.2 their last retry (2026-10-05).
+  const blocked = input.produced.filter((file) => fileBlockedByNeverTouch(file, input.task.never_touch));
+  const rejected = input.produced.filter((file) => !blocked.includes(file) && !fileAllowedByOwns(file, input.task.owns_paths));
+  if (blocked.length || rejected.length) {
+    const reason = [blocked.length ? `never_touch matched ${blocked.join(", ")}` : "",
+      rejected.length ? `owns_paths rejected ${rejected.join(", ")}` : ""].filter(Boolean).join("; ");
+    return { ok:false, state:"validation_failed", reason };
   }
   // A Lane PM may describe an output in prose; only path-like entries name a file to check.
   const fileOutputs = input.task.expected_outputs.filter(isOutputPath);

@@ -253,7 +253,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const noiseFree=new Set(filterOwnershipNoise(produced));
     const attributed=produced.filter((path)=>noiseFree.has(path)||findUnownedChanges([path],input.task).length===0);
     const checkedPaths=[...new Set([...attributed,...branchChanges])].sort();
-    const unowned = findUnownedRunChanges(checkedPaths, ownershipScope.tasks);
+    // A path no task of the run owns fails here; name this task's other stray files (a sibling's) with it, or the
+    // retry fixes only the named one and the per-task check below spends the last attempt on the rest.
+    const runUnowned = findUnownedRunChanges(checkedPaths, ownershipScope.tasks);
+    const unowned = runUnowned.length ? [...new Set([...runUnowned,...findUnownedChanges(checkedPaths,input.task)])].sort() : [];
     if (unowned.length) {
       recordGateEvaluation(db,{...input,gate:"owns-paths",status:"rejected",input:JSON.stringify(input.task),summary:{unownedCount:unowned.length}});
       recordGateEvaluation(db,{...input,gate:"validate",status:"skipped",input:JSON.stringify(input.task),summary:{reason:"ownership_rejected"}});
