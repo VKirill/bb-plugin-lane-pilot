@@ -1,0 +1,15 @@
+# Search tools (ripgrep) skip these: generated or bulky files whose long lines break writers' searches.
+# Build output
+dist/
+# Source maps: one huge line each
+*.map
+# Lane Pilot run receipts and artifacts
+.agents/runs/
+# BB chat storage
+.bb/
+# GitNexus index
+.gitnexus/
+# Test coverage reports
+coverage/
+# Dependencies
+node_modules/
