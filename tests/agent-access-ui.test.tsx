@@ -123,8 +123,8 @@ describe("Agent access tab", () => {
     try {
       await openAccessTab(slot);
       for (const role of HELPER_ROLES) expect(slot.getByTestId(`access-role-${role.replace(/[:-]/g, "_")}`)).toBeTruthy();
-      expect(slot.getByTestId("access-summary-writer").textContent).toBe("2 skills");
-      expect(slot.getByTestId("access-summary-plan_critic").textContent).toBe(en.accessNothingExtra);
+      expect(slot.getByTestId("access-summary-writer").textContent).toBe("2 skills · 2 MCP");
+      expect(slot.getByTestId("access-summary-plan_critic").textContent).toBe("1 MCP");
       expect(slot.getByTestId("access-summary-browser_qa").textContent).toBe("1 skill · 1 BB plugin");
       expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_role);
       expect(slot.getByTestId("access-providers").textContent).toContain("Claude Code and Codex: everything.");
@@ -162,7 +162,7 @@ describe("Agent access tab", () => {
       fireEvent.click(option);
       await waitFor(() => expect(saves).toHaveLength(2));
       expect(saves[1]).toEqual({ projectId, key: "helper.access.writer", expectedVersion: 1, value: { skills: { mode: "allow", names: ["writer-practices", "karpathy-guidelines", "ru-text"] } } });
-      await waitFor(() => expect(slot.getByTestId("access-summary-writer").textContent).toBe("3 skills"));
+      await waitFor(() => expect(slot.getByTestId("access-summary-writer").textContent).toBe("3 skills · 2 MCP"));
       expect(slot.getByTestId("access-writer-skills-effective").textContent).toBe("writer-practices, karpathy-guidelines, ru-text · project");
       // The always-on BB plugins stay as locked chips and cannot be removed.
       await choose(slot, "access-writer-bbPlugins-mode", en.accessModeAllow);
@@ -194,9 +194,9 @@ describe("Agent access tab", () => {
       const input = within(editor).getByLabelText(en.accessAddTypeName);
       fireEvent.change(input, { target: { value: "context7" } });
       fireEvent.keyDown(input, { key: "Enter" });
-      await waitFor(() => expect(saves.at(-1)?.value).toEqual({ mcpServers: { mode: "allow", names: ["context7"] } }));
+      await waitFor(() => expect(saves.at(-1)?.value).toEqual({ mcpServers: { mode: "allow", names: ["gitnexus", "context7"] } }));
       fireEvent.click(await within(editor).findByRole("button", { name: `${en.accessRemove}: context7` }));
-      await waitFor(() => expect(saves.at(-1)?.value).toEqual({ mcpServers: { mode: "allow", names: [] } }));
+      await waitFor(() => expect(saves.at(-1)?.value).toEqual({ mcpServers: { mode: "allow", names: ["gitnexus"] } }));
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
