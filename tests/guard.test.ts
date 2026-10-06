@@ -3,9 +3,12 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
+import { hookEnv } from "./hook-env";
 
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 const upstream = upstreamPath("hooks/guard_shell.py");
+const pythonProbe = spawnSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" });
+const python = pythonProbe.status === 0 && pythonProbe.stdout.trim() ? pythonProbe.stdout.trim() : "python3";
 const cwd = join(process.cwd(), "tests/guard-fixture");
 mkdirSync(cwd, {recursive:true});
 
@@ -53,7 +56,7 @@ function invoke(path:string, testCase:Case) {
       cwd,
     }),
     encoding:"utf8",
-    env:{...process.env,AGENT_HOOK_CLIENT:"claude"},
+    env:hookEnv({AGENT_HOOK_CLIENT:"claude"}),
   });
 }
 
@@ -106,7 +109,7 @@ describe("E2 Lane Pilot PM guard", () => {
       tool_input: { file_path: "src/app.ts" },
       cwd,
     });
-    const options = { encoding: "utf8" as const, env: { ...process.env, AGENT_HOOK_CLIENT: "claude" } };
+    const options = { encoding: "utf8" as const, env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }) };
     const a = spawnSync("python3", [guard], { ...options, input: namespaced });
     const b = spawnSync("python3", [guard], { ...options, input: short });
     expect(a.status).toBe(b.status);
@@ -123,9 +126,9 @@ describe("E2 Lane Pilot PM guard", () => {
     ];
     for (const testCase of probes) {
       const payload = JSON.stringify({agent_type:"dev-orchestrator",tool_name:testCase.tool,tool_input:testCase.input,cwd});
-      const options = {input:payload,encoding:"utf8" as const,env:{...process.env,AGENT_HOOK_CLIENT:"claude"}};
-      const before = spawnSync("python3",[upstream],options);
-      const after = spawnSync("python3",[guard],options);
+      const options = {input:payload,encoding:"utf8" as const,env:hookEnv({AGENT_HOOK_CLIENT:"claude"})};
+      const before = spawnSync(python,[upstream],options);
+      const after = spawnSync(python,[guard],options);
       expect({status:after.status,stdout:after.stdout,stderr:after.stderr})
         .toEqual({status:before.status,stdout:before.stdout,stderr:before.stderr});
     }

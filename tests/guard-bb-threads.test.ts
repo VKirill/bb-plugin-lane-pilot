@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { hookEnv } from "./hook-env";
 
 const guard = process.env.GUARD_UNDER_TEST ?? join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 
@@ -31,7 +32,7 @@ function allowed(agentType: string, command: string): number | null {
   return spawnSync("python3", [guard], {
     input:JSON.stringify({ agent_type:agentType, tool_name:"Bash", tool_input:{ command }, cwd:process.cwd() }),
     encoding:"utf8",
-    env:{ ...process.env, AGENT_HOOK_CLIENT:"claude" },
+    env: hookEnv({ AGENT_HOOK_CLIENT:"claude" }),
   }).status;
 }
 
@@ -76,11 +77,10 @@ function allowedNative(command: string): number | null {
       cwd: process.cwd(),
     }),
     encoding: "utf8",
-    env: {
-      ...process.env,
+    env: hookEnv({
       AGENT_HOOK_CLIENT: "claude",
       LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator",
-    },
+    }),
   }).status;
 }
 
@@ -88,7 +88,7 @@ function allowedIn(cwd: string, command: string): number | null {
   return spawnSync("python3", [guard], {
     input:JSON.stringify({ agent_type:"dev-orchestrator", tool_name:"Bash", tool_input:{ command }, cwd }),
     encoding:"utf8",
-    env:{ ...process.env, AGENT_HOOK_CLIENT:"claude", LANE_PILOT_AGENT_TYPE:"lane-stack:dev-orchestrator" },
+    env: hookEnv({ AGENT_HOOK_CLIENT:"claude", LANE_PILOT_AGENT_TYPE:"lane-stack:dev-orchestrator" }),
   }).status;
 }
 

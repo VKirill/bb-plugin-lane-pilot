@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
+import { hookEnv } from "./hook-env";
 import { NATIVE_HOOK_SOURCES } from "../src/native-hook-sources";
 import { lpBridgeCatalogNames, materializeNativeHookSession, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS, unionLpBridgeTools } from "../src/native-session-hooks";
 
@@ -103,7 +104,7 @@ it("injects the namespaced Claude agentSetting only when agent_type is missing",
   const inject = join(process.cwd(), "lane-stack/hooks/inject_agent_type.py");
   const inner = join(process.cwd(), "lane-stack/hooks/inject_agent_type.py");
   const echo = ["python3", "-c", "import sys; print(sys.stdin.read())"];
-  const env = { ...process.env, LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" };
+  const env = hookEnv({ LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" });
   const filled = spawnSync("python3", [inject, "--", ...echo], {
     input: JSON.stringify({ tool_name: "Write" }),
     encoding: "utf8",
@@ -113,7 +114,7 @@ it("injects the namespaced Claude agentSetting only when agent_type is missing",
   const kept = spawnSync("python3", [inner, "--", ...echo], {
     input: JSON.stringify({ agent_type: "lane-stack:dev-orchestrator", tool_name: "Read" }),
     encoding: "utf8",
-    env: { ...process.env, LANE_PILOT_AGENT_TYPE: "dev-orchestrator" },
+    env: hookEnv({ LANE_PILOT_AGENT_TYPE: "dev-orchestrator" }),
   });
   expect(JSON.parse(kept.stdout).agent_type).toBe("lane-stack:dev-orchestrator");
 });
@@ -129,10 +130,9 @@ it("adapts the live empty-client guard deny through inject to hookSpecificOutput
       cwd: "/fixture",
     }),
     encoding: "utf8",
-    env: {
-      ...process.env,
+    env: hookEnv({
       LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator",
-    },
+    }),
   });
   expect(result.status).toBe(0);
   const body = JSON.parse(result.stdout);
@@ -155,7 +155,7 @@ it("adapts empty-client deny JSON to native Claude PreToolUse hookSpecificOutput
       cwd: "/fixture",
     }),
     encoding: "utf8",
-    env: { ...process.env, LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" },
+    env: hookEnv({ LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" }),
   });
   expect(result.status).toBe(0);
   const body = JSON.parse(result.stdout);
@@ -186,7 +186,7 @@ it("lets the PM run bulk-reader and its other contract commands", () => {
     const result = spawnSync("python3", [inject, "--", "python3", guard], {
       input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command }, cwd: "/fixture" }),
       encoding: "utf8",
-      env: { ...process.env, LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" },
+      env: hookEnv({ LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" }),
     });
     expect(result.stdout, command).not.toMatch(/deny/);
   }
@@ -199,7 +199,7 @@ it("keeps state-changing bb commands away from the PM", () => {
     const result = spawnSync("python3", [inject, "--", "python3", guard], {
       input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command }, cwd: "/fixture" }),
       encoding: "utf8",
-      env: { ...process.env, LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" },
+      env: hookEnv({ LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" }),
     });
     expect(result.stdout, command).toMatch(/deny/);
   }
@@ -211,7 +211,7 @@ it("sends a Lane PM in a BB chat to BB writer threads instead of CLI lanes", () 
   const run = (command: string) => spawnSync("python3", [inject, "--", "python3", guard], {
     input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command }, cwd: "/fixture" }),
     encoding: "utf8",
-    env: { ...process.env, LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" },
+    env: hookEnv({ LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" }),
   }).stdout;
   for (const command of [
     "run-controller start --run-dir /fixture/.agents/runs/x --project-cwd /fixture",
