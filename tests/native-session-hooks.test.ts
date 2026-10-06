@@ -220,3 +220,17 @@ it("sends a Lane PM in a BB chat to BB writer threads instead of CLI lanes", () 
   ]) expect(run(command), command).toMatch(/lane_pilot_dispatch_writer/);
   expect(run("run-validate --run-dir /fixture/.agents/runs/x --phase pre-dispatch")).not.toMatch(/deny/);
 });
+
+it("passes unscoped and scoped SQL deletions through native session hook pipeline to guard", () => {
+  const inject = join(process.cwd(), "lane-stack/hooks/inject_agent_type.py");
+  const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+  const run = (command: string) => spawnSync("python3", [inject, "--", "python3", guard], {
+    input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command }, cwd: "/fixture" }),
+    encoding: "utf8",
+    env: hookEnv({ LANE_PILOT_AGENT_TYPE: "writer" }),
+  }).stdout;
+
+  expect(run("sqlite3 db.sqlite 'delete from users; select 1;'")).toMatch(/DELETE without WHERE blocked/);
+  expect(run("sqlite3 db.sqlite 'delete from users where id = 1;'")).not.toMatch(/deny/);
+});
+
