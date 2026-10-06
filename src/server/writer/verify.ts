@@ -94,7 +94,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     }
   }
 
-  async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string): Promise<Array<VerifyResult & {
+  async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string, options?:{ background?:boolean }): Promise<Array<VerifyResult & {
     sandboxBackend:string|null; policySha256:string|null; workspacePath:string; flaky?:true;
     /** The host call itself failed (worker killed, host offline): the command's own verdict is unknown. */
     hostError?:true;
@@ -122,7 +122,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         command:command.command,
         cwd: command.cwd,
         timeoutSec,
-      }, { hostId:config.hostId, timeoutMs:(timeoutSec + 15) * 1000 }).catch((cause: unknown) => ({
+      }, { hostId:config.hostId, timeoutMs:(timeoutSec + 15) * 1000, ...(options?.background ? { job:true } : {}) }).catch((cause: unknown) => ({
         hostId: config.hostId,
         exitCode: 1,
         stdout: "",

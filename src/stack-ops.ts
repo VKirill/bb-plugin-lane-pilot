@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { EXTERNAL_OPS, TARGET_SHA } from "./constants";
@@ -9,6 +8,7 @@ import type { InstallPhase } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
 import { inventoryCoexistenceAtHome, runCoexistenceOperationAtHome } from "./coexistence";
 import { agentsDir, defaultLocalFallback, resolveHome } from "./paths";
+import { spawnAsync } from "./spawn-async";
 import { skippedOpsReceipt, writeReceipt, type FileChange, type InstallReceipt } from "./receipt";
 import {
   finalizeSnapshotAfter,
@@ -35,22 +35,14 @@ export type HostContext = {
   installSettings?: Record<string, unknown>;
 };
 
-function commandVersion(command: string): { present: boolean; version: string | null } {
-  try {
-    return { present: true, version: execFileSync(command, ["--version"], { encoding: "utf8", timeout: 5000 }).trim() };
-  } catch {
-    return { present: false, version: null };
-  }
+async function commandVersion(command: string): Promise<{ present: boolean; version: string | null }> {
+  const ran = await spawnAsync(command, ["--version"], { timeout: 5000 });
+  return ran.error || ran.status !== 0 ? { present: false, version: null } : { present: true, version: ran.stdout.trim() };
 }
 
-function gitHead(root: string): string | null {
-  try {
-    return execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
-      encoding: "utf8",
-      timeout: 4000,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim() || null;
-  } catch { return null; }
+async function gitHead(root: string): Promise<string | null> {
+  const ran = await spawnAsync("git", ["-C", root, "rev-parse", "HEAD"], { timeout: 4000 });
+  return ran.error || ran.status !== 0 ? null : ran.stdout.trim() || null;
 }
 
 function unobservedExternalOps(): ExternalOpsSnapshot {
@@ -113,7 +105,7 @@ export async function detectStack(ctx: HostContext) {
     sourceSha: row.sourceSha,
   }));
   if (fallbackCompatible && fallbackRoot && !sources.some((source) => source.path === fallbackRoot)) {
-    sources.push({ manager: "local-fallback", path: fallbackRoot, version: null, sourceSha: gitHead(fallbackRoot) });
+    sources.push({ manager: "local-fallback", path: fallbackRoot, version: null, sourceSha: await gitHead(fallbackRoot) });
   }
   return {
     hostId: process.env.BB_HOST_ID ?? ctx.requestedHostId,
@@ -122,7 +114,7 @@ export async function detectStack(ctx: HostContext) {
       version: install.version,
       sourceSha: install.sourceSha,
     },
-    openCode: commandVersion("opencode"),
+    openCode: await commandVersion("opencode"),
     workspace: { path: workspacePath, present: await stat(workspacePath).then(() => true, () => false) },
     targetSha: TARGET_SHA,
     matchesTarget: install.sourceSha === TARGET_SHA,

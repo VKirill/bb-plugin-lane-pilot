@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { access, lstat, mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -9,6 +8,7 @@ import { agentsDir, resolveHome } from "../paths";
 import { assessEngineCapabilities, IMPACTED_FUNCTIONS, inspectEngineCapabilities, inspectEngineCapabilitiesDetailed } from "../upstream-adapter/capabilities";
 import { createOpenCodePluginShim, isManagedOpenCodePlugin } from "../upstream-adapter/opencode-plugin";
 import { ensureUpstream } from "../upstream";
+import { spawnAsync } from "../spawn-async";
 import { ensureOpenCodePluginEntry, removeOpenCodePluginEntry } from "../jsonc";
 import { compareAndSwapText, readTextState } from "./cas";
 import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readOwnershipLedgerStrict, readSnapshot, removeOwnershipEntry, removeOwnershipEntryIfMatches, removeSnapshotIfMatches, restoreOwnershipLedgerWrite, saveSnapshot, snapshotPath } from "./ownership";
@@ -42,9 +42,9 @@ async function readMarker(home: string): Promise<InstallMarker> {
   catch { return {}; }
 }
 
-function gitValue(root: string, args: string[]): string | null {
-  try { return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 4000 }).trim(); }
-  catch { return null; }
+async function gitValue(root: string, args: string[]): Promise<string | null> {
+  const ran = await spawnAsync("git", ["-C", root, ...args], { timeout: 4000 });
+  return ran.error || ran.status !== 0 ? null : ran.stdout.trim();
 }
 
 async function pathHash(path: string): Promise<string | null> {
@@ -179,9 +179,9 @@ async function inventoryForHome(input: CoexistenceInventoryInput, home: string):
     const managed = emptyState("managed-checkout", managedPath, "lane-pilot");
     managed.installed = await exists(managedPath);
     managed.sha256 = await pathHash(managedPath);
-    managed.sourceSha = gitValue(managedPath, ["rev-parse", "HEAD"]);
+    managed.sourceSha = await gitValue(managedPath, ["rev-parse", "HEAD"]);
     managed.version = (await readPackageVersion(managedPath)) ?? (managed.sourceSha ? managed.sourceSha.slice(0, 12) : null);
-    managed.modified = gitValue(managedPath, ["status", "--porcelain"])?.length ? true : managed.sourceSha ? false : null;
+    managed.modified = (await gitValue(managedPath, ["status", "--porcelain"]))?.length ? true : managed.sourceSha ? false : null;
     if (managed.installed) await addEngineEvidence(managed, managedPath);
     managed.decision = managed.compatible ? "reuse" : managed.installed ? "conflict" : "install";
     if (managed.installed && !managed.compatible && managed.missingCapabilities.length === 0) {
@@ -195,9 +195,9 @@ async function inventoryForHome(input: CoexistenceInventoryInput, home: string):
     const cache = emptyState("claude-cache", cachePath, "upstream");
     cache.installed = true;
     cache.sha256 = await pathHash(cachePath);
-    cache.sourceSha = gitValue(cachePath, ["rev-parse", "HEAD"]);
+    cache.sourceSha = await gitValue(cachePath, ["rev-parse", "HEAD"]);
     cache.version = (await readPackageVersion(cachePath)) ?? cachePath.split(/[\\/]/).at(-1) ?? null;
-    cache.modified = gitValue(cachePath, ["status", "--porcelain"])?.length ? true : cache.sourceSha ? false : null;
+    cache.modified = (await gitValue(cachePath, ["status", "--porcelain"]))?.length ? true : cache.sourceSha ? false : null;
     await addEngineEvidence(cache, cachePath);
     cache.decision = cache.compatible ? "reuse" : "conflict";
     cacheStates.push(cache);
@@ -231,7 +231,7 @@ async function inventoryForHome(input: CoexistenceInventoryInput, home: string):
   opencodePlugin.installed = await exists(resolvedPluginPath);
   opencodePlugin.configured = Boolean(configuredRef);
   opencodePlugin.sha256 = await pathHash(resolvedPluginPath);
-  opencodePlugin.sourceSha = engineRoot ? gitValue(engineRoot, ["rev-parse", "HEAD"]) : null;
+  opencodePlugin.sourceSha = engineRoot ? await gitValue(engineRoot, ["rev-parse", "HEAD"]) : null;
   opencodePlugin.version = engineRoot ? await readPackageVersion(engineRoot) : null;
   if (engineRoot) await addEngineEvidence(opencodePlugin, engineRoot);
   opencodePlugin.decision = opencodePlugin.installed && opencodePlugin.compatible ? "reuse" : opencodePlugin.installed ? "conflict" : engineRoot ? "install" : "conflict";
@@ -300,7 +300,7 @@ async function anyPathHash(path: string): Promise<string | null> {
   try { return (await hashPath(path)).sha256; } catch { return null; }
 }
 
-function sourceShaOf(root: string): string | null {
+async function sourceShaOf(root: string): Promise<string | null> {
   return gitValue(root, ["rev-parse", "HEAD"]);
 }
 
@@ -679,7 +679,7 @@ export async function runCoexistenceOperationAtHome(
     const shim = createOpenCodePluginShim(selected.root, selected.assessment.adaptedCapabilities);
     const write = await compareAndSwapText(input.path, null, shim);
     if (write.status !== "ok" || !write.afterSha256) return resultOf(input, { status: write.status, owner: row.owner, beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, reason: write.reason });
-    const sourceSha = sourceShaOf(selected.root);
+    const sourceSha = await sourceShaOf(selected.root);
     const snapshotId = await snapshotOfWrite({ home, manager: input.manager, path: input.path, operation: "install", beforeSha256: null, afterSha256: write.afterSha256, ownedValue: null, sourceSha });
     return resultOf(input, { status: "ok", owner: "lane-pilot", beforeSha256: null, afterSha256: write.afterSha256, snapshotId, evidence: [{ kind: "installed", path: input.path, sha256: write.afterSha256, detail: `Managed shim imports the inspected compatible module at ${moduleSource}; source SHA ${sourceSha ?? "unavailable"} is provenance only.` }], reason: null });
   }

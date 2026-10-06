@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawnAsync } from "../spawn-async";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, sep } from "node:path";
 
@@ -156,15 +156,15 @@ async function runGitNexusCallers(root:string,targets:readonly {filePath:string;
   const info=await lstat(join(root,".gitnexus")).catch(()=>null);
   if(!info?.isDirectory()||info.isSymbolicLink())return {paths:[],complete:false};
   const deadline=Date.now()+8_000,paths=new Set<string>();
-  const status=spawnSync("gitnexus",["status","--json"],{cwd:root,encoding:"utf8",timeout:1_500,maxBuffer:512*1024});
+  const status=await spawnAsync("gitnexus",["status","--json"],{cwd:root,timeout:1_500,maxBuffer:512*1024});
   const statusJson=jsonFromCli(status.stdout??"");
   if(status.status!==0||status.error||statusJson?.status!=="up-to-date")return {paths:[],complete:false};
   const bounded=targets.slice(0,16);let complete=bounded.length===targets.length;
   for(const target of bounded) {
     const remaining=deadline-Date.now();if(remaining<=0){complete=false;break;}
     if(!/^[A-Za-z_$][\w$]*$/.test(target.symbol)||target.filePath.startsWith("/")||target.filePath.split("/").includes("..")){complete=false;continue;}
-    const result=spawnSync("gitnexus",["impact",target.symbol,"--direction","upstream","--depth","1","--include-tests","--limit","100","--file",target.filePath],
-      {cwd:root,encoding:"utf8",timeout:Math.min(1_500,remaining),maxBuffer:1024*1024});
+    const result=await spawnAsync("gitnexus",["impact",target.symbol,"--direction","upstream","--depth","1","--include-tests","--limit","100","--file",target.filePath],
+      {cwd:root,timeout:Math.min(1_500,remaining),maxBuffer:1024*1024});
     const impact=jsonFromCli(result.stdout??"");
     if(result.status!==0||result.error||!impact||impact.error){complete=false;continue;}
     for(const path of collectGitNexusCallerPaths(impact,root))paths.add(path);

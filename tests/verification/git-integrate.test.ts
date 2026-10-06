@@ -360,3 +360,15 @@ it("writes the task folder, excludes it once, copies it into both worktree paths
   expect(git(base, "show", "--stat", "--format=", "HEAD^2")).not.toContain(".agents/plans/items");
   expect(git(base, "ls-files", ".agents/plans/items")).toBe("");
 });
+
+// A host worker blocked in git cannot answer the daemon (OVH, 2026-10-05): the merge's git runs leave the event loop free.
+it("keeps the event loop running while it merges", async () => {
+  const { base, worktree } = await repo();
+  const a = await worktree("a");
+  await writeFile(join(a, "lib.ts"), "export const x = 1;\n");
+  let ticks = 0;
+  const timer = setInterval(() => { ticks += 1; }, 5);
+  try { expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "task a" })).status).toBe("merged"); }
+  finally { clearInterval(timer); }
+  expect(ticks).toBeGreaterThan(5);
+});
