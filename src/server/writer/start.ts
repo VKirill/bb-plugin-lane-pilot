@@ -331,7 +331,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
             config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
-            previousAttempt:previousAttemptBrief(last.status ? last : null),
+            previousAttempt:previousAttemptBrief(last.status ? last : null, freshTask),
           });
           if (!spawned.ok) {
             last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
@@ -450,7 +450,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         activeTask = freshTask;
         dirtBefore = [];
         executionPacketSha256 = null;
-        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief({ ...failedLast, produced:[] }), failedBinding?.dirt_before)) {
+        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief({ ...failedLast, produced:[] }, freshTask), failedBinding?.dirt_before)) {
           await removeFailedWorktree();
         }
       }

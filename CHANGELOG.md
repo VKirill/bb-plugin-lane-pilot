@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.165
+
+From a self-repair of «owns_paths rejected <path>» (content-factory and Lane Pilot, 2026-10-06):
+- **A retry no longer sends the writer into files it does not own when a check fails there.** content-factory `host-read-binary` failed `npm run typecheck` in `ui/passport.tsx`: main was red for 17 minutes after two sibling tasks merged a minute apart (one used the `colStatus` key, the other renamed it). Lane Pilot `suite-green-pm-helpers` ran `npx vitest run tests/server …`, and that filter also ran `tests/server-reconcile.test.ts`, which was red on main. In both cases the retry said «fix what it names». The writer edited `ui/i18n.ts` and `tests/server-reconcile.test.ts`, and the task was blocked with «retry limit 2 exhausted: owns_paths rejected …». Now the retry names the files the failing check points at that are outside owns_paths. The writer must not edit them: if its own change broke them, it fixes that in owned files; if they fail without its change, it changes nothing more and answers `NEEDS_HUMAN: <check> fails in <file>, outside owns_paths and not caused by this task`, so the PM can wait for the mainfix or widen the contract.
+
 ## 0.1.164
 
 From a self-repair of «missing expected_outputs: <path>» (treba-sites, SelfyStudio, content-factory, Lane Pilot; 2026-10-06):

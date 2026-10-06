@@ -3,7 +3,8 @@ import type { PrototypeConfig, TaskV2 } from "../contracts";
 import { valueAt } from "./values";
 import { createHash } from "node:crypto";
 import { compactContract, pmReadBrief } from "../writer-brief";
-import { failureExcerpt } from "../output-excerpt";
+import { cleanCheckOutput, failureExcerpt } from "../output-excerpt";
+import { fileAllowedByOwns } from "../owns-paths";
 export function outputText(value: unknown): string {
   for (const key of ["text", "output", "lastAssistantText", "content"]) {
     const found = valueAt(value, key);
@@ -133,7 +134,22 @@ export function writerContextBlocks(task: TaskV2, memoryText="", executionPacket
  * full log's path under the task folder (Stripe, Aider and Anthropic feed the failure back; a retry that starts
  * blind repeats it).
  */
-export function previousAttemptBrief(last:Record<string, unknown> | null | undefined):string {
+/**
+ * Source files a failing check's output points at (`ui/passport.tsx:124:53`, `tests/a.test.ts:285`, `FAIL  tests/a.test.ts`,
+ * `src/x.ts(4,2)`), relative to the workspace; dependencies and absolute paths are left out.
+ */
+export function failingCheckFiles(output:string):string[] {
+  const found = new Set<string>();
+  const pattern = /(?:^|[\s(\['"❯›>])((?:\.\/)?(?:[\w@.+-]+\/)*[\w@.+-]+\.[A-Za-z]{1,5})(?=:\d|\(\d+,\d+\))|\bFAIL\s+((?:\.\/)?(?:[\w@.+-]+\/)*[\w@.+-]+\.[A-Za-z]{1,5})/gm;
+  for (const match of output.matchAll(pattern)) {
+    const file = (match[1] ?? match[2] ?? "").replace(/^\.\//, "");
+    if (!file || /(^|\/)node_modules\//.test(file) || /^\.?\.?\//.test(file)) continue;
+    found.add(file);
+  }
+  return [...found];
+}
+
+export function previousAttemptBrief(last:Record<string, unknown> | null | undefined, task?:Pick<TaskV2, "owns_paths">):string {
   if (!last || last.status === "accepted") return "";
   const status = String(last.status ?? "failed");
   const reason = typeof last.reason === "string" ? last.reason.slice(0, 400) : "";
@@ -144,7 +160,13 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
   const commands = /verification failed \((.+?)\)/.exec(reason)?.[1] ?? (failed?.command ?? "");
   const bullets:string[] = [];
   if (commands) {
-    bullets.push(`the check \`${commands}\` failed${failed ? ` (exit ${failed.exitCode})` : ""} → run \`${commands}\` yourself, read its output, fix what it names${logPath ? `; full log: ${logPath}` : ""}`);
+    bullets.push(`the check \`${commands}\` failed${failed ? ` (exit ${failed.exitCode})` : ""} → run \`${commands}\` yourself, read its output, fix what it names inside owns_paths${logPath ? `; full log: ${logPath}` : ""}`);
+    // A check can fail in a file the task does not own: main went red from another task's merge, or a test filter
+    // reaches a sibling's test. «Fix what it names» sent content-factory host-read-binary into ui/i18n.ts and Lane
+    // Pilot suite-green-pm-helpers into tests/server-reconcile.test.ts, and both lost their last retry to
+    // «owns_paths rejected» (2026-10-06).
+    const outside = task && failed ? failingCheckFiles(cleanCheckOutput(`${failed.stderr ?? ""}\n${failed.stdout ?? ""}`)).filter((file) => !fileAllowedByOwns(file, task.owns_paths)) : [];
+    if (outside.length) bullets.push(`the failure points at ${outside.join(", ")}, outside owns_paths → do not edit ${outside.length > 1 ? "them" : "it"}. If your change broke ${outside.length > 1 ? "them" : "it"}, fix it in your owned files; if ${outside.length > 1 ? "they fail" : "it fails"} without your change (main is red from another task, or the check also runs files of other tasks), change nothing more and answer \`${NEEDS_HUMAN_MARKER} ${commands} fails in ${outside.join(", ")}, outside owns_paths and not caused by this task\``);
   }
   const missing = /missing expected_outputs: (.+)/.exec(reason)?.[1];
   if (missing) bullets.push(`the contract expects ${missing} and your changes do not include them → if the task needs them, change them inside owns_paths; if your fix is complete without them, change nothing more and answer \`NEEDS_HUMAN: ${missing} are not needed because <reason>\``);

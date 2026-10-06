@@ -135,6 +135,48 @@ describe("writer brief", () => {
     expect(brief).not.toContain("src/other0.test.ts");
   });
 
+  it("a check failing in a file outside owns_paths tells the writer not to edit it and to stop if main is red", () => {
+    // content-factory host-read-binary (2026-10-06): main was red from two sibling merges; told to «fix what it
+    // names», the writer added the key to ui/i18n.ts and lost its last retry to «owns_paths rejected ui/i18n.ts».
+    const tsc = [
+      "> bb-plugin-content-factory@0.5.121 typecheck", "> tsc --noEmit", "",
+      "\x1b[96mui/passport.tsx\x1b[0m:\x1b[93m124\x1b[0m:\x1b[93m53\x1b[0m - \x1b[91merror\x1b[0m\x1b[90m TS2345: \x1b[0mArgument of type '\"colStatus\"' is not assignable to parameter of type '\"search\" | \"keys\"'.",
+      "", "Found 1 error in ui/passport.tsx\x1b[90m:124\x1b[0m",
+    ].join("\n");
+    const owns = { owns_paths:["host/plugin.ts", "host/", "run/native.ts", "disk/", "tests/"] };
+    const brief = previousAttemptBrief({
+      status:"validation_failed", reason:"verification failed (npm run typecheck): exit 2",
+      verification:[{ command:"npm run typecheck", exitCode:2, stdout:tsc, stderr:"" }], produced:["host/plugin.ts"],
+    }, owns);
+    const bullet = brief.split("\n").find((line) => line.includes("outside owns_paths →"));
+    expect(bullet).toContain("the failure points at ui/passport.tsx, outside owns_paths → do not edit it");
+    expect(bullet).toContain("`NEEDS_HUMAN: npm run typecheck fails in ui/passport.tsx, outside owns_paths and not caused by this task`");
+    // Lane Pilot suite-green-pm-helpers: the PM's filter `tests/server` also ran tests/server-reconcile.test.ts,
+    // red on main; vitest names it on its FAIL line and in the stack frame, far above the tail.
+    const vitest = [
+      " \x1b[31m❯\x1b[39m tests/server/errands.test.ts (12 tests) 40ms", " ✓ tests/server/specialists.test.ts (3 tests) 9ms",
+      " \x1b[31mFAIL\x1b[39m  tests/server-reconcile.test.ts > resume binds the attempt worktree",
+      "AssertionError: expected { workspace_path: null } to deeply equal { workspace_path: '/tmp/x' }",
+      " \x1b[36m ❯ tests/server-reconcile.test.ts:\x1b[2m285:8\x1b[22m\x1b[39m",
+      " ❯ node_modules/vitest/dist/chunk.js:12:3",
+      ...Array.from({ length: 60 }, (_, i) => ` ✓ tests/server/other${i}.test.ts (1 test) 1ms`),
+      " Test Files  1 failed | 28 passed (29)",
+    ].join("\n");
+    const vitestBrief = previousAttemptBrief({
+      status:"validation_failed", reason:"verification failed (npx vitest run tests/server): exit 1",
+      verification:[{ command:"npx vitest run tests/server", exitCode:1, stdout:vitest, stderr:"" }],
+    }, { owns_paths:["src/server/errands.ts", "tests/server/"] });
+    expect(vitestBrief.split("\n").find((line) => line.includes("outside owns_paths →")))
+      .toContain("the failure points at tests/server-reconcile.test.ts, outside owns_paths → do not edit it.");
+    // A failure inside owns_paths keeps the plain advice.
+    const own = previousAttemptBrief({
+      status:"validation_failed", reason:"verification failed (npm run typecheck): exit 2",
+      verification:[{ command:"npm run typecheck", exitCode:2, stdout:"host/plugin.ts:4:2 - error TS2304", stderr:"" }],
+    }, owns);
+    expect(own).toContain("fix what it names inside owns_paths");
+    expect(own).not.toContain("outside owns_paths →");
+  });
+
   it("a same-task retry says the contract is unchanged; a next task and a merge still carry it", () => {
     const folder = { path:`.agents/plans/items/${task.id}/`, files:["PLAN.md"] };
     const retry = stickyTurnPrompt({ kind:"retry", task, previousAttempt:"Result: validation_failed: verification failed (npm test)", taskFolder:folder });
