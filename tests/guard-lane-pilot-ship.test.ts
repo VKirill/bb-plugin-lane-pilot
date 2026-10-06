@@ -81,11 +81,11 @@ describe("a denied PM edit points where the PM can act", () => {
     expect(del.out).toMatch(/Add a WHERE clause|scoping/);
 
     // SQL row deletion without WHERE: caught across multiple statements and chained commands
-    expect(bash("writer", "sqlite3 db.sqlite 'delete from users; select 1;'").status).toBe(2);
-    expect(bash("writer", "psql -c 'delete from users' && echo ok").status).toBe(2);
-    expect(bash("writer", "sqlite3 db.sqlite 'delete from users where id = 1;'").status).toBe(0);
+    expect(bash("writer", 'sqlite3 data.db "DELETE FROM users; SELECT 1"').status).toBe(2);
+    expect(bash("writer", 'psql -c "delete from users" && echo ok').status).toBe(2);
+    expect(bash("writer", 'sqlite3 data.db "DELETE FROM users WHERE id=1"').status).toBe(0);
     // grep pattern in notes file currently matches the broad regex and is denied
-    expect(bash("writer", "grep 'delete from users' notes.txt").status).toBe(2);
+    expect(bash("writer", 'grep -n "delete from users" notes.md').status).toBe(2);
 
     const drop = bash("writer", "psql -c 'DROP TABLE users'");
     expect(drop.status).toBe(2);
