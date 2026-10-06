@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.167
+
+- **Writers always work in their own git worktree (P1, decision 2026-10-06).** The project setting «В папке проекта» (`in_place`) is gone; a saved value reads as auto. Every writer attempt of a Lane chat gets its own worktree, and acceptance merges it into main. Plugin-page runs keep the risk-threshold rule for now.
+- **A chat folder inside a larger repo gets a worktree too.** Before, such a folder (treba-sites `templates/blog` on OVH) fell back to in place. Now the host creates a worktree of the whole repo, and the writer works in the same subfolder there. Merging and removing the worktree use its top folder. The hub no longer runs git on a folder it may not see: the git check, the dirt snapshot and the worktree all come from the workspace's host.
+- **Writers in one folder no longer queue one by one.** Each writer has its own checkout, so only an owns_paths or area overlap makes a task wait.
+- **BB bookkeeping without a hash no longer blocks an attempt.** Example: a chat file that was already dirty before the attempt.
+- Main was red with 30 tests after the unfinished P1 commit (`ffd166e`). The suite is green again: 1385 passed.
+
+Shipped with this release, from 2026-10-06 work that had no entry yet:
+- each task has a folder with its PLAN.md for the writer, and a retry gets clean check output;
+- Linux clean-clone tests;
+- the PM guard: no pasting, no errand edits, and the unscoped SQL deletion rule;
+- the acceptance metrics card on the Checks tab;
+- the `lane_pilot_answer_writer` and `lane_pilot_update_task` tools;
+- reminders follow a redispatch;
+- the PM chat badge shows phases and a queue chip;
+- the integration gate runs once per batch;
+- bookkeeping files never block a merge;
+- helpers are read-only on the repo;
+- authorization follows the agreed goal;
+- code roles get GitNexus/MetaMCP.
+
 ## 0.1.166
 
 From a self-repair of «writer changed paths outside owns_paths or inside never_touch: <path>» (SelfyStudio, treba-sites, Lane Pilot; 2026-10-05…06):
