@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "helper-roles-get-mcp",
+  "task_sha256": "6737e9a047e3beb3cfd506acf448b8415d6240bdf88ccc9e63a029f4bd7a9694",
+  "attempt": 2,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "33a249029b1e9e940b1b9792de6711fbe39f9e3579ae77abf3395c3dd8c2a64c",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-06T17:47:31.577Z",
+  "model": "router9/ag/gemini-3.8-flash-medium"
+}

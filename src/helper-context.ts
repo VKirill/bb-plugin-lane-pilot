@@ -79,8 +79,8 @@ export type HelperRole =
   | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily";
 
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
-const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: [] };
-const READER: RoleProfile = { bbPlugins: [], skills: [], mcpServers: [] };
+const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
+const READER: RoleProfile = { bbPlugins: [], skills: [], mcpServers: ["gitnexus"] };
 export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "writer": CODER,
   "code-repair": CODER,
@@ -91,18 +91,18 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "night-reviewer": READER,
   "gate-triage": READER,
   "pm-reader": READER,
-  "docs-maintainer": { bbPlugins: [], skills: ["docs-maintain", "docs-methodology"], mcpServers: [] },
-  "onboarder": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
+  "docs-maintainer": { bbPlugins: [], skills: ["docs-maintain", "docs-methodology"], mcpServers: ["gitnexus"] },
+  "onboarder": { bbPlugins: [], skills: ["project-life"], mcpServers: ["gitnexus"] },
   // It returns one JSON array and runs no tools; the memory skills told it to call CLIs (instructions audit 2026-10-03).
-  "memory-maintainer": READER,
-  "project-life": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
+  "memory-maintainer": { bbPlugins: [], skills: [], mcpServers: [] },
+  "project-life": { bbPlugins: [], skills: ["project-life"], mcpServers: ["gitnexus"] },
   "browser-qa": { bbPlugins: ["browser-automation"], skills: ["browser-automation"], mcpServers: [] },
   // A PM's errand outside the code: a console, a mailbox, a recording. The browser on the browser machine, the fast
   // jev-ultrafast loop (computer-use) and Env Catalog for the accounts it needs; no code skills.
   "errand": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "computer-use", "env-catalog"], mcpServers: [] },
-  "council-seat": READER,
-  "rules-analyzer": READER,
-  "specialist:design-lead": { bbPlugins: [], skills: ["ui-ux-pro-max", "project-design", "project-onboard", "web-design", "design-taste", "impeccable-ui", "page-prototype"], mcpServers: [] },
+  "council-seat": { bbPlugins: [], skills: [], mcpServers: [] },
+  "rules-analyzer": { bbPlugins: [], skills: [], mcpServers: [] },
+  "specialist:design-lead": { bbPlugins: [], skills: ["ui-ux-pro-max", "project-design", "project-onboard", "web-design", "design-taste", "impeccable-ui", "page-prototype"], mcpServers: ["metamcp"] },
   "specialist:copy-lead": { bbPlugins: [], skills: ["copy-project-life", "site-copy-audience", "site-copy-headlines", "site-copy-ux", "copy-research", "tavily", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
   "specialist:seo-specialist": { bbPlugins: [], skills: ["seo-project-life", "seo-drmax-orchestrator", "cocoon-chainsmith", "drmax-cocoon-engine-x4", "drmax-brandcore", "drmax-text-humanization", "ai-detect", "drmax-signalforge", "drmax-latent-intent", "drmax-market-scoped", "google", "yandex", "seo-tools", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
   "specialist:tavily": { bbPlugins: [], skills: ["tavily"], mcpServers: [] },
