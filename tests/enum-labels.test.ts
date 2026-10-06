@@ -38,6 +38,9 @@ describe("enum presentation labels", () => {
     expect(presentEnumLabel("adoc.040", "in_place")).toBe(ru.enumWorkspaceInPlace);
     expect(presentEnumLabel("adoc.040", "worktree")).toBe(ru.enumWorkspaceWorktree);
     expect(presentEnumLabel("adoc.040", "auto")).toBe(ru.enumWorkspaceAuto);
+    expect(presentEnumLabel("adoc.008", "in_place")).toBe(ru.enumWorkspaceInPlace);
+    expect(presentEnumLabel("adoc.008", "worktree")).toBe(ru.enumWorkspaceWorktree);
+    expect(presentEnumLabel("adoc.008", "auto")).toBe(ru.enumWorkspaceAuto);
     expect(presentEnumLabel("adoc.040", "legacy_snake")).toBe(ru.enumUnsupported);
     expect(presentEnumLabel("adoc.040", "legacy_snake")).not.toBe("legacy_snake");
     setLocaleOverride("en");
