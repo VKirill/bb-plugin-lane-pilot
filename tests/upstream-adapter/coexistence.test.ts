@@ -485,7 +485,8 @@ async function managedInstall(
   }, home, { localFallbackPath: fallback, faultAt, beforeCompensation, beforeSnapshotClaim });
 }
 
-describe("managed install transaction failure integrity", () => {
+// All tests below clone the exact dd77 fixture; without it (clean clone) they skip instead of crashing.
+describe.skipIf(!exactDd77Fixture)("managed install transaction failure integrity", () => {
   it.each(["after-rename", "after-snapshot", "after-ledger-commit"] as const)("compensates and safely retries after %s", async (faultAt) => {
     const home = await makeHome();
     const fallback = await incompatibleFallback(home);

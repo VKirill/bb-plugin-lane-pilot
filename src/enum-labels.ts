@@ -5,8 +5,8 @@ const BRANDS = new Set([
 ]);
 
 const BY_KEY: Record<string, Record<string, I18nKey>> = {
-  "adoc.040": { in_place: "enumWorkspaceInPlace", worktree: "enumWorkspaceWorktree", auto: "enumWorkspaceAuto" },
-  "adoc.008": { in_place: "enumWorkspaceInPlace", worktree: "enumWorkspaceWorktree", auto: "enumWorkspaceAuto" },
+  "adoc.040": { worktree: "enumWorkspaceWorktree", auto: "enumWorkspaceAuto" },
+  "adoc.008": { worktree: "enumWorkspaceWorktree", auto: "enumWorkspaceAuto" },
   "ui.language": { en: "english", ru: "russian" },
   "plan_critique.mode": { advisory: "enumCritiqueAdvisory", gate: "enumCritiqueGate" },
   "code_critique.mode": { advisory: "enumCritiqueAdvisory", gate: "enumCritiqueGate" },

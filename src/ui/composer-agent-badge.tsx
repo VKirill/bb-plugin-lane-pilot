@@ -13,7 +13,7 @@ function shortAgentId(value: string): string {
   try { return nativeAgentCliId(value); } catch { return value; }
 }
 
-function AgentNameBadge(agent: { agentId: string; description: string; helpers?: HelperThread[] }) {
+function AgentNameBadge(agent: { agentId: string; description: string; helpers?: HelperThread[]; queued?: string[] }) {
   const id = shortAgentId(agent.agentId);
   const markerRef = useRef<HTMLSpanElement>(null);
   const [host, setHost] = useState<HTMLElement | null>(null);
@@ -76,7 +76,7 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
       }}
     >
       {label}
-      <HelperChips threads={agent.helpers ?? []} frame={frame} />
+      <HelperChips threads={agent.helpers ?? []} queued={agent.queued ?? []} frame={frame} />
     </span>
   );
 
@@ -118,7 +118,7 @@ export function ComposerAgentBadge() {
     return () => { current = false; };
   }, [rpc, threadId]);
 
-  const helpers = useHelperThreads(bound ? threadId : null);
-  if (threadId) return bound ? <AgentNameBadge {...bound} helpers={helpers} /> : null;
+  const { threads: helpers, queued } = useHelperThreads(bound ? threadId : null);
+  if (threadId) return bound ? <AgentNameBadge {...bound} helpers={helpers} queued={queued} /> : null;
   return pending ? <AgentNameBadge {...pending} /> : null;
 }

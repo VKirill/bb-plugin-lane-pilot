@@ -410,6 +410,16 @@ export function createTask(
     .run(ids.id, ids.runId, ids.kind, JSON.stringify(ids.contract), Date.now());
 }
 
+export function updateTaskContract(
+  db: LanePilotDatabase,
+  taskId: string,
+  contract: unknown,
+): boolean {
+  const result = db.prepare("UPDATE lane_pilot_task SET contract_json=? WHERE id=?")
+    .run(JSON.stringify(contract), taskId);
+  return result.changes > 0;
+}
+
 export function getTask(db: LanePilotDatabase, taskId: string): {
   id:string; run_id:string; kind:"bb"|"cli"; contract:unknown;
 }|undefined {

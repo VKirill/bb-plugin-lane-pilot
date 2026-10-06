@@ -283,7 +283,7 @@ describe("Agent access tab", () => {
       expect(resets[0]).toEqual({ projectId, keys: ["helper.access.writer"], expectedVersions: { "helper.access.writer": 1 } });
       await waitFor(() => expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_global));
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
-  });
+  }, 45_000); // jsdom re-renders the long role cards at every step; a loaded Linux run exceeded the 15 s default
 
   it("in a section names the level below: the parent section, the project, global or the role profile", async () => {
     const { slot, harness, resets, views } = await mount({ preset: { sec_a: { skills: { mode: "all" } }, sec_b: { userInstructions: "include" } } });

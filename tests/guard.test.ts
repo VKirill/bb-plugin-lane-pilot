@@ -40,7 +40,7 @@ const cases: Case[] = [
   bash("tee temp","git log | tee /tmp/x.log",true),
   ...["Edit","Write","MultiEdit","NotebookEdit"].map((tool) => edit(`${tool} production`,tool,"src/app.ts",false)),
   ...["Edit","Write","MultiEdit","NotebookEdit"].flatMap((tool) => [
-    edit(`${tool} progress`,tool,".agents/PROGRESS.md",true),
+    edit(`${tool} progress`,tool,".agents/PROGRESS.md",false),
     edit(`${tool} plan`,tool,"docs/plans/x.md",true),
   ]),
   ...["Edit","Write","MultiEdit","NotebookEdit"].map((tool) => edit(`${tool} receipt`,tool,".agents/runs/r1/controller.json",false)),

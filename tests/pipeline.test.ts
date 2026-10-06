@@ -222,7 +222,8 @@ describe("argv-builder channels", () => {
       "--task-file", "/tmp/run/tasks/001.yaml", "--provider", "cursor",
     ]);
   });
-  it("built argv is a subset of real binary --help", () => {
+  // Spawns the real upstream binaries; without the pinned upstream they are not on PATH, so skip.
+  it.skipIf(NO_UPSTREAM)("built argv is a subset of real binary --help", () => {
     const cases: Array<{ binary:"run-controller"|"lane-ctl"; subcommand:string; required:Record<string,string> }> = [
       { binary:"run-controller", subcommand:"status", required: requiredCliFlags({ binary:"run-controller", subcommand:"status", runDir:"/tmp/r" }) },
       { binary:"run-controller", subcommand:"run", required: requiredCliFlags({ binary:"run-controller", subcommand:"run", runDir:"/tmp/r", projectCwd:"/tmp/p" }) },

@@ -541,7 +541,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // A writer's question would wait unseen: writers are quiet children and do not wake the PM.
       if (!accepted && reason && failureClass(String(last.status), reason) === "judgment" && input.pmThreadId) {
         void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it from the code or docs if they settle it (else ask the owner once), then send the task again with the answer in its plan; tasks that depend on it wait for that.\n${reason.slice(0, 1200)}` }] } as never).catch(() => undefined);
+          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. Send the task again only when the contract itself must change; tasks that depend on it wait for that.\n${reason.slice(0, 1200)}` }] } as never).catch(() => undefined);
       }
       if (!accepted && last.status !== "canceled") {
         void services.stability.onTaskFailed({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,

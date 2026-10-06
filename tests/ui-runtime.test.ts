@@ -6,6 +6,7 @@ import { buildCliInvocation, isFlagOff, isFlagOn } from "../src/argv-builder";
 import { requiredCliFlags } from "../src/cli-flags";
 import { installEnv } from "../src/install-runner";
 import plugin from "../server";
+import { NO_UPSTREAM } from "./upstream-fixture";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 
@@ -94,7 +95,8 @@ function requiredFor(spec: SettingSpec): { binary: "run-controller" | "lane-ctl"
 }
 
 describe("UI storage keys feed runtime channels", () => {
-  it("derives every editable enum from pinned upstream argparse choices", () => {
+  // scripts/generate-ui-catalog.py checks enums against the pinned upstream; skip on a clean clone.
+  it.skipIf(NO_UPSTREAM)("derives every editable enum from pinned upstream argparse choices", () => {
     const script = resolve(process.cwd(), "scripts/generate-ui-catalog.py");
     const result = execFileSync("python3", [script, "--check-upstream-enums"], { encoding: "utf8" });
     expect(result).toMatch(/editable_enum_rows=\d+; provider_choices=7; effort_choices=5; provider_effort_pairs=7/);

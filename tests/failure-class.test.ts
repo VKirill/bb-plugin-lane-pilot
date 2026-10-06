@@ -17,6 +17,13 @@ describe("failure classes", () => {
     expect(failureClass("empty_output", "missing expected_outputs: src/a.ts")).toBe("contract");
     expect(failureClass("validation_failed", "writer answered but changed no files")).toBe("task");
   });
+
+  it("classes a git index lock as infra under both wordings", () => {
+    expect(failureClass("validation_failed", "git merge failed: fatal: Unable to create '/repo/.git/index.lock': File exists")).toBe("infra");
+    // Linux git 2.43 names no lock file: «error: Unable to write index.» (OVH 2026-10-06).
+    expect(failureClass("validation_failed", "git merge failed: error: Unable to write index.")).toBe("infra");
+    expect(failureClass("validation_failed", "git merge failed: error: Unable to write index. (index.lock present)")).toBe("infra");
+  });
 });
 
 describe("repeated failures", () => {

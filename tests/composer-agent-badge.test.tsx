@@ -22,7 +22,8 @@ async function mountBadge(input: {
     projectId: string;
     description: string;
   } | null;
-  helpers?: Array<{ id: string; title: string; status: string; role: string; detail: string | null }>;
+  helpers?: Array<{ id: string; title: string; status: string; role: string; detail: string | null; phase?: string | null }>;
+  queued?: string[];
   openThreadPanel?: (options: unknown) => boolean;
 }) {
   const preference = input.preference ?? "en";
@@ -42,7 +43,7 @@ async function mountBadge(input: {
         lastProjectId: null,
       }),
       native_thread: () => input.nativeThread ?? null,
-      list_helper_threads: () => ({ threads: input.helpers ?? [] }),
+      list_helper_threads: () => ({ threads: input.helpers ?? [], queued: input.queued ?? [] }),
     },
     ...(input.openThreadPanel ? { openThreadPanel: input.openThreadPanel as never } : {}),
   });

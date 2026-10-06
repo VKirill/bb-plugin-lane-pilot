@@ -1,4 +1,5 @@
 import { latestTaskAttemptState } from "../database";
+import { taskFamily } from "../failure-class";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { ServerContext } from "./context";
@@ -39,6 +40,8 @@ export type RelayDeps = {
   output(threadId:string):Promise<string>;
   /** The latest attempt state of each task in the project; null when it has none. */
   taskStates(projectId:string, taskIds:string[]):Promise<Record<string, string|null>>;
+  /** Returns the newest taskId and its state in the same task family (e.g. redispatch <id>.2), if any newer exists. */
+  latestFamilyMember?(projectId:string, taskId:string):Promise<{ taskId:string; state:string|null } | null>;
   now():number;
   log(message:string):void;
 };
@@ -91,11 +94,11 @@ export function createRelay(deps:RelayDeps) {
       }
       const item:RelayAsk = { kind:"ask", id:id("ask"), ...input, createdAt:deps.now(), answeredAt:null };
       await deps.send(input.toThreadId, [
-        `Вопрос от @thread:${input.fromThreadId} (Lane Pilot, ${item.id}):`,
+        `Lane Pilot: question from @thread:${input.fromThreadId} (${item.id}):`,
         "",
         input.question,
         "",
-        `Ответь коротко инструментом lane_pilot_reply с askId "${item.id}": что ты делаешь, что держишь и когда освободишь. Свою работу не бросай.`,
+        `Answer briefly with the lane_pilot_reply tool using askId "${item.id}": what you are doing, what you are holding and when it frees. Keep working on your task.`,
         "If you cannot call that tool, end your turn with the answer; it is passed back.",
       ].join("\n"));
       items.push(item);
@@ -109,7 +112,7 @@ export function createRelay(deps:RelayDeps) {
       if (!item) throw new Error(`no question ${input.askId}`);
       if (item.toThreadId !== input.fromThreadId) throw new Error("only the asked thread can answer");
       if (item.answeredAt) return item;
-      await deps.send(item.fromThreadId, `Ответ от @thread:${item.toThreadId} на ${item.id}:\n\n${input.answer}`);
+      await deps.send(item.fromThreadId, `Lane Pilot: reply from @thread:${item.toThreadId} to ${item.id}:\n\n${input.answer}`);
       item.answeredAt = deps.now();
       closeAnsweredWaits(items, item.fromThreadId, item.toThreadId);
       return item;
@@ -143,10 +146,10 @@ export function createRelay(deps:RelayDeps) {
   }
 
   async function fire(item:RelayReminder, by:"time"|"watch"|"tasks", states?:Record<string, string|null>) {
-    const why = by === "watch" ? `тред @thread:${item.watchThreadId} закончил ход`
-      : by === "tasks" ? `задачи завершились: ${Object.entries(states ?? {}).map(([task, state]) => `${task} — ${state}`).join(", ")}`
-      : "пришло время";
-    await deps.send(item.threadId, `Напоминание Lane Pilot (${item.id}, ${why}):\n\n${item.note}\n\nПроверь, можно ли продолжить. Если всё ещё ждёшь, поставь новое напоминание через lane_pilot_remind с большим интервалом.`);
+    const why = by === "watch" ? `thread @thread:${item.watchThreadId} finished its turn`
+      : by === "tasks" ? `tasks completed: ${Object.entries(states ?? {}).map(([task, state]) => `${task} — ${state}`).join(", ")}`
+      : "time reached";
+    await deps.send(item.threadId, `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_remind with a larger interval.`);
     item.firedAt = deps.now();
     item.firedBy = by;
   }
@@ -162,7 +165,7 @@ export function createRelay(deps:RelayDeps) {
       for (const item of items) {
         if (item.kind === "ask" && !item.answeredAt && item.toThreadId === threadId) {
           const text = (await deps.output(threadId).catch(() => "")).trim().slice(-4000);
-          await deps.send(item.fromThreadId, `@thread:${threadId} закончил ход, не ответив на ${item.id}. Его последнее сообщение:\n\n${text || "(пусто)"}`);
+          await deps.send(item.fromThreadId, `Lane Pilot: @thread:${threadId} finished its turn without answering ${item.id}. Its last message:\n\n${text || "(empty)"}`);
           item.answeredAt = deps.now();
           closeAnsweredWaits(items, item.fromThreadId, threadId);
           woken++;
@@ -183,8 +186,37 @@ export function createRelay(deps:RelayDeps) {
       for (const item of items) {
         if (item.kind !== "remind" || item.firedAt) continue;
         if (item.taskIds?.length) {
+          // Check for redispatch and retarget tasks if a newer family member exists
+          if (deps.latestFamilyMember) {
+            const updatedTaskIds = new Set<string>();
+            for (const task of item.taskIds) {
+              const newer = await deps.latestFamilyMember(item.projectId, task).catch(() => null);
+              if (newer && newer.taskId !== task) {
+                updatedTaskIds.add(newer.taskId);
+              } else {
+                updatedTaskIds.add(task);
+              }
+            }
+            item.taskIds = [...updatedTaskIds];
+          }
+
           const states = await deps.taskStates(item.projectId, item.taskIds).catch(() => ({} as Record<string, string|null>));
-          if (item.taskIds.every((task) => TASK_DONE.has(states[task] ?? ""))) { await fire(item, "tasks", states); fired++; continue; }
+
+          // Drop canceled tasks from item.taskIds
+          item.taskIds = item.taskIds.filter((task) => states[task] !== "canceled");
+
+          // A reminder left with no taskIds and no watchThreadId closes silently, without waking anyone
+          if (item.taskIds.length === 0 && !item.watchThreadId) {
+            item.firedAt = deps.now();
+            item.firedBy = "tasks";
+            continue;
+          }
+
+          if (item.taskIds.length > 0 && item.taskIds.every((task) => TASK_DONE.has(states[task] ?? ""))) {
+            await fire(item, "tasks", states);
+            fired++;
+            continue;
+          }
         }
         if (item.dueAt <= deps.now()) { await fire(item, "time"); fired++; }
         else if (item.watchThreadId) watched.add(item.watchThreadId);
@@ -247,6 +279,13 @@ export function relayFor(ctx:ServerContext):Relay {
         && !thread.activeBackgroundAgentCount && commands === 0;
     },
     taskStates:async (projectId, taskIds) => Object.fromEntries(taskIds.map((task) => [task, latestTaskAttemptState(ctx.db, projectId, task)])),
+    latestFamilyMember:async (projectId, taskId) => {
+      const family = taskFamily(taskId);
+      const rows = ctx.db.prepare(`SELECT a.task_id, a.state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+        WHERE r.project_id=? ORDER BY a.created_at DESC, a.attempt_no DESC`).all(projectId) as Array<{ task_id:string; state:string }>;
+      const member = rows.find((row) => taskFamily(row.task_id) === family);
+      return member ? { taskId:member.task_id, state:member.state } : null;
+    },
     output:async (threadId) => {
       const result = await bb.sdk.threads.output({ threadId }) as { output?:unknown; text?:unknown };
       const value = result.output ?? result.text;

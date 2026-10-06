@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { extractModelJson } from "./model-json";
+import { extractModelJson, NO_TOOLS_LINE } from "./model-json";
 
 const onboardingEditSchema = z.object({
   path:z.string().min(1).max(240),
@@ -54,7 +54,7 @@ export function onboardingPreviewSha256(preview:OnboardingPreview):string {
 
 export function onboardingPrompt(input:{task:unknown;pages:OnboardingInputPage[];accepted?:OnboardingAcceptedEvidence|null;agent?:string;depth:"fast"|"deep"}):string {
   return [
-    `You are ${input.agent?.trim()||"project-onboarder"}. Produce a reviewable onboarding preview for the supplied task and project documents.`,
+    `You are ${input.agent?.trim()||"project-onboarder"}. Produce a reviewable onboarding preview for the supplied task and project documents. ${NO_TOOLS_LINE}`,
     input.depth === "deep"
       ? "Depth deep: up to 8 pages. Cover the project's parts and how they fit, and give each page an Open questions section for what the receipt and the pages do not settle."
       : "Depth fast: at most 3 pages, only facts that the receipt and the observed pages confirm; leave the rest as open questions in the summary.",

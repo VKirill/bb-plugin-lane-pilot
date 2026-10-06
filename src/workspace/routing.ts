@@ -15,7 +15,8 @@ export type AttemptWorkspaceDecision = {
 
 export function parseWorkspaceMode(value: unknown): WorkspaceMode {
   if (value === undefined || value === null || value === "") return "auto";
-  if (value === "in_place" || value === "worktree" || value === "auto") return value;
+  if (value === "in_place" || value === "В папке проекта") return "auto";
+  if (value === "worktree" || value === "auto") return value;
   throw new Error(`workspace.mode must be in_place, worktree, or auto; received ${String(value)}`);
 }
 

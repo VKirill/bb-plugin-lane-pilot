@@ -110,6 +110,7 @@ it("gives specialists no bb-bridge tools and keeps the PM core plus browser QA",
     "mcp__bb-bridge__lane_pilot_dispatch_writer",
     "mcp__bb-bridge__lane_pilot_cancel_task",
     "mcp__bb-bridge__lane_pilot_wait_writer",
+    "mcp__bb-bridge__lane_pilot_answer_writer",
     "mcp__bb-bridge__lane_pilot_browser_qa",
     "mcp__bb-bridge__lane_pilot_memory_context",
     "mcp__bb-bridge__lane_pilot_workspace_status",
@@ -177,7 +178,7 @@ it("resolves the installed markdown from the actual cwd, not a bundled copy", as
 });
 
 it("is a unified BB PM instruction, not a CLI orchestrator patch", () => {
-  expect(LANE_PILOT_PM_SESSION).toMatch(/делай правки/);
+  expect(LANE_PILOT_PM_SESSION).toMatch(/Делать правки/);
   expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_dispatch_writer");
   expect(LANE_PILOT_PM_SESSION).toContain("design-lead");
   expect(LANE_PILOT_PM_SESSION).toContain("copy-lead");
@@ -191,7 +192,7 @@ it("is a unified BB PM instruction, not a CLI orchestrator patch", () => {
   expect(LANE_PILOT_PM_SESSION).toContain("specialized agents");
   expect(LANE_PILOT_PM_SESSION).toMatch(/terminal Lane Stack run machinery is not used in this chat/);
   expect(LANE_PILOT_PM_SESSION).toContain("scripts/deploy.sh");
-  expect(LANE_PILOT_PM_SESSION).toContain("asking about it costs the owner a round trip");
+  expect(LANE_PILOT_PM_SESSION).toContain("asking «Запустить?» or «Делать правки?» only costs a round trip");
   expect(LANE_PILOT_PM_SESSION).not.toContain("docs/llm");
   expect(LANE_PILOT_PM_SESSION).not.toContain("stages.docs");
   expect(LANE_PILOT_PM_SESSION).not.toContain("stages.onboard");
@@ -251,4 +252,10 @@ it("keeps a Lane PM from delegating code to general-purpose subagents", async ()
   expect(withoutCodeWritingSubagents("dev-orchestrator", [
     "Agent(lane-stack:project-onboarder, lane-stack:docs-maintainer, lane-stack:night-reviewer, lane-stack:copy-lead, Explore)",
   ])).toEqual(["Agent(Explore)"]);
+});
+
+it("overlay PM session carries the goal-based authorization policy and omits per-step literal constraints", () => {
+  expect(LANE_PILOT_PM_SESSION).toContain("Authorization follows the owner's goal, not each command.");
+  expect(LANE_PILOT_PM_SESSION).toContain("Never ask step by step for steps of an approved plan.");
+  expect(LANE_PILOT_PM_SESSION).not.toContain("exactly that change");
 });

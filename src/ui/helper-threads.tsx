@@ -7,7 +7,19 @@ import { Icon, type IconName } from "../../components/ui/icon";
 export const HELPER_PANEL_ACTION = "lane-helper-thread";
 const POLL_MS = 4_000;
 
-export type HelperThread = { id: string; title: string; status: string; role: string; detail: string | null };
+export type HelperThread = {
+  id: string;
+  title: string;
+  status: string;
+  role: string;
+  detail: string | null;
+  phase?: string | null;
+};
+
+export type HelperThreadsResult = {
+  threads: HelperThread[];
+  queued: string[];
+};
 
 const ROLES: Record<string, { icon: IconName; label: I18nKey }> = {
   writer: { icon: "Code", label: "helperRole_writer" },
@@ -31,24 +43,25 @@ function roleOf(row: HelperThread) {
 
 export function helperHint(row: HelperThread): string {
   const role = t(roleOf(row).label);
-  return `${row.detail ? `${role} · ${row.detail}` : role}: ${row.title}`;
+  const base = `${row.detail ? `${role} · ${row.detail}` : role}: ${row.title}`;
+  return row.phase ? `${base} (${row.phase})` : base;
 }
 
-/** The PM chat's helpers that are still working, re-read every few seconds. */
-export function useHelperThreads(threadId: string | null): HelperThread[] {
+/** The PM chat's helpers that are still working and queued tasks, re-read every few seconds. */
+export function useHelperThreads(threadId: string | null): HelperThreadsResult {
   const rpc = useRpc<typeof rpcContract>();
-  const [rows, setRows] = useState<HelperThread[]>([]);
+  const [data, setData] = useState<HelperThreadsResult>({ threads: [], queued: [] });
   useEffect(() => {
-    if (!threadId) { setRows([]); return; }
+    if (!threadId) { setData({ threads: [], queued: [] }); return; }
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const read = () => void rpc.call("list_helper_threads", { threadId }).then((result) => {
-      if (alive) setRows(result.threads);
+      if (alive) setData({ threads: result.threads, queued: result.queued ?? [] });
     }).catch(() => undefined).finally(() => { if (alive) timer = setTimeout(read, POLL_MS); });
     read();
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, [rpc, threadId]);
-  return rows;
+  return data;
 }
 
 /** Opens a helper in the right-hand thread panel; where the surface has none (a phone), goes to the thread. */
@@ -61,37 +74,60 @@ export function useOpenHelper() {
 }
 
 /**
- * The working helpers beside the agent badge: one square each with the role icon and a pulse, the task on hover
+ * The working helpers beside the agent badge: one square each with the role icon and a pulse/status dot, the task on hover
  * (the owner wants icons only); click opens its chat. Past three, the rest fold into a «+N» that opens the list.
+ * Queued tasks appear as an extra «в очереди N» chip.
  */
-export function HelperChips({ threads, frame }: { threads: HelperThread[]; frame?: CSSProperties }) {
+export function HelperChips({ threads, queued, frame }: { threads: HelperThread[]; queued?: string[]; frame?: CSSProperties }) {
   const open = useOpenHelper();
   const navigate = useBbNavigate();
-  if (!threads.length) return null;
+  const queuedCount = queued?.length ?? 0;
+  if (!threads.length && !queuedCount) return null;
   const shown = threads.slice(0, 3);
   const rest = threads.length - shown.length;
   return (
     <span className="pointer-events-auto flex items-center gap-1" data-testid="helper-chips">
-      {shown.map((row) => (
-        <button
-          key={row.id}
-          type="button"
-          title={helperHint(row)}
-          aria-label={`${helperHint(row)}. ${t("helperOpen")}`}
-          data-testid={`helper-chip-${row.id}`}
-          onClick={() => open(row)}
-          className="relative inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          style={{ ...frame, borderRadius: "0.375rem" }}
-        >
-          <Icon name={roleOf(row).icon} className="size-3" />
-          <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-primary" aria-hidden />
-        </button>
-      ))}
+      {shown.map((row) => {
+        const isVerifying = row.phase === "проверка" || row.phase === "приёмка" || row.phase === "ждёт слияния";
+        return (
+          <button
+            key={row.id}
+            type="button"
+            title={helperHint(row)}
+            aria-label={`${helperHint(row)}. ${t("helperOpen")}`}
+            data-testid={`helper-chip-${row.id}`}
+            onClick={() => open(row)}
+            className="relative inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            style={{ ...frame, borderRadius: "0.375rem" }}
+          >
+            <Icon name={roleOf(row).icon} className="size-3" />
+            {isVerifying ? (
+              <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-emerald-500" data-testid="verifying-dot" aria-hidden />
+            ) : (
+              <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-primary" data-testid="active-dot" aria-hidden />
+            )}
+          </button>
+        );
+      })}
       {rest > 0 ? (
         <button type="button" data-testid="helper-chips-more" aria-label={t("helperMore").replace("{n}", String(rest))}
           onClick={() => navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
           className="inline-flex h-5 cursor-pointer items-center px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
           style={{ ...frame, borderRadius: "0.375rem" }}>+{rest}</button>
+      ) : null}
+      {queuedCount > 0 ? (
+        <button
+          type="button"
+          data-testid="helper-chip-queue"
+          title={`Задачи в очереди: ${queued?.join(", ")}`}
+          aria-label={`В очереди: ${queuedCount}`}
+          onClick={() => navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
+          className="inline-flex h-5 cursor-pointer items-center gap-1 px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
+          style={{ ...frame, borderRadius: "0.375rem" }}
+        >
+          <Icon name="Clock" className="size-3" />
+          <span>в очереди {queuedCount}</span>
+        </button>
       ) : null}
     </span>
   );
@@ -101,12 +137,18 @@ export function HelperChips({ threads, frame }: { threads: HelperThread[]; frame
 export function HelperThreadPanel({ threadId, params }: { threadId: string; params: unknown }) {
   const target = params && typeof params === "object" && typeof (params as { threadId?: unknown }).threadId === "string"
     ? (params as { threadId: string }).threadId : null;
-  const helpers = useHelperThreads(target ? null : threadId);
+  const { threads: helpers, queued } = useHelperThreads(target ? null : threadId);
   const open = useOpenHelper();
   if (target) return <ThreadChat threadId={target} variant="compact" />;
   return (
     <div className="space-y-1 p-3" data-bb-plugin="lane-pilot" data-testid="helper-panel-list">
-      {!helpers.length ? <p className="text-sm text-muted-foreground">{t("helperPanelEmpty")}</p> : helpers.map((row) => (
+      {queued.length > 0 ? (
+        <div className="mb-2 rounded border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-2 text-xs text-muted-foreground" data-testid="helper-panel-queue">
+          <div className="font-semibold text-foreground">В очереди: {queued.length}</div>
+          <div className="mt-1">{queued.join(", ")}</div>
+        </div>
+      ) : null}
+      {!helpers.length && !queued.length ? <p className="text-sm text-muted-foreground">{t("helperPanelEmpty")}</p> : helpers.map((row) => (
         <button key={row.id} type="button" onClick={() => open(row)} className="lp-nav-item flex w-full items-center gap-2 px-2 py-2 text-left text-sm hover:bg-state-hover">
           <Icon name={roleOf(row).icon} className="size-4 shrink-0" />
           <span className="min-w-0 truncate">{helperHint(row)}</span>

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
 import { en, ru, setLocaleOverride, t, validationMessage } from "../i18n";
@@ -8,6 +8,9 @@ import { EXTERNAL_OPS } from "../src/constants";
 import { toast } from "sonner";
 
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
+
+// Under load React updates and debounced saves settle after the 1 s default; await the real condition instead.
+configure({ asyncUtilTimeout: 10_000 });
 
 function screenFixture() {
   const values = Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, row.defaultValue]));
@@ -134,7 +137,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     expect(slot.getByTestId("main-agent").textContent).toContain(en.mainAgent);
     expect(slot.getByTestId("main-agent").textContent).not.toMatch(/spawn|compiled/i);
     slot.lifecycle.unmount();
-  }, 10_000);
+  });
 
   it("keeps technical fields in Diagnostics and renders each storage key once", async () => {
     const slot = await mountPage();
@@ -416,7 +419,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     expect(checkout.textContent).toContain("required interface listAgentRuns available");
     expect(slot.getByTestId("stack-detect-result").textContent).toContain(en.targetMatchInformational);
     slot.lifecycle.unmount();
-  }, 15000);
+  });
 
   it("shows one card per run with its attempts inside, the same on every width", async () => {
     const slot = await mountPage();
@@ -745,7 +748,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     await waitFor(() => expect(slot.getByTestId("field-s371").textContent).toContain("project tree"));
     expect(slot.getByTestId("field-s371").textContent).toContain("Inherited");
     slot.lifecycle.unmount();
-  }, 15_000);
+  });
 
   it("shows owner inheritance after reset even while the durable CAS generation stays positive", async () => {
     let reset = false;
@@ -773,7 +776,7 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     expect(within(row).queryByRole("button", { name: "Reset to inherited" })).toBeNull();
     expect(slot.getByTestId("field-s371").textContent).toContain("project tree");
     slot.lifecycle.unmount();
-  }, 15_000);
+  });
 
   it("keeps the confirm dialog title and full install ops list in the DOM", async () => {
     const slot = await mountPage({ stack_detect: missingStack });

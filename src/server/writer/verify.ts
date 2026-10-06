@@ -8,11 +8,14 @@ import { sha256 } from "../../stages/contract";
 import { parseReadFirstHints } from "../../stages/read-first";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../stages/run-policy";
 import { classifyWriterOutput, isOutputPath } from "../../validate-output";
+import { cleanCheckOutput } from "../../output-excerpt";
 import type { VerifyResult } from "../../validate-output";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../../owns-paths";
 import { taskFamily } from "../../failure-class";
-import { filterOwnershipNoise } from "../../verification/git-ownership";
+import { filterOwnershipNoise, workspaceRelativeDirt } from "../../verification/git-ownership";
 import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../verification/ownership";
+import { workspaceGitLayout } from "../../verification/git-integrate";
+import { snapshotDirectoryHashes, diffDirectoryHashes } from "../../hash";
 import { recordGateEvaluation } from "../stage-records";
 import { stringAt } from "../values";
 import { outputText, writerPatchFromOutput } from "../writer-task";
@@ -194,36 +197,48 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
   }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[]; verification:VerifyResult[]; checkLogPath?:string; runV2?:ReturnType<typeof buildRunExecutionProfile> }> {
     const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
     const dirt = await services.workspaceDirt(input.config, input.task.project_cwd);
+    const layout = dirt.ok ? await workspaceGitLayout(input.task.project_cwd) : { ok:false as const, reason:dirt.reason };
+    let produced: string[] = [];
+
+    const persistedRun = getRun(db, input.runId);
+    const basePath = persistedRun?.writer_workspace_path;
+    const isSeparateWorktree = Boolean(basePath && resolve(basePath) !== resolve(input.task.project_cwd));
+
     if (!dirt.ok) {
-      recordGateEvaluation(db,{...input,gate:"owns-paths",status:"failed",input:JSON.stringify(input.task),summary:{reason:"workspace_snapshot_unavailable"}});
-      return { status:"validation_failed", reason:dirt.reason, output:outputText(output), produced:[], verification:[] };
+      // Non-git project: validate produced files from content-hash snapshot
+      const hashesBefore = new Map(input.dirtBefore.map((row) => [row.path, row.sha256]));
+      const hashesAfter = await snapshotDirectoryHashes(input.task.project_cwd);
+      produced = diffDirectoryHashes(hashesBefore, hashesAfter);
+    } else if (isSeparateWorktree) {
+      // Git project with separate worktree: produced files come from commit diff git diff base..HEAD
+      const gitBase = getTaskGitBase(db, input.taskId);
+      const baseSha = gitBase?.compare_committed ? gitBase.base_sha : (await host.call("gitOwnershipBase", {
+        requestedHostId: input.config.hostId,
+        projectCwd: basePath ?? input.task.project_cwd,
+      }, { hostId: input.config.hostId, timeoutMs: 30_000 }).catch(() => null))?.baseSha ?? null;
+
+      const committed = baseSha ? await host.call("gitOwnershipChanges", {
+        requestedHostId: input.config.hostId,
+        projectCwd: input.task.project_cwd,
+        baseSha,
+        compareCommitted: true,
+      }, { hostId: input.config.hostId, timeoutMs: 30_000 }).catch(() => null) : null;
+
+      if (committed?.status === "ready") {
+        produced = committed.paths;
+      } else {
+        const prefix = layout.ok && layout.nested ? layout.prefix : "";
+        const dirtBefore = workspaceRelativeDirt(input.dirtBefore, prefix);
+        const dirtAfter = workspaceRelativeDirt(dirt.snapshots, prefix);
+        produced = attemptProduced(dirtAfter, dirtBefore);
+      }
+    } else {
+      // Shared checkout / test fixtures running in place on a git repo
+      const prefix = layout.ok && layout.nested ? layout.prefix : "";
+      const dirtBefore = workspaceRelativeDirt(input.dirtBefore, prefix);
+      const dirtAfter = workspaceRelativeDirt(dirt.snapshots, prefix);
+      produced = attemptProduced(dirtAfter, dirtBefore);
     }
-    // In in_place mode an earlier attempt of the same task family leaves its edits in the shared checkout. Only the
-    // files those attempts produced count as this family's produced work; dirt from other tasks or the owner keeps
-    // its baseline, so it is never counted as produced.
-    const familyProduced = new Set<string>();
-    for (const row of db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND id<>?")
-      .all(input.runId, input.attemptId) as Array<{ id:string; task_id:string }>) {
-      if (taskFamily(row.task_id) !== taskFamily(input.taskId)) continue;
-      const saved = await bb.storage.kv.get(`writer-produced:${row.id}`).catch(() => null);
-      if (Array.isArray(saved)) for (const path of saved) if (typeof path === "string") familyProduced.add(path);
-    }
-    const comparable = familyDirtBaseline(input.task, input.dirtBefore, familyProduced);
-    const unverifiable = comparable
-      .filter((before) => !before.sha256 && dirt.snapshots.some((after) => after.path === before.path))
-      .map((file) => file.path);
-    if (unverifiable.length > 0) {
-      recordGateEvaluation(db,{...input,gate:"owns-paths",status:"failed",input:JSON.stringify(input.task),summary:{unverifiableCount:unverifiable.length}});
-      return {
-        status:"validation_failed",
-        reason:`cannot compare pre-existing dirty file content: ${unverifiable.join(", ")}`,
-        output:outputText(output), produced:[], verification:[],
-      };
-    }
-    let produced = attemptProduced(dirt.snapshots, comparable);
-    // The files this attempt's changes produced, for the next attempt of the task family: only these may later
-    // leave a redispatch's dirt baseline.
-    void bb.storage.kv.set(`writer-produced:${input.attemptId}`, produced as never).catch(() => undefined);
     // A task rejected before it ever ran (preflight, plan critique) claims no files; its contract may even be unsafe
     // («../other-repo/» in owns_paths), and kept in the scope it failed every later task of the run (BB-сервис 2026-10-05).
     const attempted = new Set((db.prepare("SELECT DISTINCT task_id FROM lane_pilot_attempt WHERE run_id=?").all(input.runId) as Array<{ task_id:string }>).map((row) => row.task_id));
@@ -233,12 +248,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       const parsed = taskV2Schema.safeParse(row.contract);
       return parsed.success && parsed.data.id === row.id ? [{ ...parsed.data }] : [];
     });
-    const persistedRun = getRun(db,input.runId);
     const persistedAttempt = getAttempt(db,input.attemptId);
     // In the attempt's own worktree, work may already sit in a commit: the writer committed it, or Lane Pilot
     // committed it on the way to main and was cut off mid-merge (a host restart) before this re-check. Those
     // files count too; otherwise a finished task reads as «writer changed no files» and never reaches main.
-    const basePath = persistedRun?.writer_workspace_path;
     if (basePath && resolve(basePath) !== resolve(input.task.project_cwd)) {
       const base = await host.call("gitOwnershipBase",{requestedHostId:input.config.hostId,projectCwd:basePath},
         {hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>null);
@@ -253,8 +266,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const contractWorkspace = persistedRun?.writer_workspace_path ?? runOwnershipTasks[0]?.project_cwd;
     const attemptWorkspaceMatches = persistedAttempt?.run_id === input.runId
       && persistedAttempt.task_id === input.taskId
-      && persistedAttempt.workspace_path === input.task.project_cwd;
-    const ownershipScope = runTasks.length === runOwnershipTasks.length && contractWorkspace && attemptWorkspaceMatches
+      && (persistedAttempt.workspace_path === input.task.project_cwd || (!layout.ok && persistedAttempt.workspace_path === contractWorkspace) || (layout.ok && layout.nested && input.task.project_cwd.endsWith(layout.prefix)));
+    const ownershipScope = runTasks.length === runOwnershipTasks.length && contractWorkspace && (attemptWorkspaceMatches || !layout.ok)
       ? resolveRunOwnershipScope(runOwnershipTasks,input.taskId,contractWorkspace)
       : { ok:false as const, reason:"run scope contains a non-BB or invalid task contract" };
     if (!ownershipScope.ok) {
@@ -313,15 +326,13 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       const slug = failedVerify.command.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "check";
       checkLogPath = `.agents/plans/items/${input.taskId}/logs/${slug}.log`;
       const saved = await bb.sdk.files.write({ hostId:input.config.hostId, rootPath:input.task.project_cwd, path:`${input.task.project_cwd}/${checkLogPath}`,
-        content:`$ ${failedVerify.command}\nexit ${failedVerify.exitCode}\n\n${failedVerify.stdout}\n${failedVerify.stderr}`.trim() + "\n",
+        content:`$ ${failedVerify.command}\nexit ${failedVerify.exitCode}\n\n${cleanCheckOutput(failedVerify.stdout)}\n${cleanCheckOutput(failedVerify.stderr)}`.trim() + "\n",
         contentEncoding:"utf8", createParents:true, expectedSha256:null }).catch(() => null);
       if (!saved) checkLogPath = undefined;
     }
     // Same attribution as the run-scope gate: Lane Pilot's own receipt from a pass a reload cut off (.agents/runs/…)
     // is no writer change, and read as one it failed finished SelfyStudio tasks on resume (2026-10-04).
     const answerText = outputText(output);
-    // Owned files that already carried content at the attempt's start: the contract may name them as outputs the
-    // attempt inherited (a sibling attempt's edits), so they are met, not missing, once real work was produced.
     const preexisting = input.dirtBefore
       .filter((row) => row.sha256 && fileAllowedByOwns(row.path, input.task.owns_paths) && !fileBlockedByNeverTouch(row.path, input.task.never_touch))
       .map((row) => row.path);

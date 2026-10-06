@@ -15,6 +15,8 @@ import { mountSpecialists } from "./specialists";
 import { mountRelay } from "./relay";
 import { mountSelfRepair } from "./self-repair";
 import { registerObservedTool, ToolError } from "./tool-result";
+import { createWriterAnswer } from "./writer/answer";
+import { createWriterUpdateTask } from "./writer/update-task";
 import { z } from "zod";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
@@ -95,6 +97,37 @@ export function registerTools(ctx: ServerCore, services: Services) {
     },
   });
 
+  const { updateTask } = createWriterUpdateTask(ctx, services);
+  registerObservedTool(bb.agents, {
+    name:"lane_pilot_update_task",
+    description:"Update the contract or plan of a queued task that has not started yet in place under the same id.",
+    instructions:"Use only from a Lane Pilot PM thread to correct a task before its writer begins. Keeps the task id, queue position and depends_on edges, rewrites PLAN.md, and reruns pm-read and plan critique. If the task has already started, returns task_started (use lane_pilot_answer_writer if it stopped with a question, or cancel and redispatch).",
+    parameters:z.object({
+      taskId:z.string().min(1),
+      task:taskV2Schema.optional(),
+      plan:z.string().min(1).optional(),
+    }).strict(),
+    execute: async (params, context) => {
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
+      const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
+      if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
+        throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
+      }
+      return JSON.stringify(
+        await updateTask({
+          projectId:context.projectId,
+          runId,
+          pmThreadId:context.threadId,
+          taskId:params.taskId,
+          task:params.task,
+          plan:params.plan,
+        }),
+        null,
+        2,
+      );
+    },
+  });
+
   registerObservedTool(bb.agents, {
     name:"lane_pilot_wait_writer",
     description:"Wait up to 240 seconds for a Lane Pilot writer run and return its persisted receipt or running state.",
@@ -103,6 +136,27 @@ export function registerTools(ctx: ServerCore, services: Services) {
     execute: async (params, context) => JSON.stringify(
       compactWaitResult(await services.waitWriter({ threadId:context.threadId, projectId:context.projectId, runId:params.runId, timeoutSec:params.timeoutSec })),
     ),
+  });
+
+  // The answer service reads the shared bag at call time, so it is mounted here instead of the composition root.
+  const { answerWriter } = createWriterAnswer(ctx, services);
+  registerObservedTool(bb.agents, {
+    name:"lane_pilot_answer_writer",
+    description:"Answer a writer's NEEDS_HUMAN question: the same attempt continues in the same writer thread without spending one.",
+    instructions:"Use only from the matching Lane Pilot PM thread, and only when the task's latest attempt is blocked with needs_human. The answer is delivered into the writer's own thread and its normal wait → validate → accept cycle follows: poll lane_pilot_wait_writer with the same runId. Any other case returns not_answerable — dispatch the task again instead. Never use it to change the contract: redispatch for that.",
+    parameters:z.object({ taskId:z.string().min(1), answer:z.string().min(1).max(8000) }).strict(),
+    execute: async (params, context) => {
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
+      const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
+      if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
+        throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
+      }
+      return JSON.stringify(
+        await answerWriter({ projectId:context.projectId, runId, pmThreadId:context.threadId, taskId:params.taskId, answer:params.answer }),
+        null,
+        2,
+      );
+    },
   });
 
   registerObservedTool(bb.agents, {
@@ -133,7 +187,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   registerObservedTool(bb.agents, {
     name:"lane_pilot_browser_qa",
     description:"Check an accepted task in a browser: a child thread drives the BB browser on the project's Browser QA machine (the Mac mini) and returns a verdict per case and viewport.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. The check runs in a child thread that opens the BB browser on the Browser QA machine (the Mac mini), even when this chat runs elsewhere; a localhost target on another machine is opened at that machine's private VPN address. When the target is a dev server that is not running, pass its start command in devServer (e.g. npm -w @app/web run dev -- --port 5173): the check starts it in a BB terminal of its thread and closes it afterwards. Supply concrete browser-ui cases and the exact target URL; viewports are CSS widths (default 375,768,1280). Production, unknown, or stateful side-effect cases require authorized=true. Show the owner the returned @thread link. A verdict is passed only when every case passed on every viewport.",
+    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. The check runs in a child thread that opens the BB browser on the Browser QA machine (the Mac mini), even when this chat runs elsewhere; a localhost target on another machine is opened at that machine's private VPN address. When the target is a dev server that is not running, pass its start command in devServer (e.g. npm -w @app/web run dev -- --port 5173): the check starts it in a BB terminal of its thread and closes it afterwards. Supply concrete browser-ui cases and the exact target URL; viewports are CSS widths (default 375,768,1280). Production, unknown, or stateful side-effect cases require authorized=true. Authorization follows the owner's goal: every reversible step needed for the approved outcome inside the owner's accounts is authorized without asking step by step; ask the owner once up front only for destructive, paid, outgoing, permission or irreversible steps. Show the owner the returned @thread link. A verdict is passed only when every case passed on every viewport.",
     parameters:z.object({
       runId:z.string().min(1), taskId:z.string().min(1), url:z.string().url(),
       cases:z.array(z.string().min(1).max(2000)).min(1).max(30),

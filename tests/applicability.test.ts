@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { SETTING_CATALOG } from "../src/channels";
 import { UI_CATALOG, VISIBLE_CATALOG } from "../src/ui-catalog";
@@ -7,9 +7,12 @@ const summary = JSON.parse(
   readFileSync(new URL("../src/ui-catalog.summary.json", import.meta.url), "utf8"),
 ) as { editable: number; readonly: number; gap: number; excluded: number; blank: number; tuple_equal: boolean };
 
-const SETTINGS = JSON.parse(
-  readFileSync(new URL("../../../.agency/jobs/AG-179/settings.json", import.meta.url), "utf8"),
-) as { settings: Array<{ area: string; setting: string; location: string; category: string }> };
+// Owner-machine fixture: absent on a clean clone, where the tests comparing against it skip.
+const SETTINGS_URL = new URL("../../../.agency/jobs/AG-179/settings.json", import.meta.url);
+const SETTINGS = existsSync(SETTINGS_URL)
+  ? JSON.parse(readFileSync(SETTINGS_URL, "utf8")) as { settings: Array<{ area: string; setting: string; location: string; category: string }> }
+  : null;
+const NO_AGENCY_SETTINGS = SETTINGS === null;
 
 const APPLICABILITY = readFileSync(new URL("../docs/adoc-applicability.md", import.meta.url), "utf8");
 const PATH_LINE = /[A-Za-z0-9_./{}*-]+:\d+/;
@@ -39,11 +42,11 @@ function parseApplicabilityTable(): Array<{
 }
 
 describe("adoc applicability catalog", () => {
-  it("matches settings.json 1:1 on area+setting+location+category", () => {
+  it.skipIf(NO_AGENCY_SETTINGS)("matches settings.json 1:1 on area+setting+location+category", () => {
     expect(UI_CATALOG).toHaveLength(413);
-    expect(SETTINGS.settings).toHaveLength(355);
+    expect(SETTINGS!.settings).toHaveLength(355);
     const catalogKeys = UI_CATALOG.slice(0,355).map((row) => `${row.area}\0${row.setting}\0${row.location}\0${row.category}`);
-    const settingKeys = SETTINGS.settings.map((row) => `${row.area}\0${row.setting}\0${row.location}\0${row.category}`);
+    const settingKeys = SETTINGS!.settings.map((row) => `${row.area}\0${row.setting}\0${row.location}\0${row.category}`);
     expect(catalogKeys).toEqual(settingKeys);
   });
 
@@ -91,15 +94,15 @@ describe("adoc applicability catalog", () => {
     expect(APPLICABILITY).toContain("| 284 | gate scripts | gate-report --gate | bin/gate-report:129 | user | NONE | readonly |");
   });
 
-  it("documents the 355 source rows and native docs/onboarding additions with location and path:line", () => {
+  it.skipIf(NO_AGENCY_SETTINGS)("documents the 355 source rows and native docs/onboarding additions with location and path:line", () => {
     const rows = parseApplicabilityTable();
     expect(rows).toHaveLength(413);
     expect(rows.filter((row) => !PATH_LINE.test(row.evidence))).toEqual([]);
     for (const [index, row] of rows.slice(0,355).entries()) {
-      expect(row.area).toBe(SETTINGS.settings[index]!.area);
-      expect(row.setting).toBe(SETTINGS.settings[index]!.setting);
-      expect(row.location).toBe(SETTINGS.settings[index]!.location);
-      expect(row.category).toBe(SETTINGS.settings[index]!.category);
+      expect(row.area).toBe(SETTINGS!.settings[index]!.area);
+      expect(row.setting).toBe(SETTINGS!.settings[index]!.setting);
+      expect(row.location).toBe(SETTINGS!.settings[index]!.location);
+      expect(row.category).toBe(SETTINGS!.settings[index]!.category);
       expect(row.decision.length).toBeGreaterThan(0);
     }
     expect(rows.slice(355).map((row)=>row.setting)).toEqual(["docs.provider","docs.model","docs.reasoning_effort","docs.service_tier","onboarding.provider","onboarding.model","onboarding.reasoning_effort","onboarding.service_tier","onboarding.agent","onboarding.depth","sandbox.backend","helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins","helper.placement","code_critique.enabled","code_critique.mode","code_critique.provider","code_critique.model","code_critique.reasoning_effort","code_critique.service_tier","code_critique.agent","code_critique.auto_fix","code_critique.max_rounds","project_life.enabled","project_life.provider","project_life.model","project_life.reasoning_effort","project_life.service_tier","run.max_attempts","run.max_wall_minutes","run.max_tokens","run.max_children","council.product.provider","council.product.model","council.product.reasoning_effort","council.demand.provider","council.demand.model","council.demand.reasoning_effort","council.audience.provider","council.audience.model","council.audience.reasoning_effort","council.skeptic.provider","council.skeptic.model","council.skeptic.reasoning_effort","council.growth.provider","council.growth.model","council.growth.reasoning_effort","council.ux.provider","council.ux.model","council.ux.reasoning_effort","council.chair.provider","council.chair.model","council.chair.reasoning_effort","council.judge","council.max_rounds"]);

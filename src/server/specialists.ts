@@ -1,5 +1,6 @@
 import type { HelperRole } from "../helper-context";
 import { observeStageChild } from "@lane-pilot/thread-observe";
+import { spawnSync } from "node:child_process";
 import { z } from "zod";
 import { findOpenNativeRun, getRun } from "../database";
 import { writerExecutionSelection } from "../jev-reasoning";
@@ -35,8 +36,32 @@ export function specialistPrompt(marker: string, role: string, task: string): st
  * read and stopped like a writer. Before this they were Claude Code subagents: BB showed only «a background agent
  * is running» and nobody could look inside.
  */
+function gitRepoStatus(cwd: string): Set<string> {
+  const res = spawnSync("git", ["status", "--porcelain", "-uall"], { cwd, encoding: "utf8", windowsHide: true });
+  if (res.status !== 0 || !res.stdout) return new Set();
+  const files = new Set<string>();
+  for (const line of res.stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const name = trimmed.slice(2).trim();
+    if (name) files.add(name.split(" -> ").pop()!.trim());
+  }
+  return files;
+}
+
+function detectRepoEdits(before: Set<string>, after: Set<string>, allowed: (file: string) => boolean): string[] {
+  const changed: string[] = [];
+  for (const file of after) {
+    if (!before.has(file) && !allowed(file)) {
+      changed.push(file);
+    }
+  }
+  return changed.sort();
+}
+
 export function mountSpecialists(ctx: ServerCore): void {
   const { bb, db } = ctx;
+  const specialistSnapshots = new Map<string, { cwd: string; before: Set<string> }>();
 
   async function start(input: { projectId: string; pmThreadId: string; role: (typeof SPECIALIST_ROLES)[number]; task: string; title?: string }) {
     const runId = findOpenNativeRun(db, input.projectId, input.pmThreadId);
@@ -45,6 +70,9 @@ export function mountSpecialists(ctx: ServerCore): void {
     const pm = await bb.sdk.threads.get({ threadId: input.pmThreadId });
     const environmentId = stringAt(pm, "environmentId");
     if (!environmentId) throw new Error("specialist_needs_pm_environment");
+    const envObj = await bb.sdk.environments.get({ environmentId }).catch(() => null);
+    const checkoutPath = stringAt(envObj, "path") ?? "";
+    const beforeStatus = checkoutPath ? gitRepoStatus(checkoutPath) : new Set<string>();
     const { selection } = await storeNativeSelection(ctx, { projectId: input.projectId, agentId: input.role, parentRunId: runId });
     const helperPolicy = requireHelperSpawn({ bb, db, projectId: input.projectId, runId });
     const placement = await helperChildPlacement({ bb, db, projectId: input.projectId, runId, role: "specialist", taskTitle: input.title ?? `${input.role}: ${input.task.slice(0, 60)}` });
@@ -58,6 +86,7 @@ export function mountSpecialists(ctx: ServerCore): void {
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("specialist_thread_id_missing");
+    if (checkoutPath) specialistSnapshots.set(threadId, { cwd: checkoutPath, before: beforeStatus });
     return { threadId, role: input.role, state: "running" as const, link: `@thread:${threadId}` };
   }
 
@@ -68,6 +97,15 @@ export function mountSpecialists(ctx: ServerCore): void {
       if (ctx.isDisposed()) break;
       const observed = await observeStageChild(bb, input.threadId, Math.min(WAIT_STEP_MS, Math.max(1, deadline - Date.now())));
       if (observed.kind === "completed") {
+        const snapshot = specialistSnapshots.get(input.threadId);
+        if (snapshot) {
+          specialistSnapshots.delete(input.threadId);
+          const afterStatus = gitRepoStatus(snapshot.cwd);
+          const edited = detectRepoEdits(snapshot.before, afterStatus, (f) => f.startsWith(".agents/") || f === ".agents" || f.startsWith(".bb/chats/"));
+          if (edited.length > 0) {
+            return { threadId: input.threadId, state: "blocked" as const, reason: "repo_edited", files: edited, output: fenceOutside("specialist", `Helper edited repository files: ${edited.join(", ")}`) };
+          }
+        }
         const raw = (await bb.sdk.threads.output({ threadId: input.threadId })).output;
         return { threadId: input.threadId, state: "done" as const, output: fenceOutside("specialist", typeof raw === "string" ? raw : outputText(raw)) };
       }

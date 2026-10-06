@@ -1,7 +1,16 @@
 import { join } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
+
+// Plugin shipping (`bb plugin reload/install/update`) is judged by the checkout folder name; pin a
+// temp bb-plugin-lane-pilot cwd so the result does not depend on what this clone directory is called.
+const guardHome = mkdtempSync(join(tmpdir(), "lane-pilot-guard-"));
+const pluginCheckout = join(guardHome, "bb-plugin-lane-pilot");
+mkdirSync(pluginCheckout, { recursive: true });
+afterAll(() => rmSync(guardHome, { recursive: true, force: true }));
 
 const guard = process.env.GUARD_UNDER_TEST ?? join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 
@@ -68,13 +77,13 @@ describe("dev-orchestrator env wrappers still judge the inner command", () => {
   });
 });
 
-function allowedNative(command: string): number | null {
+function allowedNative(command: string, cwd: string = process.cwd()): number | null {
   return spawnSync("python3", [guard], {
     input: JSON.stringify({
       agent_type: "lane-stack:dev-orchestrator",
       tool_name: "Bash",
       tool_input: { command },
-      cwd: process.cwd(),
+      cwd,
     }),
     encoding: "utf8",
     env: hookEnv({
@@ -105,9 +114,9 @@ describe("BB native PM can run project node scripts", () => {
       expect(allowedNative(command)).toBe(0);
       expect(allowed("lane-pilot-pm", command)).toBe(0);
     }
-    // Shipping a plugin only from that plugin's checkout (this repo is bb-plugin-lane-pilot); a product checkout may not.
+    // Shipping a plugin only from that plugin's checkout (pinned temp dir named bb-plugin-lane-pilot); a product checkout may not.
     for (const command of ["bb plugin reload lane-pilot", "bb plugin install ./dist", "bb plugin update project-folders"]) {
-      expect(allowedNative(command)).toBe(0);
+      expect(allowedNative(command, pluginCheckout)).toBe(0);
       expect(allowedIn("/srv/apps/selfystudio", command)).toBe(2);
     }
     for (const command of ["bb thread create --prompt x", "bb plugin rpc call x y", "bb env-catalog get SECRET"]) expect(allowedNative(command)).toBe(2);

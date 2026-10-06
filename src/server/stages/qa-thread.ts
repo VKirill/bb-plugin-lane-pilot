@@ -54,7 +54,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
     "3. For every viewport set the page width, open the target and go through every case. Take a fresh snapshot before using refs; take a screenshot as proof for each case and look at it.",
     "4. Close the session.",
     "If a case needs a sign-in, find the account with env_list and read it with env_get; never print the value. If none exists, the case is blocked with that reason.",
-    "Do not change any file. Do not guess: a case you could not check is blocked, with the reason.",
+    "Do not change any file: your thread has full access to the checkout, and a changed file would count as part of the task's changes. Do not guess: a case you could not check is blocked, with the reason.",
     "",
     "End with one fenced json block and nothing after it:",
     "```json",

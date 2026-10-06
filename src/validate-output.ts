@@ -1,4 +1,5 @@
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "./owns-paths";
+import { cleanCheckOutput } from "./output-excerpt";
 import type { TaskV2 } from "./contracts";
 
 export function isTaskFolderFile(path:string):boolean {
@@ -101,10 +102,11 @@ export function classifyWriterOutput(input: {
   }
   for (const verify of input.verifies ?? []) {
     if (verify.exitCode !== 0) {
+      const cleaned = cleanCheckOutput(verify.stderr || "").slice(0, 300);
       return {
         ok:false,
         state:"validation_failed",
-        reason:`verification failed (${verify.command}): ${verify.stderr || `exit ${verify.exitCode}`}`,
+        reason:`verification failed (${verify.command}): ${cleaned || `exit ${verify.exitCode}`}`,
       };
     }
   }

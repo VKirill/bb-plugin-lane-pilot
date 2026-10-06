@@ -73,6 +73,21 @@ describe("a denied PM edit points where the PM can act", () => {
     expect(result.status).toBe(2);
     expect(result.out).toContain("run supervisor");
   });
+
+  it("denials for DELETE without WHERE, DROP/TRUNCATE, and malformed payload name a next step", () => {
+    const del = bash("writer", "psql -c 'delete from users;'");
+    expect(del.status).toBe(2);
+    expect(del.out).toContain("WHERE");
+    expect(del.out).toMatch(/Add a WHERE clause|scoping/);
+
+    const drop = bash("writer", "psql -c 'DROP TABLE users'");
+    expect(drop.status).toBe(2);
+    expect(drop.out).toMatch(/Run schema changes through project migrations|explicit review/);
+
+    const malformed = run("dev-orchestrator", "Bash", { command: "   " }, NATIVE);
+    expect(malformed.status).toBe(2);
+    expect(malformed.out).toContain("supply a command string in command");
+  });
 });
 
 describe("destructive checks read commands, not text a heredoc hands to a program", () => {

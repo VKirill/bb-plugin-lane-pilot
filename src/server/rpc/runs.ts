@@ -20,6 +20,7 @@ import type { Services } from "../services";
 
 export function runsRpc(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, nativeInstaller, ownedAgents } = ctx;
+  let lastListErrorLogAt = 0;
   const handlers = {
     finish_run: async ({ projectId, runId }) => {
       await finishRunSafely(bb, db, projectId, runId, "rpc");
@@ -42,26 +43,126 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     list_helper_threads: async ({ threadId }) => {
       // A long PM chat has hundreds of finished helpers (SelfyStudio: 335); one page of 50 held old ones only, so a
       // working writer never got its square next to the badge. Unarchived ones, every page.
-      const rows:unknown[] = [];
-      for (let offset = 0; offset < 2_000; offset += 200) {
-        const page = await bb.sdk.threads.list({ parentThreadId: threadId, includeHidden: true, archived: false, limit: 200, offset }).catch(() => []);
+      const rows: unknown[] = [];
+      const PAGE_SIZE = 100;
+      for (let offset = 0; offset < 2_000; offset += PAGE_SIZE) {
+        let page: unknown[] = [];
+        try {
+          page = await bb.sdk.threads.list({ parentThreadId: threadId, includeHidden: true, archived: false, limit: PAGE_SIZE, offset });
+        } catch (cause) {
+          const now = Date.now();
+          if (now - lastListErrorLogAt > 60_000) {
+            lastListErrorLogAt = now;
+            bb.log.warn(`Lane Pilot list_helper_threads error: ${cause instanceof Error ? cause.message : String(cause)}`);
+          }
+          break;
+        }
         rows.push(...page);
-        if (page.length < 200) break;
+        if (page.length < PAGE_SIZE) break;
       }
-      const working = (rows as unknown as Array<Record<string, unknown>>)
-        .filter((row) => typeof row.id === "string" && !row.archivedAt && !["idle", "error", "stopped", "completed"].includes(String(row.status)));
+
+      // Find the open run for this PM thread (if any)
+      const openRun = db.prepare(
+        "SELECT id, project_id FROM lane_pilot_run WHERE pm_thread_id=? AND closed_at IS NULL ORDER BY created_at DESC LIMIT 1",
+      ).get(threadId) as { id: string; project_id: string } | undefined;
+
+      // Find tasks in this run with open attempts, their latest attempt and stages
+      type OpenAttemptRow = {
+        id: string;
+        run_id: string;
+        task_id: string;
+        thread_id: string | null;
+        state: string;
+        reason: string | null;
+      };
+      const openAttemptsByThread = new Map<string, OpenAttemptRow>();
+      const queuedTaskIds: string[] = [];
+
+      if (openRun) {
+        // Find latest attempt for each task in this run
+        const attempts = db.prepare(`
+          SELECT a.id, a.run_id, a.task_id, a.thread_id, a.state, a.reason
+          FROM lane_pilot_attempt a
+          WHERE a.run_id=?
+            AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
+        `).all(openRun.id) as OpenAttemptRow[];
+
+        const TERMINAL_ATTEMPTS = new Set(["accepted", "blocked", "canceled", "failed"]);
+        for (const att of attempts) {
+          if (!TERMINAL_ATTEMPTS.has(att.state)) {
+            if (att.state === "queued" && !att.thread_id) {
+              queuedTaskIds.push(att.task_id);
+            } else if (att.thread_id) {
+              openAttemptsByThread.set(att.thread_id, att);
+            }
+          }
+        }
+      }
+
+      const rowList = (rows as unknown as Array<Record<string, unknown>>)
+        .filter((row) => typeof row.id === "string" && !row.archivedAt);
+
+      const isTerminalThread = (status: string) => ["error", "stopped", "completed"].includes(status);
+
+      const working = rowList.filter((row) => {
+        const id = String(row.id);
+        const status = String(row.status);
+        if (isTerminalThread(status)) return false;
+        if (status === "idle") {
+          return openAttemptsByThread.has(id);
+        }
+        return true;
+      });
+
       const threads = await Promise.all(working.map(async (row) => {
-        const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: String(row.id) }).catch(() => null);
+        const threadIdStr = String(row.id);
+        const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: threadIdStr }).catch(() => null);
+        const statusStr = String(row.status);
+
+        let phase: string | null = null;
+        if (statusStr !== "idle") {
+          phase = "работает";
+        } else {
+          const attempt = openAttemptsByThread.get(threadIdStr);
+          if (attempt && openRun) {
+            const receipts = (db.prepare(
+              "SELECT stage_id, state FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?",
+            ).all(openRun.id, attempt.task_id) as Array<{ stage_id: string; state: string }>);
+
+            const verification = receipts.find((r) => r.stage_id === "verification");
+            const acceptance = receipts.find((r) => r.stage_id === "acceptance-receipt");
+
+            const isVerifying = verification?.state === "running";
+            const isAccepting = acceptance?.state === "running" || (verification?.state === "passed" && (!acceptance || acceptance.state === "pending"));
+
+            if (isVerifying) {
+              phase = "проверка";
+            } else if (isAccepting) {
+              phase = "приёмка";
+            } else if (attempt.reason?.includes("merge") || attempt.reason?.includes("busy") || attempt.reason?.includes("conflict")) {
+              phase = "ждёт слияния";
+            } else {
+              phase = "проверка";
+            }
+          } else {
+            phase = "работает";
+          }
+        }
+
         return {
-          id: String(row.id),
-          // «Lane Pilot writer: <task>» → «<task>»: the square's icon already says the role.
-          title: (stringAt(row, "title") ?? stringAt(row, "titleFallback") ?? String(row.id)).replace(/^Lane Pilot [^:]{1,40}:\s*/, ""),
-          status: String(row.status),
+          id: threadIdStr,
+          title: (stringAt(row, "title") ?? stringAt(row, "titleFallback") ?? threadIdStr).replace(/^Lane Pilot [^:]{1,40}:\s*/, ""),
+          status: statusStr,
           role: stringAt(metadata, "role") ?? "helper",
           detail: stringAt(metadata, "specialist"),
+          phase,
         };
       }));
-      return { threads: threads.filter((row) => row.role !== "workspace-provisioner") };
+
+      return {
+        threads: threads.filter((row) => row.role !== "workspace-provisioner"),
+        queued: queuedTaskIds,
+      };
     },
     native_thread: async ({ threadId }) => {
       const selected = await bb.storage.kv.get(`native-thread:${threadId}`);

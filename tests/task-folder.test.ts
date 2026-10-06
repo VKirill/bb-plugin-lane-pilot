@@ -1,9 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+
+// The real-checkout test below spawns git and sh; inside the sandboxed check the suite runs ~2.5x slower and
+// vitest's 5 s default would cut it off (2026-10-06 check log, sibling git-integrate/git-lock timeouts).
+vi.setConfig({ testTimeout: 120_000 });
 import { stickyTurnPrompt, writerPrompt } from "../src/server/writer-task";
 import { classifyWriterOutput, parseGitChangedPaths } from "../src/validate-output";
-import { persistTaskFolder, TASK_FOLDER_EXCLUDE, withTaskFolderExclude } from "../src/verification/git-integrate";
+import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../src/verification/git-integrate";
 import type { TaskV2 } from "../src/contracts";
 
 const task = {
@@ -46,42 +50,52 @@ it("does not treat task-folder files as produced, stray, or owns_paths violation
   })).toMatchObject({ ok: false, state: "empty_output" });
 });
 
-it("writes PLAN.md and puts the exclude line in once", async () => {
-  const files = new Map<string, string>([[".git/info/exclude", "# git exclude\n"]]);
+it("writes PLAN.md and hands the exclude line to the workspace's host", async () => {
+  const files = new Map<string, string>();
+  const lines: string[] = [];
   const written = await persistTaskFolder({
     taskId: "lptask_1", plan: "Ship the folder",
+    exclude: async (line) => { lines.push(line); },
     writeFile: async (rel, content) => { files.set(rel, content); },
-    readFile: async (rel) => files.get(rel) ?? null,
   });
   expect(written).toEqual({ folder: ".agents/plans/items/lptask_1" });
+  expect(lines).toEqual([TASK_FOLDER_EXCLUDE]);
   expect(files.get(".agents/plans/items/lptask_1/PLAN.md")).toBe("Ship the folder\n");
-  expect(files.get(".git/info/exclude")!.split("\n").filter((line) => line === TASK_FOLDER_EXCLUDE)).toEqual([TASK_FOLDER_EXCLUDE]);
-  await persistTaskFolder({
-    taskId: "lptask_1", plan: "Ship the folder",
-    writeFile: async (rel, content) => { files.set(rel, content); },
-    readFile: async (rel) => files.get(rel) ?? null,
-  });
-  expect(files.get(".git/info/exclude")!.split("\n").filter((line) => line === TASK_FOLDER_EXCLUDE)).toEqual([TASK_FOLDER_EXCLUDE]);
-  expect(withTaskFolderExclude(files.get(".git/info/exclude")!)).toBe(files.get(".git/info/exclude"));
 });
 
-it("writes the task folder onto a real checkout exclude file", async () => {
+it("still writes PLAN.md when the exclude line cannot reach the repo", async () => {
+  const files = new Map<string, string>();
+  const warnings: string[] = [];
+  const warn = console.warn;
+  console.warn = (line: string) => { warnings.push(String(line)); };
+  try {
+    const written = await persistTaskFolder({
+      taskId: "lptask_1", plan: "Ship the folder",
+      exclude: async () => { throw new Error("git dir unresolved"); },
+      writeFile: async (rel, content) => { files.set(rel, content); },
+    });
+    expect(written).toEqual({ folder: ".agents/plans/items/lptask_1" });
+  } finally { console.warn = warn; }
+  expect(files.get(".agents/plans/items/lptask_1/PLAN.md")).toBe("Ship the folder\n");
+  expect(warnings.join("\n")).toContain("task-folder exclude");
+});
+
+it("writes the task folder onto a real checkout exclude file, once", async () => {
   const { mkdtemp } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { execFileSync } = await import("node:child_process");
   const base = await mkdtemp(join(tmpdir(), "lp-task-folder-"));
   execFileSync("git", ["init", "-q", "-b", "main", base]);
-  await persistTaskFolder({
-    taskId: "abc", plan: "plan text",
-    writeFile: async (rel, content) => {
-      const path = join(base, rel);
-      await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, content);
-    },
-    readFile: async (rel) => readFile(join(base, rel), "utf8").catch(() => null),
-  });
+  const write = async (rel: string, content: string) => {
+    const path = join(base, rel);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content);
+  };
+  const exclude = async (line: string) => { execFileSync("sh", ["-c", appendExcludeCommand(line)], { cwd: base }); };
+  await persistTaskFolder({ taskId: "abc", plan: "plan text", exclude, writeFile: write });
+  await persistTaskFolder({ taskId: "abc", plan: "plan text", exclude, writeFile: write });
   expect(await readFile(join(base, ".agents/plans/items/abc/PLAN.md"), "utf8")).toBe("plan text\n");
-  const exclude = await readFile(join(base, ".git/info/exclude"), "utf8");
-  expect(exclude.split("\n").filter((line) => line === TASK_FOLDER_EXCLUDE)).toHaveLength(1);
+  const excludeText = await readFile(join(base, ".git/info/exclude"), "utf8");
+  expect(excludeText.split("\n").filter((line) => line === TASK_FOLDER_EXCLUDE)).toHaveLength(1);
   expect(execFileSync("git", ["status", "--porcelain"], { cwd: base, encoding: "utf8" }).trim()).toBe("");
 });

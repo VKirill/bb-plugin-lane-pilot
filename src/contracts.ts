@@ -552,6 +552,13 @@ export const hostContract = defineRpcContract({
   },
 });
 
+const acceptanceTotalsSchema = z.object({
+  dispatched:z.number(), firstTryAccepted:z.number(), eventuallyAccepted:z.number(),
+  attempts:z.number(), attemptsPerAccepted:z.number().nullable(),
+  redispatched:z.number(), families:z.number(), causes:z.record(z.string(), z.number()),
+});
+const acceptanceWeekSchema = acceptanceTotalsSchema.extend({ week:z.string() });
+
 export const rpcContract = defineRpcContract({
   get_preferences: {
     input: z.object({ suggestedLocale: z.enum(["en", "ru"]) }).strict(),
@@ -778,7 +785,17 @@ export const rpcContract = defineRpcContract({
   },
   list_helper_threads: {
     input: z.object({ threadId: z.string().min(1) }).strict(),
-    output: z.object({ threads: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), role: z.string(), detail: z.string().nullable() }).strict()) }).strict(),
+    output: z.object({
+      threads: z.array(z.object({
+        id: z.string(),
+        title: z.string(),
+        status: z.string(),
+        role: z.string(),
+        detail: z.string().nullable(),
+        phase: z.string().nullable().optional(),
+      }).strict()),
+      queued: z.array(z.string()).default([]),
+    }).strict(),
   },
   native_thread: {
     input: z.object({ threadId: z.string().min(1) }).strict(),
@@ -1144,6 +1161,15 @@ export const rpcContract = defineRpcContract({
     input: z.object({ projectId:z.string().min(1), days:z.number().int().min(1).max(90).default(7) }).strict(),
     output: z.object({ days:z.number(), stats:z.object({ tasks:z.number(), accepted:z.number(), coldThreads:z.number(), continued:z.number(),
       coldPerAccepted:z.number().nullable(), areaShare:z.number().nullable(), tasksPerArea:z.number().nullable(), medianMinutesToAccept:z.number().nullable() }) }),
+  },
+  /** Acceptance per project and ISO week: first-try, eventual, attempts per accepted task, redispatch families, failure causes. */
+  acceptance_stats: {
+    input: z.object({ days:z.number().int().min(1).max(90).default(28), projectId:z.string().min(1).optional() }).strict(),
+    output: z.object({
+      days: z.number(),
+      totals: acceptanceTotalsSchema,
+      projects: z.array(z.object({ projectId:z.string(), totals:acceptanceTotalsSchema, weeks:z.array(acceptanceWeekSchema) })),
+    }),
   },
   /** Before a deploy: hold new checkout-writing host calls and report the ones still running. */
   deploy_drain: {

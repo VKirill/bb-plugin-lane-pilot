@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { existsSync, unlinkSync } from "node:fs";
 import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { spawnAsync } from "../spawn-async";
@@ -24,38 +25,63 @@ export class BaseLockBusyError extends Error {
 
 const FALLBACK_IDENTITY = ["-c", "user.name=Lane Pilot writer", "-c", "user.email=lane-pilot@localhost"];
 
-/** Lane Pilot's per-task folder; never committed, never produced, never an owns_paths hit. */
-export const TASK_FOLDER_EXCLUDE = ".agents/plans/items/";
+/** Lane Pilot's per-task folder; never committed, never produced, never an owns_paths hit. The leading double star
+ * is what makes the one line match at any depth (a pattern with a middle slash would be anchored to the repo root
+ * and miss a workspace that is a subfolder — the real-git test caught exactly that). */
+export const TASK_FOLDER_EXCLUDE = "**/.agents/plans/items/";
 
 export function taskFolderRel(taskId:string):string|null {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId)) return null;
   return `.agents/plans/items/${taskId}`;
 }
 
-export function withTaskFolderExclude(text:string):string {
-  if (text.split("\n").includes(TASK_FOLDER_EXCLUDE)) return text.endsWith("\n") || text === "" ? text : `${text}\n`;
-  return `${text && !text.endsWith("\n") ? `${text}\n` : text}${TASK_FOLDER_EXCLUDE}\n`;
+/**
+ * The shell that appends the task-folder exclude line to the repository's real info/exclude, which git itself
+ * resolves (`--git-path`): a workspace that is a repo subfolder gets no stray `.git`, and a linked worktree's
+ * shared exclude gets the line. Idempotent POSIX sh; run on the workspace's host with cwd at the workspace.
+ */
+export function appendExcludeCommand(line:string):string {
+  const quoted=line.replace(/'/g,"'\\''");
+  return `f=$(git rev-parse --git-path info/exclude) || exit 1
+grep -qxF '${quoted}' "$f" 2>/dev/null || { mkdir -p "$(dirname "$f")" && printf '%s\\n' '${quoted}' >> "$f"; }`;
 }
 
 export async function persistTaskFolder(input:{
   taskId:string; plan:string;
+  /** Appends the exclude line to the repo's real info/exclude on the workspace's host; a failure skips only the line. */
+  exclude?:(line:string)=>Promise<void>;
   writeFile:(relativePath:string, content:string)=>Promise<void>;
-  readFile:(relativePath:string)=>Promise<string|null>;
 }):Promise<{folder:string}|null> {
   const folder = taskFolderRel(input.taskId);
   if (!folder) return null;
-  const exclude = await input.readFile(".git/info/exclude");
-  const next = withTaskFolderExclude(exclude ?? "");
-  if (next !== (exclude ?? "")) await input.writeFile(".git/info/exclude", next);
+  if (input.exclude) {
+    try { await input.exclude(TASK_FOLDER_EXCLUDE); }
+    catch (cause) {
+      console.warn(`lane-pilot: skipped the task-folder exclude line: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
   const plan = input.plan.endsWith("\n") ? input.plan : `${input.plan}\n`;
   await input.writeFile(`${folder}/PLAN.md`, plan);
   return { folder };
 }
 
+/**
+ * A git process that hit <git-dir>/index.lock names it only sometimes (macOS prints the path; Linux git 2.43 says
+ * just «Unable to write index»), so the lock is named here and every such failure classes as infra, not as the
+ * task's. `git rev-parse` itself never writes the index, so it answers even while the lock stands.
+ */
+export function withIndexLockNote(cwd:string,reason:string):string {
+  if (reason.includes("index.lock")) return reason;
+  const dir=spawnSync("git",["rev-parse","--absolute-git-dir"],{cwd,encoding:"utf8",timeout:10_000,maxBuffer:1_000_000,windowsHide:true});
+  const gitDir=dir.status===0?dir.stdout.trim():"";
+  if (!gitDir||!existsSync(join(gitDir,"index.lock"))) return reason;
+  return `${reason} (index.lock present)`;
+}
+
 function git(cwd:string,args:string[]) {
   const result=spawnSync("git",args,{cwd,encoding:"utf8",timeout:60_000,maxBuffer:4_000_000,windowsHide:true});
   if(result.error) return {ok:false as const,stdout:"",reason:result.error.message};
-  if(result.status!==0) return {ok:false as const,stdout:result.stdout??"",reason:(result.stderr||result.stdout||`git exited ${result.status}`).trim()};
+  if(result.status!==0) return {ok:false as const,stdout:result.stdout??"",reason:withIndexLockNote(cwd,(result.stderr||result.stdout||`git exited ${result.status}`).trim())};
   return {ok:true as const,stdout:result.stdout,reason:""};
 }
 
@@ -234,29 +260,67 @@ export async function workspaceGitLayout(workspacePath:string):Promise<
 export async function createWorktree(input:{basePath:string;targetPath:string;name:string}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null}> {
   const layout=await workspaceGitLayout(input.basePath);
   if(!layout.ok) return {status:"failed",path:null,branch:null,reason:`not a git checkout: ${layout.reason}`};
-  if(layout.nested){
-    return {status:"failed",path:null,branch:null,reason:`workspace_not_repo_root: ${input.basePath} is not the git repo root ${layout.repoTop}. Open the Lane chat at ${layout.repoTop}`};
-  }
+  const repoRoot=layout.nested?layout.repoTop:input.basePath;
   const branch=`lane/${input.name}`;
   await mkdir(join(input.targetPath,".."),{recursive:true});
-  await recoverStaleGitLock(input.basePath);
-  const added=git(input.basePath,["worktree","add","-q","-b",branch,input.targetPath,"HEAD"]);
+  await recoverStaleGitLock(repoRoot);
+  const added=git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,"HEAD"]);
   if(!added.ok) return {status:"failed",path:null,branch:null,reason:added.reason};
   return {status:"ready",path:input.targetPath,branch,reason:null};
 }
 
+export const BOOKKEEPING_PATHS = [".agents/PROGRESS.md", ".agents/CHANGELOG.md"];
+
+function resolveBookkeepingToMain(basePath:string, sha:string):string {
+  const diff = git(basePath, ["diff", "--name-only", `HEAD..${sha}`]);
+  if (!diff.ok) return sha;
+  const changed = diff.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
+  const changedBookkeeping = BOOKKEEPING_PATHS.filter((path) => changed.includes(path));
+  if (!changedBookkeeping.length) return sha;
+
+  const gitDir = git(basePath, ["rev-parse", "--absolute-git-dir"]);
+  const dir = gitDir.ok && gitDir.stdout.trim() ? gitDir.stdout.trim() : join(basePath, ".git");
+  const tempIndex = join(dir, `temp-idx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
+
+  try {
+    const read = spawnSync("git", ["read-tree", sha], { cwd: basePath, env, encoding: "utf8", timeout: 30_000 });
+    if (read.status !== 0) return sha;
+    for (const bPath of changedBookkeeping) {
+      const ls = git(basePath, ["ls-tree", "HEAD", bPath]);
+      if (ls.ok && ls.stdout.trim()) {
+        const parts = ls.stdout.trim().split(/\s+/);
+        const mode = parts[0]!;
+        const blobSha = parts[2]!.split("\t")[0]!;
+        const path = ls.stdout.trim().split("\t")[1]!;
+        spawnSync("git", ["update-index", "--cacheinfo", `${mode},${blobSha},${path}`], { cwd: basePath, env, encoding: "utf8", timeout: 30_000 });
+      } else {
+        spawnSync("git", ["update-index", "--force-remove", bPath], { cwd: basePath, env, encoding: "utf8", timeout: 30_000 });
+      }
+    }
+    const writeTree = spawnSync("git", ["write-tree"], { cwd: basePath, env, encoding: "utf8", timeout: 30_000 });
+    if (writeTree.status !== 0 || !writeTree.stdout.trim()) return sha;
+    const treeSha = writeTree.stdout.trim();
+    const commitTree = git(basePath, [...identity(basePath), "commit-tree", treeSha, "-p", sha, "-m", "resolve bookkeeping to main"]);
+    return commitTree.ok && commitTree.stdout.trim() ? commitTree.stdout.trim() : sha;
+  } finally {
+    try { unlinkSync(tempIndex); } catch {}
+  }
+}
+
 function merge(basePath:string,sha:string,message:string):GitIntegration {
-  if(git(basePath,["merge-base","--is-ancestor",sha,"HEAD"]).ok) {
+  const targetSha = resolveBookkeepingToMain(basePath, sha);
+  if(git(basePath,["merge-base","--is-ancestor",targetSha,"HEAD"]).ok) {
     return {status:"up-to-date",commit:git(basePath,["rev-parse","HEAD"]).stdout.trim()||null,conflicts:[],reason:null};
   }
-  const merged=git(basePath,[...identity(basePath),"merge","--no-ff","--no-edit","-m",`Merge writer work: ${message}`,sha]);
+  const merged=git(basePath,[...identity(basePath),"merge","--no-ff","--no-edit","-m",`Merge writer work: ${message}`,targetSha]);
   if(merged.ok) return {status:"merged",commit:git(basePath,["rev-parse","HEAD"]).stdout.trim()||null,conflicts:[],reason:null};
   const unmerged=git(basePath,["diff","--name-only","--diff-filter=U"]);
   const conflicts=unmerged.ok?unmerged.stdout.split("\n").map((line)=>line.trim()).filter(Boolean):[];
   git(basePath,["merge","--abort"]);
   // Git refuses to merge over uncommitted edits of the same files in main (another agent or the PM
   // works there); name those files so the retry is understood, instead of a bare "merge failed".
-  if(!conflicts.length&&/would be overwritten by merge/.test(merged.reason)) {
+  if(!conflicts.length&&/(?:local changes|untracked working tree files|будут перезаписаны).*would be overwritten by merge|would be overwritten by merge/i.test(merged.reason)) {
     const overwritten=merged.reason.split("\n").filter((line)=>/^\t/.test(line)).map((line)=>line.trim()).filter(Boolean);
     if(overwritten.length) return {status:"conflict",commit:null,conflicts:overwritten,reason:"base checkout has uncommitted changes in files this attempt also changes"};
   }
@@ -375,11 +439,17 @@ async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:
   return true;
 }
 
-async function ensureInfoExclude(worktreePath:string, extraLines:string[]):Promise<void> {
-  const common=git(worktreePath,["rev-parse","--git-common-dir"]);
-  if(!common.ok) return;
-  const dir=common.stdout.trim();
-  const exclude=join(isAbsolute(dir)?dir:join(worktreePath,dir),"info","exclude");
+/** The checkout's real info/exclude, resolved by git itself: the repo root's, a linked worktree's shared one, or a subfolder workspace's. */
+async function infoExcludePath(checkoutPath:string):Promise<string|null> {
+  const path=git(checkoutPath,["rev-parse","--git-path","info/exclude"]);
+  if(!path.ok||!path.stdout.trim()) return null;
+  const resolved=path.stdout.trim();
+  return isAbsolute(resolved)?resolved:join(checkoutPath,resolved);
+}
+
+async function ensureInfoExclude(checkoutPath:string, extraLines:string[]):Promise<void> {
+  const exclude=await infoExcludePath(checkoutPath);
+  if(!exclude) return;
   const current=await readFile(exclude,"utf8").catch(()=>"");
   const missing=extraLines.filter((line)=>!current.split("\n").includes(line));
   if(!missing.length) return;
@@ -404,10 +474,8 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   await installBaseDependencies(input.basePath);
   const baseReal=await realpath(input.basePath).catch(()=>input.basePath);
   if(!(await stat(join(baseReal,"node_modules")).catch(()=>null))?.isDirectory()||await lstat(join(input.worktreePath,"node_modules")).catch(()=>null)) return {linked:[]};
-  const common=git(input.worktreePath,["rev-parse","--git-common-dir"]);
-  if(!common.ok) return {linked:[]};
-  const dir=common.stdout.trim();
-  const exclude=join(isAbsolute(dir)?dir:join(input.worktreePath,dir),"info","exclude");
+  const exclude=await infoExcludePath(input.worktreePath);
+  if(!exclude) return {linked:[]};
   const current=await readFile(exclude,"utf8").catch(()=>"");
   // Tool caches the checks write (vitest's .vite/ inside a package) stay out of the writer's commit and of main.
   const missing=["/node_modules","node_modules/",".vite/",".vitest/",".turbo/",".parcel-cache/"].filter((line)=>!current.split("\n").includes(line));

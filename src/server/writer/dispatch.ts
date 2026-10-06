@@ -12,12 +12,14 @@ import { sha256 } from "../../stages/contract";
 import { parseReadFirstHints, readFirstKindError } from "../../stages/read-first";
 import { validateTaskV2 } from "../../task-v2";
 import { validateOwnershipContract } from "../../verification/ownership";
-import { persistTaskFolder } from "../../verification/git-integrate";
+import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
+import { findSandboxUnsafeMissingExcludes, parseSandboxUnsafePatterns } from "../../stages/critique-coverage";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../critique-runs";
 import { recordStage } from "../stage-records";
 import { id, stringAt, valueAt } from "../values";
 import { buildTask } from "../writer-task";
 import { isAbsolute, relative, resolve } from "node:path";
+import { parseIntegrationGateSettings } from "../integration-gate";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
@@ -86,6 +88,23 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       return { runId, state:"rejected", reason, unapplied:[{ key:"task.project_cwd", reason }] };
     }
     valid.task.project_cwd = workspacePath;
+    const projectSettings = loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId));
+    const sandboxUnsafePatterns = parseSandboxUnsafePatterns(projectSettings["verification.sandbox_unsafe"]);
+    if (sandboxUnsafePatterns.length) {
+      for (const v of valid.task.verification ?? []) {
+        const missing = findSandboxUnsafeMissingExcludes(v.command, sandboxUnsafePatterns);
+        if (missing.length) {
+          const excludeFlags = missing.map((pat) => `--exclude "${pat}"`).join(" ");
+          return {
+            runId,
+            state: "validation_failed",
+            reason: `verification command "${v.command}" runs a full test suite without excluding sandbox-unsafe tests; add missing exclusions: ${excludeFlags}`,
+            missingExcludes: missing,
+            suggestedFlags: excludeFlags,
+          };
+        }
+      }
+    }
     createTask(db, { id:taskId, runId, kind:"bb", contract:valid.task });
     saveTaskPlan(db, taskId, canonicalPlan);
     const rejectPreflight = (reason:string):Record<string,unknown> => {
@@ -196,18 +215,19 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     try {
       await persistTaskFolder({
         taskId, plan:canonicalPlan,
+        // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
+        // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
+        exclude: async (line) => {
+          const ran=await host.call("runCommand",{
+            requestedHostId:config.hostId,cwd:workspacePath,command:appendExcludeCommand(line),timeoutSec:30,
+          },{hostId:config.hostId,timeoutMs:30_000});
+          if(ran.exitCode!==0) throw new Error(ran.stderr.trim()||`git exited ${ran.exitCode}`);
+        },
         writeFile: async (rel, content) => {
           await bb.sdk.files.write({
             hostId:config.hostId, rootPath:workspacePath, path:`${workspacePath}/${rel}`,
             content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
           });
-        },
-        readFile: async (rel) => {
-          const file = await bb.sdk.files.read({
-            hostId:config.hostId, rootPath:workspacePath, path:`${workspacePath}/${rel}`,
-          }).catch(() => null);
-          const content = valueAt(file, "content");
-          return typeof content === "string" ? content : null;
         },
       });
     } catch (cause) {
@@ -224,7 +244,19 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     });
     // The writer's brief carries the read stage's facts, not its open questions: those are the PM's to settle.
     const openQuestions = pmRead.summary ? pmReadBrief(pmRead.summary).openQuestions : [];
+    const settings = loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId));
+    const gateSettings = parseIntegrationGateSettings(settings);
+    const warnings: string[] = [];
+    if (gateSettings.gateCommand) {
+      for (const [idx, v] of (valid.task.verification ?? []).entries()) {
+        const cmd = v.command.trim();
+        if (/(?:^|[;&|]\s*)(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test)(?:\s|$)/i.test(cmd) && !cmd.includes("related") && !cmd.includes("-- ")) {
+          warnings.push(`Verification command [${idx}] looks like a full test suite while an integration gate is configured. Consider a focused check (e.g. \`npx vitest related <files> --run\`).`);
+        }
+      }
+    }
     return { runId, attemptId, writerThreadId:null, state:"queued", stages:listStageReceipts(db, runId, taskId),
+      ...(warnings.length ? { warnings } : {}),
       ...(openQuestions.length ? { pmReadOpenQuestions:openQuestions,
         pmReadNote:"The writer does not see these questions. If one changes what the writer should do, wait for this attempt's receipt and, if it is not accepted, dispatch again with the answer in the plan; otherwise the writer decides from the code." } : {}) };
   }

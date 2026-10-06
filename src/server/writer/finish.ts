@@ -14,6 +14,7 @@ import { closeWriterStages, recordGateEvaluation, recordStage } from "../stage-r
 import { stringAt } from "../values";
 import { needsHumanQuestion, outputText, providerLimitNotice, WRITER_SETUP_LINES, writerContextBlocks } from "../writer-task";
 import { isMainfixTask } from "../../validate-output";
+import { IntegrationGateRunner, parseIntegrationGateSettings } from "../integration-gate";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { join, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
@@ -56,6 +57,7 @@ export function postMergeRepair(onMain:TaskV2, red:Array<{ command:string; exitC
 
 export function createWriterFinish(ctx: ServerCore, services: Services) {
   const { bb, db, getThreadBounded, host } = ctx;
+  const integrationGateRunner = new IntegrationGateRunner(ctx, services);
 
   /** Who holds the checkout: the open attempt whose task the holder's commit message names. */
   function mergeHolder(runId: string, holder: string | null, since: number): BlockedBy {
@@ -542,7 +544,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           await saveBlockedBy(bb.storage.kv, input.attemptId, blockedBy);
           // The PM is woken when the holder settles, or in 10 minutes, without the owner.
           await relayFor(ctx).remind({ projectId:input.projectId, threadId:input.pmThreadId, inMinutes:10, watchThreadId:blockedBy.holderThreadId,
-            note:`Задача ${input.taskId} ждала слияния 15 минут: основную копию держит ${blockedBy.holderTaskId ?? "другая задача"}. Работа исполнителя закоммичена в его рабочем дереве; отправь задачу заново, когда держатель освободится.` })
+            note:`Lane Pilot: task ${input.taskId} waited 15 minutes for merge: main checkout is held by ${blockedBy.holderTaskId ?? "another task"}. Writer's work is committed in its worktree; send the task again once the holder is free.` })
             .catch((cause) => ctx.log(`merge-block reminder failed: ${cause instanceof Error ? cause.message : String(cause)}`));
           transitionAttempt(db, input.attemptId, "blocked", { reason });
           return { status:"blocked", reason, blockedBy, attemptId:input.attemptId, writerThreadId };
@@ -556,8 +558,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const asked = await askGuestsToCommit(bb, basePath, merged.conflicts, input.taskId).catch(() => [] as string[]);
           void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
             text:asked.length
-              ? `Lane Pilot: задача ${input.taskId} готова, но в основной папке ${basePath} лежат незакоммиченные правки в тех же файлах: ${files}. Lane Pilot попросил закоммитить их чаты, которые работают в этой папке: ${asked.map((thread) => `@thread:${thread}`).join(", ")}. Задача вольётся сама, как только файлы будут закоммичены (ждёт до 2 часов); отправлять её заново не нужно.`
-              : `Lane Pilot: задача ${input.taskId} готова, но в основной папке ${basePath} лежат чужие незакоммиченные правки в тех же файлах: ${files}. Чей это чат, Lane Pilot не знает: попроси владельца закоммитить или убрать их (или сделай это сам, если это работа этого чата). Задача вольётся сама, как только папка очистится (ждёт до 2 часов); отправлять её заново не нужно.` }] } as never).catch(() => undefined);
+              ? `Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot asked threads working in this folder to commit them: ${asked.map((thread) => `@thread:${thread}`).join(", ")}. The task will merge automatically once files are committed (waits up to 2 hours); no need to resend it.`
+              : `Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot does not know whose chat it is: ask the owner to commit or put them away (or do it yourself if this chat made them). The task will merge automatically once the directory is clean (waits up to 2 hours); no need to resend it.` }] } as never).catch(() => undefined);
           const since = Date.now();
           // Another task's merge may hold the checkout meanwhile: that is a wait too, never an acceptance without a merge.
           while ((dirtyBase(merged) || merged.status === "busy") && Date.now() - since < DIRTY_BASE_WAIT_MS && !ctx.isDisposed()) {
@@ -586,8 +588,30 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             attemptId:input.attemptId, writerThreadId };
         }
         integration = { status:merged.status, commit:merged.commit, conflicts:[] };
-        if (merged.status === "merged") void checkMainAfterMerge({ projectId:input.projectId, pmThreadId:input.pmThreadId, config:input.config,
-          runId:input.runId, task:input.task, basePath, worktreePath:bound.workspace_path });
+        if (merged.status === "merged") {
+          const settings = loadProjectSettings(db, input.projectId);
+          const gateSettings = parseIntegrationGateSettings(settings);
+          if (gateSettings.gateCommand) {
+            integrationGateRunner.noteMergedTask({
+              taskId: input.taskId,
+              commitSha: merged.commit ?? "",
+              threadId: input.writerThreadId,
+              attemptId: input.attemptId,
+              produced: candidate.produced,
+            });
+            void integrationGateRunner.maybeRunGate({
+              runId: input.runId,
+              projectId: input.projectId,
+              pmThreadId: input.pmThreadId,
+              basePath,
+              configHostId: input.config.hostId,
+              trigger: "merge",
+            });
+          } else {
+            void checkMainAfterMerge({ projectId:input.projectId, pmThreadId:input.pmThreadId, config:input.config,
+              runId:input.runId, task:input.task, basePath, worktreePath:bound.workspace_path });
+          }
+        }
       }
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
         attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration}});

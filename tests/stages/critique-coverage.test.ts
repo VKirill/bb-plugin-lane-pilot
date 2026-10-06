@@ -161,6 +161,16 @@ describe("bounded structural critique coverage scan",()=>{
     expect(flagged.map((finding)=>[finding.path,finding.severity])).toEqual([["tasks/by-name","error"],["tasks/by-dir","error"]]);
     expect(flagged[0]!.finding).toContain("node --test");
   });
+
+  it("flags bare whole-suite verification even on a single task",async()=>{
+    const root=await workspace();
+    const result=await scanCritiqueCoverage({workspacePath:root,plan:"Valid single task plan",tasks:[
+      {id:"single",lane:"writer",owns_paths:["src/a.ts"],has_verification:true,verification:[{command:"npx vitest run"}]},
+    ]});
+    expect(result.findings).toContainEqual(expect.objectContaining({
+      code:"verify_heavy",severity:"warning",path:"tasks/single",
+    }));
+  });
 });
 
 describe("depends_on findings",()=>{

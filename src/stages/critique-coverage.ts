@@ -54,10 +54,54 @@ function callableNames(source:string):string[] {
 }
 function heavyVerification(command:string):boolean {
   const value=command.trim();
+  if(!value)return false;
+  if(/(?:^|[;&|]\s*)(?:npx\s+)?vitest(?:\s+run)?(?:\s*$|\s+(?:--\S+|\s+)*$)/i.test(value))return true;
+  if(/(?:^|[;&|]\s*)jest(?:\s*$|\s+(?:--\S+|\s+)*$)/i.test(value))return true;
+  if(/(?:^|[;&|]\s*)pytest(?:\s*$|\s+(?:--\S+|\s+)*$)/i.test(value))return true;
+  if(/(?:^|[;&|]\s*)npm\s+run\s+check(?:\s|$)/i.test(value))return true;
   if(!/(?:^|[;&|]\s*)(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:build|test)(?:\s|$)/i.test(value))return false;
   if(value.includes(" -- ")||/\s--\s+\S/.test(value))return false;
   if(/(?:test:unit|vitest|jest).+\.(?:ts|tsx|js|mjs|cjs|py)\b/i.test(value))return false;
   return true;
+}
+
+export function parseSandboxUnsafePatterns(settingValue: unknown): string[] {
+  if (Array.isArray(settingValue)) {
+    return settingValue.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof settingValue === "string") {
+    const trimmed = settingValue.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean);
+      } catch {}
+    }
+    return trimmed.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+export function findSandboxUnsafeMissingExcludes(command: string, patterns: readonly string[]): string[] {
+  if (!patterns.length) return [];
+  const value = command.trim();
+  if (!value) return [];
+  const isVitestCommand = /(?:^|[;&|]\s*)(?:npx\s+)?vitest(?:\s+run)?(?:\s+|$)/i.test(value);
+  if (!isVitestCommand) return [];
+  // If target arguments contain test files outside of --exclude/-x, it's a focused check
+  const strippedOfExcludes = value.replace(/(?:--exclude(?:=|\s+)|-x\s+)(?:'[^']+'|"[^"]+"|\S+)/g, "");
+  if (/(?:test:unit|vitest|jest).+\.(?:ts|tsx|js|mjs|cjs|py)\b/i.test(strippedOfExcludes)) return [];
+
+  // Parse existing --exclude flags
+  // Flags can be --exclude <val>, --exclude=<val>, or -x <val>
+  const excludeMatches = [...value.matchAll(/(?:--exclude(?:=|\s+)|-x\s+)(?:'([^']+)'|"([^"]+)"|(\S+))/g)];
+  const existingExcludes = new Set<string>();
+  for (const match of excludeMatches) {
+    const glob = match[1] ?? match[2] ?? match[3];
+    if (glob) existingExcludes.add(glob.trim());
+  }
+  return patterns.filter((pattern) => !existingExcludes.has(pattern));
 }
 const BINARY=/\.(?:woff2?|ttf|otf|eot|png|jpe?g|gif|webp|avif|ico|pdf|zip|gz|mp3|mp4|mov|wasm)$/i;
 /** Expected outputs a model cannot author (fonts, images, archives, media, wasm). */
@@ -175,7 +219,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
     add(findings,"owns_empty",`tasks/${task.id??"unknown"}`,`Write task ${task.id??"unknown"} has no explicit owned paths`,"error");
   for(const task of writers) if(!task.has_verification)
     add(findings,"verify_missing",`tasks/${task.id??"unknown"}`,`Write task ${task.id??"unknown"} has no verification command` ,"error");
-  if(input.tasks.length>1)for(const task of input.tasks)for(const [index,verification] of (task.verification??[]).entries()) {
+  for(const task of input.tasks)for(const [index,verification] of (task.verification??[]).entries()) {
     const command=verification.command??"";
     if((verification.timeout_sec??0)>900||heavyVerification(command))
       add(findings,"verify_heavy",`tasks/${task.id??"unknown"}`,`Task ${task.id??"unknown"} verification[${index}] looks like a full-package check; keep the dispatch check focused and reserve broad validation for the integration gate`,"warning");

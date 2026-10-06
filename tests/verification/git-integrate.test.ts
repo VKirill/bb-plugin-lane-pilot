@@ -2,7 +2,11 @@ import { execFileSync, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+
+// These tests build real repositories and worktrees; inside Lane Pilot's sandboxed check the whole suite runs
+// about 2.5x slower and vitest's 5 s default cut them off (2026-10-06 log: 12 uniform 5000 ms timeouts).
+vi.setConfig({ testTimeout: 120_000 });
 import { integrateWorktree, prepareWorktree, withBaseLock } from "../../src/verification/git-integrate";
 import { gitOwnershipChangedPaths } from "../../src/verification/git-ownership";
 
@@ -321,7 +325,7 @@ it("saves a released worktree's uncommitted edits and unshared commits as a patc
 });
 
 it("writes the task folder, excludes it once, copies it into both worktree paths, and does not commit it", async () => {
-  const { persistTaskFolder, prepareWorktree, createWorktree, TASK_FOLDER_EXCLUDE } = await import("../../src/verification/git-integrate");
+  const { appendExcludeCommand, persistTaskFolder, prepareWorktree, createWorktree, TASK_FOLDER_EXCLUDE } = await import("../../src/verification/git-integrate");
   const { mkdir, readFile, writeFile } = await import("node:fs/promises");
   const { dirname } = await import("node:path");
   const { base, worktree } = await repo();
@@ -329,12 +333,12 @@ it("writes the task folder, excludes it once, copies it into both worktree paths
   const plan = "Do the thing.\n";
   await persistTaskFolder({
     taskId, plan,
+    exclude: async (line) => { execFileSync("sh", ["-c", appendExcludeCommand(line)], { cwd: base }); },
     writeFile: async (rel, content) => {
       const path = join(base, rel);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, content);
     },
-    readFile: async (rel) => readFile(join(base, rel), "utf8").catch(() => null),
   });
   expect(await readFile(join(base, ".agents", "plans", "items", taskId, "PLAN.md"), "utf8")).toBe(plan);
   const own = join(base, "..", "own", "main");

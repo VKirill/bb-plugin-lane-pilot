@@ -1,5 +1,6 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStats, routingHint, setRuleAudience, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
+import { acceptanceStats } from "../../acceptance-stats";
 import { rpcContract } from "../../contracts";
 import { loadProjectSettings } from "../../database";
 import { parseDocsSettings } from "../../stages/docs";
@@ -87,9 +88,11 @@ export function insightsRpc(ctx: ServerCore, services: Services) {
     start_rule_scan: async ({ projectId, locale }) => services.ruleScan.startScan(projectId, locale),
     save_rules_analyzer: async ({ projectId, analyzer }) => ({ analyzer: await services.ruleScan.saveAnalyzer(projectId, analyzer) }),
     rule_set_audience: async ({ projectId, ruleId, audience, always }) => ({ ok: setRuleAudience(db, projectId, ruleId, audience, always) }),
+    /** Acceptance per project and ISO week: first-try, eventual, attempts per accepted task, redispatch families, causes. */
+    acceptance_stats: async ({ days, projectId }) => acceptanceStats(db, days, projectId),
     decide_rule_proposal: async ({ projectId, id, action, rule }) => {
       if (action === "accept") return { proposal: ruleView(acceptRuleProposal(db, projectId, id, rule ?? getRuleProposal(db, projectId, id)?.rule ?? "")) };
       return { proposal: ruleView(action === "reject" ? rejectRuleProposal(db, projectId, id) : revokeRule(db, projectId, id)) };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_routing_hint" | "list_rule_proposals" | "decide_rule_proposal" | "start_rule_scan" | "save_rules_analyzer" | "docs_overview" | "memory_records_list" | "memory_record_delete" | "rule_set_audience">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_routing_hint" | "list_rule_proposals" | "decide_rule_proposal" | "start_rule_scan" | "save_rules_analyzer" | "docs_overview" | "memory_records_list" | "memory_record_delete" | "rule_set_audience" | "acceptance_stats">;
 }

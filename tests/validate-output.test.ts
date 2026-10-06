@@ -98,3 +98,21 @@ it("meets a named output the attempt inherited, once it produced its other outpu
     preexisting: ["apps/site/src/owner-edit.ts"],
   })).toMatchObject({ ok: false, state: "validation_failed", reason: "missing expected_outputs: apps/site/src/b.ts" });
 });
+
+it("cleans ANSI escapes and truncates stderr to 300 characters in failure reason", () => {
+  const t = task(["apps/marketing/app/components/greeting-cards/CardMockCard.vue"]);
+  const rawStderr = "\x1b[31mFAIL\x1b[39m " + "x".repeat(400);
+  const result = classifyWriterOutput({
+    task: t,
+    produced: ["apps/marketing/app/components/greeting-cards/CardMockCard.vue"],
+    contents: { "apps/marketing/app/components/greeting-cards/CardMockCard.vue": "content" },
+    verifies: [{ command: "vitest run", exitCode: 1, stdout: "", stderr: rawStderr }],
+  });
+  expect(result.ok).toBe(false);
+  if (!result.ok) {
+    expect(result.reason).not.toContain("\x1b");
+    const tail = result.reason.replace("verification failed (vitest run): ", "");
+    expect(tail.length).toBeLessThanOrEqual(300);
+    expect(tail.startsWith("FAIL")).toBe(true);
+  }
+});

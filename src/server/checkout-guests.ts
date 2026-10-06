@@ -50,7 +50,7 @@ export async function noteCheckoutGuest(bb: BbPluginApi, db: LanePilotDatabase, 
   if (await bb.storage.kv.get(NOTICED(threadId, run.id)).catch(() => null)) return;
   await bb.storage.kv.set(NOTICED(threadId, run.id), now as never);
   await bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-    text:`Lane Pilot: в этой папке (${resolve(path)}) сейчас работает координатор разработки — его исполнители вливают свою работу в main этой папки. Коммить свои правки сразу, как закончишь каждое изменение: незакоммиченные правки в тех же файлах не дают влить их работу. Если работа долгая и коммитить рано, делай её в отдельной рабочей копии (git worktree), а не в этой папке.` }] } as never).catch(() => undefined);
+    text:`Lane Pilot: a development orchestrator is working in this directory (${resolve(path)}) — its writers merge their work into main here. Commit your changes immediately after finishing each change: uncommitted changes in the same files prevent merging their work. If your work takes long and it is too early to commit, do it in a separate git worktree instead of this directory.` }] } as never).catch(() => undefined);
 }
 
 /**
@@ -67,7 +67,7 @@ export async function askGuestsToCommit(bb: BbPluginApi, path: string, files: st
     if (typeof last === "number" && now - last < ASK_EVERY_MS) { asked.push(guest.threadId); continue; }
     await bb.storage.kv.set(ASKED(guest.threadId, path), now as never);
     const sent = await bb.sdk.threads.send({ threadId:guest.threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-      text:`Lane Pilot: в папке ${resolve(path)} лежат незакоммиченные правки в файлах ${files.join(", ")}. Из-за них не вливается готовая задача ${taskId} координатора разработки. Если это твои правки и они готовы — закоммить их сейчас. Если не готовы — закоммить, как будут готовы. Никогда не выбрасывай и не откатывай правки ради этого (никаких git checkout/restore/reset/stash drop): если закоммитить не можешь или не должен, оставь их как есть и скажи владельцу. Если правки не твои — не трогай их и ответь, что они не твои. Lane Pilot вольёт задачу сам, как только файлы будут закоммичены, и подождёт до 2 часов.` }] } as never).then(() => true, () => false);
+      text:`Lane Pilot: there are uncommitted changes in ${resolve(path)} in files: ${files.join(", ")}. Because of them, accepted task ${taskId} from the development orchestrator cannot be merged. If these are your changes and they are ready, commit them now. If not ready, commit as soon as they are ready. Never drop or revert changes for this (no git checkout/restore/reset/stash drop): if you cannot or should not commit, leave them as is and tell the owner. If the changes are not yours, do not touch them and answer that they are not yours. Lane Pilot will merge the task automatically once the files are committed, and will wait up to 2 hours.` }] } as never).then(() => true, () => false);
     if (sent) asked.push(guest.threadId);
   }
   return asked;
