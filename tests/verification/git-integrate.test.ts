@@ -319,3 +319,40 @@ it("saves a released worktree's uncommitted edits and unshared commits as a patc
   expect(await readFile(join(dir, "env_x-commits", commits[0]!), "utf8")).toContain("rejected commit");
   expect((await snapshotWorktree({ worktreePath: await worktree("clean"), name: "env_y", dir })).status).toBe("clean");
 });
+
+it("writes the task folder, excludes it once, copies it into both worktree paths, and does not commit it", async () => {
+  const { persistTaskFolder, prepareWorktree, createWorktree, TASK_FOLDER_EXCLUDE } = await import("../../src/verification/git-integrate");
+  const { mkdir, readFile, writeFile } = await import("node:fs/promises");
+  const { dirname } = await import("node:path");
+  const { base, worktree } = await repo();
+  const taskId = "lptask_folder";
+  const plan = "Do the thing.\n";
+  await persistTaskFolder({
+    taskId, plan,
+    writeFile: async (rel, content) => {
+      const path = join(base, rel);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, content);
+    },
+    readFile: async (rel) => readFile(join(base, rel), "utf8").catch(() => null),
+  });
+  expect(await readFile(join(base, ".agents", "plans", "items", taskId, "PLAN.md"), "utf8")).toBe(plan);
+  const own = join(base, "..", "own", "main");
+  const created = await createWorktree({ basePath: base, targetPath: own, name: "lpattempt_folder" });
+  expect(created.status).toBe("ready");
+  const flat = await worktree("flat");
+  await prepareWorktree({ basePath: base, worktreePath: own });
+  await prepareWorktree({ basePath: base, worktreePath: flat });
+  await prepareWorktree({ basePath: base, worktreePath: own });
+  expect(await readFile(join(own, ".agents", "plans", "items", taskId, "PLAN.md"), "utf8")).toBe(plan);
+  expect(await readFile(join(flat, ".agents", "plans", "items", taskId, "PLAN.md"), "utf8")).toBe(plan);
+  const exclude = await readFile(join(base, ".git", "info", "exclude"), "utf8");
+  expect(exclude.split("\n").filter((line) => line === TASK_FOLDER_EXCLUDE)).toEqual([TASK_FOLDER_EXCLUDE]);
+  expect(git(base, "status", "--porcelain").trim()).toBe("");
+  expect(git(own, "status", "--porcelain").trim()).toBe("");
+  expect(git(flat, "status", "--porcelain").trim()).toBe("");
+  await writeFile(join(own, "lib.ts"), "export {};\n");
+  expect((await integrateWorktree({ basePath: base, worktreePath: own, message: "task folder" })).status).toBe("merged");
+  expect(git(base, "show", "--stat", "--format=", "HEAD^2")).not.toContain(".agents/plans/items");
+  expect(git(base, "ls-files", ".agents/plans/items")).toBe("");
+});

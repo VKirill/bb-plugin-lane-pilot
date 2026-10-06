@@ -16,10 +16,10 @@ import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorks
 import { fullAccessSpawn } from "../pm-spawn";
 import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
 import { holderSpawnKey, stringAt } from "../values";
-import { planDigest, writerPrompt } from "../writer-task";
+import { planDigest, writerPrompt, type TaskFolderBrief } from "../writer-task";
 import { areaHistoryText, loadArea } from "./sticky";
 import { dirtInsideWorkspace } from "../../verification/git-ownership";
-import { workspaceGitLayout } from "../../verification/git-integrate";
+import { taskFolderRel, workspaceGitLayout } from "../../verification/git-integrate";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
@@ -45,6 +45,26 @@ function inPlaceEnvironment(hostId:string, workspacePath:string, environmentId:s
   return environmentId
     ? { type:"reuse", environmentId }
     : { type:"host", hostId, workspace:{ type:"unmanaged", path:workspacePath } };
+}
+
+async function listTaskFolder(bb:{sdk:{files:{read(args:{hostId:string;rootPath:string;path:string}):Promise<unknown>;listPaths(args:{hostId:string;path:string;includeFiles:boolean;includeDirectories:boolean;includeHidden:boolean;limit:number}):Promise<{paths?:Array<{kind?:string;name?:string;path?:string}>}>}}},
+  hostId:string, workspacePath:string, taskId:string):Promise<TaskFolderBrief|null> {
+  const rel = taskFolderRel(taskId);
+  if (!rel) return null;
+  const file = await bb.sdk.files.read({ hostId, rootPath:workspacePath, path:resolve(workspacePath, rel, "PLAN.md") }).catch(() => null);
+  const content = file && typeof file === "object" ? (file as { content?:unknown }).content : null;
+  if (typeof content !== "string") return null;
+  const files = new Set<string>(["PLAN.md"]);
+  const listed = await bb.sdk.files.listPaths({
+    hostId, path:resolve(workspacePath, rel), includeFiles:true, includeDirectories:false, includeHidden:true, limit:100,
+  }).catch(() => null);
+  for (const entry of listed?.paths ?? []) {
+    if (entry.kind !== "file") continue;
+    const name = typeof entry.name === "string" && entry.name ? entry.name
+      : typeof entry.path === "string" ? entry.path.replace(/^.*\//, "") : "";
+    if (name && !name.includes("..") && !name.includes("/")) files.add(name);
+  }
+  return { path:`${rel}/`, files:[...files].sort() };
 }
 
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
@@ -349,9 +369,10 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       }
       const helperSnapshot = requireHelperSpawn({ bb, db, projectId:input.projectId, runId:input.runId });
       const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
+      const taskFolder = await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
       const writerBrief = writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
         ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
-        : undefined,writerAgent,input.pmReadContext ?? "",rulesText,input.previousAttempt ?? "");
+        : undefined,writerAgent,input.pmReadContext ?? "",rulesText,input.previousAttempt ?? "",taskFolder);
       const existingTrace = getReasoningTrace(db, input.attemptId);
       if (existingTrace) {
         saveReasoningTrace(db, {

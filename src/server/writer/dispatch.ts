@@ -12,6 +12,7 @@ import { sha256 } from "../../stages/contract";
 import { parseReadFirstHints, readFirstKindError } from "../../stages/read-first";
 import { validateTaskV2 } from "../../task-v2";
 import { validateOwnershipContract } from "../../verification/ownership";
+import { persistTaskFolder } from "../../verification/git-integrate";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../critique-runs";
 import { recordStage } from "../stage-records";
 import { id, stringAt, valueAt } from "../values";
@@ -191,6 +192,26 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason});
       setRunState(db,runId,"blocked");refreshRun(runId);
       return {runId,taskId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
+    }
+    try {
+      await persistTaskFolder({
+        taskId, plan:canonicalPlan,
+        writeFile: async (rel, content) => {
+          await bb.sdk.files.write({
+            hostId:config.hostId, rootPath:workspacePath, path:`${workspacePath}/${rel}`,
+            content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
+          });
+        },
+        readFile: async (rel) => {
+          const file = await bb.sdk.files.read({
+            hostId:config.hostId, rootPath:workspacePath, path:`${workspacePath}/${rel}`,
+          }).catch(() => null);
+          const content = valueAt(file, "content");
+          return typeof content === "string" ? content : null;
+        },
+      });
+    } catch (cause) {
+      bb.log.warn(`Lane Pilot could not persist task folder for ${taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
     for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
       recordStage(db, { runId, taskId, stageId, state:"pending", input:canonicalPlan });

@@ -24,6 +24,34 @@ export class BaseLockBusyError extends Error {
 
 const FALLBACK_IDENTITY = ["-c", "user.name=Lane Pilot writer", "-c", "user.email=lane-pilot@localhost"];
 
+/** Lane Pilot's per-task folder; never committed, never produced, never an owns_paths hit. */
+export const TASK_FOLDER_EXCLUDE = ".agents/plans/items/";
+
+export function taskFolderRel(taskId:string):string|null {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId)) return null;
+  return `.agents/plans/items/${taskId}`;
+}
+
+export function withTaskFolderExclude(text:string):string {
+  if (text.split("\n").includes(TASK_FOLDER_EXCLUDE)) return text.endsWith("\n") || text === "" ? text : `${text}\n`;
+  return `${text && !text.endsWith("\n") ? `${text}\n` : text}${TASK_FOLDER_EXCLUDE}\n`;
+}
+
+export async function persistTaskFolder(input:{
+  taskId:string; plan:string;
+  writeFile:(relativePath:string, content:string)=>Promise<void>;
+  readFile:(relativePath:string)=>Promise<string|null>;
+}):Promise<{folder:string}|null> {
+  const folder = taskFolderRel(input.taskId);
+  if (!folder) return null;
+  const exclude = await input.readFile(".git/info/exclude");
+  const next = withTaskFolderExclude(exclude ?? "");
+  if (next !== (exclude ?? "")) await input.writeFile(".git/info/exclude", next);
+  const plan = input.plan.endsWith("\n") ? input.plan : `${input.plan}\n`;
+  await input.writeFile(`${folder}/PLAN.md`, plan);
+  return { folder };
+}
+
 function git(cwd:string,args:string[]) {
   const result=spawnSync("git",args,{cwd,encoding:"utf8",timeout:60_000,maxBuffer:4_000_000,windowsHide:true});
   if(result.error) return {ok:false as const,stdout:"",reason:result.error.message};
@@ -347,7 +375,32 @@ async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:
   return true;
 }
 
+async function ensureInfoExclude(worktreePath:string, extraLines:string[]):Promise<void> {
+  const common=git(worktreePath,["rev-parse","--git-common-dir"]);
+  if(!common.ok) return;
+  const dir=common.stdout.trim();
+  const exclude=join(isAbsolute(dir)?dir:join(worktreePath,dir),"info","exclude");
+  const current=await readFile(exclude,"utf8").catch(()=>"");
+  const missing=extraLines.filter((line)=>!current.split("\n").includes(line));
+  if(!missing.length) return;
+  await mkdir(join(exclude,".."),{recursive:true});
+  await appendFile(exclude,`${current&&!current.endsWith("\n")?"\n":""}${missing.join("\n")}\n`);
+}
+
+async function copyTaskItems(basePath:string, worktreePath:string):Promise<void> {
+  const src=join(basePath,".agents","plans","items");
+  if(!(await stat(src).catch(()=>null))?.isDirectory()) return;
+  const dest=join(worktreePath,".agents","plans","items");
+  const srcReal=await realpath(src).catch(()=>src);
+  const destReal=await realpath(dest).catch(()=>dest);
+  if(srcReal===destReal) return;
+  await mkdir(join(dest,".."),{recursive:true});
+  await cp(src,dest,{recursive:true,dereference:false,errorOnExist:false,force:true});
+}
+
 export async function prepareWorktree(input:{basePath:string;worktreePath:string}):Promise<{linked:string[]}> {
+  await ensureInfoExclude(input.worktreePath, [TASK_FOLDER_EXCLUDE]);
+  await copyTaskItems(input.basePath, input.worktreePath);
   await installBaseDependencies(input.basePath);
   const baseReal=await realpath(input.basePath).catch(()=>input.basePath);
   if(!(await stat(join(baseReal,"node_modules")).catch(()=>null))?.isDirectory()||await lstat(join(input.worktreePath,"node_modules")).catch(()=>null)) return {linked:[]};

@@ -477,7 +477,7 @@ it("a handoff to a new thread keeps the Lane Pilot profile of the chat it contin
   const handoff = (threadId: string, source: string) => {
     const text = `Continue from @thread:${source}\n\nу нас платёжка уже живая`;
     const ctx = context(threadId, text);
-    (ctx.input.blocks as Array<{ mentions: unknown[] }>)[0]!.mentions = [{ start: 14, end: 14 + `@thread:${source}`.length,
+    (ctx.input.blocks as unknown as Array<{ mentions: unknown[] }>)[0]!.mentions = [{ start: 14, end: 14 + `@thread:${source}`.length,
       resource: { kind: "thread", threadId: source, projectId: "project_a", label: "Инструментарий" } }];
     return ctx;
   };
@@ -487,7 +487,7 @@ it("a handoff to a new thread keeps the Lane Pilot profile of the chat it contin
   await hook(handoff("thr_plainnext", "thr_plainsource"));
   expect(await fake.harness.behavior.resolveProviderEnv("claude-code", { threadId: "thr_plainnext", hostId: "host_a", projectId: "project_a" })).toEqual([]);
   const mention = context("thr_mentions", "look at @thread:thr_pmsource");
-  (mention.input.blocks as Array<{ mentions: unknown[] }>)[0]!.mentions = [{ start: 8, end: 28, resource: { kind: "thread", threadId: "thr_pmsource", projectId: "project_a", label: "PM" } }];
+  (mention.input.blocks as unknown as Array<{ mentions: unknown[] }>)[0]!.mentions = [{ start: 8, end: 28, resource: { kind: "thread", threadId: "thr_pmsource", projectId: "project_a", label: "PM" } }];
   await hook(mention);
   expect(await fake.harness.behavior.resolveProviderEnv("claude-code", { threadId: "thr_mentions", hostId: "host_a", projectId: "project_a" })).toEqual([]);
 });

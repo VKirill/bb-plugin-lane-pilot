@@ -201,7 +201,7 @@ describe("role profiles", () => {
     bindRole({ capability: "required", advertised: adv, snapshot, providerId, role });
 
   it("gives a writer two coding skills and only the mandatory plugins and MCP", () => {
-    const policy = (bind("writer", "codex") as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
+    const policy = (bind("writer", "codex") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
     expect(policy.skills.names).toEqual(["writer-practices", "karpathy-guidelines"]);
     expect(policy.bbPlugins.names).toEqual(["environment-project-checkout", "project-folders"]);
     expect(policy.mcpServers.names).toEqual(["bb-bridge"]);
@@ -209,10 +209,10 @@ describe("role profiles", () => {
   });
 
   it("gives the docs maintainer docs skills and no plugins, and the browser check the browser plugin", () => {
-    const docs = (bind("docs-maintainer", "claude-code") as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
+    const docs = (bind("docs-maintainer", "claude-code") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
     expect(docs.bbPlugins.names).toEqual(["environment-project-checkout", "project-folders"]);
     expect(docs.skills.names).toContain("docs-maintain");
-    const qa = (bind("browser-qa", "claude-code") as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
+    const qa = (bind("browser-qa", "claude-code") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
     expect(qa.bbPlugins.names).toContain("browser-automation");
   });
 

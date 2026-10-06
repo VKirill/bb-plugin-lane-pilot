@@ -209,7 +209,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           },
         },
         // A repair goes as a message into the writer's own thread: recorded like a spawn of that same writer, with a new turn.
-        send:async (args:{threadId:string;input:Array<{text?:string}>}) => {
+        send:(async (args:{threadId:string;input:Array<{text?:string}>}) => {
           if(throwOnRepairSpawn) throw new Error("repair_spawn_crashed");
           const original=spawned.find((row)=>row.threadIdAssigned===args.threadId) ?? {};
           const meta=(threadMeta.get(args.threadId) as Record<string,unknown>|undefined) ?? {};
@@ -218,7 +218,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           spawned.push({...original,via:"send",threadIdAssigned:args.threadId,prompt:args.input[0]?.text,pluginMetadata:{...(original.pluginMetadata as Record<string,unknown>??{}),repairRound}});
           followUps.set(args.threadId,{at:Date.now(),seq:(followUps.get(args.threadId)?.seq??2)+3});
           return {} as never;
-        },
+        }) as never,
         stop:async ({ threadId }:{threadId:string}) => { stopCalls.push(threadId); return {ok:true} as never; },
         output:async ({ threadId }) => threadId === "pm-read-thread" ? {output:pmReadOutput} : threadId === "docs-thread" ? {output:docsControl.output??JSON.stringify([{path:"docs/fixture.md",expectedSha256:createHash("sha256").update(docsContent).digest("hex"),content:"# Updated documentation fixture\n"}])} : threadId === "onboarding-thread" ? {output:onboardingOutput??JSON.stringify({summary:"Add a concise project guide",edits:[{path:"docs/fixture.md",expectedSha256:createHash("sha256").update(docsContent).digest("hex"),content:"# Onboarding guide\n"}]})} : threadId === "memory-thread" ? {output:memoryOutput} : threadId === "night-thread" ? {output:nightOutput} : threadId === "night-fix-thread" ? {output:nightFixOutput} : threadId === "gate-triage-thread" ? {output:JSON.stringify({decision:"recommendations",summary:"Verification failures need receipt inspection.",recommendations:[{stageId:"verification",state:"failed",count:1,action:"Inspect the verification receipt for the affected task."}]})} : threadId === "critic-thread"
           ? { output:critiqueOutput } : threadId === "specialist-thread"

@@ -842,7 +842,7 @@ describe("BB writer validation on the server path", () => {
       pluginId:"lane-pilot",
       sdk:{
         threads:{
-          getPluginMetadata: async ({ threadId }) => threadId === pmThreadId
+          getPluginMetadata: async ({ threadId }: { threadId:string }) => threadId === pmThreadId
             ? { role:"pm", lanePilotRunId:"run-t" }
             : { role:"writer" },
           spawn: async () => ({ id:"writer-real" }),
@@ -865,7 +865,7 @@ describe("BB writer validation on the server path", () => {
         },
         providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
         files:{
-          read: async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" }
+          read: async ({ path }: { path:string }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" }
             : path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
           write: async () => ({ ok:true }),
         },
@@ -992,7 +992,7 @@ describe("BB writer validation on the server path", () => {
         output: async () => { throw new Error("synthetic output read failure"); },
         list: async () => [] as never,
       }, providers:{ list:listLiveWriterProviders, models:listLiveWriterModels },
-      files:{ read:async ({path})=>path.endsWith("README.md")?{content:"task read-first fixture\n"}:{content:null} } },
+      files:{ read:async ({path})=>path.endsWith("README.md")?{content:"task read-first fixture\n"}:{content:null}, write:async () => ({ ok:true }) } },
       experimental_callHostRpc: (call) => {
         const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { taskV2Schema } from "../src/contracts";
 import { compactContract, pathAnchors, pmReadBrief, writerMemory } from "../src/writer-brief";
-import { writerPrompt } from "../src/server/writer-task";
+import { stickyTurnPrompt, writerPrompt } from "../src/server/writer-task";
 
 // The real brief SelfyStudio's writer got for gc-pages-polish-2 on 2026-10-02 (4130 tokens, 64% memory).
 const original = readFileSync(join(__dirname, "fixtures/writer-brief-gc-pages-polish-2.md"), "utf8");
@@ -58,6 +58,30 @@ describe("writer brief", () => {
     expect(brief).toMatch(/<project_memory>\n- [^\n]+\n<\/project_memory>/);
     expect(brief).toMatch(/<pm_read_facts>[\s\S]+<\/pm_read_facts>/);
     expect(writerMemory([{ kind:"core", concepts:[], content:"Use npm ci.\n\nProject rules confirmed by the owner: delete docs/" }], task)).toBe("- Use npm ci. Project rules confirmed by the owner: delete docs/");
+  });
+
+  it("points at the task folder when it exists and stays the same when it does not", () => {
+    const without = writerPrompt(task, writerMemory(notes, task), packet, undefined, "Lane Pilot writer", pmRead, "");
+    const stickyWithout = stickyTurnPrompt({ kind: "next-task", task });
+    expect(without).not.toContain(".agents/plans/items/");
+    expect(stickyWithout).not.toContain(".agents/plans/items/");
+    expect(without).toContain("Task contract:");
+    expect(without).toContain(task.objective);
+    const folder = { path: `.agents/plans/items/${task.id}/`, files: ["PLAN.md", "notes.md"] };
+    const withFolder = writerPrompt(task, writerMemory(notes, task), packet, undefined, "Lane Pilot writer", pmRead, "", "", folder);
+    const sticky = stickyTurnPrompt({ kind: "retry", task, taskFolder: folder });
+    expect(withFolder).toContain(".agents/plans/items/");
+    expect(withFolder).toContain(`- PLAN.md`);
+    expect(withFolder).toContain(`- notes.md`);
+    expect(withFolder).toContain("the compact contract below stays the source of truth");
+    expect(withFolder).toContain("Task contract:");
+    expect(withFolder).toContain(task.objective);
+    expect(withFolder).toContain(without.slice(without.indexOf("Task contract:")));
+    expect(sticky).toContain(".agents/plans/items/");
+    expect(sticky).toContain(`- PLAN.md`);
+    expect(sticky).toContain(`- notes.md`);
+    expect(sticky).toContain("the compact contract below stays the source of truth");
+    expect(sticky).toContain(task.objective);
   });
 
   it("no write path stores a credential or an instruction override", async () => {
