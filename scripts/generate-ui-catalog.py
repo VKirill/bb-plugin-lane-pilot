@@ -1189,9 +1189,9 @@ def main() -> None:
                 options, default_value = ["clamp 1-10"], "5"
         elif storage_key == "adoc.040":
             decision, ch = "editable", "OWN"
-            rationale = "Native workspace routing: in_place uses the configured path; worktree provisions a managed BB worktree; auto selects managed isolation"
+            rationale = "Native workspace routing: auto gives every writer attempt its own git worktree; worktree provisions one managed BB worktree for the run"
             evidence = "server.ts:596"
-            options, default_value = ["in_place", "worktree", "auto"], "auto"
+            options, default_value = ["worktree", "auto"], "auto"
         elif storage_key in {"adoc.041", "adoc.042"}:
             decision, ch = "editable", "OWN"
             rationale = "Native task-level workspace router applies this setting before writer spawn and persists the decision with attempt CAS"
@@ -1546,7 +1546,7 @@ def main() -> None:
         elif row["storageKey"] == "adoc.040":
             field_en[f"field_{row['id']}"] = "Workspace isolation"
             field_ru[f"field_{row['id']}"] = "Изоляция рабочей копии"
-            field_ru[f"reason_{row['id']}"] = "Настройка Lane Pilot: in_place использует выбранный путь, worktree создаёт управляемую BB рабочую копию, auto выбирает изоляцию"
+            field_ru[f"reason_{row['id']}"] = "Настройка Lane Pilot: auto даёт каждой попытке исполнителя свою рабочую копию git, worktree создаёт одну управляемую BB рабочую копию на весь запуск"
         elif row["storageKey"] == "run.gate":
             field_en[f"field_{row['id']}"] = "Run gate"
             field_ru[f"field_{row['id']}"] = "Ограничение запуска"

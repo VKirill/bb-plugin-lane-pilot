@@ -265,8 +265,8 @@ describe("Lane Pilot UI", { timeout: 20_000 }, () => {
     expect(slot.getByTestId("help-dialog-adoc.040").textContent).toContain(en.workspaceModeHelp);
     expect(slot.getByTestId("help-dialog-adoc.040").textContent).not.toContain("in_place");
     fireEvent.click(field.querySelector("button[role='combobox']") as HTMLButtonElement);
-    fireEvent.click(slot.getByRole("option", { name: en.enumWorkspaceInPlace }));
-    await waitFor(() => expect(saved).toContainEqual(expect.objectContaining({ key:"adoc.040", value:"in_place" })));
+    fireEvent.click(slot.getByRole("option", { name: en.enumWorkspaceWorktree }));
+    await waitFor(() => expect(saved).toContainEqual(expect.objectContaining({ key:"adoc.040", value:"worktree" })));
     expect(slot.getByTestId("browser-qa-host-select")).toBeTruthy();
     expect(slot.getByTestId("browser-qa-host").textContent).not.toContain(en.browserQaHostNone);
     slot.lifecycle.unmount();
