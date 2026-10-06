@@ -6,8 +6,10 @@
  * - infra: the machine (disk, git lock, host offline); parked and retried with a backoff.
  * - contract, judgment: the PM's to fix or answer; never retried as is.
  * - budget: a run hit run.max_*; uncharged, not parked, not retried.
+ * - limit: the writer's provider takes no work now (plan, quota, credits, or its breaker is open); uncharged, the task
+ *   moves down the writer chain at once.
  */
-export type FailureClass = "task" | "provider" | "merge" | "harness" | "infra" | "contract" | "judgment" | "budget";
+export type FailureClass = "task" | "provider" | "merge" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit";
 
 import { NO_ANSWER_REASON } from "./validate-output";
 
@@ -20,6 +22,7 @@ const INFRA = /ENOSPC|no space left|disk_low|index\.lock|host is not connected|h
 const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing|reconcile_|attempt_worktree_|attempt_workspace_|writer reconcile|its retry was lost|sticky_send_failed|sticky_failed/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const BUDGET = /^run_budget_exceeded:/;
+const LIMIT = /writer_provider_limit:|^writer_provider_unavailable:breaker_open/;
 // An empty_output is a provider fault only when the writer gave no answer; an answer with no files is the task's.
 const PROVIDER_STATES = new Set(["provider_error", "timeout"]);
 
@@ -27,6 +30,7 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   const text = reason ?? "";
   if (JUDGMENT.test(text)) return "judgment";
   if (BUDGET.test(text)) return "budget";
+  if (LIMIT.test(text)) return "limit";
   if (MISLABELED_MERGE.test(text)) return "harness";
   if (MERGE.test(text)) return "merge";
   if (INFRA.test(text)) return "infra";
@@ -67,7 +71,7 @@ export function taskFamily(taskId:string):string {
 }
 
 /** Failures that do not spend one of the task's attempts. */
-export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "harness", "infra", "budget"]);
+export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "harness", "infra", "budget", "limit"]);
 /** Parked failures: the task waits for a fix or the machine, then restarts by itself. */
 export const PARKED_CLASSES:ReadonlySet<FailureClass> = new Set(["harness", "infra"]);
 /** Free retries a task may take on top of its two attempts, so a repeating free failure still ends. */

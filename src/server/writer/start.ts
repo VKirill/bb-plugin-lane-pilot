@@ -405,6 +405,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A fault of Lane Pilot or the machine is not redone here: another writer meets the same fault. The task is
         // parked and restarts once a fix ships or the machine recovers.
         const failedClass = failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null);
+        // A provider that takes no work fails every retry the same way: the writer chain below takes the task now.
+        // The attempt ends blocked with its limit reason (uncharged); primaryFailure keeps the state the chain reads.
+        if (failedClass === "limit") {
+          const latest = getAttempt(db, attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
+          last = { ...last, status:"blocked" };
+          break;
+        }
         if (PARKED_CLASSES.has(failedClass)) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
@@ -461,13 +469,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // Only a provider, limit or catalog fault moves down the writer chain: a task's own failure (an answered
         // empty_output, a repeated failure) gets no fallback writer — another model meets the same task.
         const primaryClass = failureClass(String(primaryFailure.status), typeof primaryFailure.reason === "string" ? primaryFailure.reason : null);
-        const chain = primaryClass === "provider"
+        const chain = primaryClass === "provider" || primaryClass === "limit"
           ? writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection)
           : [];
         let failure:Record<string, unknown>=primaryFailure;
         const primaryAttemptId=typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId;
         if (!chain.length) last={...last,emergencyFallback:{state:"skipped",
-          reason:primaryClass === "provider" ? "configured_pm_selection_matches_primary" : `failure is not a provider fault (${primaryClass})`}};
+          reason:primaryClass === "provider" || primaryClass === "limit" ? "configured_pm_selection_matches_primary" : `failure is not a provider fault (${primaryClass})`}};
         for (const fallback of chain) {
           const decision=emergencyFallbackDecision({
             state:String(failure.status ?? "unknown"),

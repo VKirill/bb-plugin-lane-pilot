@@ -5,7 +5,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { runBrowserQaOnHost, type BrowserQaInput } from "../../src/stages/browser-qa";
-import { claimActivation, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../src/database";
+import { claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../src/database";
 import { memoryRecordId } from "../../src/stages/memory";
 import type { TaskV2 } from "../../src/contracts";
 import { buildRunPolicy } from "../../src/stages/run-policy";
@@ -46,6 +46,9 @@ const readFirstLine = `- README.md L1-L2 (sha256 ${readmeSha8})`;
 const heldEvents = new Map<string,Promise<void>>();
 /** While true, the docs child reports no completion, so a test sees it running until it releases it. */
 let docsEventsHeld=false;
+/** Primary writer threads still to answer with a provider's plan notice instead of a report. */
+let limitWriters=0;
+const limitThreadIds=new Set<string>();
 function holdEvents(threadId:string):()=>void {
   let release=()=>{};
   heldEvents.set(threadId,new Promise<void>((resolve)=>{release=()=>{heldEvents.delete(threadId);resolve();};}));
@@ -86,6 +89,7 @@ const task:TaskV2 = {
 async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[], codeCritiqueOutputs?:string[], codeRepairOutput?:string) {
   docsEventsHeld=false;
   extraListPaths=[];
+  limitThreadIds.clear();
   writerControl = writerControl ?? {hold:false,states:new Map()};
   const spawned:Array<Record<string,unknown>> = [];
   const followUps=new Map<string,{at:number;seq:number}>();
@@ -144,6 +148,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
               saveProjectSetting(setupDb, projectId, "code_critique.provider", "codex");
             }
           }
+          if(role==="writer"&&limitWriters>0){limitWriters-=1;limitThreadIds.add(id);}
           if(role==="writer"&&writerControl.hold)writerControl.states.set(id,"active");
           threadMeta.set(id, (request.pluginMetadata as Record<string,unknown>) ?? { role });
           request.threadIdAssigned=id;
@@ -225,6 +230,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
             ? { output:specialistOutput }
             : threadId.startsWith("code-critic-thread")
               ? { output:codeCritiqueByThread.get(threadId) ?? '{"decision":"approve","summary":"Candidate checked","findings":[]}' }
+            : limitThreadIds.has(threadId) ? { output:"\n\nUpgrade your plan to continue\n" }
             : { output: Number((threadMeta.get(threadId) as {repairRound?:unknown}|undefined)?.repairRound) > 0
               ? (codeRepairOutput ?? '{"replies":[{"id":"f1","status":"fixed","evidence":"updated note.txt"}]}')
               : "writer created note.txt" },
@@ -1313,6 +1319,25 @@ describe("stage → native writer → receipt", () => {
     const writerReceipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="writer-agent");
     expect(writerReceipt?.state).toBe("passed");
     expect((writerReceipt?.result as Record<string,unknown>)?.emergencyFallback).toMatchObject({state:"completed",providerId:"critic",model:"critic-model"});
+    await harness.lifecycle.dispose();
+  });
+
+  // content-factory editor-policy-ui(.2), 2026-10-06: the writer's provider answered «Upgrade your plan to continue»;
+  // both attempts were spent as task failures, the breaker stayed closed and no other writer was tried.
+  it("moves a task whose writer's provider answers with a plan notice to the next writer, uncharged, and opens the breaker",async()=>{
+    limitWriters=1;
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"writer.fallback1.provider":"","writer.fallback2.provider":""},undefined,undefined,undefined,undefined,undefined,undefined,false,0,{providerId:"critic",model:"critic-model"});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer")).toHaveLength(1);
+    const fallback=spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="emergency-writer");
+    expect(fallback).toHaveLength(1);
+    const attempts=db.prepare("SELECT state,reason FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no").all(task.id) as Array<{state:string;reason:string|null}>;
+    expect(attempts[0]).toMatchObject({state:"blocked",reason:"writer_provider_limit: Upgrade your plan to continue"});
+    expect(attempts.at(-1)?.state).toBe("accepted");
+    expect(countChargedAttempts(db,"stage-run",task.id)).toBe(1);
+    const health=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_run_health",{runId:"stage-run"},{threadId:pmThreadId,projectId})));
+    expect(JSON.stringify(health)).toContain('"state":"open"');
     await harness.lifecycle.dispose();
   });
 

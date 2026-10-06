@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { failureClass, repeatedFailureReason, taskFamily } from "../src/failure-class";
+import { FREE_CLASSES, failureClass, repeatedFailureReason, taskFamily } from "../src/failure-class";
+import { providerLimitNotice } from "../src/server/writer-task";
 
 describe("failure classes", () => {
   it("keeps provider, limit and catalog faults on the provider path for the writer chain", () => {
@@ -63,5 +64,24 @@ describe("task families", () => {
     expect(taskFamily("x-mainfix")).toBe("x");
     expect(taskFamily("x-mainfix.2")).toBe("x");
     expect(taskFamily("lptask_abc")).toBe("lptask_abc");
+  });
+
+  // content-factory editor-policy-ui(.2), 2026-10-06: acp-cursor/grok-4.6 answered only this, twice per task.
+  it("reads a provider's plan or quota notice as a limit: uncharged, never a repeated task failure", () => {
+    const notice = providerLimitNotice("\n\nUpgrade your plan to continue\n");
+    expect(notice).toBe("Upgrade your plan to continue");
+    const reason = `writer_provider_limit: ${notice}`;
+    expect(failureClass("provider_error", reason)).toBe("limit");
+    expect(FREE_CLASSES.has("limit")).toBe(true);
+    expect(repeatedFailureReason({ state:"provider_error", reason }, { state:"provider_error", reason })).toBeNull();
+    expect(failureClass("spawn_rejected", "writer_provider_unavailable:breaker_open:acp-cursor/grok-4.6: 1 provider failures in 10 min")).toBe("limit");
+    for (const text of ["You've hit your usage limit. Try again in 3 hours.", "Error: quota exceeded for this month", "429 Too Many Requests",
+      "You are out of credits.", "Your credit balance is too low to access the API"]) expect(providerLimitNotice(text)).not.toBeNull();
+  });
+
+  it("keeps a real writer report about rate limits a report", () => {
+    expect(providerLimitNotice("Added a token bucket to api/limiter.ts.")).toBeNull();
+    expect(providerLimitNotice(`Changed api/limiter.ts: requests over the rate limit reached now get 429.\n${"Checks: npm test passed. ".repeat(20)}`)).toBeNull();
+    expect(providerLimitNotice("")).toBeNull();
   });
 });

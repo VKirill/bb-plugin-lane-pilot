@@ -12,7 +12,7 @@ import { fullAccessSpawn } from "../pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../stage-records";
 import { stringAt } from "../values";
-import { needsHumanQuestion, outputText, WRITER_SETUP_LINES, writerContextBlocks } from "../writer-task";
+import { needsHumanQuestion, outputText, providerLimitNotice, WRITER_SETUP_LINES, writerContextBlocks } from "../writer-task";
 import { isMainfixTask } from "../../validate-output";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { join, relative, resolve } from "node:path";
@@ -152,7 +152,15 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         return { status:"canceled", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
       // A writer that stopped to ask the owner is not a failed attempt: no retry, no fallback, the question goes to the PM.
-      const question = needsHumanQuestion(outputText(await bb.sdk.threads.output({ threadId:input.writerThreadId }).catch(() => "")));
+      const answer = outputText(await bb.sdk.threads.output({ threadId:input.writerThreadId }).catch(() => ""));
+      // The provider's own limit notice instead of a report: the task never ran, so another model takes it, uncharged.
+      const limit = providerLimitNotice(answer);
+      if (limit) {
+        const reason = `writer_provider_limit: ${limit}`;
+        transitionAttempt(db, input.attemptId, "provider_error", { reason });
+        return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      }
+      const question = needsHumanQuestion(answer);
       if (question) {
         const reason = `needs_human: ${question}`;
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"skipped",

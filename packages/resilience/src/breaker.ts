@@ -1,4 +1,4 @@
-export type FailureClass = "transient" | "failure" | "product";
+export type FailureClass = "transient" | "failure" | "product" | "exhausted";
 export type BreakerOutcome = "ok" | FailureClass;
 export type BreakerState = "closed" | "open" | "half_open";
 
@@ -25,6 +25,8 @@ export function breakerKey(providerId: string, model: string): string {
   return `${providerId}/${model}`;
 }
 
+// The provider refused for the plan, quota or credits: no retry inside the window will pass, so the pair opens at once.
+const EXHAUSTED = /writer_provider_limit:/;
 const TRANSIENT = /rate.?limit|overload|429|503|stream.?(closed|disconnected)|ECONNRESET|socket hang up|timeout|provider_not_started|reconnect/i;
 const HARD = /provider_error|system_error|thread_status_error|spawn_rejected|turn_rejected|provisioning_(failed|cancelled)|model.*not (found|available)|unauthori[sz]ed|401|403/i;
 
@@ -35,6 +37,7 @@ const HARD = /provider_error|system_error|thread_status_error|spawn_rejected|tur
 export function classifyFailure(detail: string | null | undefined): FailureClass {
   const text = (detail ?? "").trim();
   if (!text) return "product";
+  if (EXHAUSTED.test(text)) return "exhausted";
   if (TRANSIENT.test(text)) return "transient";
   if (HARD.test(text)) return "failure";
   return "product";
@@ -73,7 +76,7 @@ export function createProviderBreaker(options: ProviderBreakerOptions = {}) {
       item.failures.push(now);
       prune(item, now);
       const wasTrial = item.openedAt !== null && stateOf(item, now) === "half_open";
-      if (wasTrial || item.failures.length >= config.failureThreshold) {
+      if (wasTrial || outcome === "exhausted" || item.failures.length >= config.failureThreshold) {
         item.openedAt = now;
         item.trialInFlight = false;
       }

@@ -29,6 +29,13 @@ describe("provider breaker", () => {
     expect(breaker.decide(key, 710)).toEqual({ allow: true, state: "closed" });
   });
 
+  it("opens at once when the provider refuses for the plan or quota", () => {
+    const breaker = createProviderBreaker();
+    expect(classifyFailure("provider_error:writer_provider_limit: Upgrade your plan to continue")).toBe("exhausted");
+    breaker.record("acp-cursor/grok-4.6", "exhausted", 0);
+    expect(breaker.decide("acp-cursor/grok-4.6", 1)).toMatchObject({ allow:false, state:"open" });
+  });
+
   it("re-opens at once when the trial call fails", () => {
     const breaker = createProviderBreaker({ failureThreshold: 1, windowMs: 1000, cooldownMs: 100 });
     breaker.record(key, "failure", 0);

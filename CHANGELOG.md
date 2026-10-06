@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.163
+
+At the request of the content-factory PM (editor-policy-ui, 2026-10-06):
+- **A provider's plan or quota notice moves the task to the next writer.** The writer on acp-cursor/grok-4.6 answered only «Upgrade your plan to continue». Lane Pilot read that as a task that did not produce its files. Both attempts of `editor-policy-ui` and `editor-policy-ui.2` were spent, the breaker stayed closed, and no other model was tried. A short answer that is only a provider notice (plan, usage limit, quota, rate limit, out of credits, credit balance) now ends the attempt as `writer_provider_limit: <notice>`. The attempt is not charged, there is no retry in the same thread, and the writer chain (fallback 1/2, then the PM's model) takes the task at once. A longer report that mentions rate limits stays a report.
+- **The breaker opens on the first such notice.** Retries inside the window cannot pass a plan limit, so the provider/model pair opens without waiting for three failures. While it is open, a new task's writer that is refused with `breaker_open` goes down the chain uncharged, instead of spending its attempts on refused spawns.
+
 ## 0.1.162
 
 - **Each task has a folder the writer can read.** The PM's canonical plan goes to `.agents/plans/items/<task id>/PLAN.md` in the workspace (excluded from git and never counted as produced), and the writer's brief points at it; the compact contract below the pointer stays the source of truth for owns_paths and checks.
