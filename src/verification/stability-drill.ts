@@ -1,7 +1,7 @@
-import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, statfs, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnAsync } from "../spawn-async";
 import { integrateWorktree } from "./git-integrate";
 
 export type DrillCheck = { name:string; ok:boolean; detail:string | null };
@@ -12,7 +12,11 @@ export type DrillCheck = { name:string; ok:boolean; detail:string | null };
  */
 export async function runStabilityDrill():Promise<DrillCheck[]> {
   const root = await mkdtemp(join(tmpdir(), "lp-drill-"));
-  const git = (cwd:string, ...args:string[]) => execFileSync("git", ["-c", "user.name=drill", "-c", "user.email=drill@local", ...args], { cwd, encoding:"utf8", stdio:["ignore", "pipe", "pipe"] });
+  const git = async (cwd:string, ...args:string[]) => {
+    const ran = await spawnAsync("git", ["-c", "user.name=drill", "-c", "user.email=drill@local", ...args], { cwd });
+    if (ran.error || ran.status !== 0) throw new Error(`git ${args[0]} failed: ${ran.error?.message ?? ran.stderr.trim()}`);
+    return ran.stdout;
+  };
   const aged = async (path:string, seconds:number) => { const at = new Date(Date.now() - seconds * 1000); await utimes(path, at, at); };
   const checks:DrillCheck[] = [];
   const check = async (name:string, work:() => Promise<string | null>) => {
@@ -21,12 +25,12 @@ export async function runStabilityDrill():Promise<DrillCheck[]> {
   };
   try {
     const base = join(root, "main");
-    execFileSync("git", ["init", "-q", "-b", "main", base]);
+    await git(root, "init", "-q", "-b", "main", base);
     await writeFile(join(base, "a.txt"), "one\n");
-    git(base, "add", "-A"); git(base, "commit", "-qm", "base");
+    await git(base, "add", "-A"); await git(base, "commit", "-qm", "base");
     const worktree = async (name:string, file:string) => {
       const path = join(root, name);
-      git(base, "worktree", "add", "-q", "-b", `drill/${name}`, path, "main");
+      await git(base, "worktree", "add", "-q", "-b", `drill/${name}`, path, "main");
       await writeFile(join(path, file), `${name}\n`);
       return path;
     };
@@ -39,9 +43,10 @@ export async function runStabilityDrill():Promise<DrillCheck[]> {
     });
     await check("a merge cut off midway is aborted and the next merge lands", async () => {
       const side = await worktree("w2", "a.txt");
-      git(side, "commit", "-qam", "side");
-      await writeFile(join(base, "a.txt"), "two\n"); git(base, "commit", "-qam", "main");
-      try { git(base, "merge", "--no-edit", "drill/w2"); } catch { /* the conflict leaves MERGE_HEAD, as a killed merge would */ }
+      await git(side, "commit", "-qam", "side");
+      await writeFile(join(base, "a.txt"), "two\n"); await git(base, "commit", "-qam", "main");
+      // The conflict leaves MERGE_HEAD, as a killed merge would.
+      await git(base, "merge", "--no-edit", "drill/w2").catch(() => undefined);
       await aged(join(base, ".git", "MERGE_HEAD"), 3600);
       const path = await worktree("w3", "c.txt");
       const merged = await integrateWorktree({ basePath:base, worktreePath:path, message:"drill w3" });

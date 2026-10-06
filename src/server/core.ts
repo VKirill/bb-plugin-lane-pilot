@@ -1,5 +1,6 @@
 import { parseOwnedAgents } from "../agent-profile";
 import { createDeployDrain } from "./deploy-drain";
+import { createHostJobs, isHostJobKind } from "./host-jobs";
 import { aggregateRun } from "../aggregation";
 import { TARGET_SHA } from "../constants";
 import { hostContract } from "../contracts";
@@ -47,12 +48,23 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     return value;
   }
   const deployDrain = createDeployDrain(() => state.disposed);
+  const rawCall = rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>;
+  // Long host calls run as background jobs (B4): the host daemon cancels a call at its deadline and kills the worker.
+  const hostJobs = createHostJobs({
+    call: rawCall, kv: bb.storage.kv, disposed: () => state.disposed, log: (message) => bb.log.info(message),
+  });
   const host = {
     ...rawHost,
     call: (async (method: string, input: unknown, options: unknown) => await deployDrain.around(method, async () => {
-      const key = JEV_METHODS.has(method) ? await catalogJevKey() : undefined;
-      return await (rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>)(method,
-        key ? { ...(input as Record<string, unknown>), jevApiKey:key } : input, options);
+      // `job: true` asks for a background job where it is not the rule (the post-merge check); the host never sees it.
+      const { job, ...hostOptions } = (options ?? {}) as { hostId: string; timeoutMs?: number; job?: boolean };
+      const direct = async () => {
+        const key = JEV_METHODS.has(method) ? await catalogJevKey() : undefined;
+        return await rawCall(method, key ? { ...(input as Record<string, unknown>), jevApiKey:key } : input, hostOptions);
+      };
+      // LANE_PILOT_HOST_JOBS=0 runs every call directly, as before jobs: a switch for a host where they misbehave.
+      if (process.env.LANE_PILOT_HOST_JOBS !== "0" && isHostJobKind(method) && (method !== "runSandboxedCommand" || job === true)) return await hostJobs.run(method, input, hostOptions, direct);
+      return await direct();
     })) as typeof rawHost.call,
   } as typeof rawHost;
 

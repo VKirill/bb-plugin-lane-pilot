@@ -651,7 +651,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     if (!input.task.verification.length || !input.pmThreadId || await isRunHalted(bb.storage.kv as never, input.runId)) return;
     const onBase = (cwd:string) => resolve(cwd).startsWith(resolve(input.worktreePath)) ? join(input.basePath, relative(input.worktreePath, cwd)) : cwd;
     const onMain = { ...input.task, project_cwd:input.basePath, verification:input.task.verification.map((command) => ({ ...command, cwd:onBase(command.cwd) })) };
-    const checks = await services.runVerification(input.config, onMain, input.runId).catch((cause:unknown) => {
+    const checks = await services.runVerification(input.config, onMain, input.runId, undefined, { background:true }).catch((cause:unknown) => {
       ctx.log(`post-merge check of ${input.task.id} could not run: ${cause instanceof Error ? cause.message : String(cause)}`);
       return null;
     });

@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { TARGET_SHA, UPSTREAM_REPO } from "./constants";
 import { defaultLocalFallback, managedEngineDir, resolveHome } from "./paths";
+import { spawnAsync } from "./spawn-async";
 import { assessEngineCapabilities, inspectEngineCapabilities } from "./upstream-adapter/capabilities";
 
 export type UpstreamReady = {
@@ -15,17 +15,19 @@ export type UpstreamReady = {
   adaptedCapabilities: string[];
 };
 
-function git(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 }).trim();
+/** Throws like execFileSync did: a failed or timed-out git is an error carrying its stderr. */
+async function runGit(cwd: string | undefined, args: string[], timeout: number): Promise<string> {
+  const ran = await spawnAsync("git", args, { cwd, timeout });
+  if (ran.error || ran.status !== 0) throw new Error(`git ${args[0]} failed: ${(ran.error?.message ?? ran.stderr.trim()) || `exit ${ran.status}`}`);
+  return ran.stdout;
 }
 
-function gitOk(cwd: string, args: string[]): boolean {
-  try {
-    execFileSync("git", args, { cwd, encoding: "utf8", stdio: "ignore", timeout: 4000 });
-    return true;
-  } catch {
-    return false;
-  }
+async function git(cwd: string, args: string[]): Promise<string> {
+  return (await runGit(cwd, args, 30_000)).trim();
+}
+
+async function gitOk(cwd: string, args: string[]): Promise<boolean> {
+  return await runGit(cwd, args, 4000).then(() => true, () => false);
 }
 
 async function isDirectory(path: string): Promise<boolean> {
@@ -33,12 +35,12 @@ async function isDirectory(path: string): Promise<boolean> {
 }
 
 async function inspectReusable(path: string): Promise<UpstreamReady | null> {
-  if (!await isDirectory(path) || !gitOk(path, ["rev-parse", "--git-dir"])) return null;
+  if (!await isDirectory(path) || !await gitOk(path, ["rev-parse", "--git-dir"])) return null;
   if (!await isDirectory(join(path, "profiles/opencode/opencode-lane"))) return null;
   const assessment = assessEngineCapabilities(await inspectEngineCapabilities(path));
   if (!assessment.compatible) return null;
-  const sha = git(path, ["rev-parse", "HEAD"]);
-  const dirty = git(path, ["status", "--porcelain"]) !== "";
+  const sha = await git(path, ["rev-parse", "HEAD"]);
+  const dirty = await git(path, ["status", "--porcelain"]) !== "";
   return {
     path,
     sha,
@@ -49,14 +51,10 @@ async function inspectReusable(path: string): Promise<UpstreamReady | null> {
   };
 }
 
-function clone(source: string, destination: string): void {
-  execFileSync("git", ["clone", "--no-checkout", source, destination], {
-    encoding: "utf8",
-    timeout: 120_000,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  git(destination, ["checkout", "--detach", TARGET_SHA]);
-  const sha = git(destination, ["rev-parse", "HEAD"]);
+async function clone(source: string, destination: string): Promise<void> {
+  await runGit(undefined, ["clone", "--no-checkout", source, destination], 120_000);
+  await git(destination, ["checkout", "--detach", TARGET_SHA]);
+  const sha = await git(destination, ["rev-parse", "HEAD"]);
   if (sha !== TARGET_SHA) throw new Error(`managed source SHA ${sha} does not match reference ${TARGET_SHA}`);
 }
 
@@ -89,19 +87,19 @@ export async function ensureUpstream(input: {
   let source: UpstreamReady["source"] = "clone";
   try {
     let sourceUrl = UPSTREAM_REPO;
-    if (fallback && await isDirectory(fallback) && gitOk(fallback, ["rev-parse", "--git-dir"])) {
-      const fallbackSha = git(fallback, ["rev-parse", "HEAD"]);
+    if (fallback && await isDirectory(fallback) && await gitOk(fallback, ["rev-parse", "--git-dir"])) {
+      const fallbackSha = await git(fallback, ["rev-parse", "HEAD"]);
       if (fallbackSha === TARGET_SHA) {
         sourceUrl = fallback;
         source = "local-copy";
       }
     }
-    clone(sourceUrl, staging);
+    await clone(sourceUrl, staging);
     const assessment = assessEngineCapabilities(await inspectEngineCapabilities(staging));
     if (!assessment.compatible) {
       throw new Error(`reference engine is missing required interfaces: ${assessment.diagnostics.map((item) => item.capability).join(", ")}`);
     }
-    const clean = git(staging, ["status", "--porcelain"]) === "";
+    const clean = await git(staging, ["status", "--porcelain"]) === "";
     try {
       await rename(staging, destination);
     } catch (error) {

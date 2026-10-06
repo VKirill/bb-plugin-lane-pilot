@@ -90,6 +90,15 @@ export const taskV2Schema = z.object({
 
 export type TaskV2 = z.infer<typeof taskV2Schema>;
 
+/**
+ * Host calls that run as background jobs: a separate process the host daemon's deadline cannot cut off (B4). A kind is
+ * the name of the ordinary host method whose handler the job runs; its input is that method's own input.
+ */
+export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa"] as const;
+export type HostJobKind = (typeof HOST_JOB_KINDS)[number];
+const hostJobId = z.string().regex(/^job_[a-z0-9]{10,40}$/);
+const hostJobRef = z.object({ requestedHostId:z.string().min(1), jobId:hostJobId }).strict();
+
 const hostBaseFields = {
   requestedHostId: z.string().min(1),
   workspacePath: z.string().startsWith("/").optional(),
@@ -181,6 +190,22 @@ export const hostContract = defineRpcContract({
   gitSyncWorktree: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), keepConflicts:z.boolean().optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["synced","up-to-date","dirty","conflict","failed"]), head:z.string().nullable(), reason:z.string().nullable(), conflicts:z.array(z.string()).optional() }).strict(),
+  },
+  jobStart: {
+    input: z.object({ requestedHostId:z.string().min(1), kind:z.enum(HOST_JOB_KINDS), input:z.record(z.string(), z.unknown()), timeoutSec:z.number().int().min(10).max(10_800) }).strict(),
+    output: z.object({ hostId:z.string(), jobId:hostJobId }).strict(),
+  },
+  jobStatus: {
+    input: hostJobRef,
+    output: z.object({
+      hostId:z.string(), jobId:hostJobId, state:z.enum(["running", "succeeded", "failed", "cancelled", "lost"]),
+      progress:z.object({ startedAt:z.number(), updatedAt:z.number(), elapsedSec:z.number().int().nonnegative(), lastLine:z.string() }).strict(),
+      result:z.unknown().optional(), error:z.string().nullable(),
+    }).strict(),
+  },
+  jobCancel: {
+    input: hostJobRef,
+    output: z.object({ hostId:z.string(), jobId:hostJobId, cancelled:z.boolean() }).strict(),
   },
   stabilityDrill: {
     input: z.object({ requestedHostId:z.string().min(1) }).strict(),

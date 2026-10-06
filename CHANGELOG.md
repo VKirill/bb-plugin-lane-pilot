@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Long host calls are background jobs (B4).** `jobStart(kind, input)`, `jobStatus(jobId)` and `jobCancel(jobId)` are ordinary short host calls. The work runs in a detached process of its own, with its log and result under `~/.lane-pilot/jobs/<jobId>/`, so the daemon's deadline and the 5 s SIGKILL of the worker no longer reach it. The server runs `detect`, `install`, `rollback`, `snapshot`, `importConfig`, `connectOpencode`, `coexistenceOperation`, `gitIntegrate` (merge, `npm run build` of changed packages), `gitPrepareWorktree` (`npm ci`) and `runBrowserQa` as jobs, and the post-merge check (`runSandboxedCommand` with `job:true`). It polls with backoff and keeps the job id in KV, so a reload or restart picks the job up again. A host without jobs gets the ordinary call.
+- **No child process blocks the host worker.** The synchronous git, `opencode --version`, `gitnexus` and clone calls in git-integrate, git-ownership, coexistence, stack-ops, upstream, opencode-connect, critique-coverage and the stability drill use `spawnAsync`. `tests/host-no-sync-spawn.test.ts` fails on a `spawnSync`/`execFileSync`/`execSync` anywhere host.ts can reach.
+
 ## 0.1.168
 
 - **One writer session per task.** A failed check, a missing output or a stray file goes back to the same writer as a feedback turn in its own thread: what failed, what to do, and the full log path. The cap is 5 turns or 120 minutes. The session stops early only when the failure and the diff are both unchanged between two turns. A new writer (the next model in the chain) takes over only on a provider or limit failure. One session counts as one attempt.

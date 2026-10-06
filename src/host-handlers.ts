@@ -15,6 +15,7 @@ import { hostContract } from "./contracts";
 import { readBoundedWorkspaceFile } from "./bounded-read";
 import { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
 import { runBrowserQaOnHost } from "./stages/browser-qa";
+import { cancelHostJob, hostJobStatus, startHostJob } from "./jobs";
 import { scanCritiqueCoverage } from "./stages/critique-coverage";
 import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "./verification/sandbox";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "./verification/git-ownership";
@@ -67,6 +68,24 @@ export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract
 export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message,removeWorktree:input.removeWorktree,committedOnly:input.committedOnly,bookkeeping:input.bookkeeping}),
+});
+
+/** Background jobs (B4): ordinary short calls; the long work runs in a process of its own, see src/jobs.ts. */
+export const jobStart: ExperimentalHostRpcHandlers<typeof hostContract>["jobStart"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  jobId:await startHostJob({kind:input.kind,input:input.input,timeoutSec:input.timeoutSec}),
+});
+
+export const jobStatus: ExperimentalHostRpcHandlers<typeof hostContract>["jobStatus"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  jobId:input.jobId,
+  ...await hostJobStatus(input.jobId),
+});
+
+export const jobCancel: ExperimentalHostRpcHandlers<typeof hostContract>["jobCancel"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  jobId:input.jobId,
+  cancelled:await cancelHostJob(input.jobId),
 });
 
 export const stabilityDrill: ExperimentalHostRpcHandlers<typeof hostContract>["stabilityDrill"] = async (input) => ({

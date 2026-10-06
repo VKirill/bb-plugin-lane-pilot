@@ -11,7 +11,7 @@ export type SpawnResult = {
  * Like spawnSync: a time limit or an overfull stream (`maxBuffer`, per stream) sends SIGTERM and sets `error.code`
  * ETIMEDOUT / ENOBUFS; a failed launch sets `error` with no status.
  */
-export function spawnAsync(file:string,args:readonly string[],options:{cwd?:string;env?:NodeJS.ProcessEnv;timeout?:number;maxBuffer?:number}={}):Promise<SpawnResult> {
+export function spawnAsync(file:string,args:readonly string[],options:{cwd?:string;env?:NodeJS.ProcessEnv;timeout?:number;maxBuffer?:number;input?:string}={}):Promise<SpawnResult> {
   return new Promise((resolve)=>{
     const maxBuffer=options.maxBuffer??1024*1024;
     const out:Buffer[]=[]; const err:Buffer[]=[]; const size={out:0,err:0};
@@ -26,7 +26,8 @@ export function spawnAsync(file:string,args:readonly string[],options:{cwd?:stri
       if(grace) clearTimeout(grace);
       resolve({pid:child.pid,status,signal,stdout:Buffer.concat(out).toString("utf8"),stderr:Buffer.concat(err).toString("utf8"),...(error?{error}:{})});
     };
-    const child=spawn(file,[...args],{cwd:options.cwd,env:options.env,stdio:["ignore","pipe","pipe"],windowsHide:true});
+    const child=spawn(file,[...args],{cwd:options.cwd,env:options.env,stdio:[options.input===undefined?"ignore":"pipe","pipe","pipe"],windowsHide:true});
+    if(options.input!==undefined) child.stdin!.end(options.input);
     const stop=(code:string)=>{
       error??=Object.assign(new Error(`spawn ${file} ${code}`),{code});
       child.kill("SIGTERM");

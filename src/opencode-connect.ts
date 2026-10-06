@@ -1,9 +1,9 @@
-import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { compareAndSwapText, readTextState } from "./coexistence/cas";
 import { ensureOpenCodePluginEntry } from "./jsonc";
 import { resolveHome } from "./paths";
+import { spawnAsync } from "./spawn-async";
 
 export type ConnectOpencodeResult = {
   skipped: boolean;
@@ -19,17 +19,14 @@ export type ConnectOpencodeResult = {
   version: string | null;
 };
 
-function opencodeVersion(): string | null {
-  try {
-    return execFileSync("opencode", ["--version"], { encoding: "utf8", timeout: 5000 }).trim();
-  } catch {
-    return null;
-  }
+async function opencodeVersion(): Promise<string | null> {
+  const ran = await spawnAsync("opencode", ["--version"], { timeout: 5000 });
+  return ran.error || ran.status !== 0 ? null : ran.stdout.trim();
 }
 
 export async function connectOpencode(homeDir?: string): Promise<ConnectOpencodeResult> {
   const home = resolveHome(homeDir);
-  const version = opencodeVersion();
+  const version = await opencodeVersion();
   const candidates = [
     join(home, ".config/opencode/opencode.jsonc"),
     join(home, ".config/opencode/opencode.json"),

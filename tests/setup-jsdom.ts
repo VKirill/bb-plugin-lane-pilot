@@ -26,3 +26,6 @@ if (typeof window !== "undefined") {
     });
   }
 }
+
+// Tests script the host call by call; the one that checks the job path switches it on (tests/server/host-jobs.test.ts).
+process.env.LANE_PILOT_HOST_JOBS ??= "0";

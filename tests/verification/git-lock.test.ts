@@ -130,12 +130,12 @@ describe("a git failure while index.lock stands", () => {
   it("names the lock even when git's own wording omits it", async () => {
     const { withIndexLockNote } = await import("../../src/verification/git-integrate");
     const { base } = await repo();
-    expect(withIndexLockNote(base, "error: Unable to write index.")).toBe("error: Unable to write index.");
+    expect(await withIndexLockNote(base, "error: Unable to write index.")).toBe("error: Unable to write index.");
     // git's own wording already carries the lock: nothing is added twice.
-    expect(withIndexLockNote(base, "fatal: Unable to create '/repo/.git/index.lock': File exists"))
+    expect(await withIndexLockNote(base, "fatal: Unable to create '/repo/.git/index.lock': File exists"))
       .toBe("fatal: Unable to create '/repo/.git/index.lock': File exists");
     await writeFile(lockOf(base), "");
-    expect(withIndexLockNote(base, "error: Unable to write index.")).toBe("error: Unable to write index. (index.lock present)");
+    expect(await withIndexLockNote(base, "error: Unable to write index.")).toBe("error: Unable to write index. (index.lock present)");
   });
 
   it("classes a Linux-worded lock failure as infra", async () => {

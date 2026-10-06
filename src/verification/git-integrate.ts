@@ -1,6 +1,7 @@
-import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
 import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { spawnAsync } from "../spawn-async";
 import { isBookkeepingPath } from "../bookkeeping-paths";
@@ -73,24 +74,24 @@ export async function persistTaskFolder(input:{
  * just «Unable to write index»), so the lock is named here and every such failure classes as infra, not as the
  * task's. `git rev-parse` itself never writes the index, so it answers even while the lock stands.
  */
-export function withIndexLockNote(cwd:string,reason:string):string {
+export async function withIndexLockNote(cwd:string,reason:string):Promise<string> {
   if (reason.includes("index.lock")) return reason;
-  const dir=spawnSync("git",["rev-parse","--absolute-git-dir"],{cwd,encoding:"utf8",timeout:10_000,maxBuffer:1_000_000,windowsHide:true});
+  const dir=await spawnAsync("git",["rev-parse","--absolute-git-dir"],{cwd,timeout:10_000,maxBuffer:1_000_000});
   const gitDir=dir.status===0?dir.stdout.trim():"";
   if (!gitDir||!existsSync(join(gitDir,"index.lock"))) return reason;
   return `${reason} (index.lock present)`;
 }
 
-function git(cwd:string,args:string[]) {
-  const result=spawnSync("git",args,{cwd,encoding:"utf8",timeout:60_000,maxBuffer:4_000_000,windowsHide:true});
+async function git(cwd:string,args:string[]) {
+  const result=await spawnAsync("git",args,{cwd,timeout:60_000,maxBuffer:4_000_000});
   if(result.error) return {ok:false as const,stdout:"",reason:result.error.message};
-  if(result.status!==0) return {ok:false as const,stdout:result.stdout??"",reason:withIndexLockNote(cwd,(result.stderr||result.stdout||`git exited ${result.status}`).trim())};
+  if(result.status!==0) return {ok:false as const,stdout:result.stdout??"",reason:await withIndexLockNote(cwd,(result.stderr||result.stdout||`git exited ${result.status}`).trim())};
   return {ok:true as const,stdout:result.stdout,reason:""};
 }
 
 /** The repository's own identity when set, otherwise a writer identity, so commits never fail on a bare host. */
-function identity(cwd:string):string[] {
-  const email=git(cwd,["config","user.email"]);
+async function identity(cwd:string):Promise<string[]> {
+  const email=await git(cwd,["config","user.email"]);
   return email.ok&&email.stdout.trim()?[]:FALLBACK_IDENTITY;
 }
 
@@ -106,13 +107,13 @@ function ownerAlive(pid:number):boolean {
  * never deleted. Without lsof nothing proves it is free, so only a lock older than 10 minutes counts. A fresh lock is a live git.
  */
 export async function recoverStaleGitLock(cwd:string):Promise<string|null> {
-  const dir=git(cwd,["rev-parse","--absolute-git-dir"]);
+  const dir=await git(cwd,["rev-parse","--absolute-git-dir"]);
   if(!dir.ok||!dir.stdout.trim()) return null;
   const lock=join(dir.stdout.trim(),"index.lock");
   const info=await stat(lock).catch(()=>null);
   const age=info?Date.now()-info.mtimeMs:0;
   if(!info||age<=60_000) return null;
-  const held=spawnSync("lsof",[lock],{encoding:"utf8",timeout:10_000,windowsHide:true});
+  const held=await spawnAsync("lsof",[lock],{timeout:10_000});
   const lsofRan=!held.error&&(held.status===0||held.status===1);
   if(lsofRan?held.status===0&&held.stdout.trim()!=="":age<=600_000) return null;
   const aside=`${lock}.stale-${Date.now()}`;
@@ -126,11 +127,11 @@ export async function recoverStaleGitLock(cwd:string):Promise<string|null> {
  * integration lock nobody else merges here, so one older than 10 minutes is aborted.
  */
 export async function abortStaleMerge(cwd:string):Promise<boolean> {
-  const dir=git(cwd,["rev-parse","--absolute-git-dir"]);
+  const dir=await git(cwd,["rev-parse","--absolute-git-dir"]);
   if(!dir.ok||!dir.stdout.trim()) return false;
   const info=await stat(join(dir.stdout.trim(),"MERGE_HEAD")).catch(()=>null);
   if(!info||Date.now()-info.mtimeMs<=600_000) return false;
-  const aborted=git(cwd,["merge","--abort"]).ok;
+  const aborted=(await git(cwd,["merge","--abort"])).ok;
   console.warn(`lane-pilot: ${aborted?"aborted":"could not abort"} a merge left unfinished in ${cwd} (${Math.round((Date.now()-info.mtimeMs)/60_000)} min old)`);
   return aborted;
 }
@@ -141,7 +142,7 @@ export async function abortStaleMerge(cwd:string):Promise<boolean> {
  */
 export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>,label="",waitMs=120_000):Promise<T> {
   // In a worktree .git is a file; the lock lives in that checkout's own git directory.
-  const gitDir=git(basePath,["rev-parse","--absolute-git-dir"]);
+  const gitDir=await git(basePath,["rev-parse","--absolute-git-dir"]);
   const lock=join(gitDir.ok&&gitDir.stdout.trim()?gitDir.stdout.trim():join(basePath,".git"),"lane-pilot-integrate.lock");
   const deadline=Date.now()+waitMs;
   for(;;) {
@@ -169,13 +170,13 @@ export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>,labe
  * Replays the attempt's commits on the base checkout's current HEAD, in the attempt's own worktree. Returns the new tip,
  * or null when there was nothing to replay or a commit conflicts: the rebase is then undone, the branch is as it was.
  */
-function rebaseOntoBase(worktreePath:string, baseHead:string):string|null {
-  if(git(worktreePath,["merge-base","--is-ancestor",baseHead,"HEAD"]).ok) return null;
-  if(!git(worktreePath,[...identity(worktreePath),"rebase",baseHead]).ok) {
-    git(worktreePath,["rebase","--abort"]);
+async function rebaseOntoBase(worktreePath:string, baseHead:string):Promise<string|null> {
+  if((await git(worktreePath,["merge-base","--is-ancestor",baseHead,"HEAD"])).ok) return null;
+  if(!(await git(worktreePath,[...await identity(worktreePath),"rebase",baseHead])).ok) {
+    await git(worktreePath,["rebase","--abort"]);
     return null;
   }
-  const tip=git(worktreePath,["rev-parse","HEAD"]);
+  const tip=await git(worktreePath,["rev-parse","HEAD"]);
   return tip.ok&&tip.stdout.trim()?tip.stdout.trim():null;
 }
 
@@ -190,30 +191,30 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   bookkeeping?:string[]}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
   await recoverStaleGitLock(input.worktreePath);
-  const dirty=input.committedOnly?{ok:true as const,stdout:"",reason:""}:git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
+  const dirty=input.committedOnly?{ok:true as const,stdout:"",reason:""}:await git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
   if(!dirty.ok) return fail(`worktree status: ${dirty.reason}`);
   if(dirty.stdout.trim()) {
-    const add=git(input.worktreePath,["add","-A"]);
+    const add=await git(input.worktreePath,["add","-A"]);
     if(!add.ok) return fail(`worktree add: ${add.reason}`);
     // The project's own git hooks run here as they do for any commit and for the merge below: a hook
     // that rejects the writer's work fails the attempt with its output, and the retry has to satisfy it.
-    const commit=git(input.worktreePath,[...identity(input.worktreePath),"commit","-q","-m",input.message]);
+    const commit=await git(input.worktreePath,[...await identity(input.worktreePath),"commit","-q","-m",input.message]);
     if(!commit.ok) return fail(`project git hook or commit rejected the writer's work: ${commit.reason.split("\n").slice(-12).join("\n")}`);
   }
-  const head=git(input.worktreePath,["rev-parse","HEAD"]);
+  const head=await git(input.worktreePath,["rev-parse","HEAD"]);
   if(!head.ok) return fail(`worktree head: ${head.reason}`);
   const sha=head.stdout.trim();
-  const branch=git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"]).stdout.trim();
+  const branch=(await git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"])).stdout.trim();
   let result:GitIntegration;
   try {
     result=await withBaseLock(input.basePath,async()=>{
       await recoverStaleGitLock(input.basePath);
       await abortStaleMerge(input.basePath);
-      const before=git(input.basePath,["rev-parse","HEAD"]).stdout.trim();
+      const before=(await git(input.basePath,["rev-parse","HEAD"])).stdout.trim();
       // Main moved while the writer worked: replay the attempt on the current main first. Clean, it merges without
       // another writer turn; a real conflict is left as it was and the merge below reports it for the free redo.
-      const rebased=branch.startsWith("lane/")&&before?rebaseOntoBase(input.worktreePath,before):null;
-      const merged=merge(input.basePath,rebased??sha,input.message,input.bookkeeping);
+      const rebased=branch.startsWith("lane/")&&before?await rebaseOntoBase(input.worktreePath,before):null;
+      const merged=await merge(input.basePath,rebased??sha,input.message,input.bookkeeping);
       if(rebased&&merged.status==="merged") merged.rebased=true;
       if(merged.status==="merged"&&before) merged.rebuilt=await rebuildChangedPackages(input.basePath,before);
       return merged;
@@ -227,8 +228,8 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   // Lane Pilot's own worktree is done once its work is in main. A conflict keeps it: uncommitted edits in main block
   // the merge without anything to redo, and the committed work there is merged as soon as main is clean.
   if(input.removeWorktree&&(result.status==="merged"||result.status==="up-to-date")) {
-    git(input.basePath,["worktree","remove","--force",worktreeTop(input.worktreePath)]);
-    if(branch.startsWith("lane/")) git(input.basePath,["branch","-D",branch]);
+    await git(input.basePath,["worktree","remove","--force",await worktreeTop(input.worktreePath)]);
+    if(branch.startsWith("lane/")) await git(input.basePath,["branch","-D",branch]);
   }
   return result;
 }
@@ -243,22 +244,22 @@ export async function syncWorktree(input:{basePath:string;worktreePath:string;
   keepConflicts?:boolean}):Promise<{status:"synced"|"up-to-date"|"dirty"|"conflict"|"failed";head:string|null;reason:string|null;conflicts?:string[]}> {
   const fail=(status:"dirty"|"conflict"|"failed",reason:string)=>({status,head:null,reason});
   await recoverStaleGitLock(input.worktreePath);
-  const dirty=git(input.worktreePath,["status","--porcelain","--untracked-files=no"]);
+  const dirty=await git(input.worktreePath,["status","--porcelain","--untracked-files=no"]);
   if(!dirty.ok) return fail("failed",`worktree status: ${dirty.reason}`);
   if(dirty.stdout.trim()) return fail("dirty",`uncommitted changes: ${dirty.stdout.trim().split("\n").slice(0,5).join("; ")}`);
-  const main=git(input.basePath,["rev-parse","HEAD"]);
+  const main=await git(input.basePath,["rev-parse","HEAD"]);
   if(!main.ok) return fail("failed",`base head: ${main.reason}`);
   const sha=main.stdout.trim();
-  const head=()=>git(input.worktreePath,["rev-parse","HEAD"]).stdout.trim()||null;
-  if(git(input.worktreePath,["merge-base","--is-ancestor",sha,"HEAD"]).ok) return {status:"up-to-date",head:head(),reason:null};
-  if(git(input.worktreePath,["merge","--ff-only","-q",sha]).ok) return {status:"synced",head:head(),reason:null};
-  const merged=git(input.worktreePath,[...identity(input.worktreePath),"merge","--no-edit","-q",sha]);
-  if(merged.ok) return {status:"synced",head:head(),reason:null};
-  const unmerged=git(input.worktreePath,["diff","--name-only","--diff-filter=U"]);
+  const head=async()=>(await git(input.worktreePath,["rev-parse","HEAD"])).stdout.trim()||null;
+  if((await git(input.worktreePath,["merge-base","--is-ancestor",sha,"HEAD"])).ok) return {status:"up-to-date",head:await head(),reason:null};
+  if((await git(input.worktreePath,["merge","--ff-only","-q",sha])).ok) return {status:"synced",head:await head(),reason:null};
+  const merged=await git(input.worktreePath,[...await identity(input.worktreePath),"merge","--no-edit","-q",sha]);
+  if(merged.ok) return {status:"synced",head:await head(),reason:null};
+  const unmerged=await git(input.worktreePath,["diff","--name-only","--diff-filter=U"]);
   const conflicts=unmerged.ok?unmerged.stdout.split("\n").map((line)=>line.trim()).filter(Boolean):[];
   // The writer that made the work resolves the conflict in its worktree (Copilot, Devin and Vibe Kanban do the same).
-  if(input.keepConflicts&&conflicts.length) return {status:"conflict",head:head(),reason:`conflicts: ${conflicts.slice(0,10).join(", ")}`,conflicts};
-  git(input.worktreePath,["merge","--abort"]);
+  if(input.keepConflicts&&conflicts.length) return {status:"conflict",head:await head(),reason:`conflicts: ${conflicts.slice(0,10).join(", ")}`,conflicts};
+  await git(input.worktreePath,["merge","--abort"]);
   return fail(conflicts.length?"conflict":"failed",conflicts.length?`conflicts: ${conflicts.slice(0,10).join(", ")}`:`git merge failed: ${merged.reason.split("\n").slice(-4).join("\n")}`);
 }
 
@@ -266,7 +267,7 @@ export async function syncWorktree(input:{basePath:string;worktreePath:string;
 export async function workspaceGitLayout(workspacePath:string):Promise<
   {ok:true;repoTop:string;nested:boolean;prefix:string} | {ok:false;reason:string}
 > {
-  const top=git(workspacePath,["rev-parse","--show-toplevel"]);
+  const top=await git(workspacePath,["rev-parse","--show-toplevel"]);
   if(!top.ok||!top.stdout.trim()) return {ok:false,reason:top.reason||"not a git checkout"};
   const repoTop=top.stdout.trim();
   const [workspaceReal,topReal]=await Promise.all([
@@ -290,7 +291,7 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
   const branch=`lane/${input.name}`;
   await mkdir(join(input.targetPath,".."),{recursive:true});
   await recoverStaleGitLock(repoRoot);
-  const added=git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,"HEAD"]);
+  const added=await git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,"HEAD"]);
   if(!added.ok) return {status:"failed",path:null,branch:null,reason:added.reason};
   const path=layout.nested?join(input.targetPath,layout.prefix):input.targetPath;
   // A subfolder with no tracked file yet is not in the checkout.
@@ -303,10 +304,10 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
  * what main has. A hook or sibling agent edits those files in the base checkout meanwhile, and a merge that touched
  * them stopped on «local changes would be overwritten» or on a conflict nobody could redo away.
  */
-function resolveBookkeepingToMain(basePath:string, sha:string, extra:readonly string[]):string {
-  const raw = git(basePath, ["diff", "--raw", "--no-abbrev", "-z", "--no-renames", "HEAD", sha]);
+async function resolveBookkeepingToMain(basePath:string, sha:string, extra:readonly string[]):Promise<string> {
+  const raw = await git(basePath, ["diff", "--raw", "--no-abbrev", "-z", "--no-renames", "HEAD", sha]);
   if (!raw.ok) return sha;
-  const prefix = git(basePath, ["rev-parse", "--show-prefix"]).stdout.trim();
+  const prefix = (await git(basePath, ["rev-parse", "--show-prefix"])).stdout.trim();
   const parts = raw.stdout.split("\0");
   const entries:string[] = [];
   for (let i = 0; i + 1 < parts.length; i += 2) {
@@ -318,34 +319,34 @@ function resolveBookkeepingToMain(basePath:string, sha:string, extra:readonly st
   }
   if (!entries.length) return sha;
 
-  const gitDir = git(basePath, ["rev-parse", "--absolute-git-dir"]);
+  const gitDir = await git(basePath, ["rev-parse", "--absolute-git-dir"]);
   const dir = gitDir.ok && gitDir.stdout.trim() ? gitDir.stdout.trim() : join(basePath, ".git");
   const tempIndex = join(dir, `temp-idx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
-  const run = (args:string[], input?:string) => spawnSync("git", args, { cwd: basePath, env, encoding: "utf8", timeout: 30_000, input });
+  const run = (args:string[], input?:string) => spawnAsync("git", args, { cwd: basePath, env, timeout: 30_000, input });
 
   try {
-    if (run(["read-tree", sha]).status !== 0) return sha;
-    if (run(["update-index", "-z", "--index-info"], `${entries.join("\0")}\0`).status !== 0) return sha;
-    const writeTree = run(["write-tree"]);
+    if ((await run(["read-tree", sha])).status !== 0) return sha;
+    if ((await run(["update-index", "-z", "--index-info"], `${entries.join("\0")}\0`)).status !== 0) return sha;
+    const writeTree = await run(["write-tree"]);
     if (writeTree.status !== 0 || !writeTree.stdout.trim()) return sha;
-    const commitTree = git(basePath, [...identity(basePath), "commit-tree", writeTree.stdout.trim(), "-p", sha, "-m", "resolve bookkeeping to main"]);
+    const commitTree = await git(basePath, [...await identity(basePath), "commit-tree", writeTree.stdout.trim(), "-p", sha, "-m", "resolve bookkeeping to main"]);
     return commitTree.ok && commitTree.stdout.trim() ? commitTree.stdout.trim() : sha;
   } finally {
     try { unlinkSync(tempIndex); } catch {}
   }
 }
 
-function merge(basePath:string,sha:string,message:string,bookkeeping:readonly string[]=[]):GitIntegration {
-  const targetSha = resolveBookkeepingToMain(basePath, sha, bookkeeping);
-  if(git(basePath,["merge-base","--is-ancestor",targetSha,"HEAD"]).ok) {
-    return {status:"up-to-date",commit:git(basePath,["rev-parse","HEAD"]).stdout.trim()||null,conflicts:[],reason:null};
+async function merge(basePath:string,sha:string,message:string,bookkeeping:readonly string[]=[]):Promise<GitIntegration> {
+  const targetSha = await resolveBookkeepingToMain(basePath, sha, bookkeeping);
+  if((await git(basePath,["merge-base","--is-ancestor",targetSha,"HEAD"])).ok) {
+    return {status:"up-to-date",commit:(await git(basePath,["rev-parse","HEAD"])).stdout.trim()||null,conflicts:[],reason:null};
   }
-  const merged=git(basePath,[...identity(basePath),"merge","--no-ff","--no-edit","-m",`Merge writer work: ${message}`,targetSha]);
-  if(merged.ok) return {status:"merged",commit:git(basePath,["rev-parse","HEAD"]).stdout.trim()||null,conflicts:[],reason:null};
-  const unmerged=git(basePath,["diff","--name-only","--diff-filter=U"]);
+  const merged=await git(basePath,[...await identity(basePath),"merge","--no-ff","--no-edit","-m",`Merge writer work: ${message}`,targetSha]);
+  if(merged.ok) return {status:"merged",commit:(await git(basePath,["rev-parse","HEAD"])).stdout.trim()||null,conflicts:[],reason:null};
+  const unmerged=await git(basePath,["diff","--name-only","--diff-filter=U"]);
   const conflicts=unmerged.ok?unmerged.stdout.split("\n").map((line)=>line.trim()).filter(Boolean):[];
-  git(basePath,["merge","--abort"]);
+  await git(basePath,["merge","--abort"]);
   // Git refuses to merge over uncommitted edits of the same files in main (another agent or the PM
   // works there); name those files so the retry is understood, instead of a bare "merge failed".
   if(!conflicts.length&&/(?:local changes|untracked working tree files|будут перезаписаны).*would be overwritten by merge|would be overwritten by merge/i.test(merged.reason)) {
@@ -365,6 +366,28 @@ function merge(basePath:string,sha:string,message:string,bookkeeping:readonly st
 const installing=new Map<string,Promise<void>>();
 
 /**
+ * One `npm ci` per checkout across processes: background jobs run in their own process, so the map above no longer
+ * covers two worktree preparations of the same base. The loser waits for the winner and finds node_modules in place.
+ */
+async function withInstallLock(basePath:string,work:()=>Promise<void>):Promise<void> {
+  const lock=join(tmpdir(),`lane-pilot-npm-ci-${createHash("sha1").update(basePath).digest("hex").slice(0,16)}.lock`);
+  const deadline=Date.now()+600_000;
+  let held=false;
+  while(!held) {
+    try { await mkdir(lock); await writeFile(join(lock,"owner"),String(process.pid)); held=true; }
+    catch(error) {
+      if((error as NodeJS.ErrnoException).code!=="EEXIST") throw error;
+      const owner=Number.parseInt(await readFile(join(lock,"owner"),"utf8").catch(()=>""),10);
+      const info=await stat(lock).catch(()=>null);
+      if((Number.isInteger(owner)&&owner>0&&!ownerAlive(owner))||(info&&Date.now()-info.mtimeMs>900_000)) { await rm(lock,{recursive:true,force:true}); continue; }
+      if(Date.now()>deadline) break;
+      await new Promise((resolve)=>setTimeout(resolve,1_000));
+    }
+  }
+  try { await work(); } finally { if(held) await rm(lock,{recursive:true,force:true}); }
+}
+
+/**
  * Installs a project's npm dependencies once, in the main checkout, from its lockfile. `npm ci` never
  * rewrites package-lock.json, so a writer no longer has to run `npm install` and trip the owns check,
  * and the offline verification sandbox finds the packages already in place.
@@ -372,7 +395,11 @@ const installing=new Map<string,Promise<void>>();
 async function installBaseDependencies(basePath:string):Promise<void> {
   if((await stat(join(basePath,"node_modules")).catch(()=>null))?.isDirectory()) return;
   if(!(await stat(join(basePath,"package-lock.json")).catch(()=>null))?.isFile()) return;
-  const running=installing.get(basePath)??spawnAsync("npm",["ci","--no-audit","--no-fund"],{cwd:basePath,timeout:540_000,maxBuffer:16<<20}).then(()=>undefined).finally(()=>installing.delete(basePath));
+  const install=async()=>{
+    if((await stat(join(basePath,"node_modules")).catch(()=>null))?.isDirectory()) return;
+    await spawnAsync("npm",["ci","--no-audit","--no-fund"],{cwd:basePath,timeout:540_000,maxBuffer:16<<20});
+  };
+  const running=installing.get(basePath)??withInstallLock(basePath,install).finally(()=>installing.delete(basePath));
   installing.set(basePath,running);
   await running;
 }
@@ -383,7 +410,7 @@ async function installBaseDependencies(basePath:string):Promise<void> {
  * the next writer's typecheck failed until someone rebuilt main by hand (SelfyStudio, 2026-10-02).
  */
 async function rebuildChangedPackages(basePath:string,before:string):Promise<Array<{dir:string;ok:boolean;detail:string|null}>> {
-  const diff=git(basePath,["diff","--name-only",`${before}..HEAD`]);
+  const diff=await git(basePath,["diff","--name-only",`${before}..HEAD`]);
   if(!diff.ok) return [];
   const changed=diff.stdout.split("\n").map((line)=>line.trim()).filter(Boolean);
   const out:Array<{dir:string;ok:boolean;detail:string|null}>=[];
@@ -469,7 +496,7 @@ async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:
 
 /** The checkout's real info/exclude, resolved by git itself: the repo root's, a linked worktree's shared one, or a subfolder workspace's. */
 async function infoExcludePath(checkoutPath:string):Promise<string|null> {
-  const path=git(checkoutPath,["rev-parse","--git-path","info/exclude"]);
+  const path=await git(checkoutPath,["rev-parse","--git-path","info/exclude"]);
   if(!path.ok||!path.stdout.trim()) return null;
   const resolved=path.stdout.trim();
   return isAbsolute(resolved)?resolved:join(checkoutPath,resolved);
@@ -524,7 +551,7 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   for(const workspace of workspaces) for(const generated of ["dist",".nuxt"]) {
     const dist=join(workspace,generated);
     if(!(await stat(join(baseReal,dist)).catch(()=>null))?.isDirectory()||await lstat(join(input.worktreePath,dist)).catch(()=>null)) continue;
-    if(!git(baseReal,["check-ignore","-q",dist]).ok) continue;
+    if(!(await git(baseReal,["check-ignore","-q",dist])).ok) continue;
     await cp(join(baseReal,dist),join(input.worktreePath,dist),{recursive:true,dereference:false,errorOnExist:false,force:true});
     linked.push(dist);
   }
@@ -532,17 +559,17 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
 }
 
 /** The worktree's own top folder: a subfolder workspace's path is not what `git worktree remove` takes. */
-function worktreeTop(worktreePath:string):string {
-  return git(worktreePath,["rev-parse","--show-toplevel"]).stdout.trim()||worktreePath;
+async function worktreeTop(worktreePath:string):Promise<string> {
+  return (await git(worktreePath,["rev-parse","--show-toplevel"])).stdout.trim()||worktreePath;
 }
 
 /** Removes Lane Pilot's own worktree and its lane/ branch; other worktrees are left alone. */
 export async function removeLaneWorktree(input:{basePath:string;worktreePath:string}):Promise<{removed:boolean}> {
-  const branch=git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"]).stdout.trim();
+  const branch=(await git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"])).stdout.trim();
   if(!branch.startsWith("lane/")) return {removed:false};
   await recoverStaleGitLock(input.basePath);
-  const removed=git(input.basePath,["worktree","remove","--force",worktreeTop(input.worktreePath)]).ok;
-  if(removed) git(input.basePath,["branch","-D",branch]);
+  const removed=(await git(input.basePath,["worktree","remove","--force",await worktreeTop(input.worktreePath)])).ok;
+  if(removed) await git(input.basePath,["branch","-D",branch]);
   return {removed};
 }
 
@@ -553,23 +580,23 @@ export async function removeLaneWorktree(input:{basePath:string;worktreePath:str
  */
 export async function snapshotWorktree(input:{worktreePath:string;name:string;dir:string}):Promise<{status:"clean"|"saved"|"missing"|"failed";path:string|null;dirty:number;ahead:number;reason:string|null}> {
   if(!(await stat(input.worktreePath).catch(()=>null))?.isDirectory()) return {status:"missing",path:null,dirty:0,ahead:0,reason:null};
-  const status=git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
+  const status=await git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
   if(!status.ok) return {status:"failed",path:null,dirty:0,ahead:0,reason:status.reason};
   const dirty=status.stdout.split("\n").filter(Boolean).length;
-  const own=git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"]).stdout.trim();
-  const others=git(input.worktreePath,["for-each-ref","--format=%(refname)","refs/heads"]).stdout.split("\n").filter((ref)=>ref&&ref!==`refs/heads/${own}`);
-  const ahead=Number.parseInt(git(input.worktreePath,["rev-list","--count","HEAD","--not",...others]).stdout.trim(),10)||0;
+  const own=(await git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"])).stdout.trim();
+  const others=(await git(input.worktreePath,["for-each-ref","--format=%(refname)","refs/heads"])).stdout.split("\n").filter((ref)=>ref&&ref!==`refs/heads/${own}`);
+  const ahead=Number.parseInt((await git(input.worktreePath,["rev-list","--count","HEAD","--not",...others])).stdout.trim(),10)||0;
   if(!dirty&&!ahead) return {status:"clean",path:null,dirty,ahead,reason:null};
   // Written by git straight to files: a worktree with images made the in-memory patch overflow (ENOBUFS).
   await mkdir(input.dir,{recursive:true});
   const path=join(input.dir,`${input.name}.patch`);
   if(dirty){
-    const add=git(input.worktreePath,["add","-A"]);
-    const diff=add.ok?git(input.worktreePath,["diff","--cached","--binary","HEAD",`--output=${path}`]):add;
+    const add=await git(input.worktreePath,["add","-A"]);
+    const diff=add.ok?await git(input.worktreePath,["diff","--cached","--binary","HEAD",`--output=${path}`]):add;
     if(!diff.ok) return {status:"failed",path:null,dirty,ahead,reason:diff.reason};
   }
   if(ahead){
-    const patches=git(input.worktreePath,["format-patch","-q",`-${ahead}`,"HEAD","-o",join(input.dir,`${input.name}-commits`)]);
+    const patches=await git(input.worktreePath,["format-patch","-q",`-${ahead}`,"HEAD","-o",join(input.dir,`${input.name}-commits`)]);
     if(!patches.ok) return {status:"failed",path:null,dirty,ahead,reason:patches.reason};
   }
   return {status:"saved",path:dirty?path:join(input.dir,`${input.name}-commits`),dirty,ahead,reason:null};
