@@ -230,7 +230,7 @@ it("passes unscoped and scoped SQL deletions through native session hook pipelin
     env: hookEnv({ LANE_PILOT_AGENT_TYPE: "writer" }),
   }).stdout;
 
-  expect(run("sqlite3 db.sqlite 'delete from users; select 1;'")).toMatch(/DELETE without WHERE blocked/);
-  expect(run("sqlite3 db.sqlite 'delete from users where id = 1;'")).not.toMatch(/deny/);
+  expect(run('sqlite3 data.db "DELETE FROM users; SELECT 1"')).toMatch(/DELETE without WHERE blocked/);
+  expect(run('sqlite3 data.db "DELETE FROM users WHERE id=1"')).not.toMatch(/deny/);
 });
 
