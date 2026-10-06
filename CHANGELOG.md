@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.166
+
+From a self-repair of «writer changed paths outside owns_paths or inside never_touch: <path>» (SelfyStudio, treba-sites, Lane Pilot; 2026-10-05…06):
+- **A retry names a stray file correctly and asks the writer to undo only its own edits there.** In Lane Pilot `update-queued-task.2`, the writer added a settings row to `src/ui-catalog.ts`, a file outside owns_paths. The run-scope check names files outside owns_paths together with never_touch files, but the retry called the file «never_touch» and said «drop it». The writer reset the file to git HEAD. That also wiped another session's uncommitted edit in the shared checkout (the `workspace.mode` row without `in_place`). The task was still blocked, because the check compares the file with its state before the attempt, not with HEAD. Now the retry lists never_touch files and files outside owns_paths separately. It tells the writer to undo only its own edits, not to checkout or restore the file, and to answer `NEEDS_HUMAN: the task needs <file> changed (<why>); add it to owns_paths` if the task cannot be done without that file.
+- The other five reports were already covered. The SelfyStudio `card-checkout.test.ts` cases date from 2026-10-05 and were fixed in 0.1.161. treba-sites `admin-white-full-url.4` is the subfolder-prefix case fixed in 0.1.164, which the hub has not received yet.
+
 ## 0.1.165
 
 From a self-repair of «owns_paths rejected <path>» (content-factory and Lane Pilot, 2026-10-06):

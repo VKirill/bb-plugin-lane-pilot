@@ -4,7 +4,7 @@ import { valueAt } from "./values";
 import { createHash } from "node:crypto";
 import { compactContract, pmReadBrief } from "../writer-brief";
 import { cleanCheckOutput, failureExcerpt } from "../output-excerpt";
-import { fileAllowedByOwns } from "../owns-paths";
+import { fileAllowedByOwns, matchOwnsPath } from "../owns-paths";
 export function outputText(value: unknown): string {
   for (const key of ["text", "output", "lastAssistantText", "content"]) {
     const found = valueAt(value, key);
@@ -149,7 +149,7 @@ export function failingCheckFiles(output:string):string[] {
   return [...found];
 }
 
-export function previousAttemptBrief(last:Record<string, unknown> | null | undefined, task?:Pick<TaskV2, "owns_paths">):string {
+export function previousAttemptBrief(last:Record<string, unknown> | null | undefined, task?:Pick<TaskV2, "owns_paths"> & Partial<Pick<TaskV2, "never_touch">>):string {
   if (!last || last.status === "accepted") return "";
   const status = String(last.status ?? "failed");
   const reason = typeof last.reason === "string" ? last.reason.slice(0, 400) : "";
@@ -170,11 +170,22 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
   }
   const missing = /missing expected_outputs: (.+)/.exec(reason)?.[1];
   if (missing) bullets.push(`the contract expects ${missing} and your changes do not include them → if the task needs them, change them inside owns_paths; if your fix is complete without them, change nothing more and answer \`NEEDS_HUMAN: ${missing} are not needed because <reason>\``);
-  const never = /never_touch matched (.+?)(;|$)/.exec(reason)?.[1]
-    ?? /writer changed paths outside owns_paths or inside never_touch: (.+)/.exec(reason)?.[1];
-  const unowned = /owns_paths rejected (.+?)(;|$)/.exec(reason)?.[1];
-  if (never) bullets.push(`never_touch files (${never}) → move the change into owns_paths or drop it`);
-  if (unowned) bullets.push(`files outside owns_paths (${unowned}) → change only files under owns_paths, or drop them`);
+  // The run-scope gate's reason names files outside owns_paths as well as never_touch ones; it read as «never_touch
+  // files → drop it», and the update-queued-task.2 writer (Lane Pilot, 2026-10-06) reset src/ui-catalog.ts to git
+  // HEAD. That wiped another session's uncommitted edit in the shared checkout and still failed, because the file is
+  // compared with its state before the attempt, not with HEAD.
+  const stray = [/never_touch matched (.+?)(;|$)/, /owns_paths rejected (.+?)(;|$)/, /writer changed paths outside owns_paths or inside never_touch: (.+)/]
+    .flatMap((pattern) => pattern.exec(reason)?.[1]?.split(", ") ?? []).map((file) => file.trim()).filter(Boolean);
+  if (stray.length) {
+    const files = [...new Set(stray)];
+    const never = task?.never_touch ? files.filter((file) => task.never_touch!.some((pattern) => matchOwnsPath(file, pattern))) : [];
+    const outside = task ? files.filter((file) => !never.includes(file)) : [];
+    const undo = "→ undo only your own edits there (remove what you added, put back what you changed); do not git checkout/restore the file or make it match git HEAD: it may hold uncommitted work from before your attempt, and Lane Pilot compares it with its state before your attempt";
+    if (never.length) bullets.push(`never_touch files (${never.join(", ")}) ${undo}`);
+    if (outside.length) bullets.push(`files outside owns_paths (${outside.join(", ")}) ${undo}`);
+    if (!task) bullets.push(`files outside owns_paths or in never_touch (${files.join(", ")}) ${undo}`);
+    bullets.push(`if the task cannot be done without changing ${files.length > 1 ? "them" : "it"}, undo your edits there and answer \`${NEEDS_HUMAN_MARKER} the task needs ${files.join(", ")} changed (<why>); add ${files.length > 1 ? "them" : "it"} to owns_paths\``);
+  }
   if (/changed no files|returned no (answer|output)/.test(reason)) {
     bullets.push(`it ${/returned no (answer|output)/.test(reason) ? "gave no answer" : "answered without changing files"} → change the files the contract's expected_outputs name, then answer with the changed paths`);
   }
