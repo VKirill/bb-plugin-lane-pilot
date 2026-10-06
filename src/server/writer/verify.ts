@@ -12,7 +12,7 @@ import { cleanCheckOutput } from "../../output-excerpt";
 import type { VerifyResult } from "../../validate-output";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../../owns-paths";
 import { taskFamily } from "../../failure-class";
-import { filterOwnershipNoise } from "../../verification/git-ownership";
+import { bookkeepingSetting, filterOwnershipNoise } from "../../bookkeeping-paths";
 import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../verification/ownership";
 import { recordGateEvaluation } from "../stage-records";
 import { stringAt } from "../values";
@@ -202,6 +202,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     /** Hash of the content of the files the attempt changed: two turns with the same one left the diff as it was. */
     diffKey?:string }> {
     const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
+    const bookkeeping = bookkeepingSetting(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
     const dirt = await services.workspaceDirt(input.config, input.task.project_cwd);
     if (!dirt.ok) {
       recordGateEvaluation(db,{...input,gate:"owns-paths",status:"failed",input:JSON.stringify(input.task),summary:{reason:"workspace_snapshot_unavailable"}});
@@ -221,7 +222,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // Bookkeeping (BB chat files, Lane Pilot's own records) never counts as a change, so its missing hash blocks nothing.
     const unverifiable = filterOwnershipNoise(comparable
       .filter((before) => !before.sha256 && dirt.snapshots.some((after) => after.path === before.path))
-      .map((file) => file.path));
+      .map((file) => file.path), bookkeeping);
     if (unverifiable.length > 0) {
       recordGateEvaluation(db,{...input,gate:"owns-paths",status:"failed",input:JSON.stringify(input.task),summary:{unverifiableCount:unverifiable.length}});
       return {
@@ -254,7 +255,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       const base = await host.call("gitOwnershipBase",{requestedHostId:input.config.hostId,projectCwd:basePath},
         {hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>null);
       const committed = base?.status==="ready" && base.headSha ? await host.call("gitOwnershipChanges",{
-        requestedHostId:input.config.hostId,projectCwd:input.task.project_cwd,baseSha:base.headSha,compareCommitted:true,
+        requestedHostId:input.config.hostId,projectCwd:input.task.project_cwd,baseSha:base.headSha,compareCommitted:true,bookkeeping,
       },{hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>null) : null;
       if (committed?.status==="ready" && committed.paths.length) produced = [...new Set([...produced,...committed.paths])].sort();
     }
@@ -279,7 +280,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     if(gitBase) {
       const gitResult=await host.call("gitOwnershipChanges",{
         requestedHostId:input.config.hostId,projectCwd:input.task.project_cwd,
-        baseSha:gitBase.compare_committed?gitBase.base_sha:null,compareCommitted:gitBase.compare_committed,
+        baseSha:gitBase.compare_committed?gitBase.base_sha:null,compareCommitted:gitBase.compare_committed,bookkeeping,
       },{hostId:input.config.hostId,timeoutMs:30_000});
       if(gitResult.status!=="ready") {
         recordGateEvaluation(db,{...input,gate:"owns-paths",status:"failed",input:JSON.stringify(input.task),summary:{reason:"git_branch_diff_unavailable",detail:gitResult.reason}});
@@ -290,7 +291,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     }
     // The working tree of a shared checkout also holds what hooks and sibling agents wrote meanwhile
     // (.agents/memory episodes, PROGRESS.md, design probes); only paths this task owns stay attributed to it.
-    const noiseFree=new Set(filterOwnershipNoise(produced));
+    const noiseFree=new Set(filterOwnershipNoise(produced, bookkeeping));
     const attributed=produced.filter((path)=>noiseFree.has(path)||findUnownedChanges([path],input.task).length===0);
     const checkedPaths=[...new Set([...attributed,...branchChanges])].sort();
     // A path no task of the run owns fails here; name this task's other stray files (a sibling's) with it, or the

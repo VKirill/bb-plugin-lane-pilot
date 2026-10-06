@@ -77,6 +77,12 @@ export function taskFamily(taskId:string):string {
   }
 }
 
+// The machine, not the merged code: root-owned files left by a deploy (OVH `rmSync …/.output`), a stale output folder.
+const ENVIRONMENT_CHECK_ERROR = /\b(?:EACCES|EPERM|EEXIST)\b|permission denied/i;
+/** A failing check whose output shows the environment broke it: no writer can fix that in owns_paths. */
+export const isEnvironmentCheckFailure = (check:{ stdout?:string; stderr?:string }):boolean =>
+  ENVIRONMENT_CHECK_ERROR.test(`${check.stderr ?? ""}\n${check.stdout ?? ""}`);
+
 /** Failures that do not spend one of the task's attempts. */
 export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "harness", "infra", "budget", "limit"]);
 /** What the PM does next about a task that did not end accepted, by its failure class; shown in wait receipts. */
