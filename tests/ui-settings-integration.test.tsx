@@ -9,7 +9,8 @@ import { en, setLocaleOverride } from "../i18n";
 import plugin from "../server";
 import { toast } from "sonner";
 
-vi.setConfig({ testTimeout: 15_000 });
+// The whole file takes 70-80 s on OVH and single tests near 15 s under a loaded machine (clean-clone run 2026-10-07).
+vi.setConfig({ testTimeout: 60_000 });
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
 const projectId = "proj_settings_integration";
