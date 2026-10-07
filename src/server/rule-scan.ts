@@ -400,31 +400,32 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   }
 
   /** Every night each project with runs in the last 30 days rescans and judges its rules on trial, without anyone pressing a button. */
-  scheduleIsolated(bb, "rules-nightly", "30 3 * * *", async () => {
-    if (ctx.isDisposed()) return;
+  scheduleIsolated(bb, "rules-nightly", "30 3 * * *", async (signal) => {
+    if (ctx.isDisposed() || signal?.aborted) return;
     const since = Date.now() - RULE_SCAN_WINDOW_MS;
     const projects = (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id);
     for (const projectId of projects) {
-      if (ctx.isDisposed()) return;
+      if (ctx.isDisposed() || signal?.aborted) return;
       const stored = await bb.storage.kv.get<string>(LOCALE_KEY(projectId));
       const preferred = await bb.storage.kv.get<string>("preferences:locale");
       const locale = stored === "ru" || stored === "en" ? stored : preferred === "ru" ? "ru" : "en";
       await startScan(projectId, locale);
-      for (let i = 0; i < 180 && running.has(projectId) && !ctx.isDisposed(); i++) await new Promise((resolve) => setTimeout(resolve, 10_000));
+      for (let i = 0; i < 180 && running.has(projectId) && !ctx.isDisposed() && !signal?.aborted; i++) await new Promise((resolve) => setTimeout(resolve, 10_000));
     }
   }, { timeoutMs: 6 * 3_600_000 });
 
   /** Every 15 minutes new failures of recently active projects get their System One answers; no model runs. */
-  bb.background.schedule("rules-triage", "*/15 * * * *", async () => {
-    if (ctx.isDisposed()) return;
+  scheduleIsolated(bb, "rules-triage", "6,21,36,51 * * * *", async (signal) => {
+    if (ctx.isDisposed() || signal?.aborted) return;
     const since = Date.now() - 86_400_000;
     const projects = (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id);
     for (const projectId of projects) {
-      if (ctx.isDisposed() || running.has(projectId)) continue;
+      if (ctx.isDisposed() || signal?.aborted) return;
+      if (running.has(projectId)) continue;
       const result = await triageNew(projectId, { limit: 50 }).catch((cause: unknown) => ({ state: "error", triaged: 0, reason: cause instanceof Error ? cause.message : String(cause) }));
       if (result.triaged > 0 || result.state !== "ok") bb.log.info(`Lane Pilot rules triage for ${projectId}: ${result.state}, ${result.triaged} attempts`);
     }
-  });
+  }, { timeoutMs: 10 * 60_000 });
 
   return { analyzerFor, chainForRun, evaluateRules, saveAnalyzer, scanLabel: scopeLabel, scanState, startScan, summary, triageNew };
 }

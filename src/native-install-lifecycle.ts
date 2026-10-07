@@ -6,7 +6,7 @@ const PREFIX = "native-install:host:";
 const ERROR_PREFIX = "native-install:error:";
 type Action = "enable" | "disable" | "remove" | "reload" | "shutdown";
 type LifecycleContext = {
-  action: Action; kv: PluginKvStorage; signal: AbortSignal; deadline?: number;
+  action: Action; kv: PluginKvStorage; signal: AbortSignal; deadline?: number; instanceId?: string;
   callHost(args: { contract: PluginRpcContract; method: string; input: unknown; hostId: string; timeoutMs?: number; signal?: AbortSignal }): Promise<unknown>;
 };
 

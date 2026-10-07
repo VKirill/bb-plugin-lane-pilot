@@ -22,12 +22,13 @@ const isGone = (cause: unknown) => /\b404\b|not found/i.test(cause instanceof Er
  * day. A run is opened per Lane Pilot chat and used to stay «running» forever once the chat was gone. Live and idle
  * chats are left alone, as is any run with an open attempt or a chat that could not be read.
  */
-export async function closeAbandonedRuns(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, now = Date.now()): Promise<string[]> {
+export async function closeAbandonedRuns(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, now = Date.now(), signal?: AbortSignal): Promise<string[]> {
   const rows = db.prepare("SELECT id,project_id,pm_thread_id,created_at FROM lane_pilot_run WHERE closed_at IS NULL AND state IN ('pending','running')")
     .all() as Array<{ id: string; project_id: string; pm_thread_id: string | null; created_at: number }>;
   const busy = new Set(listOpenAttempts(db).map((attempt) => attempt.run_id));
   const closed: string[] = [];
   for (const row of rows) {
+    signal?.throwIfAborted();
     if (busy.has(row.id)) continue;
     let abandoned: boolean;
     if (!row.pm_thread_id) abandoned = now - row.created_at > DAY_MS;
@@ -88,7 +89,7 @@ export type WorktreeSnapshot = (hostId:string, worktreePath:string, name:string)
  * has are saved as a patch first (~/.lane-pilot/released/<environment>.patch); if that fails the worktree stays.
  * The worktree of an area's last accepted task stays for the sticky window: the area's next task continues there.
  */
-export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, snapshot: WorktreeSnapshot, now = Date.now()): Promise<string[]> {
+export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, snapshot: WorktreeSnapshot, now = Date.now(), signal?: AbortSignal): Promise<string[]> {
   const rows = db.prepare(`SELECT a.environment_id AS environmentId, a.holder_thread_id AS holderThreadId, a.state, a.updated_at AS updatedAt, a.run_id AS runId,
       r.writer_environment_id AS runEnvironmentId, json_extract(t.contract_json,'$.area') AS area,
       EXISTS(SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.created_at>a.created_at) AS superseded
@@ -98,6 +99,7 @@ export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: Re
   const done = (row:(typeof rows)[number]) => FINAL.has(row.state) || ((RETRY_ELIGIBLE as string[]).includes(row.state) && row.superseded === 1);
   const groups = new Map<string, typeof rows>();
   for (const row of rows) {
+    signal?.throwIfAborted();
     let environmentId = row.environmentId;
     // A holder whose worktree was never bound: its attempt ended before setAttemptWorkspace. Asked only once that attempt is over.
     if (!environmentId && row.holderThreadId && done(row) && row.updatedAt < now - ENVIRONMENT_GRACE_MS) {
@@ -108,6 +110,7 @@ export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: Re
   }
   const removed: string[] = [];
   for (const [environmentId, attempts] of groups) {
+    signal?.throwIfAborted();
     if (!attempts.every(done) || Math.max(...attempts.map((row) => row.updatedAt)) >= now - ENVIRONMENT_GRACE_MS) continue;
     if (attempts.some((row) => row.state === "accepted" && row.area && row.updatedAt >= now - STICKY_WINDOW_MS)) continue;
     const environment = await bb.sdk.environments.get({ environmentId }).then((value) => value as unknown, (cause: unknown) => (isGone(cause) ? null : undefined));
@@ -139,7 +142,7 @@ export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: Re
  * Lane Pilot's own worktrees (a section with its own repository) that an area task kept after its merge, removed once
  * the area's sticky window is over and no open attempt works there. Returns the removed paths.
  */
-export async function cleanupStickyLaneWorktrees(db: ReturnType<typeof openDatabase>, remove:(hostId:string, basePath:string, worktreePath:string) => Promise<boolean>, released:Set<string>, now = Date.now()): Promise<string[]> {
+export async function cleanupStickyLaneWorktrees(db: ReturnType<typeof openDatabase>, remove:(hostId:string, basePath:string, worktreePath:string) => Promise<boolean>, released:Set<string>, now = Date.now(), signal?: AbortSignal): Promise<string[]> {
   const rows = db.prepare(`SELECT a.workspace_path AS path, r.writer_workspace_path AS base, r.writer_host_id AS hostId, MAX(a.updated_at) AS updatedAt,
       SUM(a.state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')) AS open
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_task t ON t.id=a.task_id
@@ -148,6 +151,7 @@ export async function cleanupStickyLaneWorktrees(db: ReturnType<typeof openDatab
     GROUP BY a.workspace_path, r.writer_workspace_path, r.writer_host_id`).all() as Array<{ path:string; base:string|null; hostId:string|null; updatedAt:number; open:number }>;
   const removed:string[] = [];
   for (const row of rows) {
+    signal?.throwIfAborted();
     if (released.has(row.path) || row.open > 0 || !row.base || !row.hostId || row.updatedAt >= now - STICKY_WINDOW_MS) continue;
     if (await remove(row.hostId, row.base, row.path).catch(() => false)) removed.push(row.path);
     released.add(row.path);

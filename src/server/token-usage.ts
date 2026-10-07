@@ -4,6 +4,7 @@ import { pluginStopped } from "./run-finish";
 import { stringAt, valueAt } from "./values";
 import { costUsd } from "../model-prices";
 import type { ServerCore } from "./core";
+import { scheduleIsolated } from "./schedules";
 
 export const TOKEN_USAGE_SCHEDULE = "token-usage-sync";
 export const TOKEN_USAGE_LAST_SYNC_KEY = "token-usage:last-sync-at";
@@ -551,7 +552,8 @@ export function attachTokenUsage(ctx: ServerCore): { start: (sinceDays?: number)
       .finally(() => { running = false; });
     return true;
   };
-  ctx.bb.background.schedule(TOKEN_USAGE_SCHEDULE, "*/30 * * * *", async () => { start(90); });
+  // The sync runs detached (`start` returns at once), so the isolated run is short; the limit only guards a stuck start.
+  scheduleIsolated(ctx.bb, TOKEN_USAGE_SCHEDULE, "7,37 * * * *", async () => { start(90); }, { timeoutMs: 5 * 60_000 });
   start(90);
   return { start };
 }

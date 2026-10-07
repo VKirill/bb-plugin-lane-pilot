@@ -1,5 +1,6 @@
 import { parseOwnedAgents } from "../agent-profile";
 import { bindDrainTarget, createDeployDrain } from "./deploy-drain";
+import { currentScheduleSignal } from "./schedules";
 import { createHostJobs, isHostJobKind } from "./host-jobs";
 import { aggregateRun } from "../aggregation";
 import { TARGET_SHA } from "../constants";
@@ -48,7 +49,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     return value;
   }
   const deployDrain = createDeployDrain(() => state.disposed);
-  bindDrainTarget({ drain: deployDrain, log: (line) => bb.log.info(line) });
+  bb.onDispose(bindDrainTarget({ drain: deployDrain, log: (line) => bb.log.info(line) }, (bb as unknown as { vk?: { instanceId?: string } }).vk?.instanceId));
   const rawCall = rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>;
   // Long host calls run as background jobs (B4): the host daemon cancels a call at its deadline and kills the worker.
   const hostJobs = createHostJobs({
@@ -56,9 +57,14 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   });
   const host = {
     ...rawHost,
-    call: (async (method: string, input: unknown, options: unknown) => await deployDrain.around(method, async () => {
+    call: (async (method: string, input: unknown, options: unknown) => {
+      // A call made inside an isolated schedule run carries that run's signal: the core aborts the run at its limit.
+      const runSignal = currentScheduleSignal();
+      const given = (options ?? {}) as { hostId: string; timeoutMs?: number; job?: boolean; signal?: AbortSignal };
+      const withSignal = runSignal && !given.signal ? { ...given, signal: runSignal } : given;
+      return await deployDrain.around(method, async () => {
       // `job: true` asks for a background job where it is not the rule (the post-merge check); the host never sees it.
-      const { job, ...hostOptions } = (options ?? {}) as { hostId: string; timeoutMs?: number; job?: boolean };
+      const { job, ...hostOptions } = withSignal;
       const direct = async () => {
         const key = JEV_METHODS.has(method) ? await catalogJevKey() : undefined;
         return await rawCall(method, key ? { ...(input as Record<string, unknown>), jevApiKey:key } : input, hostOptions);
@@ -66,7 +72,8 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
       // LANE_PILOT_HOST_JOBS=0 runs every call directly, as before jobs: a switch for a host where they misbehave.
       if (process.env.LANE_PILOT_HOST_JOBS !== "0" && isHostJobKind(method) && (method !== "runSandboxedCommand" || job === true)) return await hostJobs.run(method, input, hostOptions, direct);
       return await direct();
-    })) as typeof rawHost.call,
+      }, withSignal.signal);
+    }) as typeof rawHost.call,
   } as typeof rawHost;
 
 

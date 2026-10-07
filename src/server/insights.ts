@@ -9,6 +9,7 @@ import {
 import { loadProjectSettings, type LanePilotDatabase } from "../database";
 import { configuredSetting, requirePmRun, type ServerContext } from "./context";
 import { registerObservedTool } from "./tool-result";
+import { scheduleIsolated } from "./schedules";
 
 export const INSIGHTS_TOOLS = ["lane_pilot_routing_stats", "lane_pilot_lessons_sweep", "lane_pilot_rule_propose", "lane_pilot_lesson", "lane_pilot_memory_golden"] as const;
 
@@ -272,11 +273,12 @@ export function mountInsights(ctx: ServerContext): void {
     },
   });
 
-  bb.background.schedule("lessons-sweep", "*/15 * * * *", async () => {
+  // Isolated, and off the quarter-hour: BB starts at most 8 isolated runs at once and skips the tick of any further one.
+  scheduleIsolated(bb, "lessons-sweep", "4,19,34,49 * * * *", async (signal) => {
     if (ctx.isDisposed()) return;
     const now = Date.now();
     for (const projectId of activeProjects(db, now - 86_400_000)) {
-      if (ctx.isDisposed()) return;
+      if (ctx.isDisposed() || signal?.aborted) return;
       try {
         const result = await sweepLessons(ctx, projectId, now);
         if (result.state === "counted") ctx.log(`Lane Pilot lessons for ${projectId}: ${result.candidates} from ${result.sources} sources counted`);
@@ -284,5 +286,5 @@ export function mountInsights(ctx: ServerContext): void {
         ctx.log(`Lane Pilot lessons sweep failed for ${projectId}: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
     }
-  });
+  }, { timeoutMs: 10 * 60_000 });
 }

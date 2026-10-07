@@ -11,6 +11,7 @@
     "experimental_vkQuietChild",
     "experimental_vkSpawnKeyed",
     "vkLifecycleDrain",
+    "vkInstanceId",
     "experimental_vkSchedule",
     "experimental_vkOnHookTimeout"
   ]

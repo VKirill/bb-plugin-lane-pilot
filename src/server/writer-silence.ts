@@ -30,6 +30,8 @@ export type SilenceDeps = {
   /** Minutes of silence after which the project's writers are nudged. */
   silenceMinutes:(projectId:string, runId:string) => number;
   isDisposed:() => boolean;
+  /** The schedule run's signal: the sweep stops between attempts when the core aborts the run. */
+  signal?:AbortSignal;
   log:(line:string) => void;
 };
 
@@ -49,7 +51,7 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
   const done:Array<{ attemptId:string; action:"nudged" | "ended"; count:number }> = [];
   const { bb } = deps;
   for (const attempt of deps.openAttempts()) {
-    if (deps.isDisposed()) break;
+    if (deps.isDisposed() || deps.signal?.aborted) break;
     if (attempt.state !== "running" || !attempt.thread_id) continue;
     try {
       const limitMs = Math.max(1, deps.silenceMinutes(attempt.project_id, attempt.run_id)) * 60_000;

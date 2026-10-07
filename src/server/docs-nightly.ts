@@ -12,7 +12,7 @@ import { fullAccessSpawn } from "./pm-spawn";
 import { stringAt } from "./values";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { basename, resolve } from "node:path";
-import { scheduleIsolated } from "./schedules";
+import { abortable, scheduleIsolated } from "./schedules";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 
@@ -220,10 +220,11 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     return result.status;
   }
 
-  async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string;catchUp?:boolean}={}):Promise<Array<Record<string,unknown>>> {
+  async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string;catchUp?:boolean;signal?:AbortSignal}={}):Promise<Array<Record<string,unknown>>> {
     const results:Array<Record<string,unknown>>=[];
     const projects=opts.projectId?[{id:opts.projectId}]:await bb.sdk.projects.list({includePersonal:true}).catch(()=>[] as Array<{id:string}>);
     for(const project of projects){
+      opts.signal?.throwIfAborted();
       const places:Array<{scopes:string[];hostId:string;path:string}>=[];
       const root=await services.resolveProjectWriterHost({projectId:project.id}).catch(()=>null);
       if(root?.status==="resolved"&&root.path) places.push({scopes:[],hostId:root.hostId,path:root.path});
@@ -235,6 +236,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const sections=await listProjectSections(project.id);
       for(const section of sections) if(section.kind==="folder"&&section.path&&section.hostId) places.push({scopes:sectionChain(sections,section.id),hostId:section.hostId,path:section.path});
       for(const place of places){
+        opts.signal?.throwIfAborted();
         if(opts.path&&resolve(place.path)!==resolve(opts.path)) continue;
         try{
           const settings=loadProjectSettings(db,project.id,place.scopes);
@@ -259,7 +261,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           if(!opts.force&&!catchUp&&!claimDailySchedule(db,project.id,schedule,scope.localDate)) continue;
           if(docsPassesRunning.has(place.path)) continue;
           docsPassesRunning.add(place.path);
-          await inDocsQueue(async()=>{
+          // A pass stuck on one await must not keep the serial queue and its place busy: an aborted run ends the wait.
+          const inQueue=()=>inDocsQueue(async()=>{
           const firstResult=results.length;
           const attempts=(catchUp?night?.attempts??0:0)+1;
           await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:false,failed:0});
@@ -313,7 +316,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
             }
             finally{ running.delete(unit); }
           };
-          const pool=async(queue:DocsUnit[])=>{ await Promise.all(Array.from({length:Math.min(DOCS_UNIT_CONCURRENCY,queue.length)},async()=>{ for(let unit=queue.shift();unit;unit=queue.shift()) await run(unit); })); };
+          const pool=async(queue:DocsUnit[])=>{ await Promise.all(Array.from({length:Math.min(DOCS_UNIT_CONCURRENCY,queue.length)},async()=>{ for(let unit=queue.shift();unit;unit=queue.shift()){ opts.signal?.throwIfAborted(); await run(unit); } })); };
           // Workspaces first, a few at once. Then the business flows, traced once across the repository, each written
           // by its own agent on top of the workspace docs. The root last, so its overview links to docs that exist.
           await pool(units.slice(0,-1));
@@ -322,11 +325,13 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           await pool([...flowUnits]);
           const root=units.at(-1)!;
           await run(flowUnits.length?{...root,flows:flowUnits.map((unit)=>unit.flow!.slug)}:root);
+          opts.signal?.throwIfAborted();
           // A unit whose merge found main busy is in the worktree's history; this merges what is still missing.
           await mergeDocs(place.path,work,`docs: nightly refresh ${scope.localDate}`);
           await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:true,failed:results.slice(firstResult).filter((row)=>row.state==="failed").length});
           } finally { docsPassesRunning.delete(place.path); }
           });
+          if(opts.signal) await abortable(opts.signal,inQueue()).finally(()=>docsPassesRunning.delete(place.path)); else await inQueue();
         }catch(cause){
           const reason=cause instanceof Error?cause.message:String(cause);
           results.push({projectId:project.id,path:place.path,state:"failed",reason});
@@ -623,10 +628,11 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     }finally{ docsUnitsFinishing.delete(key); }
   }
 
-  async function runScheduledDocsMaintenance():Promise<void> {
+  async function runScheduledDocsMaintenance(signal?:AbortSignal):Promise<void> {
     const projectIds=(db.prepare("SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id=''").all() as Array<{project_id:string}>).map((row)=>row.project_id);
     const now=new Date(), today=localDateKey(now);
     for(const projectId of projectIds){
+      signal?.throwIfAborted();
       const config=loadPrototypeConfig(db,projectId); if(!config) continue;
       const settings=loadProjectSettings(db,projectId);
       const docsSettings=parseDocsSettings(Object.fromEntries(["docs.enabled","docs.maintain","docs.since","docs.page_cap","docs.hour"].map((key)=>[key,configuredSetting(settings,key)])));
@@ -655,11 +661,11 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
    * stops all of them - self-repair included. The work runs detached; a tick while it still runs is skipped.
    */
   const schedulesRunning=new Set<string>();
-  function guarded(name:string,work:()=>Promise<unknown>):()=>Promise<void> {
-    return async()=>{
+  function guarded(name:string,work:(signal?:AbortSignal)=>Promise<unknown>):(signal?:AbortSignal)=>Promise<void> {
+    return async(signal?:AbortSignal)=>{
       if(schedulesRunning.has(name)) return;
       schedulesRunning.add(name);
-      try{ await work(); }
+      try{ await (signal?abortable(signal,Promise.resolve(work(signal))):work()); }
       catch(cause){ if(!pluginStopped(cause)) bb.log.warn(`Lane Pilot schedule ${name} failed: ${cause instanceof Error?cause.message:String(cause)}`); }
       finally{ schedulesRunning.delete(name); }
     };
@@ -670,22 +676,23 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     return async()=>{ void run(); };
   }
   /** With them the core waits for the pass without holding other schedules, and aborts it after the limit. */
-  function scheduleDocs(name:string,cron:string,work:()=>Promise<unknown>,timeoutMs:number){
+  function scheduleDocs(name:string,cron:string,work:(signal?:AbortSignal)=>Promise<unknown>,timeoutMs:number){
     scheduleIsolated(bb,name,cron,guarded(name,work),{timeoutMs,fallback:inBackground(name,work)});
   }
 
   scheduleIsolated(bb,"docs-maintenance-hourly","0 * * * *",runScheduledDocsMaintenance,{timeoutMs:3*3_600_000});
 
-  scheduleDocs("docs-nightly-hourly","0 * * * *",()=>runNightlyDocs(),6*3_600_000);
+  scheduleDocs("docs-nightly-hourly","0 * * * *",(signal)=>runNightlyDocs({signal}),6*3_600_000);
 
   /**
    * Every two minutes: units a stopped plugin instance left mid-way are finished on their own agent thread, and a pass
    * of today that broke off or left units failed runs again - up to DOCS_NIGHT_ATTEMPTS a night. Settled passes leave the index.
    */
-  async function runDocsCatchUps():Promise<void> {
+  async function runDocsCatchUps(signal?:AbortSignal):Promise<void> {
     // First the units whose agent a stopped plugin instance left running or finished: same thread, from the saved step.
     const units=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
     for(const unitKey of Object.keys(units)){
+      signal?.throwIfAborted();
       if(docsUnitsFinishing.has(unitKey)) continue;
       const record=await bb.storage.kv.get(unitKey).catch(()=>null) as DocsUnitRecord|null;
       if(!record){ await updateDocsUnitsIndex((index)=>{ delete index[unitKey]; }); continue; }
@@ -696,13 +703,14 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const open=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
     const keep:DocsOpenPasses={};
     for(const [key,entry] of Object.entries(open)){
+      signal?.throwIfAborted();
       const night=await bb.storage.kv.get(key).catch(()=>null) as {date?:string;attempts?:number;finished?:boolean;failed?:number}|null;
       const unsettled=night?.date===entry.date&&(!night.finished||(night.failed??0)>0)&&(night.attempts??0)<DOCS_NIGHT_ATTEMPTS;
       if(!unsettled) continue;
       keep[key]=entry;
       if(docsPassesRunning.has(entry.path)) continue;
       // Units still finishing from saved progress are waited for inside the pass, not started again.
-      await runNightlyDocs({projectId:entry.projectId,path:entry.path,catchUp:true});
+      await runNightlyDocs({projectId:entry.projectId,path:entry.path,catchUp:true,signal});
     }
     const latest=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
     await bb.storage.kv.set(DOCS_OPEN_KEY,Object.fromEntries(Object.entries(latest).filter(([key])=>key in keep||!(key in open))));

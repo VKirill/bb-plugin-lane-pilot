@@ -25,6 +25,7 @@ import bundledAgents from "../bundled-agents.json";
 import { BB_AGENT_SUMMARIES } from "../native-agent-overlay";
 import { requirePmRun, type ServerContext } from "./context";
 import { registerObservedTool } from "./tool-result";
+import { scheduleIsolated } from "./schedules";
 
 export const HANDOFF_TOOLS = ["lane_pilot_handoff_create", "lane_pilot_handoff_receipt", "lane_pilot_handoff_list"] as const;
 
@@ -150,9 +151,9 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
     },
   });
 
-  bb.background.schedule("handoff-expiry", "*/5 * * * *", async () => {
+  scheduleIsolated(bb, "handoff-expiry", "1-59/5 * * * *", async () => {
     if (ctx.isDisposed()) return;
     const expired = expireOverdueHandoffs(db);
     if (expired.length) ctx.log(`Lane Pilot handoffs expired: ${expired.join(", ")}`);
-  });
+  }, { timeoutMs: 2 * 60_000 });
 }

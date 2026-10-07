@@ -17,9 +17,9 @@ export function createDeployDrain(disposed:() => boolean, now = () => Date.now()
   const inFlight = new Map<number, { method:string; startedAt:number }>();
   const draining = () => on && now() - since < TTL_MS;
   return {
-    async around<T>(method:string, call:() => Promise<T>):Promise<T> {
+    async around<T>(method:string, call:() => Promise<T>, signal?:AbortSignal):Promise<T> {
       if (!CHECKOUT_WRITING_METHODS.has(method) && !ACCEPTANCE_METHODS.has(method)) return await call();
-      while (draining() && !disposed()) await new Promise((wake) => setTimeout(wake, pollMs));
+      while (draining() && !disposed()) { signal?.throwIfAborted(); await new Promise((wake) => setTimeout(wake, pollMs)); }
       const token = next++;
       inFlight.set(token, { method, startedAt:now() });
       try { return await call(); } finally { inFlight.delete(token); }
@@ -33,15 +33,28 @@ export function createDeployDrain(disposed:() => boolean, now = () => Date.now()
 
 export type DeployDrain = ReturnType<typeof createDeployDrain>;
 type DrainTarget = { drain:DeployDrain; log:(line:string) => void };
-type DrainContext = { action:string; deadline?:number; signal:AbortSignal; kv:{ set(key:string, value:unknown):Promise<void> } };
+type DrainContext = { action:string; deadline?:number; signal:AbortSignal; kv:{ set(key:string, value:unknown):Promise<void> }; instanceId?:string };
 export const DRAIN_SNAPSHOT_KEY = "drain:snapshot";
 
 /**
- * The drain of the instance this module belongs to. BB runs `experimental_vkLifecycle` in the module instance that
- * is being replaced, so a module-level binding reaches the right instance; the factory binds it at load.
+ * The drains of the plugin instances built from this module, by instance id (`bb.vk.instanceId`). A reload with the
+ * same build does not evaluate the module again, and BB runs the new factory BEFORE it drains the old instance, so one
+ * module-level binding was overwritten by the new instance and the old instance's drain switched the NEW one off for
+ * 20 minutes while the old one's work was cut. The lifecycle handler gets the id of the instance it drains
+ * (`ctx.instanceId`) and finds exactly that one. A core without ids: the oldest bound instance, which is the one
+ * being replaced. An instance unbinds when it is disposed.
  */
-let drainTarget:DrainTarget | null = null;
-export function bindDrainTarget(target:DrainTarget | null):void { drainTarget = target; }
+const drainTargets = new Map<string, DrainTarget>();
+let anonymousInstances = 0;
+export function bindDrainTarget(target:DrainTarget, instanceId?:string):() => void {
+  const id = instanceId ?? `anonymous-${++anonymousInstances}`;
+  drainTargets.set(id, target);
+  return () => { if (drainTargets.get(id) === target) drainTargets.delete(id); };
+}
+function drainTargetFor(instanceId:string | undefined):DrainTarget | null {
+  if (instanceId !== undefined) return drainTargets.get(instanceId) ?? null;
+  return drainTargets.values().next().value ?? null;
+}
 
 /**
  * VK core drain (`vk.lifecycle.drain` in package.json): before a reload or a server stop, new calls that write to a
@@ -50,7 +63,7 @@ export function bindDrainTarget(target:DrainTarget | null):void { drainTarget = 
  * on abort; the same switch the `deploy_drain` RPC turns, so the push script's drain stays a working fallback.
  */
 export async function drainForLifecycle(ctx:DrainContext, pollMs = 500, now = () => Date.now()):Promise<{ clean:boolean }> {
-  const target = drainTarget;
+  const target = drainTargetFor(ctx.instanceId);
   if (!target) return { clean:true };
   target.drain.set(true);
   const deadline = ctx.deadline ?? now() + 30_000;
@@ -64,4 +77,13 @@ export async function drainForLifecycle(ctx:DrainContext, pollMs = 500, now = ()
     ? `Lane Pilot drained for ${ctx.action}: no checkout write or check in flight`
     : `Lane Pilot drain for ${ctx.action} ended with ${status.inFlight.map((call) => `${call.method}(${call.ageSec}s)`).join(", ")} still running`);
   return { clean };
+}
+
+/**
+ * Whether a start right after a clean drain may leave the periodic scans (runs, worktrees, parked tasks) to their
+ * schedules: a reload whose previous instance finished its drain in time (`afterDrain`) and saved a snapshot with
+ * nothing in flight. Anything else (a boot, an enable, a drain that hit its deadline, no snapshot) scans at once.
+ */
+export function skipRedundantStartupScans(vk:{ startReason?:string; afterDrain?:boolean }, snapshot:{ action?:string; clean?:boolean } | undefined):boolean {
+  return vk.startReason === "reload" && vk.afterDrain === true && snapshot?.action === "reload" && snapshot.clean === true;
 }

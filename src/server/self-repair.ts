@@ -401,11 +401,14 @@ export function createSelfRepair(ctx: ServerCore) {
    * thread for the oldest kind nobody has taken yet. Kinds that wait (a repair running, the daily limit) stay in the
    * state and are taken on a later pass; a kind seen again a day after its repair started gets a new repair.
    */
-  async function tick(options: { dryRun?: boolean; since?: number } = {}): Promise<{ incidents: number; signatures: string[]; spawned: string | null; reason: string }> {
+  async function tick(options: { dryRun?: boolean; since?: number; signal?: AbortSignal } = {}): Promise<{ incidents: number; signatures: string[]; spawned: string | null; reason: string }> {
+    const { signal } = options;
     const cfg = await config();
     const current = await state();
     const now = Date.now();
+    signal?.throwIfAborted();
     const incidents = await collect(options.since ?? current.cursor, cfg);
+    signal?.throwIfAborted();
     const groups = new Map<string, Incident[]>();
     for (const row of incidents) groups.set(row.signature, [...(groups.get(row.signature) ?? []), row]);
     for (const [signature, rows] of groups) {
@@ -419,6 +422,7 @@ export function createSelfRepair(ctx: ServerCore) {
     }
     for (const [signature, record] of Object.entries(current.signatures)) if (now - record.lastAt > FORGET_MS) delete current.signatures[signature];
     for (const record of Object.values(current.signatures)) {
+      signal?.throwIfAborted();
       if (!record.threadId || record.verdict || await threadBusy(record.threadId)) continue;
       const threadId = record.threadId;
       record.verdict = parseVerdict(await Promise.resolve().then(() => bb.sdk.threads.output({ threadId }))
@@ -427,6 +431,7 @@ export function createSelfRepair(ctx: ServerCore) {
     }
     if (!options.dryRun) {
       for (const [signature, record] of Object.entries(current.signatures)) {
+        signal?.throwIfAborted();
         if (!record.worktree || !record.threadId || (record.worktree.mergeTries ?? 0) >= MERGE_TRIES || await threadBusy(record.threadId)) continue;
         await settleWorktree(record, signature, now);
       }
@@ -446,6 +451,8 @@ export function createSelfRepair(ctx: ServerCore) {
       const [signature, record] = due[0]!;
       let worktree: RepairWorktree | null = null;
       try {
+        // An aborted tick starts nothing: a repair thread begun after the abort has nobody watching it.
+        signal?.throwIfAborted();
         // No worktree, no repair: the shared checkout is not a fallback (that is the fault E2 removes); the kind stays due.
         worktree = await createRepairWorktree(cfg, signature, now);
         const result = await fullAccessSpawn(bb, {
@@ -533,9 +540,9 @@ export type SelfRepair = ReturnType<typeof createSelfRepair>;
 export function mountSelfRepair(ctx: ServerCore): SelfRepair {
   const repair = createSelfRepair(ctx);
   // Isolated where the core allows: a long schedule of its own or of another plugin must not hold the watcher back.
-  scheduleIsolated(ctx.bb, "self-repair", "*/15 * * * *", async () => {
+  scheduleIsolated(ctx.bb, "self-repair", "*/15 * * * *", async (signal) => {
     if (ctx.isDisposed()) return;
-    const result = await repair.tick().catch((cause) => ({ incidents: 0, signatures: [], spawned: null, reason: String(cause) }));
+    const result = await repair.tick({ signal }).catch((cause) => ({ incidents: 0, signatures: [], spawned: null, reason: String(cause) }));
     if (result.incidents) ctx.log(`self-repair tick: ${result.incidents} incident(s), ${result.signatures.length} kind(s): ${result.reason}`);
   }, { timeoutMs: 20 * 60_000 });
   return repair;

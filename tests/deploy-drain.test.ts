@@ -49,7 +49,7 @@ const noCallHost = async () => { throw new Error("a drain does not call hosts");
 it("a reload drain waits for the running call, saves a snapshot and leaves the drain on", async () => {
   const drain = createDeployDrain(() => false, () => Date.now(), 5);
   const lines: string[] = [];
-  bindDrainTarget({ drain, log: (line) => lines.push(line) });
+  const unbind = bindDrainTarget({ drain, log: (line) => lines.push(line) });
   let release!: () => void;
   const merging = drain.around("gitIntegrate", () => new Promise<void>((done) => { release = done; }));
   const { rows, kv } = lifecycleKv();
@@ -62,17 +62,72 @@ it("a reload drain waits for the running call, saves a snapshot and leaves the d
   expect(rows.get(DRAIN_SNAPSHOT_KEY)).toMatchObject({ action: "reload", clean: true, inFlight: [] });
   expect(lines[0]).toContain("drained for reload");
   expect(drain.status().draining).toBe(true);
-  bindDrainTarget(null);
+  unbind();
 });
 
 it("a drain stops at its deadline with the call still running, and without a bound instance it does nothing", async () => {
   const drain = createDeployDrain(() => false, () => Date.now(), 5);
-  bindDrainTarget({ drain, log: () => undefined });
+  const unbind = bindDrainTarget({ drain, log: () => undefined });
   void drain.around("gitIntegrate", () => new Promise<void>(() => undefined));
   const { rows, kv } = lifecycleKv();
   const result = await drainForLifecycle({ action: "shutdown", deadline: Date.now() + 50, kv, signal: new AbortController().signal }, 10);
   expect(result.clean).toBe(false);
   expect(rows.get(DRAIN_SNAPSHOT_KEY)).toMatchObject({ action: "shutdown", clean: false });
-  bindDrainTarget(null);
+  unbind();
   await expect(drainForLifecycle({ action: "reload", kv, signal: new AbortController().signal })).resolves.toEqual({ clean: true });
+});
+
+// A same-build reload does not evaluate the module again: the new factory binds before the old instance drains.
+function instance(name: string) {
+  const drain = createDeployDrain(() => false, () => Date.now(), 5);
+  const lines: string[] = [];
+  return { name, drain, lines, target: { drain, log: (line: string) => lines.push(line) } };
+}
+const reloadDrain = (instanceId: string | undefined) => {
+  const { kv } = lifecycleKv();
+  return drainForLifecycle({ action: "reload", deadline: Date.now() + 50, kv, signal: new AbortController().signal, ...(instanceId ? { instanceId } : {}) }, 5);
+};
+
+it("order 1: the new instance binds before the old one drains, and the drain reaches only the old instance", async () => {
+  const oldOne = instance("old"), newOne = instance("new");
+  const unbindOld = bindDrainTarget(oldOne.target, "old");
+  const unbindNew = bindDrainTarget(newOne.target, "new");
+  void oldOne.drain.around("gitIntegrate", () => new Promise<void>(() => undefined));
+  await reloadDrain("old");
+  expect(oldOne.drain.status().draining).toBe(true);
+  expect(newOne.drain.status().draining).toBe(false);
+  expect(newOne.lines).toEqual([]);
+  expect(await newOne.drain.around("gitIntegrate", async () => "ran")).toBe("ran");
+  unbindOld(); unbindNew();
+});
+
+it("order 2: the old instance drains before the new one binds, and the new one starts open", async () => {
+  const oldOne = instance("old"), newOne = instance("new");
+  const unbindOld = bindDrainTarget(oldOne.target, "old");
+  await reloadDrain("old");
+  const unbindNew = bindDrainTarget(newOne.target, "new");
+  expect(oldOne.drain.status().draining).toBe(true);
+  expect(newOne.drain.status().draining).toBe(false);
+  unbindOld(); unbindNew();
+});
+
+it("a core without instance ids drains the oldest bound instance, the one being replaced", async () => {
+  const oldOne = instance("old"), newOne = instance("new");
+  const unbindOld = bindDrainTarget(oldOne.target);
+  const unbindNew = bindDrainTarget(newOne.target);
+  await reloadDrain(undefined);
+  expect(oldOne.drain.status().draining).toBe(true);
+  expect(newOne.drain.status().draining).toBe(false);
+  unbindOld(); unbindNew();
+});
+
+it("a disposed instance is unbound: its id drains nothing, and an unknown id never falls back to another instance", async () => {
+  const oldOne = instance("old"), newOne = instance("new");
+  const unbindOld = bindDrainTarget(oldOne.target, "old");
+  const unbindNew = bindDrainTarget(newOne.target, "new");
+  unbindOld();
+  await expect(reloadDrain("old")).resolves.toEqual({ clean: true });
+  await expect(reloadDrain("unknown")).resolves.toEqual({ clean: true });
+  expect(newOne.drain.status().draining).toBe(false);
+  unbindNew();
 });

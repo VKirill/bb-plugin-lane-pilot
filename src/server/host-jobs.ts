@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { HOST_JOB_KINDS, type HostJobKind } from "../contracts";
 
-type RawCall = (method: string, input: unknown, options: { hostId: string; timeoutMs?: number }) => Promise<unknown>;
+type RawCall = (method: string, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }) => Promise<unknown>;
 type JobKv = { get<T>(key: string): Promise<T | undefined>; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void> };
 type JobStatusReply = { state: "running" | "succeeded" | "failed" | "cancelled" | "lost"; result?: unknown; error: string | null; progress: { updatedAt: number } };
 type JobEntry = { jobId: string; hostId: string; startedAt: number };
@@ -35,7 +35,7 @@ export function createHostJobs(deps: {
   const status = async (hostId: string, jobId: string) => await deps.call("jobStatus", { requestedHostId: hostId, jobId }, { hostId, timeoutMs: 20_000 }) as JobStatusReply;
 
   return {
-    async run(kind: HostJobKind, input: unknown, options: { hostId: string; timeoutMs?: number }, directCall: () => Promise<unknown>): Promise<unknown> {
+    async run(kind: HostJobKind, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }, directCall: () => Promise<unknown>): Promise<unknown> {
       const { hostId } = options;
       const key = `host-job:${kind}:${hostId}:${createHash("sha256").update(JSON.stringify(input)).digest("hex").slice(0, 24)}`;
       const minWait = MIN_WAIT_MS[kind] ?? 0;
@@ -64,6 +64,8 @@ export function createHostJobs(deps: {
       let delay = POLL_FIRST_MS;
       for (;;) {
         if (deps.disposed()) throw new Error(`host ${kind} job ${entry.jobId} is still running; the plugin is reloading`);
+        // The caller's run was aborted: stop polling. The job goes on at the host, and the same call made again finds it by its key.
+        options.signal?.throwIfAborted();
         const reply = last ?? await status(entry.hostId, entry.jobId);
         last = null;
         if (reply.state !== "running") {

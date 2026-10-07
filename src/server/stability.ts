@@ -134,13 +134,15 @@ export function createStability(ctx:ServerCore, services:Services) {
   }
 
   /** Restarts parked tasks whose fault is fixed (harness) or whose backoff is over (infra), a few per project per pass. */
-  async function sweep(now = Date.now()):Promise<string[]> {
+  async function sweep(now = Date.now(), signal?:AbortSignal):Promise<string[]> {
     const list = await loadParked();
     if (!list.length) return [];
     const keep:ParkedTask[] = [];
     const started:string[] = [];
     const perProject = new Map<string, number>();
     for (const row of list) {
+      // An aborted sweep keeps what it has not decided yet: the rows it did not reach are saved as they were.
+      if (signal?.aborted) { keep.push(row); continue; }
       const run = getRun(db, row.runId);
       if (!run || run.closed_at || superseded(row) || services.activeWriterTasks.has(`${row.runId}:${row.taskId}`) || await isRunHalted(bb.storage.kv as never, row.runId)) continue;
       const count = perProject.get(row.projectId) ?? 0;
@@ -213,11 +215,12 @@ export function createStability(ctx:ServerCore, services:Services) {
    * The weekly fire drill on every machine that ran a writer this week: the recovery from a stale git lock and a merge
    * cut off midway must still work there. The outcome is kept for the self-repair watcher, which takes a failure on.
    */
-  async function drill(now = Date.now()):Promise<Record<string, DrillOutcome>> {
+  async function drill(now = Date.now(), signal?:AbortSignal):Promise<Record<string, DrillOutcome>> {
     const hosts = (db.prepare(`SELECT DISTINCT writer_host_id FROM lane_pilot_run WHERE writer_host_id IS NOT NULL AND created_at > ?`)
       .all(now - 7 * 86400_000) as Array<{ writer_host_id:string }>).map((row) => row.writer_host_id);
     const outcome:Record<string, DrillOutcome> = {};
     for (const hostId of hosts) {
+      signal?.throwIfAborted();
       const ran = await ctx.host.call("stabilityDrill", { requestedHostId:hostId }, { hostId, timeoutMs:120_000 })
         .catch((cause:unknown) => ({ checks:[{ name:"drill ran", ok:false, detail:cause instanceof Error ? cause.message : String(cause) }] }));
       outcome[hostId] = { at:now, version:VERSION, checks:ran.checks };
