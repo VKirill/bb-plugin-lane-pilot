@@ -162,6 +162,42 @@ export function registerTools(ctx: ServerCore, services: Services) {
     },
   });
 
+  // A question to the owner as a BB form: it sits in this chat, reaches the owner's phone as a push, and the answer comes
+  // back as a message. Called from a tool, BB answers the call at once with a waiting notice, so the PM is not held.
+  registerObservedTool(bb.agents, {
+    name:"lane_pilot_ask_owner",
+    description:"Ask the owner a question as a form in this chat (the owner's phone gets a push). The answer comes back into this chat as a message.",
+    instructions:[
+      "Use instead of writing the question in your reply when only the owner can decide: a writer's needs_human question you cannot settle from the code or docs, money, access, deleting data, a product choice. Put the whole question in one call: only one form can be open in a chat.",
+      "`question`: one self-contained sentence the owner can answer from the phone (it is the push text); `detail` carries the context. `options`: up to 6 short answers the owner can tap; without them the owner types a reply.",
+      "After the call, end your turn or continue other work: the answer arrives as a message («the owner answered …»). Then act on it, for a writer's question with lane_pilot_answer_writer.",
+      "If the result says owner_question_unavailable, ask in your reply text instead.",
+    ].join("\n"),
+    parameters:z.object({
+      question:z.string().trim().min(1).max(2000),
+      detail:z.string().trim().max(4000).optional(),
+      options:z.array(z.string().trim().min(1).max(120)).max(6).optional(),
+      allowText:z.boolean().default(true),
+      timeoutMin:z.number().int().min(1).max(60).default(30),
+    }).strict(),
+    execute: async (params, context) => {
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
+      if ((metadata as Record<string, unknown> | null)?.role !== "pm") {
+        throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
+      }
+      const answer = await ctx.ownerAsk.ask(context.threadId, { source:"pm", question:params.question, detail:params.detail, options:params.options, allowText:params.allowText },
+        { timeoutMs:params.timeoutMin * 60_000, signal:context.signal });
+      if (answer.outcome === "unavailable") {
+        throw new ToolError(`owner_question_unavailable: ${answer.reason}`, { code:"owner_question_unavailable", retryable:false, sideEffects:"none", next:"ask the owner in your reply text" });
+      }
+      if (answer.outcome === "cancelled") {
+        return JSON.stringify({ answered:false, reason:answer.reason,
+          next:answer.reason === "timeout" ? "the owner did not answer in time: decide yourself if it is safe, or ask again in your reply" : "the owner dismissed the question: decide yourself if it is safe, or ask in your reply" }, null, 2);
+      }
+      return JSON.stringify({ answered:true, choice:answer.choice?.label ?? null, text:answer.text }, null, 2);
+    },
+  });
+
   registerObservedTool(bb.agents, {
     name:"lane_pilot_dispatch_cli",
     description:"Dispatch a CLI writer through run-controller or lane-ctl on the project host worker.",

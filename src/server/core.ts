@@ -2,6 +2,7 @@ import { parseOwnedAgents } from "../agent-profile";
 import { bindDrainTarget, createDeployDrain } from "./deploy-drain";
 import { currentScheduleSignal } from "./schedules";
 import { createHostJobs, isHostJobKind } from "./host-jobs";
+import { createOwnerAsk } from "./owner-ask";
 import { createRealtime, mountHelperSignals } from "./realtime";
 import { aggregateRun } from "../aggregation";
 import { TARGET_SHA } from "../constants";
@@ -32,6 +33,8 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   const realtime = createRealtime(bb, (message) => bb.log.warn(message));
   const stopHelperSignals = mountHelperSignals(bb, db, realtime);
   bb.onDispose(() => { stopHelperSignals(); realtime.dispose(); });
+  // Questions to the owner as BB pending interactions (a form in the chat, a push on the phone).
+  const ownerAsk = createOwnerAsk(bb, (message) => bb.log.warn(message));
 
   const rawHost = bb.hosts.experimental_client({ contract:hostContract });
 
@@ -338,7 +341,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
 
   const writerBindingKey = (projectId: string) => `writer-binding:${projectId}`;
 
-  return { bb, db, state, realtime, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
+  return { bb, db, state, realtime, ownerAsk, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }
 
 export type ServerCore = ReturnType<typeof createCore>;

@@ -6,6 +6,8 @@ import { CouncilPage } from "./src/ui/council-page";
 import { ComposerAgentBadge } from "./src/ui/composer-agent-badge";
 import { EnableLanePilotAction } from "./src/ui/composer-enable";
 import { HELPER_PANEL_ACTION, HelperThreadPanel } from "./src/ui/helper-threads";
+import { OWNER_ASK_RENDERER_ID } from "./src/owner-ask";
+import { OwnerAsk } from "./src/ui/owner-ask";
 
 export default definePluginApp((app) => {
   app.slots.navPanel({
@@ -30,6 +32,9 @@ export default definePluginApp((app) => {
     layout: "flush",
     component: ({ threadId, params }) => <HelperThreadPanel threadId={threadId} params={params} />,
   });
+  // A question to the owner (PM, integration gate, repair thread, council) as BB's pending interaction; BB's
+  // notification plugin sends the same interaction to the phone.
+  app.slots.pendingInteraction({ id: OWNER_ASK_RENDERER_ID, component: OwnerAsk });
   app.composer.customize({
     id: "lane-pilot-activation",
     scopes: ["new-thread"],

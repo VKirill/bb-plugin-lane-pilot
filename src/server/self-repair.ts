@@ -405,6 +405,22 @@ export function createSelfRepair(ctx: ServerCore) {
   }
 
   /**
+   * A repair that ended «needs-owner» put its question in its report, where nobody looks. The owner is asked in the repair
+   * thread as a form (a push on the phone) with the report's closing lines; the answer goes back into that thread as a
+   * message. The repair's worktree is released as for any verdict but «fixed», so the answer is a decision to act on in a
+   * new repair, not a continuation of the old edits. An older BB without question forms leaves the report as it was.
+   */
+  async function askOwnerAboutRepair(threadId: string, signature: string, report: string): Promise<void> {
+    const title = signature.split(":").slice(2).join(":").slice(0, 100);
+    const body = report.replace(/SELF-REPAIR-VERDICT:.*$/im, "").trim();
+    const question = `Self-repair of «${title}» needs your decision. Open the repair thread for its report.`;
+    const TIMEOUT_MS = 60 * 60_000;
+    const opened = await ctx.ownerAsk?.askInBackground(threadId, { source: "repair", question, detail: body.slice(-3000), options: ["Go ahead as the report proposes", "Leave it"] },
+      (answer) => ctx.ownerAsk.sendToThread(threadId, ctx.ownerAsk.answerMessage(question, answer, TIMEOUT_MS)), { timeoutMs: TIMEOUT_MS }).catch(() => false);
+    if (opened) ctx.log(`self-repair: asked the owner about @thread:${threadId} (needs-owner)`);
+  }
+
+  /**
    * One pass: collect since the cursor, remember each kind of problem with a few samples, start at most one repair
    * thread for the oldest kind nobody has taken yet. Kinds that wait (a repair running, the daily limit) stay in the
    * state and are taken on a later pass; a kind seen again a day after its repair started gets a new repair.
@@ -432,13 +448,15 @@ export function createSelfRepair(ctx: ServerCore) {
       if (record.pending && !options.dryRun) await releaseWorktree(record.pending.worktree);
       delete current.signatures[signature];
     }
-    for (const record of Object.values(current.signatures)) {
+    for (const [signature, record] of Object.entries(current.signatures)) {
       signal?.throwIfAborted();
       if (!record.threadId || record.verdict || await threadBusy(record.threadId)) continue;
       const threadId = record.threadId;
-      record.verdict = parseVerdict(await Promise.resolve().then(() => bb.sdk.threads.output({ threadId }))
+      const report = await Promise.resolve().then(() => bb.sdk.threads.output({ threadId }))
         .then((result) => { const value = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text; return typeof value === "string" ? value.slice(-4000) : ""; })
-        .catch(() => ""));
+        .catch(() => "");
+      record.verdict = parseVerdict(report);
+      if (record.verdict === "needs-owner" && !options.dryRun) await askOwnerAboutRepair(threadId, signature, report);
     }
     if (!options.dryRun) {
       for (const [signature, record] of Object.entries(current.signatures)) {

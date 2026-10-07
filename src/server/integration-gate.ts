@@ -347,15 +347,11 @@ export class IntegrationGateRunner {
     if (isEnvironmentCheckFailure({ stdout, stderr })) {
       const evidence = `${stderr}\n${stdout}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr: line }))?.trim().slice(0, 300) ?? "";
       this.ctx.log(`infra: integration gate \`${gateCommand}\` is red from the environment, no culprit searched: ${evidence}`);
-      await bb.sdk.threads.send({
-        threadId: pmThreadId,
-        mode: "queue-if-active",
-        input: [{
-          type: "text",
-          text: `Lane Pilot: integration gate \`${gateCommand}\` is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent (a writer cannot fix file permissions). Fix it in ${basePath}, then the gate runs again.`,
-          mentions: [],
-        }],
-      } as never).catch(() => undefined);
+      await this.tellPm(pmThreadId, `Lane Pilot: integration gate \`${gateCommand}\` is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent (a writer cannot fix file permissions). Fix it in ${basePath}, then the gate runs again.`, {
+        question: `The integration gate \`${gateCommand}\` is red because of the machine, not the code. It needs a fix in ${basePath} that only you can make.`,
+        detail: evidence,
+        options: ["Fixed, run the gate again", "I will look later"],
+      });
       return { ran: true, passed: false, culpritTaskId: null };
     }
 
@@ -428,17 +424,30 @@ export class IntegrationGateRunner {
       return { ran: true, passed: false, culpritTaskId: culprit.taskId };
     }
 
-    // Tell PM with log
-    await bb.sdk.threads.send({
-      threadId: pmThreadId,
-      mode: "queue-if-active",
-      input: [{
-        type: "text",
-        text: `Lane Pilot: integration gate \`${gateCommand}\` failed (exit ${exitCode}). Could not unambiguously identify culprit. Full log: ${logRelativePath}`,
-        mentions: [],
-      }],
-    } as never).catch(() => undefined);
+    // Tell PM with log; the owner is asked what to do (a form in the PM chat and a push on the phone).
+    await this.tellPm(pmThreadId, `Lane Pilot: integration gate \`${gateCommand}\` failed (exit ${exitCode}). Could not unambiguously identify culprit. Full log: ${logRelativePath}`, {
+      question: `The integration gate \`${gateCommand}\` is red and no single task is to blame. What should the PM do?`,
+      detail: `Full log: ${logRelativePath}\n\n${`${stderr}\n${stdout}`.trim().slice(-1200)}`,
+      options: ["Investigate and fix it", "Leave it, I will look myself"],
+    });
 
     return { ran: true, passed: false, culpritTaskId: null };
+  }
+
+  /**
+   * The PM gets the failure as a message. A failure only the owner can settle also opens a question form for the owner
+   * (see `createOwnerAsk`); when it opened, the message says so and the answer arrives in the PM chat as a message, and
+   * when it could not open (an older BB, another form already open) the message alone is the old behaviour.
+   */
+  private async tellPm(pmThreadId: string, text: string, ask: { question: string; detail: string; options: string[] }): Promise<void> {
+    const TIMEOUT_MS = 60 * 60_000;
+    const asked = await this.ctx.ownerAsk?.askInBackground(pmThreadId, { source: "gate", ...ask },
+      (answer) => this.ctx.ownerAsk.sendToThread(pmThreadId, this.ctx.ownerAsk.answerMessage(ask.question, answer, TIMEOUT_MS)),
+      { timeoutMs: TIMEOUT_MS }).catch(() => false);
+    await this.ctx.bb.sdk.threads.send({
+      threadId: pmThreadId,
+      mode: "queue-if-active",
+      input: [{ type: "text", text: asked ? `${text} The owner was asked what to do; the answer arrives in this chat.` : text, mentions: [] }],
+    } as never).catch(() => undefined);
   }
 }
