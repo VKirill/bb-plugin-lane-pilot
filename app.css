@@ -11,6 +11,7 @@
  * 12px inner cards; 14px single cards and the header strip; 16px panels.
  * Rules sit in the components layer: a Tailwind utility on an element wins.
  */
+@import "@xyflow/react/dist/base.css" layer(base);
 
 [data-bb-plugin="lane-pilot"],
 [data-bb-plugin-root]:not([data-bb-plugin]) {
@@ -26,6 +27,7 @@
   --lp-success: var(--success, #3fae4a);
   --lp-success-text: var(--diff-added, #2f8a45);
   --lp-info: var(--timeline-accent, #3e7be8);
+  --lp-warning: var(--warning, #e8a33d);
   --lp-warning-text: var(--warning-text, #b4540f);
   --lp-danger-text: var(--destructive-text, var(--destructive));
 }
@@ -176,4 +178,181 @@
 
   .lp-text-success { color: var(--lp-success-text); }
   .lp-text-warning { color: var(--lp-warning-text); }
+
+  .lp-pill-warning { background-color: color-mix(in oklab, var(--lp-warning) 16%, transparent); color: var(--lp-warning-text); }
+
+  /*
+   * Workflow graph (Workflows tab). A node carries --wf-tone, the colour of its type or role: plan blue, build green, QA
+   * orange, review violet; everything else is quiet gray. Colours come from the plugin tokens, so a theme repaints the graph.
+   */
+  .lp-wf-canvas {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--lp-hairline);
+    border-radius: 12px;
+    background-color: var(--lp-well);
+    background-image: radial-gradient(color-mix(in oklab, var(--foreground) 14%, transparent) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  .lp-wf-canvas .react-flow { background: transparent; }
+
+  .lp-wf-node {
+    --wf-tone: var(--muted-foreground);
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    padding: 9px 10px;
+    overflow: hidden;
+    border: 1px solid var(--lp-hairline);
+    border-left: 3px solid var(--wf-tone);
+    border-radius: 12px;
+    background-color: var(--lp-card);
+    box-shadow: var(--lp-drop);
+    cursor: pointer;
+  }
+  .lp-wf-node:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
+  .lp-wf-node[data-selected="1"] { box-shadow: 0 0 0 2px var(--wf-tone), var(--lp-drop); }
+  .lp-wf-node[data-tone="plan"] { --wf-tone: var(--lp-info); }
+  .lp-wf-node[data-tone="build"] { --wf-tone: var(--lp-success); }
+  .lp-wf-node[data-tone="qa"] { --wf-tone: var(--lp-warning); }
+  .lp-wf-node[data-tone="review"] { --wf-tone: var(--primary); }
+  .lp-wf-node[data-tone="human"] { --wf-tone: color-mix(in oklab, var(--primary) 55%, var(--destructive)); }
+  .lp-wf-node[data-tone="sub"] { --wf-tone: color-mix(in oklab, var(--lp-info) 55%, var(--lp-success)); }
+  .lp-wf-node[data-tone="decision"] { --wf-tone: color-mix(in oklab, var(--lp-warning) 60%, var(--foreground)); }
+  .lp-wf-node[data-tone="flow"], .lp-wf-node[data-tone="action"] { --wf-tone: color-mix(in oklab, var(--foreground) 50%, transparent); }
+  .lp-wf-node[data-status="pending"] { opacity: 0.72; }
+  .lp-wf-node[data-status="skipped"] { opacity: 0.5; border-style: dashed; }
+  .lp-wf-node[data-status="running"] { border-color: var(--lp-info); }
+  .lp-wf-node[data-status="waiting"] { border-color: var(--lp-warning); }
+  .lp-wf-node[data-status="failed"] { border-color: var(--destructive); }
+  .lp-wf-node[data-status="done"] { border-color: color-mix(in oklab, var(--lp-success) 55%, var(--lp-hairline)); }
+
+  .lp-wf-tile { color: var(--wf-tone); background-color: color-mix(in oklab, var(--wf-tone) 12%, var(--lp-card)); }
+
+  .lp-wf-port {
+    width: 8px;
+    height: 8px;
+    min-width: 0;
+    min-height: 0;
+    border: 1.5px solid var(--muted-foreground);
+    background-color: var(--lp-card);
+  }
+
+  .lp-wf-status { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .lp-wf-pulse {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background-color: currentColor;
+    animation: lp-wf-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes lp-wf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .lp-wf-pulse { animation: none; } }
+
+  .lp-wf-expand, .lp-wf-expand-inline {
+    border: 1px solid var(--lp-outline);
+    border-radius: 8px;
+    background-color: var(--lp-card);
+    color: var(--foreground);
+    font-size: 11px;
+    line-height: 16px;
+    padding: 0 8px;
+    cursor: pointer;
+  }
+  .lp-wf-expand { position: absolute; right: 8px; bottom: 6px; }
+  .lp-wf-expand:disabled { opacity: 0.5; cursor: default; }
+
+  .lp-wf-add {
+    position: absolute;
+    top: 50%;
+    right: -11px;
+    width: 22px;
+    height: 22px;
+    margin-top: -11px;
+    border: 1px solid var(--lp-outline);
+    border-radius: 9999px;
+    background-color: var(--lp-card);
+    box-shadow: var(--lp-drop);
+    line-height: 20px;
+    cursor: pointer;
+  }
+
+  .lp-wf-terminal {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--lp-outline);
+    border-radius: 9999px;
+    background-color: var(--lp-card);
+    box-shadow: var(--lp-drop);
+    color: var(--muted-foreground);
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .lp-wf-terminal[data-status="done"] { color: var(--lp-success-text); }
+  .lp-wf-terminal[data-status="failed"] { color: var(--lp-danger-text); }
+
+  .lp-wf-note {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    padding: 8px 10px;
+    overflow: hidden;
+    border: 1px dashed var(--lp-outline);
+    border-radius: 10px;
+    background-color: color-mix(in oklab, var(--lp-warning) 9%, var(--lp-card));
+    color: var(--muted-foreground);
+  }
+
+  .lp-wf-group {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    border: 1px dashed var(--lp-outline);
+    border-radius: 14px;
+    background-color: color-mix(in oklab, var(--lp-card) 55%, transparent);
+  }
+  .lp-wf-group-head { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 8px 10px; }
+
+  .lp-wf-edge { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; opacity: 0.75; }
+  .lp-wf-edge[data-state="taken"] { stroke: var(--lp-info); stroke-width: 2; opacity: 1; }
+  .lp-wf-edge[data-state="untaken"] { opacity: 0.3; stroke-dasharray: 4 4; }
+  .lp-wf-arrow path { fill: var(--muted-foreground); }
+  .lp-wf-arrow-taken path { fill: var(--lp-info); }
+  .lp-wf-arrow-untaken path { opacity: 0.4; }
+
+  .lp-wf-edge-label {
+    position: absolute;
+    display: flex;
+    max-width: 190px;
+    flex-direction: column;
+    align-items: center;
+    padding: 2px 6px;
+    border: 1px solid var(--lp-hairline);
+    border-radius: 8px;
+    background-color: var(--lp-card);
+    box-shadow: var(--lp-drop);
+    font-size: 10px;
+    line-height: 14px;
+    pointer-events: all;
+  }
+  .lp-wf-edge-label[data-state="untaken"] { opacity: 0.55; }
+  .lp-wf-edge-when { color: var(--foreground); font-family: ui-monospace, monospace; }
+  .lp-wf-edge-sub { color: var(--muted-foreground); font-family: ui-monospace, monospace; }
+  .lp-wf-pass { color: var(--muted-foreground); font-size: 9px; letter-spacing: 0.02em; text-transform: uppercase; }
+  .lp-wf-pass[data-pass="same-session"], .lp-wf-pass[data-pass="read-prior-session"], .lp-wf-pass[data-pass="fork"] { color: var(--primary); font-weight: 600; }
+
+  /* A draft patch: what it touched is outlined until the next one. */
+  .lp-wf-node[data-changed="1"] { box-shadow: 0 0 0 2px var(--lp-info), var(--lp-drop); animation: lp-wf-flash 1.8s ease-out 1; }
+  .lp-wf-edge[data-changed="1"] { stroke: var(--lp-info); stroke-width: 2.5; opacity: 1; }
+  .lp-wf-edge-label[data-changed="1"] { border-color: var(--lp-info); }
+  @keyframes lp-wf-flash { 0% { box-shadow: 0 0 0 7px color-mix(in oklab, var(--lp-info) 35%, transparent), var(--lp-drop); } 100% { box-shadow: 0 0 0 2px var(--lp-info), var(--lp-drop); } }
+  @media (prefers-reduced-motion: reduce) { .lp-wf-node[data-changed="1"] { animation: none; } }
+
+  .lp-wf-tools { display: flex; gap: 4px; }
+  .lp-wf-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
 }
