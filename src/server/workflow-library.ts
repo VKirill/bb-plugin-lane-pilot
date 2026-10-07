@@ -155,7 +155,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
             const awaiting = parseJson(step.await_json) as { kind?: string } | null;
             return { key: step.step_key, nodeId: step.node_id, state: step.state, visit: step.visit, scope: step.scope, attempt: step.attempt, parentKey: step.parent_key, edgeIndex: step.edge_index,
               startedAt: step.started_at, endedAt: step.ended_at, error: step.error, threadId: receipt?.threadId ?? null,
-              handoff: typeof output?.handoff === "string" ? output.handoff : null, awaiting: awaiting?.kind ?? null, output: clipJson(output) };
+              handoff: typeof output?.handoff === "string" ? output.handoff : null, awaiting: awaiting?.kind ?? null, input: clipJson(parseJson(step.input_json)), output: clipJson(output) };
           }),
           children: children.map((row) => ({ runId: row.id, stepKey: row.parent_step_key, workflowId: row.workflow_id, status: row.status })),
           goals: parseGoals(run.goals_json),

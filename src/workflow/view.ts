@@ -50,5 +50,7 @@ export function workflowView(workflow: Workflow, resolve?: ResolveWorkflow): Wor
   const nodes = lowered.nodes.map(viewNode);
   if (used.has(START)) nodes.unshift(sentinel(START));
   if (used.has(END)) nodes.push(sentinel(END));
-  return { nodes, edges: lowered.edges.map(viewEdge) };
+  // The entry and the exit are `start` and `end` in the file, `$start` and `$end` in the view.
+  const positions = Object.fromEntries(Object.entries(workflow.ui?.positions ?? {}).map(([id, at]) => [id === "start" ? START : id === "end" ? END : id, at]));
+  return { nodes, edges: lowered.edges.map(viewEdge), ...(Object.keys(positions).length ? { positions } : {}) };
 }

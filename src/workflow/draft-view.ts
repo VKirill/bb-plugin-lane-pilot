@@ -51,6 +51,14 @@ function node(raw: Raw): ViewNode | null {
 
 const terminal = (id: string): ViewNode => ({ id, kind: id === START ? "start" : "end", tone: "terminal", title: null, label: id === START ? "start" : "end", role: null, excerpt: null, uses: null, out: [], maxVisits: null, stages: [], calls: null, modes: null });
 
+/** The owner's placement of the nodes (`ui.positions`), leniently: an entry that is not a pair of numbers is left out. */
+function placements(ui: unknown): Record<string, { x: number; y: number }> | null {
+  const raw = isRaw(ui) && isRaw(ui.positions) ? ui.positions : null;
+  if (!raw) return null;
+  const found = Object.entries(raw).flatMap(([id, at]) => (isRaw(at) && typeof at.x === "number" && typeof at.y === "number" ? [[id === "start" ? START : id === "end" ? END : id, { x: at.x, y: at.y }] as const] : []));
+  return found.length ? Object.fromEntries(found) : null;
+}
+
 /** `start` and `end` mean the entry and the exit unless a node of that name exists. */
 export function draftView(workflow: unknown): WorkflowView {
   const source = isRaw(workflow) ? workflow : {};
@@ -73,7 +81,8 @@ export function draftView(workflow: unknown): WorkflowView {
   }
   if (used.has(START)) nodes.unshift(terminal(START));
   if (used.has(END)) nodes.push(terminal(END));
-  return { nodes, edges };
+  const positions = placements(source.ui);
+  return { nodes, edges, ...(positions ? { positions } : {}) };
 }
 
 const signature = (edge: ViewEdge) => JSON.stringify([edge.from, edge.to, edge.when, edge.label, edge.pass, edge.carries]);
