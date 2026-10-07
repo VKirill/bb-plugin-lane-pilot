@@ -1,4 +1,4 @@
-import { checkRequires } from "../workflow/preflight";
+import { checkRequires, effectiveRequires } from "../workflow/preflight";
 import type { PreflightResult, RequirePorts } from "../workflow/preflight";
 import type { Workflow } from "../workflow/schema";
 import type { ArchitectDeps } from "./workflow-architect";
@@ -62,7 +62,7 @@ export function createWorkflowPreflight(ctx: ServerCore, deps: Pick<ArchitectDep
           },
         } : {}),
       };
-      return await checkRequires(workflow.requires, ports);
+      return await checkRequires(effectiveRequires(workflow), ports);
     },
   };
 }

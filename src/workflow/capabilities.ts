@@ -39,7 +39,7 @@ async function section<T>(read: (() => Promise<T[] | null>) | undefined, filter:
 /** The vocabulary of the chain format, so the architect writes only what the validator accepts. */
 export const WORKFLOW_REFERENCE = {
   nodeTypes: {
-    agent: "a model thread does one job: role, prompt, skills, environment (none|project|worktree|personal), out = the fields it must return; every agent also returns a non-empty `handoff`",
+    agent: "a model thread does one job: role, prompt, skills, plugins (BB plugin ids its session may load) and mcp (MCP server names) on top of its role's, environment (none|project|worktree|personal), out = the fields it must return; every agent also returns a non-empty `handoff`",
     "lp-task": "a code change through Lane Pilot's writer, critics, checks and merge (owns_paths, contract); use it for anything that edits a repository",
     action: "a deterministic step run by code: `action` names it (telegram.send_rich, fs.write, items.dedupe ...), `params` feed it; `action: emit` ends the workflow with `map` (status and the workflow outputs)",
     decision: "branches on fields already produced (reads_node) without a model call",

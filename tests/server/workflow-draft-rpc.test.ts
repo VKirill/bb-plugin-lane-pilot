@@ -129,6 +129,21 @@ describe("workflow_draft_test and workflow_draft_publish", () => {
     expect(await rpc("workflow_runs", { id: "browser-digest" })).toEqual({ runs: [], hasMore: false });
   });
 
+  it("publishes a chain whose steps name plugins and MCP servers the machine lacks, and says which", async () => {
+    const { rpc, call } = await setup();
+    const draftId = await finished(call);
+    await rpc("workflow_draft_patch", { draftId, ops: [{ op: "update_node", id: "search", set: { plugins: ["browser-automation", "ghost-plugin"], mcp: ["tavily", "ghost-mcp"] } }] });
+    expect((await rpc("workflow_draft_test", { draftId })).green).toBe(true);
+    const published = await rpc("workflow_draft_publish", { draftId });
+    expect(published.published).toBe(true);
+    expect(published.capabilityWarnings).toEqual(expect.arrayContaining([expect.stringContaining("BB plugin \"ghost-plugin\""), expect.stringContaining("MCP server \"ghost-mcp\"")]));
+    // What the machine does list is not reported.
+    expect(published.capabilityWarnings.join(" ")).not.toContain("\"tavily\"");
+    expect(published.capabilityWarnings.join(" ")).not.toContain("\"browser-automation\"");
+    const stored = await rpc("workflow_draft_get", { draftId });
+    expect((stored.definition.nodes as Array<{ id: string; plugins?: string[] }>).find((node) => node.id === "search")!.plugins).toEqual(["browser-automation", "ghost-plugin"]);
+  });
+
   it("reports an invalid draft instead of running it", async () => {
     const { rpc, call } = await setup();
     const created = await call("lane_pilot_workflow_draft_create", { name: "Empty", description: "Nothing yet", scope: "global" });

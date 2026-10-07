@@ -26,6 +26,7 @@ const biOps = (current: unknown, lang: "en" | "ru", next: string): { en: string;
   return !both.en && !both.ru ? null : { en: both.en || both.ru, ru: both.ru || both.en };
 };
 const json = (value: unknown) => JSON.stringify(value, null, 2);
+const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
 const jsonObject = (value: string): ModelError | null => {
   if (!value.trim()) return null;
   try { return isRaw(JSON.parse(value)) ? null : { key: "wfEditErr_jsonObject" }; } catch { return { key: "wfEditErr_json" }; }
@@ -157,6 +158,8 @@ export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onC
           <TextArea label={t("wfEditPrompt")} value={text(node.prompt)} rows={6} suggestions={refs} testId="wf-edit-prompt" hint={t("wfEditPromptHint")} onCommit={(next) => set({ prompt: next })} />
           <ModelFields node={node} edit={edit} catalog={catalog} />
           <ChipsField label={t("wfEditSkills")} values={Array.isArray(node.skills) ? node.skills.filter((item): item is string => typeof item === "string") : []} catalog={catalog.skills.length ? catalog.skills : undefined} testId="wf-edit-skills" hint={t("wfEditSkillsHint")} onChange={(next) => set({ skills: next.slice(0, 8) })} />
+          <ChipsField label={t("wfEditNodePlugins")} values={strings(node.plugins)} catalog={catalog.plugins.length ? catalog.plugins : undefined} testId="wf-edit-node-plugins" hint={t("wfEditNodePluginsHint")} onChange={(next) => set({ plugins: next.slice(0, 8) })} />
+          <ChipsField label={t("wfEditNodeMcp")} values={strings(node.mcp)} catalog={catalog.mcpServers.length ? catalog.mcpServers.map((value) => ({ value })) : undefined} testId="wf-edit-node-mcp" hint={t("wfEditNodeMcpHint")} onChange={(next) => set({ mcp: next.slice(0, 8) })} />
           <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             <SelectField label={t("wfEditEnvironment")} value={(text(node.environment) as "worktree") || ""} none={t("wfEditDefault")} testId="wf-edit-environment"
               options={(["worktree", "project", "personal", "none"] as const).map((value) => ({ value, label: t(`wfEditEnv_${value}` as I18nKey) }))} onChange={(next) => set({ environment: next })} />

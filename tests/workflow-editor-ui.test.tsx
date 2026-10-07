@@ -445,6 +445,21 @@ describe("editing a draft in the Workflows tab", () => {
     expect(slot.getByTestId("wf-edit-mcp").textContent).toContain("tavily");
   });
 
+  it("puts the step's BB plugins and MCP servers beside its skills, from the catalogue, and writes them to the draft", async () => {
+    const { slot, architect, draftId } = await open();
+    fireEvent.click(await slot.findByTestId("wf-node-search"));
+    const plugins = await slot.findByTestId("wf-edit-node-plugins");
+    await waitFor(() => expect(within(plugins).queryByRole("combobox")).toBeTruthy());
+    fireEvent.click(within(plugins).getByRole("combobox"));
+    fireEvent.click(await slot.findByRole("option", { name: /browser/i }));
+    await waitFor(() => expect((architect.drafts.get(draftId)!.definition.nodes as Array<{ id: string; plugins?: string[] }>).find((node) => node.id === "search")!.plugins).toEqual(["browser-automation"]));
+    const mcp = await slot.findByTestId("wf-edit-node-mcp");
+    await waitFor(() => expect(within(mcp).queryByRole("combobox")).toBeTruthy());
+    fireEvent.click(within(mcp).getByRole("combobox"));
+    fireEvent.click(await slot.findByRole("option", { name: "tavily" }));
+    await waitFor(() => expect((architect.drafts.get(draftId)!.definition.nodes as Array<{ id: string; mcp?: string[] }>).find((node) => node.id === "search")!.mcp).toEqual(["tavily"]));
+  });
+
   it("edits the schedule trigger (cron, zone, inputs) and the requirements lists without losing what was set", async () => {
     const { slot, calls, architect, draftId } = await open();
     fireEvent.click(await slot.findByTestId("wf-edit-settings"));

@@ -165,7 +165,7 @@ export function roleAccessFromSettings(input: Record<string, unknown>): Partial<
 
 /** What one group of a role effectively loads: a list (mandatory included) or null for «everything BB has». */
 /** Names added to one spawn's role profile on top of the role's own (a browser check that must sign in gets Env Catalog). */
-export type ExtraAccess = { bbPlugins?: string[]; skills?: string[] };
+export type ExtraAccess = { bbPlugins?: string[]; skills?: string[]; mcpServers?: string[] };
 
 export function effectiveGroup(role: HelperRole, group: AccessGroup, access: RoleAccess = {}): { names: string[] | null; source: "role" | "owner" } {
   const own = access[group];
@@ -189,7 +189,7 @@ export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}, ext
   const policy: VkSessionPolicy = { claudeAiSync: false, required: true };
   for (const group of ACCESS_GROUPS) {
     const { names } = effectiveGroup(role, group, access);
-    const added = group === "bbPlugins" ? extra.bbPlugins : group === "skills" ? extra.skills : undefined;
+    const added = group === "bbPlugins" ? extra.bbPlugins : group === "skills" ? extra.skills : group === "mcpServers" ? extra.mcpServers : undefined;
     if (names) policy[group] = { mode: "allow", names: added?.length ? [...new Set([...names, ...added])] : names };
   }
   if (!effectiveSwitch("userInstructions", access).include) policy.userInstructions = false;

@@ -51,6 +51,21 @@ const within = async <T>(read: (() => Promise<T>) | undefined): Promise<{ ok: tr
   try { return { ok: true, value: await read() }; } catch { return { ok: false }; }
 };
 
+/**
+ * What the workflow needs in all: its `requires` and the BB plugins and MCP servers its agent steps name, so a step that asks for a
+ * plugin or a server nobody installed is found before the run, not by a helper that starts without it. (The skills of a step stay a
+ * hint in its brief, as before; the workflow lists the ones it cannot do without in `requires.skills`.)
+ */
+export function effectiveRequires(workflow: Workflow): Workflow["requires"] {
+  const plugins = new Set(workflow.requires.plugins), mcp = new Set(workflow.requires.mcp);
+  const bodies = workflow.nodes.flatMap((node) => (node.type === "agent" ? [node] : node.type === "parallel" && node.child?.type === "agent" ? [node.child] : []));
+  for (const body of bodies) {
+    for (const name of body.plugins ?? []) plugins.add(name);
+    for (const name of body.mcp ?? []) mcp.add(name);
+  }
+  return { ...workflow.requires, plugins: [...plugins], mcp: [...mcp] };
+}
+
 export async function checkRequires(requires: Workflow["requires"], ports: RequirePorts): Promise<PreflightResult> {
   const issues: RequireIssue[] = [];
   const checked: PreflightResult["checked"] = [];

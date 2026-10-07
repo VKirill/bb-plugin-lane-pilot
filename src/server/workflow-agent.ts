@@ -1,7 +1,7 @@
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { ROLE_PROFILES } from "../helper-context";
-import type { HelperRole } from "../helper-context";
+import type { ExtraAccess, HelperRole } from "../helper-context";
 import { redactKnown } from "../redact";
 import { agentPrompt, outputContract, parseAgentOutput } from "../workflow/agent-output";
 import type { AgentOutputError } from "../workflow/agent-output";
@@ -59,6 +59,8 @@ export type HelperRequest = {
   fields: readonly Field[];
   provider?: string; model?: string; reasoning?: string; preset?: string;
   skills?: readonly string[];
+  /** BB plugins and MCP servers the step's session may load on top of its role's. */
+  plugins?: readonly string[]; mcp?: readonly string[];
   /** Same session: send into this thread (a step that goes on in the earlier helper's session). */
   intoThread?: string | null;
   signal?: AbortSignal;
@@ -68,6 +70,15 @@ export type HelperResult = { threadId: string; output: Record<string, unknown>; 
 export class HelperFailure extends Error {
   /** The code leads the message: it is what a run's step error shows. */
   constructor(readonly code: string, message: string) { super(`${code}: ${message}`); }
+}
+
+/** What a step asks its session to load besides the role's own: the session policy of the spawn adds exactly these. */
+export function extraAccessOf(request: Pick<HelperRequest, "skills" | "plugins" | "mcp">): ExtraAccess | undefined {
+  const extra: ExtraAccess = {};
+  if (request.skills?.length) extra.skills = [...request.skills];
+  if (request.plugins?.length) extra.bbPlugins = [...request.plugins];
+  if (request.mcp?.length) extra.mcpServers = [...request.mcp];
+  return Object.keys(extra).length ? extra : undefined;
 }
 
 export function createWorkflowAgents() {
@@ -102,7 +113,7 @@ export function createWorkflowAgents() {
         const placement = await helperChildPlacement({ bb, db, projectId: rt.projectId, runId: rt.runId, role: spec.metadata, taskTitle: `${request.title}`.slice(0, 80) });
         const spawned = await fullAccessSpawn(bb, {
           ...placement,
-          ...requiredPolicyField(bb, policy, providerId, spec.helper, request.skills?.length ? { skills: [...request.skills] } : undefined),
+          ...requiredPolicyField(bb, policy, providerId, spec.helper, extraAccessOf(request)),
           ...writerExecutionSelection(providerId, request.model ?? preset?.model ?? DEFAULT_MODEL, request.reasoning ?? preset?.reasoning ?? DEFAULT_REASONING, null),
           prompt: request.prompt,
           environment: { type: "reuse", environmentId },
@@ -181,7 +192,7 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
   return {
     rt, workflowRunId: ctx.runId, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role: node.role, title, prompt: body, fields,
     ...(node.provider ? { provider: node.provider } : {}), ...(node.model ? { model: node.model } : {}), ...(node.reasoning ? { reasoning: node.reasoning } : {}), ...(node.model_preset ? { preset: node.model_preset } : {}),
-    skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], intoThread, signal: ctx.signal,
+    skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
   };
 }
 

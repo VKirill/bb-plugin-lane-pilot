@@ -99,6 +99,10 @@ const agentBody = {
   model: z.string().max(120).optional(),
   reasoning: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
   skills: z.array(z.string().min(1).max(120)).max(8).default([]),
+  /** BB plugins this step's session may load, on top of its role's (by plugin id; the helper's session policy narrows to the role's list plus these). */
+  plugins: z.array(z.string().min(1).max(120)).max(8).default([]),
+  /** MCP servers this step's session may load, on top of its role's (by server name). */
+  mcp: z.array(z.string().min(1).max(120)).max(8).default([]),
   environment: z.enum(["worktree", "project", "personal", "none"]).default("none"),
   session: z.enum(["new", "same"]).optional(),
   authorized: z.boolean().optional(),

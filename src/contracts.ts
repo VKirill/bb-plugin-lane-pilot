@@ -721,7 +721,7 @@ export const workflowDraftPublishResultSchema = z.object({
   draftId: z.string(), published: z.boolean(), reason: z.string().optional(), next: z.string().optional(), problems: draftProblems.optional(), path: z.string().optional(),
   failing: z.array(z.object({ caseId: z.string(), failures: z.array(z.string()) })).optional(),
   workflowId: z.string().optional(), workflowVersion: z.number().int().optional(), scope: z.string().optional(),
-  liveReady: z.boolean().optional(), unregisteredExecutors: z.array(z.string()).optional(), warning: z.string().optional(),
+  liveReady: z.boolean().optional(), unregisteredExecutors: z.array(z.string()).optional(), warning: z.string().optional(), capabilityWarnings: z.array(z.string()).optional(),
 });
 
 /** One case of a trial run on stubs (a dry run, or the tests of a workflow file). */
