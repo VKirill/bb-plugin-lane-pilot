@@ -2209,6 +2209,20 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   },20_000);
 
+  it("keeps the run's objective from the first dispatch that names one (G9)",async()=>{
+    const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    const objective=()=>(db.prepare("SELECT objective FROM lane_pilot_run WHERE id='stage-run'").get() as {objective:string|null}).objective;
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    expect(objective()).toBeNull();
+    const second={...task,id:"objective-second",expected_outputs:["other.txt"],owns_paths:["other.txt"]};
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Second",task:second,objective:"Ship the fixture batch"},{threadId:pmThreadId,projectId});
+    expect(objective()).toBe("Ship the fixture batch");
+    const third={...task,id:"objective-third",expected_outputs:["third.txt"],owns_paths:["third.txt"]};
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Third",task:third,objective:"A different goal"},{threadId:pmThreadId,projectId});
+    expect(objective()).toBe("Ship the fixture batch");
+    await harness.lifecycle.dispose();
+  },20_000);
+
   it("skips code critique by default and accepts without a repair writer",async()=>{
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});

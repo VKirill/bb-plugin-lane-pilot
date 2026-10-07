@@ -267,6 +267,8 @@ export const migrations = [
   `CREATE TABLE lane_pilot_check_duration (
     project_id TEXT NOT NULL, command_key TEXT NOT NULL, duration_ms INTEGER NOT NULL, exit_code INTEGER NOT NULL, at INTEGER NOT NULL)`,
   `CREATE INDEX lane_pilot_check_duration_key ON lane_pilot_check_duration(project_id, command_key, at)`,
+  // G9: what the run is for, in one sentence from the PM's first dispatch (the chat holds it otherwise, and a closed chat loses it).
+  `ALTER TABLE lane_pilot_run ADD COLUMN objective TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -369,6 +371,13 @@ export function createRun(db: LanePilotDatabase, id: string, projectId: string, 
   const now = Date.now();
   db.prepare("INSERT INTO lane_pilot_run(id,project_id,state,kind,created_at,updated_at,writer_workspace_path,run_gate,run_policy_json,writer_host_id) VALUES (?,?,\'pending\',?,?,?,?,?,?,?)")
     .run(id, projectId, kind, now, now, writerWorkspacePath, runGate, JSON.stringify(runPolicy), writerHostId);
+}
+
+/** The run's objective, kept from the first dispatch that names one: later ones never replace it. Trimmed and bounded. */
+export function setRunObjective(db: LanePilotDatabase, runId: string, objective: string): boolean {
+  const text = objective.trim().slice(0, 2000);
+  if (!text) return false;
+  return db.prepare("UPDATE lane_pilot_run SET objective=?, updated_at=? WHERE id=? AND objective IS NULL").run(text, Date.now(), runId).changes === 1;
 }
 
 export function getRunWriterHost(db: LanePilotDatabase, runId: string): string | null {

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
+import { inspectState, setRunObjective, appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -249,6 +249,25 @@ describe("section 9 storage.database DDL", () => {
     const db=openDatabase(bb);
     createRun(db,"run-pools","A","bb","/repo","none",{schemaVersion:1,pools:{provider:6,verification:4}});
     expect(JSON.parse(getRun(db,"run-pools")!.run_policy_json)).toEqual({schemaVersion:1,pools:{provider:6,verification:4}});
+    await harness.lifecycle.dispose();
+  });
+
+  it("keeps the run's objective in its row, set once and bounded", async () => {
+    const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot"});
+    const db=openDatabase(bb);
+    createRun(db,"run-objective","A");
+    const read=()=>(db.prepare("SELECT objective FROM lane_pilot_run WHERE id='run-objective'").get() as {objective:string|null}).objective;
+    expect(read()).toBeNull();
+    expect(setRunObjective(db,"run-objective","   ")).toBe(false);
+    expect(read()).toBeNull();
+    expect(setRunObjective(db,"run-objective","  Make checkout survive a double click  ")).toBe(true);
+    expect(read()).toBe("Make checkout survive a double click");
+    expect(setRunObjective(db,"run-objective","Something else")).toBe(false);
+    expect(read()).toBe("Make checkout survive a double click");
+    createRun(db,"run-long","A");
+    expect(setRunObjective(db,"run-long","x".repeat(3000))).toBe(true);
+    expect((db.prepare("SELECT objective FROM lane_pilot_run WHERE id='run-long'").get() as {objective:string}).objective).toHaveLength(2000);
+    expect((inspectState(db,"A").runs as Array<{id:string;objective:string|null}>).find((row)=>row.id==="run-objective")?.objective).toBe("Make checkout survive a double click");
     await harness.lifecycle.dispose();
   });
 

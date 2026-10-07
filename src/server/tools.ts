@@ -68,9 +68,10 @@ export function registerTools(ctx: ServerCore, services: Services) {
     name:"lane_pilot_dispatch_writer",
     description:"Start a task-v2 contract with the configured native BB writer and return run/attempt identity immediately.",
     instructions:"Use only from a Lane Pilot PM thread. Send every task of the plan now, each in its own call: one task per page or feature, with its area field; tasks whose owns_paths do not overlap run in parallel, a task whose owns_paths or area overlap an open task's waits for it (the area's writer then continues it in its own thread), and a task with depends_on (task ids that must be accepted first) starts by itself once they are — do not hold tasks back in waves. Returns before writer completion: poll lane_pilot_wait_writer with the returned runId, or end your turn with lane_pilot_remind on the task ids. A task's own failure goes back to its writer as feedback turns in the same thread (up to 5 turns or 120 minutes); sending a task again while one of its family runs or is parked returns task_in_progress. A provider, limit or catalog failure moves it down the writer chain (writer model, fallback 1, fallback 2, then the PM's model) without a redispatch.",
-    parameters:z.object({ confirm:z.literal(true), plan:z.string().min(1), task:taskV2Schema.optional(), baseRef:z.string().trim().min(1).max(240).optional() }).strict(),
+    parameters:z.object({ confirm:z.literal(true), plan:z.string().min(1), task:taskV2Schema.optional(), baseRef:z.string().trim().min(1).max(240).optional(),
+      objective:z.string().trim().min(1).max(2000).describe("What this whole run is for, in one or two sentences; send it with the first dispatch. Lane Pilot keeps the first one in the run's record.").optional() }).strict(),
     execute: async (params, context) => JSON.stringify(
-      await services.dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task, plan:params.plan, baseRef:params.baseRef }),
+      await services.dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task, plan:params.plan, baseRef:params.baseRef, objective:params.objective }),
       null,
       2,
     ),

@@ -8,7 +8,7 @@ import { classifyCliOutcome } from "../../cli-outcome";
 import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../constants";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
+import { setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
 import { sha256 } from "../../stages/contract";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../failure-class";
 import { isMainfixTask } from "../../validate-output";
@@ -100,7 +100,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
 
   const lintTask = createTaskLinter(ctx, services);
 
-  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string}): Promise<Record<string,unknown>> {
+  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
@@ -117,6 +117,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       return { runId, state:"rejected", reason, unapplied:[{ key:"task.project_cwd", reason }] };
     }
     const runConfig = { ...config, writerWorkspacePath:workspacePath };
+    if (args.objective) setRunObjective(db, runId, args.objective);
     if (listTaskKinds(db, runId).includes("cli")) {
       throw new Error("V1: BB writer cannot join a CLI run-controller run");
     }
