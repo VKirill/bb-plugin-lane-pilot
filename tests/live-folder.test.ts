@@ -11,7 +11,9 @@ import {
   chunkPaths, classifyFolderProbe, liveOwnedFiles, LIVE_BACKUP_SCRIPT, LIVE_FOLDER_BIG_BYTES, LIVE_FOLDER_FILE_CAP, LIVE_SNAPSHOT_SCRIPT, LIVE_SNAPSHOT_SKIP_DIRS,
   LIVE_SNAPSHOT_SKIP_PATHS, liveSnapshotCommand, parseLiveSnapshot, pythonCommand,
 } from "../src/live-folder";
+import { LANE_PILOT_PM_SESSION } from "../src/native-agent-overlay";
 import { createLiveFolder } from "../src/server/writer/live-folder";
+import { previousAttemptBrief, writerPrompt, writerSetupLines, WRITER_SETUP_LINES } from "../src/server/writer-task";
 
 const roots: string[] = [];
 const realHome = process.env.HOME;
@@ -311,5 +313,39 @@ describe("backup and rollback", () => {
     const ran = spawnSync("/bin/bash", ["-lc", command], { cwd: root, encoding: "utf8", env: { ...process.env, HOME: home } });
     expect(ran.status).toBe(3);
     expect(ran.stderr).toContain("too_large_backup:10");
+  });
+});
+
+describe("what the writer and the PM are told", () => {
+  const task = {
+    schema_version: 2, id: "t", title: "t", risk: "low", lane: "writer", project_cwd: "/w", read_first: [], interfaces: [], invariants: [], out_of_scope: [],
+    expected_outputs: ["a.txt"], owns_paths: ["a.txt"], never_touch: [], depends_on: [], objective: "o", acceptance: ["a"], verify: "none", verification: [],
+  } as never;
+  const LIVE = "This folder has no git: you edit the live files directly; Lane Pilot does not commit; do not run git commands.";
+
+  it("swaps the worktree line of the writer's brief for the live-folder one, and only for a live folder", () => {
+    const live = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", "", null, true);
+    expect(live).toContain(LIVE);
+    expect(live).not.toContain("own git worktree");
+    const normal = writerPrompt(task);
+    expect(normal).toContain("own git worktree");
+    expect(normal).not.toContain(LIVE);
+    expect(writerSetupLines(true)).toContain(LIVE);
+    expect(writerSetupLines(false)).toEqual(WRITER_SETUP_LINES);
+  });
+
+  it("tells a retry writer that Lane Pilot rolled the files back and does not send it to git checkout", () => {
+    const last = { status: "validation_failed", reason: "writer changed paths outside owns_paths or inside never_touch: x.txt", produced: ["a.txt"] };
+    const live = previousAttemptBrief(last, { owns_paths: ["a.txt"] }, [{ path: "a.txt" }], true);
+    expect(live).not.toContain("git checkout -- <file>");
+    expect(live).toContain("x.txt did not exist before your attempt");
+    expect(live).toContain("put the owned ones back as they were");
+    expect(previousAttemptBrief(last, { owns_paths: ["a.txt"] }, [{ path: "a.txt" }])).toContain("git checkout -- <file>");
+  });
+
+  it("names the mode in the PM's instructions", () => {
+    expect(LANE_PILOT_PM_SESSION).toContain("A folder without git");
+    expect(LANE_PILOT_PM_SESSION).toContain("workspace: \"live-folder\"");
+    expect(LANE_PILOT_PM_SESSION).toContain("one writer at a time per folder");
   });
 });

@@ -389,7 +389,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             activeConfig = freshConfig;
             activeTask = {...freshTask,project_cwd:spawned.workspacePath,
               verification:freshTask.verification.map(command=>({...command,cwd:spawned.workspacePath}))};
-            dirtBefore = spawned.dirtBefore;
+            // In a folder without git every attempt of the task starts from the same state (the owned files are rolled
+            // back), so a file outside owns_paths that an earlier attempt left behind keeps counting as changed until undone.
+            dirtBefore = liveFolder && baselineDirtBefore ? baselineDirtBefore : spawned.dirtBefore;
             baselineDirtBefore ??=[...spawned.dirtBefore];
             baselineWorkspacePath ??=spawned.workspacePath;
             executionPacketSha256 = spawned.executionPacketSha256 ?? null;

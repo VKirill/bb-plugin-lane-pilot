@@ -47,6 +47,7 @@ function services(env: ReturnType<typeof setup>, script: Step[], live: boolean) 
   const acquired: Array<{ key: string; limit: number }> = [];
   const restored: Array<{ backupId: string; folder: string; owns: string[] }> = [];
   const spawned: string[] = [];
+  const dirtSeen: string[] = [];
   const all = {
     activeWriterTasks: new Set<string>(),
     providerBreaker: { record: () => undefined },
@@ -68,9 +69,11 @@ function services(env: ReturnType<typeof setup>, script: Step[], live: boolean) 
       setAttemptWorkspace(env.db, input.attemptId, { path: WORKSPACE, environmentId: null,
         decision: live ? { strategy: "inherit_run", reason: LIVE_FOLDER_REASON } : { strategy: "inherit_run", reason: "below_threshold" } });
       transitionAttempt(env.db, input.attemptId, "running", { threadId: "thr_w" });
-      return { ok: true, threadId: "thr_w", providerId: "p", model: "wm", dirtBefore: [], workspacePath: WORKSPACE };
+      // Every spawn snapshots the folder again, and the folder differs from the first snapshot (a stray file stayed).
+      return { ok: true, threadId: "thr_w", providerId: "p", model: "wm", dirtBefore: [{ path: "stray.txt", sha256: `snapshot-${spawned.length}` }], workspacePath: WORKSPACE };
     },
-    finishWriterAttempt: async (input: { attemptId: string; writerThreadId: string }) => {
+    finishWriterAttempt: async (input: { attemptId: string; writerThreadId: string; dirtBefore: Array<{ sha256: string }> }) => {
+      dirtSeen.push(input.dirtBefore[0]?.sha256 ?? "");
       const step = script[turn++] ?? { diff: `d${turn}` };
       if (step.accept) { transitionAttempt(env.db, input.attemptId, "accepted"); return { status: "accepted", produced: ["a.txt"], verification: [] }; }
       if (step.needsHuman) {
@@ -87,7 +90,7 @@ function services(env: ReturnType<typeof setup>, script: Step[], live: boolean) 
         verification: [{ command: "npm test", exitCode: 1, stdout: "", stderr: "AssertionError: boom" }], diffKey: step.diff ?? `d${turn}` };
     },
   } as unknown as Services;
-  return { all, acquired, restored, spawned };
+  return { all, acquired, restored, spawned, dirtSeen };
 }
 
 function start(env: ReturnType<typeof setup>, svc: Services, taskId = "T1") {
@@ -204,4 +207,19 @@ it("treats a writer's question as a pause: no rollback, and the answered attempt
     task: contract("T1"), plan: "Plan for T1", writerThreadId: "thr_w" });
   await vi.waitFor(() => expect(restored.map((row) => row.backupId)).toEqual(["T1-a1"]));
   await env.harness.lifecycle.dispose();
+});
+
+it("measures every attempt of a task against the folder as the first one found it, so a stray file an earlier attempt left still counts", async () => {
+  const live = setup();
+  const liveRun = services(live, [{ providerError: true }, { accept: true }], true);
+  start(live, liveRun.all);
+  await vi.waitFor(() => expect(writerStage(live.db).state).toBe("passed"));
+  expect(liveRun.dirtSeen).toEqual(["snapshot-1", "snapshot-1"]);
+  await live.harness.lifecycle.dispose();
+  const git = setup();
+  const gitRun = services(git, [{ providerError: true }, { accept: true }], false);
+  start(git, gitRun.all);
+  await vi.waitFor(() => expect(writerStage(git.db).state).toBe("passed"));
+  expect(gitRun.dirtSeen).toEqual(["snapshot-1", "snapshot-2"]);
+  await git.harness.lifecycle.dispose();
 });
