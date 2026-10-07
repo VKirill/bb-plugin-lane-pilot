@@ -8,6 +8,10 @@
     "experimental_vkSessionPolicy",
     "experimental_vkRequiredSessionPolicy",
     "experimental_vkCompiledMainAgent",
-    "experimental_vkQuietChild"
+    "experimental_vkQuietChild",
+    "experimental_vkSpawnKeyed",
+    "vkLifecycleDrain",
+    "experimental_vkSchedule",
+    "experimental_vkOnHookTimeout"
   ]
 }
