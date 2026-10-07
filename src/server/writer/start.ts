@@ -107,10 +107,17 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     // backup its first spawn made (feedback turns in the same thread keep working on the live files, so they keep it).
     let liveFolder = false;
     let liveBackupId:string|null = null;
+    /** The backup an attempt works under, kept so an attempt resumed later (the PM's answer, a reload) finds it. */
+    const liveBackupKey = (forAttemptId:string) => `live-backup:${forAttemptId}`;
+    const bindLiveBackup = async ():Promise<void> => {
+      if (liveBackupId) await bb.storage.kv.set(liveBackupKey(attemptId), liveBackupId as never).catch(() => undefined);
+    };
     /** Puts the owned files back after a failed attempt and takes out what the writer created there; once per backup. */
     const rollbackLive = async ():Promise<void> => {
       const backupId = liveBackupId;
       if (!backupId) return;
+      // A writer's question is a pause, not a rejection: its answer continues the same attempt on the files as it left them.
+      if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") return;
       liveBackupId = null;
       const folder = getRun(db,input.runId)?.writer_workspace_path ?? input.task.project_cwd;
       const rolled = await services.restoreLiveFolder({ hostId:input.config.hostId, folder, backupId, task:freshTask })
@@ -225,6 +232,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
       const runFolder = getRun(db,input.runId)?.writer_workspace_path ?? input.task.project_cwd;
       liveFolder = await services.isLiveFolder(input.runId, input.config.hostId, runFolder);
+      // An attempt resumed on its writer's thread (the PM's answer, a reload) goes on under the backup it began with.
+      if (liveFolder && writerThreadId) {
+        const saved = await bb.storage.kv.get(liveBackupKey(attemptId)).catch(() => null);
+        if (typeof saved === "string") liveBackupId = saved;
+      }
       const dependency = await waitForDependencies(wallOrTokenStop);
       if (dependency) {
         blockBeforeWriter(dependency);
@@ -369,7 +381,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
           } else {
             writerThreadId = spawned.threadId;
-            if (liveFolder) liveBackupId = attemptId;
+            if (liveFolder) { liveBackupId = attemptId; await bindLiveBackup(); }
             writerSelection=spawned.providerId&&spawned.model?{
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
@@ -510,6 +522,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           await rollbackLive();
         }
         inSession = Boolean(redo && writerThreadId);
+        if (inSession) await bindLiveBackup();
       }
       // No attempt was left for this start: end the queued attempt instead of leaving it queued with failed stages.
       if (attemptsHere === 0 && getAttempt(db, attemptId)?.state === "queued") {
@@ -568,7 +581,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               continue;
             } else {
               writerThreadId=spawned.threadId;
-              if (liveFolder) liveBackupId=emergencyAttemptId;
+              if (liveFolder) { liveBackupId=emergencyAttemptId; await bindLiveBackup(); }
               writerSelection=spawned.providerId&&spawned.model?{
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
