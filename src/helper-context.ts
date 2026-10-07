@@ -82,6 +82,10 @@ export type HelperRole =
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
 const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
 const READER: RoleProfile = { bbPlugins: [], skills: [], mcpServers: ["gitnexus"] };
+// One answer from the message itself (the prompt says: open no files, call no tools). Measured on the hub: plan-critic and pm-reader made no
+// code-graph call in 419 of 419 runs (the only tool uses were two native reads/shell commands), yet the gitnexus schemas cost ~8k tokens a turn.
+// The router's model step runs as pm-reader. The owner can still give a role MCP servers (helper.access.<role>).
+const ONE_SHOT: RoleProfile = { bbPlugins: [], skills: [], mcpServers: [] };
 // Env Catalog (J1): the roles that need an account or key get its tools. A writer does not: its checks get the secrets the
 // contract declares (verification[].secrets) from the server, by name. A browser check gets it only for a case that names
 // a login (qa-thread.ts, extraAccess).
@@ -89,12 +93,12 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "writer": CODER,
   "code-repair": CODER,
   "night-fixer": CODER,
-  "plan-critic": READER,
+  "plan-critic": ONE_SHOT,
   "code-critic": READER,
   "specialist-reviewer": READER,
   "night-reviewer": READER,
   "gate-triage": READER,
-  "pm-reader": READER,
+  "pm-reader": ONE_SHOT,
   "docs-maintainer": { bbPlugins: [], skills: ["docs-maintain", "docs-methodology"], mcpServers: ["gitnexus"] },
   "onboarder": { bbPlugins: [], skills: ["project-life"], mcpServers: ["gitnexus"] },
   // It returns one JSON array and runs no tools; the memory skills told it to call CLIs (instructions audit 2026-10-03).
