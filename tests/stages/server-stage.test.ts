@@ -252,7 +252,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
               ? (codeRepairOutput ?? '{"replies":[{"id":"f1","status":"fixed","evidence":"updated note.txt"}]}')
               : "writer created note.txt" },
         list:async () => [...new Set([...threadMeta.keys(), ...seededThreadMeta.keys()])].map((id)=>({id})) as never,
-        queue:{list:async ({threadId}:{threadId?:string})=>queuedRetries.filter((row)=>!threadId||row.threadId===threadId)},
+        queue:{list:async (args?:{threadId?:string})=>queuedRetries.filter((row)=>!args?.threadId||row.threadId===args.threadId)},
         queuedMessages:{delete:async ({queuedMessageId}:{queuedMessageId:string})=>{queueLog.push(`delete:${queuedMessageId}`);return {ok:true};}},
       },
       plugins:{

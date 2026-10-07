@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { noOptionalPlugins } from "../optional-plugin-stubs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../../src/contracts";
 import { createAttempt, createRun, createTask, getAttempt, listOpenAttempts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/database";
@@ -143,6 +144,7 @@ async function simulate(seed:number):Promise<{ violations:string[]; summary:stri
     const services = {
       activeWriterTasks:new Set<string>(),
       providerBreaker:{ record:() => undefined },
+      ...noOptionalPlugins,
       runBudgetFor:() => ({ check:() => ({ ok:true }), noteAttempt:() => undefined, noteTokens:() => undefined, snapshot:() => ({ limits:{} }) }),
       runWriterPool:{ acquire:async () => () => undefined },
       maintainMemoryAfterAcceptance:() => undefined,
