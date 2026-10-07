@@ -153,6 +153,7 @@ it("does not retry a writer the user canceled", async () => {
   const db = openDatabase(fake.bb);
   createRun(db, "lprun_1", "project_a");
   createAttempt(db, { id: "attempt-cancel", runId: "lprun_1", taskId: "t" });
+  transitionAttempt(db, "attempt-cancel", "spawn_requested");
   transitionAttempt(db, "attempt-cancel", "running", { threadId: "thr_cancel" });
   transitionAttempt(db, "attempt-cancel", "cancel_requested", { threadId: "thr_cancel" });
   await fake.harness.behavior.emitThreadEvent("turn.failed", makeTurnFailedEvent({

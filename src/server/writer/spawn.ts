@@ -454,7 +454,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         transitionAttempt(db, input.attemptId, "spawn_rejected", { reason });
         return { ok:false, status:"spawn_rejected", reason, attemptId:input.attemptId };
       }
-      transitionAttempt(db, input.attemptId, "spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });
+      // Only a spawn that is still being made is unknown. A failure after the thread was bound (the attempt is running) is
+      // a bookkeeping error: reconcile below finds the thread it already has. Any other state is not a spawn's to change.
+      const during = getAttempt(db, input.attemptId)?.state;
+      if (during === "spawn_requested") transitionAttempt(db, input.attemptId, "spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });
+      else if (during !== "running" && during !== "spawn_unknown") throw cause;
       // Reconcile overwrites this reason; keep the spawn error itself in the log.
       bb.log.warn(`Lane Pilot writer spawn for ${input.attemptId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       const attempt = getAttempt(db, input.attemptId);

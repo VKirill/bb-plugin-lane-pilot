@@ -7,7 +7,7 @@ let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
 
 type Registration = { cron: string; fn: (context: { signal: AbortSignal }) => unknown; options: { isolated?: boolean; timeoutMs?: number; overlap?: string } };
-const ISOLATED = ["self-repair", "parked-task-sweep", "attempt-worktree-sweep", "writer-silence-sweep", "docs-maintenance-hourly", "docs-nightly-hourly", "docs-nightly-catchup", "rules-nightly"];
+const ISOLATED = ["self-repair", "task-reconcile", "attempt-worktree-sweep", "writer-silence-sweep", "docs-maintenance-hourly", "docs-nightly-hourly", "docs-nightly-catchup", "rules-nightly"];
 
 describe("isolated schedules", () => {
   it("registers through experimental_vkSchedule when the core has it, with a limit and no overlap", () => {

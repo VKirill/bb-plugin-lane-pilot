@@ -30,6 +30,7 @@ describe("abandoned run sweep", () => {
     db.prepare("UPDATE lane_pilot_run SET created_at=? WHERE id='run_orphan_new'").run(now - 60_000);
     createTask(db, { id:"task_busy", runId:"run_busy", kind:"bb", contract:{} });
     createAttempt(db, { id:"attempt_busy", runId:"run_busy", taskId:"task_busy" });
+    transitionAttempt(db, "attempt_busy", "spawn_requested");
     transitionAttempt(db, "attempt_busy", "running", { threadId:"thr_writer" });
 
     const closed = await closeAbandonedRuns(bb, db, now);

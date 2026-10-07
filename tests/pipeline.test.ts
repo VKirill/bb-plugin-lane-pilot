@@ -335,6 +335,8 @@ describe("retry creates a new attemptId", () => {
     const db = openDatabase(bb);
     createRun(db, "run-r", config.projectId);
     createAttempt(db, { id:"a1", runId:"run-r", taskId:"t" });
+    transitionAttempt(db, "a1", "spawn_requested");
+    transitionAttempt(db, "a1", "running");
     transitionAttempt(db, "a1", "validation_failed");
     createAttempt(db, { id:"a2", runId:"run-r", taskId:"t" });
     expect(countAttempts(db, "run-r", "t")).toBe(2);

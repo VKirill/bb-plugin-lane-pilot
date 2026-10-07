@@ -79,6 +79,7 @@ export function createProbes(ctx: ServerCore, services: Services) {
     createRun(db, runId, projectId);
     setRunThread(db, runId, pmThreadId);
     createAttempt(db, { id:attemptId, runId, taskId });
+    transitionAttempt(db, attemptId, "spawn_requested");
     transitionAttempt(db, attemptId, "spawn_unknown", { reason:"live ambiguous reconcile probe" });
     const threadIds: string[] = [];
     try {

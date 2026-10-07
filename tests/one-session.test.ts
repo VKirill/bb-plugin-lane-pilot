@@ -61,6 +61,7 @@ function services(db:ReturnType<typeof openDatabase>, script:Step[]) {
     spawnWriterAttempt:async (input:{ attemptId:string }) => {
       spawned.push(input.attemptId);
       setAttemptWorkspace(db, input.attemptId, { path:WORKTREE, environmentId:null, decision:{} });
+      transitionAttempt(db, input.attemptId, "spawn_requested");
       transitionAttempt(db, input.attemptId, "running", { threadId:"thr_w" });
       return { ok:true, threadId:"thr_w", providerId:"p", model:"wm", dirtBefore:[], workspacePath:WORKTREE };
     },

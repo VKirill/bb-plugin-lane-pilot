@@ -310,6 +310,7 @@ describe("production spawn_unknown reconciliation", () => {
     createRun(db, triple.lanePilotRunId, projectId);
     setRunThread(db, triple.lanePilotRunId, pmThreadId);
     createAttempt(db, { id:triple.attemptId, runId:triple.lanePilotRunId, taskId:triple.lanePilotTaskId });
+    transitionAttempt(db, triple.attemptId, "spawn_requested");
     transitionAttempt(db, triple.attemptId, "spawn_unknown", { reason:"response lost" });
     expect(getAttempt(db, triple.attemptId)?.thread_id).toBeNull();
     await plugin(bb);
@@ -317,6 +318,30 @@ describe("production spawn_unknown reconciliation", () => {
     const result = await harness.behavior.runCli(["recover", triple.attemptId]);
     expect(result).toMatchObject({ exitCode:1, stderr:"writer is not idle: active" });
     expect(getAttempt(db, triple.attemptId)).toMatchObject({ thread_id:"writer-found", state:"running" });
+    await harness.lifecycle.dispose();
+  });
+
+  it("finding the thread of an attempt whose stop was requested does not turn it back into running", async () => {
+    const triple = { lanePilotRunId:"run-cancel-recover", lanePilotTaskId:"task-cancel-recover", attemptId:"attempt-cancel-recover" };
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{ threads:{
+        list: async () => [{ id:"writer-found" }] as never,
+        getPluginMetadata: async () => triple,
+        get: async () => ({ id:"writer-found", status:"active" }) as never,
+      } },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    createRun(db, triple.lanePilotRunId, projectId);
+    setRunThread(db, triple.lanePilotRunId, pmThreadId);
+    createAttempt(db, { id:triple.attemptId, runId:triple.lanePilotRunId, taskId:triple.lanePilotTaskId });
+    transitionAttempt(db, triple.attemptId, "spawn_requested");
+    transitionAttempt(db, triple.attemptId, "cancel_requested", { reason:"canceled while its writer was starting" });
+    await plugin(bb);
+    await harness.behavior.runCli(["recover", triple.attemptId]);
+    // The thread was found and kept; the stop stays requested, so the recovery ends it as canceled.
+    expect(getAttempt(db, triple.attemptId)).toMatchObject({ state:"cancel_requested" });
     await harness.lifecycle.dispose();
   });
 
@@ -342,6 +367,7 @@ describe("production spawn_unknown reconciliation", () => {
     setRunThread(db,triple.lanePilotRunId,pmThreadId);
     createTask(db,{id:triple.lanePilotTaskId,runId:triple.lanePilotRunId,kind:"bb",contract:{}});
     createAttempt(db,{id:triple.attemptId,runId:triple.lanePilotRunId,taskId:triple.lanePilotTaskId});
+    transitionAttempt(db, triple.attemptId, "spawn_requested");
     transitionAttempt(db,triple.attemptId,"spawn_unknown",{reason:"provider response was lost"});
     await plugin(bb);
 

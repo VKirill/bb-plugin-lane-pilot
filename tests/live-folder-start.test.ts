@@ -68,6 +68,7 @@ function services(env: ReturnType<typeof setup>, script: Step[], live: boolean) 
       spawned.push(input.attemptId);
       setAttemptWorkspace(env.db, input.attemptId, { path: WORKSPACE, environmentId: null,
         decision: live ? { strategy: "inherit_run", reason: LIVE_FOLDER_REASON } : { strategy: "inherit_run", reason: "below_threshold" } });
+      transitionAttempt(env.db, input.attemptId, "spawn_requested");
       transitionAttempt(env.db, input.attemptId, "running", { threadId: "thr_w" });
       // Every spawn snapshots the folder again, and the folder differs from the first snapshot (a stray file stayed).
       return { ok: true, threadId: "thr_w", providerId: "p", model: "wm", dirtBefore: [{ path: "stray.txt", sha256: `snapshot-${spawned.length}` }], workspacePath: WORKSPACE };
@@ -112,6 +113,7 @@ afterEach(() => { vi.useRealTimers(); });
 function busyFolder(env: ReturnType<typeof setup>) {
   createTask(env.db, { id: "B1", runId: "run1", kind: "bb", contract: contract("B1") });
   createAttempt(env.db, { id: "b1-a", runId: "run1", taskId: "B1" });
+  transitionAttempt(env.db, "b1-a", "spawn_requested");
   transitionAttempt(env.db, "b1-a", "running", { threadId: "thr_b" });
 }
 

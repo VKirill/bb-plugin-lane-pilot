@@ -7,7 +7,7 @@ import { classifyCliOutcome } from "../../cli-outcome";
 import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../constants";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
+import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
 import { sha256 } from "../../stages/contract";
 import { nextStep, taskFamily } from "../../failure-class";
 import { isMainfixTask } from "../../validate-output";
@@ -523,7 +523,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       }
       attemptId = id("lpattempt");
       createAttempt(db, { id: attemptId, runId, taskId });
-      transitionAttempt(db, attemptId, outcome.status, { reason: outcome.reason });
+      recordFinishedAttempt(db, attemptId, outcome.status, outcome.reason);
     }
     saveProjectSetting(db, args.projectId, cliReceiptRunKey(runId), JSON.stringify(receipt));
     if (attemptId) {

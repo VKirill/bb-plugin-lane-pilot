@@ -10,6 +10,7 @@ import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
 import { validateSettingValue, validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "./lp-defaults";
 import packageJson from "../package.json";
+import { IllegalTransitionError, isLegalMove } from "./state-machine";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -818,10 +819,18 @@ export function releaseActivation(db: LanePilotDatabase, projectId: string, runI
 /** States an attempt never leaves: its work is merged, or the owner stopped it. */
 const FINAL_ATTEMPT_STATES = ["accepted", "canceled"] as const;
 
+let illegalTransitionLog:(message:string) => void = (message) => console.warn(message);
+/** Where a refused move is reported (the plugin log); until set, the console. */
+export function setIllegalTransitionLog(log:(message:string) => void):void { illegalTransitionLog = log; }
+
 /**
  * Moves an attempt to a new state and journals it. An accepted or canceled attempt keeps its state: before,
  * a cancel during verification could be overwritten with «accepted» after the merge (fleet invariants audit,
- * 2026-10-03). Returns false when the move was refused.
+ * 2026-10-03). Returns false when the move was refused that way.
+ *
+ * Every other move must be a row of the state machine's table (src/state-machine.ts) or one of its documented operational
+ * moves. An illegal one is logged, journaled as refused and thrown as `IllegalTransitionError`: a caller that did it is
+ * wrong, and the writer loop's catch ends the attempt as `internal_error` (a Lane Pilot fault, parked and restarted).
  */
 export function transitionAttempt(
   db: LanePilotDatabase,
@@ -832,12 +841,32 @@ export function transitionAttempt(
   const now = Date.now();
   const before = db.prepare("SELECT state FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { state: string } | undefined;
   if (!before) return false;
+  const settled = (FINAL_ATTEMPT_STATES as readonly string[]).includes(before.state);
+  if (!settled && before.state !== state && !isLegalMove(before.state, state)) {
+    db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,1,?)`)
+      .run(attemptId, before.state, state, `illegal move: ${fields.reason ?? ""}`.trim(), now);
+    const error = new IllegalTransitionError(attemptId, before.state, state);
+    illegalTransitionLog(`Lane Pilot refused ${error.message}${fields.reason ? `: ${fields.reason.slice(0, 200)}` : ""}`);
+    throw error;
+  }
   const changed = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, updated_at=?
     WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=?)`)
     .run(state, fields.threadId ?? null, fields.reason ?? null, now, attemptId, ...FINAL_ATTEMPT_STATES, state).changes === 1;
   db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
     .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
   return changed;
+}
+
+/**
+ * An attempt whose work ran before it was recorded (a native CLI run: the command has finished when the attempt is
+ * written): journals the steps it went through, then its outcome. A blocked outcome needs no steps.
+ */
+export function recordFinishedAttempt(db: LanePilotDatabase, attemptId: string, status: "accepted" | "blocked" | "running", reason?: string): void {
+  if (status !== "blocked") {
+    transitionAttempt(db, attemptId, "spawn_requested");
+    transitionAttempt(db, attemptId, "running");
+  }
+  if (status !== "running") transitionAttempt(db, attemptId, status, { reason });
 }
 
 export function inspectState(db: LanePilotDatabase, projectId: string): Record<string,unknown> {
