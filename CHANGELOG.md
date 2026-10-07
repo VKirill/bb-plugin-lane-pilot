@@ -43,7 +43,7 @@ Integration with the official BB plugins (I1-I4, I6, I7) and the canary (G7). Ev
 - **Canary and error budget (G7).** `canary_status` RPC, a 10-minute check that tells the PMs once per version when 3+ of the first 20 attempts (above 5%) failed on Lane Pilot's own fault, a 7-day budget, `scripts/lp-canary.sh` (exit 1 when tripped or spent) and `--rollback <version>` that prints the steps from the deploy log.
 - README: the «Official BB plugins» table with notes for plugin-api-docs, plugin-api-tester (enable on a development machine only), agent-annotations and push-notifications (I6, I7).
 
-## Unreleased (Env Catalog, phase J)
+### Env Catalog (phase J)
 
 Secrets for checks, browser logins and deploy steps, from BB's Env Catalog, with least privilege. Needs the `env-catalog` plugin for any of it; without it a task that declares nothing is unaffected.
 - **J1, roles.** Env Catalog tools go to the roles that use them: errands and the four specialists (design-lead, copy-lead, seo-specialist, tavily). A writer has none, and its brief no longer promises `env_get` (it says its checks get declared secrets as environment variables and it never sees a value). The browser-check thread gets Env Catalog only for a case that names a login (J5).

@@ -61,6 +61,8 @@ describe("accounts for a deploy errand (J7)", () => {
     const call = async (params: Record<string, unknown>) =>
       JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_errand", params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
     const args = { task: "Deploy the build to the server over SSH", authorized: true, accounts: ["OVH_SSH", "GONE_FTP"] };
+    // An empty secrets.allow allows what the errand names; the owner restricted it here.
+    saveProjectSetting(db, projectId, "secrets.allow", "OTHER_KEY");
     const notAllowed = await call(args);
     expect(notAllowed).toMatchObject({ state: "blocked", reason: "waiting_secret:OVH_SSH,GONE_FTP" });
     expect(JSON.stringify(notAllowed.fix)).toContain("secrets.allow");
