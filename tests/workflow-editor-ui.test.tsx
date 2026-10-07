@@ -150,6 +150,7 @@ describe("the editor model", () => {
       { level: "error", code: "y", message: "in the fan", node: "analyze:child" },
     ], loose, viewEdgeIndexes(loose, view));
     expect(found.graph.nodes.get("analyze")).toEqual(["no way out", "in the fan"]);
+    expect([...found.graph.errors].sort()).toEqual(["edge:e1", "node:analyze"]);
     expect(found.graph.edges.get("e1")).toEqual(["bad field"]);
     expect(found.general.map((problem) => problem.message)).toEqual(["unknown target", "general"]);
   });
@@ -268,7 +269,9 @@ describe("editing a draft in the Workflows tab", () => {
     await slot.behavior.emitRealtime(`lp:${projectId}`, { kind: "workflow-draft", draftId });
     const marker = await slot.findByTestId("wf-problem-lonely");
     expect(marker.getAttribute("aria-label")).toBe("The validator found a problem here");
-    expect(slot.getByTestId("wf-node-lonely").getAttribute("data-problem")).toBe("1");
+    expect(slot.getByTestId("wf-node-lonely").getAttribute("data-problem")).toBe("error");
+    // A warning is marked too, but not as an error.
+    expect(slot.getByTestId("wf-node-search").getAttribute("data-problem")).toBe("warning");
     expect(slot.getByTestId("wf-edit-problem-count").textContent).toMatch(/\d+ errors/);
     expect(within(slot.getByTestId("wf-problems-panel")).getAllByTestId("wf-problem-row").some((row) => row.textContent?.includes("lonely"))).toBe(true);
     // A draft with errors cannot be tested.

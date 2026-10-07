@@ -17,7 +17,7 @@ export type DraftDoc = {
   draftId: string; version: number | null; workflow: unknown; threadId: string | null; updatedAt: number | null;
   /** The validator's verdict, the last test run and the version log: present when the server sends them (the real one does). */
   check: DraftCheck | null; tests: DraftTests | null; history: Array<{ version: number; summary: string; at: number }>;
-  status: string | null; scope: string | null; publishedPath: string | null;
+  status: string | null; scope: string | null; publishedPath: string | null; projectId: string | null;
 };
 
 const isRaw = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -67,7 +67,7 @@ export async function getDraft(rpc: unknown, draftId: string): Promise<DraftDoc 
         notChecked: Array.isArray(row.notChecked) ? row.notChecked.filter((line): line is string => typeof line === "string") : [],
         stubbed: Array.isArray(row.stubbed) ? row.stubbed.flatMap((entry) => (isRaw(entry) && str(entry.node) ? [{ node: str(entry.node)!, type: str(entry.type) ?? "", executor: str(entry.executor) ?? "" }] : [])) : [] }] : [])) } : null,
       history: Array.isArray(top.history) ? top.history.flatMap((row) => (isRaw(row) && num(row.version) !== null ? [{ version: num(row.version)!, summary: str(row.summary) ?? "", at: num(row.at) ?? 0 }] : [])) : [],
-      status: str(summary.status), scope: str(summary.scope), publishedPath: str(summary.publishedPath),
+      status: str(summary.status), scope: str(summary.scope), publishedPath: str(summary.publishedPath), projectId: str(summary.projectId),
     };
   } catch { return null; }
 }

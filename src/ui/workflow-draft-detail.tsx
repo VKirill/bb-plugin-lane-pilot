@@ -92,7 +92,8 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
   editing: boolean; setEditing: (next: boolean) => void; narrow: boolean; direction: "RIGHT" | "DOWN"; onBack: () => void; openChat: (threadId: string) => void; read: () => Promise<unknown>; renderNodePanel?: NodePanelRenderer;
 }) {
   const edit = useDraftEditing(doc, read);
-  const catalog = useCatalog(projectId, doc.draftId, editing);
+  // A draft belongs to the project it was made in, whichever library (global or a project's) the screen shows.
+  const catalog = useCatalog(doc.projectId ?? projectId, doc.draftId, editing);
   const [adding, setAdding] = useState<{ after: string | null } | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const definition = (isRaw(doc.workflow) ? doc.workflow : {}) as Raw;

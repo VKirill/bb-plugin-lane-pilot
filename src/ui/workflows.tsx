@@ -74,13 +74,13 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   const load = useCallback(async () => {
     const mine = ++generation.current;
     try {
-      const [result, found] = await Promise.all([rpc.call("workflow_list", projectId ? { projectId } : {}), listDrafts(rpc, projectId)]);
+      const [result, found] = await Promise.all([rpc.call("workflow_list", projectId ? { projectId } : {}), listDrafts(rpc, projectId ?? architectProjectId)]);
       if (mine !== generation.current) return;
       setListing(result);
       setDrafts(found);
       setError(null);
     } catch (cause) { if (mine === generation.current) setError(cause instanceof Error ? cause.message : String(cause)); }
-  }, [projectId, rpc]);
+  }, [projectId, architectProjectId, rpc]);
   useEffect(() => { setListing(null); setDrafts([]); setOpenId(null); setOpenDraft(null); void load(); }, [load]);
 
   // The detail view has its own subscription; this one keeps the library's counts and «running» marks fresh.

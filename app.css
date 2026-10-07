@@ -302,9 +302,13 @@
     font-weight: 700;
     line-height: 1;
   }
-  .lp-wf-node[data-problem="1"] { border-color: var(--destructive); }
-  .lp-wf-edge[data-problem="1"] { stroke: var(--destructive); stroke-width: 2; opacity: 1; }
-  .lp-wf-edge-label[data-problem="1"] { border-color: var(--destructive); }
+  .lp-wf-problem[data-level="warning"] { background-color: var(--lp-warning); color: var(--foreground); }
+  .lp-wf-node[data-problem="error"] { border-color: var(--destructive); }
+  .lp-wf-node[data-problem="warning"] { border-color: var(--lp-warning); }
+  .lp-wf-edge[data-problem="error"] { stroke: var(--destructive); stroke-width: 2; opacity: 1; }
+  .lp-wf-edge[data-problem="warning"] { stroke: var(--lp-warning); stroke-width: 2; opacity: 1; }
+  .lp-wf-edge-label[data-problem="error"] { border-color: var(--destructive); }
+  .lp-wf-edge-label[data-problem="warning"] { border-color: var(--lp-warning); }
   .lp-wf-edge[data-selected="1"] { stroke: var(--primary); stroke-width: 2.5; opacity: 1; }
   .lp-wf-edge-label[data-selected="1"] { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 30%, transparent), var(--lp-drop); }
 
@@ -366,7 +370,7 @@
   .lp-wf-edge-label {
     position: absolute;
     display: flex;
-    max-width: 230px;
+    max-width: 190px;
     flex-direction: column;
     align-items: center;
     padding: 3px 8px;
@@ -380,7 +384,9 @@
     cursor: pointer;
   }
   .lp-wf-edge-label[data-state="untaken"] { opacity: 0.55; }
+  .lp-wf-edge-label span { max-width: 100%; overflow-wrap: anywhere; text-align: center; }
   .lp-wf-edge-when { color: var(--foreground); font-family: ui-monospace, monospace; }
+  .lp-wf-edge-title { color: var(--foreground); font-weight: 500; }
   .lp-wf-edge-sub { color: var(--muted-foreground); font-family: ui-monospace, monospace; }
   .lp-wf-pass { color: var(--muted-foreground); font-size: 10px; letter-spacing: 0.02em; text-transform: uppercase; }
   .lp-wf-pass[data-pass="same-session"], .lp-wf-pass[data-pass="read-prior-session"], .lp-wf-pass[data-pass="fork"] { color: var(--primary); font-weight: 600; }
@@ -393,6 +399,7 @@
   @media (prefers-reduced-motion: reduce) { .lp-wf-node[data-changed="1"] { animation: none; } }
 
   .lp-wf-tools { display: flex; gap: 4px; }
+  .lp-wf-hint { margin: 0 !important; padding: 2px 8px; border-radius: 8px; background-color: color-mix(in oklab, var(--lp-card) 80%, transparent); color: var(--muted-foreground); font-size: 11px; line-height: 16px; pointer-events: none; }
   .lp-wf-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
 
   /* The editor's property panel on a narrow screen: a bottom sheet that stays at the foot of the screen while the graph above it is in view. */

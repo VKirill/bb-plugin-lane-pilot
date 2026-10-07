@@ -3,6 +3,7 @@ export const editorEn = {
   wfEditProblemsOn: "The validator found a problem here",
   wfNotes: "Notes on the graph",
   wfNoteEmpty: "Empty note",
+  wfPanHint: "Drag to move along the chain",
 
   wfEdit: "Edit",
   wfEditDone: "Done",
@@ -227,6 +228,7 @@ export const editorRu: { [K in keyof typeof editorEn]: string } = {
   wfEditProblemsOn: "Валидатор нашёл здесь проблему",
   wfNotes: "Заметки к графу",
   wfNoteEmpty: "Пустая заметка",
+  wfPanHint: "Тяните, чтобы двигаться по цепочке",
 
   wfEdit: "Править",
   wfEditDone: "Готово",

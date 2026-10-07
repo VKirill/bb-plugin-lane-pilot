@@ -304,17 +304,25 @@ export type Problem = { level: "error" | "warning"; code: string; message: strin
 
 /** Problems by the card or edge they name, and those that name neither. Edge indexes are the file's; the canvas's are in `viewEdges`. */
 export function problemMaps(problems: readonly Problem[], definition: Raw, viewEdges: readonly number[]): { graph: GraphProblems; general: Problem[] } {
-  const nodes = new Map<string, string[]>(), edges = new Map<string, string[]>(), general: Problem[] = [];
+  const nodes = new Map<string, string[]>(), edges = new Map<string, string[]>(), errors = new Set<string>(), general: Problem[] = [];
   const viewOf = new Map(viewEdges.map((raw, view) => [raw, view]));
   // With `entry`, the validator counts a synthetic edge from start first; the file's edge i is its i + 1.
   const shifted = typeof definition.entry === "string" && !edgesOf(definition).some((edge) => edgeEnd(edge.from) === "start") ? 1 : 0;
   const add = (map: Map<string, string[]>, key: string, message: string) => map.set(key, [...(map.get(key) ?? []), message]);
   for (const problem of problems) {
-    if (problem.node) { add(nodes, problem.node.replace(/:(child|fan)$/, ""), problem.message); continue; }
-    if (problem.edge !== undefined) { const view = viewOf.get(problem.edge - shifted); if (view !== undefined) { add(edges, `e${view}`, problem.message); continue; } }
+    if (problem.node) {
+      const id = problem.node.replace(/:(child|fan)$/, "");
+      add(nodes, id, problem.message);
+      if (problem.level === "error") errors.add(`node:${id}`);
+      continue;
+    }
+    if (problem.edge !== undefined) {
+      const view = viewOf.get(problem.edge - shifted);
+      if (view !== undefined) { add(edges, `e${view}`, problem.message); if (problem.level === "error") errors.add(`edge:e${view}`); continue; }
+    }
     general.push(problem);
   }
-  return { graph: { nodes, edges }, general };
+  return { graph: { nodes, edges, errors }, general };
 }
 
 /** The file's edge index behind each edge of the canvas (the draft view leaves out an edge to a node that is not there yet). */

@@ -34,7 +34,8 @@ export function readableViewport(graph: { width: number; height: number }, ancho
     : { zoom, x: pad - anchor.x * zoom, y: box.height / 2 - centre.y * zoom };
 }
 
-export type GraphProblems = { nodes: ReadonlyMap<string, string[]>; edges: ReadonlyMap<string, string[]> };
+/** The messages by node id and by edge key, and which of those hold an error (`node:<id>`, `edge:<key>`); the rest are warnings. */
+export type GraphProblems = { nodes: ReadonlyMap<string, string[]>; edges: ReadonlyMap<string, string[]>; errors: ReadonlySet<string> };
 const TONE_ICON: Record<NodeTone, IconName> = {
   plan: "Search", build: "Code", qa: "Target", review: "CircleCheck", agent: "Bot", action: "Zap", decision: "GitBranch",
   human: "UserRoundPlus", flow: "Layers", sub: "Workflow", note: "Info", terminal: "Circle",
@@ -56,9 +57,9 @@ const PASS_KEY: Record<ViewEdge["pass"], I18nKey> = {
 
 type CardData = {
   view: ViewNode; locale: Locale; direction: Direction; run: NodeRun | null; selected: boolean; changed: boolean; expanded: boolean; loading: boolean;
-  onToggle: (() => void) | null; onAddAfter: (() => void) | null; onPick: () => void; problems: string[]; editing: boolean;
+  onToggle: (() => void) | null; onAddAfter: (() => void) | null; onPick: () => void; problems: string[]; level: "error" | "warning"; editing: boolean;
 };
-type EdgeData = { edge: ViewEdge; active: boolean | null; changed: boolean; direction: Direction; selected: boolean; problems: string[]; onPick: () => void };
+type EdgeData = { edge: ViewEdge; active: boolean | null; changed: boolean; direction: Direction; selected: boolean; problems: string[]; level: "error" | "warning"; onPick: () => void };
 type FlowNode = Node<CardData>;
 type FlowEdge = Edge<EdgeData>;
 
@@ -80,21 +81,21 @@ function StatusPill({ run }: { run: NodeRun }) {
 }
 
 const NodeCard = memo(function NodeCard({ data, id }: NodeProps<FlowNode>) {
-  const { view, locale, direction, run, selected, changed, expanded, loading, onToggle, onAddAfter, onPick, problems, editing } = data;
+  const { view, locale, direction, run, selected, changed, expanded, loading, onToggle, onAddAfter, onPick, problems, level, editing } = data;
   const side = ports(direction);
   const title = nodeTitle(view, locale);
   const kind = t(KIND_KEY[view.kind] ?? "wfKind_agent");
   const role = view.role && view.role !== view.kind ? view.role : kind;
   const meta = [role, view.maxVisits ? `↻ ${view.maxVisits}` : null, run && run.visits > 1 ? t("wfVisits").replace("{n}", String(run.visits)) : null].filter(Boolean).join(" · ");
   return (
-    <div className="lp-wf-node nodrag" data-tone={view.tone} data-kind={view.kind} data-status={run?.status ?? "none"} data-selected={selected ? "1" : "0"} data-changed={changed ? "1" : "0"} data-problem={problems.length ? "1" : "0"} data-testid={`wf-node-${id}`}
+    <div className="lp-wf-node nodrag" data-tone={view.tone} data-kind={view.kind} data-status={run?.status ?? "none"} data-selected={selected ? "1" : "0"} data-changed={changed ? "1" : "0"} data-problem={problems.length ? level : "none"} data-testid={`wf-node-${id}`}
       role="button" tabIndex={0} aria-pressed={selected} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onPick(); } }}
       aria-label={`${title}, ${kind}${run ? `, ${t(STATUS_KEY[run.status])}` : ""}${problems.length ? `, ${problems.join("; ")}` : ""}`}>
       <Handle type="target" position={side.target} className="lp-wf-port" isConnectable={editing} />
       <div className="flex min-w-0 items-center gap-2">
         <span className="lp-tile lp-wf-tile size-7 shrink-0" aria-hidden><Icon name={TONE_ICON[view.tone]} className="size-3.5" /></span>
         <span className="lp-wf-role min-w-0 flex-1 truncate" title={meta}>{meta}</span>
-        {problems.length ? <span className="lp-wf-problem" data-testid={`wf-problem-${id}`} title={problems.join("\n")} role="img" aria-label={t("wfEditProblemsOn")}>!</span> : null}
+        {problems.length ? <span className="lp-wf-problem" data-level={level} data-testid={`wf-problem-${id}`} title={problems.join("\n")} role="img" aria-label={t("wfEditProblemsOn")}>!</span> : null}
         {run ? <StatusPill run={run} /> : null}
       </div>
       <div className="mt-1.5 truncate text-sm font-medium leading-5" title={title}>{title}</div>
@@ -139,14 +140,14 @@ const NodeGroup = memo(function NodeGroup({ data, id }: NodeProps<FlowNode>) {
   );
 });
 
-const clip = (text: string, max = 44) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+const clip = (text: string, max = 70) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 const FlowEdgeView = memo(function FlowEdgeView({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps<FlowEdge>) {
   const edge = data!.edge;
   const right = data!.direction === "RIGHT";
-  // The label stays readable when the graph is zoomed out: it grows against the zoom, up to a third.
+  // The label stays readable when the graph is zoomed out: it grows against the zoom, up to a fifth (more would run over the cards at either end).
   const zoom = useStore((state) => state.transform[2]);
-  const grow = Math.min(1.35, Math.max(1, 0.92 / (zoom || 1)));
+  const grow = Math.min(1.2, Math.max(1, 0.85 / (zoom || 1)));
   // A loop back to an earlier step would run straight through the cards in between; it arcs around them instead.
   const back = right ? targetX <= sourceX : targetY <= sourceY;
   const bend = 110;
@@ -159,7 +160,7 @@ const FlowEdgeView = memo(function FlowEdgeView({ id, sourceX, sourceY, targetX,
   const showPass = edge.pass !== "artifact" || edge.carries.length > 0;
   const state = data!.active === null ? "idle" : data!.active ? "taken" : "untaken";
   const title = [edge.label, edge.when, edge.carries.length ? `→ ${edge.carries.join(", ")}` : null, ...data!.problems].filter(Boolean).join("\n");
-  const flags = { "data-state": state, "data-changed": data!.changed ? "1" : "0", "data-selected": data!.selected ? "1" : "0", "data-problem": data!.problems.length ? "1" : "0" };
+  const flags = { "data-state": state, "data-changed": data!.changed ? "1" : "0", "data-selected": data!.selected ? "1" : "0", "data-problem": data!.problems.length ? data!.level : "none" };
   return (
     <>
       <BaseEdge id={id} path={path} className="lp-wf-edge" {...flags} markerEnd={`url(#lp-wf-arrow-${state})`} interactionWidth={22} />
@@ -167,8 +168,8 @@ const FlowEdgeView = memo(function FlowEdgeView({ id, sourceX, sourceY, targetX,
         <EdgeLabelRenderer>
           <div className="lp-wf-edge-label nodrag nopan" data-testid={`wf-edge-${id}`} {...flags} title={title} onClick={(event) => { event.stopPropagation(); data!.onPick(); }}
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px) scale(${grow})` } as CSSProperties}>
-            {data!.problems.length ? <span className="lp-wf-problem" aria-label={t("wfEditProblemsOn")}>!</span> : null}
-            {main ? <span className="lp-wf-edge-when">{clip(main)}</span> : null}
+            {data!.problems.length ? <span className="lp-wf-problem" data-level={data!.level} aria-label={t("wfEditProblemsOn")}>!</span> : null}
+            {main ? <span className={edge.label ? "lp-wf-edge-title" : "lp-wf-edge-when"}>{clip(main)}</span> : null}
             {edge.label && edge.when ? <span className="lp-wf-edge-sub">{clip(edge.when)}</span> : null}
             <span className="lp-wf-pass" data-pass={edge.pass}>{t(PASS_KEY[edge.pass])}</span>
           </div>
@@ -224,7 +225,7 @@ export type WorkflowGraphProps = {
   height?: number;
 };
 
-const NO_PROBLEMS: GraphProblems = { nodes: new Map(), edges: new Map() };
+const NO_PROBLEMS: GraphProblems = { nodes: new Map(), edges: new Map(), errors: new Set() };
 
 function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, changedEdges, selected = null, loadingKeys, onSelect, onToggleExpand, onAddAfter, onConnect, selectedEdge = null, onSelectEdge,
   problems = NO_PROBLEMS, focusKey = null, refit = "always", direction = "RIGHT", height = 440 }: WorkflowGraphProps) {
@@ -262,7 +263,7 @@ function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, cha
       width: placed.width, height: placed.height, initialWidth: placed.width, initialHeight: placed.height, handles: portsOf(orientation, placed.width, placed.height),
       style: { width: placed.width, height: placed.height }, draggable: false, selectable: false, connectable: editing,
       data: { view, locale, direction: orientation, run: runs?.get(key) ?? null, selected: selected === key, changed: changedNodes?.has(key) ?? false, expanded: placed.group, loading: loadingKeys?.has(key) ?? false,
-        problems: problems.nodes.get(key) ?? [], editing,
+        problems: problems.nodes.get(key) ?? [], level: problems.errors.has(`node:${key}`) ? "error" : "warning", editing,
         onPick: () => pick(key), onToggle: canExpand ? () => handlers.current.onToggleExpand?.(key, view) : null,
         onAddAfter: hasAdd && view.kind !== "end" && !placed.group ? () => handlers.current.onAddAfter?.(key) : null },
     } satisfies FlowNode;
@@ -271,7 +272,7 @@ function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, cha
   const edges = useMemo<FlowEdge[]>(() => (layout?.edges ?? []).map((placed) => ({
     id: placed.key, source: placed.source, target: placed.target, type: "flow", selectable: false, focusable: false,
     data: { edge: placed.edge, active: runs ? takenEdges?.has(placed.key) ?? false : null, changed: changedEdges?.has(placed.key) ?? false, direction: orientation,
-      selected: selectedEdge === placed.key, problems: problems.edges.get(placed.key) ?? [], onPick: () => handlers.current.onSelectEdge?.(placed.key) },
+      selected: selectedEdge === placed.key, problems: problems.edges.get(placed.key) ?? [], level: problems.errors.has(`edge:${placed.key}`) ? "error" : "warning", onPick: () => handlers.current.onSelectEdge?.(placed.key) },
   })), [layout, runs, takenEdges, changedEdges, orientation, selectedEdge, problems]);
 
   /**
@@ -311,10 +312,12 @@ function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, cha
   }, [layout, focusKey, flow]);
 
   const notes = graph.nodes.filter((node) => node.kind === "note");
+  // A chain laid out in one row does not need the whole height: the box is as tall as the row at the readable zoom, with room for the tools.
+  const shown = orientation === "RIGHT" && layout ? Math.min(height, Math.max(240, Math.ceil(layout.height * READABLE_ZOOM) + 120)) : height;
 
   return (
     <div className="min-w-0 space-y-2">
-      <div ref={boxRef} className="lp-wf-canvas relative min-w-0" style={{ height }} data-testid="workflow-graph" data-layout={layout ? "ready" : failed ? "failed" : "pending"} data-direction={orientation} data-editing={editing ? "1" : "0"}>
+      <div ref={boxRef} className="lp-wf-canvas relative min-w-0" style={{ height: shown }} data-testid="workflow-graph" data-layout={layout ? "ready" : failed ? "failed" : "pending"} data-direction={orientation} data-editing={editing ? "1" : "0"}>
         <Markers />
         <ReactFlow<FlowNode, FlowEdge>
           nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
@@ -327,13 +330,14 @@ function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, cha
           onPaneClick={() => { pick(null); handlers.current.onSelectEdge?.(null); }}
           aria-label={t("wfGraphLabel")}
         >
-          <Panel position="top-right" className="lp-wf-tools">
+          <Panel position={orientation === "DOWN" ? "bottom-right" : "top-right"} className="lp-wf-tools">
             <Button type="button" size="sm" variant="outline" className="lp-raised size-7 p-0" aria-label={t("wfZoomIn")} onClick={() => void flow.zoomIn({ duration: 120 })}>+</Button>
             <Button type="button" size="sm" variant="outline" className="lp-raised size-7 p-0" aria-label={t("wfZoomOut")} onClick={() => void flow.zoomOut({ duration: 120 })}>−</Button>
             <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2 text-xs" aria-label={t("wfFitView")} onClick={() => place(160)}>{t("wfFit")}</Button>
             <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2 text-xs" aria-pressed={orientation === "DOWN"} aria-label={t("wfFlipDirection")} data-testid="wf-direction"
               onClick={() => setOrientation((current) => (current === "RIGHT" ? "DOWN" : "RIGHT"))}>{orientation === "RIGHT" ? "→" : "↓"}</Button>
           </Panel>
+          <Panel position="bottom-left" className="lp-wf-hint" data-testid="wf-pan-hint">{t("wfPanHint")}</Panel>
         </ReactFlow>
         {!layout && !failed ? <p className="lp-wf-overlay text-xs text-muted-foreground" role="status">{t("wfLayouting")}</p> : null}
         {failed ? <p className="lp-wf-overlay text-xs text-destructive" role="alert">{t("wfGraphError").replace("{error}", failed)}</p> : null}
