@@ -1,0 +1,396 @@
+{
+  "id": "grill-driven",
+  "name": {
+    "en": "Grill the plan first",
+    "ru": "Сначала допрос плана"
+  },
+  "description": {
+    "en": "For big or risky changes - adversarial Socratic walk through the plan against the real code (3/5/8 branches), then multi-role brainstorm, plan, build, close.",
+    "ru": "Для крупных или рискованных изменений - состязательный допрос плана по реальному коду (3/5/8 веток), затем многоролевой штурм, план, исполнение, закрытие."
+  },
+  "examples": {
+    "ru": [
+      "Сначала допроси мой план миграции на новую БД, потом реализуй",
+      "Устрой жёсткий разбор плана перед тем как начинать писать код",
+      "Проверь идею на прочность по коду и только потом делай",
+      "Перед запуском крупной переделки проведи допрос плана",
+      "Погоняй мой замысел вопросами, найди дыры, затем собери план и выполни",
+      "Найди слабые места в моём плане, а потом реализуй то, что устоит"
+    ],
+    "en": [
+      "First grill my plan for migrating to the new database, then build it",
+      "Stress-test the plan hard before any code is written",
+      "Check the idea against the codebase and only then implement",
+      "Before the big rework, run an adversarial review of the plan",
+      "Poke holes in my design with questions, then plan and execute",
+      "Find the weak spots in my plan, then implement whatever survives"
+    ]
+  },
+  "not_for": [
+    "brainstorm-driven",
+    "grill-plan",
+    "analyze-plan-execute"
+  ],
+  "status": "published",
+  "tags": [
+    "code",
+    "planning",
+    "risky"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "goals": {
+      "type": "Goal[]"
+    },
+    "boundary": {
+      "type": "Boundary"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    },
+    "plan_text": {
+      "type": "string",
+      "note": "текст плана/идеи для допроса"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "merged_commits": "string[]",
+    "locked": "string[]",
+    "deferred": "string[]",
+    "risk_register": "Risk[]",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "full",
+    "effect": "глубина допроса: quick - 3 ветки, standard - 5, full - 8; остальное по §0.7"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 80,
+    "max_minutes": 420,
+    "max_fan_out": 5
+  },
+  "entry": "grill",
+  "nodes": [
+    {
+      "id": "grill",
+      "type": "subworkflow",
+      "workflow": "grill-plan",
+      "with": {
+        "plan": "{{$inputs.plan_text}}",
+        "goal": "{{$inputs.goal}}",
+        "depth": {
+          "by_mode": {
+            "quick": "shallow",
+            "standard": "standard",
+            "full": "deep"
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "ask_open",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Questions the code cannot answer",
+        "ru": "Вопросы, на которые код не отвечает"
+      },
+      "skip_when": "grill.open.length == 0",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "answered"
+      },
+      "prompt": "One form with all open items (max 8), each with the branch, why it matters and a suggested default; unanswered items become deferred, not blockers.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "answered|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "brainstorm",
+      "type": "subworkflow",
+      "workflow": "lp.brainstorm",
+      "with": {
+        "topic": "{{$inputs.goal}}",
+        "upstream": "{{grill}}",
+        "roles": {
+          "by_mode": {
+            "quick": [
+              "product-manager",
+              "system-architect"
+            ],
+            "standard": [
+              "product-manager",
+              "system-architect",
+              "test-strategist"
+            ],
+            "full": [
+              "product-manager",
+              "system-architect",
+              "test-strategist",
+              "ux-expert",
+              "subject-matter-expert"
+            ]
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "findings": "{{brainstorm}}",
+        "boundary": "{{$inputs.boundary}}",
+        "mode": "fresh"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan.tasks}}",
+        "waves": "{{plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "replan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "mode": "gaps",
+        "gaps": "{{build.failed_findings}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "close",
+      "type": "subworkflow",
+      "workflow": "lp.close",
+      "with": {
+        "goals": "{{$inputs.goals}}",
+        "boundary": "{{$inputs.boundary}}",
+        "goal": "{{$inputs.goal}}",
+        "merged_commits": "{{ctx.merged_commits}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "merged_commits": "ctx.merged_commits",
+        "locked": "grill.locked",
+        "deferred": "grill.deferred",
+        "risk_register": "grill.risk_register",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "merged_commits": "ctx.merged_commits",
+        "locked": "grill.locked",
+        "deferred": "grill.deferred",
+        "risk_register": "grill.risk_register",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "locked": "grill.locked",
+        "deferred": "grill.deferred",
+        "risk_register": "grill.risk_register"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "grill",
+      "to": "ask_open",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_open",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "ask_open.answer_kind == 'abort'"
+    },
+    {
+      "from": "ask_open",
+      "to": "brainstorm",
+      "pass": "artifact"
+    },
+    {
+      "from": "brainstorm",
+      "to": "plan",
+      "pass": "artifact",
+      "when": "brainstorm.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "brainstorm",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "close",
+      "pass": "artifact",
+      "when": "build.status == 'done'"
+    },
+    {
+      "from": "build",
+      "to": "replan",
+      "pass": "artifact",
+      "when": "build.status == 'partial' && visits('replan') == 0"
+    },
+    {
+      "from": "build",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "replan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "replan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "replan",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "close",
+      "to": "done",
+      "pass": "artifact",
+      "when": "close.status == 'closed'"
+    },
+    {
+      "from": "close",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "gd-1",
+    "sim": {
+      "input": {
+        "goal": "Move sessions from SQLite to Postgres",
+        "plan_text": "1) dual-write 2) backfill 3) switch reads",
+        "quality_mode": "full"
+      },
+      "stubs": {
+        "grill-plan": {
+          "open": [
+            "backfill window"
+          ],
+          "locked": [
+            "dual-write first"
+          ],
+          "deferred": [],
+          "risk_register": [
+            {
+              "risk": "lock contention"
+            }
+          ]
+        },
+        "ask_open": {
+          "answer_kind": "answered"
+        },
+        "lp.brainstorm": {
+          "status": "ok"
+        },
+        "lp.plan": {
+          "status": "ok"
+        },
+        "lp.build": {
+          "status": "done",
+          "merged_commits": [
+            "g1"
+          ]
+        },
+        "lp.close": {
+          "status": "closed"
+        }
+      },
+      "expect_path": [
+        "grill",
+        "ask_open",
+        "brainstorm",
+        "plan",
+        "build",
+        "close",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "locked.length >= 1",
+        "risk_register.length >= 1"
+      ]
+    },
+    "live": "песочница: придуманный план с дырой (нет отката); допрос должен найти её с file:line и положить в risk_register"
+  }
+}

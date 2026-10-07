@@ -1,0 +1,205 @@
+{
+  "id": "plan-only",
+  "name": {
+    "en": "Plan only",
+    "ru": "Только план"
+  },
+  "description": {
+    "en": "Analyze and write task contracts with plan critique and save them as a draft for approval. Nothing is built.",
+    "ru": "Проанализировать и составить контракты задач с критикой плана и сохранить как черновик на утверждение. Ничего не исполняется."
+  },
+  "examples": {
+    "ru": [
+      "Составь план миграции на новую версию фреймворка, выполнять пока не нужно",
+      "Распиши по задачам, что нужно для двухфакторной авторизации, я посмотрю",
+      "Подготовь контракты задач для переезда на новый API, без запуска",
+      "Сделай черновик плана по рефакторингу биллинга"
+    ],
+    "en": [
+      "Draft a plan for migrating to the new framework version, don't execute yet",
+      "Break two-factor authentication into tasks, I'll look at them",
+      "Prepare task contracts for moving to the new API, without running them",
+      "Make a draft plan for the billing refactor"
+    ]
+  },
+  "not_for": [
+    "analyze-plan-execute",
+    "analyze-code",
+    "roadmap-driven"
+  ],
+  "status": "published",
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "ok|low_confidence|failed",
+    "tasks": "Task[]",
+    "waves": "string[][]",
+    "plan_path": "string",
+    "critic_status": "string",
+    "proposed_workflow": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "критика плана по §0.7"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 14,
+    "max_minutes": 60
+  },
+  "entry": "analyze",
+  "nodes": [
+    {
+      "id": "analyze",
+      "type": "subworkflow",
+      "workflow": "lp.analyze",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "scope": "{{$inputs.scope}}",
+        "depth": {
+          "by_mode": {
+            "quick": "quick",
+            "standard": "standard",
+            "full": "deep"
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "findings": "{{analyze}}",
+        "mode": "fresh"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "save",
+      "type": "action",
+      "action": "fs.write",
+      "path": "plans/draft-{{run_id}}.json",
+      "reads": [
+        "plan.tasks",
+        "plan.waves"
+      ],
+      "out": {
+        "plan_path": "string"
+      }
+    },
+    {
+      "id": "offer",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "analyze-plan-execute",
+      "inputs": {
+        "goal": "{{$inputs.goal}}",
+        "tasks": "{{plan.tasks}}"
+      },
+      "note": "предложение выполнить сохранённый план; запуск - решение владельца/политики"
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "ok",
+        "tasks": "plan.tasks",
+        "waves": "plan.waves",
+        "plan_path": "save.plan_path",
+        "critic_status": "plan.plan_verdict",
+        "proposed_workflow": "analyze-plan-execute"
+      }
+    },
+    {
+      "id": "failed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "failed"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "analyze",
+      "to": "plan",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "save",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "failed",
+      "pass": "artifact"
+    },
+    {
+      "from": "save",
+      "to": "offer",
+      "pass": "artifact"
+    },
+    {
+      "from": "offer",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "po-1",
+    "sim": {
+      "input": {
+        "goal": "Plan 2FA via TOTP",
+        "scope": "src/auth"
+      },
+      "stubs": {
+        "lp.plan": {
+          "status": "ok",
+          "task_count": 4,
+          "plan_verdict": "pass"
+        }
+      },
+      "expect_path": [
+        "analyze",
+        "plan",
+        "save",
+        "offer",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'ok'",
+        "tasks.length == 4",
+        "plan_path != ''"
+      ]
+    },
+    "live": "песочница: план для небольшой фичи; ни одного запущенного писателя, файл плана на диске"
+  }
+}

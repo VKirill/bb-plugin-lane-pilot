@@ -1,0 +1,364 @@
+{
+  "id": "web-research",
+  "name": {
+    "en": "Web research with sources",
+    "ru": "Поиск в интернете с источниками"
+  },
+  "description": {
+    "en": "Splits a question into sub-questions, searches in parallel (Tavily), reads the best sources, checks each claim against independent sources, and writes a cited report in which every statement carries a numbered source.",
+    "ru": "Раскладывает вопрос на подвопросы, ищет параллельно (Tavily), читает лучшие источники, проверяет каждое утверждение по независимым источникам и пишет отчёт, где у каждого утверждения есть номер источника."
+  },
+  "examples": {
+    "ru": [
+      "Найди в интернете, чем отличаются тарифы Stripe и Paddle, с источниками",
+      "Сделай обзор рынка CRM для малого бизнеса со ссылками",
+      "Погугли актуальные требования к маркировке рекламы и дай отчёт с источниками",
+      "Выясни, что нового в последнем релизе Postgres, со ссылками",
+      "Исследуй конкурентов сервиса бронирования, нужен отчёт с цитатами",
+      "Поищи свежие исследования про интервальное голодание и кратко изложи с ссылками"
+    ],
+    "en": [
+      "Search the web for how Stripe and Paddle pricing differs, with sources",
+      "Do a market overview of CRMs for small business with links",
+      "Look up the current ad-labeling requirements and give a cited report",
+      "Find out what's new in the latest Postgres release, with links",
+      "Research competitors of the booking service, I need a report with citations",
+      "Look for recent studies on intermittent fasting and summarize them with links"
+    ]
+  },
+  "not_for": [
+    "x-to-telegram-digest",
+    "seo-cocoon",
+    "analyze-code"
+  ],
+  "status": "tested",
+  "tags": [
+    "research",
+    "web"
+  ],
+  "inputs": {
+    "question": {
+      "type": "string",
+      "required": true
+    },
+    "depth": {
+      "type": "quick|standard|deep",
+      "default": "standard"
+    },
+    "language": {
+      "type": "string",
+      "default": "ru"
+    },
+    "recency": {
+      "type": "string",
+      "note": "например 12m; пусто - без ограничения"
+    },
+    "max_sources": {
+      "type": "int",
+      "default": 10
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "report_md": "string",
+    "sources": "Source[]",
+    "unverified": "string[]",
+    "report_path": "string",
+    "citation_ok": "bool"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "= depth: quick 1 подвопрос и 5 источников; standard 3-4 и 10; full(deep) 6 и 20 + проход по контрпримерам"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "tavily"
+    ],
+    "secrets": [
+      "TAVILY_API_KEY"
+    ],
+    "machines": [
+      "any with internet"
+    ]
+  },
+  "budget": {
+    "max_steps": 20,
+    "max_minutes": 60,
+    "max_usd": 2
+  },
+  "entry": "frame",
+  "nodes": [
+    {
+      "id": "frame",
+      "type": "agent",
+      "role": "analyst",
+      "model_preset": "cheap-fast",
+      "title": {
+        "en": "Frame the question",
+        "ru": "Сформулировать вопрос"
+      },
+      "prompt": "Split the question into 1-6 sub-questions (by depth), define the time window, acceptable source types (primary, official, peer-reviewed, reputable press) and what would count as an answer. If the question is too vague to search, return needs_clarification with one question.",
+      "out": {
+        "subquestions": "string[]",
+        "sub_count": "int",
+        "needs_clarification": "bool",
+        "clarification": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 5
+      }
+    },
+    {
+      "id": "ask",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Clarify",
+        "ru": "Уточнить"
+      },
+      "prompt": "One clarifying question from `frame.clarification`.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 120
+      }
+    },
+    {
+      "id": "search",
+      "type": "parallel",
+      "for_each": "frame.subquestions",
+      "child": {
+        "type": "agent",
+        "role": "specialist:tavily",
+        "prompt": "Tavily search then extract for the sub-question {{item}}: candidates with URL, title, date, snippet; extract full text of the best 2-4. Mark each source as full_text, snippet, metadata_only or unavailable. A search result is a candidate, not a fact.",
+        "out": {
+          "subquestion": "string",
+          "sources": "Source[]"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "sources": "Source[]",
+          "source_count": "int",
+          "unavailable": "string[]"
+        },
+        "uses": "reduce.web-research.search"
+      },
+      "concurrency": 3
+    },
+    {
+      "id": "claims",
+      "type": "agent",
+      "role": "analyst",
+      "model_preset": "strong",
+      "title": {
+        "en": "Claims and counterevidence",
+        "ru": "Утверждения и контрпримеры"
+      },
+      "prompt": "Build the list of claims that answer the question. A claim stands with two independent sources (different organizations, not copies of each other), otherwise it is `unverified` and says so. Seek counterevidence and alternative explanations before the main conclusion. Keep observation, inference and opinion apart; numbers belong to their source and sample.",
+      "out": {
+        "claims": "Claim[]",
+        "unverified": "string[]",
+        "counter": "string[]",
+        "claim_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "report",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "ru-text"
+        ]
+      },
+      "title": {
+        "en": "Write the cited report",
+        "ru": "Написать отчёт с источниками"
+      },
+      "prompt": "Short answer first, then findings with numbered citations [n] after every sentence that states a fact, then limits (what is unverified, unavailable or contested), then the numbered source list (title, publisher, date, URL, access status). No claim without a source number.",
+      "out": {
+        "report_md": "string",
+        "cited_ids": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "check",
+      "type": "action",
+      "action": "citations.check",
+      "reads": [
+        "report.report_md",
+        "search.sources"
+      ],
+      "rule": "every [n] resolves to a source; every source listed is used; links.verify returns a 2xx/3xx for at least 80% of full_text sources (paywalls and bot blocks are marked, not failed)",
+      "out": {
+        "citation_ok": "bool",
+        "broken": "string[]",
+        "unresolved": "string[]"
+      }
+    },
+    {
+      "id": "deliver",
+      "type": "action",
+      "action": "fs.write",
+      "path": "reports/research-{{date}}-{{slug}}.md",
+      "out": {
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "report_md": "report.report_md",
+        "sources": "search.sources",
+        "unverified": "claims.unverified",
+        "report_path": "deliver.report_path",
+        "citation_ok": "check.citation_ok"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "report_md": "report.report_md",
+        "sources": "search.sources",
+        "unverified": "claims.unverified",
+        "report_path": "deliver.report_path",
+        "citation_ok": false
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "frame",
+      "to": "ask",
+      "pass": "artifact",
+      "when": "frame.needs_clarification"
+    },
+    {
+      "from": "frame",
+      "to": "search",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask",
+      "to": "frame",
+      "pass": "artifact",
+      "when": "ask.answer_kind == 'answered'"
+    },
+    {
+      "from": "ask",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "search",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "search.source_count == 0"
+    },
+    {
+      "from": "search",
+      "to": "claims",
+      "pass": "artifact"
+    },
+    {
+      "from": "claims",
+      "to": "report",
+      "pass": "artifact"
+    },
+    {
+      "from": "report",
+      "to": "check",
+      "pass": "artifact"
+    },
+    {
+      "from": "check",
+      "to": "report",
+      "pass": "same-session",
+      "when": "!check.citation_ok && visits('report') < 2",
+      "label": "fix citations"
+    },
+    {
+      "from": "check",
+      "to": "deliver",
+      "pass": "artifact"
+    },
+    {
+      "from": "deliver",
+      "to": "done",
+      "pass": "artifact",
+      "when": "check.citation_ok"
+    },
+    {
+      "from": "deliver",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "wr-1",
+    "sim": {
+      "input": {
+        "question": "What changed in the React 19 compiler?",
+        "depth": "quick",
+        "language": "en"
+      },
+      "stubs": {
+        "tavily.search": "fixtures/tavily-react19.json (8 источников, 2 недоступных)",
+        "claims": {
+          "claim_count": 4,
+          "unverified": [
+            "benchmark numbers"
+          ]
+        }
+      },
+      "expect_path": [
+        "frame",
+        "search",
+        "claims",
+        "report",
+        "check",
+        "deliver",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "citation_ok == true",
+        "sources.length >= 5",
+        "every sentence with a number has [n]"
+      ]
+    },
+    "live": "реальный запрос с ключом из Env Catalog; в отчёте ни одной ссылки, которой нет в списке; ключ не появляется ни в выводе, ни в логах",
+    "note": "Tested on stubs: every outside action answers from a stub. Not live yet: Tavily search with a key from Env Catalog and live links for the citation check. See `live` for the acceptance run."
+  }
+}

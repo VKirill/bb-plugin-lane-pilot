@@ -1,0 +1,187 @@
+{
+  "id": "issue-discover",
+  "name": {
+    "en": "Discover issues",
+    "ru": "Найти проблемы"
+  },
+  "description": {
+    "en": "Eight read-only perspectives (security, performance, reliability, maintainability, scalability, ux, accessibility, compliance) scan an area in two batches of four; findings are deduplicated and registered as open cards in BB Tasks.",
+    "ru": "Восемь перспектив только на чтение (безопасность, производительность, надёжность, сопровождаемость, масштабируемость, UX, доступность, соответствие) проходят область двумя пачками по четыре; находки дедуплицируются и заводятся открытыми карточками в BB Tasks."
+  },
+  "examples": {
+    "ru": [
+      "Найди проблемы в модуле заказов и заведи карточки",
+      "Просканируй проект глазами безопасности, производительности и доступности",
+      "Ночной обход: что нужно починить в репозитории",
+      "Составь список проблем по сервису уведомлений в трекере"
+    ],
+    "en": [
+      "Find problems in the orders module and file cards for them",
+      "Scan the project through security, performance and accessibility eyes",
+      "Night sweep: what needs fixing in the repository",
+      "Build a list of problems for the notifications service in the tracker"
+    ]
+  },
+  "not_for": [
+    "quality-loop",
+    "security-audit",
+    "code-review"
+  ],
+  "status": "published",
+  "triggers": [
+    "chat",
+    "schedule"
+  ],
+  "inputs": {
+    "scope": {
+      "type": "string"
+    },
+    "perspectives": {
+      "type": "string[]",
+      "default": [
+        "security",
+        "performance",
+        "reliability",
+        "maintainability",
+        "scalability",
+        "ux",
+        "accessibility",
+        "compliance"
+      ]
+    },
+    "dry_run": {
+      "type": "bool",
+      "default": false
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "found": "int",
+    "created_ids": "string[]",
+    "duplicates_merged": "int"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "quick - 4 перспективы; full - все 8 и подтверждение critical/high 2 из 3"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "bb-tasks"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 14,
+    "max_minutes": 90
+  },
+  "entry": "scan",
+  "nodes": [
+    {
+      "id": "scan",
+      "type": "parallel",
+      "for_each": "$inputs.perspectives",
+      "child": {
+        "type": "agent",
+        "role": "analyst",
+        "src": "maestro-flow:workflows/issue-discover.md",
+        "prompt": "Perspective {{item}}. Read the project coding standards first so severity matches them. Return findings [{title, severity, description, location file:line, fix_direction, affected_components}]; nothing without a location.",
+        "out": {
+          "perspective": "string",
+          "findings": "Finding[]"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "findings": "Finding[]",
+          "count": "int"
+        },
+        "uses": "reduce.issue-discover.scan"
+      },
+      "concurrency": 4
+    },
+    {
+      "id": "dedupe",
+      "type": "action",
+      "action": "items.dedupe",
+      "rule": "group by file; merge when descriptions overlap more than 80% or the same file:line; keep the higher severity",
+      "reads": [
+        "scan.findings"
+      ],
+      "out": {
+        "findings": "Finding[]",
+        "merged": "int"
+      }
+    },
+    {
+      "id": "create",
+      "type": "action",
+      "action": "bb.tasks.create",
+      "dry_run": "{{$inputs.dry_run}}",
+      "map": "severity to priority: critical 1, high 2, medium 3, low 4; status open; source discovery",
+      "reads": [
+        "dedupe.findings"
+      ],
+      "out": {
+        "created_ids": "string[]"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "found": "scan.count",
+        "created_ids": "create.created_ids",
+        "duplicates_merged": "dedupe.merged"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "scan",
+      "to": "dedupe",
+      "pass": "artifact"
+    },
+    {
+      "from": "dedupe",
+      "to": "create",
+      "pass": "artifact"
+    },
+    {
+      "from": "create",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "id-1",
+    "sim": {
+      "input": {
+        "scope": "src/orders",
+        "dry_run": true
+      },
+      "stubs": {
+        "scan": {
+          "count": 11,
+          "findings": "fixtures/discover-11.json"
+        }
+      },
+      "expect_path": [
+        "scan",
+        "dedupe",
+        "create",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "duplicates_merged >= 1"
+      ]
+    },
+    "live": "тестовый проект BB Tasks; карточки с file:line и priority по шкале"
+  }
+}

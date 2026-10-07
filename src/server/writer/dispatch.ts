@@ -271,7 +271,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     };
     const pendingReply = (): Record<string,unknown> => ({ runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),
       note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn with lane_pilot_remind on the task id. Do not send the task again: the same id and contract returns this task." });
-    // The same pipeline as a workflow run (workflows/analyze-plan-execute.json, executors in dispatch-workflow.ts). The direct
+    // The same pipeline as a workflow run (workflows/lp-task-pipeline.json, executors in dispatch-workflow.ts). The direct
     // `runStages` above stays as the path for LANE_PILOT_WORKFLOW_ENGINE=0 and for an engine that cannot start the run.
     const runViaEngine = async (): Promise<Record<string,unknown>> => {
       let started: ReturnType<typeof startDispatchRun>;

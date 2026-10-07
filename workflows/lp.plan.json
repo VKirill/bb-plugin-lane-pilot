@@ -241,5 +241,6 @@
       "to": "failed",
       "pass": "artifact"
     }
-  ]
+  ],
+  "status": "published"
 }

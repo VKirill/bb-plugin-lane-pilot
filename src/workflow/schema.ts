@@ -171,6 +171,8 @@ const parallelNode = z.object({
   for_each: FOR_EACH_SOURCES.optional(),
   order: z.enum(["depends_on"]).optional(),
   max_fan_out: z.number().int().min(1).max(50).optional(),
+  /** How many branches run at once; the others wait their turn. `max_fan_out` is the cap on how many branches there may be at all. */
+  concurrency: z.number().int().min(1).max(50).optional(),
   batch_size: z.number().int().min(1).max(500).optional(),
   on_child_fail: z.enum(["block_dependents"]).optional(),
   onOverflow: z.enum(["fail", "truncate"]).default("fail"),
@@ -241,8 +243,11 @@ export const workflowSchema = z.object({
     maxFanOut: z.number().int().min(1).max(50).default(12),
     maxSubworkflowDepth: z.number().int().min(1).max(MAX_SUBWORKFLOW_DEPTH).default(MAX_SUBWORKFLOW_DEPTH),
   }).strict().default({ maxSteps: 60, maxFanOut: 12, maxSubworkflowDepth: MAX_SUBWORKFLOW_DEPTH }),
-  /** `default` is `$mode` when the run is started without one; `effect` says in words what the mode changes here. */
-  quality_mode: z.object({ default: z.enum(QUALITY_MODES).default("standard"), effect: z.string().max(600).optional() }).strict().optional(),
+  /**
+   * `default` is `$mode` when the run is started without one; `effect` says in words what the mode changes here; `min` raises a lower
+   * request to this mode (a refactor is never run `quick`); `fixed` is the mode whatever is asked (a companion run is always `quick`).
+   */
+  quality_mode: z.object({ default: z.enum(QUALITY_MODES).default("standard"), effect: z.string().max(600).optional(), min: z.enum(QUALITY_MODES).optional(), fixed: z.enum(QUALITY_MODES).optional() }).strict().optional(),
   triggers: z.array(trigger).max(10).default([]),
   scope: z.object({
     level: z.enum(["builtin", "global", "project", "section"]).default("global"),

@@ -1,0 +1,223 @@
+{
+  "id": "lp.brainstorm",
+  "internal": true,
+  "name": {
+    "en": "Multi-role brainstorm",
+    "ru": "Многоролевой штурм"
+  },
+  "description": {
+    "en": "Role authors work in parallel, a fresh cross-role reviewer finds conflicts, gaps and synergies, conflicts are resolved with the owner, a guidance specification with at most 8 features is written.",
+    "ru": "Роли-авторы работают параллельно, свежий перекрёстный ревьюер находит конфликты, пробелы и синергии, конфликты решаются с владельцем, пишется guidance-спецификация не более чем на 8 фич."
+  },
+  "inputs": {
+    "topic": {
+      "type": "string",
+      "required": true
+    },
+    "upstream": {
+      "type": "any",
+      "note": "grill-report: locked/open/deferred, risk_register, terminology"
+    },
+    "roles": {
+      "type": "string[]"
+    },
+    "research": {
+      "type": "any"
+    }
+  },
+  "outputs": {
+    "status": "ok|low_confidence|failed",
+    "guidance": "string",
+    "features": "Feature[]",
+    "decisions": "Decision[]",
+    "constraints": "string[]",
+    "non_goals": "string[]",
+    "open_questions": "string[]"
+  },
+  "entry": "terms",
+  "budget": {
+    "max_steps": 14,
+    "max_minutes": 60,
+    "max_fan_out": 5
+  },
+  "nodes": [
+    {
+      "id": "terms",
+      "type": "agent",
+      "role": "analyst",
+      "src": "maestro-flow:workflows/brainstorm.md (phase 2)",
+      "prompt": "Extract 5-10 domain terms with one-line definitions and the Non-Goals of the topic from the upstream material and the repository (check each term for a name collision in code, cite file:line). New terms are candidates, they do not enter any glossary here.",
+      "out": {
+        "terminology": "Term[]",
+        "non_goals": "string[]",
+        "term_count": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "designs",
+      "type": "parallel",
+      "for_each": "$inputs.roles",
+      "max_fan_out": 5,
+      "child": {
+        "type": "agent",
+        "role": "analyst",
+        "src": "maestro-flow:agents/role-design-author",
+        "prompt": "You are {{item}}. Write: 1 Role Mandate, 2 Decision Digest (four tables: decisions, assumptions, risks, open questions; each row with its reason), 3 Cross-Cutting concerns, 4 file index, 5 TODOs.\nStay inside your role; no files into the repository; every claim about the codebase has file:line.\n",
+        "out": {
+          "role": "string",
+          "digest": "any",
+          "ok": "bool"
+        }
+      },
+      "join": {
+        "policy": "all_or_low_confidence",
+        "out": {
+          "digests": "Digest[]",
+          "ok_count": "int",
+          "failed_roles": "string[]"
+        },
+        "uses": "reduce.lp.brainstorm.designs"
+      }
+    },
+    {
+      "id": "cross_review",
+      "type": "agent",
+      "role": "analyst",
+      "session": "new",
+      "src": "maestro-flow:agents/cross-role-reviewer",
+      "prompt": "Compare the Decision Digests only (not the full analyses). Return conflicts (two roles decide differently), gaps (nobody covers), synergies, need_deeper_context. Write nothing.",
+      "out": {
+        "conflicts": "Conflict[]",
+        "gaps": "string[]",
+        "synergies": "string[]",
+        "conflict_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "resolve",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Resolve role conflicts",
+        "ru": "Разрешить конфликты ролей"
+      },
+      "skip_when": "cross_review.conflict_count == 0",
+      "skip_out": {
+        "resolutions": "[]",
+        "answer_kind": "resolved"
+      },
+      "prompt": "Up to 4 questions per round, one per conflict, each with the two positions and a recommended pick. A resolution names the exact role and heading it changes.",
+      "out": {
+        "resolutions": "Resolution[]",
+        "answer_kind": "resolved|timeout"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "guidance",
+      "type": "agent",
+      "role": "planner",
+      "src": "maestro-flow:workflows/brainstorm.md (guidance-specification)",
+      "prompt": "Write the guidance specification with RFC 2119 keywords - decomposition into at most 8 features F-NNN (name, why, acceptance idea), decision tracking, cross-role resolutions applied (superseded text marked). Locked constraints C-NNN come from upstream locked decisions and resolved conflicts.",
+      "out": {
+        "guidance": "string",
+        "features": "Feature[]",
+        "decisions": "Decision[]",
+        "constraints": "string[]",
+        "feature_count": "int",
+        "open_questions": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "ok",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "ok",
+        "guidance": "guidance.guidance",
+        "features": "guidance.features",
+        "decisions": "guidance.decisions",
+        "constraints": "guidance.constraints",
+        "non_goals": "terms.non_goals",
+        "open_questions": "guidance.open_questions"
+      }
+    },
+    {
+      "id": "low",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "low_confidence",
+        "guidance": "guidance.guidance",
+        "features": "guidance.features",
+        "decisions": "guidance.decisions",
+        "constraints": "guidance.constraints",
+        "non_goals": "terms.non_goals",
+        "open_questions": "guidance.open_questions"
+      }
+    },
+    {
+      "id": "failed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "failed"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "terms",
+      "to": "designs",
+      "pass": "artifact"
+    },
+    {
+      "from": "designs",
+      "to": "failed",
+      "pass": "artifact",
+      "when": "designs.ok_count == 0"
+    },
+    {
+      "from": "designs",
+      "to": "cross_review",
+      "pass": "read-prior-session"
+    },
+    {
+      "from": "cross_review",
+      "to": "resolve",
+      "pass": "artifact"
+    },
+    {
+      "from": "resolve",
+      "to": "guidance",
+      "pass": "artifact"
+    },
+    {
+      "from": "guidance",
+      "to": "low",
+      "pass": "artifact",
+      "when": "designs.failed_roles.length > 0 || resolve.answer_kind == 'timeout'"
+    },
+    {
+      "from": "guidance",
+      "to": "ok",
+      "pass": "artifact"
+    }
+  ],
+  "status": "published"
+}

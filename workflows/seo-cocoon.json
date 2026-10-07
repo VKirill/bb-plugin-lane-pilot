@@ -1,0 +1,471 @@
+{
+  "id": "seo-cocoon",
+  "name": {
+    "en": "Semantic cocoon (Cocoon Engine X4)",
+    "ru": "Семантический кокон (Cocoon Engine X4)"
+  },
+  "description": {
+    "en": "Brief, audience evidence (Reddit Mapper), external cited research, page architecture (entity to intent to pages, canonical parents, internal links), GIST content briefs per page and a cocoon audit. Delivers files and a handoff; changes no site.",
+    "ru": "Бриф, доказательства по аудитории (Reddit Mapper), внешнее исследование с источниками, архитектура страниц (сущность, интент, страницы, канонические родители, внутренние ссылки), GIST-брифы по каждой странице и аудит кокона. Отдаёт файлы и передачу; сайт не меняет."
+  },
+  "examples": {
+    "ru": [
+      "Собери семантический кокон для сайта про окна ПВХ в Москве",
+      "Построй структуру раздела и бриефы страниц по методу X4",
+      "Проведи аудит кластера статей про йогу",
+      "Нужен кокон 4.0 для интернет-магазина кофемашин",
+      "Сделай исследование аудитории и архитектуру страниц для блога о путешествиях",
+      "Разложи тему «ипотека для самозанятых» в структуру страниц с брифами"
+    ],
+    "en": [
+      "Build a semantic cocoon for a PVC windows site in Moscow",
+      "Build the section structure and page briefs with the X4 method",
+      "Audit the cluster of articles about yoga",
+      "I need a cocoon 4.0 for a coffee machine online store",
+      "Do audience research and page architecture for a travel blog",
+      "Lay the topic 'mortgage for the self-employed' out into a page structure with briefs"
+    ]
+  },
+  "not_for": [
+    "web-research",
+    "insights-post",
+    "analyze-plan-execute"
+  ],
+  "status": "tested",
+  "tags": [
+    "seo",
+    "content",
+    "drmax"
+  ],
+  "inputs": {
+    "topic": {
+      "type": "string",
+      "required": true
+    },
+    "geo": {
+      "type": "string",
+      "default": ""
+    },
+    "language": {
+      "type": "string",
+      "default": "ru"
+    },
+    "site_goal": {
+      "type": "string",
+      "note": "тип сайта и цель: интернет-магазин / услуги / блог / медиа",
+      "default": ""
+    },
+    "site_url": {
+      "type": "string"
+    },
+    "material": {
+      "type": "string[]",
+      "note": "пути к имеющимся данным: семантика, тексты, выгрузки"
+    },
+    "slug": {
+      "type": "string"
+    },
+    "use_seo_tools": {
+      "type": "bool",
+      "default": false,
+      "note": "платные Mutagen/xmlstock; только при согласии"
+    },
+    "max_pages": {
+      "type": "int",
+      "default": 30
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "clusters": "Cluster[]",
+    "page_count": "int",
+    "briefs_dir": "string",
+    "audit_status": "pass|rework|block",
+    "folder": "string",
+    "handoff_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "quick - без аудита; full - независимое подтверждение выводов вторым агентом и расширенный Reddit/научный поиск"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "cocoon-chainsmith",
+      "cocoon-pilot",
+      "drmax-cocoon-engine-x4",
+      "reddit-mapper",
+      "topical-graph-architect",
+      "gist-content-logic",
+      "tavily",
+      "seo-tools",
+      "alphaxiv"
+    ],
+    "secrets": [
+      "TAVILY_API_KEY",
+      "MUTAGEN_API_KEY (только при use_seo_tools)"
+    ],
+    "machines": [
+      "project host"
+    ]
+  },
+  "budget": {
+    "max_steps": 50,
+    "max_minutes": 360,
+    "max_usd": 15,
+    "max_fan_out": 30
+  },
+  "entry": "ask_brief",
+  "nodes": [
+    {
+      "id": "ask_brief",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "$inputs.geo != '' && $inputs.site_goal != ''",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "given"
+      },
+      "title": {
+        "en": "Brief",
+        "ru": "Бриф"
+      },
+      "src": "cocoon-pilot SKILL",
+      "prompt": "At most 3 questions in one form - topic scope and geography, language, site goal (type, audience, what the site sells/answers) and which material exists. Default the rest; do not ask permission for routine steps.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "given|answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "chainsmith",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "cocoon-chainsmith"
+        ]
+      },
+      "title": {
+        "en": "Plan the command chain",
+        "ru": "Спланировать цепочку команд"
+      },
+      "prompt": "Cocoon Chainsmith v3: fill the 9 YAML variables and emit a verified CP-Navigator command sequence for Cocoon Engine X4 (verify the commands against the X4 bundle). Plan only - do not run research here.",
+      "out": {
+        "vars": "any",
+        "commands": "string[]",
+        "ok": "bool"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "evidence",
+      "type": "parallel",
+      "for_each": [
+        "audience",
+        "external",
+        "frequency"
+      ],
+      "title": {
+        "en": "Collect evidence",
+        "ru": "Собрать доказательства"
+      },
+      "child": {
+        "type": "agent",
+        "role": "specialist:seo-specialist",
+        "prompt": "Branch {{item}}.\naudience: /исследование - Reddit Mapper evidence from forums, reviews and supplied material (pains, language, decision criteria, demand map, gaps); alphaXiv for scientific evidence when relevant.\nexternal: cited research (Tavily) - competitors, regulations, market facts; each fact with URL; separate evidence, hypothesis and proposal.\nfrequency: ONLY if use_seo_tools and the key is available - Mutagen/xmlstock frequency and competition; otherwise return skipped. Paid calls: log count and cost.\nNever claim a module ran or an artifact exists unless it did.\n",
+        "out": {
+          "branch": "string",
+          "findings_path": "string",
+          "sources": "Source[]",
+          "skipped": "bool"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "findings_paths": "string[]",
+          "sources": "Source[]",
+          "skipped_branches": "string[]"
+        },
+        "uses": "reduce.seo-cocoon.evidence"
+      },
+      "concurrency": 3
+    },
+    {
+      "id": "architecture",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "topical-graph-architect",
+          "drmax-cocoon-engine-x4"
+        ]
+      },
+      "title": {
+        "en": "Page architecture",
+        "ru": "Архитектура страниц"
+      },
+      "prompt": "TGA v4: entity to intent to pages, not keyword silos. Clusters, pages (slug, intent, entity, canonical parent), internal link map with anchors, depth <= 3. At most `max_pages` pages in this run - mark the rest as phase 2. Mapper produces evidence, TGA owns architecture and canonical parents.",
+      "out": {
+        "clusters": "Cluster[]",
+        "pages": "Page[]",
+        "links": "Link[]",
+        "page_count": "int",
+        "changed_pages": "string[]",
+        "phase2": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 45
+      }
+    },
+    {
+      "id": "briefs",
+      "type": "parallel",
+      "for_each": "architecture.pages",
+      "title": {
+        "en": "GIST brief per page",
+        "ru": "GIST-бриф на страницу"
+      },
+      "child": {
+        "type": "agent",
+        "role": "specialist:seo-specialist",
+        "profile": {
+          "skills": [
+            "gist-content-logic"
+          ]
+        },
+        "prompt": "GIST content brief for page {{item.slug}}: user job, topic core, missing decision nodes, content utility, redundancy against sibling pages, competitor replaceability, metadata (title, H1, description). A brief states what the page must let the reader decide, not keywords to sprinkle.",
+        "out": {
+          "slug": "string",
+          "brief_path": "string"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "brief_paths": "string[]",
+          "ok_count": "int"
+        },
+        "uses": "reduce.seo-cocoon.briefs"
+      },
+      "concurrency": 5
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "plan-critic",
+      "session": "new",
+      "applicable_modes": [
+        "standard",
+        "full"
+      ],
+      "skip_out": {
+        "status": "pass",
+        "findings": "[]",
+        "orphan_count": 0,
+        "cannibal_count": 0
+      },
+      "title": {
+        "en": "Cocoon audit",
+        "ru": "Аудит кокона"
+      },
+      "prompt": "Verdict on the whole cocoon from the files only: every audience pain/intent has a page; no two pages target one intent (cannibalization, quote both); no orphan pages; link graph depth <= 3; every brief states the decision the reader makes. Findings cite the page slug and the passage.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "orphan_count": "int",
+        "cannibal_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/{{slug}}/",
+      "files": [
+        "research.md",
+        "architecture.json",
+        "briefs/*.md",
+        "audit.md",
+        "handoff.md"
+      ],
+      "note": "handoff.md separates actual evidence, hypotheses, proposed changes and publication readiness; code changes for the site go in a block 'для PM'",
+      "out": {
+        "folder": "string",
+        "handoff_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "clusters": "architecture.clusters",
+        "page_count": "architecture.page_count",
+        "briefs_dir": "package.folder",
+        "audit_status": "audit.status",
+        "folder": "package.folder",
+        "handoff_path": "package.handoff_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "clusters": "architecture.clusters",
+        "page_count": "architecture.page_count",
+        "audit_status": "audit.status",
+        "folder": "package.folder",
+        "handoff_path": "package.handoff_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "ask_brief",
+      "to": "chainsmith",
+      "pass": "artifact"
+    },
+    {
+      "from": "chainsmith",
+      "to": "evidence",
+      "pass": "artifact",
+      "when": "chainsmith.ok"
+    },
+    {
+      "from": "chainsmith",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "evidence",
+      "to": "architecture",
+      "pass": "artifact"
+    },
+    {
+      "from": "architecture",
+      "to": "briefs",
+      "pass": "artifact"
+    },
+    {
+      "from": "briefs",
+      "to": "audit",
+      "pass": "artifact"
+    },
+    {
+      "from": "audit",
+      "to": "architecture",
+      "pass": "same-session",
+      "when": "audit.status == 'rework' && visits('audit') < 2",
+      "label": "fix architecture"
+    },
+    {
+      "from": "audit",
+      "to": "package",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact",
+      "when": "audit.status in ['pass']"
+    },
+    {
+      "from": "package",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sc-1",
+    "sim": {
+      "input": {
+        "topic": "кофемашины для дома",
+        "geo": "RU",
+        "language": "ru",
+        "site_goal": "интернет-магазин",
+        "use_seo_tools": false,
+        "max_pages": 12
+      },
+      "stubs": {
+        "chainsmith": {
+          "ok": true
+        },
+        "evidence": {
+          "skipped_branches": [
+            "frequency"
+          ]
+        },
+        "architecture": {
+          "page_count": 10,
+          "clusters": [
+            {
+              "name": "выбор"
+            },
+            {
+              "name": "уход"
+            }
+          ],
+          "pages": "fixtures/pages-10.json"
+        },
+        "briefs": {
+          "ok_count": 10
+        },
+        "audit#1": {
+          "status": "rework",
+          "cannibal_count": 1
+        },
+        "audit#2": {
+          "status": "pass"
+        }
+      },
+      "expect_path": [
+        "ask_brief",
+        "chainsmith",
+        "evidence",
+        "architecture",
+        "briefs",
+        "audit",
+        "architecture",
+        "briefs",
+        "audit",
+        "package",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "page_count <= 12",
+        "audit_status == 'pass'",
+        "files exist: handoff.md, architecture.json"
+      ]
+    },
+    "live": "небольшая тема (до 8 страниц), без платных API; handoff разделяет доказательства и гипотезы; сайт не тронут",
+    "note": "Tested on stubs: every outside action answers from a stub. Not live yet: the specialist runs the DrMax cocoon engine; paid SEO tools only with the owner's consent. See `live` for the acceptance run."
+  }
+}

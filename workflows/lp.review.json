@@ -42,7 +42,7 @@
   "budget": {
     "max_steps": 14,
     "max_minutes": 50,
-    "max_fan_out": 6
+    "max_fan_out": 20
   },
   "nodes": [
     {
@@ -83,7 +83,6 @@
       "id": "dims",
       "type": "parallel",
       "for_each": "$inputs.dimensions",
-      "max_fan_out": 6,
       "title": {
         "en": "Review per dimension",
         "ru": "Ревью по измерению"
@@ -106,8 +105,10 @@
           "critical_count": "int",
           "high_count": "int",
           "unchecked": "string[]"
-        }
-      }
+        },
+        "uses": "reduce.lp.review.dims"
+      },
+      "concurrency": 6
     },
     {
       "id": "confirm",
@@ -117,7 +118,6 @@
         "standard",
         "full"
       ],
-      "max_fan_out": 6,
       "title": {
         "en": "Majority check (2 of 3)",
         "ru": "Проверка большинством (2 из 3)"
@@ -139,13 +139,16 @@
         "out": {
           "confirmed_ids": "string[]",
           "dropped_ids": "string[]"
-        }
+        },
+        "uses": "reduce.lp.review.confirm"
       },
       "skip_when": "dims.critical_count + dims.high_count == 0",
       "skip_out": {
         "confirmed_ids": "[]",
         "dropped_ids": "[]"
-      }
+      },
+      "concurrency": 6,
+      "onOverflow": "truncate"
     },
     {
       "id": "aggregate",
@@ -228,5 +231,6 @@
       "to": "result",
       "pass": "artifact"
     }
-  ]
+  ],
+  "status": "published"
 }

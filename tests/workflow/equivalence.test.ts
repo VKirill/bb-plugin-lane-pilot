@@ -187,7 +187,7 @@ describe("dispatch through the workflow engine equals the direct path", () => {
       if (scenario.finish) expect((engine.waited as { state: string }).state).toBe("accepted");
       // The kill switch really switches: the engine leaves a journal, the direct path none.
       expect(direct.engineRuns).toEqual([]);
-      expect(engine.engineRuns.map((row) => row.workflow_id)).toEqual(scenario.runGate === "pre-merge" ? [] : ["analyze-plan-execute"]);
+      expect(engine.engineRuns.map((row) => row.workflow_id)).toEqual(scenario.runGate === "pre-merge" ? [] : ["lp-task-pipeline"]);
     }, 30_000);
   }
 

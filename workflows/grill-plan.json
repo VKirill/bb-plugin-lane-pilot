@@ -1,0 +1,185 @@
+{
+  "id": "grill-plan",
+  "name": {
+    "en": "Grill the plan",
+    "ru": "Допрос плана"
+  },
+  "description": {
+    "en": "Adversarial Socratic review of a plan or idea against the real code - branches of questions with file:line, locked/open/deferred decisions and a risk register. Changes nothing.",
+    "ru": "Состязательный допрос плана или идеи по реальному коду - ветки вопросов с file:line, решения locked/open/deferred и реестр рисков. Ничего не меняет."
+  },
+  "examples": {
+    "ru": [
+      "Найди дыры в моём плане перехода на очередь сообщений",
+      "Проверь по коду, выдержит ли идея кэширования на уровне API",
+      "Устрой допрос плана разбиения монолита, без реализации",
+      "Покритикуй мой план релиза по коду и перечисли риски"
+    ],
+    "en": [
+      "Find the holes in my plan for moving to a message queue",
+      "Check against the code whether the API-level caching idea holds up",
+      "Interrogate the plan to split the monolith, no implementation",
+      "Critique my release plan against the code and list the risks"
+    ]
+  },
+  "not_for": [
+    "grill-driven",
+    "analyze-code"
+  ],
+  "status": "published",
+  "inputs": {
+    "plan": {
+      "type": "string"
+    },
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "depth": {
+      "type": "shallow|standard|deep",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "locked": "string[]",
+    "open": "string[]",
+    "deferred": "string[]",
+    "risk_register": "Risk[]",
+    "terminology": "Term[]",
+    "branches_walked": "int",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "глубина допроса: quick - shallow (3 ветки), standard - 5, full - deep (8)"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 10,
+    "max_minutes": 50
+  },
+  "entry": "walk",
+  "nodes": [
+    {
+      "id": "walk",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Walk the branches",
+        "ru": "Обойти ветки"
+      },
+      "src": "maestro-flow:workflows/grill.md, boundary-grill.md",
+      "prompt": "Read-only. Branches by depth - shallow: Scope and Boundaries, Data Model and State, Edge Cases and Failure Modes; standard: + Integration and Dependencies, Scale and Performance; deep: + Security and Access Control, Observability and Operations, Migration and Rollback.\nOne question at a time, 3-5 per branch, at least 2 question-answer pairs per branch; EVERY question cites file:line - a question without it is not a question. Answer each from the code; what the code cannot answer goes to `open`.\nAlign terms first (check collisions with names in the code). Conflicts of the plan with the code or with a locked decision: priority DEC (locked decision) > RSC (out of scope) > MOD (crosses 2+ top modules); at most 3 conflicts x 3 questions; each ends RESOLVED, DEFERRED or ACCEPTED_RISK, code wins.\nDepth reached without a decision - force the synthesis.\n",
+      "out": {
+        "qa": "QA[]",
+        "branches_walked": "int",
+        "questions_without_anchor": "int",
+        "conflicts": "Conflict[]",
+        "terminology": "Term[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "synth",
+      "type": "agent",
+      "role": "analyst",
+      "session": "new",
+      "prompt": "Synthesize the Q&A into Locked (confirmed by code), Open (not verified), Deferred (not applicable now) and a risk register (risk, severity, file:line, mitigation). Flag anything the plan assumes that the code contradicts.",
+      "out": {
+        "locked": "string[]",
+        "open": "string[]",
+        "deferred": "string[]",
+        "risk_register": "Risk[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "locked": "synth.locked",
+        "open": "synth.open",
+        "deferred": "synth.deferred",
+        "risk_register": "synth.risk_register",
+        "terminology": "walk.terminology",
+        "branches_walked": "walk.branches_walked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "walk",
+      "to": "walk",
+      "pass": "same-session",
+      "when": "walk.questions_without_anchor > 0 && visits('walk') < 2",
+      "label": "anchors missing"
+    },
+    {
+      "from": "walk",
+      "to": "synth",
+      "pass": "read-prior-session"
+    },
+    {
+      "from": "synth",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "gp-1",
+    "sim": {
+      "input": {
+        "goal": "Add Redis cache in front of the API",
+        "plan": "cache GET by URL for 60s",
+        "depth": "standard"
+      },
+      "stubs": {
+        "walk": {
+          "branches_walked": 5,
+          "questions_without_anchor": 0
+        },
+        "synth": {
+          "locked": [
+            "GET only"
+          ],
+          "open": [
+            "invalidation on write"
+          ],
+          "risk_register": [
+            {
+              "risk": "stale reads",
+              "severity": "high"
+            }
+          ]
+        }
+      },
+      "expect_path": [
+        "walk",
+        "synth",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "branches_walked >= 5",
+        "risk_register.length >= 1"
+      ]
+    },
+    "live": "песочница: план с дырой; допрос возвращает риск с file:line"
+  }
+}

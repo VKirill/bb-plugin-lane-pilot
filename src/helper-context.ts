@@ -76,6 +76,7 @@ export type HelperRole =
   | "plan-critic" | "code-critic" | "specialist-reviewer" | "night-reviewer" | "gate-triage" | "pm-reader"
   | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
   | "browser-qa" | "errand" | "council-seat" | "rules-analyzer"
+  | "analyst" | "planner" | "auditor" | "debugger"
   | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily";
 
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
@@ -103,6 +104,12 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   // A PM's errand outside the code: a console, a mailbox, a recording. The browser on the browser machine, the fast
   // jev-ultrafast loop (computer-use) and Env Catalog for the accounts it needs; no code skills.
   "errand": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "computer-use", "env-catalog"], mcpServers: [] },
+  // The thin roles of the workflow chains (W3): read the repository and answer in a typed message, nothing else. A chain node may
+  // name more skills for one step; the owner changes a role here like any other (Agent access).
+  "analyst": READER,
+  "planner": READER,
+  "auditor": READER,
+  "debugger": READER,
   "council-seat": { bbPlugins: [], skills: [], mcpServers: [] },
   "rules-analyzer": { bbPlugins: [], skills: [], mcpServers: [] },
   "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "ui-ux-pro-max", "project-design", "project-onboard", "web-design", "design-taste", "impeccable-ui", "page-prototype"], mcpServers: ["metamcp"] },

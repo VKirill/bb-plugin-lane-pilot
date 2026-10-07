@@ -22,8 +22,8 @@ export type Expr =
   | { t: "list"; items: Expr[] }
   | { t: "bin"; op: "&&" | "||" | "==" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "+" | "-"; l: Expr; r: Expr };
 
-/** Names a run provides without any node: `{{date}}`, `{{run_id}}`. */
-export const RUN_VARS = ["date", "run_id"] as const;
+/** Names a run provides without any node: `{{date}}`, `{{run_id}}`, `{{slug}}` (the `slug` input, else a slug of the first of topic, question, query, subject, goal, source, title). */
+export const RUN_VARS = ["date", "run_id", "slug"] as const;
 /** What `ctx.` holds: the run id, the goal input, and the merged commits accumulated from every step that reports them. */
 export const CTX_VARS = ["run_id", "goal", "merged_commits"] as const;
 
@@ -322,6 +322,9 @@ export function valueSpecOf(value: unknown): ValueSpec {
   if (typeof value !== "string") return { literal: value };
   const text = value.trim();
   if (text === "") return { literal: "" };
+  // `{{node}}` or `{{node.field}}`: the whole value of a node (a bare word alone is a literal, `refactor` metrics are not).
+  const whole = /^\{\{\s*([^{}]+?)\s*\}\}$/.exec(text);
+  if (whole) return { expr: { t: "ref", ref: refOf(whole[1]!) } };
   if (/^'.*'$/s.test(text) || /^".*"$/s.test(text)) return { literal: text.slice(1, -1) };
   if (/^[[{]/.test(text)) { try { return { literal: JSON.parse(text) as unknown }; } catch { /* an expression with a list in it */ } }
   if (/^(true|false|null)$/.test(text)) return { literal: text === "true" ? true : text === "false" ? false : null };
@@ -344,7 +347,8 @@ export function renderValue(value: unknown, read: (ref: Ref, text: string) => un
       return found === undefined || found === null ? "" : typeof found === "string" ? found : JSON.stringify(found);
     });
   }
-  if (Array.isArray(value)) return value.map((item) => renderValue(item, read, mode));
+  // A placeholder in a list that names nothing (a node that did not run) leaves no hole behind.
+  if (Array.isArray(value)) return value.map((item) => renderValue(item, read, mode)).filter((item) => item !== undefined);
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
     if ("by_mode" in record && Object.keys(record).length === 1) {

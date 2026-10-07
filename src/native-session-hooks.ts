@@ -61,6 +61,9 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_workflow_capabilities",
   "lane_pilot_workflow_draft_test",
   "lane_pilot_workflow_draft_publish",
+  "lane_pilot_route",
+  "lane_pilot_run_workflow",
+  "lane_pilot_workflow_status",
 ] as const;
 
 export const NATIVE_LP_BRIDGE_PM_TOOLS = [
@@ -98,6 +101,9 @@ export const NATIVE_LP_BRIDGE_PM_TOOLS = [
   "lane_pilot_workflow_capabilities",
   "lane_pilot_workflow_draft_test",
   "lane_pilot_workflow_draft_publish",
+  "lane_pilot_route",
+  "lane_pilot_run_workflow",
+  "lane_pilot_workflow_status",
 ] as const;
 
 /** The tools of the Workflow architect: it builds chains, it does not dispatch writers. */

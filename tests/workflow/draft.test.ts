@@ -153,7 +153,7 @@ describe("draft tests on stubs", () => {
     expect(wrongOutput.failures[0]).toContain("output status");
   });
 
-  it("refuses to run a draft that uses what the engine does not run yet", async () => {
+  it("runs a draft with votes, which the engine runs since W3", async () => {
     const { db } = store();
     const workflow = parseWorkflow({
       id: "votes", name: "Votes", description: { en: "d", ru: "д" }, inputs: [], outputs: [],
@@ -164,8 +164,7 @@ describe("draft tests on stubs", () => {
       edges: [{ from: "start", to: "fan" }, { from: "fan", to: "done" }],
     });
     const result = await runDraftTest({ db, harnessVersion: "t" }, workflow, testCasesOf(workflow)[0]!);
-    expect(result).toMatchObject({ green: false, status: "invalid" });
-    expect(result.failures[0]).toContain("votes 3");
+    expect(result).toMatchObject({ green: true, status: "succeeded" });
   });
 
   it("records the tests of a version: tested only when all are green, and a later change takes it back to draft", async () => {

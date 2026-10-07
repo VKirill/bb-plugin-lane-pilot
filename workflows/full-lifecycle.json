@@ -1,0 +1,550 @@
+{
+  "id": "full-lifecycle",
+  "name": {
+    "en": "Full lifecycle",
+    "ru": "Полный цикл"
+  },
+  "description": {
+    "en": "Plan, build, independent review with a fix loop, browser check, owner acceptance for UI, goal audit and knowledge closeout. For a feature that must be finished, not just merged.",
+    "ru": "План, исполнение, независимое ревью с циклом починки, проверка в браузере, приёмка владельцем для UI, аудит целей и закрытие знаний. Для фичи, которую надо довести до конца, а не просто слить."
+  },
+  "examples": {
+    "ru": [
+      "Доведи фичу уведомлений до конца: план, код, ревью, проверка",
+      "Проведи эту фазу полностью от плана до приёмки",
+      "Сделай модуль авторизации под ключ с ревью и тестированием",
+      "Закрой этап «личный кабинет» целиком, включая проверку в браузере",
+      "Полный цикл для переезда на новую форму заявки",
+      "Нужна фича с нуля до приёмки, без срезания углов"
+    ],
+    "en": [
+      "Take the notifications feature through the full lifecycle: plan, build, review, test",
+      "Run this phase end to end, plan through acceptance",
+      "Deliver the auth module turnkey with review and testing",
+      "Finish the account area milestone completely, including browser verification",
+      "Full cycle for moving to the new order form",
+      "I need the feature from scratch to acceptance, no corner cutting"
+    ]
+  },
+  "not_for": [
+    "analyze-plan-execute",
+    "companion",
+    "quality-loop"
+  ],
+  "status": "published",
+  "tags": [
+    "code",
+    "lifecycle"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "goals": {
+      "type": "Goal[]"
+    },
+    "boundary": {
+      "type": "Boundary"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    },
+    "tasks": {
+      "type": "Task[]",
+      "note": "готовый план из прошлого прогона - анализ и планирование пропускаются"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "merged_commits": "string[]",
+    "review_status": "pass|rework|block",
+    "fix_rounds": "int",
+    "goals_met": "bool",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "quick не допускается (ревью обязательно, минимум 2 измерения); full добавляет приёмку владельцем и голосование 2 из 3",
+    "min": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [],
+    "machines": [
+      "project writer host",
+      "browser machine for UI"
+    ]
+  },
+  "budget": {
+    "max_steps": 90,
+    "max_minutes": 480,
+    "max_fan_out": 5
+  },
+  "entry": "contract",
+  "nodes": [
+    {
+      "id": "contract",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "Boundary and goals",
+        "ru": "Граница и цели"
+      },
+      "skip_when": "$inputs.goals.length > 0",
+      "skip_out": {
+        "goals": "$inputs.goals",
+        "boundary": "$inputs.boundary"
+      },
+      "prompt": "As in analyze-plan-execute: boundary_contract and goals with done_when and evidence.",
+      "out": {
+        "goals": "Goal[]",
+        "boundary": "Boundary"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "analyze",
+      "type": "subworkflow",
+      "workflow": "lp.analyze",
+      "skip_when": "$inputs.tasks.length > 0",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "scope": "{{$inputs.scope}}",
+        "depth": {
+          "by_mode": {
+            "quick": "quick",
+            "standard": "standard",
+            "full": "deep"
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      },
+      "skip_out": {
+        "decisions": "[]",
+        "risks": "[]",
+        "scope_verdict": "unknown",
+        "recommendation": "go",
+        "confidence": 100,
+        "open_questions": "[]",
+        "residual_risks": "[]",
+        "anchors": "[]"
+      }
+    },
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "skip_when": "$inputs.tasks.length > 0",
+      "skip_out": {
+        "status": "ok",
+        "tasks": "$inputs.tasks",
+        "waves": "[]",
+        "has_ui": false
+      },
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "findings": "{{analyze}}",
+        "boundary": "{{contract.boundary}}",
+        "mode": "fresh"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan.tasks}}",
+        "waves": "{{plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 3
+      }
+    },
+    {
+      "id": "review",
+      "type": "subworkflow",
+      "workflow": "lp.review",
+      "with": {
+        "range": "{{ctx.merged_commits}}",
+        "dimensions": {
+          "by_mode": {
+            "quick": [
+              "correctness",
+              "security"
+            ],
+            "standard": [
+              "correctness",
+              "security",
+              "maintainability",
+              "performance"
+            ],
+            "full": [
+              "correctness",
+              "security",
+              "performance",
+              "architecture",
+              "maintainability",
+              "best_practices"
+            ]
+          }
+        },
+        "criteria": "{{contract.goals}}"
+      },
+      "guards": {
+        "maxVisits": 3
+      }
+    },
+    {
+      "id": "qa",
+      "type": "agent",
+      "role": "browser-qa",
+      "applicable_modes": [
+        "standard",
+        "full"
+      ],
+      "skip_when": "!plan.has_ui",
+      "skip_out": {
+        "status": "pass",
+        "findings": "[]"
+      },
+      "src": "maestro-flow:ref/frontend-verify.md",
+      "prompt": "FRONTEND_VERIFY_METHOD over the merged result: three layers per feature, 375 and 1280 px, silence is never pass.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "uat",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Owner acceptance",
+        "ru": "Приёмка владельцем"
+      },
+      "applicable_modes": [
+        "full"
+      ],
+      "skip_when": "!plan.has_ui",
+      "skip_out": {
+        "answer_kind": "ok",
+        "issues": "[]"
+      },
+      "src": "maestro-flow:workflows/test.md, ref/severity-inference.md",
+      "prompt": "One scenario at a time (what you should see). Owner answers ok / skip / a remark. Severity is inferred from the owner's words - blocker (unusable, crash, data loss), major (wrong result, broken flow without a workaround), minor, trivial; take the strongest signal, on doubt the higher one; never ask how serious. Silence or timeout is never a pass: the scenario is deferred.",
+      "out": {
+        "answer_kind": "ok|issues|timeout",
+        "issues": "Finding[]",
+        "blocker_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 480
+      }
+    },
+    {
+      "id": "replan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "mode": "gaps",
+        "gaps": "{{review.findings}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "rebuild",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{replan.tasks}}",
+        "waves": "{{replan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "escalate",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Still not clean after two fix rounds",
+        "ru": "После двух кругов починки не чисто"
+      },
+      "prompt": "Show the remaining findings classified one by one (fix now, accept as risk, defer); a bulk 'pre-existing' is not allowed.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "accept|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 480
+      }
+    },
+    {
+      "id": "close",
+      "type": "subworkflow",
+      "workflow": "lp.close",
+      "with": {
+        "goals": "{{contract.goals}}",
+        "boundary": "{{contract.boundary}}",
+        "goal": "{{$inputs.goal}}",
+        "merged_commits": "{{ctx.merged_commits}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "merged_commits": "ctx.merged_commits",
+        "review_status": "review.status",
+        "fix_rounds": "visits('replan')",
+        "goals_met": true,
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "merged_commits": "ctx.merged_commits",
+        "review_status": "review.status",
+        "goals_met": false,
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "merged_commits": "[]",
+        "goals_met": false
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "contract",
+      "to": "analyze",
+      "pass": "artifact"
+    },
+    {
+      "from": "analyze",
+      "to": "plan",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "review",
+      "pass": "artifact",
+      "when": "build.status != 'blocked' && build.merged_commits.length > 0"
+    },
+    {
+      "from": "build",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "review",
+      "to": "qa",
+      "pass": "read-prior-session",
+      "when": "review.status == 'pass'"
+    },
+    {
+      "from": "review",
+      "to": "replan",
+      "pass": "artifact",
+      "when": "review.status == 'rework' && visits('replan') < 2",
+      "label": "fix findings"
+    },
+    {
+      "from": "review",
+      "to": "escalate",
+      "pass": "artifact"
+    },
+    {
+      "from": "qa",
+      "to": "uat",
+      "pass": "artifact",
+      "when": "qa.status == 'pass'"
+    },
+    {
+      "from": "qa",
+      "to": "replan",
+      "pass": "artifact",
+      "when": "qa.status == 'rework' && visits('replan') < 2"
+    },
+    {
+      "from": "qa",
+      "to": "escalate",
+      "pass": "artifact"
+    },
+    {
+      "from": "uat",
+      "to": "close",
+      "pass": "artifact",
+      "when": "uat.answer_kind == 'ok'"
+    },
+    {
+      "from": "uat",
+      "to": "replan",
+      "pass": "artifact",
+      "when": "uat.answer_kind == 'issues' && visits('replan') < 2"
+    },
+    {
+      "from": "uat",
+      "to": "escalate",
+      "pass": "artifact"
+    },
+    {
+      "from": "replan",
+      "to": "rebuild",
+      "pass": "artifact",
+      "when": "replan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "replan",
+      "to": "escalate",
+      "pass": "artifact"
+    },
+    {
+      "from": "rebuild",
+      "to": "review",
+      "pass": "artifact",
+      "when": "rebuild.status != 'blocked'"
+    },
+    {
+      "from": "rebuild",
+      "to": "escalate",
+      "pass": "artifact"
+    },
+    {
+      "from": "escalate",
+      "to": "close",
+      "pass": "artifact",
+      "when": "escalate.answer_kind == 'accept'"
+    },
+    {
+      "from": "escalate",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "close",
+      "to": "done",
+      "pass": "artifact",
+      "when": "close.status == 'closed'"
+    },
+    {
+      "from": "close",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "fl-1",
+    "sim": {
+      "input": {
+        "goal": "Add an export button to the stats page",
+        "quality_mode": "full"
+      },
+      "stubs": {
+        "lp.plan": {
+          "status": "ok",
+          "task_count": 2,
+          "has_ui": true
+        },
+        "lp.build": {
+          "status": "done",
+          "merged_commits": [
+            "c1",
+            "c2"
+          ]
+        },
+        "lp.review#1": {
+          "status": "rework",
+          "findings": [
+            {
+              "severity": "high",
+              "file": "src/stats.tsx",
+              "line": 40
+            }
+          ]
+        },
+        "lp.review#2": {
+          "status": "pass"
+        },
+        "browser-qa": {
+          "status": "pass"
+        },
+        "uat": {
+          "answer_kind": "ok"
+        },
+        "lp.close": {
+          "status": "closed"
+        }
+      },
+      "expect_path": [
+        "contract",
+        "analyze",
+        "plan",
+        "build",
+        "review",
+        "replan",
+        "rebuild",
+        "review",
+        "qa",
+        "uat",
+        "close",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "review_status == 'pass'"
+      ]
+    },
+    "live": "песочница, UI-задача с qa_cases; первая проверка ловит заведомый дефект (кнопка без обработчика), второй круг зелёный"
+  }
+}

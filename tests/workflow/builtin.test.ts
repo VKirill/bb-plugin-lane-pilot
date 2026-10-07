@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ANALYZE_PLAN_EXECUTE, BUILTIN_SOURCES, builtinWorkflow, builtinWorkflows } from "../../src/workflow/builtin";
+import { LP_TASK_PIPELINE, BUILTIN_SOURCES, builtinWorkflow, builtinWorkflows } from "../../src/workflow/builtin";
 import { END, START } from "../../src/workflow/schema";
 import { loadWorkflowStore } from "../../src/workflow/store";
 import { validateWorkflow } from "../../src/workflow/validate";
@@ -17,13 +17,13 @@ describe("built-in workflows", () => {
   });
 
   it("the committed JSON is what the loader reads (no stale copy)", () => {
-    const text = JSON.parse(readFileSync(join(__dirname, "../../workflows/analyze-plan-execute.json"), "utf8"));
-    expect(text.id).toBe(ANALYZE_PLAN_EXECUTE);
-    expect(text.nodes.length).toBe(builtinWorkflow(ANALYZE_PLAN_EXECUTE)!.nodes.length);
+    const text = JSON.parse(readFileSync(join(__dirname, "../../workflows/lp-task-pipeline.json"), "utf8"));
+    expect(text.id).toBe(LP_TASK_PIPELINE);
+    expect(text.nodes.length).toBe(builtinWorkflow(LP_TASK_PIPELINE)!.nodes.length);
   });
 
-  it("analyze-plan-execute keeps today's stage order and the guarded quality-mode branches", () => {
-    const workflow = builtinWorkflow(ANALYZE_PLAN_EXECUTE)!;
+  it("lp-task-pipeline keeps today's stage order and the guarded quality-mode branches", () => {
+    const workflow = builtinWorkflow(LP_TASK_PIPELINE)!;
     expect(workflow).toMatchObject({ status: "published", scope: { level: "builtin" } });
     const next = (from: string, matching?: (edge: (typeof workflow.edges)[number]) => boolean) => workflow.edges.filter((edge) => edge.from === from && (!matching || matching(edge))).map((edge) => edge.to);
     const happy = ["pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "writer"];
@@ -46,6 +46,6 @@ describe("built-in workflows", () => {
   });
 
   it("is also valid when checked on its own with the engine's checks", () => {
-    expect(validateWorkflow(builtinWorkflow(ANALYZE_PLAN_EXECUTE)!).filter((problem) => problem.level === "error")).toEqual([]);
+    expect(validateWorkflow(builtinWorkflow(LP_TASK_PIPELINE)!).filter((problem) => problem.level === "error")).toEqual([]);
   });
 });

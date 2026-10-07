@@ -1,0 +1,187 @@
+{
+  "id": "ui-audit",
+  "name": {
+    "en": "UI audit (evidence-based)",
+    "ru": "Аудит интерфейса по доказательствам"
+  },
+  "description": {
+    "en": "Audits a live UI in the browser on six dimensions (visual hierarchy, interaction states, accessibility, responsiveness, micro-interactions, edge cases) and returns scored findings with screenshots. Changes nothing.",
+    "ru": "Аудит живого интерфейса в браузере по шести измерениям (иерархия, состояния, доступность, адаптив, микро-взаимодействия, пограничные случаи); возвращает оценённые находки со скриншотами. Ничего не меняет."
+  },
+  "examples": {
+    "ru": [
+      "Проверь интерфейс личного кабинета на удобство и доступность",
+      "Сделай аудит дизайна главной страницы на 375 и 1280",
+      "Оцени состояния кнопок и форм в приложении, найди недочёты",
+      "Проверь адаптив и контраст на странице тарифов"
+    ],
+    "en": [
+      "Check the account area UI for usability and accessibility",
+      "Audit the home page design at 375 and 1280",
+      "Assess button and form states in the app and find the flaws",
+      "Check responsiveness and contrast on the pricing page"
+    ]
+  },
+  "not_for": [
+    "impeccable-build",
+    "code-review"
+  ],
+  "status": "published",
+  "inputs": {
+    "url": {
+      "type": "string",
+      "required": true
+    },
+    "flows": {
+      "type": "string[]"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "score_40": "int",
+    "score_20": "int",
+    "findings": "Finding[]",
+    "screenshots": "string[]",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "quick - 1 вьюпорт и 3 измерения"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "impeccable-ui",
+      "web-design",
+      "ui-review"
+    ],
+    "machines": [
+      "browser machine"
+    ]
+  },
+  "budget": {
+    "max_steps": 10,
+    "max_minutes": 60
+  },
+  "entry": "capture",
+  "nodes": [
+    {
+      "id": "capture",
+      "type": "agent",
+      "role": "browser-qa",
+      "prompt": "FRONTEND_VERIFY_METHOD: open the URL and the listed flows at 375 and 1280, exercise default/hover/focus/disabled/loading/empty/error states, save screenshots. Report what could not be exercised as blocked, never as passed.",
+      "out": {
+        "screenshots": "string[]",
+        "states_seen": "string[]",
+        "status": "pass|rework|block",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "specialist:design-lead",
+      "session": "new",
+      "src": "impeccable (Apache-2.0): critique, audit",
+      "prompt": "Score from the captured evidence only: ten Nielsen heuristics 0-4 (total /40) and five technical dimensions /20 (accessibility, performance, theming, responsiveness, implementation integrity); P0-P3 per finding with a screenshot reference. Do not edit anything.",
+      "out": {
+        "score_40": "int",
+        "score_20": "int",
+        "findings": "Finding[]",
+        "report_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "score_40": "audit.score_40",
+        "score_20": "audit.score_20",
+        "findings": "audit.findings",
+        "screenshots": "capture.screenshots",
+        "report_path": "audit.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "capture",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "capture.status == 'block'"
+    },
+    {
+      "from": "capture",
+      "to": "audit",
+      "pass": "read-prior-session"
+    },
+    {
+      "from": "audit",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "ua-1",
+    "sim": {
+      "input": {
+        "url": "http://localhost:4173/pricing"
+      },
+      "stubs": {
+        "capture": {
+          "status": "pass",
+          "screenshots": [
+            "s375.png",
+            "s1280.png"
+          ]
+        },
+        "audit": {
+          "score_40": 30,
+          "score_20": 14,
+          "findings": [
+            {
+              "severity": "medium",
+              "file": "src/pricing.tsx",
+              "line": 55,
+              "evidence": "focus ring missing"
+            }
+          ]
+        }
+      },
+      "expect_path": [
+        "capture",
+        "audit",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "screenshots.length == 2"
+      ]
+    },
+    "live": "локальный сервер песочницы; два скриншота и оценки"
+  }
+}

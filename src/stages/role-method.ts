@@ -47,3 +47,42 @@ export const FRONTEND_VERIFY_METHOD: readonly string[] = [
   "Every write the case depends on needs a control that reaches it: a write with no reachable control in the page is a defect to report, not an untested item. A failed layer of something the user can see fails the case. If a layer cannot be observed with the tools you have (no network view, no way to read the DOM state), say so in the case note: that case is blocked, never passed.",
   "Silence is never a pass. A case you did not run, a layer you did not assert, or a check you could not complete is blocked or failed. Every claim in a note is backed by what you observed (the element found, the request captured, the DOM text read), not by «looks fine».",
 ];
+
+/**
+ * The roles a workflow chain adds (W3): analyst, planner, auditor. Adapted from catlog22/maestro-flow (MIT; THIRD_PARTY_NOTICES.md):
+ * workflows/analyze.md, workflows/roadmap.md and plan.md, ref/knowledge-closeout.md and the goal audit of prepare/ralph.md.
+ */
+export const ANALYST_METHOD: readonly string[] = [
+  "Method: read-only analysis. Map the area in three layers: L1 the modules the goal touches, L2 the call chains of the 3 to 5 key files, L3 code anchors (20 to 50 lines each). Read the project's conventions (AGENTS.md, DESIGN.md for UI) before you judge anything.",
+  "Every statement carries file:line. A claim about code you did not open is not a finding; say that you did not look. Quote the line that shows the thing, not a paraphrase.",
+  "Decisions are locked (binding for the plan), free (the planner's choice) or deferred (excluded). Do a pressure pass before you recommend: state the strongest argument against the goal, then answer it with evidence. Score feasibility, impact, risk, complexity and dependencies from 1 to 5, each with its evidence.",
+  "Confidence (0 to 100) comes from the depth of the findings, the strength of the evidence and the breadth of the coverage, not from how sure you feel. If two rounds raised it by less than 5 points, stop and list what you still do not know.",
+];
+
+export const PLANNER_METHOD: readonly string[] = [
+  "Method: write task contracts a writer can execute without asking. One task is one feature or one module boundary of about 15 to 60 minutes, not one file; a user-visible feature is one end-to-end task.",
+  "Every task has: objective, read_first (the files the change touches and the files whose pattern it must follow), owns_paths (the only files it may write), never_touch, acceptance lines that a command, a grep or a file read can decide, and verification commands with the exact exit code or string that decides them. No subjective words (properly, clean, robust, as expected).",
+  "Tasks that can run together own disjoint paths; a task that needs another's result names it in depends_on. Group them in waves. A task you cannot make checkable is a question for the owner, not a vague task.",
+  "Plan from the analysis you were given: locked decisions bind the plan, free ones are yours, deferred ones stay out. Say what you left out and why.",
+];
+
+export const AUDITOR_METHOD: readonly string[] = [
+  "Method: audit the goals against evidence. For each goal take its done_when and the evidence it names (a command, a file:line, a test) and check it now: run the read-only command, open the file, read the test. MET only with fresh evidence you saw; UNMET with what is missing; a goal you could not check is UNMET, never assumed.",
+  "Then check intent drift: set what was delivered (the merged commits, the files) beside the original request and the boundary (in scope, out of scope, constraints). Name every addition the owner did not ask for and every part of the request nobody did.",
+  "You are not the author: do not fix, do not soften a finding because the author means well, and do not repeat the author's reasoning as proof.",
+];
+
+/** The method lines of a role of a chain, or none when the role has none of its own. */
+export function roleMethod(role: string): readonly string[] {
+  switch (role) {
+    case "analyst": return ANALYST_METHOD;
+    case "planner": return PLANNER_METHOD;
+    case "auditor": return AUDITOR_METHOD;
+    case "plan-critic": return PLAN_CRITIC_METHOD;
+    case "code-critic": return CODE_CRITIC_METHOD;
+    case "debugger": return SCIENTIFIC_DEBUG_METHOD;
+    case "triager": return FAILURE_TRIAGE_METHOD;
+    case "browser-qa": return FRONTEND_VERIFY_METHOD;
+    default: return [];
+  }
+}

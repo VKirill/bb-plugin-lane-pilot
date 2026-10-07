@@ -1,0 +1,224 @@
+{
+  "id": "companion",
+  "name": {
+    "en": "Small task, no plan",
+    "ru": "Мелкая задача без плана"
+  },
+  "description": {
+    "en": "A mechanically clear, bounded change with a named target (a typo, a constant, a one-line config) - one writer task in quick mode, sandbox verification only, no plan, no critics.",
+    "ru": "Механически ясное ограниченное изменение с названной целью (опечатка, константа, строка в конфиге) - одна задача писателя в режиме quick, только песочная проверка, без плана и критиков."
+  },
+  "examples": {
+    "ru": [
+      "Поправь опечатку в README: «вырианты» на «варианты»",
+      "Переименуй константу MAX_RETRY в MAX_RETRIES в config.ts",
+      "Добавь в .gitignore папку dist",
+      "Увеличь таймаут в api/client.ts с 5 до 10 секунд",
+      "Убери неиспользуемый импорт в header.tsx",
+      "Поменяй текст кнопки «Отправить» на «Сохранить» в форме профиля"
+    ],
+    "en": [
+      "Fix the typo in the README: 'recieve' to 'receive'",
+      "Rename the constant MAX_RETRY to MAX_RETRIES in config.ts",
+      "Add the dist folder to .gitignore",
+      "Raise the timeout in api/client.ts from 5 to 10 seconds",
+      "Remove the unused import in header.tsx",
+      "Change the 'Submit' button text to 'Save' in the profile form"
+    ]
+  },
+  "not_for": [
+    "issue-quick",
+    "analyze-plan-execute",
+    "refactor"
+  ],
+  "status": "published",
+  "tags": [
+    "code",
+    "small"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "status": "done|rerouted|blocked",
+    "merge_commit": "string",
+    "files": "string[]",
+    "summary": "string",
+    "proposed_workflow": "string"
+  },
+  "quality_mode": {
+    "default": "quick",
+    "effect": "всегда quick",
+    "fixed": "quick"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 6,
+    "max_minutes": 30
+  },
+  "entry": "self_check",
+  "nodes": [
+    {
+      "id": "self_check",
+      "type": "agent",
+      "role": "planner",
+      "model_preset": "cheap-fast",
+      "title": {
+        "en": "Self-check and contract",
+        "ru": "Самопроверка и контракт"
+      },
+      "src": "maestro-flow:.claude/commands/maestro-companion.md",
+      "prompt": "All four must hold: (1) the intent names a concrete bounded action with a named target (file, function, error text); (2) no typed artifact is consumed downstream; (3) no lifecycle gate or verdict is needed; (4) a single concern, no multi-phase span.\nIf they hold, write a minimal task-v2 contract (read_first = the named files, owns_paths = those files only, acceptance = one grep/command). If not, say which fails and stop.\n",
+      "out": {
+        "concrete": "bool",
+        "bounded": "bool",
+        "single_concern": "bool",
+        "passes": "bool",
+        "reason": "string",
+        "contract": "Task"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 5
+      }
+    },
+    {
+      "id": "task",
+      "type": "lp-task",
+      "contract": "{{self_check.contract}}",
+      "quality_mode": "quick",
+      "title": {
+        "en": "Do it",
+        "ru": "Сделать"
+      },
+      "out": {
+        "state": "accepted|failed|blocked|needs_human|cancelled",
+        "attempts": "int",
+        "merge_commit": "string",
+        "files": "string[]"
+      },
+      "guards": {
+        "maxAttempts": 2
+      }
+    },
+    {
+      "id": "reroute",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "analyze-plan-execute",
+      "inputs": {
+        "goal": "{{$inputs.goal}}",
+        "scope": "{{$inputs.scope}}"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "merge_commit": "task.merge_commit",
+        "files": "task.files",
+        "summary": "self_check.reason"
+      }
+    },
+    {
+      "id": "rerouted",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "rerouted",
+        "proposed_workflow": "analyze-plan-execute",
+        "summary": "self_check.reason"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "summary": "self_check.reason"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "self_check",
+      "to": "reroute",
+      "pass": "artifact",
+      "when": "!self_check.passes"
+    },
+    {
+      "from": "self_check",
+      "to": "task",
+      "pass": "artifact"
+    },
+    {
+      "from": "reroute",
+      "to": "rerouted",
+      "pass": "artifact"
+    },
+    {
+      "from": "task",
+      "to": "done",
+      "pass": "artifact",
+      "when": "task.state == 'accepted'"
+    },
+    {
+      "from": "task",
+      "to": "blocked",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "cp-1",
+    "sim": {
+      "input": {
+        "goal": "Add the dist folder to .gitignore",
+        "scope": ".gitignore"
+      },
+      "stubs": {
+        "self_check": {
+          "passes": true,
+          "concrete": true,
+          "bounded": true,
+          "single_concern": true
+        },
+        "task": {
+          "state": "accepted",
+          "merge_commit": "c0ffee1",
+          "files": [
+            ".gitignore"
+          ]
+        }
+      },
+      "expect_path": [
+        "self_check",
+        "task",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "files.length == 1"
+      ]
+    },
+    "live": "песочница: добавить строку в .gitignore; второй сценарий «Переделай модуль платежей» - самопроверка не проходит, ожидание: rerouted на analyze-plan-execute и ни одной задачи писателя"
+  }
+}

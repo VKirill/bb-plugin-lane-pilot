@@ -1,0 +1,372 @@
+{
+  "id": "debug",
+  "name": {
+    "en": "Debug (diagnosis only)",
+    "ru": "Отладка (только диагноз)"
+  },
+  "description": {
+    "en": "Finds the root cause of a failure by the scientific method - hypotheses with predictions, evidence log, backward tracing, at most 3 refuted hypotheses - and returns the diagnosis and fix directions without touching the code.",
+    "ru": "Находит корневую причину сбоя научным методом - гипотезы с предсказаниями, журнал улик, обратная трассировка, не более 3 опровергнутых гипотез - и возвращает диагноз и направления починки, не трогая код."
+  },
+  "examples": {
+    "ru": [
+      "Почему падает импорт CSV? Найди причину, ничего не меняй",
+      "Разберись, откуда утечка памяти, диагноз без правок",
+      "Тесты нестабильно падают раз в пару запусков, найди первопричину",
+      "Приложение зависает при сохранении, выясни почему",
+      "Найди корневую причину ошибки 500 на странице заказа",
+      "Что сломалось после последнего деплоя? Нужна причина, а не заплатка"
+    ],
+    "en": [
+      "Why does the CSV import crash? Find the cause, don't change anything",
+      "Figure out where the memory leak comes from, diagnosis only",
+      "Tests fail intermittently every few runs, find the root cause",
+      "The app freezes on save, find out why",
+      "Find the root cause of the 500 error on the order page",
+      "What broke after the last deploy? I need the cause, not a patch"
+    ]
+  },
+  "not_for": [
+    "issue-quick",
+    "analyze-plan-execute",
+    "review-fix"
+  ],
+  "status": "published",
+  "tags": [
+    "code",
+    "diagnosis"
+  ],
+  "inputs": {
+    "symptom": {
+      "type": "string|Finding[]",
+      "note": "что ожидалось / что случилось / ошибка / с какого момента / как воспроизвести; при mode=from_failures - список провалов"
+    },
+    "mode": {
+      "type": "standalone|from_failures",
+      "default": "standalone"
+    },
+    "scope": {
+      "type": "string"
+    },
+    "auto_fix": {
+      "type": "bool",
+      "default": false,
+      "note": "предложить analyze-plan-execute после подтверждённой причины"
+    }
+  },
+  "outputs": {
+    "status": "confirmed|partial|inconclusive|proposed",
+    "root_cause": "string",
+    "confidence": "int",
+    "affected_files": "string[]",
+    "fix_direction": "string",
+    "regression_tests": "string[]",
+    "risks": "string[]",
+    "evidence_path": "string",
+    "fix_directions": "string[]",
+    "diagnosis": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "quick - 2 гипотезы и без второго мнения; full - + независимое подтверждение причины вторым агентом"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "machines": [
+      "project host (read-only",
+      "throwaway worktree for reproduction)"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 25,
+    "max_minutes": 90
+  },
+  "entry": "ask_symptoms",
+  "nodes": [
+    {
+      "id": "ask_symptoms",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Symptoms",
+        "ru": "Симптомы"
+      },
+      "skip_when": "$inputs.mode == 'from_failures' || $inputs.symptom.length >= 40",
+      "skip_out": {
+        "answer": "$inputs.symptom",
+        "answer_kind": "given"
+      },
+      "src": "maestro-flow:workflows/debug.md (symptoms)",
+      "prompt": "Five questions in one form - what was expected, what happened, the exact error text, since when (last good version if known), steps to reproduce. Anything not in the form the agent finds in git log -10 and git diff --stat HEAD~3.",
+      "out": {
+        "answer": "any",
+        "answer_kind": "given|answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 120
+      }
+    },
+    {
+      "id": "investigate",
+      "type": "agent",
+      "role": "debugger",
+      "title": {
+        "en": "Investigate",
+        "ru": "Расследовать"
+      },
+      "src": "maestro-flow:ref/scientific-debug.md, workflows/debug.md",
+      "prompt": "SCIENTIFIC_DEBUG_METHOD. Read-only on the repository; reproduction only in a throwaway copy. Loop: FORM a hypothesis, PREDICT what you would observe, TEST it (change one variable at a time), RECORD {hypothesis, prediction, observation, verdict} in evidence.ndjson (append-only), DECIDE.\nRoot cause is confirmed only with a reproduction or file:line plus the mechanism. Red flags: \"probably\", \"let me just try changing this\", \"works on my machine\". Trace backward from the symptom to the first bad state, following data, not control flow.\nAfter 3 refuted hypotheses on one surface re-read the module boundaries and doubt the \"unchanged\" assumptions; do not raise a 4th hypothesis on your own - return inconclusive with what you learned.\nconfidence from reproduction reliability, directness of the evidence chain, whether the predicted fix was tested. Before declaring a cause: evidence_completeness >= 40%, a pressure pass done (strongest counter-argument answered), no contradicting evidence, fix_direction names concrete files.\n",
+      "out": {
+        "status": "confirmed|partial|inconclusive",
+        "root_cause": "string",
+        "mechanism": "string",
+        "confidence": "int",
+        "hypotheses_total": "int",
+        "refuted": "int",
+        "evidence_path": "string",
+        "affected_files": "string[]",
+        "fix_direction": "string",
+        "regression_tests": "string[]",
+        "risks": "string[]",
+        "pressure_pass": "bool",
+        "contradictions": "int"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "verify_cause",
+      "type": "agent",
+      "role": "debugger",
+      "session": "new",
+      "title": {
+        "en": "Independent confirmation",
+        "ru": "Независимое подтверждение"
+      },
+      "applicable_modes": [
+        "full"
+      ],
+      "skip_out": {
+        "confirmed": true,
+        "objections": "[]"
+      },
+      "prompt": "Fresh agent re-checks the claimed cause from the evidence log and the code only; try to refute it with one cheaper explanation; report confirmed or the objection with file:line.",
+      "out": {
+        "confirmed": "bool",
+        "objections": "string[]"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "ask_more",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Need more information",
+        "ru": "Нужны данные"
+      },
+      "prompt": "Three hypotheses were refuted. Say what was ruled out and ask for the one thing that would help most (a log, a stack trace, an exact repro, access to a service); options - provide, continue anyway, stop.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "provide|continue|stop|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 480
+      }
+    },
+    {
+      "id": "propose_fix",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "analyze-plan-execute",
+      "inputs": {
+        "goal": "{{investigate.fix_direction}}",
+        "scope": "{{investigate.affected_files}}"
+      }
+    },
+    {
+      "id": "confirmed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "confirmed",
+        "root_cause": "investigate.root_cause",
+        "confidence": "investigate.confidence",
+        "affected_files": "investigate.affected_files",
+        "fix_direction": "investigate.fix_direction",
+        "regression_tests": "investigate.regression_tests",
+        "risks": "investigate.risks",
+        "evidence_path": "investigate.evidence_path",
+        "fix_directions": "[investigate.fix_direction]",
+        "diagnosis": "investigate.mechanism"
+      }
+    },
+    {
+      "id": "proposed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "proposed",
+        "root_cause": "investigate.root_cause",
+        "confidence": "investigate.confidence",
+        "affected_files": "investigate.affected_files",
+        "fix_direction": "investigate.fix_direction",
+        "regression_tests": "investigate.regression_tests",
+        "risks": "investigate.risks",
+        "evidence_path": "investigate.evidence_path",
+        "diagnosis": "investigate.mechanism"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "root_cause": "investigate.root_cause",
+        "confidence": "investigate.confidence",
+        "evidence_path": "investigate.evidence_path",
+        "diagnosis": "investigate.mechanism"
+      }
+    },
+    {
+      "id": "inconclusive",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "inconclusive",
+        "evidence_path": "investigate.evidence_path",
+        "diagnosis": "investigate.mechanism",
+        "confidence": "investigate.confidence"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "ask_symptoms",
+      "to": "investigate",
+      "pass": "artifact"
+    },
+    {
+      "from": "investigate",
+      "to": "verify_cause",
+      "pass": "read-prior-session",
+      "when": "investigate.status == 'confirmed' && investigate.confidence >= 40 && investigate.pressure_pass && investigate.contradictions == 0 && investigate.affected_files.length > 0"
+    },
+    {
+      "from": "investigate",
+      "to": "investigate",
+      "pass": "same-session",
+      "when": "investigate.status == 'confirmed' && visits('investigate') < 2",
+      "label": "gate not met - gather more evidence"
+    },
+    {
+      "from": "investigate",
+      "to": "ask_more",
+      "pass": "artifact",
+      "when": "investigate.status == 'inconclusive' && investigate.refuted >= 3 && visits('ask_more') == 0"
+    },
+    {
+      "from": "investigate",
+      "to": "partial",
+      "pass": "artifact",
+      "when": "investigate.status == 'partial'"
+    },
+    {
+      "from": "investigate",
+      "to": "inconclusive",
+      "pass": "artifact"
+    },
+    {
+      "from": "verify_cause",
+      "to": "propose_fix",
+      "pass": "artifact",
+      "when": "verify_cause.confirmed && $inputs.auto_fix"
+    },
+    {
+      "from": "verify_cause",
+      "to": "confirmed",
+      "pass": "artifact",
+      "when": "verify_cause.confirmed"
+    },
+    {
+      "from": "verify_cause",
+      "to": "investigate",
+      "pass": "same-session",
+      "when": "visits('investigate') < 3",
+      "label": "objection"
+    },
+    {
+      "from": "verify_cause",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_more",
+      "to": "investigate",
+      "pass": "same-session",
+      "when": "ask_more.answer_kind in ['provide','continue']"
+    },
+    {
+      "from": "ask_more",
+      "to": "inconclusive",
+      "pass": "artifact"
+    },
+    {
+      "from": "propose_fix",
+      "to": "proposed",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "dbg-1",
+    "sim": {
+      "input": {
+        "symptom": "CSV import crashes with 'Cannot read properties of undefined (reading split)' on files with an empty last line; started after v2.3",
+        "scope": "src/import"
+      },
+      "stubs": {
+        "investigate": {
+          "status": "confirmed",
+          "confidence": 82,
+          "pressure_pass": true,
+          "contradictions": 0,
+          "affected_files": [
+            "src/import/csv.ts:48"
+          ],
+          "refuted": 1,
+          "root_cause": "last empty line yields undefined row",
+          "fix_direction": "skip empty trailing rows in parseCsv"
+        },
+        "verify_cause": {
+          "confirmed": true
+        }
+      },
+      "expect_path": [
+        "ask_symptoms",
+        "investigate",
+        "verify_cause",
+        "confirmed"
+      ],
+      "expect_outputs": [
+        "status == 'confirmed'",
+        "affected_files.length >= 1",
+        "confidence > 70"
+      ],
+      "expect_no_repo_edits": true
+    },
+    "live": "песочница: заведомый баг (пустая последняя строка); ответ содержит file:line и механизм, evidence.ndjson есть, изменений в репозитории нет (repo_edited = 0)"
+  }
+}

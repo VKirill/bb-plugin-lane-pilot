@@ -129,7 +129,7 @@ describe("workflow library", () => {
     expect(detail!.graph.nodes).toHaveLength(5);
     expect(detail!.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect((await lib.get({ id: "nope" })).workflow).toBeNull();
-    const builtin = (await lib.get({ id: "analyze-plan-execute" })).workflow!;
+    const builtin = (await lib.get({ id: "lp-task-pipeline" })).workflow!;
     expect(builtin.graph.nodes.some((node) => node.kind === "lp-task" && node.stages.length > 0)).toBe(true);
   });
 });

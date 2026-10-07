@@ -1,0 +1,643 @@
+{
+  "id": "reels",
+  "name": {
+    "en": "Reels / Shorts",
+    "ru": "Рилсы / Shorts"
+  },
+  "description": {
+    "en": "Turns a supplied long video or link into finished vertical clips (transcribe, select coherent excerpts, edit plan, reframe, captions, render, verify), or makes a short code-rendered animated film from a subject in a chosen style.",
+    "ru": "Превращает присланное длинное видео или ссылку в готовые вертикальные клипы (расшифровка, отбор законченных фрагментов, план монтажа, кадрирование, субтитры, рендер, проверка) или делает короткий мультфильм, нарисованный кодом, по теме в выбранном стиле."
+  },
+  "examples": {
+    "ru": [
+      "Нарежь это интервью на рилсы",
+      "Сделай три шортса из видео по ссылке с ютуба",
+      "Найди хайлайты в записи вебинара и смонтируй вертикальные клипы с субтитрами",
+      "Сделай короткий нарисованный мультфильм про то, как работает кэш",
+      "Озвученный ролик с мелом на доске про налоговый вычет, вертикальный",
+      "Из подкаста вытащи самые сильные моменты в формате Reels"
+    ],
+    "en": [
+      "Cut this interview into reels",
+      "Make three shorts from the YouTube video at this link",
+      "Find highlights in the webinar recording and edit vertical clips with captions",
+      "Make a short hand-drawn animated film about how a cache works",
+      "A narrated chalkboard-style explainer reel about the tax deduction, vertical",
+      "Pull the strongest moments out of the podcast as Reels"
+    ]
+  },
+  "not_for": [
+    "x-to-telegram-digest",
+    "insights-post"
+  ],
+  "status": "tested",
+  "tags": [
+    "video",
+    "social"
+  ],
+  "inputs": {
+    "source": {
+      "type": "string",
+      "note": "путь к файлу или ссылка; пусто - режим фильма",
+      "default": ""
+    },
+    "subject": {
+      "type": "string",
+      "note": "тема фильма, если нет source",
+      "default": ""
+    },
+    "count": {
+      "type": "int",
+      "default": 3
+    },
+    "duration_s": {
+      "type": "int[]",
+      "default": [
+        30,
+        60
+      ]
+    },
+    "language": {
+      "type": "string",
+      "note": "по умолчанию язык оригинала"
+    },
+    "style": {
+      "type": "string",
+      "default": "",
+      "note": "house|chalk|threejs|watercolor|paper-cutout; only for a film; empty - ask"
+    },
+    "publish_text": {
+      "type": "bool",
+      "default": true
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "clips": "Clip[]",
+    "folder": "string",
+    "film_path": "string",
+    "captions_ok": "bool"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "full - одобрение списка клипов владельцем перед монтажом и вторая проверка звука; quick - без текста публикации"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "video-to-reels",
+      "procedural-film",
+      "copywriter",
+      "vechkasov-voice"
+    ],
+    "secrets": [],
+    "machines": [
+      "media machine with ffmpeg, yt-dlp, a Whisper implementation (and diarization if multiple speakers are needed); check on the host before the job"
+    ]
+  },
+  "budget": {
+    "max_steps": 40,
+    "max_minutes": 240,
+    "max_usd": 8
+  },
+  "entry": "ingest",
+  "nodes": [
+    {
+      "id": "ingest",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "Acquire and inspect",
+        "ru": "Получить и осмотреть"
+      },
+      "skip_when": "$inputs.source == ''",
+      "skip_out": {
+        "ok": false,
+        "reason": "no_source"
+      },
+      "src": "video-to-reels step 1",
+      "prompt": "Create <project-root>/reels/<date>-<short-name>/ with the documented hierarchy (never the toolkit install dir). Use the local file or download the one URL with yt-dlp (never a playlist). Probe duration, streams, resolution, orientation, frame rate. Check the tools needed (ffmpeg, whisper, yt-dlp) on this host and say what is missing.",
+      "out": {
+        "ok": "bool",
+        "video_path": "string",
+        "folder": "string",
+        "duration_s": "int",
+        "missing_tools": "string[]",
+        "reason": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "transcribe",
+      "type": "agent",
+      "role": "errand",
+      "src": "video-to-reels step 2",
+      "prompt": "Extract audio and run Whisper with word timestamps to structured JSON; keep the untouched machine transcript, corrections separate and tied to timestamps; chunk with overlap and restore absolute offsets if needed. Diarize only when speakers must be attributed; labels are anonymous voices, not names.",
+      "out": {
+        "ok": "bool",
+        "transcript_path": "string",
+        "speakers": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 60
+      }
+    },
+    {
+      "id": "select",
+      "type": "agent",
+      "role": "analyst",
+      "model_preset": "strong",
+      "profile": {
+        "skills": [
+          "video-to-reels"
+        ]
+      },
+      "src": "video-to-reels step 3",
+      "prompt": "Read the full transcript and context around each candidate; write selection.md - source ranges, opening idea, payoff, why it stands alone, context risks, why others were rejected (scoring.md). Up to `count` clips of duration_s. Keep negations, caveats, conditions, names and the actual question when an answer depends on them; prefer one continuous complete excerpt before stitching distant sentences. Never present paraphrases as the speaker's words.",
+      "out": {
+        "clips": "ClipRange[]",
+        "clip_count": "int",
+        "selection_path": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "approve_clips",
+      "type": "human",
+      "role": "owner",
+      "applicable_modes": [
+        "full"
+      ],
+      "skip_out": {
+        "answer_kind": "ok"
+      },
+      "title": {
+        "en": "Approve the clip list",
+        "ru": "Одобрить список клипов"
+      },
+      "prompt": "Show each clip: range, hook line, payoff; options - go, change (say which), abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "ok|change|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "edit_plan",
+      "type": "agent",
+      "role": "analyst",
+      "src": "video-to-reels step 4",
+      "prompt": "Write edit-plan.json - source duration, named clips, ordered source ranges (exact seconds), layout (single-speaker crop only when inspected frames support it; split or fitted layouts for interviews, screens, slides), captions, visual insert cues (each with a real asset, output interval, provenance). Cuts fall between words with room for breaths.",
+      "out": {
+        "edit_plan_path": "string"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "prepare",
+      "type": "action",
+      "action": "shell.skill_script",
+      "skill": "video-to-reels",
+      "script": "scripts/prepare_timeline.py",
+      "args": "--plan {{edit_plan.edit_plan_path}} --transcript {{transcribe.transcript_path}} --out prepared",
+      "out": {
+        "ok": "bool",
+        "errors": "string[]"
+      }
+    },
+    {
+      "id": "render",
+      "type": "parallel",
+      "for_each": "select.clips",
+      "child": {
+        "type": "agent",
+        "role": "errand",
+        "prompt": "Render clip {{item.id}} with FFmpeg (or a working Remotion composition for motion captions): first a short preview to check crop, Cyrillic fonts, caption positions and audio, then the full render. Output into the job folder; do not replace shared tooling.",
+        "out": {
+          "clip_id": "string",
+          "file": "string",
+          "duration_s": "int",
+          "ok": "bool"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "files": "string[]",
+          "ok_count": "int",
+          "failed_ids": "string[]"
+        },
+        "uses": "reduce.reels.render"
+      },
+      "concurrency": 3
+    },
+    {
+      "id": "verify",
+      "type": "parallel",
+      "for_each": "render.files",
+      "child": {
+        "type": "agent",
+        "role": "auditor",
+        "prompt": "Verify the rendered clip: duration matches the timeline within tolerance, audio and video present, the file decodes; beginning and ending complete, cuts remove no words or reverse meaning; captions match the audible words and stay in sync across cuts (check names and numbers against source audio); faces/slides and captions stay visible; no black or frozen frames, stretched pictures or clipped text; dialogue intelligible, inserts end on time. Inspect sampled frames including cut and insert boundaries; if listening is unavailable say so - signal statistics do not prove perceptual quality.",
+        "out": {
+          "clip_file": "string",
+          "ok": "bool",
+          "issues": "string[]"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "ok_count": "int",
+          "bad_files": "string[]",
+          "issues": "string[]"
+        },
+        "uses": "reduce.reels.verify"
+      },
+      "concurrency": 3
+    },
+    {
+      "id": "publish_text",
+      "type": "agent",
+      "role": "specialist:copy-lead",
+      "profile": {
+        "skills": [
+          "vechkasov-voice",
+          "copywriter"
+        ]
+      },
+      "skip_when": "!$inputs.publish_text || $mode == 'quick'",
+      "skip_out": {
+        "captions": "[]"
+      },
+      "src": "video-to-reels publishing.md",
+      "prompt": "Per clip: publication caption in the author's voice, 2-3 source-based giveaway ideas when justified, a short comment codeword, and a complete take-away as Markdown. Only claims the speaker made.",
+      "out": {
+        "captions": "Caption[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "style_pick",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Choose a film style",
+        "ru": "Выбрать стиль фильма"
+      },
+      "skip_when": "$inputs.style != ''",
+      "skip_out": {
+        "answer": "$inputs.style",
+        "answer_kind": "given"
+      },
+      "prompt": "Show the style gallery - house (inked paper plates on a beat grid), chalk (white sheet with word-by-word subtitles for a narrated voice-over), threejs (3D/WebGL scenes), watercolor (p5.brush painterly), paper-cutout (torn-paper collage). Ask which look to use.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "given|chosen|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "script",
+      "type": "agent",
+      "role": "analyst",
+      "model_preset": "strong",
+      "profile": {
+        "skills": [
+          "procedural-film"
+        ]
+      },
+      "prompt": "Short script and storyboard for the subject in the chosen style: 30-60 seconds, vertical, one idea, voice-over lines with timing. No claims you cannot support.",
+      "out": {
+        "script_path": "string",
+        "scene_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "build_film",
+      "type": "agent",
+      "role": "errand",
+      "profile": {
+        "skills": [
+          "procedural-film"
+        ]
+      },
+      "prompt": "Follow the chosen style's pipeline (styles/<style>/...) from the skill: setup, scenes, voice-over and word subtitles where the style has them, render with code only. Deliver film.mp4 into films/<slug>/.",
+      "out": {
+        "film_path": "string",
+        "ok": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 90
+      }
+    },
+    {
+      "id": "verify_film",
+      "type": "agent",
+      "role": "auditor",
+      "prompt": "Check duration, vertical format, audio present, subtitles in sync with the voice, no clipped text; report what you could not check.",
+      "out": {
+        "ok": "bool",
+        "issues": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "deliver",
+      "type": "action",
+      "action": "fs.write",
+      "path": "reels/{{date}}-{{slug}}/delivery/",
+      "out": {
+        "folder": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "clips": "render.files",
+        "folder": "deliver.folder",
+        "captions_ok": "verify.bad_files.length == 0"
+      }
+    },
+    {
+      "id": "done_film",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "film_path": "build_film.film_path",
+        "folder": "deliver.folder"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "clips": "render.files"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "ingest",
+      "to": "style_pick",
+      "pass": "artifact",
+      "when": "$inputs.source == '' && $inputs.subject != ''"
+    },
+    {
+      "from": "ingest",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "!ingest.ok"
+    },
+    {
+      "from": "ingest",
+      "to": "transcribe",
+      "pass": "artifact"
+    },
+    {
+      "from": "transcribe",
+      "to": "select",
+      "pass": "artifact",
+      "when": "transcribe.ok"
+    },
+    {
+      "from": "transcribe",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "select",
+      "to": "approve_clips",
+      "pass": "artifact",
+      "when": "select.clip_count > 0"
+    },
+    {
+      "from": "select",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "approve_clips",
+      "to": "select",
+      "pass": "same-session",
+      "when": "approve_clips.answer_kind == 'change'"
+    },
+    {
+      "from": "approve_clips",
+      "to": "edit_plan",
+      "pass": "artifact",
+      "when": "approve_clips.answer_kind == 'ok'"
+    },
+    {
+      "from": "approve_clips",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "edit_plan",
+      "to": "prepare",
+      "pass": "artifact"
+    },
+    {
+      "from": "prepare",
+      "to": "edit_plan",
+      "pass": "same-session",
+      "when": "!prepare.ok && visits('prepare') < 3",
+      "label": "timeline invalid"
+    },
+    {
+      "from": "prepare",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "!prepare.ok"
+    },
+    {
+      "from": "prepare",
+      "to": "render",
+      "pass": "artifact"
+    },
+    {
+      "from": "render",
+      "to": "verify",
+      "pass": "artifact",
+      "when": "render.ok_count > 0"
+    },
+    {
+      "from": "render",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "verify",
+      "to": "render",
+      "pass": "artifact",
+      "when": "verify.bad_files.length > 0 && visits('verify') < 2",
+      "label": "re-render faulty clips"
+    },
+    {
+      "from": "verify",
+      "to": "publish_text",
+      "pass": "artifact",
+      "when": "verify.bad_files.length == 0"
+    },
+    {
+      "from": "verify",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "publish_text",
+      "to": "deliver",
+      "pass": "artifact"
+    },
+    {
+      "from": "style_pick",
+      "to": "script",
+      "pass": "artifact"
+    },
+    {
+      "from": "script",
+      "to": "build_film",
+      "pass": "artifact"
+    },
+    {
+      "from": "build_film",
+      "to": "verify_film",
+      "pass": "artifact",
+      "when": "build_film.ok"
+    },
+    {
+      "from": "build_film",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "verify_film",
+      "to": "build_film",
+      "pass": "same-session",
+      "when": "!verify_film.ok && visits('verify_film') < 2"
+    },
+    {
+      "from": "verify_film",
+      "to": "deliver",
+      "pass": "artifact",
+      "when": "verify_film.ok"
+    },
+    {
+      "from": "verify_film",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "deliver",
+      "to": "done_film",
+      "pass": "artifact",
+      "when": "$inputs.source == ''"
+    },
+    {
+      "from": "deliver",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "rl-1",
+    "sim": {
+      "input": {
+        "source": "fixtures/interview-5min.mp4",
+        "count": 2,
+        "language": "ru",
+        "quality_mode": "standard"
+      },
+      "stubs": {
+        "ingest": {
+          "ok": true,
+          "duration_s": 300
+        },
+        "transcribe": {
+          "ok": true,
+          "transcript_path": "fixtures/transcript.json"
+        },
+        "select": {
+          "clip_count": 2
+        },
+        "prepare.py": {
+          "ok": true
+        },
+        "render": {
+          "ok_count": 2,
+          "files": [
+            "c1.mp4",
+            "c2.mp4"
+          ]
+        },
+        "verify": {
+          "bad_files": []
+        }
+      },
+      "expect_path": [
+        "ingest",
+        "transcribe",
+        "select",
+        "approve_clips",
+        "edit_plan",
+        "prepare",
+        "render",
+        "verify",
+        "publish_text",
+        "deliver",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "clips.length == 2",
+        "folder != ''"
+      ]
+    },
+    "live": "реальная 3-минутная запись; 1 клип 30-45 с, 1080x1920, субтитры на кириллице, проверка verify по семплам кадров; для фильма - стиль chalk, тема из трёх предложений",
+    "note": "Tested on stubs: every outside action answers from a stub. Not live yet: ffmpeg, Whisper and yt-dlp (or the film pipeline) on a machine that has them. See `live` for the acceptance run."
+  }
+}

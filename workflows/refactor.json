@@ -1,0 +1,449 @@
+{
+  "id": "refactor",
+  "name": {
+    "en": "Refactor (behavior preserved)",
+    "ru": "Рефакторинг (поведение сохраняется)"
+  },
+  "description": {
+    "en": "Restructure code without changing behavior - baseline of tests and metrics first, plan with mandatory critique, writers, equivalence check against the baseline, code review.",
+    "ru": "Перестройка кода без изменения поведения - сначала базовая линия тестов и метрик, план с обязательной критикой, исполнители, сверка с базовой линией, ревью кода."
+  },
+  "examples": {
+    "ru": [
+      "Отрефактори модуль платежей без изменения поведения",
+      "Разбей огромный файл utils.ts на части",
+      "Убери дублирование в обработчиках и упрости код",
+      "Почисти технический долг в слое работы с базой",
+      "Переименуй и перегруппируй сервисы, поведение то же",
+      "Сократи сложность функции parseOrder, внешне всё как раньше"
+    ],
+    "en": [
+      "Refactor the payments module without changing behavior",
+      "Split the huge utils.ts into parts",
+      "Remove duplication in the handlers and simplify the code",
+      "Clean up tech debt in the database layer",
+      "Reorganize the services, same behavior",
+      "Reduce the complexity of parseOrder, outwardly everything as before"
+    ]
+  },
+  "not_for": [
+    "analyze-plan-execute",
+    "quality-loop"
+  ],
+  "status": "published",
+  "tags": [
+    "code",
+    "refactor"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "goals": {
+      "type": "Goal[]"
+    },
+    "boundary": {
+      "type": "Boundary"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    },
+    "baseline_commands": {
+      "type": "string[]",
+      "note": "если пусто - команды проверки проекта (gate-detect)"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "merged_commits": "string[]",
+    "equivalent": "bool",
+    "metrics_before": "any",
+    "metrics_after": "any",
+    "recommendations": "string[]",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "минимум standard: критика плана и критик кода обязательны (quick повышается до standard)",
+    "min": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true,
+      "tests": "желательно; без тестов - риск high, режим full"
+    }
+  },
+  "budget": {
+    "max_steps": 60,
+    "max_minutes": 360,
+    "max_fan_out": 5
+  },
+  "entry": "baseline",
+  "nodes": [
+    {
+      "id": "baseline",
+      "type": "action",
+      "action": "lp.project_checks",
+      "mode": "baseline",
+      "commands": "{{$inputs.baseline_commands}}",
+      "title": {
+        "en": "Baseline before",
+        "ru": "Базовая линия до"
+      },
+      "out": {
+        "tests_passed": "int",
+        "tests_failed": "int",
+        "loc": "int",
+        "lint_errors": "int",
+        "ok": "bool",
+        "no_tests": "bool"
+      }
+    },
+    {
+      "id": "ask_no_tests",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "No tests to protect the refactor",
+        "ru": "Нет тестов, защищающих рефакторинг"
+      },
+      "prompt": "The project has no passing baseline. Offer - add characterization tests first (test-gen), proceed at risk, abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "tests_first|proceed|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 120
+      }
+    },
+    {
+      "id": "tests_first",
+      "type": "subworkflow",
+      "workflow": "test-gen",
+      "with": {
+        "scope": "{{$inputs.scope}}",
+        "goal": "characterization tests for the code to be refactored"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "analyze",
+      "type": "subworkflow",
+      "workflow": "lp.analyze",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "scope": "{{$inputs.scope}}",
+        "depth": "standard"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "findings": "{{analyze}}",
+        "boundary": "{{$inputs.boundary}}",
+        "mode": "fresh",
+        "extra_rules": [
+          "every task: acceptance includes 'all tests that passed in the baseline still pass'",
+          "no behavior change; useful side ideas go to recommendations, not into tasks",
+          "scope is locked after approval; one task per module boundary"
+        ]
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan.tasks}}",
+        "waves": "{{plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "equivalence",
+      "type": "action",
+      "action": "lp.project_checks",
+      "mode": "baseline",
+      "title": {
+        "en": "Equivalence check",
+        "ru": "Сверка с базовой линией"
+      },
+      "out": {
+        "tests_passed": "int",
+        "tests_failed": "int",
+        "loc": "int",
+        "lint_errors": "int",
+        "ok": "bool",
+        "no_tests": "bool"
+      },
+      "note": "after merge; regression = tests_failed > baseline.tests_failed or tests_passed < baseline.tests_passed"
+    },
+    {
+      "id": "review",
+      "type": "subworkflow",
+      "workflow": "lp.review",
+      "with": {
+        "range": "{{ctx.merged_commits}}",
+        "dimensions": [
+          "correctness",
+          "maintainability",
+          "architecture",
+          "silent_failures"
+        ]
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "replan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "mode": "gaps",
+        "gaps": [
+          "{{equivalence}}",
+          "{{review.findings}}"
+        ]
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "rebuild",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{replan.tasks}}",
+        "waves": "{{replan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "merged_commits": "ctx.merged_commits",
+        "equivalent": true,
+        "metrics_before": "{{baseline}}",
+        "metrics_after": "{{equivalence}}",
+        "recommendations": "analyze.open_questions"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "merged_commits": "ctx.merged_commits",
+        "equivalent": false,
+        "metrics_before": "{{baseline}}",
+        "metrics_after": "{{equivalence}}"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "equivalent": false
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "baseline",
+      "to": "ask_no_tests",
+      "pass": "artifact",
+      "when": "baseline.no_tests || baseline.tests_failed > 0"
+    },
+    {
+      "from": "baseline",
+      "to": "analyze",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_no_tests",
+      "to": "tests_first",
+      "pass": "artifact",
+      "when": "ask_no_tests.answer_kind == 'tests_first'"
+    },
+    {
+      "from": "ask_no_tests",
+      "to": "analyze",
+      "pass": "artifact",
+      "when": "ask_no_tests.answer_kind == 'proceed'"
+    },
+    {
+      "from": "ask_no_tests",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "tests_first",
+      "to": "analyze",
+      "pass": "artifact"
+    },
+    {
+      "from": "analyze",
+      "to": "plan",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "equivalence",
+      "pass": "artifact",
+      "when": "build.merged_commits.length > 0"
+    },
+    {
+      "from": "build",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "equivalence",
+      "to": "review",
+      "pass": "artifact",
+      "when": "equivalence.ok && equivalence.tests_failed <= baseline.tests_failed"
+    },
+    {
+      "from": "equivalence",
+      "to": "replan",
+      "pass": "artifact",
+      "when": "visits('replan') == 0",
+      "label": "restore behavior"
+    },
+    {
+      "from": "equivalence",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "review",
+      "to": "done",
+      "pass": "artifact",
+      "when": "review.status == 'pass'"
+    },
+    {
+      "from": "review",
+      "to": "replan",
+      "pass": "artifact",
+      "when": "review.status == 'rework' && visits('replan') == 0"
+    },
+    {
+      "from": "review",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "replan",
+      "to": "rebuild",
+      "pass": "artifact",
+      "when": "replan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "replan",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "rebuild",
+      "to": "equivalence",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "rf-1",
+    "sim": {
+      "input": {
+        "goal": "Split utils.ts into date.ts and string.ts, behavior unchanged",
+        "scope": "src/utils.ts"
+      },
+      "stubs": {
+        "baseline": {
+          "ok": true,
+          "tests_passed": 120,
+          "tests_failed": 0,
+          "no_tests": false
+        },
+        "lp.plan": {
+          "status": "ok",
+          "task_count": 2
+        },
+        "lp.build": {
+          "status": "done",
+          "merged_commits": [
+            "r1",
+            "r2"
+          ]
+        },
+        "equivalence": {
+          "ok": true,
+          "tests_passed": 120,
+          "tests_failed": 0
+        },
+        "lp.review": {
+          "status": "pass"
+        }
+      },
+      "expect_path": [
+        "baseline",
+        "analyze",
+        "plan",
+        "build",
+        "equivalence",
+        "review",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "equivalent == true"
+      ]
+    },
+    "live": "песочница: вынести две функции в модули; метрики до/после в отчёте; второй сценарий - стаб, ломающий один тест, ожидание: ветка replan и затем done или partial"
+  }
+}

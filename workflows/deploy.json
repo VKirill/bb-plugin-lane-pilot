@@ -1,0 +1,541 @@
+{
+  "id": "deploy",
+  "name": {
+    "en": "Deploy with check and rollback",
+    "ru": "Выкат с проверкой и откатом"
+  },
+  "description": {
+    "en": "Preflight (clean pushed HEAD, green suite, no running work, daily window), owner approval for production, deploy through the repo script or an errand with Env Catalog accounts, post-deploy check, and a rollback offer if the check fails.",
+    "ru": "Предполётная проверка (чистый запушенный HEAD, зелёный набор, нет идущей работы, дневное окно), подтверждение владельца для продакшна, выкат скриптом репозитория или errand с доступами из Env Catalog, проверка после, предложение отката при провале."
+  },
+  "examples": {
+    "ru": [
+      "Выкати текущую версию на продакшн",
+      "Задеплой main на сервер и проверь, что всё поднялось",
+      "Раскатай релиз 2.4 на staging, потом проверь",
+      "Опубликуй сайт на хостинг по FTP и убедись, что открывается",
+      "Деплой плагина на хаб с проверкой после",
+      "Обнови продакшн до последнего коммита и откати, если упадёт"
+    ],
+    "en": [
+      "Deploy the current version to production",
+      "Deploy main to the server and verify it came up",
+      "Roll out release 2.4 to staging, then check it",
+      "Publish the site to hosting over FTP and make sure it opens",
+      "Deploy the plugin to the hub with a post-check",
+      "Update production to the latest commit and roll back if it breaks"
+    ]
+  },
+  "not_for": [
+    "analyze-plan-execute"
+  ],
+  "status": "tested",
+  "tags": [
+    "ops",
+    "deploy"
+  ],
+  "inputs": {
+    "target": {
+      "type": "lane-pilot-plugin|ssh|ftp|script",
+      "required": true
+    },
+    "environment": {
+      "type": "staging|prod",
+      "default": "staging"
+    },
+    "ref": {
+      "type": "string",
+      "default": "main HEAD"
+    },
+    "accounts": {
+      "type": "string[]",
+      "note": "имена записей Env Catalog (ssh/ftp/secret); значения не передаются"
+    },
+    "deploy_steps": {
+      "type": "string",
+      "note": "для ssh/ftp/script: что именно сделать (каталог, команда, куда)"
+    },
+    "health_url": {
+      "type": "string"
+    },
+    "incident": {
+      "type": "string",
+      "note": "причина для повторного дневного выката плагина; становится LP_DEPLOY_INCIDENT",
+      "default": ""
+    }
+  },
+  "outputs": {
+    "status": "deployed|aborted|rolled_back|failed|blocked",
+    "deployed_version": "string",
+    "post_check_ok": "bool",
+    "rollback_needed": "bool",
+    "log_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "prod принудительно full: полный набор + браузер-проверка; staging - standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "env-catalog"
+    ],
+    "skills": [],
+    "secrets": [
+      "перечисленные в accounts (ssh/ftp/secret) - только по именам, J7"
+    ],
+    "machines": [
+      "deploy host (Mac mini for the plugin push; project host for ssh/ftp)"
+    ]
+  },
+  "budget": {
+    "max_steps": 14,
+    "max_minutes": 60
+  },
+  "entry": "preflight",
+  "nodes": [
+    {
+      "id": "preflight",
+      "type": "action",
+      "action": "lp.preflight",
+      "rule": "git tree clean, HEAD equals the pushed ref, on main; lp.run_status: no running attempts, gate ok; for lane-pilot-plugin also deploys.log: already deployed today?",
+      "out": {
+        "clean": "bool",
+        "pushed": "bool",
+        "head": "string",
+        "running_attempts": "int",
+        "gate_ok": "bool",
+        "deployed_today": "bool",
+        "last_version": "string"
+      }
+    },
+    {
+      "id": "ask_incident",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Already deployed today",
+        "ru": "Сегодня уже выкатывали"
+      },
+      "prompt": "Lane Pilot is deployed at most once a day. A second deploy needs an incident reason (becomes LP_DEPLOY_INCIDENT). Give the reason or abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "reason|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 120
+      }
+    },
+    {
+      "id": "tests",
+      "type": "action",
+      "action": "lp.project_checks",
+      "mode": "full",
+      "skip_when": "$inputs.target == 'lane-pilot-plugin'",
+      "skip_out": {
+        "ok": true,
+        "tests_passed": 0,
+        "tests_failed": 0,
+        "no_tests": false
+      },
+      "title": {
+        "en": "Full suite once",
+        "ru": "Полный набор один раз"
+      },
+      "note": "один полный набор на партию - запускает координатор, не исполнители; для плагина LP набор и учения гоняет сам bb-plugin-push",
+      "out": {
+        "ok": "bool",
+        "tests_passed": "int",
+        "tests_failed": "int",
+        "no_tests": "bool"
+      }
+    },
+    {
+      "id": "approve",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "$inputs.environment != 'prod'",
+      "skip_out": {
+        "answer_kind": "deploy"
+      },
+      "title": {
+        "en": "Approve the production deploy",
+        "ru": "Подтвердить выкат на прод"
+      },
+      "prompt": "Show: ref and short log since the last deployed version, tests result, target, accounts by name, post-check and the exact rollback command. No answer means NO deploy.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "deploy|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "push_plugin",
+      "type": "action",
+      "action": "shell.repo_script",
+      "script": "infrastructure/plugin-deploy/bb-plugin-push",
+      "args": "lane-pilot",
+      "env": {
+        "LP_DEPLOY_INCIDENT": "{{$inputs.incident}}"
+      },
+      "test_mode": "echo dry-run, no push",
+      "out": {
+        "ok": "bool",
+        "version": "string",
+        "log_path": "string"
+      },
+      "guards": {
+        "maxAttempts": 1
+      }
+    },
+    {
+      "id": "run_deploy",
+      "type": "agent",
+      "role": "errand",
+      "authorized": true,
+      "title": {
+        "en": "Deploy (ssh / ftp / script)",
+        "ru": "Выкат (ssh / ftp / скрипт)"
+      },
+      "prompt": "Do exactly `deploy_steps` for `ref` with the accounts given by name (read each with env_get; write keys into a mktemp -d folder outside every repository, chmod 600, delete afterwards; passwords by environment variable or netrc, never on the command line). Back up what you overwrite where the target allows. Report the deployed version/commit and any step that failed. No retries on failure.",
+      "out": {
+        "ok": "bool",
+        "version": "string",
+        "log_path": "string",
+        "backup_path": "string"
+      },
+      "guards": {
+        "maxAttempts": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "post_check",
+      "type": "action",
+      "action": "deploy.post_check",
+      "rule": "lane-pilot-plugin: canary_status and scripts/lp-canary.sh exit 0; otherwise health_url answers 200 and (full) a browser-qa pass on the main page",
+      "test_mode": "fixture response",
+      "out": {
+        "ok": "bool",
+        "details": "string"
+      }
+    },
+    {
+      "id": "ask_rollback",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Post-check failed",
+        "ru": "Проверка после выката не прошла"
+      },
+      "prompt": "Show the failure and the rollback command; options - roll back now, leave as is (I'll look), abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "rollback|leave|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 60
+      }
+    },
+    {
+      "id": "rollback",
+      "type": "action",
+      "action": "shell.repo_script",
+      "script": "scripts/lp-canary.sh",
+      "args": "--rollback {{preflight.last_version}}",
+      "note": "для не-плагина - errand с backup_path",
+      "test_mode": "echo dry-run",
+      "out": {
+        "ok": "bool"
+      },
+      "guards": {
+        "maxAttempts": 1
+      }
+    },
+    {
+      "id": "record",
+      "type": "agent",
+      "role": "memory",
+      "prompt": "Stage a short note about this deploy (version, check result, anything surprising) as a candidate; no publication.",
+      "out": {
+        "staged": "int"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "deployed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "deployed",
+        "deployed_version": "push_plugin.version",
+        "post_check_ok": true,
+        "rollback_needed": false,
+        "log_path": "push_plugin.log_path"
+      }
+    },
+    {
+      "id": "deployed_other",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "deployed",
+        "deployed_version": "run_deploy.version",
+        "post_check_ok": true,
+        "rollback_needed": false,
+        "log_path": "run_deploy.log_path"
+      }
+    },
+    {
+      "id": "rolled_back",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "rolled_back",
+        "post_check_ok": false,
+        "rollback_needed": true
+      }
+    },
+    {
+      "id": "failed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "failed",
+        "post_check_ok": false,
+        "rollback_needed": true
+      }
+    },
+    {
+      "id": "aborted",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "aborted"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "preflight",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "!preflight.clean || !preflight.pushed || preflight.running_attempts > 0 || !preflight.gate_ok"
+    },
+    {
+      "from": "preflight",
+      "to": "ask_incident",
+      "pass": "artifact",
+      "when": "$inputs.target == 'lane-pilot-plugin' && preflight.deployed_today && $inputs.incident == ''"
+    },
+    {
+      "from": "preflight",
+      "to": "tests",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_incident",
+      "to": "tests",
+      "pass": "artifact",
+      "when": "ask_incident.answer_kind == 'reason'"
+    },
+    {
+      "from": "ask_incident",
+      "to": "aborted",
+      "pass": "artifact"
+    },
+    {
+      "from": "tests",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "!tests.ok"
+    },
+    {
+      "from": "tests",
+      "to": "approve",
+      "pass": "artifact"
+    },
+    {
+      "from": "approve",
+      "to": "aborted",
+      "pass": "artifact",
+      "when": "approve.answer_kind != 'deploy'"
+    },
+    {
+      "from": "approve",
+      "to": "push_plugin",
+      "pass": "artifact",
+      "when": "$inputs.target == 'lane-pilot-plugin'"
+    },
+    {
+      "from": "approve",
+      "to": "run_deploy",
+      "pass": "artifact"
+    },
+    {
+      "from": "push_plugin",
+      "to": "post_check",
+      "pass": "artifact",
+      "when": "push_plugin.ok"
+    },
+    {
+      "from": "push_plugin",
+      "to": "failed",
+      "pass": "artifact"
+    },
+    {
+      "from": "run_deploy",
+      "to": "post_check",
+      "pass": "artifact",
+      "when": "run_deploy.ok"
+    },
+    {
+      "from": "run_deploy",
+      "to": "failed",
+      "pass": "artifact"
+    },
+    {
+      "from": "post_check",
+      "to": "record",
+      "pass": "artifact",
+      "when": "post_check.ok"
+    },
+    {
+      "from": "post_check",
+      "to": "ask_rollback",
+      "pass": "artifact"
+    },
+    {
+      "from": "record",
+      "to": "deployed",
+      "pass": "artifact",
+      "when": "$inputs.target == 'lane-pilot-plugin'"
+    },
+    {
+      "from": "record",
+      "to": "deployed_other",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_rollback",
+      "to": "rollback",
+      "pass": "artifact",
+      "when": "ask_rollback.answer_kind == 'rollback'"
+    },
+    {
+      "from": "ask_rollback",
+      "to": "failed",
+      "pass": "artifact"
+    },
+    {
+      "from": "rollback",
+      "to": "rolled_back",
+      "pass": "artifact",
+      "when": "rollback.ok"
+    },
+    {
+      "from": "rollback",
+      "to": "failed",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "dp-1",
+    "sim": {
+      "input": {
+        "target": "lane-pilot-plugin",
+        "environment": "prod",
+        "incident": ""
+      },
+      "stubs": {
+        "preflight": {
+          "clean": true,
+          "pushed": true,
+          "running_attempts": 0,
+          "gate_ok": true,
+          "deployed_today": false,
+          "last_version": "0.1.182"
+        },
+        "tests": {
+          "ok": true
+        },
+        "approve": {
+          "answer_kind": "deploy"
+        },
+        "push_plugin": "echo dry-run, version 0.1.183",
+        "post_check": {
+          "ok": true
+        }
+      },
+      "expect_path": [
+        "preflight",
+        "tests",
+        "approve",
+        "push_plugin",
+        "post_check",
+        "record",
+        "deployed"
+      ],
+      "expect_outputs": [
+        "status == 'deployed'",
+        "post_check_ok == true",
+        "no real push happened"
+      ],
+      "variant_fail": {
+        "stubs": {
+          "post_check": {
+            "ok": false
+          }
+        },
+        "human_answers": {
+          "ask_rollback": "rollback"
+        },
+        "expect_path": [
+          "preflight",
+          "tests",
+          "approve",
+          "push_plugin",
+          "post_check",
+          "ask_rollback",
+          "rollback",
+          "rolled_back"
+        ],
+        "expect_outputs": [
+          "status == 'rolled_back'"
+        ]
+      },
+      "variant_no_answer": {
+        "human_answers": {
+          "approve": "timeout"
+        },
+        "expect_path": [
+          "preflight",
+          "tests",
+          "approve",
+          "aborted"
+        ],
+        "expect_outputs": [
+          "status == 'aborted'",
+          "no push"
+        ]
+      }
+    },
+    "live": "staging-проект песочницы (тестовый FTP или скрипт); для плагина LP - только вручную владельцем, в обычном live-тесте не запускать (правило «не чаще раза в день»)",
+    "note": "Tested on stubs: every outside action answers from a stub. Not live yet: a real push of the plugin or a deploy to a server; run only as a dry run in acceptance. See `live` for the acceptance run."
+  }
+}
