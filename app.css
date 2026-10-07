@@ -394,4 +394,17 @@
 
   .lp-wf-tools { display: flex; gap: 4px; }
   .lp-wf-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+
+  /* The editor's property panel on a narrow screen: a bottom sheet that stays at the foot of the screen while the graph above it is in view. */
+  .lp-wf-sheet[data-narrow="1"] {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    max-height: 64vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -12px 28px -14px rgb(0 0 0 / 0.4);
+  }
+  .lp-wf-sheet[data-narrow="1"] .lp-panel-head { position: sticky; top: 0; z-index: 1; background-color: var(--lp-card); }
 }

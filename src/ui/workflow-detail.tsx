@@ -112,7 +112,11 @@ export function NodePanel({ node, locale, run, definitionOnly, onOpenThread, onC
  * One workflow: its graph, and the runs it has had. A run is the same graph with a status on every node, read from the
  * engine's journal and re-read when the server signals a change in the project (or on a slow poll while one is active).
  */
-export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel }: { id: string; projectId: string | null; locale: Locale; onBack: () => void; renderNodePanel?: NodePanelRenderer }) {
+export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel, editProjectId = projectId, onEditDraft }: {
+  id: string; projectId: string | null; locale: Locale; onBack: () => void; renderNodePanel?: NodePanelRenderer;
+  /** Editing starts a draft in this project (the tab's project, or the one the page has open); without it, or without `onEditDraft`, the workflow is only shown. */
+  editProjectId?: string | null; onEditDraft?: (draftId: string) => void;
+}) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -125,6 +129,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel 
   const [snapshot, setSnapshot] = useState<RunSnapshot | null>(null);
   const [snapshotGone, setSnapshotGone] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [starting, setStarting] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const [expanded, setExpanded] = useState<ReadonlyMap<string, { graph: WorkflowView; snapshot: RunSnapshot | null }>>(new Map());
   const [loading, setLoading] = useState<ReadonlySet<string>>(new Set());
   const generation = useRef(0);
@@ -282,6 +287,18 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel 
     })();
   };
 
+  const startEdit = async (workflow: Detail) => {
+    if (!editProjectId || !onEditDraft) return;
+    setStarting({ busy: true, error: null });
+    try {
+      // A built-in workflow is read-only: it is copied under a new id; an own one is edited in place (its draft replaces its file when published).
+      const result = await rpc.call("workflow_draft_create", { projectId: editProjectId, workflowId: workflow.id, mode: workflow.scope === "builtin" ? "duplicate" : "edit", scope: projectId ? "project" : "global" });
+      if (!result.draftId) throw new Error(result.reason ?? "no draft");
+      setStarting({ busy: false, error: null });
+      onEditDraft(result.draftId);
+    } catch (cause) { setStarting({ busy: false, error: cause instanceof Error ? cause.message : String(cause) }); }
+  };
+
   const selectedNode = selected ? lookup(selected) : null;
   const direction = width > 0 && width < 560 ? "DOWN" : "RIGHT";
 
@@ -299,7 +316,14 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel 
           <span className="lp-pill-neutral rounded-full px-2 py-0.5 text-[11px] font-medium">{t(`wfStatus_${detail.status}` as I18nKey)}</span>
           <span className="lp-pill-muted rounded-full px-2 py-0.5 text-[11px] font-medium">{t(`wfScope_${detail.scope}` as I18nKey)}</span>
           <span className="font-mono text-[11px] text-muted-foreground">{detail.id} · {t("wfVersion").replace("{n}", String(detail.version))}</span>
+          {editProjectId && onEditDraft ? (
+            <Button type="button" size="sm" variant="outline" className="lp-raised ml-auto h-7 px-2.5 text-xs" disabled={starting.busy} data-testid="wf-edit-start" onClick={() => void startEdit(detail)}>
+              {starting.busy ? t("wfEditStarting") : detail.scope === "builtin" ? t("wfDuplicateToEdit") : t("wfEditThis")}
+            </Button>
+          ) : null}
         </div>
+        {detail.scope === "builtin" && editProjectId && onEditDraft ? <p className="text-xs text-muted-foreground" data-testid="wf-builtin-note">{t("wfBuiltinReadOnly")}</p> : null}
+        {starting.error ? <p className="break-words text-xs text-destructive" role="alert" data-testid="wf-edit-start-error">{t("wfEditStartError").replace("{error}", starting.error)}</p> : null}
       </div>
 
       <Surface testId="wf-graph-panel">

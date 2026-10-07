@@ -20,6 +20,20 @@ import type { NodeRun, NodeStatus } from "./workflow-run";
  */
 /** The smallest zoom «Fit» and the first view use: below it a card's text is no longer readable. */
 export const READABLE_ZOOM = 0.7;
+/**
+ * The first view of a graph in a box: all of it when it fits at READABLE_ZOOM or more, centred; otherwise READABLE_ZOOM on the
+ * anchor (the start of the chain), so the cards stay legible and the owner pans along the chain.
+ */
+export function readableViewport(graph: { width: number; height: number }, anchor: { x: number; y: number; width: number; height: number }, box: { width: number; height: number }, orientation: Direction, pad = 20): { x: number; y: number; zoom: number } {
+  const fit = Math.min((box.width - pad * 2) / graph.width, (box.height - pad * 2) / graph.height, 1);
+  const zoom = Math.max(fit, READABLE_ZOOM);
+  if (fit >= READABLE_ZOOM) return { zoom, x: (box.width - graph.width * zoom) / 2, y: (box.height - graph.height * zoom) / 2 };
+  const centre = { x: anchor.x + anchor.width / 2, y: anchor.y + anchor.height / 2 };
+  return orientation === "DOWN"
+    ? { zoom, x: box.width / 2 - centre.x * zoom, y: pad - anchor.y * zoom }
+    : { zoom, x: pad - anchor.x * zoom, y: box.height / 2 - centre.y * zoom };
+}
+
 export type GraphProblems = { nodes: ReadonlyMap<string, string[]>; edges: ReadonlyMap<string, string[]> };
 const TONE_ICON: Record<NodeTone, IconName> = {
   plan: "Search", build: "Code", qa: "Target", review: "CircleCheck", agent: "Bot", action: "Zap", decision: "GitBranch",
@@ -270,14 +284,8 @@ function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, cha
     const width = box?.clientWidth ?? 0, boxHeight = box?.clientHeight ?? 0;
     if (!current || !current.nodes.length) return;
     if (!width || !boxHeight || !current.width || !current.height) { void flow.fitView({ padding: 0.14, duration, maxZoom: 1, minZoom: READABLE_ZOOM }); return; }
-    const pad = 20;
-    const fit = Math.min((width - pad * 2) / current.width, (boxHeight - pad * 2) / current.height, 1);
-    const zoom = Math.max(fit, READABLE_ZOOM);
-    if (fit >= READABLE_ZOOM) { void flow.setViewport({ zoom, x: (width - current.width * zoom) / 2, y: (boxHeight - current.height * zoom) / 2 }, { duration }); return; }
     const anchor = current.nodes.find((item) => item.node.kind === "start" && !item.parent) ?? current.nodes.find((item) => !item.parent) ?? current.nodes[0]!;
-    const centre = { x: anchor.x + anchor.width / 2, y: anchor.y + anchor.height / 2 };
-    const down = orientation === "DOWN";
-    void flow.setViewport({ zoom, x: down ? width / 2 - centre.x * zoom : pad - anchor.x * zoom, y: down ? pad - anchor.y * zoom : boxHeight / 2 - centre.y * zoom }, { duration });
+    void flow.setViewport(readableViewport(current, anchor, { width, height: boxHeight }, orientation), { duration });
   }, [flow, orientation]);
 
   // A new layout (another workflow, an expanded node, the other direction) is brought into view; a status change is not.

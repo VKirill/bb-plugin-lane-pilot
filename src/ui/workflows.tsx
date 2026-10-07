@@ -60,6 +60,8 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   const navigate = useBbNavigate();
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const [openDraft, setOpenDraft] = useState<string | null>(null);
+  // A draft opened from a workflow's «Edit» goes straight to the editor; one opened from the list is first shown as it is.
+  const [editFirst, setEditFirst] = useState(false);
   const [architect, setArchitect] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,8 +106,11 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   const shown = useMemo(() => (listing?.workflows ?? []).filter((row) =>
     matches(row, query) && (status === ANY || row.status === status) && (scope === ANY || row.scope === scope)), [listing, query, status, scope]);
 
-  if (openDraft) return <WorkflowDraftDetail draftId={openDraft} projectId={projectId} locale={locale} renderNodePanel={renderNodePanel} onBack={() => { setOpenDraft(null); void load(); }} />;
-  if (openId) return <WorkflowDetail id={openId} projectId={projectId} locale={locale} renderNodePanel={renderNodePanel} onBack={() => { setOpenId(null); void load(); }} />;
+  if (openDraft) return <WorkflowDraftDetail draftId={openDraft} projectId={projectId} locale={locale} renderNodePanel={renderNodePanel} startEditing={editFirst} onBack={() => { setOpenDraft(null); setEditFirst(false); void load(); }} />;
+  if (openId) {
+    return <WorkflowDetail id={openId} projectId={projectId} locale={locale} renderNodePanel={renderNodePanel} editProjectId={architectProjectId} onEditDraft={(draftId) => { setOpenId(null); setEditFirst(true); setOpenDraft(draftId); }}
+      onBack={() => { setOpenId(null); void load(); }} />;
+  }
 
   const notice = listing?.project === "unavailable" ? t("wfProjectUnavailable") : listing?.project === "no_machine" ? t("wfProjectNoMachine") : null;
   return (
@@ -133,7 +138,7 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
               {drafts.map((row) => (
                 <li key={row.draftId}>
                   <button type="button" className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-2 py-2.5 text-left hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    data-testid={`wf-draft-${row.draftId}`} onClick={() => setOpenDraft(row.draftId)}>
+                    data-testid={`wf-draft-${row.draftId}`} onClick={() => { setEditFirst(false); setOpenDraft(row.draftId); }}>
                     <span className="min-w-0 break-words text-sm font-medium">{row.name ? row.name[locale] : t("wfDraftUnnamed")}</span>
                     <span className="lp-pill-info rounded-full px-2 py-0.5 text-[11px] font-medium" data-testid={`wf-draft-badge-${row.draftId}`}><span className="lp-wf-pulse mr-1" aria-hidden />{t("wfDraftBadge")}</span>
                     {row.version !== null ? <span className="font-mono text-xs text-muted-foreground">{t("wfDraftVersion").replace("{n}", String(row.version))}</span> : null}

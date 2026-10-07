@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
-import { t, type Locale } from "../../i18n";
+import { t, type I18nKey, type Locale } from "../../i18n";
 import { Button } from "../../components/ui/button";
 import { LP_ALL_PROJECTS } from "../realtime-channel";
 import { draftChanges, draftView } from "../workflow/draft-view";
@@ -12,6 +12,12 @@ import { useObservedWidth } from "./panel-layout";
 import { getDraft, type DraftDoc } from "./workflow-drafts";
 import { NodePanel, WorkflowGraph, type NodePanelContext, type NodePanelRenderer } from "./workflow-detail";
 import { nodeTitle } from "./workflow-titles";
+import {
+  connectOps, edgesOf, endName, insertAfterOps, isRaw, newNode, nodeById, problemMaps, viewEdgeIndexes, END_KEY, START_KEY, type NodeType, type Raw,
+} from "./workflow-edit-model";
+import { say } from "./workflow-edit-fields";
+import { AddNodeMenu, EdgeForm, NodeForm, TestResults, VersionsList, WorkflowForm } from "./workflow-edit-panels";
+import { useCatalog, useDraftEditing } from "./workflow-edit-state";
 
 const bilingual = (value: unknown, locale: Locale): string | null => {
   if (typeof value === "string") return value || null;
@@ -19,19 +25,26 @@ const bilingual = (value: unknown, locale: Locale): string | null => {
   return null;
 };
 
+/** What the panel under the graph shows: a step, an edge (named by its ends and which of them it is, so it survives a re-read), or the workflow itself. */
+type Selection = { kind: "node"; id: string } | { kind: "edge"; from: string; to: string; ordinal: number } | { kind: "workflow" } | null;
+const NARROW = 560;
+
 /**
- * A workflow the architect is building. It redraws when the server says the draft was patched (no reload), and outlines the
- * nodes and edges that patch changed until the next one. Selecting a node opens the same panel slot the editor (W6) fills.
+ * A workflow the architect is building, and the owner's editor for it. It redraws when the server says the draft was patched (no
+ * reload) and outlines what that patch changed. «Edit» turns the graph into a canvas: «+» after a step, drag from a port to join
+ * two, a panel for the selected step, edge or the workflow; every change is a patch the validator checks, shown on the card or
+ * edge it names. The selection is kept by id across the architect's patches.
  */
-export function WorkflowDraftDetail({ draftId, projectId, locale, onBack, renderNodePanel }: {
-  draftId: string; projectId: string | null; locale: Locale; onBack: () => void; renderNodePanel?: NodePanelRenderer;
+export function WorkflowDraftDetail({ draftId, projectId, locale, onBack, renderNodePanel, startEditing = false }: {
+  draftId: string; projectId: string | null; locale: Locale; onBack: () => void; renderNodePanel?: NodePanelRenderer; startEditing?: boolean;
 }) {
   const rpc = useRpc();
   const navigate = useBbNavigate();
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useObservedWidth(rootRef);
   const [draft, setDraft] = useState<DraftDoc | null | "missing">(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection>(null);
+  const [editing, setEditing] = useState(startEditing);
   const [changes, setChanges] = useState<{ nodes: Set<string>; edges: Set<string> }>({ nodes: new Set(), edges: new Set() });
   const seen = useRef<{ view: WorkflowView | null; version: number | null; text: string }>({ view: null, version: null, text: "" });
 
@@ -48,7 +61,7 @@ export function WorkflowDraftDetail({ draftId, projectId, locale, onBack, render
     setDraft(doc);
   }, [rpc, draftId]);
 
-  useEffect(() => { seen.current = { view: null, version: null, text: "" }; setDraft(null); setSelected(null); setChanges({ nodes: new Set(), edges: new Set() }); void read(); }, [read]);
+  useEffect(() => { seen.current = { view: null, version: null, text: "" }; setDraft(null); setSelection(null); setChanges({ nodes: new Set(), edges: new Set() }); void read(); }, [read]);
 
   // A patch is a signal; the slow poll only repairs a missed one.
   const readRef = useRef(read);
@@ -57,7 +70,8 @@ export function WorkflowDraftDetail({ draftId, projectId, locale, onBack, render
   useEffect(() => { const timer = setInterval(() => void readRef.current(), pollMs); return () => clearInterval(timer); }, [pollMs]);
 
   const view = useMemo(() => (draft && draft !== "missing" ? draftView(draft.workflow) : null), [draft]);
-  const direction = width > 0 && width < 560 ? "DOWN" : "RIGHT";
+  const narrow = width > 0 && width < NARROW;
+  const direction = narrow ? "DOWN" : "RIGHT";
   const openChat = (threadId: string) => {
     if (!navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: t("wfArchitectPanelTitle"), params: { threadId } })) navigate.toThread(threadId);
   };
@@ -65,45 +79,201 @@ export function WorkflowDraftDetail({ draftId, projectId, locale, onBack, render
   if (draft === "missing") return <div ref={rootRef} className="space-y-3"><Button type="button" size="sm" variant="ghost" className="-ml-2 h-7 px-2 text-xs" onClick={onBack} data-testid="wf-back">‹ {t("wfBack")}</Button><p className="text-sm text-muted-foreground" data-testid="wf-draft-missing">{t("wfDraftGone")}</p></div>;
   if (!draft || !view) return <div ref={rootRef}><p className="text-sm text-muted-foreground" role="status">{t("wfLoading")}</p></div>;
 
-  const workflow = (draft.workflow && typeof draft.workflow === "object" ? draft.workflow : {}) as { name?: unknown; description?: unknown; id?: unknown };
-  const title = bilingual(workflow.name, locale) ?? t("wfDraftUnnamed");
-  const description = bilingual(workflow.description, locale);
-  const selectedNode: ViewNode | null = selected ? view.nodes.find((node) => node.id === selected) ?? null : null;
-  const changed = changes.nodes.size + changes.edges.size;
   return (
     <div ref={rootRef} className="min-w-0 space-y-4" data-testid="workflow-draft-detail">
+      <DraftScreen doc={draft} view={view} locale={locale} projectId={projectId} changes={changes} selection={selection} setSelection={setSelection} editing={editing} setEditing={setEditing}
+        narrow={narrow} direction={direction} onBack={onBack} openChat={openChat} read={read} renderNodePanel={renderNodePanel} />
+    </div>
+  );
+}
+
+function DraftScreen({ doc, view, locale, projectId, changes, selection, setSelection, editing, setEditing, narrow, direction, onBack, openChat, read, renderNodePanel }: {
+  doc: DraftDoc; view: WorkflowView; locale: Locale; projectId: string | null; changes: { nodes: Set<string>; edges: Set<string> }; selection: Selection; setSelection: (next: Selection) => void;
+  editing: boolean; setEditing: (next: boolean) => void; narrow: boolean; direction: "RIGHT" | "DOWN"; onBack: () => void; openChat: (threadId: string) => void; read: () => Promise<unknown>; renderNodePanel?: NodePanelRenderer;
+}) {
+  const edit = useDraftEditing(doc, read);
+  const catalog = useCatalog(projectId, doc.draftId, editing);
+  const [adding, setAdding] = useState<{ after: string | null } | null>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const definition = (isRaw(doc.workflow) ? doc.workflow : {}) as Raw;
+  const workflow = definition as { name?: unknown; description?: unknown; id?: unknown };
+  const title = bilingual(workflow.name, locale) ?? t("wfDraftUnnamed");
+  const description = bilingual(workflow.description, locale);
+  const changed = changes.nodes.size + changes.edges.size;
+
+  const rawEdges = useMemo(() => viewEdgeIndexes(definition, view), [definition, view]);
+  const problems = useMemo(() => problemMaps(doc.check?.problems ?? [], definition, rawEdges), [doc.check, definition, rawEdges]);
+
+  // The edge on the panel, found again by its ends after every read.
+  const edgeKeyOf = (sel: Extract<Selection, { kind: "edge" }>): { key: string; raw: number } | null => {
+    let seenOf = 0;
+    for (let index = 0; index < view.edges.length; index += 1) {
+      const edge = view.edges[index]!;
+      if (edge.from !== sel.from || edge.to !== sel.to) continue;
+      if (seenOf === sel.ordinal) return { key: `e${index}`, raw: rawEdges[index] ?? -1 };
+      seenOf += 1;
+    }
+    return null;
+  };
+  const selectedEdge = selection?.kind === "edge" ? edgeKeyOf(selection) : null;
+  const selectedNode = selection?.kind === "node" ? nodeById(definition, selection.id) : null;
+  // What was selected is gone (the architect removed it): the panel closes instead of showing a stale form.
+  useEffect(() => {
+    if (!selection) return;
+    if ((selection.kind === "node" && !selectedNode) || (selection.kind === "edge" && !selectedEdge)) setSelection(null);
+  }, [selection, selectedNode, selectedEdge, setSelection]);
+
+  const onSelect = (key: string | null) => {
+    if (!key || key === START_KEY || key === END_KEY) { setSelection(null); return; }
+    setSelection({ kind: "node", id: key });
+    setAdding(null);
+  };
+  const onSelectEdge = (key: string | null) => {
+    if (!key) return;
+    const index = Number(key.slice(1));
+    const edge = view.edges[index];
+    if (!edge) return;
+    const ordinal = view.edges.slice(0, index).filter((other) => other.from === edge.from && other.to === edge.to).length;
+    setSelection({ kind: "edge", from: edge.from, to: edge.to, ordinal });
+    setAdding(null);
+  };
+
+  const add = async (type: NodeType) => {
+    const after = adding?.after ?? null;
+    const node = newNode(definition, type, { after: after ? endName(after) : null });
+    setAdding(null);
+    const result = await edit.apply(insertAfterOps(definition, after, node));
+    if (result.ok) { setSelection({ kind: "node", id: String(node.id) }); setFocusKey(String(node.id)); }
+  };
+  const connect = async (from: string, to: string) => {
+    const made = connectOps(definition, from, to);
+    if ("error" in made) { edit.setFailure(made.error); return; }
+    const ordinal = edgesOf(definition).filter((edge) => endName(String(edge.from)) === endName(from) && endName(String(edge.to)) === endName(to)).length;
+    const result = await edit.apply(made.ops);
+    if (result.ok) setSelection({ kind: "edge", from, to, ordinal });
+  };
+
+  const tests = doc.tests;
+  const testsFresh = Boolean(tests && tests.version === doc.version);
+  const canPublish = editing && Boolean(doc.check?.valid) && testsFresh && tests!.green && !edit.busy && !edit.publishing;
+  const publishWhy = !doc.check?.valid ? t("wfEditPublishInvalid") : !testsFresh ? t("wfEditPublishUntested") : !tests!.green ? t("wfEditPublishRed") : "";
+  const errors = doc.check?.errors ?? 0;
+
+  const panelNarrow = narrow;
+  const panel = (() => {
+    if (!editing) {
+      if (!selectedNode) return null;
+      const node: ViewNode | undefined = view.nodes.find((candidate) => candidate.id === selectedNode.id);
+      if (!node) return null;
+      const context: NodePanelContext = { node, nodeKey: node.id, locale, run: null, definitionOnly: false, readOnly: true, onOpenThread: openChat, onClose: () => setSelection(null) };
+      return renderNodePanel ? renderNodePanel(context) : <NodePanel {...context} draft />;
+    }
+    if (selection?.kind === "node" && selectedNode) return <NodeForm node={selectedNode} definition={definition} catalog={catalog} edit={edit} narrow={panelNarrow} onClose={() => setSelection(null)} onConnect={(to) => void connect(selection.id, to === "end" ? END_KEY : to)} />;
+    if (selection?.kind === "edge" && selectedEdge && selectedEdge.raw >= 0) return <EdgeForm edge={{ from: selection.from, to: selection.to }} rawIndex={selectedEdge.raw} definition={definition} edit={edit} narrow={panelNarrow} onClose={() => setSelection(null)} />;
+    if (selection?.kind === "workflow") return <WorkflowForm definition={definition} catalog={catalog} edit={edit} narrow={panelNarrow} onClose={() => setSelection(null)} />;
+    return null;
+  })();
+
+  return (
+    <>
       <div className="lp-strip space-y-1.5">
         <Button type="button" size="sm" variant="ghost" className="-ml-2 h-7 px-2 text-xs text-muted-foreground" onClick={onBack} data-testid="wf-back">‹ {t("wfBack")}</Button>
         <h2 className="break-words text-xl font-medium">{title}</h2>
         {description ? <p className="break-words text-xs text-muted-foreground">{description}</p> : null}
         <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
           <span className="lp-pill-info rounded-full px-2 py-0.5 text-[11px] font-medium"><span className="lp-wf-pulse mr-1" aria-hidden />{t("wfDraftBadge")}</span>
-          {draft.version !== null ? <span className="font-mono text-[11px] text-muted-foreground" data-testid="wf-draft-version">{t("wfDraftVersion").replace("{n}", String(draft.version))}</span> : null}
+          {doc.version !== null ? <span className="font-mono text-[11px] text-muted-foreground" data-testid="wf-draft-version">{t("wfDraftVersion").replace("{n}", String(doc.version))}</span> : null}
           {typeof workflow.id === "string" ? <span className="font-mono text-[11px] text-muted-foreground">{workflow.id}</span> : null}
-          {draft.threadId ? <Button type="button" size="sm" variant="outline" className="lp-raised ml-auto h-7 px-2 text-xs" onClick={() => openChat(draft.threadId!)}>{t("wfDraftOpenChat")}</Button> : null}
+          {doc.status === "published" ? <span className="lp-pill-success rounded-full px-2 py-0.5 text-[11px] font-medium" data-testid="wf-draft-published">{t("wfStatus_published")}</span> : null}
+          <span className="ml-auto flex items-center gap-1.5">
+            {doc.threadId ? <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2 text-xs" onClick={() => openChat(doc.threadId!)}>{t("wfDraftOpenChat")}</Button> : null}
+            <Button type="button" size="sm" variant={editing ? "default" : "outline"} className={editing ? "lp-accent h-7 px-3 text-xs" : "lp-raised h-7 px-3 text-xs"} aria-pressed={editing} data-testid="wf-edit-toggle"
+              onClick={() => { setEditing(!editing); setAdding(null); setSelection(null); }}>{editing ? t("wfEditDone") : t("wfEdit")}</Button>
+          </span>
         </div>
       </div>
+
       <Surface testId="wf-draft-graph-panel">
-        <SurfaceHeader className="flex-wrap justify-between">
+        <SurfaceHeader className="flex-wrap justify-between gap-2">
           <h3 className="text-sm font-medium">{t("wfGraphHeading")}</h3>
-          <span className="text-xs text-muted-foreground" data-testid="wf-draft-changes" aria-live="polite">
-            {changed ? t("wfDraftChanged").replace("{nodes}", String(changes.nodes.size)).replace("{edges}", String(changes.edges.size)) : t("wfDraftNoChange")}
-          </span>
+          {editing ? (
+            <div className="flex flex-wrap items-center gap-1.5" role="toolbar" aria-label={t("wfEditToolbar")} data-testid="wf-edit-toolbar">
+              <Button type="button" size="sm" className="lp-accent h-7 px-2.5 text-xs" data-testid="wf-edit-add" onClick={() => { setAdding({ after: selection?.kind === "node" && selectedNode?.type !== "note" ? selection.id : null }); setSelection(selection?.kind === "node" ? selection : null); }}>+ {t("wfEditAddStep")}</Button>
+              <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2 text-xs" disabled={!edit.canUndo || edit.busy} aria-label={t("wfEditUndo")} data-testid="wf-edit-undo" onClick={() => void edit.undo()}>↶</Button>
+              <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2 text-xs" disabled={!edit.canRedo || edit.busy} aria-label={t("wfEditRedo")} data-testid="wf-edit-redo" onClick={() => void edit.redo()}>↷</Button>
+              <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2 text-xs" aria-pressed={selection?.kind === "workflow"} data-testid="wf-edit-settings" onClick={() => { setAdding(null); setSelection(selection?.kind === "workflow" ? null : { kind: "workflow" }); }}>{t("wfEditSettings")}</Button>
+              <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2 text-xs" disabled={edit.testing || edit.busy || errors > 0} data-testid="wf-edit-test" onClick={() => void edit.test()}>{edit.testing ? t("wfEditTesting") : t("wfEditTest")}</Button>
+              <Button type="button" size="sm" className="lp-accent h-7 px-2.5 text-xs" disabled={!canPublish} aria-describedby="wf-publish-why" data-testid="wf-edit-publish" onClick={() => void edit.publish()}>{edit.publishing ? t("wfEditPublishing") : t("wfEditPublish")}</Button>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground" data-testid="wf-draft-changes" aria-live="polite">
+              {changed ? t("wfDraftChanged").replace("{nodes}", String(changes.nodes.size)).replace("{edges}", String(changes.edges.size)) : t("wfDraftNoChange")}
+            </span>
+          )}
         </SurfaceHeader>
         <SurfaceBody className="space-y-2">
-          <p className="text-xs text-muted-foreground">{t("wfDraftLive")}</p>
-          {view.nodes.length ? (
+          {editing ? (
+            <div className="space-y-1" aria-live="polite">
+              <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground" data-testid="wf-edit-status">
+                <span>{edit.busy ? t("wfEditSaving") : t("wfEditSaved").replace("{n}", String(doc.version ?? 1))}</span>
+                {doc.check ? <span className={errors ? "text-destructive-text" : ""} data-testid="wf-edit-problem-count">{errors ? t("wfEditErrorsCount").replace("{n}", String(errors)) : t("wfEditNoErrors")}{doc.check.warnings ? ` · ${t("wfEditWarningsCount").replace("{n}", String(doc.check.warnings))}` : ""}</span> : null}
+                {changed ? <span>{t("wfDraftChanged").replace("{nodes}", String(changes.nodes.size)).replace("{edges}", String(changes.edges.size))}</span> : null}
+              </p>
+              {edit.failure ? <p className="break-words text-xs text-destructive-text" role="alert" data-testid="wf-edit-failure">{say(edit.failure)}</p> : null}
+              <p id="wf-publish-why" className="text-xs text-muted-foreground" data-testid="wf-publish-why">{canPublish ? t("wfEditPublishReady") : publishWhy}</p>
+            </div>
+          ) : <p className="text-xs text-muted-foreground">{t("wfDraftLive")}</p>}
+          {view.nodes.length || editing ? (
             <Suspense fallback={<p className="py-10 text-center text-xs text-muted-foreground" role="status">{t("wfGraphLoading")}</p>}>
-              <WorkflowGraph graph={view} locale={locale} changedNodes={changes.nodes} changedEdges={changes.edges} selected={selected}
-                onSelect={(key) => setSelected(key)} direction={direction} height={direction === "DOWN" ? 420 : 460} />
+              <WorkflowGraph graph={view} locale={locale} changedNodes={changes.nodes} changedEdges={changes.edges} selected={selection?.kind === "node" ? selection.id : null}
+                onSelect={onSelect} direction={direction} height={direction === "DOWN" ? 420 : 460}
+                {...(editing ? { onAddAfter: (key: string) => { setSelection({ kind: "node", id: key }); setAdding({ after: key }); }, onConnect: (from: string, to: string) => void connect(from, to),
+                  selectedEdge: selectedEdge?.key ?? null, onSelectEdge, problems: problems.graph, focusKey, refit: "first" as const } : {})} />
             </Suspense>
           ) : <p className="py-6 text-center text-xs text-muted-foreground" data-testid="wf-draft-empty">{t("wfDraftEmpty")}</p>}
+          {editing && !view.nodes.length ? <p className="text-center text-xs text-muted-foreground" data-testid="wf-draft-empty-edit">{t("wfEditEmptyHint")}</p> : null}
         </SurfaceBody>
       </Surface>
-      {selectedNode ? (() => {
-        const context: NodePanelContext = { node: selectedNode, nodeKey: selectedNode.id, locale, run: null, definitionOnly: false, readOnly: true, onOpenThread: openChat, onClose: () => setSelected(null) };
-        return renderNodePanel ? renderNodePanel(context) : <NodePanel {...context} draft />;
-      })() : null}
-    </div>
+
+      {editing && adding ? <AddNodeMenu after={adding.after} onPick={(type) => void add(type)} onClose={() => setAdding(null)} /> : null}
+      {panel}
+
+      {editing ? (
+        <>
+          {problems.general.length || (doc.check?.problems.length ?? 0) ? (
+            <Surface testId="wf-problems-panel">
+              <SurfaceHeader><h3 className="text-sm font-medium">{t("wfEditProblems")}</h3></SurfaceHeader>
+              <SurfaceBody>
+                <ul className="space-y-1.5">
+                  {(doc.check?.problems ?? []).slice(0, 40).map((problem, index) => (
+                    <li key={`${problem.code}:${index}`} className="flex min-w-0 items-start gap-2 text-xs" data-testid="wf-problem-row" data-level={problem.level}>
+                      <span className={`${problem.level === "error" ? "lp-pill-danger" : "lp-pill-warning"} shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium`}>{problem.level === "error" ? t("wfEditProblemError") : t("wfEditProblemWarning")}</span>
+                      <span className="min-w-0 break-words">{problem.message}</span>
+                      {problem.node && nodeById(definition, problem.node.replace(/:(child|fan)$/, "")) ? <button type="button" className="shrink-0 text-xs underline" onClick={() => setSelection({ kind: "node", id: problem.node!.replace(/:(child|fan)$/, "") })}>{t("wfEditGoTo")}</button> : null}
+                    </li>
+                  ))}
+                </ul>
+              </SurfaceBody>
+            </Surface>
+          ) : null}
+          <Surface testId="wf-tests-panel">
+            <SurfaceHeader className="flex-wrap justify-between gap-2"><h3 className="text-sm font-medium">{t("wfEditTests")}</h3>
+              {edit.published ? <span className={`${edit.published.published ? "lp-pill-success" : "lp-pill-danger"} rounded-full px-2 py-0.5 text-[11px] font-medium`} data-testid="wf-publish-result">{edit.published.published ? t("wfEditPublished") : t("wfEditPublishRefused").replace("{reason}", edit.published.reason ?? "")}</span> : null}
+            </SurfaceHeader>
+            <SurfaceBody>
+              {edit.published?.published ? <p className="break-all text-xs text-muted-foreground" data-testid="wf-publish-path">{t("wfEditPublishedAt").replace("{path}", edit.published.path ?? "")}{edit.published.warning ? ` · ${edit.published.warning}` : ""}</p> : null}
+              {edit.published && !edit.published.published && edit.published.next ? <p className="break-words text-xs text-muted-foreground">{edit.published.next}</p> : null}
+              <TestResults doc={doc} testRun={edit.testRun} />
+            </SurfaceBody>
+          </Surface>
+          <Surface testId="wf-versions-panel">
+            <SurfaceHeader><h3 className="text-sm font-medium">{t("wfEditVersions")}</h3></SurfaceHeader>
+            <SurfaceBody><VersionsList doc={doc} edit={edit} /></SurfaceBody>
+          </Surface>
+        </>
+      ) : null}
+    </>
   );
 }
+
+export type { I18nKey };
