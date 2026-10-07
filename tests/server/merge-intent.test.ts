@@ -6,7 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { runCommandOnHost } from "../../src/cli-run";
 import { createAttempt, createRun, getAttempt, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/database";
-import { clearMergeIntent, createMergeIntentRecovery, mergeIntentKey, mergeLanded, recordMergeIntent, type MergeIntent, type RunOnHost } from "../../src/server/merge-intent";
+import { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, mergeIntentKey, mergeLanded, recordMergeIntent, type MergeIntent, type RunOnHost } from "../../src/server/merge-intent";
 import { recordStage } from "../../src/server/stage-records";
 import { integrateWorktree } from "../../src/verification/git-integrate";
 
@@ -30,7 +30,8 @@ async function repo() {
   return { base, worktree };
 }
 
-const intentFor = async (kv: Parameters<typeof recordMergeIntent>[0], base: string, wt: string, message = "T1: Fix") => {
+const MESSAGE = attemptMergeMessage({ id: "T1", title: "Fix" }, "a1");
+const intentFor = async (kv: Parameters<typeof recordMergeIntent>[0], base: string, wt: string, message = MESSAGE) => {
   await recordMergeIntent(kv, run, { attemptId: "a1", runId: "run", taskId: "T1", projectId: "proj", hostId: "h", basePath: base, worktreePath: wt, message });
   return await kv.get(mergeIntentKey("a1")) as MergeIntent;
 };
@@ -41,7 +42,7 @@ describe("merge intent record", () => {
     const { base, worktree } = await repo();
     const wt = await worktree("a");
     const intent = await intentFor(bb.storage.kv as never, base, wt);
-    expect(intent).toMatchObject({ attemptId: "a1", branch: "lane/a", baseHead: git(base, "rev-parse", "HEAD"), sha: git(wt, "rev-parse", "HEAD"), message: "T1: Fix" });
+    expect(intent).toMatchObject({ attemptId: "a1", branch: "lane/a", baseHead: git(base, "rev-parse", "HEAD"), sha: git(wt, "rev-parse", "HEAD"), message: MESSAGE });
     await clearMergeIntent(bb.storage.kv as never, "a1");
     expect(await bb.storage.kv.get(mergeIntentKey("a1"))).toBeFalsy();
   });
@@ -70,18 +71,18 @@ describe("whether the work landed, asked of git", () => {
     git(wt, "add", "-A"); git(wt, "commit", "-qm", "work");
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const intent = await intentFor(bb.storage.kv as never, base, wt);
-    expect((await integrateWorktree({ basePath: base, worktreePath: wt, message: "T1: Fix", removeWorktree: true })).status).toBe("merged");
+    expect((await integrateWorktree({ basePath: base, worktreePath: wt, message: MESSAGE, removeWorktree: true })).status).toBe("merged");
     expect(await mergeLanded(intent, run)).toMatchObject({ landed: true });
   });
 
-  it("is landed when the writer's loose edits were committed and merged by the integration (the merge commit's subject is the witness)", async () => {
+  it("is landed when the writer's loose edits were committed and merged by the integration (the merge commit's attempt trailer is the witness)", async () => {
     const { base, worktree } = await repo();
     const wt = await worktree("a");
     await writeFile(join(wt, "new.ts"), "x\n");
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const intent = await intentFor(bb.storage.kv as never, base, wt);
     expect(intent.sha).toBe(intent.baseHead); // nothing committed yet: the heads alone prove nothing
-    expect((await integrateWorktree({ basePath: base, worktreePath: wt, message: "T1: Fix", removeWorktree: true })).status).toBe("merged");
+    expect((await integrateWorktree({ basePath: base, worktreePath: wt, message: MESSAGE, removeWorktree: true })).status).toBe("merged");
     expect(await mergeLanded(intent, run)).toMatchObject({ landed: true, how: expect.stringContaining("merge commit") });
   });
 
@@ -129,7 +130,7 @@ describe("recovery of a merge whose reply was lost", () => {
     await writeFile(join(wt, "new.ts"), "x\n");
     await intentFor(bb.storage.kv as never, base, wt);
     // gitIntegrate merged, then the reply was lost (a reload): the attempt is still «running».
-    expect((await integrateWorktree({ basePath: base, worktreePath: wt, message: "T1: Fix", removeWorktree: true })).status).toBe("merged");
+    expect((await integrateWorktree({ basePath: base, worktreePath: wt, message: MESSAGE, removeWorktree: true })).status).toBe("merged");
     expect(getAttempt(db, "a1")?.state).toBe("running");
 
     expect(await recoverMergeIntents()).toEqual(["T1"]);
@@ -159,7 +160,7 @@ describe("recovery of a merge whose reply was lost", () => {
     const wt = await worktree("a");
     await writeFile(join(wt, "new.ts"), "x\n");
     await intentFor(bb.storage.kv as never, base, wt);
-    await integrateWorktree({ basePath: base, worktreePath: wt, message: "T1: Fix", removeWorktree: true });
+    await integrateWorktree({ basePath: base, worktreePath: wt, message: MESSAGE, removeWorktree: true });
     services.activeWriterTasks.add("run:T1");
     expect(await recoverMergeIntents()).toEqual([]);
     expect(getAttempt(db, "a1")?.state).toBe("running");

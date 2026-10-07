@@ -13,13 +13,20 @@ import type { Services } from "./services";
 export const MERGE_INTENT_PREFIX = "merge-intent:";
 export const mergeIntentKey = (attemptId:string) => `${MERGE_INTENT_PREFIX}${attemptId}`;
 
+/** The trailer that names an attempt in the commits it makes: two attempts of one task share a title, so the title proves nothing. */
+export const attemptTrailer = (attemptId:string) => `Lane-Pilot-Attempt: ${attemptId}`;
+
+/** The message gitIntegrate commits and merges with (500 characters at most): the task's title line and the attempt's trailer. */
+export const attemptMergeMessage = (task:{ id:string; title:string }, attemptId:string) =>
+  `${`${task.id}: ${task.title}`.replace(/\s+/g, " ").slice(0, 400)}\n\n${attemptTrailer(attemptId)}`;
+
 export type MergeIntent = {
   attemptId:string; runId:string; taskId:string; projectId:string; hostId:string;
   /** The run's base checkout (main) and the attempt's own worktree. */
   basePath:string; worktreePath:string;
   /** The attempt's branch and HEAD, and main's HEAD, when the intent was written; null when the machine did not answer. */
   branch:string | null; sha:string | null; baseHead:string | null;
-  /** The commit message gitIntegrate merges with: the merge commit is «Merge writer work: <message>». */
+  /** The commit message gitIntegrate merges with (`attemptMergeMessage`): the merge commit carries it, trailer included. */
   message:string;
   at:number;
 };
@@ -29,7 +36,7 @@ type Kv = { get(key:string):Promise<unknown>; set(key:string, value:never):Promi
 
 const quote = (text:string) => `'${text.replace(/'/g, "'\\''")}'`;
 
-/** Writes the intent. A machine that cannot tell the heads still gets one (the message identifies the merge); a KV failure never blocks the merge. */
+/** Writes the intent. A machine that cannot tell the heads still gets one (the attempt's trailer in the merge commit identifies the merge); a KV failure never blocks the merge. */
 export async function recordMergeIntent(kv:Kv, run:RunOnHost, input:Omit<MergeIntent, "branch" | "sha" | "baseHead" | "at">):Promise<void> {
   const heads = await run(input.hostId, input.basePath,
     `git rev-parse HEAD; git -C ${quote(input.worktreePath)} rev-parse HEAD; git -C ${quote(input.worktreePath)} rev-parse --abbrev-ref HEAD`).catch(() => null);
@@ -48,7 +55,7 @@ export type MergeVerdict = { landed:true; how:string; commit:string | null } | {
  * Whether the attempt's work is in the base checkout now, asked of git on the project's machine. Three witnesses, any
  * one is enough: the attempt's commit made before the merge (not main's own HEAD, which is an ancestor of itself), the
  * worktree's present tip when it is clean (a rebase or the commit of the writer's loose edits made it), and the merge
- * commit's subject among the commits main took since the intent. `unknown` when the machine did not answer.
+ * commit carrying the attempt's trailer among the commits main took since the intent. `unknown` when the machine did not answer.
  */
 export async function mergeLanded(intent:MergeIntent, run:RunOnHost):Promise<MergeVerdict> {
   const ask = (cwd:string, command:string) => run(intent.hostId, cwd, command).catch(() => ({ exitCode:-1, stdout:"", stderr:"unreachable" }));
@@ -63,8 +70,11 @@ export async function mergeLanded(intent:MergeIntent, run:RunOnHost):Promise<Mer
     // Clean worktree only: loose edits not committed yet say nothing about the merge, whatever the tip is.
     if (lines.length === 1 && lines[0] !== intent.baseHead && await ancestor(lines[0]!)) return { landed:true, how:`worktree tip ${lines[0]!.slice(0, 12)} is in main`, commit:main };
   }
-  if (intent.baseHead && await ancestor(intent.baseHead)) {
-    const subject = await ask(intent.basePath, `git log -n 1 --format=%H --fixed-strings --grep=${quote(`Merge writer work: ${intent.message}`)} ${quote(`${intent.baseHead}..HEAD`)}`);
+  // The merge commit carrying the attempt's trailer among what main took since the intent: after main's head at that time, or by the clock when
+  // the machine could not tell the head.
+  const since = intent.baseHead ? (await ancestor(intent.baseHead) ? quote(`${intent.baseHead}..HEAD`) : null) : `--since=@${Math.floor(intent.at / 1000)} HEAD`;
+  if (since) {
+    const subject = await ask(intent.basePath, `git log -n 1 --format=%H --fixed-strings --grep=${quote(attemptTrailer(intent.attemptId))} ${since}`);
     if (subject.exitCode === 0 && subject.stdout.trim()) return { landed:true, how:`merge commit ${subject.stdout.trim().slice(0, 12)} is in main`, commit:subject.stdout.trim() };
   }
   return { landed:false };

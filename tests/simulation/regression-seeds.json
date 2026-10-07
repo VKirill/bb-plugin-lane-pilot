@@ -1,0 +1,9 @@
+{
+  "note": "Seeds that once broke an invariant of tests/simulation/fault-injection.test.ts; they run on every suite. A seed replays the schedule of the model as it was when it failed, so a later change of the model may make it a plain extra seed.",
+  "seeds": [
+    { "seed": 2, "why": "two attempts of one task shared a merge subject: the merge-intent recovery accepted both (now the attempt trailer in the merge commit names the merge)" },
+    { "seed": 3, "why": "a thread-scan error after a rejected spawn left the attempt spawn_rejected with its stages closed and no retry (now blocked reconcile_error and parked)" },
+    { "seed": 4, "why": "same as seed 3, two tasks" },
+    { "seed": 6, "why": "same as seed 3, two tasks" }
+  ]
+}

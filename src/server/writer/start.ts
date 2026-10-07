@@ -481,7 +481,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             find: (match) => findThreadsByMetadata(bb, match, input.projectId),
           }, { lanePilotRunId:attempt.run_id, lanePilotTaskId:attempt.task_id, attemptId:attempt.id });
           if (scanned.kind === "blocked" || scanned.kind === "error") {
-            if (scanned.kind === "blocked") transitionAttempt(db, attempt.id, "blocked", { reason:`reconcile_${scanned.reason}` });
+            // Both end the attempt: an error left it «spawn_rejected» with its stages closed, and nothing retried it (found by the
+            // fault-injection simulation, tests/simulation). A reconcile_ reason is Lane Pilot's fault: the task is parked.
+            transitionAttempt(db, attempt.id, "blocked", { reason:scanned.kind === "blocked" ? `reconcile_${scanned.reason}` : `reconcile_error: ${scanned.message}` });
             last = { ...last, status:"blocked", reason:scanned.kind === "blocked" ? scanned.reason : scanned.message };
             break;
           }
@@ -703,7 +705,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           refreshRun(input.runId);
           return;
         }
-        if (attempt && ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "provider_error", "timeout", "empty_output", "validation_failed"].includes(attempt.state)) {
+        if (attempt && ["queued", "spawn_requested", "spawn_unknown", "spawn_rejected", "running", "cancel_requested", "provider_error", "timeout", "empty_output", "validation_failed"].includes(attempt.state)) {
           transitionAttempt(db, attemptId, "blocked", { threadId:writerThreadId, reason });
         }
         void services.stability.onTaskFailed({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,

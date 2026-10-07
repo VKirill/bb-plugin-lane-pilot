@@ -27,7 +27,7 @@ import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "../writer-silence";
 import { WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../failure-class";
 import { bookkeepingSetting } from "../../bookkeeping-paths";
-import { clearMergeIntent, recordMergeIntent } from "../merge-intent";
+import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../merge-intent";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
@@ -538,7 +538,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       if (bound?.workspace_path && basePath && shouldMergeAttemptWorktree(bound.workspace_path, basePath)) {
         const integrate = () => host.call("gitIntegrate", {
           requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path!,
-          message:`${input.task.id}: ${input.task.title}`.slice(0, 500),
+          message:attemptMergeMessage(input.task, input.attemptId),
           // Only Lane Pilot's own worktree (no BB environment) is removed; a BB managed one belongs to BB. An area task
           // keeps it for the area's next task (the attempt-worktree sweep removes it after the sticky window).
           removeWorktree:bound.environment_id === null && !input.task.area,
@@ -548,7 +548,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         // asks the machine's repository whether the work landed (merge-intent.ts). Dropped once the attempt's state caught up.
         await recordMergeIntent(bb.storage.kv as never, (hostId, cwd, command) => host.call("runCommand", { requestedHostId:hostId, command, cwd, timeoutSec:30 }, { hostId, timeoutMs:35_000 }),
           { attemptId:input.attemptId, runId:input.runId, taskId:input.taskId, projectId:input.projectId, hostId:input.config.hostId,
-            basePath, worktreePath:bound.workspace_path, message:`${input.task.id}: ${input.task.title}`.slice(0, 500) });
+            basePath, worktreePath:bound.workspace_path, message:attemptMergeMessage(input.task, input.attemptId) });
         const settleIntent = () => clearMergeIntent(bb.storage.kv as never, input.attemptId);
         // Another task merging into the same checkout is a queue, not a failure: wait for it and try again.
         let merged = await integrate();
