@@ -1,3 +1,4 @@
+import { retryBudgetReason, spendRetryBudget } from "../../retry-budget";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
@@ -363,6 +364,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           }
         }
         if (!writerThreadId && !halfBound && last.status !== "accepted") {
+          // The task's overall budget of writers, kept across reloads and restarts (retry-budget.ts).
+          const spent = await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "attempt");
+          if (!spent.ok) {
+            const reason = retryBudgetReason(input.taskId, spent.record);
+            transitionAttempt(db, attemptId, "blocked", { reason });
+            last = { status:"blocked", reason, attemptId };
+            break;
+          }
           budget.noteAttempt();
           const afterAttempt=budget.check();
           if (!afterAttempt.ok) {
@@ -562,6 +571,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // A file the contract expects and the writer did not make is the task's problem, not the model's limit:
           // another model meets the same contract (GLM spent 138 min per such task on 2026-10-03).
           if (typeof failure.reason === "string" && failure.reason.startsWith("missing expected_outputs")) break;
+          const fallbackSpent = await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "fallback");
+          if (!fallbackSpent.ok) {
+            // The attempt that started the chain keeps the failure it ended with; the budget's reason goes to the log.
+            ctx.log(`writer ${input.taskId}: ${retryBudgetReason(input.taskId, fallbackSpent.record)}`);
+            break;
+          }
           await rollbackLive();
           const emergencySelection={providerId:fallback.providerId,model:fallback.model};
             const emergencyAttemptId=id("lpattempt");

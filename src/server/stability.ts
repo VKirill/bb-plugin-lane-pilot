@@ -11,6 +11,8 @@ const VERSION: string = packageJson.version;
 export const PARKED_KEY = "stability:parked";
 export const BREAKERS_KEY = "stability:breakers";
 export const DRILL_KEY = "stability:drill";
+/** The version of a task parked at start-up that no build is known for (an attempt from before harness_version): it restarts at once. */
+const ADOPTED_VERSION = "before-adoption";
 export type DrillOutcome = { at:number; version:string; checks:Array<{ name:string; ok:boolean; detail:string | null }> };
 /** Same harness fingerprint this many times in the window opens the project's breaker (Mergify pause, circuit breaker). */
 const BREAKER_THRESHOLD = 3;
@@ -48,6 +50,29 @@ export function createStability(ctx:ServerCore, services:Services) {
   const pendingNotes = new Map<string, string[]>();
   let flushTimer:ReturnType<typeof setTimeout> | null = null;
 
+  /** Written at every change of a breaker, so a reload keeps the project's wait (and the self-repair watcher reads it). */
+  function persistBreakers() {
+    void bb.storage.kv.set(BREAKERS_KEY, Object.fromEntries(breakers)).catch(() => undefined);
+  }
+
+  /**
+   * Reads the breakers back at start-up: a reload used to close every open breaker, and the next tasks started writers
+   * into the same fault until three of them failed again. A breaker of another version is not restored (a fix shipped).
+   */
+  async function restoreBreakers():Promise<string[]> {
+    const stored = await bb.storage.kv.get(BREAKERS_KEY).catch(() => null);
+    if (!stored || typeof stored !== "object" || Array.isArray(stored)) return [];
+    const restored:string[] = [];
+    for (const [projectId, row] of Object.entries(stored as Record<string, Partial<Breaker>>)) {
+      if (!row || typeof row.fingerprint !== "string" || typeof row.openedAt !== "number" || row.version !== VERSION || breakers.has(projectId)) continue;
+      breakers.set(projectId, { fingerprint:row.fingerprint, openedAt:row.openedAt, version:row.version, probing:Boolean(row.probing) });
+      restored.push(projectId);
+    }
+    if (Object.keys(stored as object).length !== breakers.size) persistBreakers();
+    if (restored.length) bb.log.info(`Lane Pilot restored the open breaker of ${restored.join(", ")} after a reload`);
+    return restored;
+  }
+
   async function loadParked():Promise<ParkedTask[]> {
     const stored = await bb.storage.kv.get(PARKED_KEY).catch(() => null);
     return Array.isArray(stored) ? stored as ParkedTask[] : [];
@@ -74,11 +99,11 @@ export function createStability(ctx:ServerCore, services:Services) {
     list.push({ fingerprint, at:now });
     recent.set(projectId, list);
     const open = breakers.get(projectId);
-    if (open && open.fingerprint === fingerprint) { open.openedAt = now; open.probing = false; return; }
+    if (open && open.fingerprint === fingerprint) { open.openedAt = now; open.probing = false; persistBreakers(); return; }
     if (list.filter((row) => row.fingerprint === fingerprint).length >= BREAKER_THRESHOLD) {
       breakers.set(projectId, { fingerprint, openedAt:now, version:VERSION, probing:false });
-      // Kept for the self-repair watcher: a breaker open for long means the fix has not shipped.
-      void bb.storage.kv.set(BREAKERS_KEY, Object.fromEntries(breakers)).catch(() => undefined);
+      // Kept for the self-repair watcher (a breaker open for long means the fix has not shipped) and read back at start-up.
+      persistBreakers();
       bb.log.warn(`Lane Pilot breaker open for ${projectId}: ${BREAKER_THRESHOLD} tasks failed on «${fingerprint}»; new writers wait`);
     }
   }
@@ -107,8 +132,8 @@ export function createStability(ctx:ServerCore, services:Services) {
   function breakerHolds(projectId:string, now = Date.now()):string | null {
     const open = breakers.get(projectId);
     if (!open) return null;
-    if (open.version !== VERSION) { breakers.delete(projectId); void bb.storage.kv.set(BREAKERS_KEY, Object.fromEntries(breakers)).catch(() => undefined); return null; }
-    if (!open.probing && now - open.openedAt >= BREAKER_PROBE_MS) { open.probing = true; return null; }
+    if (open.version !== VERSION) { breakers.delete(projectId); persistBreakers(); return null; }
+    if (!open.probing && now - open.openedAt >= BREAKER_PROBE_MS) { open.probing = true; persistBreakers(); return null; }
     return `several tasks failed on one Lane Pilot fault («${open.fingerprint}»), waiting for its fix`;
   }
 
@@ -185,19 +210,23 @@ export function createStability(ctx:ServerCore, services:Services) {
    */
   async function adoptBlockedByFaults(now = Date.now()):Promise<string[]> {
     // By when the attempt started: a cleanup that touched an old attempt yesterday made a 2-day-old task look recent.
-    const rows = db.prepare(`SELECT a.run_id, a.task_id, a.state, a.reason, a.created_at, a.updated_at, r.project_id, r.pm_thread_id
+    const rows = db.prepare(`SELECT a.run_id, a.task_id, a.state, a.reason, a.created_at, a.updated_at, a.harness_version, r.project_id, r.pm_thread_id
       FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
       WHERE a.state='blocked' AND a.created_at>? AND r.closed_at IS NULL
         AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)`)
-      .all(now - 24 * 3600_000) as Array<{ run_id:string; task_id:string; state:string; reason:string|null; created_at:number; updated_at:number; project_id:string; pm_thread_id:string|null }>;
+      .all(now - 24 * 3600_000) as Array<{ run_id:string; task_id:string; state:string; reason:string|null; created_at:number; updated_at:number; harness_version:string|null; project_id:string; pm_thread_id:string|null }>;
     const list = await loadParked();
     const adopted:string[] = [];
     for (const row of rows) {
       const klass = failureClass(row.state, row.reason);
       if (!PARKED_CLASSES.has(klass) || !row.pm_thread_id || list.some((entry) => entry.runId === row.run_id && entry.taskId === row.task_id)) continue;
       if (await isRunHalted(bb.storage.kv as never, row.run_id)) continue;
+      // The build the attempt ran under (harness_version) is the build whose fault it is: the task restarts when another build
+      // runs, not at once under the same one. A retry lost in a reload is no fault of the build, and an attempt from before the
+      // column has no build to name: both restart at once.
+      const ranUnder = /its retry was lost/i.test(row.reason ?? "") ? null : row.harness_version;
       const entry:ParkedTask = { projectId:row.project_id, runId:row.run_id, taskId:row.task_id, pmThreadId:row.pm_thread_id, klass,
-        reason:(row.reason ?? "").slice(0, 400), fingerprint:failureFingerprint(row.reason), version:"before-adoption", at:row.updated_at, since:row.created_at, redrives:0 };
+        reason:(row.reason ?? "").slice(0, 400), fingerprint:failureFingerprint(row.reason), version:ranUnder ?? ADOPTED_VERSION, at:row.updated_at, since:row.created_at, redrives:0 };
       if (superseded(entry)) continue;
       list.push(entry);
       adopted.push(row.task_id);
@@ -228,5 +257,5 @@ export function createStability(ctx:ServerCore, services:Services) {
     return outcome;
   }
 
-  return { stability:{ drill, onTaskFailed, breakerHolds, diskHolds, sweep, loadParked, adoptBlockedByFaults } };
+  return { stability:{ drill, onTaskFailed, breakerHolds, diskHolds, sweep, loadParked, adoptBlockedByFaults, restoreBreakers } };
 }

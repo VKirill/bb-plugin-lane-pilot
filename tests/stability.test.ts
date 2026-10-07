@@ -184,3 +184,62 @@ it("never redoes a task whose finished work only waits for uncommitted edits in 
   const { failureClass } = await import("../src/failure-class");
   expect(failureClass("blocked", "merge_blocked: base checkout has uncommitted changes in files this task changes: host/rpc.ts")).toBe("contract");
 });
+
+describe("the breaker survives a reload", () => {
+  const open = async (stability:ReturnType<typeof setup>["stability"]) => {
+    for (const [task, n] of [["T1", 1], ["T2", 2], ["T4", 3]] as const) {
+      await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:task, pmThreadId:"pm", state:"blocked", reason:`attempt_worktree_holder_ambiguous:page_cap lpattempt_${n}aaaaaaaaaaaa` }, n * 1000);
+    }
+  };
+
+  it("reads an open breaker back at start, so new writers keep waiting", async () => {
+    const first = setup();
+    await open(first.stability);
+    expect(first.stability.breakerHolds("proj", 4000)).toContain("page_cap");
+    // The plugin reloaded: a new instance on the same store starts with no breaker until it restores them.
+    const { stability:after } = createStability({ bb:first.bb, db:first.db, log:() => undefined } as never, { activeWriterTasks:new Set(), enqueueResumedWriter:async () => true } as never);
+    expect(after.breakerHolds("proj", 4000)).toBeNull();
+    expect(await after.restoreBreakers()).toEqual(["proj"]);
+    expect(after.breakerHolds("proj", 4000)).toContain("page_cap");
+    expect(after.breakerHolds("proj", 3000 + 31 * 60_000)).toBeNull(); // half-open timing is kept too
+  });
+
+  it("does not restore a breaker of another version (the fix shipped) or junk", async () => {
+    const { bb, db } = setup();
+    await bb.storage.kv.set("stability:breakers", { proj:{ fingerprint:"x", openedAt:1, version:"0.0.1", probing:false }, bad:"nope" });
+    const { stability } = createStability({ bb, db, log:() => undefined } as never, { activeWriterTasks:new Set() } as never);
+    expect(await stability.restoreBreakers()).toEqual([]);
+    expect(stability.breakerHolds("proj", 2)).toBeNull();
+    expect(await bb.storage.kv.get("stability:breakers")).toEqual({});
+  });
+});
+
+describe("harness_version on the attempt", () => {
+  it("is set when the attempt is created, from the running build", async () => {
+    const { db } = setup();
+    const { HARNESS_VERSION, getAttempt } = await import("../src/database");
+    createAttempt(db, { id:"v1", runId:"run", taskId:"T1" });
+    expect(getAttempt(db, "v1")?.harness_version).toBe(HARNESS_VERSION);
+    expect((await import("../package.json")).default.version).toBe(HARNESS_VERSION);
+  });
+
+  it("a task adopted at start-up restarts when another build runs, not at once under the build that failed it", async () => {
+    const { db, stability, resumed } = setup();
+    const now = Date.now();
+    const block = (id:string, task:string, reason:string, version:string | null) => {
+      createAttempt(db, { id, runId:"run", taskId:task });
+      transitionAttempt(db, id, "spawn_requested");
+      transitionAttempt(db, id, "blocked", { reason });
+      db.prepare("UPDATE lane_pilot_attempt SET created_at=?, updated_at=?, harness_version=? WHERE id=?").run(now - 60_000, now - 60_000, version, id);
+    };
+    const { HARNESS_VERSION } = await import("../src/database");
+    block("h1", "T1", "internal_error: boom", HARNESS_VERSION); // failed under this very build
+    block("h2", "T2", "internal_error: boom", "0.0.1"); // failed under an older one
+    block("h3", "T3", "internal_error: boom", null); // before the column
+    block("h4", "T4", "writer changed no files; its retry was lost in a plugin reload", HARNESS_VERSION); // no fault of the build
+    expect(await stability.adoptBlockedByFaults(now)).toEqual(["T1", "T2", "T3", "T4"]);
+    expect(await stability.sweep(now)).toEqual(["T2", "T3", "T4"]);
+    expect(resumed).toEqual(["T2", "T3", "T4"]);
+    expect((await stability.loadParked()).map((row) => row.taskId)).toEqual(["T1"]);
+  });
+});

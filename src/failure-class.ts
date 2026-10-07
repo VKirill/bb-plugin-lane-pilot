@@ -27,6 +27,8 @@ const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run s
 const NO_GIT = /not a git repository|no-git mode/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const BUDGET = /^run_budget_exceeded:/;
+/** The task spent its overall writer-attempt budget (retry-budget.ts): ends for the PM, never parked or redriven. */
+const RETRY_BUDGET = /^retry_budget_exhausted:/;
 const LIMIT = /writer_provider_limit:|^writer_provider_unavailable:breaker_open/;
 /** A writer that stayed silent through its nudges (writer-silence.ts): the provider's session hung, not the task's work. */
 export const WRITER_SILENT_REASON = "writer_silent_after_nudge";
@@ -38,7 +40,7 @@ const PROVIDER_STATES = new Set(["provider_error", "timeout"]);
 export function failureClass(state:string, reason:string | null | undefined):FailureClass {
   const text = reason ?? "";
   if (JUDGMENT.test(text)) return "judgment";
-  if (BUDGET.test(text)) return "budget";
+  if (BUDGET.test(text) || RETRY_BUDGET.test(text)) return "budget";
   if (LIMIT.test(text)) return "limit";
   if (SILENT.test(text)) return "provider";
   if (NO_GIT.test(text)) return "contract";
@@ -93,6 +95,7 @@ export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "harness
 export function nextStep(state:string, reason:string | null | undefined):string {
   if (["queued", "running", "spawn_requested", "validating"].includes(state)) return "wait: the writer is still on it";
   if (NO_GIT.test(reason ?? "")) return "the folder has no git and does not fit the no-git mode (too many files or owned bytes): put it under git, or narrow owns_paths, then dispatch again";
+  if (RETRY_BUDGET.test(reason ?? "")) return "the task spent its overall retry budget: read the failures, fix the plan or contract and dispatch it again as a new task";
   switch (failureClass(state, reason)) {
     case "judgment": return "answer_writer: answer its question with lane_pilot_answer_writer (taskId, answer); the writer continues in its thread";
     case "harness": case "infra": return "parked: restarts by itself once the fault clears; do nothing";

@@ -9,9 +9,13 @@ import type { StageId, StageState } from "./stages/contract";
 import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
 import { validateSettingValue, validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "./lp-defaults";
+import packageJson from "../package.json";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
+
+/** The Lane Pilot version that creates attempts; stored on each attempt (harness_version) to tell which build ran it. */
+export const HARNESS_VERSION: string = packageJson.version;
 
 export const migrations = [
   `CREATE TABLE lane_pilot_project_settings (
@@ -254,6 +258,9 @@ export const migrations = [
   `ALTER TABLE lane_pilot_token_daily ADD COLUMN uncached_tokens INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE lane_pilot_token_daily ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE lane_pilot_token_daily ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0`,
+  // 0.1.177: the Lane Pilot build that created the attempt; null on attempts made before. A parked task restarts when the
+  // running build differs from the one its failed attempt ran under, not from the build that happened to park it.
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN harness_version TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -627,8 +634,15 @@ export function findOpenNativeRun(db: LanePilotDatabase, projectId: string, thre
 export function createAttempt(db: LanePilotDatabase, ids: { id:string; runId:string; taskId:string }): void {
   const now = Date.now();
   const used = countAttempts(db, ids.runId, ids.taskId);
-  db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,attempt_no,created_at,updated_at) VALUES (?,?,?,\'queued\',?,?,?)")
-    .run(ids.id, ids.runId, ids.taskId, used + 1, now, now);
+  db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,attempt_no,created_at,updated_at,harness_version) VALUES (?,?,?,\'queued\',?,?,?,?)")
+    .run(ids.id, ids.runId, ids.taskId, used + 1, now, now, HARNESS_VERSION);
+}
+
+/** The Lane Pilot build the task's latest attempt was created by; null when it predates the column or the task has none. */
+export function latestAttemptHarnessVersion(db: LanePilotDatabase, runId: string, taskId: string): string | null {
+  const row = db.prepare("SELECT harness_version FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1")
+    .get(runId, taskId) as { harness_version: string | null } | undefined;
+  return row?.harness_version ?? null;
 }
 
 /** Bind a task attempt to one immutable writer workspace exactly once. */
@@ -837,16 +851,16 @@ export function inspectState(db: LanePilotDatabase, projectId: string): Record<s
 
 export function getAttempt(db: LanePilotDatabase, attemptId: string): {
   id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; attempt_no:number; dirt_before:DirtSnapshot[];
-  workspace_path:string|null;environment_id:string|null;workspace_decision:unknown|null;
+  workspace_path:string|null;environment_id:string|null;workspace_decision:unknown|null;harness_version:string|null;
 }|undefined {
-  const row = db.prepare("SELECT id,run_id,task_id,thread_id,holder_thread_id,state,reason,attempt_no,dirt_before_json,workspace_path,environment_id,workspace_decision_json FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
-    {id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; attempt_no:number; dirt_before_json?:string;workspace_path:string|null;environment_id:string|null;workspace_decision_json:string|null}|undefined;
+  const row = db.prepare("SELECT id,run_id,task_id,thread_id,holder_thread_id,state,reason,attempt_no,dirt_before_json,workspace_path,environment_id,workspace_decision_json,harness_version FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
+    {id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; attempt_no:number; dirt_before_json?:string;workspace_path:string|null;environment_id:string|null;workspace_decision_json:string|null;harness_version:string|null}|undefined;
   if (!row) return undefined;
   const dirt_before = parseDirtSnapshots(row.dirt_before_json ?? "[]");
   let workspace_decision:unknown|null=null;
   if(row.workspace_decision_json){try{workspace_decision=JSON.parse(row.workspace_decision_json);}catch{workspace_decision={invalidStoredDecision:true};}}
   return { id:row.id, run_id:row.run_id, task_id:row.task_id, thread_id:row.thread_id, holder_thread_id:row.holder_thread_id, state:row.state, reason:row.reason ?? null, attempt_no:row.attempt_no, dirt_before,
-    workspace_path:row.workspace_path,environment_id:row.environment_id,workspace_decision };
+    workspace_path:row.workspace_path,environment_id:row.environment_id,workspace_decision,harness_version:row.harness_version ?? null };
 }
 
 export type ReasoningTrace = {
