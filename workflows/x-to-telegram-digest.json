@@ -313,13 +313,17 @@
       "id": "archive",
       "type": "action",
       "action": "fs.write",
-      "path": ".lane-pilot/digests/{{date}}-{{$inputs.query}}/",
+      "path": ".lane-pilot/digests/{{date}}-{{slug}}/",
       "files": [
         "items.json",
         "summary.md"
       ],
       "out": {
         "archive_path": "string"
+      },
+      "contents": {
+        "items.json": "{{dedupe.items}}",
+        "summary.md": "{{summarize.summary_md}}"
       }
     },
     {

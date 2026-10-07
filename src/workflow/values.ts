@@ -43,7 +43,7 @@ export function checkOutput(fields: readonly Field[], output: unknown): Record<s
   return kept;
 }
 
-const SLUG_SOURCES = ["slug", "topic", "question", "subject", "goal", "source", "title"] as const;
+const SLUG_SOURCES = ["slug", "topic", "question", "query", "subject", "goal", "source", "title"] as const;
 const TRANSLIT: Record<string, string> = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya" };
 
 /** A folder-safe name for a run's subject: `slug` as given, else made from the first text input among topic, question, subject, goal, source, title. */

@@ -79,6 +79,8 @@ export type EngineOptions = {
   /** Asked before every step: false stops the run at this boundary and leaves the step pending (drain, shutdown). */
   admit?: () => boolean | Promise<boolean>;
   isDisposed?: () => boolean;
+  /** The runtime of a run this instance did not start (after a reload): built from the run row, once, when a step needs it. */
+  runtimeFor?: (run: RunRow) => unknown;
   /** What a reload does to a run that was in flight: pick up where the journal stopped, or end it as interrupted. */
   resumePolicy?: (run: RunRow) => "continue" | "interrupt";
   leaseMs?: number;
@@ -489,13 +491,20 @@ export class WorkflowEngine {
 
   // ---------------------------------------------------------------- one step
 
+  private runtimeOf(run: RunRow): unknown {
+    if (this.runtimes.has(run.id)) return this.runtimes.get(run.id);
+    const built = this.options.runtimeFor?.(run);
+    if (built !== undefined) this.runtimes.set(run.id, built);
+    return built;
+  }
+
   private contextFor(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode, attempt: number, signal: AbortSignal): StepContext {
     const j = this.journal;
     const input = JSON.parse(step.input_json) as StepInput;
     const env = this.env(run, step);
     const resolve = (text: string) => { const found = env.read(refOf(text)); return found.ran ? found.value : undefined; };
     return {
-      runId: run.id, stepKey: step.step_key, nodeId: node.id, node, workflow: c.wf, attempt, input, runtime: this.runtimes.get(run.id), signal, mode: run.mode as QualityMode,
+      runId: run.id, stepKey: step.step_key, nodeId: node.id, node, workflow: c.wf, attempt, input, runtime: this.runtimeOf(run), signal, mode: run.mode as QualityMode,
       spawnKey: sha256(`${run.id}|${step.step_key}|${attempt}`).slice(0, 32),
       resolve,
       render: (template) => String(renderValue(template, (ref, text) => { const found = env.read(ref); if (!found.ran) throw new MissingValueError("reference_missing", `"${text}" has no value yet`); return found.value; }, run.mode) ?? ""),
@@ -903,7 +912,7 @@ export class WorkflowEngine {
     const input: StepInput = {
       with: data,
       via: { mode: edge.pass, fromStep: from?.step_key ?? null,
-        ...(from?.receipt_json ? { fromThreadId: (JSON.parse(from.receipt_json) as { threadId?: string | null }).threadId ?? null } : {}),
+        ...(edge.pass !== "artifact" || from?.receipt_json ? { fromThreadId: this.sessionThread(run, from, target.id, edge.pass, where.scope) } : {}),
         ...(from?.output_json ? { handoff: (asObject(from.output_json).handoff as string | undefined) ?? null } : {}) },
     };
     const inherited = from && from.scope === where.scope ? asObject(from.input_json) : {};
@@ -917,6 +926,22 @@ export class WorkflowEngine {
     const result = j.db.prepare(`INSERT OR IGNORE INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,scope,parent_key,edge_index,state,input_json,updated_at) VALUES (?,?,?,?,?,?,?,?,'pending',?,?)`)
       .run(run.id, stepKey, origin, target.id, visit, where.scope, from?.step_key ?? null, edgeIndex, JSON.stringify(input), this.now());
     if (result.changes > 0) j.event(run.id, stepKey, "step", null, "pending", from ? `from ${from.step_key}` : "entry");
+  }
+
+  /**
+   * The thread a step goes on in (same-session) or reads (read-prior-session): for a loop back to an agent, that agent's own earlier
+   * session; else the source step's thread, and when the source is not an agent (a lint, a check) the latest helper thread of the branch.
+   */
+  private sessionThread(run: RunRow, from: StepRow | null, targetId: string, pass: PassMode, scope: string): string | null {
+    const threadOf = (row: { receipt_json: string | null } | undefined | null): string | null => {
+      if (!row?.receipt_json) return null;
+      const id = (JSON.parse(row.receipt_json) as { threadId?: string | null }).threadId;
+      return typeof id === "string" && id ? id : null;
+    };
+    const latest = (node?: string) => this.journal.db.prepare(`SELECT receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND scope=?${node ? " AND node_id=?" : ""} AND receipt_json LIKE '%"threadId":"%' ORDER BY rowid DESC LIMIT 1`)
+      .get(...(node ? [run.id, scope, node] : [run.id, scope])) as { receipt_json: string | null } | undefined;
+    if (pass === "same-session") { const own = threadOf(latest(targetId)); if (own) return own; }
+    return threadOf(from) ?? (pass === "artifact" ? null : threadOf(latest()));
   }
 
   private tryJoin(run: RunRow, c: Compiled, groupKey: string, join: Extract<WorkflowNode, { type: "join" }>, parentScope: string): void {
@@ -1063,19 +1088,29 @@ export class WorkflowEngine {
       if (!node || !executor?.poll) continue;
       const wait = asObject(step.await_json) as { kind: string; detail?: unknown; deadline?: number };
       let result: PollResult;
-      try { result = await executor.poll({ runId: row.runId, stepKey: row.stepKey, nodeId: node.id, await: wait }, { runtime: this.runtimes.get(row.runId), node }); }
+      try { result = await executor.poll({ runId: row.runId, stepKey: row.stepKey, nodeId: node.id, await: wait }, { runtime: this.runtimes.get(row.runId) ?? this.options.runtimeFor?.(run), node }); }
       catch (cause) { this.log(`poll of ${row.runId}/${row.stepKey} failed: ${cause instanceof Error ? cause.message : String(cause)}`); continue; }
       if (!result) continue;
       if (this.settle(row.runId, row.stepKey, result)) { settled += 1; touched.add(row.runId); }
     }
-    await Promise.allSettled([...touched].map((id) => this.drive(id)));
+    await Promise.allSettled([...touched].map((id) => this.kick(id)));
     return settled;
   }
 
   /** Settles a waiting step from outside (a human answered, an attempt ended); false when it is not waiting any more. */
   resolve(runId: string, stepKey: string, output: Record<string, unknown>): Promise<boolean> {
     const ok = this.settle(runId, stepKey, { output });
-    return ok ? this.drive(runId).then(() => true) : Promise.resolve(false);
+    return ok ? this.kick(runId).then(() => true) : Promise.resolve(false);
+  }
+
+  /**
+   * Drives a run after something settled one of its steps. A drive that is just ending (it saw the step waiting a moment ago) would
+   * be handed back by `drive` and leave the run `running` with nobody driving it, so it is waited for first and the run is driven again.
+   */
+  private async kick(runId: string): Promise<RunSummary> {
+    const running = this.drives.get(runId);
+    if (running) await running.catch(() => undefined);
+    return this.drive(runId);
   }
 
   private settle(runId: string, stepKey: string, result: { output: Record<string, unknown>; usage?: Usage; threadId?: string | null } | { error: string }): boolean {

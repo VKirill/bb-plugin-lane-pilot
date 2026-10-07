@@ -5,11 +5,12 @@ import type { LanePilotDatabase } from "../database";
 import { redactKnown } from "../redact";
 import type { WorkflowEngine } from "../workflow/engine";
 import { isOffered, isPipeline, routeIntent } from "../workflow/router";
-import type { RouteDecision, RouterState } from "../workflow/router";
+import type { RouteDecision, RouterModel, RouterState } from "../workflow/router";
 import type { WorkflowStore } from "../workflow/store";
 import { fenceOutside, registerObservedTool } from "./tool-result";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
+import { createRouterModel } from "./workflow-router-model";
 import type { ChainRuntime } from "./workflow-runtime";
 
 /**
@@ -23,6 +24,8 @@ export type WorkflowToolDeps = {
   runtime(input: { pmThreadId: string; projectId: string; runId: string }): ChainRuntime;
   /** What the router may know about the environment; undefined facts count as available. */
   state?(input: { projectId: string; runId: string | null }): RouterState;
+  /** The model step of the router for this PM chat (a helper thread); without it the deterministic scorer decides. */
+  model?(input: { pmThreadId: string; projectId: string; runId: string }): RouterModel;
   warn(message: string): void;
 };
 
@@ -56,7 +59,8 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
   const store = await deps.store();
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   const state = deps.state?.({ projectId: context.projectId, runId });
-  const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(params.context ? { context: params.context } : {}), workflows: store.list().map((item) => item.workflow), ...(state ? { state } : {}) });
+  const model = runId ? deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId }) : undefined;
+  const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(params.context ? { context: params.context } : {}), workflows: store.list().map((item) => item.workflow), ...(state ? { state } : {}), ...(model ? { model } : {}) });
   const noWorkflow = decision.candidates.length === 0;
   return JSON.stringify({
     decision: decision.decision, workflowId: decision.workflowId, confidence: decision.confidence,
@@ -142,6 +146,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
       // Only what is read from the database here; skills, plugins and secrets stay unknown (available) until a probe is plugged in.
       openTasks: () => (runId ? listTaskTerminalStates(db, runId).filter((state) => OPEN_ATTEMPT_STATES.has(state)).length : undefined),
     }),
+    model: ({ pmThreadId, projectId, runId }) => createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowAgents),
     warn: (message) => bb.log.warn(message),
   };
 

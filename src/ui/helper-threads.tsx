@@ -35,6 +35,10 @@ const ROLES: Record<string, { icon: IconName; label: I18nKey }> = {
   "memory-maintainer": { icon: "Archive", label: "helperRole_memory" },
   "project-life-maintainer": { icon: "Workflow", label: "helperRole_projectLife" },
   "pm-reader": { icon: "Search", label: "helperRole_reader" },
+  analyst: { icon: "Search", label: "helperRole_analyst" },
+  planner: { icon: "ListTodo", label: "helperRole_planner" },
+  auditor: { icon: "CircleCheck", label: "helperRole_auditor" },
+  debugger: { icon: "Bug", label: "helperRole_debugger" },
 };
 
 function roleOf(row: HelperThread) {

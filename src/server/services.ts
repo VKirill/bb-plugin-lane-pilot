@@ -131,4 +131,5 @@ export interface Services {
   workspaceDirt: WriterSpawnApi["workspaceDirt"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowAgents: WorkflowEngineApi["workflowAgents"];
 }

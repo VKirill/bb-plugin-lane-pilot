@@ -163,8 +163,15 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
     return { ok: true };
   });
 
-  // The code task: Lane Pilot's own writer loop (start.ts, finish.ts) runs it; this step starts it and then waits for the attempt.
-  engine.register<DispatchRuntime>("lp-task", {
+  engine.register<DispatchRuntime>("lp-task", lpTaskPipelineExecutor(engine));
+}
+
+/**
+ * The code task of the per-task pipeline: Lane Pilot's own writer loop (start.ts, finish.ts) runs it; this step starts it and then
+ * waits for the attempt. A chain's `lp-task` node (workflow-executors.ts) goes through the same executor key and hands a dispatch run's step to this.
+ */
+export function lpTaskPipelineExecutor(engine: WorkflowEngine): NodeExecutor<DispatchRuntime> {
+  return {
     run: async (ctx) => {
       const r = need(ctx);
       const { db } = r.ctx;
@@ -195,7 +202,7 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
       if (!detail) return { error: "the waiting step does not say which task it waits for" };
       return pollAttempt(engine, detail.runId, detail.taskId);
     },
-  });
+  };
 }
 
 function pollAttempt(engine: WorkflowEngine, runId: string, taskId: string) {

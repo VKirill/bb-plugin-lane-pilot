@@ -58,7 +58,7 @@ export default async function plugin(bb: BbPluginApi) {
     createReconcile(ctx, services),
     createActivation(ctx, services),
     createWriterState(ctx),
-    createWorkflowEngine(ctx),
+    createWorkflowEngine(ctx, services),
     createWriterSpawn(ctx, services),
     createWriterVerify(ctx, services),
     createWriterFinish(ctx, services),
