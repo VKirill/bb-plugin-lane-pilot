@@ -10,6 +10,7 @@ import { insightsRpc } from "./rpc/insights";
 import { tokenUsageRpc } from "./rpc/token-usage";
 import { councilRpc } from "./council";
 import { selfRepairRpc } from "./self-repair";
+import { canaryRpc } from "./canary";
 import { sessionMemoryRpc } from "./session-memory";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
@@ -24,6 +25,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...tokenUsageRpc(ctx),
     ...councilRpc(ctx.db, services.council),
     ...selfRepairRpc(ctx),
+    ...canaryRpc(services.canary),
     ...sessionMemoryRpc(ctx, services),
   });
 }

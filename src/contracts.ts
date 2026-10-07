@@ -1242,6 +1242,10 @@ export const rpcContract = defineRpcContract({
     }).strict(),
     output: z.unknown(),
   },
+  canary_status: {
+    input: z.object({}).strict(),
+    output: z.unknown(),
+  },
   self_repair_tick: {
     input: z.object({ dryRun: z.boolean().default(true), since: z.number().int().optional() }).strict(),
     output: z.unknown(),

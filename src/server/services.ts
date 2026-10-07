@@ -1,5 +1,6 @@
 import type { CouncilApi } from "./council";
 import type { RuleScanApi } from "./rule-scan";
+import type { Canary } from "./canary";
 import type { createActivation } from "./activation";
 import type { createDocsNightly } from "./docs-nightly";
 import type { createProbes } from "./probes";
@@ -42,6 +43,7 @@ type WriterDispatchApi = ReturnType<typeof createWriterDispatch>;
 /** Every function one server module offers another; filled once all modules exist, read at call time. */
 export interface Services {
   council: CouncilApi;
+  canary: Canary;
   ruleScan: RuleScanApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];
   DOCS_OPEN_KEY: DocsNightlyApi["DOCS_OPEN_KEY"];
