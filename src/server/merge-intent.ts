@@ -2,6 +2,7 @@ import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, transitionAtte
 import { closeWriterStages, recordGateEvaluation } from "./stage-records";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
+import { sendServiceMessage } from "./service-message";
 
 /**
  * The delivery record of a merge (Firstmate's delivery registry, the write-ahead log of a database). The merge, the
@@ -123,8 +124,8 @@ export function createMergeIntentRecovery(ctx:ServerCore, services:Services) {
         accepted.push(intent.taskId);
         bb.log.info(`Lane Pilot accepted ${intent.taskId} from its merge intent: ${verdict.how}`);
         if (pmThreadId) {
-          void bb.sdk.threads.send({ threadId:pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-            text:`Lane Pilot (no action needed): ${intent.taskId} was merged into main but its result was lost in a plugin reload (${verdict.how}); it is accepted, do not redispatch it.` }] } as never)
+          void sendServiceMessage(bb, { threadId:pmThreadId, senderThreadId:attempt.thread_id,
+            text:`Lane Pilot (no action needed): ${intent.taskId} was merged into main but its result was lost in a plugin reload (${verdict.how}); it is accepted, do not redispatch it.` })
             .catch(() => undefined);
         }
       } catch (cause) {

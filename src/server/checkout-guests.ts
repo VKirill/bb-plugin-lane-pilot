@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../database";
 import { resolve } from "node:path";
+import { sendServiceMessage } from "./service-message";
 
 /**
  * Threads that are not Lane Pilot's but work in a folder where a Lane Pilot run merges writers' work. Agents on the
@@ -49,15 +50,15 @@ export async function noteCheckoutGuest(bb: BbPluginApi, db: LanePilotDatabase, 
   await bb.storage.kv.set(GUESTS(path), [{ threadId, at:now }, ...guests].slice(0, 10) as never);
   if (await bb.storage.kv.get(NOTICED(threadId, run.id)).catch(() => null)) return;
   await bb.storage.kv.set(NOTICED(threadId, run.id), now as never);
-  await bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-    text:`Lane Pilot: a development orchestrator is working in this directory (${resolve(path)}) — its writers merge their work into main here. Commit your changes immediately after finishing each change: uncommitted changes in the same files prevent merging their work. If your work takes long and it is too early to commit, do it in a separate git worktree instead of this directory.` }] } as never).catch(() => undefined);
+  await sendServiceMessage(bb, { threadId, senderThreadId:run.pmThreadId,
+    text:`Lane Pilot: a development orchestrator is working in this directory (${resolve(path)}) — its writers merge their work into main here. Commit your changes immediately after finishing each change: uncommitted changes in the same files prevent merging their work. If your work takes long and it is too early to commit, do it in a separate git worktree instead of this directory.` }).catch(() => undefined);
 }
 
 /**
  * Asks the threads working in the folder to commit the edits that block a merge. Returns the threads asked; empty
  * when nobody is known, so the caller tells the PM instead.
  */
-export async function askGuestsToCommit(bb: BbPluginApi, path: string, files: string[], taskId: string): Promise<string[]> {
+export async function askGuestsToCommit(bb: BbPluginApi, path: string, files: string[], taskId: string, pmThreadId?: string): Promise<string[]> {
   const asked: string[] = [];
   const now = Date.now();
   for (const guest of await listGuests(bb.storage.kv, path, now)) {
@@ -66,8 +67,8 @@ export async function askGuestsToCommit(bb: BbPluginApi, path: string, files: st
     const last = await bb.storage.kv.get(ASKED(guest.threadId, path)).catch(() => null);
     if (typeof last === "number" && now - last < ASK_EVERY_MS) { asked.push(guest.threadId); continue; }
     await bb.storage.kv.set(ASKED(guest.threadId, path), now as never);
-    const sent = await bb.sdk.threads.send({ threadId:guest.threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-      text:`Lane Pilot: there are uncommitted changes in ${resolve(path)} in files: ${files.join(", ")}. Because of them, accepted task ${taskId} from the development orchestrator cannot be merged. If these are your changes and they are ready, commit them now. If not ready, commit as soon as they are ready. Never drop or revert changes for this (no git checkout/restore/reset/stash drop): if you cannot or should not commit, leave them as is and tell the owner. If the changes are not yours, do not touch them and answer that they are not yours. Lane Pilot will merge the task automatically once the files are committed, and will wait up to 2 hours.` }] } as never).then(() => true, () => false);
+    const sent = await sendServiceMessage(bb, { threadId:guest.threadId, senderThreadId:pmThreadId,
+      text:`Lane Pilot: there are uncommitted changes in ${resolve(path)} in files: ${files.join(", ")}. Because of them, accepted task ${taskId} from the development orchestrator cannot be merged. If these are your changes and they are ready, commit them now. If not ready, commit as soon as they are ready. Never drop or revert changes for this (no git checkout/restore/reset/stash drop): if you cannot or should not commit, leave them as is and tell the owner. If the changes are not yours, do not touch them and answer that they are not yours. Lane Pilot will merge the task automatically once the files are committed, and will wait up to 2 hours.` }).then(() => true, () => false);
     if (sent) asked.push(guest.threadId);
   }
   return asked;

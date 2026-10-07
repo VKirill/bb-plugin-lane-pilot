@@ -26,6 +26,7 @@ import { BB_AGENT_SUMMARIES } from "../native-agent-overlay";
 import { requirePmRun, type ServerContext } from "./context";
 import { registerObservedTool } from "./tool-result";
 import { scheduleIsolated } from "./schedules";
+import { sendServiceMessage } from "./service-message";
 
 export const HANDOFF_TOOLS = ["lane_pilot_handoff_create", "lane_pilot_handoff_receipt", "lane_pilot_handoff_list"] as const;
 
@@ -99,7 +100,7 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
       const message = handoffMessage(stored.card);
       const recipientThreadId = params.recipientThreadId ?? context.threadId;
       if (params.recipientThreadId) {
-        await bb.sdk.threads.send({ threadId: params.recipientThreadId, mode: "queue-if-active", input: [{ type: "text", text: message, mentions: [] }] });
+        await sendServiceMessage(bb, { threadId: params.recipientThreadId, text: message, senderThreadId: context.threadId });
       }
       const delivered = transitionHandoff(db, { id: stored.card.id, to: "delivered", actor: "lane-pilot", recipientThreadId, now: Date.now() });
       if (!delivered.ok) throw new Error(`handoff ${stored.card.id} could not be marked delivered: ${delivered.reason}`);

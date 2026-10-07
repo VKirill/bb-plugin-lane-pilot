@@ -6,6 +6,7 @@ import { stringAt } from "../values";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
+import { sendServiceMessage } from "../service-message";
 
 /**
  * Sticky writers: an area's writer thread takes the area's next task, and a task-side failure is redone in the thread
@@ -207,7 +208,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       await saveFollowUp(bb.storage.kv, input.attemptId, since);
       try {
         const text = typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt;
-        await bb.sdk.threads.send({ threadId:writer.threadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never);
+        await sendServiceMessage(bb, { threadId:writer.threadId, text, senderThreadId:getRun(db, input.runId)?.pm_thread_id });
       } catch (cause) {
         return { ok:false, reason:`sticky_send_failed:${cause instanceof Error ? cause.message : String(cause)}`, bound:true };
       }

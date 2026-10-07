@@ -3,6 +3,7 @@ import { taskFamily } from "../failure-class";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { ServerContext } from "./context";
+import { sendServiceMessage } from "./service-message";
 import { registerObservedTool } from "./tool-result";
 
 /**
@@ -30,7 +31,8 @@ export const RELAY_LIMITS = { asksPerPairPerHour:6, openRemindersPerThread:20, r
 export type RelayDeps = {
   load():Promise<RelayItem[]>;
   save(items:RelayItem[]):Promise<void>;
-  send(threadId:string, text:string):Promise<void>;
+  /** `senderThreadId`: the thread the message comes from, so the receiver sees who wrote it. */
+  send(threadId:string, text:string, senderThreadId?:string):Promise<void>;
   /**
    * The thread has finished its work: not running a turn, nothing queued for it (a queued question waits for
    * its turn), and no background command or agent still at work (a turn can end while `sleep` or a build runs on).
@@ -100,7 +102,7 @@ export function createRelay(deps:RelayDeps) {
         "",
         `Answer briefly with the lane_pilot_reply tool using askId "${item.id}": what you are doing, what you are holding and when it frees. Keep working on your task.`,
         "If you cannot call that tool, end your turn with the answer; it is passed back.",
-      ].join("\n"));
+      ].join("\n"), input.fromThreadId);
       items.push(item);
       return item;
     });
@@ -112,7 +114,7 @@ export function createRelay(deps:RelayDeps) {
       if (!item) throw new Error(`no question ${input.askId}`);
       if (item.toThreadId !== input.fromThreadId) throw new Error("only the asked thread can answer");
       if (item.answeredAt) return item;
-      await deps.send(item.fromThreadId, `Lane Pilot: reply from @thread:${item.toThreadId} to ${item.id}:\n\n${input.answer}`);
+      await deps.send(item.fromThreadId, `Lane Pilot: reply from @thread:${item.toThreadId} to ${item.id}:\n\n${input.answer}`, item.toThreadId);
       item.answeredAt = deps.now();
       closeAnsweredWaits(items, item.fromThreadId, item.toThreadId);
       return item;
@@ -149,7 +151,7 @@ export function createRelay(deps:RelayDeps) {
     const why = by === "watch" ? `thread @thread:${item.watchThreadId} finished its turn`
       : by === "tasks" ? `tasks completed: ${Object.entries(states ?? {}).map(([task, state]) => `${task} — ${state}`).join(", ")}`
       : "time reached";
-    await deps.send(item.threadId, `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_remind with a larger interval.`);
+    await deps.send(item.threadId, `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_remind with a larger interval.`, by === "watch" ? item.watchThreadId ?? undefined : undefined);
     item.firedAt = deps.now();
     item.firedBy = by;
   }
@@ -165,7 +167,7 @@ export function createRelay(deps:RelayDeps) {
       for (const item of items) {
         if (item.kind === "ask" && !item.answeredAt && item.toThreadId === threadId) {
           const text = (await deps.output(threadId).catch(() => "")).trim().slice(-4000);
-          await deps.send(item.fromThreadId, `Lane Pilot: @thread:${threadId} finished its turn without answering ${item.id}. Its last message:\n\n${text || "(empty)"}`);
+          await deps.send(item.fromThreadId, `Lane Pilot: @thread:${threadId} finished its turn without answering ${item.id}. Its last message:\n\n${text || "(empty)"}`, threadId);
           item.answeredAt = deps.now();
           closeAnsweredWaits(items, item.fromThreadId, threadId);
           woken++;
@@ -261,8 +263,8 @@ export function relayFor(ctx:ServerContext):Relay {
   const relay = createRelay({
     load:async () => { const value = await bb.storage.kv.get(KEY); return Array.isArray(value) ? value as RelayItem[] : []; },
     save:async (items) => { await bb.storage.kv.set(KEY, items as never); },
-    send:async (threadId, text) => {
-      await bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never);
+    send:async (threadId, text, senderThreadId) => {
+      await sendServiceMessage(bb, { threadId, text, senderThreadId });
     },
     settled:async (threadId) => {
       const thread = await bb.sdk.threads.get({ threadId }) as {

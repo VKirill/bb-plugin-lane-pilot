@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 import { saveFollowUp } from "./sticky";
+import { sendServiceMessage } from "../service-message";
 
 /** A blocked attempt whose reason is the writer's own question, not a fault. */
 const NEEDS_HUMAN_REASON = /^needs_human:/i;
@@ -61,8 +62,7 @@ export function createWriterAnswer(ctx: ServerCore, services: Services) {
     await saveFollowUp(bb.storage.kv, attempt.id, since);
     const question = (attempt.reason ?? "").replace(NEEDS_HUMAN_REASON, "").trim();
     try {
-      await bb.sdk.threads.send({ threadId:attempt.thread_id, mode:"queue-if-active",
-        input:[{ type:"text", text:answerTurnPrompt(input.answer), mentions:[] }] } as never);
+      await sendServiceMessage(bb, { threadId:attempt.thread_id, text:answerTurnPrompt(input.answer), senderThreadId:input.pmThreadId });
     } catch (cause) {
       // Nothing was delivered: put the attempt and its stages back the way they were, still answerable.
       transitionAttempt(db, attempt.id, "blocked", { threadId:attempt.thread_id, reason:attempt.reason ?? undefined });

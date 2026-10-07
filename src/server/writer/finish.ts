@@ -28,6 +28,7 @@ import { loadWriterNudge } from "../writer-silence";
 import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../failure-class";
 import { bookkeepingSetting } from "../../bookkeeping-paths";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../merge-intent";
+import { sendServiceMessage } from "../service-message";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
@@ -436,8 +437,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
               result:{ ...ledgerBase, spawnAttempted:true, repairThreadId:writerThreadId, repairSentAt:sentAt },
               reason:critique.reason ?? "critique_changes_requested",
             });
-            const sent = await Promise.resolve().then(() => bb.sdk.threads.send({ threadId:writerThreadId, mode:"queue-if-active",
-              input:[{ type:"text", text:repairPrompt, mentions:[] }] } as never)).then(() => true, () => false);
+            const sent = await Promise.resolve().then(() => sendServiceMessage(bb, { threadId:writerThreadId, text:repairPrompt, senderThreadId:input.pmThreadId })).then(() => true, () => false);
             if (sent) { repairThreadId = writerThreadId; repairSentAt = sentAt; }
           }
           let spawned: unknown;
@@ -587,11 +587,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const files = merged.conflicts.join(", ");
           ctx.log(`writer ${input.taskId} waits for uncommitted edits in ${basePath} to be committed: ${files}`);
           // The chats that work in this folder are asked by name; the PM hears who was asked, or that nobody is known.
-          const asked = await askGuestsToCommit(bb, basePath, merged.conflicts, input.taskId).catch(() => [] as string[]);
-          void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
+          const asked = await askGuestsToCommit(bb, basePath, merged.conflicts, input.taskId, input.pmThreadId).catch(() => [] as string[]);
+          void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
             text:asked.length
               ? `Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot asked threads working in this folder to commit them: ${asked.map((thread) => `@thread:${thread}`).join(", ")}. The task will merge automatically once files are committed (waits up to 2 hours); no need to resend it.`
-              : `Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot does not know whose chat it is: ask the owner to commit or put them away (or do it yourself if this chat made them). The task will merge automatically once the directory is clean (waits up to 2 hours); no need to resend it.` }] } as never).catch(() => undefined);
+              : `Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot does not know whose chat it is: ask the owner to commit or put them away (or do it yourself if this chat made them). The task will merge automatically once the directory is clean (waits up to 2 hours); no need to resend it.` }).catch(() => undefined);
           const since = Date.now();
           // Another task's merge may hold the checkout meanwhile: that is a wait too, never an acceptance without a merge.
           while ((dirtyBase(merged) || merged.status === "busy") && Date.now() - since < DIRTY_BASE_WAIT_MS && !ctx.isDisposed()) {

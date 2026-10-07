@@ -6,6 +6,7 @@ import { stringAt } from "./values";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 import { saveFollowUp } from "./writer/sticky";
+import { sendServiceMessage } from "./service-message";
 import { isEnvironmentCheckFailure } from "../failure-class";
 import { join } from "node:path";
 
@@ -347,15 +348,10 @@ export class IntegrationGateRunner {
     if (isEnvironmentCheckFailure({ stdout, stderr })) {
       const evidence = `${stderr}\n${stdout}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr: line }))?.trim().slice(0, 300) ?? "";
       this.ctx.log(`infra: integration gate \`${gateCommand}\` is red from the environment, no culprit searched: ${evidence}`);
-      await bb.sdk.threads.send({
+      await sendServiceMessage(bb, {
         threadId: pmThreadId,
-        mode: "queue-if-active",
-        input: [{
-          type: "text",
-          text: `Lane Pilot: integration gate \`${gateCommand}\` is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent (a writer cannot fix file permissions). Fix it in ${basePath}, then the gate runs again.`,
-          mentions: [],
-        }],
-      } as never).catch(() => undefined);
+        text: `Lane Pilot: integration gate \`${gateCommand}\` is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent (a writer cannot fix file permissions). Fix it in ${basePath}, then the gate runs again.`,
+      }).catch(() => undefined);
       return { ran: true, passed: false, culpritTaskId: null };
     }
 
@@ -409,35 +405,22 @@ export class IntegrationGateRunner {
         await saveFollowUp(bb.storage.kv, culprit.attemptId, Date.now());
       }
 
-      await bb.sdk.threads.send({
-        threadId: culprit.threadId,
-        mode: "queue-if-active",
-        input: [{ type: "text", text: prompt, mentions: [] }],
-      } as never).catch(() => undefined);
+      await sendServiceMessage(bb, { threadId: culprit.threadId, text: prompt, senderThreadId: pmThreadId }).catch(() => undefined);
 
-      await bb.sdk.threads.send({
+      await sendServiceMessage(bb, {
         threadId: pmThreadId,
-        mode: "queue-if-active",
-        input: [{
-          type: "text",
-          text: `Lane Pilot: integration gate \`${gateCommand}\` failed. Traced to ${culprit.taskId}; sent fix turn to @thread:${culprit.threadId}. Full log: ${logRelativePath}`,
-          mentions: [],
-        }],
-      } as never).catch(() => undefined);
+        text: `Lane Pilot: integration gate \`${gateCommand}\` failed. Traced to ${culprit.taskId}; sent fix turn to @thread:${culprit.threadId}. Full log: ${logRelativePath}`,
+        senderThreadId: culprit.threadId,
+      }).catch(() => undefined);
 
       return { ran: true, passed: false, culpritTaskId: culprit.taskId };
     }
 
     // Tell PM with log
-    await bb.sdk.threads.send({
+    await sendServiceMessage(bb, {
       threadId: pmThreadId,
-      mode: "queue-if-active",
-      input: [{
-        type: "text",
-        text: `Lane Pilot: integration gate \`${gateCommand}\` failed (exit ${exitCode}). Could not unambiguously identify culprit. Full log: ${logRelativePath}`,
-        mentions: [],
-      }],
-    } as never).catch(() => undefined);
+      text: `Lane Pilot: integration gate \`${gateCommand}\` failed (exit ${exitCode}). Could not unambiguously identify culprit. Full log: ${logRelativePath}`,
+    }).catch(() => undefined);
 
     return { ran: true, passed: false, culpritTaskId: null };
   }

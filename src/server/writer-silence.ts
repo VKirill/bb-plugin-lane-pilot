@@ -1,5 +1,6 @@
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { pluginStopped } from "./run-finish";
+import { sendServiceMessage } from "./service-message";
 
 /** A writer thread that is active with no event for this long is nudged (setting writer.silence_nudge_min). */
 export const DEFAULT_SILENCE_NUDGE_MIN = 20;
@@ -25,7 +26,7 @@ export async function countRunNudges(kv:Kv, attemptIds:string[]):Promise<number>
 
 export type SilenceDeps = {
   bb:{ sdk:{ threads:{ send(args:never):Promise<unknown>; events:{ list(args:never):Promise<unknown> } } }; storage:{ kv:Kv } };
-  openAttempts:() => Array<{ id:string; run_id:string; task_id:string; thread_id:string | null; state:string; project_id:string }>;
+  openAttempts:() => Array<{ id:string; run_id:string; task_id:string; thread_id:string | null; state:string; project_id:string; pm_thread_id?:string | null }>;
   getThread:(threadId:string) => Promise<unknown>;
   /** Minutes of silence after which the project's writers are nudged. */
   silenceMinutes:(projectId:string, runId:string) => number;
@@ -74,7 +75,7 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
         continue;
       }
       const text = `Lane Pilot: no activity for ${minutes} min. Continue; if a command hangs, stop it and go on; finish with your summary.`;
-      await bb.sdk.threads.send({ threadId:attempt.thread_id, mode:"steer-if-active", input:[{ type:"text", text, mentions:[] }] } as never);
+      await sendServiceMessage(bb, { threadId:attempt.thread_id, mode:"steer-if-active", text, senderThreadId:attempt.pm_thread_id });
       await bb.storage.kv.set(key(attempt.id), { count:count + 1, at:now } as never);
       deps.log(`Lane Pilot nudged the writer of ${attempt.task_id} (${attempt.id}): no activity for ${minutes} min, nudge ${count + 1} of ${MAX_WRITER_NUDGES}`);
       done.push({ attemptId:attempt.id, action:"nudged", count:count + 1 });
