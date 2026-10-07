@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.176
+
+- **A folder without git works.** The owner can run the orchestrator in a plain folder (no git, no GitHub) and writers edit its live files. Before, a task there ended `blocked: attempt_workspace_snapshot_failed: cannot read writer-workspace git diff: fatal: not a git repository`.
+  - **Detection** on the folder's own machine: `git rev-parse --is-inside-work-tree` fails there (exit 128 «not a git repository», or 127 with no git installed). The answer is kept per run in kv, so a `git init` in the middle of a run cannot change the baseline kind. An unclear answer (a host error, «dubious ownership») counts as git.
+  - **Snapshot** in place of `git status`: a python3 script on the machine hashes every regular file and symlink of the folder (skipping `.git node_modules .bb .agents/runs .agents/memory .cache .vite .vitest .turbo .next .nuxt dist coverage __pycache__ .venv venv`; a file over 20 MB is fingerprinted by size and mtime). The produced files are the ones added, changed or removed between the snapshots before and after the attempt, in the existing `{path, sha256}` shape, so owns_paths, never_touch, run scope and the bookkeeping filter work unchanged. Over 50 000 files the task is blocked as a contract failure: «folder too large for no-git mode: N files; put it under git».
+  - **In place, one writer at a time.** No worktree, no `gitIntegrate`, no post-merge check, no git ownership base, no rebase, no ship step, no project-life commit. Accepting an attempt means the files are already there; the receipt says `workspace: "live-folder"`. Tasks of one folder queue (writer pool of 1 per folder), also when their owns_paths are disjoint.
+  - **Rollback.** Before each attempt the files matching the task's owns_paths are copied to `~/.lane-pilot/live-backups/<attemptId>/` on the machine (7 days, older ones pruned when a new one is made). An attempt that ends unaccepted (rejected, blocked, canceled) gets them put back, and the files the writer created inside owns_paths go to `agent-trash` (or into the backup folder; never rm). Feedback turns in the same thread keep working on the live files; a writer's question is a pause, not a rollback. Files outside owns_paths are not rolled back, so such a file an earlier attempt left keeps counting as changed until the writer undoes it.
+  - **Failure classes.** «not a git repository» and the no-git limits are the contract's: never harness or infra, never parked.
+  - **Instructions.** The writer brief says «This folder has no git: you edit the live files directly; Lane Pilot does not commit; do not run git commands.»; the PM's prompt and the dispatch answer name the mode.
+
 ## 0.1.175
 
 From the live scenario matrix in the sandbox (2026-10-07):

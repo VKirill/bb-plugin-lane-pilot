@@ -65,6 +65,7 @@ function fakeServices(db:ReturnType<typeof openDatabase>, finish?:Services["fini
     providerBreaker:{ record:() => undefined },
     runBudgetFor:() => ({ check:() => ({ ok:true }), noteAttempt:() => undefined, noteTokens:() => undefined, snapshot:() => ({ limits:{} }) }),
     runWriterPool:{ acquire:async () => () => undefined },
+    isLiveFolder:async () => false,
     stability:{ breakerHolds:() => null, diskHolds:async () => null, onTaskFailed:async () => false },
     finishWriterAttempt:finish ?? (async () => ({ status:"accepted" })),
     maintainMemoryAfterAcceptance:() => undefined,

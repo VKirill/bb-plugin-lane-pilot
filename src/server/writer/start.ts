@@ -22,6 +22,7 @@ import type { AttemptState } from "../../state-machine";
 import { closeWriterStages, recordStage } from "../stage-records";
 import { id, stringAt } from "../values";
 import { shouldMergeAttemptWorktree } from "./spawn";
+import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../../live-folder";
 import { resolve } from "node:path";
 import { findThreadsByMetadata } from "../thread-keys";
 import type { ServerCore } from "../core";
@@ -102,6 +103,34 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let acceptedAttemptId:string|null=null;
     const pmReadContext=input.pmReadContext ?? stringAt(listStageReceipts(db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read")?.result,"summary") ?? "";
     let releaseWriterSlot:(()=>void)|undefined;
+    // A folder without git: one writer at a time edits its live files, and a failed attempt is rolled back from the
+    // backup its first spawn made (feedback turns in the same thread keep working on the live files, so they keep it).
+    let liveFolder = false;
+    let liveBackupId:string|null = null;
+    /** The backup an attempt works under, kept so an attempt resumed later (the PM's answer, a reload) finds it. */
+    const liveBackupKey = (forAttemptId:string) => `live-backup:${forAttemptId}`;
+    const bindLiveBackup = async ():Promise<void> => {
+      if (liveBackupId) await bb.storage.kv.set(liveBackupKey(attemptId), liveBackupId as never).catch(() => undefined);
+    };
+    /** Puts the owned files back after a failed attempt and takes out what the writer created there; once per backup. */
+    const rollbackLive = async ():Promise<void> => {
+      const backupId = liveBackupId;
+      if (!backupId) return;
+      // A writer's question is a pause, not a rejection: its answer continues the same attempt on the files as it left them.
+      if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") return;
+      liveBackupId = null;
+      const folder = getRun(db,input.runId)?.writer_workspace_path ?? input.task.project_cwd;
+      const rolled = await services.restoreLiveFolder({ hostId:input.config.hostId, folder, backupId, task:freshTask })
+        .catch((cause:unknown) => ({ ok:false as const, reason:cause instanceof Error ? cause.message : String(cause) }));
+      if (rolled.ok && !rolled.failed.length) {
+        ctx.log(`writer ${input.taskId}: rolled back ${backupId}: ${rolled.restored.length} restored, ${rolled.removed.length} removed`);
+        return;
+      }
+      const why = rolled.ok ? `could not put back ${rolled.failed.join("; ")}` : rolled.reason;
+      ctx.log(`writer ${input.taskId}: rollback of ${backupId} incomplete: ${why}`);
+      if (input.pmThreadId) void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
+        text:`Lane Pilot: task ${input.taskId} was not accepted and its files in ${folder} could not be put back automatically (${why.slice(0, 600)}). The originals are in ~/.lane-pilot/live-backups/${backupId}/files on the folder's machine; tell the owner before another task runs there.` }] } as never).catch(() => undefined);
+    };
     /**
      * depends_on: the task starts only once every task it names is accepted (its work is in main). A blocked
      * dependency is usually fixed and sent again (`<id>.2`), which the name follows, so the task keeps waiting for it
@@ -170,17 +199,18 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (row.state === "queued" && parsed.success && (parsed.data.depends_on ?? [])
             .some((dep) => dep !== row.task_id && latestTaskAttemptState(db, row.project_id, dep) !== "accepted")) return false;
           // One writer at a time per area: the next task of a page continues in its writer's thread once it is free.
+          if (liveFolder) return true;
           if (parsed.success && sameArea(parsed.data.area, input.task.area)) return true;
           return parsed.success && ownsPathsOverlap(parsed.data.owns_paths, input.task.owns_paths);
         });
         if (!blocker) return;
         if (noted !== blocker.id) {
           noted = blocker.id;
-          ctx.log(`writer ${input.taskId} waits for ${blocker.task_id}: their owns_paths overlap`);
+          ctx.log(`writer ${input.taskId} waits for ${blocker.task_id}: ${liveFolder ? "one writer at a time in a folder without git" : "their owns_paths overlap"}`);
           const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
           if (!stage || stage.state === "pending") {
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:`waiting for ${blocker.task_id} (thread ${blocker.thread_id ?? "not started"}): ${input.task.area ? "same area or " : ""}owns_paths overlap` });
+              reason:`waiting for ${blocker.task_id} (thread ${blocker.thread_id ?? "not started"}): ${liveFolder ? "one writer at a time in a folder without git" : `${input.task.area ? "same area or " : ""}owns_paths overlap`}` });
           }
         }
         await new Promise((wake) => setTimeout(wake, 10_000));
@@ -200,6 +230,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       };
       // Tasks run side by side only when they cannot touch the same files: one whose owns_paths overlap an
       // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
+      const runFolder = getRun(db,input.runId)?.writer_workspace_path ?? input.task.project_cwd;
+      liveFolder = await services.isLiveFolder(input.runId, input.config.hostId, runFolder);
+      // An attempt resumed on its writer's thread (the PM's answer, a reload) goes on under the backup it began with.
+      if (liveFolder && writerThreadId) {
+        const saved = await bb.storage.kv.get(liveBackupKey(attemptId)).catch(() => null);
+        if (typeof saved === "string") liveBackupId = saved;
+      }
       const dependency = await waitForDependencies(wallOrTokenStop);
       if (dependency) {
         blockBeforeWriter(dependency);
@@ -227,7 +264,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
         await new Promise((wake) => setTimeout(wake, 30_000));
       }
-      releaseWriterSlot=await services.runWriterPool.acquire(input.runId,policy.pools.provider);
+      releaseWriterSlot=liveFolder
+        ? await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(runFolder)}`,1)
+        : await services.runWriterPool.acquire(input.runId,policy.pools.provider);
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){
         if(latestAttempt?.state==="canceled"){
@@ -272,7 +311,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const continueWith = async (writer:NonNullable<Awaited<ReturnType<typeof sticky.hotWriter>>>, kind:"next-task"|"retry"|"merge", previousAttempt:string, keepDirt?:DirtSnapshot[]):Promise<boolean> => {
         const bound = {...freshTask,project_cwd:writer.workspacePath,verification:freshTask.verification.map(command=>({...command,cwd:writer.workspacePath}))};
         const turn = await sticky.continueInThread({ runId:input.runId, taskId:input.taskId, attemptId, config:freshConfig, writer, kind, dirtBefore:keepDirt,
-          prompt:(conflicts) => stickyTurnPrompt({ kind, task:bound, previousAttempt:kind === "merge" ? "" : previousAttempt, conflicts }) });
+          prompt:(conflicts) => stickyTurnPrompt({ kind, task:bound, previousAttempt:kind === "merge" ? "" : previousAttempt, conflicts, liveFolder }) });
         if (!turn.ok) {
           ctx.log(`writer ${input.taskId}: ${kind} in thread ${writer.threadId} not possible (${turn.reason}); a fresh writer starts`);
           // A half-bound attempt cannot take a fresh spawn: it ends as Lane Pilot's fault and the retry spawns.
@@ -296,7 +335,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         return true;
       };
       // The area's writer from an earlier task of this run takes this one in its own thread.
-      if (!writerThreadId && input.task.area) {
+      if (!writerThreadId && input.task.area && !liveFolder) {
         const hot = await sticky.hotWriter(input.projectId, input.runId, input.task.area);
         if (hot) await continueWith(hot, "next-task", "");
       }
@@ -336,12 +375,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
             config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
-            previousAttempt:previousAttemptBrief(last.status ? last : null, freshTask),
+            previousAttempt:previousAttemptBrief(last.status ? last : null, freshTask, undefined, liveFolder),
           });
           if (!spawned.ok) {
             last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
           } else {
             writerThreadId = spawned.threadId;
+            if (liveFolder) { liveBackupId = attemptId; await bindLiveBackup(); }
             writerSelection=spawned.providerId&&spawned.model?{
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
@@ -349,7 +389,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             activeConfig = freshConfig;
             activeTask = {...freshTask,project_cwd:spawned.workspacePath,
               verification:freshTask.verification.map(command=>({...command,cwd:spawned.workspacePath}))};
-            dirtBefore = spawned.dirtBefore;
+            // In a folder without git every attempt of the task starts from the same state (the owned files are rolled
+            // back), so a file outside owns_paths that an earlier attempt left behind keeps counting as changed until undone.
+            dirtBefore = liveFolder && baselineDirtBefore ? baselineDirtBefore : spawned.dirtBefore;
             baselineDirtBefore ??=[...spawned.dirtBefore];
             baselineWorkspacePath ??=spawned.workspacePath;
             executionPacketSha256 = spawned.executionPacketSha256 ?? null;
@@ -362,7 +404,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           }), ...(executionPacketSha256 ? { executionPacketSha256 } : {}) };
           const workspaceBinding=getAttempt(db,attemptId);
           if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
-            environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision}};
+            environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
+            ...(isLiveDecision(workspaceBinding.workspace_decision)?{mode:LIVE_FOLDER_RECEIPT}:{})}};
           await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
         }
         if (last.status === "accepted") { acceptedAttemptId = attemptId; break; }
@@ -386,7 +429,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               {hostId:input.config.hostId,timeoutMs:60_000}).catch((cause)=>bb.log.warn(`Lane Pilot could not remove worktree of ${failedBinding.id}: ${cause instanceof Error?cause.message:String(cause)}`));
           }
         };
-        if (!redo) await removeFailedWorktree();
+        if (!redo) { await removeFailedWorktree(); await rollbackLive(); }
         if (last.status === "spawn_rejected" && typeof last.reason === "string"
           && (last.reason.startsWith("execution_packet_failed:") || last.reason.startsWith("attempt_worktree_")
             || last.reason.startsWith("attempt_workspace_"))) {
@@ -476,10 +519,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         activeTask = freshTask;
         dirtBefore = [];
         executionPacketSha256 = null;
-        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief({ ...failedLast, produced:[] }, freshTask, failedBinding?.dirt_before ?? []), failedBinding?.dirt_before)) {
+        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief({ ...failedLast, produced:[] }, freshTask, failedBinding?.dirt_before ?? [], liveFolder), failedBinding?.dirt_before)) {
           await removeFailedWorktree();
+          await rollbackLive();
         }
         inSession = Boolean(redo && writerThreadId);
+        if (inSession) await bindLiveBackup();
       }
       // No attempt was left for this start: end the queued attempt instead of leaving it queued with failed stages.
       if (attemptsHere === 0 && getAttempt(db, attemptId)?.state === "queued") {
@@ -517,6 +562,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // A file the contract expects and the writer did not make is the task's problem, not the model's limit:
           // another model meets the same contract (GLM spent 138 min per such task on 2026-10-03).
           if (typeof failure.reason === "string" && failure.reason.startsWith("missing expected_outputs")) break;
+          await rollbackLive();
           const emergencySelection={providerId:fallback.providerId,model:fallback.model};
             const emergencyAttemptId=id("lpattempt");
             createAttempt(db,{id:emergencyAttemptId,runId:input.runId,taskId:input.taskId});
@@ -537,6 +583,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               continue;
             } else {
               writerThreadId=spawned.threadId;
+              if (liveFolder) { liveBackupId=emergencyAttemptId; await bindLiveBackup(); }
               writerSelection=spawned.providerId&&spawned.model?{
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
@@ -556,13 +603,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               }),emergencyFallback:{state:"completed",...emergencyFallback,attemptId:emergencyAttemptId}};
               const workspaceBinding=getAttempt(db,emergencyAttemptId);
               if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
-                environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision}};
+                environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
+                ...(isLiveDecision(workspaceBinding.workspace_decision)?{mode:LIVE_FOLDER_RECEIPT}:{})}};
               await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
               if (last.status === "accepted") { acceptedAttemptId=emergencyAttemptId; break; }
               failure=last;
             }
         }
       }
+      // Whatever the writers left in a folder without git is taken back when no attempt was accepted.
+      if (last.status !== "accepted") await rollbackLive();
       // The writer's turns on this task (its first answer and every feedback turn), kept in the stage receipt.
       const turns = writerThreadId ? countThreadTurns(db, input.runId, input.taskId, writerThreadId) : 0;
       if (turns) last = { ...last, turns };
@@ -613,6 +663,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const message = cause instanceof Error ? cause.message : String(cause);
         const reason = `internal_error: ${message}`;
         bb.log.error(`Lane Pilot writer attempt ${attemptId} failed: ${message}`);
+        // The writer may still be editing, so nothing is rolled back here; the originals wait in the backup.
+        if (liveBackupId) bb.log.warn(`Lane Pilot: the owned files of ${input.taskId} are backed up in ~/.lane-pilot/live-backups/${liveBackupId} (folder without git, no rollback after an internal error)`);
         const attempt = getAttempt(db, attemptId);
         if(attempt?.state==="canceled"){
           markCanceledWriterStages(attempt,"writer attempt canceled before provider dispatch");

@@ -12,7 +12,8 @@ import { fullAccessSpawn } from "../pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../stage-records";
 import { stringAt } from "../values";
-import { needsHumanQuestion, outputText, providerLimitNotice, WRITER_SETUP_LINES, writerContextBlocks } from "../writer-task";
+import { needsHumanQuestion, outputText, providerLimitNotice, writerContextBlocks, writerSetupLines } from "../writer-task";
+import { isLiveDecision } from "../../live-folder";
 import { isMainfixTask } from "../../validate-output";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../integration-gate";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -207,7 +208,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId)));
       const baselineHashes = Object.fromEntries(input.dirtBefore.map((row) => [row.path, row.sha256 || null]));
       const captureEvidence = async () => {
-        const dirt = await services.workspaceDirt(input.config, input.task.project_cwd);
+        const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
         const byPath = new Map((dirt.ok ? dirt.snapshots : []).map((row) => [row.path, row.sha256 || null]));
         const hashes = Object.fromEntries((candidate.produced ?? []).map((path) => [path, byPath.get(path) ?? null]));
         const files:Array<{ path:string; content:string|null }> = [];
@@ -414,7 +415,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           }
           const repairPrompt = codeRepairPrompt({
             task:input.task, findings:frozenFindings, agent:dispatch.agent,
-            setupLines:WRITER_SETUP_LINES,
+            setupLines:writerSetupLines(isLiveDecision(bound.workspace_decision)),
             contextBlocks:writerContextBlocks(input.task, dispatch.memoryText, dispatch.executionPacket, dispatch.pmReadContext, dispatch.rulesText ?? ""),
           });
           const environment = bound.environment_id

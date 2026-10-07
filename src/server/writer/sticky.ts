@@ -190,7 +190,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       }
       let dirtBefore = input.dirtBefore;
       if (!dirtBefore) {
-        const dirt = await services.workspaceDirt(input.config, writer.workspacePath);
+        const dirt = await services.workspaceDirt(input.config, writer.workspacePath, input.runId);
         if (!dirt.ok) return { ok:false, reason:`workspace_snapshot:${dirt.reason}`, bound:false };
         dirtBefore = dirt.snapshots;
       }

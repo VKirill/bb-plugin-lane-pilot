@@ -23,6 +23,10 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
   function maintainProjectLifeAfterAcceptance(projectId:string, runId:string, taskId:string, pmThreadId:string):void {
     if (!shouldTriggerProjectLife(listOpenAttempts(db).map((attempt) => attempt.run_id), runId)) return;
     void (async () => {
+      // Project life commits PROGRESS and plans to main; a folder without git has no main.
+      const run = getRun(db, runId);
+      const config = await configForRun(projectId, run);
+      if (run?.writer_workspace_path && config && await services.isLiveFolder(runId, config.hostId, run.writer_workspace_path)) return;
       for (let round = 0; round < 60 && !ctx.state.disposed; round++) {
         const result = await runProjectLifeMaintenance({ threadId:pmThreadId, projectId, runId, taskId, timeoutSec:60 });
         if (result.state !== "running") return;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FREE_CLASSES, failureClass, repeatedFailureReason, taskFamily } from "../src/failure-class";
+import { FREE_CLASSES, PARKED_CLASSES, failureClass, nextStep, repeatedFailureReason, taskFamily } from "../src/failure-class";
 import { providerLimitNotice } from "../src/server/writer-task";
 
 describe("failure classes", () => {
@@ -95,4 +95,17 @@ describe("task families", () => {
 
 it("classes a permission error at the workspace snapshot as the machine's, not Lane Pilot's (live sandbox 2026-10-07)", () => {
   expect(failureClass("blocked", "attempt_workspace_snapshot_failed:cannot read writer-workspace git diff: Traceback … PermissionError: [Errno 13] Permission denied: 'src/x.js'")).toBe("infra");
+});
+
+// A folder without git is a mode of its own: its limits are the owner's to settle, never a Lane Pilot fault to park.
+it("never parks a folder without git: «not a git repository» and the no-git limits are the contract's", () => {
+  const live = "attempt_workspace_snapshot_failed:cannot read writer-workspace git diff: fatal: not a git repository (or any of the parent directories): .git";
+  expect(failureClass("blocked", live)).toBe("contract");
+  expect(failureClass("validation_failed", "fatal: not a git repository")).toBe("contract");
+  const large = "attempt_workspace_snapshot_failed:folder too large for no-git mode: 51234 files; put it under git";
+  expect(failureClass("blocked", large)).toBe("contract");
+  expect(failureClass("spawn_rejected", "attempt_workspace_backup_failed:owned files too large for no-git mode: 2100 MB cannot be backed up for a rollback; narrow owns_paths")).toBe("contract");
+  expect(PARKED_CLASSES.has(failureClass("blocked", large))).toBe(false);
+  expect(FREE_CLASSES.has(failureClass("blocked", large))).toBe(false);
+  expect(nextStep("blocked", large)).toMatch(/put it under git/);
 });

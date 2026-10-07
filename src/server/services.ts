@@ -108,6 +108,8 @@ export interface Services {
   selectionCatalogHost: WriterHostApi["selectionCatalogHost"];
   spawnDocsThread: DocsNightlyApi["spawnDocsThread"];
   spawnWriterAttempt: WriterSpawnApi["spawnWriterAttempt"];
+  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  restoreLiveFolder: WriterSpawnApi["restoreLiveFolder"];
   startAmbiguousProbe: ProbesApi["startAmbiguousProbe"];
   startCancelProbe: ProbesApi["startCancelProbe"];
   startProviderErrorProbe: ProbesApi["startProviderErrorProbe"];
