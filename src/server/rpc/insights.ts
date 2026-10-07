@@ -91,8 +91,10 @@ export function insightsRpc(ctx: ServerCore, services: Services) {
     /** Acceptance per project and ISO week: first-try, eventual, attempts per accepted task, redispatch families, causes. */
     acceptance_stats: async ({ days, projectId }) => acceptanceStats(db, days, projectId),
     decide_rule_proposal: async ({ projectId, id, action, rule }) => {
-      if (action === "accept") return { proposal: ruleView(acceptRuleProposal(db, projectId, id, rule ?? getRuleProposal(db, projectId, id)?.rule ?? "")) };
-      return { proposal: ruleView(action === "reject" ? rejectRuleProposal(db, projectId, id) : revokeRule(db, projectId, id)) };
+      const proposal = action === "accept" ? acceptRuleProposal(db, projectId, id, rule ?? getRuleProposal(db, projectId, id)?.rule ?? "")
+        : action === "reject" ? rejectRuleProposal(db, projectId, id) : revokeRule(db, projectId, id);
+      ctx.realtime?.notify(projectId, "rules");
+      return { proposal: ruleView(proposal) };
     },
   } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_routing_hint" | "list_rule_proposals" | "decide_rule_proposal" | "start_rule_scan" | "save_rules_analyzer" | "docs_overview" | "memory_records_list" | "memory_record_delete" | "rule_set_audience" | "acceptance_stats">;
 }

@@ -6,6 +6,7 @@ import { detectLocale, t, type I18nKey } from "../../i18n";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Disclosure } from "./disclosure";
+import { useLpRealtime } from "./use-lp-realtime";
 
 type Proposal = {
   id: string; rule: string; author: "sweep" | "pm" | "owner" | "model"; state: "proposed" | "accepted" | "rejected" | "revoked";
@@ -55,13 +56,15 @@ export function RuleProposals({ projectId, picker }: {
 
   useEffect(() => { setDrafts({}); void load(); }, [load]);
 
-  // While a scan runs the screen follows it; the scan itself lives on the server.
+  // The server signals every scan step and every change of the rules (a decision on another device, a PM proposal);
+  // while a scan runs the slow poll still checks it, and the scan itself lives on the server.
+  const pollMs = useLpRealtime(projectId, ["rules"], () => { void load(); });
   const scanning = listed?.scan.state === "running";
   useEffect(() => {
     if (!scanning) return;
-    const timer = setInterval(() => { void load(); }, 3_000);
+    const timer = setInterval(() => { void load(); }, pollMs);
     return () => clearInterval(timer);
-  }, [scanning, load]);
+  }, [scanning, load, pollMs]);
 
   const decide = async (proposal: Proposal, action: "accept" | "reject" | "revoke") => {
     setBusy(proposal.id);

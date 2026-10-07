@@ -29,6 +29,7 @@ import { writerExecutionSelection } from "../jev-reasoning";
 import { configuredSetting, requirePmRun } from "./context";
 import type { ServerCore } from "./core";
 import { memorySettingsFor } from "./insights";
+import type { OwnerAsk } from "./owner-ask";
 import { fullAccessSpawn } from "./pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { outputText } from "./writer-task";
@@ -85,6 +86,23 @@ export function seatsFor(roles: readonly string[] | undefined, pairs: Array<{ pr
   });
 }
 
+/**
+ * The owner's form for a room that waits for them: a word becomes a message in the feed, «let the chair decide» asks for
+ * the decision. Returns the function that withdraws the form (the wait ended another way). Without question forms
+ * (an older BB, another form open in the PM chat) nothing opens and the council page remains the only way in.
+ */
+export function askOwnerToJoin(ownerAsk: OwnerAsk | undefined, input: {
+  pmThreadId: string; question: string; detail: string; timeoutMs: number; onWords: (text: string) => void; onDecide: () => void;
+}): () => void {
+  const withdraw = new AbortController();
+  void ownerAsk?.askInBackground(input.pmThreadId, { source: "council", question: input.question, detail: input.detail, options: ["Let the chair decide"] }, (answer) => {
+    if (answer.outcome !== "answered") return;
+    if (answer.text) input.onWords(answer.text);
+    if (answer.choice) input.onDecide();
+  }, { timeoutMs: input.timeoutMs, signal: withdraw.signal }).catch(() => false);
+  return () => withdraw.abort();
+}
+
 export function createCouncil(ctx: ServerCore) {
   const { bb, db, host, workspaceExecutionEnvironment } = ctx;
   const stopRequested = new Set<string>();
@@ -92,6 +110,8 @@ export function createCouncil(ctx: ServerCore) {
   /** Who has the floor right now, per session; not persisted, a reload starts quiet. */
   const presence = new Map<string, { seatId: string | null; since: number }>();
   const OWNER_WAIT_MS = 10 * 60_000;
+  /** The council page re-reads on this signal instead of polling every two seconds. */
+  const changed = (projectId: string) => ctx.realtime.notify(projectId, "council");
 
   /** One System One call through the run's host; null when the judge is off or fails, so the rule answers. */
   async function judge(hostId: string, state: unknown, questions: Record<string, { instructions: string; criteria: Record<string, string> }>): Promise<{ answers: Record<string, string>; confidence: Record<string, number> } | null> {
@@ -135,15 +155,36 @@ export function createCouncil(ctx: ServerCore) {
     };
   }
 
-  async function waitForOwner(councilId: string, afterSeq: number): Promise<CouncilMessage | null> {
+  /**
+   * The room waits for the owner. Besides the council page, the owner is asked in the PM chat (a form and a push on the
+   * phone): a word goes into the feed like one said on the page, «let the chair decide» asks for the decision. The form is
+   * withdrawn when the wait ends another way.
+   */
+  async function waitForOwner(councilId: string, afterSeq: number, pmThreadId: string): Promise<CouncilMessage | null> {
     const deadline = Date.now() + OWNER_WAIT_MS;
-    while (Date.now() < deadline) {
-      if (ctx.isDisposed() || stopRequested.has(councilId) || decideRequested.has(councilId)) return null;
-      const fresh = listCouncilMessages(db, councilId, afterSeq).filter((message) => message.kind === "owner");
-      if (fresh.length) return fresh[0]!;
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    const session = getCouncilSession(db, councilId);
+    const withdraw = askOwnerToJoin(ctx.ownerAsk, {
+      pmThreadId, question: `The council «${(session?.question ?? "").replace(/\s+/g, " ").slice(0, 160)}» waits for you. Add a point, or let the chair decide.`,
+      detail: lastCouncilWords(councilId), timeoutMs: OWNER_WAIT_MS,
+      onWords: (text) => { say(councilId, text); }, onDecide: () => { requestDecision(councilId); },
+    });
+    try {
+      while (Date.now() < deadline) {
+        if (ctx.isDisposed() || stopRequested.has(councilId) || decideRequested.has(councilId)) return null;
+        const fresh = listCouncilMessages(db, councilId, afterSeq).filter((message) => message.kind === "owner");
+        if (fresh.length) return fresh[0]!;
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+      return null;
+    } finally {
+      withdraw();
     }
-    return null;
+  }
+
+  /** The last few things said in the room, for the owner's form. */
+  function lastCouncilWords(councilId: string): string {
+    return listCouncilMessages(db, councilId).filter((message) => message.kind !== "status").slice(-3)
+      .map((message) => `${message.seatId}: ${message.text.replace(/\s+/g, " ").slice(0, 400)}`).join("\n\n");
   }
 
   async function readBounded(place: { hostId: string; workspace: string }, path: string, max: number): Promise<string | null> {
@@ -224,9 +265,9 @@ export function createCouncil(ctx: ServerCore) {
         spawnTurn: (turn: { session: CouncilSession; seat: CouncilSeat | null; round: number; prompt: string }) => spawnTurn({ ...turn, pmThreadId: input.pmThreadId, place: input.place, chair: input.chair }),
         evidence: () => evidencePack(session.projectId, input.place, session.question, input.materials),
         save: {
-          agenda: (agenda: string[], criteria: string[]) => setCouncilAgenda(db, session.id, agenda, criteria),
-          message: (message: Omit<CouncilMessage, "seq" | "councilId" | "at">) => addCouncilMessage(db, { councilId: session.id, ...message }),
-          state: (patch: Parameters<typeof setCouncilState>[2]) => setCouncilState(db, session.id, patch),
+          agenda: (agenda: string[], criteria: string[]) => { setCouncilAgenda(db, session.id, agenda, criteria); changed(session.projectId); },
+          message: (message: Omit<CouncilMessage, "seq" | "councilId" | "at">) => { const saved = addCouncilMessage(db, { councilId: session.id, ...message }); changed(session.projectId); return saved; },
+          state: (patch: Parameters<typeof setCouncilState>[2]) => { setCouncilState(db, session.id, patch); changed(session.projectId); },
         },
         isStopped: () => ctx.isDisposed() || stopRequested.has(session.id),
         workspace: input.place.workspace,
@@ -239,9 +280,9 @@ export function createCouncil(ctx: ServerCore) {
           ...io,
           impulse: input.judge ? jevImpulse(input.place.hostId) : undefined,
           pollOwner: (afterSeq) => listCouncilMessages(db, session.id, afterSeq).filter((message) => message.kind === "owner"),
-          waitForOwner: (afterSeq) => waitForOwner(session.id, afterSeq),
+          waitForOwner: (afterSeq) => waitForOwner(session.id, afterSeq, input.pmThreadId),
           decideRequested: () => decideRequested.has(session.id),
-          presence: (seatId) => presence.set(session.id, { seatId, since: Date.now() }),
+          presence: (seatId) => { presence.set(session.id, { seatId, since: Date.now() }); changed(session.projectId); },
           maxTurns: session.maxRounds * session.seats.length,
         });
       stopRequested.delete(session.id);
@@ -283,6 +324,7 @@ export function createCouncil(ctx: ServerCore) {
     const roundsSetting = configuredSetting(settings, "council.max_rounds");
     const session = createCouncilSession(db, { id: `cncl_${randomUUID().replaceAll("-", "").slice(0, 16)}`, projectId: input.projectId, runId: input.runId, question: input.question, seats, maxRounds: input.maxRounds ?? (Number(roundsSetting) >= 1 && Number(roundsSetting) <= 6 ? Number(roundsSetting) : 3) });
     addCouncilMessage(db, { councilId: session.id, seatId: "owner", round: 0, kind: "owner", text: input.question });
+    changed(session.projectId);
     runInBackground(session, { pmThreadId: input.pmThreadId, place: { hostId: config.hostId, workspace: config.writerWorkspacePath }, chair: chairPair, materials: input.materials ?? [], mode: input.mode ?? "room", judge: input.judge ?? !(judgeSetting === false || judgeSetting === "false" || judgeSetting === "0") });
     return session;
   }
@@ -296,7 +338,9 @@ export function createCouncil(ctx: ServerCore) {
   function say(id: string, text: string): CouncilMessage | null {
     const session = getCouncilSession(db, id);
     if (!session || ["done", "failed", "stopped"].includes(session.state)) return null;
-    return addCouncilMessage(db, { councilId: id, seatId: "owner", round: session.round, kind: "owner", text });
+    const saved = addCouncilMessage(db, { councilId: id, seatId: "owner", round: session.round, kind: "owner", text });
+    changed(session.projectId);
+    return saved;
   }
 
   function requestDecision(id: string): CouncilSession | null {

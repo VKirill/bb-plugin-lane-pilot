@@ -178,6 +178,7 @@ Every stage writes a receipt (state, input and output hashes, attempt, provider,
 | `lane_pilot_browser_qa` | browser check of an accepted task |
 | `lane_pilot_specialist` / `lane_pilot_wait_specialist` | specialist child threads |
 | `lane_pilot_ask` / `lane_pilot_reply` / `lane_pilot_remind` / `lane_pilot_relay_list` | questions, answers and reminders between threads |
+| `lane_pilot_ask_owner` | a question to the owner as a form in the PM chat (a push on the phone); the answer comes back as a message |
 | `lane_pilot_handoff_create` / `_receipt` / `_list` | task cards between agents |
 | `lane_pilot_council_start` / `_status` / `_say` / `_stop` | council of directors |
 | `lane_pilot_memory_context` / `_maintain` / `_import` / `_export` / `_golden` | project memory |

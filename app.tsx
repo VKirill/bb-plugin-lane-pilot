@@ -7,6 +7,8 @@ import { ComposerAgentBadge } from "./src/ui/composer-agent-badge";
 import { EnableLanePilotAction } from "./src/ui/composer-enable";
 import { HELPER_PANEL_ACTION, HelperThreadPanel } from "./src/ui/helper-threads";
 import { RUN_CARD_DIRECTIVE, RunCardDirective } from "./src/ui/run-card";
+import { OWNER_ASK_RENDERER_ID } from "./src/owner-ask";
+import { OwnerAsk } from "./src/ui/owner-ask";
 
 export default definePluginApp((app) => {
   app.slots.navPanel({
@@ -33,6 +35,9 @@ export default definePluginApp((app) => {
   });
   // The PM's `::lane-run{id="…"}` line becomes a live card of the run's tasks.
   app.slots.messageDirective({ id: RUN_CARD_DIRECTIVE, component: RunCardDirective });
+  // A question to the owner (PM, integration gate, repair thread, council) as BB's pending interaction; BB's
+  // notification plugin sends the same interaction to the phone.
+  app.slots.pendingInteraction({ id: OWNER_ASK_RENDERER_ID, component: OwnerAsk });
   app.composer.customize({
     id: "lane-pilot-activation",
     scopes: ["new-thread"],

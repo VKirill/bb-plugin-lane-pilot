@@ -184,6 +184,35 @@ describe("self-repair", () => {
     expect(record.spawnVersion).toBe(VERSION);
   });
 
+  it("a repair that ends needs-owner asks the owner in the repair thread, and the answer goes back into it (H8)", async () => {
+    const env = setup({}, { thr_repair1: "Нужен выбор: чинить в Lane Stack или в ядре?\nSELF-REPAIR-VERDICT: needs-owner" });
+    const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
+    const form = createFakePluginHost({ pluginId: "lane-pilot" });
+    const { createOwnerAsk } = await import("../../src/server/owner-ask");
+    const real = createOwnerAsk(form.bb, () => undefined);
+    const sent: Array<[string, string]> = [];
+    Object.assign(env.ctx, { ownerAsk: { ...real, sendToThread: async (threadId: string, text: string) => { sent.push([threadId, text]); } } });
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    const repair = createSelfRepair(env.ctx);
+    expect((await repair.tick({ since: 0 })).spawned).toBe("thr_repair1");
+    await repair.tick();
+    expect(form.harness.pendingInteractions).toHaveLength(1);
+    const asked = form.harness.pendingInteractions[0]!;
+    expect(asked).toMatchObject({ threadId: "thr_repair1", rendererId: "lane-pilot-ask" });
+    expect(asked.title).toContain("Self-repair");
+    expect((asked.payload as { detail: string }).detail).toContain("чинить в Lane Stack или в ядре");
+    expect((asked.payload as { detail: string }).detail).not.toContain("SELF-REPAIR-VERDICT");
+    form.harness.behavior.submitInteraction(asked.id, { choice: "1", text: "в ядре" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]![0]).toBe("thr_repair1");
+    expect(sent[0]![1]).toContain("the owner answered");
+    expect(sent[0]![1]).toContain("в ядре");
+    // The verdict is read once: a later pass does not ask again.
+    await repair.tick();
+    expect(form.harness.pendingInteractions).toHaveLength(0);
+  });
+
   it("an unfamiliar reason in three tasks within a day is a pattern", async () => {
     const env = setup();
     for (const n of [1, 2, 3]) env.attempt(`lpattempt_${n}`, "lprun_a", "empty_output", `writer changed no files in apps/x${n}`);

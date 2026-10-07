@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Disclosure } from "./disclosure";
 import { useObservedWidth } from "./panel-layout";
+import { useLpRealtime } from "./use-lp-realtime";
 
 type CouncilRow = { id: string; runId: string; question: string; state: string; round: number; maxRounds: number; decisionPath: string | null; updatedAt: number };
 type CouncilDetail = {
@@ -70,11 +71,14 @@ export function CouncilPage() {
   }, [councilId, rpc]);
 
   useEffect(() => { void loadDetail(); }, [loadDetail]);
+  // The server signals every message, state change and floor change of the project's councils; the poll only catches a lost signal.
+  const pollMs = useLpRealtime(projectId, ["council"], () => { void loadDetail(); void loadCouncils(); });
+  const live = detail ? !TERMINAL.has(detail.state) : false;
   useEffect(() => {
-    if (!detail || TERMINAL.has(detail.state)) return;
-    const timer = setInterval(() => { void loadDetail(); void loadCouncils(); }, 2000);
+    if (!live) return;
+    const timer = setInterval(() => { void loadDetail(); void loadCouncils(); }, pollMs);
     return () => clearInterval(timer);
-  }, [detail, loadDetail, loadCouncils]);
+  }, [live, loadDetail, loadCouncils, pollMs]);
   // Scroll only the feed: scrollIntoView would also scroll the BB page around the panel on phones.
   useEffect(() => { const node = feed.current; if (node) node.scrollTop = node.scrollHeight; }, [detail?.messages.length]);
 

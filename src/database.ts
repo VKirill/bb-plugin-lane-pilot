@@ -637,6 +637,7 @@ export function createAttempt(db: LanePilotDatabase, ids: { id:string; runId:str
   const used = countAttempts(db, ids.runId, ids.taskId);
   db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,attempt_no,created_at,updated_at,harness_version) VALUES (?,?,?,\'queued\',?,?,?,?)")
     .run(ids.id, ids.runId, ids.taskId, used + 1, now, now, HARNESS_VERSION);
+  attemptChanged(ids.id);
 }
 
 /** The Lane Pilot build the task's latest attempt was created by; null when it predates the column or the task has none. */
@@ -837,6 +838,16 @@ let illegalTransitionLog:(message:string) => void = (message) => console.warn(me
 /** Where a refused move is reported (the plugin log); until set, the console. */
 export function setIllegalTransitionLog(log:(message:string) => void):void { illegalTransitionLog = log; }
 
+const attemptListeners = new Set<(attemptId:string) => void>();
+/** Called after an attempt is created or changes state (live screens re-read); returns the function that stops it. A listener's failure never touches the write. */
+export function onAttemptChanged(listener:(attemptId:string) => void):() => void {
+  attemptListeners.add(listener);
+  return () => { attemptListeners.delete(listener); };
+}
+function attemptChanged(attemptId:string):void {
+  for (const listener of attemptListeners) { try { listener(attemptId); } catch { /* a screen update is never worth a failed write */ } }
+}
+
 /**
  * Moves an attempt to a new state and journals it. An accepted or canceled attempt keeps its state: before,
  * a cancel during verification could be overwritten with «accepted» after the merge (fleet invariants audit,
@@ -868,6 +879,7 @@ export function transitionAttempt(
     .run(state, fields.threadId ?? null, fields.reason ?? null, now, attemptId, ...FINAL_ATTEMPT_STATES, state).changes === 1;
   db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
     .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
+  if (changed && before.state !== state) attemptChanged(attemptId);
   return changed;
 }
 

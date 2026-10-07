@@ -229,7 +229,9 @@ export function mountInsights(ctx: ServerContext): void {
     parameters: z.object({ runId: z.string().min(1) }).strict(),
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
-      return JSON.stringify(await sweepLessons(ctx, context.projectId), null, 2);
+      const swept = await sweepLessons(ctx, context.projectId);
+      ctx.realtime?.notify(context.projectId, "rules");
+      return JSON.stringify(swept, null, 2);
     },
   });
 
@@ -241,6 +243,7 @@ export function mountInsights(ctx: ServerContext): void {
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
       const revised = reviseRuleProposal(db, context.projectId, params.proposalId, params.rule.trim(), "pm");
+      ctx.realtime?.notify(context.projectId, "rules");
       return JSON.stringify({ revised, proposal: getRuleProposal(db, context.projectId, params.proposalId) }, null, 2);
     },
   });
@@ -255,6 +258,7 @@ export function mountInsights(ctx: ServerContext): void {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
       const result = upsertLessonProposal(db, context.projectId, { rule: params.rule, evidence: params.evidence, scope: params.scope, audience: params.audience, always: params.always });
       const adopted = result.created ? Boolean(adoptRuleProposal(db, context.projectId, result.id)) : false;
+      ctx.realtime?.notify(context.projectId, "rules");
       return JSON.stringify({ ...result, adopted, proposal: getRuleProposal(db, context.projectId, result.id) }, null, 2);
     },
   });
