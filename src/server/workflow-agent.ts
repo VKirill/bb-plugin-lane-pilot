@@ -6,6 +6,7 @@ import { redactKnown } from "../redact";
 import { agentPrompt, outputContract, parseAgentOutput } from "../workflow/agent-output";
 import type { AgentOutputError } from "../workflow/agent-output";
 import type { StepContext } from "../workflow/engine";
+import { goalsBlock } from "../workflow/goals";
 import { outputFields } from "../workflow/lower";
 import type { Field, GraphNode } from "../workflow/schema";
 import { roleMethod } from "../stages/role-method";
@@ -170,11 +171,13 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
   const title = node.title?.en ?? node.label ?? node.id;
   const intoThread = via.mode === "same-session" && node.session !== "new" ? via.fromThreadId ?? null : null;
   const inputs = { ...ctx.input.with };
+  // K7: the first step and every third remind the helper what the whole run is for.
+  const goals = ctx.reground ? goalsBlock(ctx.goals) : undefined;
   const body = intoThread
-    ? `Continue the workflow step "${node.id}". New material for you:\n\n${JSON.stringify(inputs, null, 1).slice(0, 20_000)}\n\n${task}\n\n${outputContract(fields)}`
+    ? `Continue the workflow step "${node.id}". New material for you:\n\n${JSON.stringify(inputs, null, 1).slice(0, 20_000)}\n\n${task}${goals ? `\n\n${goals}` : ""}\n\n${outputContract(fields)}`
     : agentPrompt({ workflow: ctx.workflow.id, node: node.id, title, role: node.role, mode: ctx.mode, ...(method.length ? { method: method.join("\n") } : {}), task, inputs,
       ...(ctx.input.item !== undefined ? { item: ctx.input.item } : {}), handoff: via.handoff ?? null, ...(prior ? { prior } : {}), contract: outputContract(fields),
-      readOnly: spec.readOnly, skills: [...(node.skills ?? []), ...(node.profile?.skills ?? [])] });
+      readOnly: spec.readOnly, skills: [...(node.skills ?? []), ...(node.profile?.skills ?? [])], ...(goals ? { goals } : {}) });
   return {
     rt, workflowRunId: ctx.runId, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role: node.role, title, prompt: body, fields,
     ...(node.provider ? { provider: node.provider } : {}), ...(node.model ? { model: node.model } : {}), ...(node.reasoning ? { reasoning: node.reasoning } : {}), ...(node.model_preset ? { preset: node.model_preset } : {}),

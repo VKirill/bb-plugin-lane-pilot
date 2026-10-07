@@ -233,6 +233,10 @@ const workflowRunSnapshotSchema = z.object({
   graph: workflowViewSchema,
   steps: z.array(workflowStepSchema),
   children: z.array(z.object({ runId: z.string(), stepKey: z.string(), workflowId: z.string(), status: z.string() }).strict()),
+  /** K7: what the run is for, the last audit against it, and how the goals changed (oldest first, the first entry is the start). */
+  goals: z.array(z.object({ id: z.string(), done_when: z.string(), evidence: z.string(), guess: z.boolean().optional() }).strict()),
+  goalAudit: z.object({ verdict: z.enum(["pass", "gaps", "unavailable"]), met: z.array(z.string()), unmet: z.array(z.object({ id: z.string(), why: z.string() }).strict()), notes: z.string().optional(), error: z.string().optional(), at: z.number().int() }).strict().nullable(),
+  goalChanges: z.array(z.object({ at: z.number().int(), by: z.string(), reason: z.string(), goals: z.number().int() }).strict()),
   events: z.array(z.object({ seq: z.number().int(), stepKey: z.string().nullable(), kind: z.string(), from: z.string().nullable(), to: z.string().nullable(), detail: z.string().nullable(), at: z.number().int() }).strict()),
 }).strict();
 

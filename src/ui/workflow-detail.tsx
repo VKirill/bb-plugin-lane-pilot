@@ -14,7 +14,7 @@ import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { nodeTitle } from "./workflow-titles";
 import { pickRun, runView, stepStatus, type NodeRun, type RunSnapshot, type RunStep } from "./workflow-run";
 import type { Expansions } from "./workflow-layout";
-import { RunHistory, WorkflowTrials } from "./workflow-actions";
+import { GoalsPanel, RunHistory, WorkflowTrials } from "./workflow-actions";
 
 /** Loaded when a graph is first shown: xyflow and elkjs are most of a megabyte. */
 export const WorkflowGraph = lazy(() => import("./workflow-graph"));
@@ -394,6 +394,8 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
           ) : null}
         </SurfaceBody>
       </Surface>
+
+      {current ? <GoalsPanel snapshot={current} /> : null}
 
       {selectedNode ? (() => {
         const context: NodePanelContext = { node: selectedNode, nodeKey: selected!, locale, run: runStates?.get(selected!) ?? null, definitionOnly: !runMode, readOnly: true,

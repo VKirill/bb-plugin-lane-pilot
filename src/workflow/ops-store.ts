@@ -28,6 +28,8 @@ export const workflowOpsMigrations: string[] = [
     updated_at INTEGER NOT NULL,
     PRIMARY KEY(workflow_id, project_id, slot)
   )`,
+  // K7: the goals a run was started for (JSON, the router's shape); their changes and the audit before closing are events of the run.
+  `ALTER TABLE lane_pilot_wf_run ADD COLUMN goals_json TEXT`,
 ];
 
 export type StatusVerdict = { status: Workflow["status"]; notes: WorkflowProblem[] };

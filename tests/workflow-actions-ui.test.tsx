@@ -27,7 +27,7 @@ afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => rm(dir, { 
 const demo = () => workflow({ id: "demo", name: "Demo chain", status: "published" });
 
 /** The real library, ops and engine over a journal; the second step of the chain fails until `broken.write` is cleared. */
-async function world() {
+async function world(options: { audit?: NonNullable<Parameters<typeof engineOn>[2]>["auditGoals"] } = {}) {
   const db = journalDb();
   const globalDir = await mkdtemp(join(tmpdir(), "lp-wf-actions-"));
   dirs.push(globalDir);
@@ -37,7 +37,7 @@ async function world() {
   const engine = engineOn(db, {
     search: ok(() => ({ items: ["a"], count: 1, kind: "fresh" })),
     write: ok(() => { if (broken.write) throw new Error("telegram down"); return { text: "written" }; }),
-  }, { resolveWorkflow: () => null });
+  }, { resolveWorkflow: () => null, ...(options.audit ? { auditGoals: options.audit } : {}) });
   const ctx = { db, log: () => undefined, host: { call: async () => ({ hostId: "h", files: [] }) } } as unknown as ServerCore;
   const services = { workflowEngine: engine, docsPlaces: async () => [] } as unknown as Services;
   const lib = createWorkflowLibrary(ctx, services, { globalDir });
@@ -238,5 +238,43 @@ describe("Run", () => {
     const slot = await mount({ ...rpc, workflow_get: withSchedule });
     fireEvent.click(await slot.findByTestId("wf-row-demo"));
     expect((await slot.findByTestId("wf-schedule")).textContent).toContain("1 BB automation(s)");
+  });
+});
+
+describe("goals of a run", () => {
+  it("shows what the run is for, which goals the audit found met, why one was not, and how the goals changed", async () => {
+    const { rpc, engine, broken } = await world({ audit: async () => ({ met: ["g1"], unmet: [{ id: "g2", why: "only two urls were named" }] }) });
+    broken.write = false;
+    const goals = [{ id: "g1", done_when: "the digest is posted", evidence: "a message id" }, { id: "g2", done_when: "three sources are named", evidence: "three urls", guess: true }];
+    const started = engine.start({ workflow: wf({ id: "demo" }), inputs: { query: "q" }, goals });
+    expect((await started.done).status).toBe("blocked");
+    const slot = await mount(rpc);
+    fireEvent.click(await slot.findByTestId("wf-row-demo"));
+    fireEvent.click(await slot.findByTestId(`wf-history-${started.runId}`));
+    const panel = await slot.findByTestId("wf-goals");
+    expect(slot.getByTestId("wf-goal-state-g1").textContent).toBe("met");
+    expect(slot.getByTestId("wf-goal-state-g2").textContent).toBe("not met");
+    expect(slot.getByTestId("wf-goal-g2").textContent).toContain("only two urls were named");
+    expect(slot.getByTestId("wf-goal-g2").textContent).toContain("inferred, not confirmed");
+    expect(panel.querySelector("[data-testid=wf-goal-change]")).toBeNull();
+
+    expect(engine.amendGoals(started.runId, [goals[0]!], "the owner dropped the sources goal")).toMatchObject({ ok: true, reopened: true });
+    await engine.idle();
+    await slot.behavior.emitRealtime("lp:-", { kind: "workflow", runId: started.runId });
+    await waitFor(() => expect(slot.getByTestId("wf-goal-change").textContent).toContain("the owner dropped the sources goal"));
+    expect(slot.queryByTestId("wf-goal-g2")).toBeNull();
+    expect(slot.getByTestId("wf-goal-state-g1").textContent).toBe("met");
+  });
+
+  it("shows nothing for a run without goals", async () => {
+    const { rpc, engine, broken } = await world();
+    broken.write = false;
+    const started = engine.start({ workflow: wf({ id: "demo" }), inputs: { query: "q" } });
+    await started.done;
+    const slot = await mount(rpc);
+    fireEvent.click(await slot.findByTestId("wf-row-demo"));
+    fireEvent.click(await slot.findByTestId(`wf-history-${started.runId}`));
+    await waitFor(() => expect(slot.getByTestId("wf-run-summary").textContent).toContain("Succeeded"));
+    expect(slot.queryByTestId("wf-goals")).toBeNull();
   });
 });

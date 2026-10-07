@@ -10,6 +10,8 @@ import { executorKey, lowerWorkflow, outputFields } from "./lower";
 import { definitionSha256 } from "./store";
 import { WorkflowError, validateWorkflow } from "./validate";
 import { checkOutput, slugOf, valueAtPath } from "./values";
+import { goalsSchema, goalsSha, parseGoals, regroundDue } from "./goals";
+import type { GoalAudit, RunGoal } from "./goals";
 
 /** What a step receives: only the mapped fields (mode artifact), and where they came from. */
 export type StepInput = {
@@ -37,6 +39,8 @@ export interface StepContext<R = unknown> {
   attempt: number; input: StepInput; runtime: R | undefined;
   /** The quality mode of the run (`$mode`). */
   mode: QualityMode;
+  /** K7: the goals of the run, and whether this step's brief should repeat them (the first step, then every third). */
+  goals: RunGoal[]; reground: boolean;
   /** sha256(run | step | attempt): put it in the metadata of a spawned thread to find a lost spawn again (with the vote number, when votes > 1). */
   spawnKey: string; signal: AbortSignal;
   /** Set when the node has `votes` > 1: this is one of `of` independent runs of the same step. */
@@ -86,6 +90,8 @@ export type EngineOptions = {
   /** What a reload does to a run that was in flight: pick up where the journal stopped, or end it as interrupted. */
   resumePolicy?: (run: RunRow) => "continue" | "interrupt";
   leaseMs?: number;
+  /** K7: judges the run's output against its goals before the run closes. A throw means the audit could not be made: the run closes and says so. */
+  auditGoals?: (input: { run: RunRow; goals: RunGoal[]; output: Record<string, unknown>; steps: StepRow[]; signal: AbortSignal }) => Promise<GoalAudit>;
   /** Called after every journal event of a run (a step moved, the run changed): the hook for live screens. */
   onEvent?: (runId: string) => void;
   /** Test hook: called at named points of the driver; throwing simulates the process dying there. */
@@ -192,6 +198,8 @@ export class WorkflowEngine {
     workflow: Workflow; inputs?: Record<string, unknown>; key?: string; runtime?: R; mode?: QualityMode;
     link?: { projectId?: string; runId?: string; taskId?: string; attemptId?: string };
     parent?: { runId: string; stepKey: string }; depth?: number;
+    /** K7: what the run is for; checked against its output before it closes. */
+    goals?: RunGoal[];
   }): { runId: string; created: boolean; done: Promise<RunSummary> } {
     const { workflow } = input;
     const existing = input.key ? this.options.db.prepare("SELECT id FROM lane_pilot_wf_run WHERE idem_key=?").get(input.key) as { id: string } | undefined : undefined;
@@ -211,6 +219,7 @@ export class WorkflowEngine {
     const asked: QualityMode = (QUALITY_MODES as readonly unknown[]).includes(given) ? given as QualityMode : input.mode ?? workflow.quality_mode?.default ?? "standard";
     const floor = workflow.quality_mode?.min;
     const mode: QualityMode = workflow.quality_mode?.fixed ?? (floor && QUALITY_MODES.indexOf(asked) < QUALITY_MODES.indexOf(floor) ? floor : asked);
+    const goals = goalsSchema.parse(input.goals ?? []);
     const runId = `wfrun_${randomUUID().replaceAll("-", "")}`;
     const j = this.journal, at = this.now();
     const lowered = lowerWorkflow(workflow, this.options.resolveWorkflow);
@@ -221,7 +230,9 @@ export class WorkflowEngine {
         parent_run_id,parent_step_key,depth,status,mode,inputs_json,harness_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?)`)
         .run(runId, input.key ?? null, workflow.id, workflow.version, definitionSha256(workflow), JSON.stringify(lowered), input.link?.projectId ?? null, input.link?.runId ?? null,
           input.link?.taskId ?? null, input.link?.attemptId ?? null, input.parent?.runId ?? null, input.parent?.stepKey ?? null, depth, mode, JSON.stringify(inputs), this.options.harnessVersion, at, at);
+      if (goals.length) j.db.prepare("UPDATE lane_pilot_wf_run SET goals_json=? WHERE id=?").run(JSON.stringify(goals), runId);
       j.event(runId, null, "run", null, "running", `${workflow.id}@${workflow.version} mode ${mode}`);
+      if (goals.length) j.event(runId, null, "goals", null, null, JSON.stringify({ goals, reason: "the goals the run started with", by: "start" }));
       this.compiledRuns.set(runId, c);
       const run = j.getRun(runId)!;
       this.deliver(run, c, null, entry.edge, entry.index, { scope: "", fromScope: "", suffix: "" });
@@ -296,7 +307,7 @@ export class WorkflowEngine {
         }
         if (steps.some((step) => step.state === "waiting")) { j.setRunStatus(runId, ["running"], "waiting", null); break; }
         if (steps.some((step) => step.state === "running")) break;
-        if (routed.output_json !== null) j.setRunStatus(runId, ["running", "waiting"], "succeeded", null);
+        if (routed.output_json !== null) { if (await this.closeAfterAudit(routed) === "stop") this.stoppedRuns.add(runId); }
         else j.setRunStatus(runId, ["running", "waiting"], "failed", "dead_end: no step is left and the exit was not reached");
         break;
       }
@@ -305,6 +316,80 @@ export class WorkflowEngine {
       this.release(runId);
     }
     return this.summary(runId);
+  }
+
+  /**
+   * K7: a run that has goals is judged against them before it closes. All met: it closes. Some not: it is `blocked` with the
+   * unmet goal ids as the reason, the verdict is in the journal, and the PM either fixes the work (re-run a node: the run reaches
+   * its exit and is audited again) or amends the goals with a reason (which audits again). An audit that could not be made closes
+   * the run and says so in its reason: a broken auditor must not hold every run.
+   */
+  private async closeAfterAudit(run: RunRow): Promise<"closed" | "blocked" | "stop"> {
+    const j = this.journal;
+    const close = (reason: string | null) => { j.setRunStatus(run.id, ["running", "waiting"], "succeeded", reason); return "closed" as const; };
+    const goals = parseGoals(run.goals_json), audit = this.options.auditGoals;
+    if (!goals.length || !audit) return close(null);
+    const sha = goalsSha(goals);
+    const last = this.lastAudit(run.id);
+    if (last?.sha === sha && last.verdict === "pass") return close(null);
+    const abort = this.aborts.get(run.id) ?? new AbortController();
+    this.aborts.set(run.id, abort);
+    let result: GoalAudit;
+    try { result = await audit({ run, goals, output: asObject(run.output_json), steps: j.steps(run.id), signal: abort.signal }); }
+    catch (cause) {
+      if (isEngineBug(cause)) throw cause;
+      if (this.stopped()) return "stop";
+      const message = cause instanceof Error ? cause.message : String(cause);
+      j.event(run.id, null, "goal_audit", null, "unavailable", JSON.stringify({ sha, verdict: "unavailable", error: message.slice(0, 500) }));
+      return close(`goal_audit_unavailable: ${message.slice(0, 300)}`);
+    }
+    const unmet = result.unmet.filter((entry) => goals.some((goal) => goal.id === entry.id));
+    // A goal the auditor did not mention at all is not met: silence is not evidence.
+    for (const goal of goals) if (!result.met.includes(goal.id) && !unmet.some((entry) => entry.id === goal.id)) unmet.push({ id: goal.id, why: "the audit gave no verdict on this goal" });
+    const verdict = unmet.length ? "gaps" : "pass";
+    j.event(run.id, null, "goal_audit", null, verdict, JSON.stringify({ sha, verdict, met: result.met.filter((id) => goals.some((goal) => goal.id === id) && !unmet.some((entry) => entry.id === id)), unmet, ...(result.notes ? { notes: result.notes.slice(0, 1000) } : {}) }));
+    if (!unmet.length) return close(null);
+    j.setRunStatus(run.id, ["running", "waiting"], "blocked", `goal_audit: not met: ${unmet.map((entry) => entry.id).join(", ")}`);
+    return "blocked";
+  }
+
+  /** The last goal audit of a run, as the journal has it. */
+  lastAudit(runId: string): { sha: string; verdict: "pass" | "gaps" | "unavailable"; met: string[]; unmet: Array<{ id: string; why: string }>; notes?: string; error?: string; at: number } | null {
+    const row = this.journal.db.prepare("SELECT detail, at FROM lane_pilot_wf_event WHERE run_id=? AND kind='goal_audit' ORDER BY seq DESC LIMIT 1").get(runId) as { detail: string | null; at: number } | undefined;
+    if (!row?.detail) return null;
+    try { const detail = JSON.parse(row.detail) as Record<string, unknown>; return { sha: String(detail.sha ?? ""), verdict: detail.verdict as "pass", met: (detail.met as string[] | undefined) ?? [], unmet: (detail.unmet as Array<{ id: string; why: string }> | undefined) ?? [], ...(typeof detail.notes === "string" ? { notes: detail.notes } : {}), ...(typeof detail.error === "string" ? { error: detail.error } : {}), at: row.at }; } catch { return null; }
+  }
+
+  /** Every state the goals of a run have been in, oldest first: what changed, why and who said so. */
+  goalJournal(runId: string): Array<{ seq: number; at: number; by: string; reason: string; goals: RunGoal[] }> {
+    const rows = this.journal.db.prepare("SELECT seq, at, detail FROM lane_pilot_wf_event WHERE run_id=? AND kind='goals' ORDER BY seq").all(runId) as Array<{ seq: number; at: number; detail: string | null }>;
+    return rows.flatMap((row) => {
+      try { const detail = JSON.parse(row.detail ?? "{}") as { goals?: unknown; reason?: unknown; by?: unknown }; return [{ seq: row.seq, at: row.at, by: String(detail.by ?? ""), reason: String(detail.reason ?? ""), goals: parseGoals(JSON.stringify(detail.goals ?? [])) }]; } catch { return []; }
+    });
+  }
+
+  /**
+   * K7: the owner or the PM changes what the run is for. The whole list is replaced; the reason and the author go into the journal with the
+   * list that was replaced. A run that was blocked by its goal audit is audited again against the new goals.
+   */
+  amendGoals(runId: string, goals: unknown, reason: string, by = "pm"): { ok: true; version: number; reopened: boolean } | { ok: false; reason: string } {
+    const j = this.journal;
+    const run = j.getRun(runId);
+    if (!run) return { ok: false, reason: "not_found" };
+    if (run.status === "canceled") return { ok: false, reason: "run_canceled" };
+    const parsed = goalsSchema.safeParse(goals);
+    if (!parsed.success) return { ok: false, reason: `invalid_goals: ${parsed.error.issues.slice(0, 3).map((issue) => `${issue.path.join(".") || "goals"} ${issue.message}`).join("; ")}` };
+    const why = reason.trim();
+    if (why.length < 3) return { ok: false, reason: "reason_required" };
+    const before = parseGoals(run.goals_json);
+    const reopen = run.status === "blocked" && (run.reason ?? "").startsWith("goal_audit");
+    j.db.transaction(() => {
+      j.db.prepare("UPDATE lane_pilot_wf_run SET goals_json=?, updated_at=? WHERE id=?").run(parsed.data.length ? JSON.stringify(parsed.data) : null, this.now(), runId);
+      j.event(runId, null, "goals", null, null, JSON.stringify({ goals: parsed.data, before, reason: why.slice(0, 600), by }));
+      if (reopen) j.setRunStatus(runId, ["blocked"], "running", null);
+    })();
+    if (reopen) void this.kick(runId).catch((cause) => this.log(`run ${runId} stopped after its goals were amended: ${cause instanceof Error ? cause.message : String(cause)}`));
+    return { ok: true, version: this.goalJournal(runId).length, reopened: reopen };
   }
 
   private summary(runId: string): RunSummary {
@@ -510,10 +595,13 @@ export class WorkflowEngine {
   private contextFor(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode, attempt: number, signal: AbortSignal): StepContext {
     const j = this.journal;
     const input = JSON.parse(step.input_json) as StepInput;
+    const goals = parseGoals(j.getRun(run.id)?.goals_json);
     const env = this.env(run, step);
     const resolve = (text: string) => { const found = env.read(refOf(text)); return found.ran ? found.value : undefined; };
     return {
       runId: run.id, stepKey: step.step_key, nodeId: node.id, node, workflow: c.wf, attempt, input, runtime: this.runtimeOf(run), signal, mode: run.mode as QualityMode,
+      // `run` was read before this step was counted: the step is number steps_used + 1 of the run.
+      goals, reground: goals.length > 0 && regroundDue(run.steps_used + 1),
       spawnKey: this.spawnKeyOf(run.id, step, attempt),
       resolve,
       render: (template) => String(renderValue(template, (ref, text) => { const found = env.read(ref); if (!found.ran) throw new MissingValueError("reference_missing", `"${text}" has no value yet`); return found.value; }, run.mode) ?? ""),

@@ -79,6 +79,15 @@ export const opsEn = {
   wfEditScheduleProject: "Project that runs it",
   wfEditScheduleProjectHint: "Its Lane Pilot chat runs the schedule; a project workflow uses its own project.",
   wfEditScheduleInputs: "Inputs of every scheduled run (JSON)",
+  wfGoalsHeading: "Goals of this run",
+  wfGoalMet: "met",
+  wfGoalUnmet: "not met",
+  wfGoalPending: "not audited yet",
+  wfGoalGuess: "inferred, not confirmed",
+  wfGoalEvidence: "Evidence: {text}",
+  wfGoalAuditUnavailable: "The audit could not be made: {error}",
+  wfGoalAuditAt: "Audited {time}",
+  wfGoalChanged: "Goals changed {time} by {by}: {reason}",
 } as const;
 
 export const opsRu: { [K in keyof typeof opsEn]: string } = {
@@ -161,4 +170,13 @@ export const opsRu: { [K in keyof typeof opsEn]: string } = {
   wfEditScheduleProject: "Проект, который её запускает",
   wfEditScheduleProjectHint: "Расписание выполняет чат Lane Pilot этого проекта; у цепочки проекта это её проект.",
   wfEditScheduleInputs: "Входные данные каждого запуска по расписанию (JSON)",
+  wfGoalsHeading: "Цели запуска",
+  wfGoalMet: "достигнута",
+  wfGoalUnmet: "не достигнута",
+  wfGoalPending: "ещё не проверена",
+  wfGoalGuess: "предположение, не подтверждена",
+  wfGoalEvidence: "Чем подтверждается: {text}",
+  wfGoalAuditUnavailable: "Проверку сделать не удалось: {error}",
+  wfGoalAuditAt: "Проверено {time}",
+  wfGoalChanged: "Цели изменены {time} ({by}): {reason}",
 };

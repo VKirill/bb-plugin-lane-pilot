@@ -292,3 +292,45 @@ export function RunHistory({ id, projectId, shownRunId, signature, onPick }: { i
     </Surface>
   );
 }
+
+type Snapshot = NonNullable<Output<"workflow_run_snapshot">["snapshot"]>;
+
+/** K7: what the run is for, whether the audit found each goal met, and how the goals were changed. */
+export function GoalsPanel({ snapshot }: { snapshot: Snapshot }) {
+  const { goalAudit } = snapshot;
+  const goals = snapshot.goals ?? [], goalChanges = snapshot.goalChanges ?? [];
+  if (!goals.length && goalChanges.length < 2) return null;
+  const state = (id: string): "met" | "unmet" | "pending" => (goalAudit?.met.includes(id) ? "met" : goalAudit?.unmet.some((entry) => entry.id === id) ? "unmet" : "pending");
+  const pill = { met: "lp-pill-success", unmet: "lp-pill-danger", pending: "lp-pill-muted" } as const;
+  const label = { met: t("wfGoalMet"), unmet: t("wfGoalUnmet"), pending: t("wfGoalPending") } as const;
+  return (
+    <Surface testId="wf-goals">
+      <SurfaceHeader className="flex-wrap justify-between">
+        <h3 className="text-sm font-medium">{t("wfGoalsHeading")}</h3>
+        {goalAudit ? <span className="text-xs text-muted-foreground">{t("wfGoalAuditAt").replace("{time}", when(goalAudit.at))}</span> : null}
+      </SurfaceHeader>
+      <SurfaceBody>
+        {goalAudit?.verdict === "unavailable" ? <p className="break-words text-xs text-muted-foreground" data-testid="wf-goal-unavailable">{t("wfGoalAuditUnavailable").replace("{error}", goalAudit.error ?? "")}</p> : null}
+        <ul className="space-y-2">
+          {goals.map((goal) => {
+            const verdict = state(goal.id);
+            const why = goalAudit?.unmet.find((entry) => entry.id === goal.id)?.why;
+            return (
+              <li key={goal.id} className="space-y-0.5 text-xs" data-testid={`wf-goal-${goal.id}`}>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="font-mono font-medium">{goal.id}</span>
+                  <span className={`${pill[verdict]} rounded-full px-2 py-0.5 text-[11px] font-medium`} data-testid={`wf-goal-state-${goal.id}`}>{label[verdict]}</span>
+                  {goal.guess ? <span className="text-muted-foreground">{t("wfGoalGuess")}</span> : null}
+                </div>
+                <p className="break-words">{goal.done_when}</p>
+                <p className="break-words text-muted-foreground">{t("wfGoalEvidence").replace("{text}", goal.evidence)}</p>
+                {why ? <p className="break-words text-destructive-text">{why}</p> : null}
+              </li>
+            );
+          })}
+        </ul>
+        {goalChanges.slice(1).map((change) => <p key={change.at} className="break-words text-xs text-muted-foreground" data-testid="wf-goal-change">{t("wfGoalChanged").replace("{time}", when(change.at)).replace("{by}", change.by).replace("{reason}", change.reason)}</p>)}
+      </SurfaceBody>
+    </Surface>
+  );
+}

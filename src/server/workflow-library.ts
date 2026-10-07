@@ -4,6 +4,7 @@ import type { rpcContract } from "../contracts";
 import { BUILTIN_SOURCES } from "../workflow/builtin";
 import type { Field, Workflow } from "../workflow/schema";
 import { sha256Text } from "../workflow/files";
+import { parseGoals } from "../workflow/goals";
 import { createStatusResolver } from "../workflow/ops-store";
 import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../workflow/store";
 import { workflowView, type WorkflowView } from "../workflow/view";
@@ -157,6 +158,9 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
               handoff: typeof output?.handoff === "string" ? output.handoff : null, awaiting: awaiting?.kind ?? null, output: clipJson(output) };
           }),
           children: children.map((row) => ({ runId: row.id, stepKey: row.parent_step_key, workflowId: row.workflow_id, status: row.status })),
+          goals: parseGoals(run.goals_json),
+          goalAudit: services.workflowEngine.lastAudit(run.id),
+          goalChanges: services.workflowEngine.goalJournal(run.id).map((entry) => ({ at: entry.at, by: entry.by, reason: entry.reason, goals: entry.goals.length })),
           events: events.map((row) => ({ seq: row.seq, stepKey: row.step_key, kind: row.kind, from: row.from_state, to: row.to_state, detail: row.detail, at: row.at })),
         },
       };
