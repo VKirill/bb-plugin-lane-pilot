@@ -33,6 +33,7 @@ import { createWriterFinish } from "./src/server/writer/finish";
 import { createWriterStart } from "./src/server/writer/start";
 import { createWriterDispatch } from "./src/server/writer/dispatch";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
+import { mountLifecycleEvents } from "./src/server/lifecycle-events";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export { experimental_vkLifecycle } from "./src/native-install-lifecycle";
 
@@ -70,6 +71,7 @@ export default async function plugin(bb: BbPluginApi) {
     { ruleScan: createRuleScan(ctx, services) },
     createStability(ctx, services),
   );
+  mountLifecycleEvents(ctx);
   registerRpc(ctx, services);
   registerTools(ctx, services);
   registerCli(ctx, services);

@@ -38,10 +38,13 @@ export async function listThreadEventsRaw(
  * Waits for a child thread's turn with no overall deadline: BB's events say when it failed (see
  * threadFailure), so a slow but working model is never cut off. `probeMs` bounds a diagnostic probe only.
  */
-export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number, requestedAfter?: number): Promise<void> {
+export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number, requestedAfter?: number, shouldStop?: () => string | null): Promise<void> {
   let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
   const deadline = probeMs === undefined ? Infinity : Date.now() + probeMs;
   while (Date.now() < deadline) {
+    // The caller knows something BB's thread events do not (the queued instruction was deleted): it ends the wait.
+    const stop = shouldStop?.();
+    if (stop) throw new Error(`${timeoutMessage}:${stop}`);
     // BB's events say when to look again; the mark is taken before the read so a change during it is not missed.
     const mark = threadWatchMark(bb);
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);

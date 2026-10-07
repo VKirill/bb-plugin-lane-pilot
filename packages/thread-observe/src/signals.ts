@@ -10,7 +10,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export const SIGNAL_FALLBACK_MS = 20_000;
 
 export type ThreadSignalReason =
-  | "thread.idle" | "thread.failed" | "thread.archived" | "thread.deleted" | "experimental_thread.events";
+  | "thread.idle" | "thread.failed" | "thread.archived" | "thread.deleted" | "experimental_thread.events" | "message.cancelled";
 
 export type ThreadSignalHub = {
   /** Take before reading the thread: a signal that arrives after the mark but before `wait` is not lost. */

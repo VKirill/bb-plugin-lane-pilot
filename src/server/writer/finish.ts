@@ -21,13 +21,15 @@ import { join, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 import { isRunHalted } from "../runs-halt";
-import { loadFollowUp } from "./sticky";
+import { clearFollowUpCancelled, followUpCancelled, loadFollowUp } from "./sticky";
 import { askGuestsToCommit } from "../checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "../writer-silence";
 import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../failure-class";
 import { bookkeepingSetting } from "../../bookkeeping-paths";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../merge-intent";
+
+const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this writer";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
@@ -104,14 +106,16 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       };
       // A continued thread is idle from its previous task until the new turn starts: wait for the turn sent after `since`.
+      clearFollowUpCancelled(bb, input.attemptId);
       const followUpSince = await loadFollowUp(bb.storage.kv, input.attemptId);
       if (followUpSince !== null) {
         try {
+          const deleted = () => followUpCancelled(bb, input.attemptId) ? FOLLOW_UP_DELETED : null;
           if (!watchBudget) {
-            await waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince);
+            await waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince, deleted);
           } else {
             let waiting = true;
-            const idle = waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince)
+            const idle = waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince, deleted)
               .finally(() => { waiting = false; });
             while (waiting) {
               await noteWriterTokens();
@@ -124,6 +128,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         } catch (cause) {
           if (ctx.state.disposed) throw new Error("Lane Pilot was reloaded while the writer ran");
           const reason = cause instanceof Error ? cause.message : String(cause);
+          // The owner deleted the queued instruction: it never reaches the writer, so the task is blocked, not retried.
+          if (reason.endsWith(FOLLOW_UP_DELETED)) return await stopRunningWriter(`follow_up_deleted: ${FOLLOW_UP_DELETED}`);
           transitionAttempt(db, input.attemptId, "provider_error", { reason });
           return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
         }

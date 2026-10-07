@@ -22,9 +22,10 @@ const isGone = (cause: unknown) => /\b404\b|not found/i.test(cause instanceof Er
  * day. A run is opened per Lane Pilot chat and used to stay «running» forever once the chat was gone. Live and idle
  * chats are left alone, as is any run with an open attempt or a chat that could not be read.
  */
-export async function closeAbandonedRuns(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, now = Date.now(), signal?: AbortSignal): Promise<string[]> {
-  const rows = db.prepare("SELECT id,project_id,pm_thread_id,created_at FROM lane_pilot_run WHERE closed_at IS NULL AND state IN ('pending','running')")
-    .all() as Array<{ id: string; project_id: string; pm_thread_id: string | null; created_at: number }>;
+export async function closeAbandonedRuns(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, now = Date.now(), signal?: AbortSignal, onlyPmThreadId?: string): Promise<string[]> {
+  const rows = (db.prepare("SELECT id,project_id,pm_thread_id,created_at FROM lane_pilot_run WHERE closed_at IS NULL AND state IN ('pending','running')")
+    .all() as Array<{ id: string; project_id: string; pm_thread_id: string | null; created_at: number }>)
+    .filter((row) => onlyPmThreadId === undefined || row.pm_thread_id === onlyPmThreadId);
   const busy = new Set(listOpenAttempts(db).map((attempt) => attempt.run_id));
   const closed: string[] = [];
   for (const row of rows) {

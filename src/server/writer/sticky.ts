@@ -39,6 +39,19 @@ export async function loadFollowUp(kv: Kv, attemptId: string): Promise<number | 
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/**
+ * A follow-up turn the owner deleted from BB's queued card never reaches the writer, so the attempt waiting for it would
+ * wait for ever and hold its writer slot. The lifecycle handler of `message.cancelled` marks it here; the wait stops.
+ */
+const cancelledFollowUps = new WeakMap<object, Set<string>>();
+export function markFollowUpCancelled(bb: object, attemptId: string): void {
+  const set = cancelledFollowUps.get(bb) ?? new Set<string>();
+  cancelledFollowUps.set(bb, set.add(attemptId));
+}
+export const followUpCancelled = (bb: object, attemptId: string): boolean => cancelledFollowUps.get(bb)?.has(attemptId) ?? false;
+/** A new watcher of the attempt (its question was answered, a redo was sent) starts without an earlier deletion. */
+export const clearFollowUpCancelled = (bb: object, attemptId: string): void => { cancelledFollowUps.get(bb)?.delete(attemptId); };
+
 export type AreaRecord = {
   area: string;
   runId: string;

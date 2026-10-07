@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.179
+
+H2: Lane Pilot reacts to BB's lifecycle events when they happen (`src/server/lifecycle-events.ts`); the sweeps stay as the net for a lost event. Same switch as H1 (`LANE_PILOT_THREAD_SIGNALS=0` turns the handlers off); each listener is registered on its own, so a BB that does not know an event only loses that listener.
+- **`thread.archived` / `thread.deleted` of a PM chat** closes its run at once (the 15-minute run sweep did it before). Same rule as the sweep: a run with an open attempt is left alone. `closeAbandonedRuns` takes an optional PM thread id for this.
+- **`interaction.pending` on a running writer** (a question or an approval nobody sees): the PM gets one message naming the task, the writer thread and what it asks, and the attempt's `blockedBy` gets a `human` row with the interaction id, so if the attempt later ends blocked, `lane_pilot_wait_writer` says why. Repeats of the same interaction are not sent again.
+- **`message.cancelled`**: the owner deleted a follow-up turn Lane Pilot had queued for a writer (a continued thread). Its attempt stopped waiting for ever and held a writer slot; now the wait ends and the attempt is blocked `follow_up_deleted` (`waitThreadIdle` takes an optional `shouldStop`). Rows of other plugins, other threads and older turns are ignored.
+- **`experimental_host.deleted`** (BB core with the event; not in the pinned SDK types 0.4.104, so it is registered defensively): the machine's native-install registry row and error, and its background host-job keys, are dropped, so enable/disable/remove no longer try a machine that is gone. A log line names runs with open attempts that still point at it.
+
 ## 0.1.178
 
 H1 of the next plan: BB's thread events instead of polling.
