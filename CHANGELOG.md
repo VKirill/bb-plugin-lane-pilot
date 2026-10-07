@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Memory-maintenance and night-review briefs carry a condensed accepted result.** Both briefs embedded the whole acceptance record: every check's full stdout/stderr with terminal escapes, the reasoning trace, the duplicate acceptance object and ids. On the hub that was 97 % of the memory brief (check output alone 65 %): 52k chars (about 45k tokens) median and 164k tokens p90 on SelfyStudio. `compactAcceptedResult` (`src/server/accepted-compact.ts`) keeps what the maintainer and the reviewer work from: the writer's report (2000 chars), the produced files, per check the command, exit code and last lines (a failed check: its complaint, 400 chars; the passing run's `Test Files`/`Tests` summary), `checkLogPath` of a failed check, warnings. On 184 real briefs the memory prompt goes from 53k to 6.0k chars median and from 326k to 7.9k p90. Test on real briefs from the hub: `tests/server/accepted-compact.test.ts`.
+
 ## 0.1.190
 
 - The architect's chat opens beside the library or graph inside the Workflows tab (ThreadChat, right column; stacked under on narrow screens), and a draft it creates or patches opens on the left by itself. Before, the chat replaced the Lane Pilot page.

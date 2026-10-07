@@ -1026,6 +1026,10 @@ describe("stage → native writer → receipt", () => {
     expect(second.state).toBe("passed");
     expect(second.stage.result.budgets.core).toBe(3072);
     expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")).toHaveLength(1);
+    // The brief carries the condensed accepted result, not the acceptance record with its traces and ids.
+    const memoryBrief=String(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")?.prompt);
+    expect(memoryBrief).toContain("each check shows its exit code and the last lines of its output");
+    expect(memoryBrief).not.toMatch(/"reasoning"|"runV2"|"executionPacketSha256"/);
     await harness.lifecycle.dispose();
   });
   it("fails a memory stage whose spawn BB refused instead of leaving it running",async()=>{
