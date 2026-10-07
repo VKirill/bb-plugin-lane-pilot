@@ -1,5 +1,5 @@
 import { parseOwnedAgents } from "../agent-profile";
-import { createDeployDrain } from "./deploy-drain";
+import { bindDrainTarget, createDeployDrain } from "./deploy-drain";
 import { createHostJobs, isHostJobKind } from "./host-jobs";
 import { aggregateRun } from "../aggregation";
 import { TARGET_SHA } from "../constants";
@@ -48,6 +48,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     return value;
   }
   const deployDrain = createDeployDrain(() => state.disposed);
+  bindDrainTarget({ drain: deployDrain, log: (line) => bb.log.info(line) });
   const rawCall = rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>;
   // Long host calls run as background jobs (B4): the host daemon cancels a call at its deadline and kills the worker.
   const hostJobs = createHostJobs({

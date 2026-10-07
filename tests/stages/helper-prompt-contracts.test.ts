@@ -294,10 +294,11 @@ describe("other helper prompts", () => {
     expect(prompt).toContain("at most 12 rules in force");
   });
 
-  it("self-repair and its watchdog agree: the deploy script runs the tests", () => {
-    const text = repairPrompt([], "blocked:abc:x");
+  it("self-repair and its watchdog agree: the deploy script runs the tests; the repair thread itself never deploys", () => {
+    const text = repairPrompt([], "blocked:abc:x", { path: "/wt/r/lane-pilot", branch: "lane/r", basePath: "/repo/lane-pilot" });
     expect(text).not.toContain("does not run tests");
-    expect(text).toContain("bb-plugin-push runs it again and refuses a red suite");
+    expect(text).toContain("bb-plugin-push is the release train");
+    expect(text).toContain("Do NOT deploy");
     const watchdog = readFileSync(new URL("../../scripts/self-repair-watchdog.sh", import.meta.url), "utf8");
     expect(watchdog).not.toContain("does not run tests");
     expect(watchdog).toContain("refuses a red one");

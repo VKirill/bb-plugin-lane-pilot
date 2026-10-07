@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.172
+
+Lane Pilot uses the four new core functions of runtime `0.45.0-vk.1` (stabilization plan, phase D). Each is feature-tested and the previous behaviour stays as the fallback, so the plugin still loads on a core without them.
+- **Idempotent thread spawn (D2).** Every thread Lane Pilot starts (writer, workspace holder, critics, readers, specialists, stage children, browser check, self-repair, docs, errands) goes through `fullAccessSpawn`, which uses `experimental_vkSpawnKeyed` with the key `lp:<owner id>:<role>:<n>` (`src/server/thread-keys.ts`). A spawn whose answer was lost and is repeated returns the same thread; a spawn with no owner id gets a key of its own. The reconcile of a writer, a lost worktree holder, a stage child and a critic asks `experimental_vkFindByPluginMetadata` first (one query instead of paging every thread of the project), so `page_cap` and `holder_ambiguous` on a project with over a thousand threads cannot happen on the new core. The list scan stays as the fallback, and also when the lookup answers with a full page.
+- **Drain on reload and shutdown (D3).** `package.json` declares `vk.lifecycle.drain` (5 minutes). The `experimental_vkLifecycle` export handles `reload` and `shutdown`: new checkout writes and acceptance checks (`runSandboxedCommand`) wait, the running ones finish, a snapshot goes to kv, and the old instance is released. The new instance logs its start reason (`bb.vk.startReason`, `afterDrain`, read in the recovery service, not the factory) and consumes the snapshot. The `deploy_drain` RPC and its `bb-plugin-push` use stay as the fallback.
+- **Isolated schedules (D4).** `self-repair`, `parked-task-sweep`, `attempt-worktree-sweep`, `writer-silence-sweep`, `docs-maintenance-hourly`, `docs-nightly-hourly`, `docs-nightly-catchup` and `rules-nightly` register through `experimental_vkSchedule` (isolated, no overlap, 10 minutes to 6 hours): a long run no longer holds the others back. Without the function they are the ordinary schedules, the docs passes still return at once.
+- **Hook limits and visible timeouts (D4).** `vk.hookPolicy` gives `message.dispatch` 20 s and `contributeEnv` 10 s (not `required`: the policy is per plugin, and a late resolver of a non-PM thread would stop that turn). `bb.vk.experimental_vkOnHookTimeout` keeps each timeout in kv and the self-repair watcher reads it as a `hook` incident, except inside a reload window.
+- `vk-requires.json` lists all four as optional.
+
+Stabilization phase E (release train, own worktrees, drills):
+- **Self-repair threads work in their own worktree (E2).** Each repair gets a Lane Pilot worktree of the configured checkout (`~/.lane-pilot/worktrees`, branch `lane/self-repair-<hash>-<time>`) and runs there as an unmanaged workspace. The prompt tells it to commit on its branch and not to deploy, bump the version, push or release. With the verdict `fixed` the plugin merges the branch like a writer's (`gitIntegrate`, base lock, rebase); a conflict is retried on 4 passes and then left for the owner; any other verdict, or a day without one, saves the worktree as a patch under `~/.lane-pilot/released` and removes it. No worktree, no repair: the shared checkout is not a fallback. `self_repair_status` shows `branch` and `outcome` per kind.
+- **Sandbox drills as a script (E3).** `scripts/lp-drill.sh` runs three parallel tasks in the sandbox project and writes a receipt to `.agents/runs/drills/<date>.json`.
+- Deploy side (outside this repository, `infrastructure/plugin-deploy/bb-plugin-push`): the E1 release-train gates.
+
+Tails of phases B and C:
+- **`lane_pilot_update_task` uses the same contract lint as dispatch** (`src/server/lint-task.ts`). The task and plan stay unchanged on a failure.
+- **Activation adds the bookkeeping folders to `.git/info/exclude` on the workspace's machine** (`.agents/runs/`, `.agents/reports/`, `.bb/chats/`, `notes/lock/`, at any depth). It never edits `.gitignore` and never commits.
+- **Settings that existed only in code are now in the settings UI and can be reset:** `writer.silence_nudge_min`, `bookkeeping.paths`, `integration.gate_command`, `integration.gate_when`, `integration.gate_every`.
+
 ## 0.1.171
 
 - **A docs pass stopped by a plugin reload no longer logs failures.** During the 0.1.170 deploy, passes still running on treba, treba-sites and my-album.art logged «nightly docs failed … stale API handle» and «The database connection is not open», and the self-repair watcher reads such lines as Lane Pilot faults. Those passes were already set to resume by the catch-up. A closed database now counts as a stop, as a stale handle already did (`pluginStopped`). The unit and pass catch blocks and the docs merge stay quiet on a stop, and a stopped unit keeps its saved progress.

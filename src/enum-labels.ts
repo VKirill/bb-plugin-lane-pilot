@@ -17,6 +17,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "docs.since": { yesterday: "enumDocsYesterday", "24 hours ago": "enumDocs24h", "7 days ago": "enumDocs7d" },
   "docs.enabled": { auto: "docsModeAuto", true: "docsModeOn", false: "docsModeOff" },
   "run.gate": { none: "enumGateNone", "pre-merge": "enumGatePreMerge" },
+  "integration.gate_when": { queue_drained: "enumIntegrationGateDrained", every_n: "enumIntegrationGateEveryN" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",
     "macos-seatbelt": "enumSandboxSeatbelt",

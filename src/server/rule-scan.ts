@@ -9,6 +9,7 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../owns-paths";
 import { bbServiceTier, writerExecutionSelection } from "../jev-reasoning";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
 import { fullAccessSpawn } from "./pm-spawn";
+import { scheduleIsolated } from "./schedules";
 import { stringAt } from "./values";
 import { outputText } from "./writer-task";
 import type { ServerCore } from "./core";
@@ -399,7 +400,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   }
 
   /** Every night each project with runs in the last 30 days rescans and judges its rules on trial, without anyone pressing a button. */
-  bb.background.schedule("rules-nightly", "30 3 * * *", async () => {
+  scheduleIsolated(bb, "rules-nightly", "30 3 * * *", async () => {
     if (ctx.isDisposed()) return;
     const since = Date.now() - RULE_SCAN_WINDOW_MS;
     const projects = (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id);
@@ -411,7 +412,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
       await startScan(projectId, locale);
       for (let i = 0; i < 180 && running.has(projectId) && !ctx.isDisposed(); i++) await new Promise((resolve) => setTimeout(resolve, 10_000));
     }
-  });
+  }, { timeoutMs: 6 * 3_600_000 });
 
   /** Every 15 minutes new failures of recently active projects get their System One answers; no model runs. */
   bb.background.schedule("rules-triage", "*/15 * * * *", async () => {

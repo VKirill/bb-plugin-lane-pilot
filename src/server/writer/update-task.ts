@@ -6,17 +6,16 @@ import {
   countAttempts,
   getAttempt,
   getRun,
-  getRunSettingsScopes,
   getTask,
   getTaskPlan,
   listAttemptsForTask,
   listStageReceipts,
-  loadProjectSettings,
   loadPrototypeConfig,
   saveTaskPlan,
   updateTaskContract,
 } from "../../database";
-import { findSandboxUnsafeMissingExcludes, parseSandboxUnsafePatterns } from "../../stages/critique-coverage";
+import { lintReply } from "../contract-lint";
+import { createTaskLinter } from "../lint-task";
 import { runPlanCritique, runPmRead } from "../critique-runs";
 import { recordStage } from "../stage-records";
 import { markTaskSatisfied } from "../blocked-by";
@@ -24,11 +23,10 @@ import type { ServerCore } from "../core";
 import type { Services } from "../services";
 import { validateTaskV2 } from "../../task-v2";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
-import { validateOwnershipContract } from "../../verification/ownership";
-import { parseReadFirstHints, readFirstKindError } from "../../stages/read-first";
 
 export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;
+  const lintTask = createTaskLinter(ctx, services);
 
   async function updateTask(input: {
     projectId: string;
@@ -140,63 +138,12 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     }
     valid.task.project_cwd = workspacePath;
 
-    // Reject sandbox-unsafe checks if present
-    const settings = loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId));
-    const sandboxUnsafePatterns = parseSandboxUnsafePatterns(settings["verification.sandbox_unsafe"]);
-    if (sandboxUnsafePatterns.length) {
-      for (const v of valid.task.verification ?? []) {
-        const missing = findSandboxUnsafeMissingExcludes(v.command, sandboxUnsafePatterns);
-        if (missing.length) {
-          const excludeFlags = missing.map((pat) => `--exclude "${pat}"`).join(" ");
-          return {
-            ok: false,
-            error: {
-              code: "validation_failed",
-              retryable: false,
-              sideEffects: "none",
-              hint: `verification command "${v.command}" runs a full test suite without excluding sandbox-unsafe tests; add missing exclusions: ${excludeFlags}`,
-              missingExcludes: missing,
-              suggestedFlags: excludeFlags,
-            },
-          };
-        }
-      }
-    }
-
-    let readFirstHints: ReturnType<typeof parseReadFirstHints>;
-    try {
-      readFirstHints = parseReadFirstHints(valid.task.read_first);
-    } catch (cause) {
-      return {
-        ok: false,
-        error: { code: "validation_failed", retryable: false, sideEffects: "none", hint: cause instanceof Error ? cause.message : String(cause) },
-      };
-    }
-    if (readFirstHints.length) {
-      try {
-        const snapshot = await host.call("snapshotDryRun", {
-          requestedHostId: config.hostId,
-          paths: readFirstHints.map((hint) => resolve(workspacePath, hint.path)),
-        }, { hostId: config.hostId, timeoutMs: 30_000 });
-        for (const hint of readFirstHints) {
-          const entry = snapshot.entries.find((r) => r.path === resolve(workspacePath, hint.path));
-          if (entry?.kind === "directory") {
-            const kindError = readFirstKindError(hint.path, "directory");
-            if (kindError) return { ok: false, error: { code: "validation_failed", retryable: false, sideEffects: "none", hint: kindError } };
-          }
-          if (entry?.kind === "symlink" || entry?.kind === "other") {
-            return { ok: false, error: { code: "validation_failed", retryable: false, sideEffects: "none", hint: `read_first is not a regular file (${entry.kind}): ${hint.path}` } };
-          }
-        }
-      } catch {}
-    }
-
-    const ownershipError = validateOwnershipContract(valid.task);
-    if (ownershipError) {
-      return {
-        ok: false,
-        error: { code: "validation_failed", retryable: false, sideEffects: "none", hint: ownershipError },
-      };
+    // The same contract lint as dispatch: every contract mistake goes back to the PM in one message, before the stored task changes.
+    const lint = await lintTask(input.projectId, input.runId, valid.task, workspacePath, config.hostId);
+    if (lint.errors.length) {
+      const { runId: _runId, state: _state, reason: _reason, ...rest } = lintReply(input.runId, lint.errors);
+      const hint = `contract lint: the task was not changed. Fix and send the update again:\n${lint.errors.map((error) => `- ${error.message}`).join("\n")}`;
+      return { ok: false, error: { code: "validation_failed", retryable: false, sideEffects: "none", hint, ...rest } };
     }
 
     // Save updated contract and plan in database
