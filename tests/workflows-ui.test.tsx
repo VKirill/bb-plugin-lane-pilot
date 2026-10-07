@@ -238,13 +238,15 @@ describe("Workflow run view", () => {
     const slot = await mount({ ...rpc, workflow_run_snapshot: (input: { runId: string }) => { snapshots(input.runId); return rpc.workflow_run_snapshot(input); } });
     fireEvent.click(await slot.findByTestId("wf-row-review-fix"));
     // A finished run is not opened by itself; the owner picks it.
+    fireEvent.click(await slot.findByTestId("wf-run-pick"));
     fireEvent.click(await slot.findByTestId(`wf-pick-run-${started.runId}`));
     await waitFor(() => expect(snapshots).toHaveBeenCalledTimes(1));
     await slot.behavior.emitRealtime("lp:-", { kind: "workflow", runId: "wfrun_other" });
     await slot.behavior.emitRealtime("lp:-", { kind: "council" });
     await new Promise((done) => setTimeout(done, 60));
     expect(snapshots).toHaveBeenCalledTimes(1);
-    fireEvent.click(slot.getByTestId("wf-pick-definition"));
+    fireEvent.click(slot.getByTestId("wf-run-pick"));
+    fireEvent.click(await slot.findByTestId("wf-pick-definition"));
     await waitFor(() => expect(slot.queryByTestId("wf-run-summary")).toBeNull());
     expect(slot.getByTestId("wf-node-ship").getAttribute("data-status")).toBe("none");
   });

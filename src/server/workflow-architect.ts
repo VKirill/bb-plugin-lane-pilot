@@ -33,6 +33,8 @@ export type ArchitectDeps = {
   globalDir: () => string;
   /** The folder and machine of the project the calling chat works in. */
   projectPlace: (threadId: string) => Promise<Place | null>;
+  /** The same for a publish from the Workflows tab, which has no chat: the project's own folder and machine. */
+  projectPlaceOf?: (projectId: string) => Promise<Place | null>;
   writeProjectFile: (place: Place, id: string, content: string, expectedSha256: string | null) => Promise<{ status: "applied" | "conflict"; path: string; afterSha256: string | null; reason: string | null }>;
   /** A skill, plugin, MCP, secret and machine lister for the project; see collectCapabilities. */
   capabilityPorts: (input: { projectId: string; threadId: string }) => Parameters<typeof collectCapabilities>[0];
@@ -52,6 +54,11 @@ function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
   return {
     globalDir: () => globalWorkflowDir(),
     projectPlace: place,
+    projectPlaceOf: async (projectId) => {
+      const places = await services.docsPlaces(projectId).catch(() => []);
+      const root = places.find((item) => item.scopes.length === 0) ?? places[0];
+      return root ? { hostId: root.hostId, path: root.path } : null;
+    },
     writeProjectFile: async (target, id, content, expectedSha256) => {
       const written = await host.call("writeWorkflowFile", { requestedHostId: target.hostId, projectCwd: target.path, id, content, expectedSha256 }, { hostId: target.hostId, timeoutMs: 30_000 });
       return { status: written.status, path: written.path, afterSha256: written.afterSha256, reason: written.reason };
@@ -139,7 +146,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
       next: "ask the owner the short questions, then build with lane_pilot_workflow_draft_patch: set_meta (inputs, outputs, requires), then the nodes and edges a step at a time" };
   }
 
-  function patch(input: { projectId: string; threadId: string; draftId: string; ops: z.input<typeof draftOpSchema>[]; expectedVersion?: number }) {
+  function patch(input: { projectId: string; threadId?: string; draftId: string; ops: z.input<typeof draftOpSchema>[]; expectedVersion?: number }) {
     own(input.draftId, input.projectId);
     const result = drafts.patch(input.draftId, input.ops, { expectedVersion: input.expectedVersion, validate: { resolve } });
     if (!result.ok) {
@@ -178,7 +185,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     return [...keys].sort();
   }
 
-  async function test(input: { projectId: string; threadId: string; draftId: string; testCaseId?: string }) {
+  async function test(input: { projectId: string; threadId?: string; draftId: string; testCaseId?: string }) {
     const draft = own(input.draftId, input.projectId);
     const load = loaded(draft);
     if (!load.ok) return { draftId: draft.id, version: draft.version, green: false, ran: false, reason: "invalid", problems: load.problems.filter((problem) => problem.level === "error").slice(0, MAX_SHOWN_PROBLEMS), next: "fix the errors with lane_pilot_workflow_draft_patch first" };
@@ -204,7 +211,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     };
   }
 
-  async function publish(input: { projectId: string; threadId: string; draftId: string }) {
+  async function publish(input: { projectId: string; threadId?: string; draftId: string }) {
     const draft = own(input.draftId, input.projectId);
     const refuse = (reason: string, next: string, extra: Record<string, unknown> = {}) => ({ draftId: draft.id, published: false, reason, next, ...extra });
     const load = loaded(draft);
@@ -226,7 +233,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     const expected = draft.publishedSha256 && draft.publishedPath?.endsWith(`${id}.json`) ? draft.publishedSha256 : null;
     let written: { status: "applied" | "conflict"; path: string; afterSha256: string | null; reason: string | null };
     if (draft.scope === "project") {
-      const place = await deps.projectPlace(input.threadId);
+      const place = input.threadId ? await deps.projectPlace(input.threadId) : await deps.projectPlaceOf?.(input.projectId) ?? null;
       if (!place) return refuse("project_place_unknown", "this chat has no project folder on a machine to write into; start the architect from the project's own chat, or publish as global");
       written = await deps.writeProjectFile(place, id, content, expected);
     } else {
@@ -252,9 +259,47 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
       const check = checkOf(draft);
       return { draft: summary(draft, check), definition: draft.definition, check: { valid: check.valid, errors: check.errors, warnings: check.warnings, nodes: check.nodes, edges: check.edges, problems: check.problems }, tests: draft.tests, history: history ? drafts.history(draft.id) : [] };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_draft_list" | "workflow_draft_get">;
+    // The editor in the Workflows tab changes a draft through the same functions the architect's tools call, so the validator,
+    // the version counter, the test reset and the «workflow-draft» signal behave the same for the owner and for the chat.
+    workflow_draft_patch: ({ draftId, ops, expectedVersion }) => {
+      const draft = drafts.get(draftId);
+      if (!draft) throw new Error(`draft ${draftId} does not exist`);
+      const parsed = z.array(draftOpSchema).min(1).max(40).safeParse(ops);
+      if (!parsed.success) return { ok: false, applied: false, refused: parsed.error.issues.slice(0, 5).map((issue) => ({ index: typeof issue.path[0] === "number" ? issue.path[0] : 0, op: "invalid", reason: issue.message })) };
+      const result = patch({ projectId: draft.projectId, threadId: draft.threadId ?? undefined, draftId, ops: parsed.data, expectedVersion }) as Record<string, unknown>;
+      return result.applied ? { ...result, definition: drafts.get(draftId)?.definition } as never : result as never;
+    },
+    workflow_draft_restore: ({ draftId, version, expectedVersion }) => {
+      const result = drafts.restore(draftId, version, { expectedVersion });
+      if (!result.ok) return { ok: false, reason: result.reason, ...(result.currentVersion !== undefined ? { currentVersion: result.currentVersion } : {}) };
+      changed(result.draft);
+      return { ok: true, version: result.draft.version, definition: result.draft.definition };
+    },
+    workflow_draft_test: async ({ draftId, testCaseId }) => {
+      const draft = drafts.get(draftId);
+      if (!draft) throw new Error(`draft ${draftId} does not exist`);
+      return await test({ projectId: draft.projectId, threadId: draft.threadId ?? undefined, draftId, testCaseId }) as never;
+    },
+    workflow_draft_publish: async ({ draftId }) => {
+      const draft = drafts.get(draftId);
+      if (!draft) throw new Error(`draft ${draftId} does not exist`);
+      return await publish({ projectId: draft.projectId, threadId: draft.threadId ?? undefined, draftId }) as never;
+    },
+    workflow_capabilities: async ({ projectId, draftId }) => {
+      const draft = draftId ? drafts.get(draftId) : null;
+      return { capabilities: await capabilities({ projectId, threadId: draft?.threadId ?? "", sections: ["skills", "plugins", "mcpServers", "secrets", "hosts", "specialists"] }) };
+    },
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_draft_list" | "workflow_draft_get" | "workflow_draft_patch" | "workflow_draft_restore" | "workflow_draft_test" | "workflow_draft_publish" | "workflow_capabilities">;
 
-  return { drafts, create, patch, get, capabilities, test, publish, summary, rpc };
+  /** A draft that starts from a workflow that exists: a copy of a built-in one, or the file of one the owner edits. */
+  function createFrom(input: { projectId: string; scope: "global" | "project"; workflowId: string; definition: Record<string, unknown>; name: { en: string; ru: string }; description: { en: string; ru: string };
+    base?: { path: string; sha256: string; version: number } }): DraftRow {
+    const draft = drafts.create({ projectId: input.projectId, threadId: null, scope: input.scope, name: input.name, description: input.description, workflowId: input.workflowId, definition: input.definition, base: input.base });
+    changed(draft);
+    return draft;
+  }
+
+  return { drafts, create, createFrom, patch, get, capabilities, test, publish, summary, rpc };
 }
 
 export type WorkflowArchitect = ReturnType<typeof createWorkflowArchitect>;
