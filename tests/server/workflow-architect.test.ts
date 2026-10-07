@@ -82,8 +82,9 @@ describe("workflow architect tools", () => {
     expect(tested.next).toContain("lane_pilot_workflow_draft_publish");
 
     const published = await call("lane_pilot_workflow_draft_publish", { draftId, confirm: true });
-    expect(published).toMatchObject({ published: true, workflowId: "browser-digest", scope: "global", workflowVersion: 1 });
-    expect(published.unregisteredExecutors).toEqual(["agent", "telegram.send_rich"]);
+    // Since W3 the agent step and the Telegram send have live executors, so the published chain can run for real.
+    expect(published).toMatchObject({ liveReady: true });
+    expect(published.unregisteredExecutors).toBeUndefined();
     const file = join(globalWorkflowDir(), "browser-digest.json");
     expect(existsSync(file)).toBe(true);
     // The published file is a workflow the store loads, with the status the publish gave it.
@@ -101,7 +102,7 @@ describe("workflow architect tools", () => {
     expect(read.history).toHaveLength(1 + BROWSER_DIGEST_STEPS.length);
     expect((await rpc("workflow_draft_get", { draftId: "wfd_nope" })).draft).toBeNull();
     expect(harness.registrations.agentTools.filter((tool) => tool.name.startsWith("lane_pilot_workflow_")).map((tool) => tool.name).sort()).toEqual([
-      "lane_pilot_workflow_capabilities", "lane_pilot_workflow_draft_create", "lane_pilot_workflow_draft_get", "lane_pilot_workflow_draft_patch", "lane_pilot_workflow_draft_publish", "lane_pilot_workflow_draft_test",
+      "lane_pilot_workflow_capabilities", "lane_pilot_workflow_draft_create", "lane_pilot_workflow_draft_get", "lane_pilot_workflow_draft_patch", "lane_pilot_workflow_draft_publish", "lane_pilot_workflow_draft_test", "lane_pilot_workflow_status",
     ]);
   });
 
