@@ -31,6 +31,22 @@ describe("attempt workspace for a native run's own worktree", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("does the same for a dispatched run: its writers have their own worktrees too", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const core = createCore(bb, db);
+    createRun(db, "run-bb", "P", "bb", base);
+    createTask(db, { id: "bot-fix", runId: "run-bb", kind: "bb", contract: task });
+    createAttempt(db, { id: "lpattempt_d", runId: "run-bb", taskId: "bot-fix" });
+    expect(setAttemptWorkspace(db, "lpattempt_d", { path: worktree, environmentId: null, decision: {} })).toBe(true);
+    transitionAttempt(db, "lpattempt_d", "spawn_requested");
+    transitionAttempt(db, "lpattempt_d", "running", { threadId: "thr_writer" });
+    expect(core.acceptedTaskWorkspace("run-bb", "bot-fix", base, task, "lpattempt_d").path).toBe(worktree);
+    transitionAttempt(db, "lpattempt_d", "validation_failed", { reason: "x" });
+    expect(core.acceptedTaskWorkspace("run-bb", "bot-fix", base, task, "lpattempt_d").path).toBe(base);
+    await harness.lifecycle.dispose();
+  });
+
   it("a retry of an attempt resumed in its worktree starts from the run's workspace, not the removed worktree", () => {
     const resumed = { ...(task as object), project_cwd: worktree, verification: [{ command: "npm test", cwd: worktree }] } as never;
     const config = { hostId: "h", writerWorkspacePath: worktree } as never;

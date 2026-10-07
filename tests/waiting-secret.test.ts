@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { createFakeWorktreeHost } from "./own-worktree-host";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import type { TaskV2 } from "../src/contracts";
@@ -74,6 +75,8 @@ describe("parked for a secret", () => {
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";
+// A git project gives every writer attempt its own worktree.
+const worktreeHost = (options:NonNullable<Parameters<typeof createFakePluginHost>[0]>) => createFakeWorktreeHost(options, "host-test");
 const config = { projectId, hostId:"host-test", pmWorkspacePath:"/tmp/pm", writerWorkspacePath:"/tmp/writer", pmProviderId:"claude-code", pmModel:"claude-test", writerProviderId:"codex", writerModel:"codex-test" };
 const task:TaskV2 = {
   schema_version:2, id:"needs-secret", title:"Needs a secret", risk:"low", lane:"writer", project_cwd:config.writerWorkspacePath, read_first:["README.md"],
@@ -93,7 +96,7 @@ describe("dispatch of a task whose check needs a secret", () => {
     const sandboxCalls:Array<Record<string, unknown>> = [];
     const messages:string[] = [];
     const written = new Map<string, string>();
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
