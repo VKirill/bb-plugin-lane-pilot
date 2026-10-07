@@ -61,7 +61,9 @@ it("skips the run, worktree and parked-task scans after a clean reload drain, an
   ] as const) {
     const ran = await startAfter(vk, snapshot);
     expect(ran.lines, JSON.stringify([vk, snapshot])).not.toContain("left to their schedules");
-    expect(ran.parked, JSON.stringify([vk, snapshot])).toBeGreaterThan(skippedReads);
+    // The parked-task sweep is part of the ordered task reconcile now and runs on every start (a lost retry is restarted
+    // in the same start-up), so only the run and worktree scans depend on a clean drain.
+    expect(ran.parked, JSON.stringify([vk, snapshot])).toBeGreaterThanOrEqual(skippedReads);
   }
 });
 
