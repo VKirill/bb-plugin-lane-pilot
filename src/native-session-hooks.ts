@@ -55,6 +55,12 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_reply",
   "lane_pilot_remind",
   "lane_pilot_relay_list",
+  "lane_pilot_workflow_draft_create",
+  "lane_pilot_workflow_draft_patch",
+  "lane_pilot_workflow_draft_get",
+  "lane_pilot_workflow_capabilities",
+  "lane_pilot_workflow_draft_test",
+  "lane_pilot_workflow_draft_publish",
 ] as const;
 
 export const NATIVE_LP_BRIDGE_PM_TOOLS = [
@@ -86,6 +92,24 @@ export const NATIVE_LP_BRIDGE_PM_TOOLS = [
   "lane_pilot_reply",
   "lane_pilot_remind",
   "lane_pilot_relay_list",
+  "lane_pilot_workflow_draft_create",
+  "lane_pilot_workflow_draft_patch",
+  "lane_pilot_workflow_draft_get",
+  "lane_pilot_workflow_capabilities",
+  "lane_pilot_workflow_draft_test",
+  "lane_pilot_workflow_draft_publish",
+] as const;
+
+/** The tools of the Workflow architect: it builds chains, it does not dispatch writers. */
+export const NATIVE_LP_BRIDGE_ARCHITECT_TOOLS = [
+  "lane_pilot_read",
+  "lane_pilot_ask_owner",
+  "lane_pilot_workflow_draft_create",
+  "lane_pilot_workflow_draft_patch",
+  "lane_pilot_workflow_draft_get",
+  "lane_pilot_workflow_capabilities",
+  "lane_pilot_workflow_draft_test",
+  "lane_pilot_workflow_draft_publish",
 ] as const;
 
 export function lpBridgeCatalogNames(tools: readonly string[] = NATIVE_LP_BRIDGE_TOOLS): string[] {

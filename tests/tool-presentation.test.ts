@@ -4,7 +4,7 @@ import plugin from "../server";
 import { LANE_PILOT_READ_NAME } from "../src/bounded-read";
 import { TOOL_PRESENTATION, presentationFor } from "../src/server/tool-presentation";
 
-const QUIET = ["lane_pilot_wait_writer", "lane_pilot_wait_specialist", "lane_pilot_wait_errand", "lane_pilot_relay_list", "lane_pilot_read", "lane_pilot_remind"];
+const QUIET = ["lane_pilot_wait_writer", "lane_pilot_wait_specialist", "lane_pilot_wait_errand", "lane_pilot_relay_list", "lane_pilot_read", "lane_pilot_remind", "lane_pilot_workflow_draft_get", "lane_pilot_workflow_capabilities"];
 
 describe("tool presentation", () => {
   let dispose: (() => Promise<void> | void) | null = null;
@@ -36,5 +36,15 @@ describe("tool presentation", () => {
     }
     expect(presentationFor("lane_pilot_remind", "ru")).toMatchObject({ label: { pending: "Ставлю напоминание" }, suppress: true });
     expect(presentationFor("not_ours", "en")).toBeUndefined();
+  });
+
+  it("labels the workflow architect's tools in English and Russian; reads are quiet, changes and publishing are shown", () => {
+    expect(presentationFor("lane_pilot_workflow_draft_patch", "en")).toEqual({ label: { pending: "Changing the workflow draft", completed: "Changed the workflow draft" } });
+    expect(presentationFor("lane_pilot_workflow_draft_patch", "ru")).toEqual({ label: { pending: "Дорабатываю цепочку", completed: "Цепочка доработана" } });
+    expect(presentationFor("lane_pilot_workflow_draft_test", "ru")?.label.completed).toBe("Цепочка проверена на заглушках");
+    expect(presentationFor("lane_pilot_workflow_draft_publish", "en")?.label.pending).toBe("Publishing the workflow");
+    expect(presentationFor("lane_pilot_workflow_capabilities", "en")?.suppress).toBe(true);
+    expect(presentationFor("lane_pilot_workflow_draft_get", "ru")?.suppress).toBe(true);
+    for (const name of ["create", "patch", "test", "publish"]) expect(presentationFor(`lane_pilot_workflow_draft_${name}`, "both")?.suppress).toBeUndefined();
   });
 });

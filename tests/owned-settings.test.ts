@@ -36,7 +36,7 @@ describe("owned settings persistence and optimistic concurrency", () => {
       expect(kept["copy-lead"].compiled).toMatchObject({ skills: ["copywriter"], mcpServers: ["search"], tools: ["Read"], disallowedTools: ["Bash"] });
       expect(editedResources.sourceHash).not.toBe(seeded.sourceHash);
       const before: any = await harness.behavior.callRpc("get_globals", {});
-      expect(before.agents.map((item: any) => item.id)).toEqual(["dev-orchestrator", "copy-lead", "seo-specialist", "design-lead", "project-onboarder", "tavily"]);
+      expect(before.agents.map((item: any) => item.id)).toEqual(["dev-orchestrator", "copy-lead", "seo-specialist", "design-lead", "project-onboarder", "tavily", "workflow-architect"]);
       const coordinator = before.agents.find((item: any) => item.id === "dev-orchestrator");
       expect(coordinator.prompt).toContain("Lane Pilot PM");
       expect(coordinator.prompt).not.toContain("Boot solo dev-orchestrator");
