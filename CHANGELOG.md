@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **A merge no longer fails on the project-life stage's staged files.** The stage writes PROGRESS, CHANGELOG and plan items in the base checkout and `git add`s them a moment before its commit; git's ort strategy refuses every merge while the index differs from HEAD, and in a message with no tab-indented files, so the merge read as `merge_failed` (infra, a parked task) instead of the dirty-base wait (drill 2026-10-07 20:29, scenario provider_limit). Under the integration lock the merge now gives machine-written staged files (bookkeeping paths, `.agents/plans/**`, `.agents/todos/**`) 20 s to be committed by their stager, then commits them as staged; unstaged edits stay, nothing is discarded. A staged file that is anyone's work is left alone, and the merge reports the real files from the index as a dirty base (the wait up to 2 hours, guests asked to commit).
+- A new attempt worktree no longer receives the base's uncommitted edits of tracked plan items: the task-folder copy skips files the repository tracks, so the stage's edits do not go into the attempt's commit.
+
 ## 0.1.184
 
 - The server bundle takes jsonc-parser's ESM build: its UMD build kept a runtime `require("./impl/format")` the bundle cannot resolve, and the 0.1.183 reload failed on the hub (0.1.182 kept running).
