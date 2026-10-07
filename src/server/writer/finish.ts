@@ -27,6 +27,7 @@ import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "../writer-silence";
 import { WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../failure-class";
 import { bookkeepingSetting } from "../../bookkeeping-paths";
+import { clearMergeIntent, recordMergeIntent } from "../merge-intent";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
@@ -543,6 +544,12 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           removeWorktree:bound.environment_id === null && !input.task.area,
           bookkeeping:bookkeepingSetting(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))),
         }, { hostId:input.config.hostId, timeoutMs:180_000 });
+        // Written before the merge: a reply lost to a reload leaves main updated and this attempt «running»; the recovery
+        // asks the machine's repository whether the work landed (merge-intent.ts). Dropped once the attempt's state caught up.
+        await recordMergeIntent(bb.storage.kv as never, (hostId, cwd, command) => host.call("runCommand", { requestedHostId:hostId, command, cwd, timeoutSec:30 }, { hostId, timeoutMs:35_000 }),
+          { attemptId:input.attemptId, runId:input.runId, taskId:input.taskId, projectId:input.projectId, hostId:input.config.hostId,
+            basePath, worktreePath:bound.workspace_path, message:`${input.task.id}: ${input.task.title}`.slice(0, 500) });
+        const settleIntent = () => clearMergeIntent(bb.storage.kv as never, input.attemptId);
         // Another task merging into the same checkout is a queue, not a failure: wait for it and try again.
         let merged = await integrate();
         const queuedSince = Date.now();
@@ -561,6 +568,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             note:`Lane Pilot: task ${input.taskId} waited 15 minutes for merge: main checkout is held by ${blockedBy.holderTaskId ?? "another task"}. Writer's work is committed in its worktree; send the task again once the holder is free.` })
             .catch((cause) => ctx.log(`merge-block reminder failed: ${cause instanceof Error ? cause.message : String(cause)}`));
           transitionAttempt(db, input.attemptId, "blocked", { reason });
+          await settleIntent();
           return { status:"blocked", reason, blockedBy, attemptId:input.attemptId, writerThreadId };
         }
         // Someone's uncommitted edits in main block the merge: a redo would meet the same edits, so the finished work
@@ -588,6 +596,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"failed",
               attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged,blockedBy}});
             transitionAttempt(db, input.attemptId, "blocked", { reason });
+            await settleIntent();
             return { status:"blocked", reason, blockedBy, attemptId:input.attemptId, writerThreadId };
           }
         }
@@ -598,6 +607,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged}});
           transitionAttempt(db, input.attemptId, "validation_failed", { reason });
+          await settleIntent();
           return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification,
             attemptId:input.attemptId, writerThreadId };
         }
@@ -630,6 +640,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
         attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration}});
       transitionAttempt(db, input.attemptId, "accepted");
+      if (integration) await clearMergeIntent(bb.storage.kv as never, input.attemptId);
       return { ...receipt, verification:candidate.verification, produced:candidate.produced };
     } catch (cause) {
       const thread = await getThreadBounded(input.writerThreadId);
