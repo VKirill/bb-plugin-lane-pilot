@@ -3,6 +3,7 @@ import { LP_ALL_PROJECTS } from "../realtime-channel";
 import { LP_TASK_PIPELINE, builtinWorkflow } from "../workflow/builtin";
 import { createWorkflowCatalog } from "../workflow/catalog";
 import { WorkflowEngine } from "../workflow/engine";
+import { createStatusResolver } from "../workflow/ops-store";
 import { registerPureActions } from "../workflow/actions";
 import { registerReducers } from "../workflow/reducers";
 import { createWorkflowAgents } from "./workflow-agent";
@@ -27,7 +28,8 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     if (project) ctx.realtime.notify(project, "workflow", undefined, runId);
     ctx.realtime.notify(LP_ALL_PROJECTS, "workflow", undefined, runId);
   };
-  const workflowCatalog = createWorkflowCatalog({ log: (message) => bb.log.warn(`Lane Pilot ${message}`) });
+  const statuses = createStatusResolver(db);
+  const workflowCatalog = createWorkflowCatalog({ log: (message) => bb.log.warn(`Lane Pilot ${message}`), resolveStatus: statuses.resolve });
   const engine = new WorkflowEngine({
     db, harnessVersion: HARNESS_VERSION,
     instanceId: (bb as unknown as { vk?: { instanceId?: string } }).vk?.instanceId,

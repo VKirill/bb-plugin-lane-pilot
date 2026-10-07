@@ -14,6 +14,7 @@ import packageJson from "../package.json";
 import { IllegalTransitionError, isLegalMove } from "./state-machine";
 import { recordMemoryAccepted } from "@lane-pilot/memory-core";
 import { workflowMigrations } from "./workflow/journal";
+import { workflowOpsMigrations } from "./workflow/ops-store";
 import { draftMigrations } from "./workflow/draft-store";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
@@ -288,6 +289,8 @@ export const migrations = [
   ...workflowMigrations,
   // Workflow architect: drafts of workflows being built, with their version history.
   ...draftMigrations,
+  // Receipts of workflow test runs (W7), goals of a run (K7), the automations of schedule triggers (W9).
+  ...workflowOpsMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

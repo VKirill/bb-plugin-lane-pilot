@@ -176,7 +176,7 @@ const coexistenceOperationResult = z.object({
 }).strict();
 
 const bilingualSchema = z.object({ en: z.string(), ru: z.string() }).strict();
-const viewFieldSchema = z.object({ name: z.string(), type: z.string(), required: z.boolean(), values: z.array(z.string()).optional(), note: z.string().optional() }).strict();
+const viewFieldSchema = z.object({ name: z.string(), type: z.string(), required: z.boolean(), values: z.array(z.string()).optional(), note: z.string().optional(), default: z.unknown().optional() }).strict();
 export const WORKFLOW_NODE_TONES = ["plan", "build", "qa", "review", "agent", "action", "decision", "human", "flow", "sub", "note", "terminal"] as const;
 export const workflowViewNodeSchema = z.object({
   id: z.string(), kind: z.enum(["agent", "lp-task", "action", "decision", "human", "parallel", "join", "subworkflow", "note", "start", "end"]),
@@ -715,6 +715,12 @@ export const workflowDraftPublishResultSchema = z.object({
   workflowId: z.string().optional(), workflowVersion: z.number().int().optional(), scope: z.string().optional(),
   liveReady: z.boolean().optional(), unregisteredExecutors: z.array(z.string()).optional(), warning: z.string().optional(),
 });
+
+/** One case of a trial run on stubs (a dry run, or the tests of a workflow file). */
+export const workflowTrialCaseSchema = z.object({
+  caseId: z.string(), green: z.boolean(), status: z.string(), reason: z.string().nullable(), error: z.string().nullable(), failedNode: z.string().nullable(),
+  path: z.array(z.string()), output: z.unknown(), runId: z.string().nullable(), failures: z.array(z.string()), stubbedCalls: z.array(z.string()), notChecked: z.array(z.string()),
+}).strict();
 
 export const rpcContract = defineRpcContract({
   get_preferences: {
@@ -1563,6 +1569,26 @@ export const rpcContract = defineRpcContract({
   workflow_run_snapshot: {
     input: z.object({ runId: z.string().min(1) }).strict(),
     output: z.object({ snapshot: workflowRunSnapshotSchema.nullable() }).strict(),
+  },
+  /** The run history of one workflow, newest first, a page at a time (`before` is the `createdAt` of the last row of the page before). */
+  workflow_runs: {
+    input: z.object({ id: z.string().min(1), projectId: z.string().min(1).optional(), limit: z.number().int().min(1).max(50).default(20), before: z.number().int().optional() }).strict(),
+    output: z.object({ runs: z.array(workflowRunRowSchema.extend({ stepsUsed: z.number().int() }).strict()), hasMore: z.boolean() }).strict(),
+  },
+  /** Re-runs one node of a finished run: its steps and everything after it start again. `reason` says why not (run_active, child_run, node_not_run, ...). */
+  workflow_rerun_node: {
+    input: z.object({ runId: z.string().min(1), nodeId: z.string().min(1).max(80) }).strict(),
+    output: z.object({ ok: z.boolean(), reason: z.string().optional(), stepKey: z.string().optional(), removed: z.number().int().optional() }).strict(),
+  },
+  /** A trial run of a workflow with every external action stubbed (agents, code tasks, sends): nothing leaves the machine. */
+  workflow_dry_run: {
+    input: z.object({ id: z.string().min(1), projectId: z.string().min(1).optional(), input: z.record(z.string(), z.unknown()).default({}) }).strict(),
+    output: z.object({ found: z.boolean(), result: workflowTrialCaseSchema.nullable(), stubbed: z.array(z.string()) }).strict(),
+  },
+  /** Runs every test case of a workflow on stubs and keeps the receipt: a file of the owner counts as tested or published only with a green one. */
+  workflow_run_tests: {
+    input: z.object({ id: z.string().min(1), projectId: z.string().min(1).optional() }).strict(),
+    output: z.object({ found: z.boolean(), green: z.boolean(), cases: z.array(workflowTrialCaseSchema), status: z.string().nullable() }).strict(),
   },
   // The Workflow architect's drafts: the same value as a workflow file, with the validator's verdict and the last test.
   workflow_draft_list: {

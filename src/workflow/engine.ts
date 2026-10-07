@@ -20,6 +20,8 @@ export type StepInput = {
   /** Order `depends_on`: the branches that must have arrived at the join before this branch starts, and the parallel step they belong to. */
   after?: number[];
   group?: string;
+  /** How many times the owner re-ran this step by hand: part of its spawn key, so the new try gets a new thread, not the old one. */
+  rerun?: number;
 };
 export type Usage = { tokens?: number; costUsd?: number };
 export type StepDone = { output: Record<string, unknown>; usage?: Usage; threadId?: string | null; detail?: unknown };
@@ -139,6 +141,11 @@ export class WorkflowEngine {
   register<R>(key: string, executor: NodeExecutor<R>): this { this.executors.set(key, executor); return this; }
   hasExecutor = (key: string): boolean => this.executors.has(key);
   private fault(point: string): void { this.options.fault?.(point); }
+  /** sha256(run | step | attempt), and the number of the owner's re-runs when there were any. */
+  private spawnKeyOf(runId: string, step: StepRow, attempt: number): string {
+    const rerun = (asObject(step.input_json) as { rerun?: number }).rerun ?? 0;
+    return sha256(`${runId}|${step.step_key}|${attempt}${rerun > 0 ? `|r${rerun}` : ""}`).slice(0, 32);
+  }
   private stopped(): boolean { return this.disposed || (this.options.isDisposed?.() ?? false); }
   private log(message: string): void { this.options.log?.(`workflow: ${message}`); }
 
@@ -507,7 +514,7 @@ export class WorkflowEngine {
     const resolve = (text: string) => { const found = env.read(refOf(text)); return found.ran ? found.value : undefined; };
     return {
       runId: run.id, stepKey: step.step_key, nodeId: node.id, node, workflow: c.wf, attempt, input, runtime: this.runtimeOf(run), signal, mode: run.mode as QualityMode,
-      spawnKey: sha256(`${run.id}|${step.step_key}|${attempt}`).slice(0, 32),
+      spawnKey: this.spawnKeyOf(run.id, step, attempt),
       resolve,
       render: (template) => String(renderValue(template, (ref, text) => { const found = env.read(ref); if (!found.ran) throw new MissingValueError("reference_missing", `"${text}" has no value yet`); return found.value; }, run.mode) ?? ""),
       value: (spec) => evalSpec(valueSpecOf(spec), lenient(env), `${node.id}`),
@@ -624,7 +631,7 @@ export class WorkflowEngine {
     }
 
     const startAttempt = Math.max(1, step.attempt);
-    const spawnKey = sha256(`${runId}|${stepKey}|${startAttempt}`).slice(0, 32);
+    const spawnKey = this.spawnKeyOf(runId, step, startAttempt);
     this.fault("before-start");
     if (!j.moveStep(runId, stepKey, "pending", "running", { started: true, harness_version: this.options.harnessVersion, attempt: startAttempt, spawn_key: spawnKey })) return "skip";
     j.db.prepare("UPDATE lane_pilot_wf_run SET steps_used=steps_used+1, updated_at=? WHERE id=?").run(this.now(), runId);
@@ -643,7 +650,7 @@ export class WorkflowEngine {
     this.aborts.set(runId, abort);
     let outcome: StepOutcome | null = null, lastError: unknown = null;
     for (let attempt = startAttempt; attempt <= node.maxAttempts; attempt += 1) {
-      if (attempt !== startAttempt) j.db.prepare("UPDATE lane_pilot_wf_step SET attempt=?, spawn_key=?, updated_at=? WHERE run_id=? AND step_key=?").run(attempt, sha256(`${runId}|${stepKey}|${attempt}`).slice(0, 32), this.now(), runId, stepKey);
+      if (attempt !== startAttempt) j.db.prepare("UPDATE lane_pilot_wf_step SET attempt=?, spawn_key=?, updated_at=? WHERE run_id=? AND step_key=?").run(attempt, this.spawnKeyOf(runId, step, attempt), this.now(), runId, stepKey);
       try {
         this.fault("before-run");
         const fresh = j.getStep(runId, stepKey)!;
@@ -1149,6 +1156,72 @@ export class WorkflowEngine {
     const ok = this.journal.setRunStatus(runId, ["running", "waiting"], "canceled", reason);
     if (ok) { this.aborts.get(runId)?.abort(); this.cancelOpenSteps(runId); }
     return ok;
+  }
+
+  /**
+   * The owner re-runs one node of a finished run: the node's last step goes back to pending, everything that came out of it (the
+   * steps it routed to, their branches, the joins that waited for it, the child runs, the effects) is removed, and the run goes on
+   * from there. A canceled step that was waiting for its turn when the run ended is revived. Refused while the run is active, for a
+   * child run (re-run from its parent) and for a node that never ran. The new try has its own spawn key, so an agent step opens a new thread.
+   */
+  async rerunNode(runId: string, nodeId: string): Promise<{ ok: true; stepKey: string; removed: number } | { ok: false; reason: string }> {
+    const j = this.journal;
+    const run = j.getRun(runId);
+    if (!run) return { ok: false, reason: "not_found" };
+    if (!TERMINAL_RUN.includes(run.status) || this.drives.has(runId)) return { ok: false, reason: "run_active" };
+    if (run.parent_run_id) return { ok: false, reason: "child_run" };
+    const c = this.compiled(run);
+    if (!c.nodes.has(nodeId)) return { ok: false, reason: "unknown_node" };
+    const steps = j.steps(runId);
+    const target = [...steps].reverse().find((step) => step.node_id === nodeId && step.state !== "pending");
+    if (!target) return { ok: false, reason: "node_not_run" };
+    if (target.state === "running" || target.state === "waiting") return { ok: false, reason: "step_active" };
+
+    const gone = new Set<string>();
+    const arrivals = j.db.prepare("SELECT group_key, from_step FROM lane_pilot_wf_arrival WHERE run_id=?").all(runId) as Array<{ group_key: string; from_step: string }>;
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const step of steps) {
+        if (step.step_key === target.step_key || gone.has(step.step_key)) continue;
+        const fedBy = step.parent_key !== null && (step.parent_key === target.step_key || gone.has(step.parent_key));
+        // A join waited for the branches of its parallel: when a branch arrival goes, the join goes with it.
+        const joinOfGone = step.parent_key !== null && c.nodes.get(step.node_id)?.type === "join" && arrivals.some((row) => row.group_key === step.parent_key && (row.from_step === target.step_key || gone.has(row.from_step)));
+        if (fedBy || joinOfGone) { gone.add(step.step_key); grew = true; }
+      }
+    }
+    const doomed = new Set([target.step_key, ...gone]);
+    const childRuns = (id: string): string[] => {
+      const rows = j.db.prepare("SELECT id FROM lane_pilot_wf_run WHERE parent_run_id=?").all(id) as Array<{ id: string }>;
+      return rows.flatMap((row) => [row.id, ...childRuns(row.id)]);
+    };
+    const attached = (j.db.prepare("SELECT id, parent_step_key FROM lane_pilot_wf_run WHERE parent_run_id=?").all(runId) as Array<{ id: string; parent_step_key: string }>)
+      .filter((row) => doomed.has(row.parent_step_key)).flatMap((row) => [row.id, ...childRuns(row.id)]);
+    const started = [...doomed].filter((key) => steps.find((step) => step.step_key === key)?.state !== "pending").length;
+    const input = asObject(target.input_json) as unknown as StepInput;
+    const nextInput = JSON.stringify({ ...input, rerun: (input.rerun ?? 0) + 1 });
+
+    j.db.transaction(() => {
+      const marks = (list: string[]) => list.map(() => "?").join(",");
+      const dropped = [...gone], all = [target.step_key, ...dropped];
+      for (const child of attached) {
+        for (const table of ["lane_pilot_wf_step", "lane_pilot_wf_arrival", "lane_pilot_wf_effect"]) j.db.prepare(`DELETE FROM ${table} WHERE run_id=?`).run(child);
+        j.db.prepare("DELETE FROM lane_pilot_wf_run WHERE id=?").run(child);
+      }
+      if (dropped.length) j.db.prepare(`DELETE FROM lane_pilot_wf_step WHERE run_id=? AND step_key IN (${marks(dropped)})`).run(runId, ...dropped);
+      j.db.prepare(`DELETE FROM lane_pilot_wf_arrival WHERE run_id=? AND (from_step IN (${marks(all)}) OR group_key IN (${marks(all)}))`).run(runId, ...all, ...all);
+      j.db.prepare(`DELETE FROM lane_pilot_wf_effect WHERE run_id=? AND step_key IN (${marks(all)})`).run(runId, ...all);
+      j.db.prepare(`UPDATE lane_pilot_wf_step SET state='pending', attempt=0, input_json=?, output_json=NULL, error=NULL, await_json=NULL, spawn_key=NULL, receipt_json=NULL,
+        routed=0, fan_count=NULL, started_at=NULL, ended_at=NULL, updated_at=? WHERE run_id=? AND step_key=?`).run(nextInput, this.now(), runId, target.step_key);
+      for (const step of steps) {
+        if (doomed.has(step.step_key) || step.state !== "canceled" || step.error !== null) continue;
+        j.db.prepare("UPDATE lane_pilot_wf_step SET state='pending', ended_at=NULL, updated_at=? WHERE run_id=? AND step_key=?").run(this.now(), runId, step.step_key);
+      }
+      j.db.prepare("UPDATE lane_pilot_wf_run SET status='running', reason=NULL, output_json=NULL, steps_used=MAX(0, steps_used-?), owner_id=NULL, lease_until=0, updated_at=? WHERE id=?").run(started, this.now(), runId);
+      j.event(runId, target.step_key, "rerun", target.state, "pending", `node ${nodeId}: ${doomed.size} step(s) reset or removed`);
+    })();
+    this.compiledRuns.delete(runId);
+    void this.kick(runId).catch((cause) => this.log(`run ${runId} stopped after a re-run: ${cause instanceof Error ? cause.message : String(cause)}`));
+    return { ok: true, stepKey: target.step_key, removed: gone.size };
   }
 
   get(runId: string): RunSummary | null { return this.journal.getRun(runId) ? this.summary(runId) : null; }

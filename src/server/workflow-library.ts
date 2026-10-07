@@ -4,6 +4,7 @@ import type { rpcContract } from "../contracts";
 import { BUILTIN_SOURCES } from "../workflow/builtin";
 import type { Field, Workflow } from "../workflow/schema";
 import { sha256Text } from "../workflow/files";
+import { createStatusResolver } from "../workflow/ops-store";
 import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../workflow/store";
 import { workflowView, type WorkflowView } from "../workflow/view";
 import type { ServerCore } from "./core";
@@ -19,7 +20,8 @@ const RECENT_RUNS = 10;
 const STEP_OUTPUT_LIMIT = 4_000;
 const EVENT_TAIL = 80;
 
-const field = (item: Field) => ({ name: item.name, type: item.type, required: item.required, ...(item.values ? { values: item.values } : {}), ...((item.description ?? item.note) ? { note: item.description ?? item.note } : {}) });
+const field = (item: Field) => ({ name: item.name, type: item.type, required: item.required, ...(item.values ? { values: item.values } : {}), ...((item.description ?? item.note) ? { note: item.description ?? item.note } : {}),
+  ...(item.default !== undefined ? { default: item.default } : {}) });
 
 /** A big output goes to the screen as a preview: the journal keeps the whole value. */
 export function clipJson(value: unknown, limit = STEP_OUTPUT_LIMIT): unknown {
@@ -38,6 +40,7 @@ const parseJson = (text: string | null): unknown => { if (text === null) return 
 export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, "docsPlaces" | "workflowEngine">, options: { globalDir?: string } = {}) {
   const { db } = ctx;
   const globalDir = options.globalDir ?? globalWorkflowDir();
+  const statuses = createStatusResolver(db);
 
   /** The project's workflow files, read once on its machine and served from memory to the store. */
   async function readProjectFiles(projectId: string): Promise<{ files: Map<string, string>; dir: string | null; state: ProjectState }> {
@@ -59,7 +62,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
       list: async (dir) => (project.dir && dir === project.dir ? [...project.files.keys()].map((name) => `${dir}/${name}`).sort() : nodeFileSource.list(dir)),
       read: async (path) => (project.dir && dirname(path) === project.dir ? project.files.get(path.slice(project.dir.length + 1)) ?? "" : nodeFileSource.read(path)),
     };
-    const store = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, files, globalDir, ...(project.dir ? { projectDir: project.dir } : {}) });
+    const store = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, files, globalDir, ...(project.dir ? { projectDir: project.dir } : {}), resolveStatus: statuses.resolve });
     return { store, project: project.state, files };
   }
 

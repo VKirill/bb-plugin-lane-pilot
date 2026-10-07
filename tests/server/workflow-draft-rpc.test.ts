@@ -117,6 +117,16 @@ describe("workflow_draft_test and workflow_draft_publish", () => {
     const published = await rpc("workflow_draft_publish", { draftId });
     expect(published).toMatchObject({ published: true, workflowId: "browser-digest", scope: "global" });
     expect(existsSync(join(globalWorkflowDir(), "browser-digest.json"))).toBe(true);
+    // The publish leaves the receipt of its green tests, so the library counts the file as published; the file edited by hand does not.
+    const library = async () => (await rpc("workflow_list", {})).workflows.find((row: { id: string }) => row.id === "browser-digest");
+    expect(await library()).toMatchObject({ status: "published" });
+    const file = join(globalWorkflowDir(), "browser-digest.json");
+    writeFileSync(file, readFileSync(file, "utf8").replace('"version": 1', '"version": 1, "tags": ["edited"]'));
+    expect(await library()).toMatchObject({ status: "draft" });
+    expect(await rpc("workflow_run_tests", { id: "browser-digest" })).toMatchObject({ found: true, green: true, status: "published" });
+    expect(await library()).toMatchObject({ status: "published" });
+    expect(await rpc("workflow_dry_run", { id: "browser-digest", input: {} })).toMatchObject({ found: true, result: { status: "succeeded" } });
+    expect(await rpc("workflow_runs", { id: "browser-digest" })).toEqual({ runs: [], hasMore: false });
   });
 
   it("reports an invalid draft instead of running it", async () => {

@@ -14,7 +14,8 @@ import { builtinWorkflow } from "../workflow/builtin";
 import { casWriteWorkflowFile, sha256Text } from "../workflow/files";
 import { executorKey, lowerWorkflow } from "../workflow/lower";
 import type { Workflow } from "../workflow/schema";
-import { globalWorkflowDir } from "../workflow/store";
+import { createStatusResolver } from "../workflow/ops-store";
+import { definitionSha256, globalWorkflowDir } from "../workflow/store";
 import { loadWorkflow } from "../workflow/validate";
 import { configuredSetting } from "./context";
 import { SPECIALIST_ROLES } from "./specialists";
@@ -98,7 +99,7 @@ const bothLanguages = (value: unknown): { en: string; ru: string } => {
   return { en, ru: typeof row.ru === "string" ? row.ru : en };
 };
 
-export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services, "workflowEngine">, deps: ArchitectDeps = realDeps(ctx, services as Services)) {
+export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog">>, deps: ArchitectDeps = realDeps(ctx, services as Services)) {
   const { db } = ctx;
   const drafts: DraftStore = createDraftStore(db);
   const resolve = (id: string, version?: number) => builtinWorkflow(id, version);
@@ -241,8 +242,11 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     }
     if (written.status === "conflict") return refuse("file_conflict", `${written.reason}; choose another id with set_meta {id} or ask the owner`, { path: written.path });
     const sha256 = written.afterSha256 ?? sha256Text(content);
+    // The file is only as good as its tests: the receipt says this exact definition passed them, which the library asks for before it counts the file as published.
+    createStatusResolver(db).recordTest(id, definitionSha256(reloaded.workflow), true, draft.tests.results.map((row) => ({ caseId: row.caseId, green: row.green, path: row.path })));
     const published = drafts.markPublished(draft.id, { version: draft.version, path: written.path, sha256, workflowVersion: version }) ?? draft;
     changed(published, input.threadId);
+    services.workflowCatalog?.invalidate();
     const missing = unregisteredExecutors(final);
     return {
       draftId: draft.id, published: true, workflowId: id, workflowVersion: version, scope: draft.scope, path: written.path,

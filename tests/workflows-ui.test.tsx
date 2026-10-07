@@ -9,7 +9,7 @@ import { setLocaleOverride } from "../i18n";
 import { createWorkflowLibrary } from "../src/server/workflow-library";
 import type { ServerCore } from "../src/server/core";
 import type { Services } from "../src/server/services";
-import { engineOn, journalDb, wf } from "./workflow/engine-helpers";
+import { engineOn, journalDb, trust, wf } from "./workflow/engine-helpers";
 import { workflow } from "./workflow/fixtures";
 
 // The graph pulls in xyflow and elkjs on first use; a cold import under load can pass the 5 s default.
@@ -57,7 +57,7 @@ async function world(options: { reviewWaits?: boolean; files?: Record<string, un
   const globalDir = await mkdtemp(join(tmpdir(), "lp-wf-ui-"));
   dirs.push(globalDir);
   const files = { "review-fix.json": reviewFix(), "x-digest.json": digest(), ...(options.files ?? {}) };
-  for (const [name, content] of Object.entries(files)) await writeFile(join(globalDir, name), JSON.stringify(content));
+  for (const [name, content] of Object.entries(files)) { await writeFile(join(globalDir, name), JSON.stringify(content)); trust(db, content as Record<string, unknown>); }
   const engine = engineOn(db, {
     agent: { reentrant: true, run: async (ctx) => ctx.nodeId === "review" && options.reviewWaits ? { wait: { kind: "human" }, threadId: "thr_review" } : { output: { handoff: "done", done: true, verdict: "pass" }, threadId: `thr_${ctx.nodeId}` } },
     ship: { reentrant: true, run: async () => ({ output: { text: "shipped" } }) },
