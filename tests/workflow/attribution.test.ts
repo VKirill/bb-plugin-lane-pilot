@@ -17,9 +17,9 @@ describe("runs of the old per-task pipeline", () => {
   it("move to lp-task-pipeline when the plugin is updated, and the chain that took the id starts with a clean record", async () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = bb.storage.database();
-    expect(migrations.at(-1)).toBe(PIPELINE_RUNS_ATTRIBUTION);
+    expect(migrations).toContain(PIPELINE_RUNS_ATTRIBUTION);
     // The database as 0.1.188 left it: the pipeline's runs under the old id next to a real run of the chain.
-    bb.storage.migrate(db, migrations.slice(0, -1));
+    bb.storage.migrate(db, migrations.slice(0, migrations.indexOf(PIPELINE_RUNS_ATTRIBUTION)));
     for (let n = 1; n <= 24; n += 1) insert(db, `old${n}`, "analyze-plan-execute", n % 6 === 0 ? "failed" : "succeeded", `lp-task:att_${n}`, `att_${n}`);
     insert(db, "keyless", "analyze-plan-execute", "succeeded", null, "att_keyless");
     insert(db, "chain", "analyze-plan-execute", "succeeded", "wf:lprun_1:analyze-plan-execute:abc", null, null, 200);
