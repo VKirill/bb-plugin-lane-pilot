@@ -42,13 +42,16 @@ export function parseMemoryCandidates(raw:unknown,settings:MemorySettings):Memor
   for(const value of raw){
     if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("memory entry must be an object");
     const row=value as Record<string,unknown>;
-    if(Object.keys(row).some((key)=>!["kind","content","concepts"].includes(key)))throw new Error("memory entry contains unsupported fields");
+    if(Object.keys(row).some((key)=>!["kind","content","concepts","supersedes","valid_until"].includes(key)))throw new Error("memory entry contains unsupported fields");
     if(row.kind!=="core"&&row.kind!=="note")throw new Error("memory kind must be core or note");
     if(typeof row.content!=="string"||!row.content.trim()||Buffer.byteLength(row.content,"utf8")>MAX_ENTRY_BYTES)throw new Error("memory content is empty or exceeds the 64000 byte limit");
     const issue=memoryContentIssue(row.content);
     if(issue)throw new Error(issue);
     if(!Array.isArray(row.concepts)||row.concepts.length>24||row.concepts.some((item)=>typeof item!=="string"||!item.trim()||item.length>100))throw new Error("memory concepts must be up to 24 short strings");
-    const entry={kind:row.kind as MemoryKind,content:row.content.trim(),concepts:[...new Set((row.concepts as string[]).map((item)=>item.trim().toLowerCase()))]};
+    if(row.supersedes!==undefined&&(!Array.isArray(row.supersedes)||row.supersedes.length>5||row.supersedes.some((item)=>typeof item!=="string"||!/^[0-9a-f]{12,64}$/.test(item))))throw new Error("memory supersedes must be up to 5 record ids (12 to 64 hex characters)");
+    if(row.valid_until!==undefined&&(typeof row.valid_until!=="string"||!/^\d{4}-\d{2}-\d{2}/.test(row.valid_until)||Number.isNaN(Date.parse(row.valid_until))))throw new Error("memory valid_until must be an ISO date like 2026-12-31");
+    const entry:MemoryCandidate={kind:row.kind as MemoryKind,content:row.content.trim(),concepts:[...new Set((row.concepts as string[]).map((item)=>item.trim().toLowerCase()))],
+      ...(row.supersedes?.length?{supersedes:row.supersedes as string[]}:{}),...(row.valid_until!==undefined?{validUntil:Date.parse(row.valid_until as string)}:{})};
     const tokens=estimateTokens(entry.content);
     if(entry.kind==="core")core+=tokens;else note+=tokens;
     index+=tokens;

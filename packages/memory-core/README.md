@@ -11,8 +11,8 @@ retrieval, and a token budget that is enforced before anything is stored or inje
 | `parseMemorySettings(raw)` | Validates the `memory.*` settings object into `MemorySettings` |
 | `parseMemoryCandidates(raw, settings)` | Validates a model's JSON output; rejects credentials, instruction overrides, oversize entries and budget overruns |
 | `memoryRecordId(projectId, kind, content, bot?)` | Stable id: the same fact stored twice is one record |
-| `storeMemoryRecords(db, input)` | Inserts new candidates inside the budgets, in one transaction; returns the corpus and the inserted ids |
-| `searchMemoryRecords(db, projectId, query, limit, engine, audience?, bot?)` | FTS5 (`bm25` ranking) or a plain lexical fallback |
+| `storeMemoryRecords(db, input)` | Inserts new candidates inside the budgets, in one transaction. A full note shelf hides the least useful notes instead of refusing (`evictedIds`); a restated or named note replaces the older one (`supersededIds`); dates and 90 idle days expire notes (`expiredIds`); a second source confirms an observed record (`corroboratedIds`) |
+| `searchMemoryRecords(db, projectId, query, limit, engine, audience?, bot?, options?)` | FTS5 (`bm25` ranking) or a plain lexical fallback; only active, in-date records, and observed ones only after a second source or the quarantine (`options.includeObserved` for the session that wrote them) |
 | `memoryContext(records, taskText, budget)` | Packs the most relevant records under a token budget into prompt text |
 | `memoryMaintenancePrompt(input)` | The prompt for the maintenance model |
 | `estimateTokens(text)` | The budget unit used everywhere here |

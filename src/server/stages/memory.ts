@@ -170,7 +170,9 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       spawnCalled=true;
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId, "memory-maintainer"),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
-        prompt:memoryMaintenancePrompt({task,acceptedResult:accepted.result,settings:snapshot.settings,agent:snapshot.agent}),
+        prompt:memoryMaintenancePrompt({task,acceptedResult:accepted.result,settings:snapshot.settings,agent:snapshot.agent,
+          existing:searchMemoryRecords(db,args.projectId,`${task.title}\n${task.objective}`,8,snapshot.settings.searchEngine,snapshot.settings.audience,snapshot.settings.personalBot)
+            .filter((record)=>record.kind==="note"&&!record.concepts.includes("rule")).map((record)=>({id:record.id,content:record.content}))}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
           stageId:"memory-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});

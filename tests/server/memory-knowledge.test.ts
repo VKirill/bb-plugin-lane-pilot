@@ -19,11 +19,11 @@ describe("K8 defect 1: a full memory budget no longer stops memory silently", ()
 
   it("makes room by hiding the least useful note, and says which", () => {
     const db = newDb();
-    const a = storeMemoryRecords(db, { projectId: "P", ...limits, ...budgets, entries: [note("alpha note text about one area")], now: 1000 }).insertedIds[0]!;
-    const b = storeMemoryRecords(db, { projectId: "P", ...limits, ...budgets, entries: [note("bravo note text about two area")], now: 2000 }).insertedIds[0]!;
+    const a = storeMemoryRecords(db, { projectId: "P", ...limits, ...budgets, entries: [note("alpha note text about one area")] }).insertedIds[0]!;
+    const b = storeMemoryRecords(db, { projectId: "P", ...limits, ...budgets, entries: [note("bravo note text about two area")] }).insertedIds[0]!;
     // b was given to a writer and the attempt was accepted: it is worth more than the never-used a.
     db.prepare("UPDATE lane_pilot_memory SET use_count=3, accepted_count=3 WHERE id=?").run(b);
-    const result = storeMemoryRecords(db, { projectId: "P", ...limits, ...budgets, entries: [note("charlie note text about three")], now: 3000 });
+    const result = storeMemoryRecords(db, { projectId: "P", ...limits, ...budgets, entries: [note("charlie note text about three")] });
     expect(result.insertedIds).toHaveLength(1);
     expect(result.evictedIds).toEqual([a]);
     expect(statusOf(db, a)).toBe("expired");

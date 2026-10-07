@@ -1,7 +1,7 @@
 import { memoryContentIssue } from "./candidates";
 import type Database from "better-sqlite3";
 import { memoryRecordId } from "./candidates";
-import { OBSERVED_QUARANTINE_MS, hideRecord } from "./lifecycle";
+import { OBSERVED_QUARANTINE_MS, expireMemory, hideRecord, idleSql, sameSubject } from "./lifecycle";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine, MemoryStatus, MemoryTrust } from "./settings";
 
 /** The better-sqlite3 surface this package needs; BB's `bb.storage.database()` satisfies it. */
@@ -46,8 +46,10 @@ export type StoreMemoryInput = { projectId: string; personalBot?: string; audien
 export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[];
   /** Notes hidden to make room under a budget, least useful first. */
   evictedIds: string[];
-  /** Records a newer one replaced (same file edited, same subject). */
+  /** Records a newer one replaced (same file edited, same subject, or named by the maintainer). */
   supersededIds: string[];
+  /** Records whose date passed or that nobody was given for 90 days; hidden before this write. */
+  expiredIds: string[];
   /** Observed records a second independent source confirmed. */
   corroboratedIds: string[] };
 
@@ -59,6 +61,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const personalBot = input.personalBot ?? "";
     // The one door every write passes: rules and imports reach the corpus without the maintainer's parser.
     for (const entry of input.entries) { const issue = memoryContentIssue(entry.content); if (issue) throw new Error(issue); }
+    const expiredIds = expireMemory(db, input.projectId, personalBot, now, (projectId, id) => dropMemoryIndexes(db, projectId, id));
     const rows = db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND personal_bot=?`).all(input.projectId, personalBot) as Row[];
     const known = new Map(rows.map((row) => [memoryRecordId(input.projectId, row.kind, row.content, personalBot), row]));
     const pending: Array<{ entry: MemoryCandidate; id: string }> = [];
@@ -70,7 +73,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (seen.has(id)) continue;
       seen.add(id);
       const hit = known.get(id);
-      if (!hit) { pending.push({ entry, id }); continue; }
+      if (!hit) { if (entry.validUntil == null || entry.validUntil > now) pending.push({ entry, id }); continue; }
       if (hit.status === "active") { if (hit.trust === "observed" && hit.source_sha256 !== input.sourceSha256) corroborate.push(hit.id); continue; }
       // A hidden record comes back when its fact is stated again, or when the file it came from says so; a replaced one stays replaced otherwise.
       const wanted = hit.status === "expired" || (entry.sourceFileId != null && entry.sourceFileId === hit.source_file_id);
@@ -84,6 +87,15 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     for (const { entry, id } of adds) {
       // An edited file record: what the file said before is replaced by what it says now.
       if (entry.sourceFileId) for (const row of rows) if (row.status === "active" && row.source_file_id === entry.sourceFileId && row.id !== id) replace(row.id, id);
+      // One session's word does not retire what the maintainer or a file established.
+      if (trust !== "confirmed") continue;
+      const replaceable = rows.filter((row) => row.status === "active" && !gone.has(row.id) && row.id !== id && row.audience === input.audience && !isRule(row));
+      for (const prefix of entry.supersedes ?? []) {
+        const named = replaceable.filter((row) => row.id.startsWith(prefix));
+        if (named.length === 1) replace(named[0]!.id, id);
+      }
+      // A restated note replaces the older wording of the same subject.
+      if (entry.kind === "note") for (const row of replaceable) if (row.kind === "note" && !gone.has(row.id) && sameSubject(entry, { content: row.content, concepts: JSON.parse(row.concepts_json) as string[] })) replace(row.id, id);
     }
     const active = rows.filter((row) => row.status === "active" && !gone.has(row.id));
     const sum = (list: Array<{ content: string }>) => list.reduce((total, row) => total + estimate(row.content), 0);
@@ -115,8 +127,8 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       insertedIds.push(id);
     }
     for (const { entry, id } of revive) {
-      db.prepare("UPDATE lane_pilot_memory SET status='active', superseded_by=NULL, valid_until=?, source_sha256=?, trust=?, last_used_at=NULL WHERE project_id=? AND id=?")
-        .run(entry.validUntil ?? null, input.sourceSha256, trust, input.projectId, id);
+      db.prepare("UPDATE lane_pilot_memory SET status='active', superseded_by=NULL, valid_until=?, source_sha256=?, trust=?, last_used_at=? WHERE project_id=? AND id=?")
+        .run(entry.validUntil ?? null, input.sourceSha256, trust, now, input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
     }
@@ -124,7 +136,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const mine = new Set(input.entries.map((entry) => memoryRecordId(input.projectId, entry.kind, entry.content, personalBot)));
     const records = (db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? ORDER BY created_at DESC`).all(input.projectId, personalBot) as Row[])
       .filter((row) => row.status === "active" || mine.has(row.id)).map(toRecord);
-    return { records, insertedIds, evictedIds, supersededIds, corroboratedIds: corroborate };
+    return { records, insertedIds, evictedIds, supersededIds, expiredIds, corroboratedIds: corroborate };
   }).immediate();
 }
 
@@ -139,7 +151,7 @@ export type SearchOptions = { now?: number; includeObserved?: boolean };
 
 function visibility(alias: string, options: SearchOptions): string {
   const now = Math.floor(options.now ?? Date.now());
-  return `${alias}.status='active' AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now})`
+  return `${alias}.status='active' AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND NOT (${idleSql(alias, now)})`
     + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`);
 }
 
