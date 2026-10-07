@@ -45,6 +45,8 @@ export interface StepContext<R = unknown> {
   render(template: string): string;
   /** A value in an expression-valued position (`'text'`, `node.field`, `a + b`, a bare word is itself). */
   value(spec: unknown): unknown;
+  /** A value with `{{ref}}` placeholders written in (a lone placeholder keeps the type of what it names; a node that has not run gives nothing). */
+  template(value: unknown): unknown;
   /** An external call recorded as intended before and done after, so a reload neither repeats nor forgets it. */
   effect<T>(key: string, kind: string, fn: () => Promise<T>, options?: { intent?: unknown; reconcile?: EffectReconcile<T> }): Promise<T>;
 }
@@ -474,6 +476,7 @@ export class WorkflowEngine {
       resolve,
       render: (template) => String(renderValue(template, (ref, text) => { const found = env.read(ref); if (!found.ran) throw new MissingValueError("reference_missing", `"${text}" has no value yet`); return found.value; }, run.mode) ?? ""),
       value: (spec) => evalSpec(valueSpecOf(spec), lenient(env), `${node.id}`),
+      template: (value) => renderValue(value, (ref) => lenient(env).read(ref).value, run.mode),
       effect: (key, kind, fn, options) => this.runEffect(j, run.id, step.step_key, key, kind, fn, options),
     };
   }
