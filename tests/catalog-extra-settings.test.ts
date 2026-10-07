@@ -26,11 +26,12 @@ describe("settings that code reads and the catalog now lists", () => {
     expect(row("integration.gate_when")).toMatchObject({ uiStatus: "editable", control: "select", options: ["queue_drained", "every_n"], defaultValue: gate.gateWhen });
     expect(row("integration.gate_every")).toMatchObject({ uiStatus: "editable", control: "number", min: 1, defaultValue: String(gate.gateEvery) });
     expect(row("verification.sandbox_unsafe")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "stages" });
+    expect(row("secrets.allow")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "stages", scope: "project" });
     expect(bookkeepingSetting({ "bookkeeping.paths": row("bookkeeping.paths")!.defaultValue })).toEqual([]);
   });
 
   it("have a label and a reason in English and in Russian", () => {
-    for (const key of ["writer.silence_nudge_min", "bookkeeping.paths", "integration.gate_command", "integration.gate_when", "integration.gate_every", "verification.sandbox_unsafe"]) {
+    for (const key of ["writer.silence_nudge_min", "bookkeeping.paths", "integration.gate_command", "integration.gate_when", "integration.gate_every", "verification.sandbox_unsafe", "secrets.allow"]) {
       const id = row(key)!.id;
       for (const locale of [en, ru] as Array<Record<string, string>>) {
         expect(locale[`field_${id}`], `${key} field`).toBeTruthy();
