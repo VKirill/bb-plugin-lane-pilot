@@ -6,6 +6,7 @@ import { z } from "zod";
 import packageJson from "../../package.json";
 import { fullAccessSpawn } from "./pm-spawn";
 import { scheduleIsolated } from "./schedules";
+import { HOOK_TIMEOUTS_KEY, type HookTimeoutRecord } from "./hook-timeouts";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { stringAt } from "./values";
 import { writerBriefStats } from "../writer-brief";
@@ -50,7 +51,7 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
 
 export type Incident = {
   signature: string;
-  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill";
+  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook";
   projectId: string;
   runId: string;
   taskId: string;
@@ -284,6 +285,16 @@ export function createSelfRepair(ctx: ServerCore) {
           attemptId: `drill:${hostId}:${row.at}:${check.name}`, pmThreadId: null, writerThreadId: null, version: VERSION,
           reason: `weekly fire drill on ${hostId}: «${check.name}» failed: ${check.detail ?? ""}`, at: row.at });
       }
+    }
+    // A hook of the plugin that did not answer in its time (VK hook policy): the turn went on without Lane Pilot's env or
+    // dispatch decision. A reload's own window is not a fault.
+    const hookRows = await bb.storage.kv.get(HOOK_TIMEOUTS_KEY).catch(() => null);
+    for (const row of (Array.isArray(hookRows) ? hookRows : []) as HookTimeoutRecord[]) {
+      if (row.quiet || row.at <= since) continue;
+      const effect = row.hook === "contributeEnv" ? (row.required ? "env required, turn not started" : "env not applied") : row.hook === "messageDispatch" ? "dispatch hook not applied" : "mention not resolved";
+      out.push({ signature: reasonSignature("hook", `hook ${row.hook} timed out`), kind: "hook", projectId: row.projectId ?? "-", runId: "-", taskId: "-",
+        attemptId: `hook:${row.hook}:${row.at}`, pmThreadId: null, writerThreadId: row.threadId, version: VERSION,
+        reason: `Lane Pilot hook ${row.hook} did not answer in ${row.timeoutMs} ms: ${effect}`, at: row.at });
     }
     // The same unfamiliar reason in several tasks within a day is a pattern, not one writer's mistake.
     const recent = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a
