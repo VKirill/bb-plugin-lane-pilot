@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **K1: sharper role texts, adapted from Maestro-Flow (MIT).** The plan critic reads `read_first` through the PM read context, wants criteria a command or grep can decide (no «properly», «clean», «consistent with»), and ignores a finding or a question without a file:line. The code critic checks three layers (exists, substantive, wired), the anti-patterns (placeholder, stub, log-only handler, disabled tests), six dimensions, and BLOCK / WARN / PASS thresholds (BLOCK: one critical or more than 5 high), and confirms every critical or high finding three ways (prosecutor, defence, judge) before it reports it, keeping it only when 2 of 3 hold. Self-repair works by scientific debugging (a confirmed root cause at a file:line, at most 3 hypotheses with evidence, a stop after 3 refuted) and classifies a failing check as `test_defect`, `code_defect` or `env_issue`. The browser check asserts three layers per feature (entry point, write request, DOM result) and never turns a case it could not assert into a pass. The texts live in `src/stages/role-method.ts`; `THIRD_PARTY_NOTICES.md` carries the MIT notice and names the files with adapted text.
+
 ## 0.1.180
 
 - **A folder without git: only what the writer did counts as its touch.** Edited paths, command text and tool arguments; a command's output does not. A plain `ls` listed the PM's `index.md` and the writer was blamed for it, so the 0.1.179 fix never applied (drill 2026-10-07).

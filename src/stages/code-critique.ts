@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "./model-json";
+import { CODE_CRITIC_METHOD } from "./role-method";
 
 export const CODE_CRITIQUE_STAGE = "code-critique" as const;
 export const CODE_CRITIQUE_MAX_ROUNDS = 3;
@@ -330,6 +331,7 @@ export function codeCritiquePrompt(input: {
     `Review the completed writer candidate, not the writer's self-report. ${NO_TOOLS_LINE}`,
     "If you have the gitnexus tools and the project has a `.gitnexus/` index, use `query`/`context`/`impact` to check claims about callers and blast radius; grep for literals.",
     "Judge only in-scope owns_paths against the task contract, host-read file bytes/diff, writer reply hash, and verification stdout/stderr. Exit codes alone are not sufficient.",
+    ...CODE_CRITIC_METHOD,
     "Answer with one JSON object and nothing else: no text before or after it. Keys: decision (\"approve\" or \"changes_requested\"), summary (string, at most 2000 characters), findings (at most 30 objects). Finding keys: id (at most 80 characters), severity (\"info\", \"warning\" or \"blocking\"), finding (at most 1000 characters), criterion (at most 500); optional path, line (positive integer), evidence (at most 2000), impact, trigger, verificationExpectation (each at most 500). Any other key makes the answer unreadable and the attempt is blocked.",
     "Use changes_requested only when at least one finding is blocking: a concrete unmet requirement, an ignored rule, changed behavior that no test or acceptance line covers, or a contradiction between report, tests and diff. Info and warning findings go with decision approve; changes_requested without a blocking finding is read as approve. Build each id from the file and the criterion in kebab case (for example src/a.ts:rate-limit-missing) so the same problem gets the same id when the code is reviewed again.",
     "Cosmetic preferences are severity info and must not be blocking. Ambiguous issues stay uncertain; do not invent rewrites.",
