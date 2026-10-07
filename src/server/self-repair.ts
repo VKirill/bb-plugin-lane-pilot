@@ -86,7 +86,7 @@ type SignatureRecord = {
 };
 type SelfRepairState = { cursor: number; lastTickAt: number | null; signatures: Record<string, SignatureRecord>; spawned: Array<{ at: number; threadId: string; signature: string }> };
 
-const CONFIG_KEY = "self-repair:config";
+export const CONFIG_KEY = "self-repair:config";
 const STATE_KEY = "self-repair:state";
 const SYSTEM_REASON = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing/i;
 const STUCK_MS = 45 * 60_000;

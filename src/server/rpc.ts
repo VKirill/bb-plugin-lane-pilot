@@ -14,6 +14,7 @@ import { selfRepairRpc } from "./self-repair";
 import { canaryRpc } from "./canary";
 import { sessionMemoryRpc } from "./session-memory";
 import { createWorkflowArchitect } from "./workflow-architect";
+import { architectStartRpc } from "./architect-start";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
@@ -31,5 +32,6 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...canaryRpc(services.canary),
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
+    ...architectStartRpc(ctx, services),
   });
 }

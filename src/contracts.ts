@@ -1597,6 +1597,15 @@ export const rpcContract = defineRpcContract({
     input: z.object({ projectId: z.string().min(1), workflowId: z.string().min(1), mode: z.enum(["edit", "duplicate"]), scope: z.enum(["global", "project"]).optional() }).strict(),
     output: z.object({ draftId: z.string().nullable(), workflowId: z.string().nullable(), reused: z.boolean(), reason: z.string().optional() }).strict(),
   },
+  /**
+   * «Build with the architect»: a chat thread with the Workflow architect already active (Claude Code, Opus 5.5, high, standard speed).
+   * The project is `projectId`, else the draft's, else the Lane Pilot project of the hub; `sectionId` files the chat in that Project Folders section.
+   * An architect chat of the same project (and draft) that is still alive is returned instead of a second one (`reused`).
+   */
+  workflow_architect_start: {
+    input: z.object({ projectId: z.string().min(1).optional(), sectionId: z.string().min(1).optional(), draftId: z.string().min(1).optional() }).strict(),
+    output: z.object({ threadId: z.string(), projectId: z.string(), reused: z.boolean() }).strict(),
+  },
   /** What a node may use: skills, plugins, MCP servers, Env Catalog names (never values), machines, specialist roles. */
   workflow_capabilities: {
     input: z.object({ projectId: z.string().min(1), draftId: z.string().min(1).optional() }).strict(),

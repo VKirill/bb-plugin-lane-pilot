@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **«Собрать с архитектором» works.** The button called `workflow_architect_start`, which no server registered («plugin "lane-pilot" has no rpc method»). The RPC now exists (`projectId?`, `sectionId?`, `draftId?` -> `{threadId, projectId, reused}`): the server spawns a visible chat «Архитектор цепочек» with the Workflow architect already active (its profile token goes in the first message, so the dispatch hook binds the same session, overlay and tools as the composer's «Enable Lane Pilot»), always Claude Code, Opus 5.5, reasoning high, service tier `default` sent explicitly (never the remembered fast mode), in the project's own source folder on its machine. The tab opens it in the right side panel next to the graph. The chat opens with the architect's own greeting (an agent-only brief; with `draftId` it reads that draft and continues it). Project: `projectId`, else the draft's, else the Lane Pilot project of the hub (self-repair's); `sectionId` files the chat in that Project Folders section. A live (not archived, not failed) architect chat of the same project and draft is returned instead of a second one, also for a double click.
+- Test that every RPC `src/ui` and `app.tsx` call by name is in the contract and registered on the server (`tests/ui-rpc-registered.test.ts`).
+
 ## 0.1.188
 
 - **Workflow graph is readable.** «Fit» and the first view never go below zoom 0.7 (cards are 264 px wide, 185 px on screen at the floor); a graph wider than the panel opens on its start and the owner pans along the chain («Drag to move along the chain»). Edge labels are 12 px, wrap, and grow against the zoom (up to a fifth) so they stay readable when zoomed out; layers are spaced for them. A free `note` node is no longer laid out far from the graph: notes are listed under it (and open the same panel). The warning/error marks on cards and edges are amber/red.
