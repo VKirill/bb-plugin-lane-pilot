@@ -3,15 +3,14 @@ import type { WorkflowView, ViewNode, ViewEdge } from "../workflow/view";
 /**
  * Where the nodes of a workflow graph go. elkjs does the layering (it handles loops and nested graphs); this module feeds it
  * fixed-size cards and turns the answer into positions a canvas can use. A subworkflow node that is expanded becomes a group:
- * the called graph is laid out inside it first, and the group takes the size of its content.
+ * the called graph is laid out inside it first, and the group takes the size of its content. Notes are not laid out (see `build`).
  */
 /** The slice of elk's graph format used here (elkjs's own typings do not pass strict library checks, see elk-shim.d.ts). */
 type ElkNode = { id: string; x?: number; y?: number; width?: number; height?: number; children?: ElkNode[]; edges?: ElkExtendedEdge[]; layoutOptions?: Record<string, string> };
 type ElkExtendedEdge = { id: string; sources: string[]; targets: string[] };
 
-export const CARD = { width: 232, height: 104 } as const;
+export const CARD = { width: 248, height: 112 } as const;
 const TERMINAL = { width: 76, height: 34 } as const;
-const NOTE = { width: 200, height: 72 } as const;
 export const GROUP_PAD = { top: 40, side: 14, bottom: 14 } as const;
 
 export type Direction = "RIGHT" | "DOWN";
@@ -26,7 +25,7 @@ export type Placed = {
 export type PlacedEdge = { key: string; edge: ViewEdge; source: string; target: string };
 export type Layout = { nodes: Placed[]; edges: PlacedEdge[]; width: number; height: number };
 
-const sizeOf = (node: ViewNode) => (node.kind === "start" || node.kind === "end" ? TERMINAL : node.kind === "note" ? NOTE : CARD);
+const sizeOf = (node: ViewNode) => (node.kind === "start" || node.kind === "end" ? TERMINAL : CARD);
 
 /** Mirrors an edge list so that a node's id is the one the canvas uses. */
 const keyOf = (prefix: string, id: string) => (prefix ? `${prefix}/${id}` : id);
@@ -40,6 +39,8 @@ function build(graph: WorkflowView, expansions: Expansions | undefined, prefix: 
   const present = new Set<string>();
   for (const node of graph.nodes) {
     if (inner && (node.kind === "start" || node.kind === "end")) continue;
+    // A note has no edges, so the layout would drop it far from what it explains; the canvas lists notes beside the graph instead.
+    if (node.kind === "note") continue;
     const key = keyOf(prefix, node.id);
     present.add(node.id);
     const expansion = node.kind === "subworkflow" ? expansions?.get(key) : undefined;

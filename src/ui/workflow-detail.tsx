@@ -4,6 +4,7 @@ import type { z } from "zod";
 import type { rpcContract } from "../contracts";
 import { t, type I18nKey, type Locale } from "../../i18n";
 import { Button } from "../../components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { LP_ALL_PROJECTS } from "../realtime-channel";
 import type { ViewNode, WorkflowView } from "../workflow/view";
 import { HELPER_PANEL_ACTION } from "./helper-threads";
@@ -28,6 +29,10 @@ export const RUN_STATUS_KEY: Record<string, I18nKey> = {
 export const runPill = (status: string) => status === "succeeded" ? "lp-pill-success" : status === "running" || status === "waiting" ? "lp-pill-info" : status === "canceled" ? "lp-pill-muted" : "lp-pill-danger";
 const STEP_PILL: Record<string, string> = { pending: "lp-pill-muted", running: "lp-pill-info", waiting: "lp-pill-neutral", done: "lp-pill-success", failed: "lp-pill-danger", skipped: "lp-pill-muted" };
 const NODE_KEY: Record<string, I18nKey> = { pending: "wfNode_pending", running: "wfNode_running", waiting: "wfNode_waiting", done: "wfNode_done", failed: "wfNode_failed", skipped: "wfNode_skipped" };
+
+const DEFINITION = "__definition__";
+const dotClass = (status: string) => status === "succeeded" ? "bg-[var(--lp-success)]" : status === "running" || status === "waiting" ? "bg-[var(--lp-info)]" : status === "canceled" ? "bg-[var(--muted-foreground)]" : "bg-[var(--destructive)]";
+const StatusDot = ({ status }: { status: string }) => <span className={`${dotClass(status)} ${isActive(status) ? "lp-wf-pulse" : ""} inline-block size-2 shrink-0 rounded-full`} data-status={status} aria-hidden />;
 
 const when = (at: number | null) => (at ? new Date(at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "");
 const isActive = (status: string) => status === "running" || status === "waiting";
@@ -300,14 +305,23 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel 
       <Surface testId="wf-graph-panel">
         <SurfaceHeader className="flex-wrap justify-between">
           <h3 className="text-sm font-medium">{t("wfGraphHeading")}</h3>
-          <div className="lp-seg flex-wrap" role="group" aria-label={t("wfRunPick")} data-testid="wf-run-pick">
-            <Button type="button" variant="ghost" className="lp-seg-item h-7 px-2.5 text-xs hover:bg-transparent" aria-pressed={runId === null} data-testid="wf-pick-definition"
-              onClick={() => { setRunId(null); setFollow(false); setSelected(null); }}>{t("wfDefinition")}</Button>
-            {runs.map((row) => (
-              <Button key={row.id} type="button" variant="ghost" className="lp-seg-item h-7 px-2.5 text-xs hover:bg-transparent" aria-pressed={runId === row.id} data-testid={`wf-pick-run-${row.id}`}
-                onClick={() => { setRunId(row.id); setFollow(false); setSelected(null); }}>{isActive(row.status) ? <span className="lp-wf-pulse mr-1" aria-hidden /> : null}{runLabel(row)}</Button>
-            ))}
-          </div>
+          <Select value={runId ?? DEFINITION} onValueChange={(value) => { setRunId(value === DEFINITION ? null : value); setFollow(false); setSelected(null); }}>
+            <SelectTrigger aria-label={t("wfRunPick")} className="h-8 w-full min-w-0 text-xs sm:w-72" data-testid="wf-run-pick">
+              <SelectValue>
+                {runId && runs.some((row) => row.id === runId)
+                  ? <span className="flex min-w-0 items-center gap-2"><StatusDot status={runs.find((row) => row.id === runId)!.status} /><span className="truncate">{runLabel(runs.find((row) => row.id === runId)!)}</span></span>
+                  : t("wfDefinition")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DEFINITION} data-testid="wf-pick-definition">{t("wfDefinition")}</SelectItem>
+              {runs.map((row) => (
+                <SelectItem key={row.id} value={row.id} data-testid={`wf-pick-run-${row.id}`}>
+                  <span className="flex items-center gap-2"><StatusDot status={row.status} />{runLabel(row)}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SurfaceHeader>
         <SurfaceBody className="space-y-2">
           {current ? (

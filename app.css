@@ -203,7 +203,6 @@
     width: 100%;
     height: 100%;
     padding: 9px 10px;
-    overflow: hidden;
     border: 1px solid var(--lp-hairline);
     border-left: 3px solid var(--wf-tone);
     border-radius: 12px;
@@ -228,6 +227,8 @@
   .lp-wf-node[data-status="failed"] { border-color: var(--destructive); }
   .lp-wf-node[data-status="done"] { border-color: color-mix(in oklab, var(--lp-success) 55%, var(--lp-hairline)); }
 
+  .lp-wf-role { color: var(--wf-tone); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
+  .lp-wf-node[data-tone="agent"] .lp-wf-role, .lp-wf-node[data-tone="flow"] .lp-wf-role, .lp-wf-node[data-tone="action"] .lp-wf-role { color: var(--muted-foreground); }
   .lp-wf-tile { color: var(--wf-tone); background-color: color-mix(in oklab, var(--wf-tone) 12%, var(--lp-card)); }
 
   .lp-wf-port {
@@ -264,10 +265,11 @@
   .lp-wf-expand { position: absolute; right: 8px; bottom: 6px; }
   .lp-wf-expand:disabled { opacity: 0.5; cursor: default; }
 
+  /* The «+» sits past the port, so a drag from the port and a click on the plus do not meet. */
   .lp-wf-add {
     position: absolute;
     top: 50%;
-    right: -11px;
+    right: -34px;
     width: 22px;
     height: 22px;
     margin-top: -11px;
@@ -275,9 +277,36 @@
     border-radius: 9999px;
     background-color: var(--lp-card);
     box-shadow: var(--lp-drop);
+    color: var(--foreground);
     line-height: 20px;
     cursor: pointer;
   }
+  .lp-wf-add:hover { background-color: var(--state-hover, var(--lp-well)); }
+  .lp-wf-add:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
+  .lp-wf-canvas[data-direction="DOWN"] .lp-wf-add { top: auto; right: 50%; bottom: -34px; margin: 0 -11px 0 0; }
+  .lp-wf-canvas[data-editing="1"] .lp-wf-port { width: 12px; height: 12px; cursor: crosshair; }
+  .lp-wf-canvas[data-editing="1"] .react-flow__handle.connectingto { border-color: var(--lp-info); background-color: color-mix(in oklab, var(--lp-info) 30%, var(--lp-card)); }
+
+  /* What the validator named: a red outline and a «!» on the card or the edge label. */
+  .lp-wf-problem {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    background-color: var(--destructive);
+    color: var(--destructive-foreground, #fff);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .lp-wf-node[data-problem="1"] { border-color: var(--destructive); }
+  .lp-wf-edge[data-problem="1"] { stroke: var(--destructive); stroke-width: 2; opacity: 1; }
+  .lp-wf-edge-label[data-problem="1"] { border-color: var(--destructive); }
+  .lp-wf-edge[data-selected="1"] { stroke: var(--primary); stroke-width: 2.5; opacity: 1; }
+  .lp-wf-edge-label[data-selected="1"] { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 30%, transparent), var(--lp-drop); }
 
   .lp-wf-terminal {
     display: flex;
@@ -296,17 +325,26 @@
   .lp-wf-terminal[data-status="done"] { color: var(--lp-success-text); }
   .lp-wf-terminal[data-status="failed"] { color: var(--lp-danger-text); }
 
+  /* Notes are listed under the graph: they have no edges, so on the canvas they would sit far from what they explain. */
+  .lp-wf-notes { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
   .lp-wf-note {
-    box-sizing: border-box;
+    display: flex;
     width: 100%;
-    height: 100%;
-    padding: 8px 10px;
-    overflow: hidden;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 7px 10px;
     border: 1px dashed var(--lp-outline);
     border-radius: 10px;
     background-color: color-mix(in oklab, var(--lp-warning) 9%, var(--lp-card));
     color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 16px;
+    text-align: left;
+    cursor: pointer;
   }
+  .lp-wf-note[data-selected="1"] { border-style: solid; border-color: var(--lp-warning); color: var(--foreground); }
+  .lp-wf-note:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
+  .lp-wf-note-mark { display: inline-flex; flex: none; padding-top: 2px; color: var(--lp-warning-text); }
 
   .lp-wf-group {
     box-sizing: border-box;
@@ -328,22 +366,23 @@
   .lp-wf-edge-label {
     position: absolute;
     display: flex;
-    max-width: 190px;
+    max-width: 230px;
     flex-direction: column;
     align-items: center;
-    padding: 2px 6px;
+    padding: 3px 8px;
     border: 1px solid var(--lp-hairline);
     border-radius: 8px;
     background-color: var(--lp-card);
     box-shadow: var(--lp-drop);
-    font-size: 10px;
-    line-height: 14px;
+    font-size: 12px;
+    line-height: 16px;
     pointer-events: all;
+    cursor: pointer;
   }
   .lp-wf-edge-label[data-state="untaken"] { opacity: 0.55; }
   .lp-wf-edge-when { color: var(--foreground); font-family: ui-monospace, monospace; }
   .lp-wf-edge-sub { color: var(--muted-foreground); font-family: ui-monospace, monospace; }
-  .lp-wf-pass { color: var(--muted-foreground); font-size: 9px; letter-spacing: 0.02em; text-transform: uppercase; }
+  .lp-wf-pass { color: var(--muted-foreground); font-size: 10px; letter-spacing: 0.02em; text-transform: uppercase; }
   .lp-wf-pass[data-pass="same-session"], .lp-wf-pass[data-pass="read-prior-session"], .lp-wf-pass[data-pass="fork"] { color: var(--primary); font-weight: 600; }
 
   /* A draft patch: what it touched is outlined until the next one. */
