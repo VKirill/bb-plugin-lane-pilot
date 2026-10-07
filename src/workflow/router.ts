@@ -267,10 +267,12 @@ const CONTINUE = new RegExp(`^(?:${foldSource("давай ")})?(?:${foldSource("
 type Doc = { workflow: Workflow; tf: Map<string, number>; len: number; exampleGrams: Array<Set<string>>; nameStems: Set<string> };
 const W_NAME = 3, W_TAG = 2.5, W_DESC = 1.5, W_EXAMPLE = 1, K1 = 1.2, BM_B = 0.6;
 
-const offered = (workflow: Workflow): boolean => workflow.status === "published" && !workflow.internal && !NEVER_OFFERED.has(workflow.id);
+/** The router offers, and the PM may start, only a published workflow that is not a fragment and not Lane Pilot's own per-task pipeline. */
+export const isOffered = (workflow: Workflow): boolean => workflow.status === "published" && !workflow.internal && !NEVER_OFFERED.has(workflow.id);
+export const isPipeline = (workflow: Workflow): boolean => NEVER_OFFERED.has(workflow.id);
 
 function buildIndex(workflows: ReadonlyArray<Workflow>) {
-  const docs: Doc[] = workflows.filter(offered).map((workflow) => {
+  const docs: Doc[] = workflows.filter(isOffered).map((workflow) => {
     const tf = new Map<string, number>();
     let len = 0;
     const add = (text: string, weight: number) => { for (const term of stems(text)) { tf.set(term, (tf.get(term) ?? 0) + weight); len += weight; } };
@@ -475,6 +477,7 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   }
 
   const index = buildIndex(input.workflows);
+  if (!index.docs.length) return empty({ evidence: { pattern: "no published workflow in the catalog", rejected: [], rules: [], model: "deterministic" } });
   let broad = s.sig.length < 2;
   let query = s.sig;
   if (broad && input.context?.trim()) {

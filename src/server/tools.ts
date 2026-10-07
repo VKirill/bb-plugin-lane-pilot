@@ -13,6 +13,7 @@ import { mountMemorySync } from "./memory-sync";
 import { mountCouncilTools } from "./council";
 import { mountSpecialists } from "./specialists";
 import { mountRelay } from "./relay";
+import { mountWorkflowTools } from "./workflow-tools";
 import { mountSelfRepair } from "./self-repair";
 import { mountHookTimeoutWatch } from "./hook-timeouts";
 import { registerObservedTool, ToolError } from "./tool-result";
@@ -340,6 +341,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountSpecialists(ctx);
   mountErrands(ctx);
   mountRelay(ctx);
+  mountWorkflowTools(ctx, services);
   mountSelfRepair(ctx);
   mountHookTimeoutWatch(ctx);
 
