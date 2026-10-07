@@ -1466,8 +1466,8 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("mirrors nothing by default, when the Tasks plugin is absent, or when no tracker project is linked — and the writer is unaffected",async()=>{
-    for(const [plugin,extra] of [[{linkedProjectId:projectId},{}],[null,{"tasks.mirror":true}],[{linkedProjectId:null},{"tasks.mirror":true}]] as const){
+  it("mirrors nothing when turned off, when the Tasks plugin is absent, or when no tracker project is linked — and the writer is unaffected",async()=>{
+    for(const [plugin,extra] of [[{linkedProjectId:projectId},{"tasks.mirror":false}],[null,{"tasks.mirror":true}],[{linkedProjectId:null},{"tasks.mirror":true}]] as const){
       tasksPlugin=plugin;tasksCalls.length=0;
       const {harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,...extra});
       await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});

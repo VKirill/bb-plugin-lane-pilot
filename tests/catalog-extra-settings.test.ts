@@ -21,7 +21,7 @@ describe("settings that code reads and the catalog now lists", () => {
 
   it("has a row for each, with the default the code uses", () => {
     expect(row("writer.silence_nudge_min")).toMatchObject({ uiStatus: "editable", control: "number", min: 1, defaultValue: String(DEFAULT_SILENCE_NUDGE_MIN), section: "writer" });
-    expect(row("tasks.mirror")).toMatchObject({ uiStatus: "editable", control: "switch", defaultValue: "false" });
+    expect(row("tasks.mirror")).toMatchObject({ uiStatus: "editable", control: "switch", defaultValue: "true" });
     expect(row("bookkeeping.paths")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "" });
     expect(row("integration.gate_command")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "" });
     const gate = parseIntegrationGateSettings({});

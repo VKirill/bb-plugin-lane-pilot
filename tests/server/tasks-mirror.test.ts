@@ -24,8 +24,9 @@ function setup(options: { enabled?: boolean; plugin?: boolean; linked?: boolean;
 }
 
 describe("tasksMirrorEnabled", () => {
-  it("is off unless the project says so", () => {
-    expect(tasksMirrorEnabled({})).toBe(false);
+  // On by default (owner: no switches to flip); a project with no linked Tasks project mirrors nothing anyway.
+  it("is on unless the project turns it off", () => {
+    expect(tasksMirrorEnabled({})).toBe(true);
     expect(tasksMirrorEnabled({ "tasks.mirror": false })).toBe(false);
     expect(tasksMirrorEnabled({ "tasks.mirror": "false" })).toBe(false);
     expect(tasksMirrorEnabled({ "tasks.mirror": true })).toBe(true);
