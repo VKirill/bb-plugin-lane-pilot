@@ -33,7 +33,7 @@ const projectId = "proj_models";
 const settings = { "writer.provider": "codex", "writer.model": "gpt-6-luna", "writer.reasoning_effort": "high", "writer.service_tier": "fast", "jev.LANE_JEV_EFFORT": false };
 
 const info = (id: string, name: string, available = true) => ({ id, displayName: name, available, logoUrl: null, capabilities: { supportsServiceTier: id === "codex" }, ...(id === "codex" ? { serviceTiers: [{ id: "default" }, { id: "fast" }] } : {}) });
-const model = (id: string, name: string, efforts: string[]) => ({ id, model: id, displayName: name, supportedReasoningEfforts: efforts.map((reasoningEffort) => ({ reasoningEffort })), defaultReasoningEffort: efforts[0] });
+const model = (id: string, name: string, efforts: string[], isDefault = false) => ({ id, model: id, displayName: name, supportedReasoningEfforts: efforts.map((reasoningEffort) => ({ reasoningEffort })), defaultReasoningEffort: efforts[0], isDefault });
 /** The Mac mini has Claude, Codex and OpenCode (Gemini, DeepSeek gone); OVH has Codex only; router9 is nowhere. */
 const bb = {
   sdk: {
@@ -41,9 +41,9 @@ const bb = {
     providers: {
       list: async ({ hostId }: { hostId: string }) => (hostId === "mac" ? [info("claude-code", "Claude Code"), info("codex", "Codex"), info("acp-opencode", "OpenCode"), info("router9", "router9", false)] : [info("codex", "Codex")]),
       models: async ({ providerId, hostId }: { providerId: string; hostId: string }) => ({
-        models: providerId === "claude-code" ? [model("claude-opus-5-5", "Opus 5.5", ["low", "medium", "high", "xhigh"]), model("claude-sonnet-5-5", "Sonnet 5.5", ["low", "medium", "high"])]
-          : providerId === "codex" ? [model("gpt-6-luna", "GPT-6 Luna", ["low", "medium", "high"])]
-            : providerId === "acp-opencode" && hostId === "mac" ? [model("router9/ag/gemini-3.8-flash-high", "Gemini 3.8 Flash", ["medium", "high"]), model("deepseek/v4", "DeepSeek V4", ["high"])] : [],
+        models: providerId === "claude-code" ? [model("claude-opus-5-5", "Opus 5.5", ["low", "medium", "high", "xhigh"], true), model("claude-sonnet-5-5", "Sonnet 5.5", ["low", "medium", "high"])]
+          : providerId === "codex" ? [model("gpt-6-luna", "GPT-6 Luna", ["low", "medium", "high"], true)]
+            : providerId === "acp-opencode" && hostId === "mac" ? [model("router9/ag/gemini-3.8-flash-high", "Gemini 3.8 Flash", ["medium", "high"], true), model("deepseek/v4", "DeepSeek V4", ["high"])] : [],
       }),
     },
   },

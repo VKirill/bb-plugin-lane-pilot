@@ -219,7 +219,7 @@ export const modelCatalogSchema = z.object({
   hosts: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean() }).strict()),
   providers: z.array(z.object({
     id: z.string(), displayName: z.string(), logoUrl: z.string().nullable(), family: z.string().nullable(), supportsServiceTier: z.boolean(), serviceTiers: z.array(z.string()), hostIds: z.array(z.string()),
-    models: z.array(z.object({ id: z.string(), model: z.string(), displayName: z.string(), efforts: z.array(z.string()), defaultEffort: z.string().nullable(), hostIds: z.array(z.string()) }).strict()),
+    models: z.array(z.object({ id: z.string(), model: z.string(), displayName: z.string(), efforts: z.array(z.string()), defaultEffort: z.string().nullable(), isDefault: z.boolean(), hostIds: z.array(z.string()) }).strict()),
   }).strict()),
 }).strict();
 export const workflowStatsSchema = z.object({

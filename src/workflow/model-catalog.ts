@@ -9,6 +9,8 @@ import { priceFor } from "../model-prices";
 export type CatalogHost = { id: string; name: string; connected: boolean };
 export type CatalogModel = {
   id: string; model: string; displayName: string; efforts: string[]; defaultEffort: string | null;
+  /** The provider's own default model: what choosing the provider picks first. */
+  isDefault: boolean;
   /** The machines whose provider lists this model. */
   hostIds: string[];
 };

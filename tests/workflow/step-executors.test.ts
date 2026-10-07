@@ -14,10 +14,10 @@ const catalog: ModelCatalog = {
   hosts: [{ id: "mac", name: "Mac mini", connected: true }, { id: "ovh", name: "OVH", connected: true }],
   providers: [
     { id: "codex", displayName: "Codex", logoUrl: null, family: null, supportsServiceTier: true, serviceTiers: ["default", "fast"], hostIds: ["mac", "ovh"],
-      models: [{ id: "gpt-6-luna", model: "gpt-6-luna", displayName: "GPT-6 Luna", efforts: ["low", "medium", "high"], defaultEffort: "medium", hostIds: ["mac", "ovh"] }] },
+      models: [{ id: "gpt-6-luna", model: "gpt-6-luna", displayName: "GPT-6 Luna", efforts: ["low", "medium", "high"], defaultEffort: "medium", isDefault: false, hostIds: ["mac", "ovh"] }] },
     { id: "acp-opencode", displayName: "OpenCode", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["mac"],
-      models: [{ id: "router9/ag/gemini-3.8-flash-high", model: "router9/ag/gemini-3.8-flash-high", displayName: "Gemini 3.8 Flash", efforts: ["medium", "high"], defaultEffort: "high", hostIds: ["mac"] },
-        { id: "deepseek/v4", model: "deepseek/v4", displayName: "DeepSeek V4", efforts: ["high"], defaultEffort: "high", hostIds: [] }] },
+      models: [{ id: "router9/ag/gemini-3.8-flash-high", model: "router9/ag/gemini-3.8-flash-high", displayName: "Gemini 3.8 Flash", efforts: ["medium", "high"], defaultEffort: "high", isDefault: false, hostIds: ["mac"] },
+        { id: "deepseek/v4", model: "deepseek/v4", displayName: "DeepSeek V4", efforts: ["high"], defaultEffort: "high", isDefault: false, hostIds: [] }] },
     { id: "router9", displayName: "router9", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: [], models: [] },
   ],
 };

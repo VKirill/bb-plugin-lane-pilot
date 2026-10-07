@@ -6,9 +6,9 @@ const catalog: ModelCatalog = {
   hosts: [{ id: "mac", name: "Mac mini", connected: true }],
   providers: [
     { id: "codex", displayName: "Codex", logoUrl: null, family: null, supportsServiceTier: true, serviceTiers: ["fast"], hostIds: ["mac"],
-      models: [{ id: "gpt-6-luna", model: "gpt-6-luna", displayName: "GPT-6 Luna", efforts: ["none", "low", "high", "ultra"], defaultEffort: "low", hostIds: ["mac"] }] },
+      models: [{ id: "gpt-6-luna", model: "gpt-6-luna", displayName: "GPT-6 Luna", efforts: ["none", "low", "high", "ultra"], defaultEffort: "low", isDefault: false, hostIds: ["mac"] }] },
     { id: "acp-opencode", displayName: "OpenCode", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["mac"],
-      models: [{ id: "deepseek/v4", model: "deepseek/v4", displayName: "DeepSeek V4", efforts: ["high"], defaultEffort: "high", hostIds: [] }, { id: "gemini", model: "gemini", displayName: "Gemini", efforts: ["medium"], defaultEffort: "medium", hostIds: ["mac"] }] },
+      models: [{ id: "deepseek/v4", model: "deepseek/v4", displayName: "DeepSeek V4", efforts: ["high"], defaultEffort: "high", isDefault: false, hostIds: [] }, { id: "gemini", model: "gemini", displayName: "Gemini", efforts: ["medium"], defaultEffort: "medium", isDefault: true, hostIds: ["mac"] }] },
   ],
 };
 const definition = { nodes: [{ id: "a", type: "agent", role: "analyst" }, { id: "fan", type: "parallel", child: { type: "agent", role: "analyst", model_preset: "cheap-fast" } }], edges: [] };

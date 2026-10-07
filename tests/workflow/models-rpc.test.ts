@@ -5,7 +5,7 @@ import { journalDb } from "./engine-helpers";
 
 type Info = { id: string; displayName: string; available: boolean; logoUrl: string | null; capabilities: { supportsServiceTier: boolean }; serviceTiers?: Array<{ id: string }> };
 const info = (id: string, available = true, tiers = false): Info => ({ id, displayName: id.toUpperCase(), available, logoUrl: `/logo/${id}`, capabilities: { supportsServiceTier: tiers }, ...(tiers ? { serviceTiers: [{ id: "default" }, { id: "fast" }] } : {}) });
-const model = (id: string, efforts: string[]) => ({ id, model: id, displayName: id, supportedReasoningEfforts: efforts.map((reasoningEffort) => ({ reasoningEffort })), defaultReasoningEffort: efforts[0] });
+const model = (id: string, efforts: string[]) => ({ id, model: id, displayName: id, supportedReasoningEfforts: efforts.map((reasoningEffort) => ({ reasoningEffort })), defaultReasoningEffort: efforts[0], isDefault: id === "gpt-6-luna" });
 
 /** Two machines: the Mac mini has OpenCode (Gemini, DeepSeek) and Codex; OVH has Codex only; a third is offline. */
 function fakeBb() {
@@ -24,9 +24,9 @@ describe("the model catalog of the hub", () => {
     expect(catalog.hosts).toEqual([{ id: "mac", name: "Mac mini", connected: true }, { id: "ovh", name: "OVH", connected: true }, { id: "old", name: "Old laptop", connected: false }]);
     const byId = Object.fromEntries(catalog.providers.map((row) => [row.id, row]));
     expect(byId.codex).toMatchObject({ hostIds: ["mac", "ovh"], supportsServiceTier: true, serviceTiers: ["default", "fast"], logoUrl: "/logo/codex" });
-    expect(byId.codex!.models).toEqual([{ id: "gpt-6-luna", model: "gpt-6-luna", displayName: "gpt-6-luna", efforts: ["low", "high"], defaultEffort: "low", hostIds: ["mac", "ovh"] }]);
+    expect(byId.codex!.models).toEqual([{ id: "gpt-6-luna", model: "gpt-6-luna", displayName: "gpt-6-luna", efforts: ["low", "high"], defaultEffort: "low", isDefault: true, hostIds: ["mac", "ovh"] }]);
     expect(byId["acp-opencode"]!.hostIds).toEqual(["mac"]);
-    expect(byId["acp-opencode"]!.models.map((row) => [row.id, row.hostIds])).toEqual([["router9/ag/gemini-3.8-flash-high", ["mac"]], ["deepseek/v4", ["mac"]]]);
+    expect(byId["acp-opencode"]!.models.map((row) => [row.id, row.hostIds])).toEqual([["deepseek/v4", ["mac"]], ["router9/ag/gemini-3.8-flash-high", ["mac"]]]);
     expect(fake.providers).not.toHaveBeenCalledWith({ hostId: "old" });
   });
 

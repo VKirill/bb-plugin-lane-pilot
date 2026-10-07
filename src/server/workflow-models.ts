@@ -48,11 +48,13 @@ export function createModelCatalog(ctx: Pick<ServerCore, "bb" | "log">, now: () 
           if (known) { known.hostIds.push(host.id); continue; }
           entry.models.push({
             id: row.id, model: row.model, displayName: row.displayName || row.model || row.id,
-            efforts: row.supportedReasoningEfforts.map((item) => item.reasoningEffort), defaultEffort: row.defaultReasoningEffort ?? null, hostIds: [host.id],
+            efforts: row.supportedReasoningEfforts.map((item) => item.reasoningEffort), defaultEffort: row.defaultReasoningEffort ?? null, isDefault: Boolean(row.isDefault), hostIds: [host.id],
           });
         }
       }));
     }));
+    // A model some machine has comes first; a provider like OpenCode lists hundreds, and the picker is typed into by its first letters.
+    for (const entry of providers.values()) entry.models.sort((a, b) => Number(b.hostIds.length > 0) - Number(a.hostIds.length > 0) || a.displayName.localeCompare(b.displayName));
     return {
       hosts: hosts.map((host) => ({ id: host.id, name: host.name, connected: host.connected })),
       providers: [...providers.values()].sort((a, b) => Number(b.hostIds.length > 0) - Number(a.hostIds.length > 0) || a.displayName.localeCompare(b.displayName)),

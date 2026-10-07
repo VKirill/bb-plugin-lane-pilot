@@ -53,6 +53,7 @@ export function effortFor(model: CatalogModel | undefined, current: string | nul
 /** What choosing a provider selects: its first model that some machine has, with an effort that model and the node both know. */
 export function firstChoice(catalog: ModelCatalog, providerId: string, currentEffort: string | null): ModelChoice | null {
   const provider = findProvider(catalog, providerId);
-  const model = provider?.models.find((row) => row.hostIds.length > 0);
+  const offered = provider?.models.filter((row) => row.hostIds.length > 0) ?? [];
+  const model = offered.find((row) => row.isDefault) ?? offered[0];
   return provider && provider.hostIds.length && model ? { providerId, model: model.id, effort: effortFor(model, currentEffort) } : null;
 }
