@@ -25,7 +25,7 @@
   "not_for": [
     "milestone-close"
   ],
-  "status": "draft",
+  "status": "published",
   "inputs": {
     "run_id": {
       "type": "string"

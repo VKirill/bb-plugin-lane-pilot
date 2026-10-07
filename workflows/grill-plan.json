@@ -26,7 +26,7 @@
     "grill-driven",
     "analyze-code"
   ],
-  "status": "draft",
+  "status": "published",
   "inputs": {
     "plan": {
       "type": "string"

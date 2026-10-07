@@ -31,7 +31,7 @@ export type Sim = {
 let storePromise: Promise<WorkflowStore> | null = null;
 export const chainStore = (): Promise<WorkflowStore> => (storePromise ??= loadWorkflowStore({ builtin: BUILTIN_SOURCES }));
 
-const FALSE_BY_NAME = /(^|_)(stalled|warn|has_ui|blocked|failed|thin|timeout|drift|error|errors|missing|dirty|unmet|needs|skipped|breaking|regression|rejected|duplicate)(_|$)/;
+const FALSE_BY_NAME = /(^|_)(stalled|warn|has_ui|blocked|failed|thin|timeout|drift|error|errors|missing|dirty|unmet|needs|skipped|breaking|regression|rejected|duplicate|no)(_|$)/;
 const defaultValue = (field: Field, node: string): unknown => {
   switch (field.type) {
     case "string": return field.default ?? "stub";

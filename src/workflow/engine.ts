@@ -195,7 +195,8 @@ export class WorkflowEngine {
     const inputs = checkOutput(workflow.inputs, withDefaults);
     const depth = input.depth ?? 0;
     if (depth > Math.min(workflow.guards.maxSubworkflowDepth, MAX_SUBWORKFLOW_DEPTH)) throw new MissingValueError("subworkflow_depth", `subworkflows go ${depth} deep; the limit is ${MAX_SUBWORKFLOW_DEPTH}`);
-    const given = inputs.quality_mode;
+    // The mode the caller asked for: the input as given, else the mode passed along (a subworkflow inherits its parent's), else the default.
+    const given = (input.inputs ?? {}).quality_mode;
     const asked: QualityMode = (QUALITY_MODES as readonly unknown[]).includes(given) ? given as QualityMode : input.mode ?? workflow.quality_mode?.default ?? "standard";
     const floor = workflow.quality_mode?.min;
     const mode: QualityMode = workflow.quality_mode?.fixed ?? (floor && QUALITY_MODES.indexOf(asked) < QUALITY_MODES.indexOf(floor) ? floor : asked);

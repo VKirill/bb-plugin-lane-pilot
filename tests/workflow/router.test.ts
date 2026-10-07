@@ -20,8 +20,8 @@ describe("text search", () => {
 
 describe("what is offered", () => {
   it("never offers a draft, a deprecated, an internal or the per-task workflow", async () => {
-    // The real files are drafts until they are published: nothing is offered except the published per-task pipeline, which is never a choice.
-    const drafts = await routeIntent({ intent: "Add pagination to the orders list and cover it with tests", workflows: builtinWorkflows() });
+    // A catalog of drafts offers nothing; the per-task pipeline is published but is never a choice.
+    const drafts = await routeIntent({ intent: "Add pagination to the orders list and cover it with tests", workflows: builtinWorkflows().map((workflow) => (workflow.id === "lp-task-pipeline" ? workflow : { ...workflow, status: "draft" as const })) });
     expect(drafts.decision).toBe("clarify");
     expect(drafts.candidates).toEqual([]);
     const published = await route("Build the lp.build fragment tasks waves and run the task pipeline for an attempt", {});

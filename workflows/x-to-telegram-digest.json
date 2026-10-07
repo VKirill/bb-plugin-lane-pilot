@@ -30,7 +30,7 @@
     "web-research",
     "insights-post"
   ],
-  "status": "draft",
+  "status": "tested",
   "tags": [
     "social",
     "digest",
@@ -561,6 +561,7 @@
         ]
       }
     },
-    "live": "реальный сбор в X с ограничением limit=15 на личном аккаунте; отправка в «Избранное» (me); проверка в Telegram, что Rich Message отрисовался (status=verified в квитанции tg)"
+    "live": "реальный сбор в X с ограничением limit=15 на личном аккаунте; отправка в «Избранное» (me); проверка в Telegram, что Rich Message отрисовался (status=verified в квитанции tg)",
+    "note": "Tested on stubs: every outside action answers from a stub. Not live yet: X is read in the owner's browser session and the digest is sent from the owner's Telegram account. See `live` for the acceptance run."
   }
 }

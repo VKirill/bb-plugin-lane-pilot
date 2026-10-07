@@ -27,7 +27,7 @@
     "security-audit",
     "code-review"
   ],
-  "status": "draft",
+  "status": "published",
   "triggers": [
     "chat",
     "schedule"
@@ -83,7 +83,6 @@
       "id": "scan",
       "type": "parallel",
       "for_each": "$inputs.perspectives",
-      "batch": 4,
       "child": {
         "type": "agent",
         "role": "analyst",

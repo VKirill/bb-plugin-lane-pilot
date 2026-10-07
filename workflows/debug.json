@@ -31,7 +31,7 @@
     "analyze-plan-execute",
     "review-fix"
   ],
-  "status": "draft",
+  "status": "published",
   "tags": [
     "code",
     "diagnosis"
@@ -104,7 +104,7 @@
       "src": "maestro-flow:workflows/debug.md (symptoms)",
       "prompt": "Five questions in one form - what was expected, what happened, the exact error text, since when (last good version if known), steps to reproduce. Anything not in the form the agent finds in git log -10 and git diff --stat HEAD~3.",
       "out": {
-        "answer": "string",
+        "answer": "any",
         "answer_kind": "given|answered|timeout"
       },
       "guards": {
@@ -164,7 +164,7 @@
         "objections": "string[]"
       },
       "guards": {
-        "maxVisits": 1,
+        "maxVisits": 3,
         "timeoutMin": 25
       }
     },
@@ -209,7 +209,7 @@
         "regression_tests": "investigate.regression_tests",
         "risks": "investigate.risks",
         "evidence_path": "investigate.evidence_path",
-        "fix_directions": "investigate.fix_direction",
+        "fix_directions": "[investigate.fix_direction]",
         "diagnosis": "investigate.mechanism"
       }
     },

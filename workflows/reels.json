@@ -30,7 +30,7 @@
     "x-to-telegram-digest",
     "insights-post"
   ],
-  "status": "draft",
+  "status": "tested",
   "tags": [
     "video",
     "social"
@@ -38,11 +38,13 @@
   "inputs": {
     "source": {
       "type": "string",
-      "note": "путь к файлу или ссылка; пусто - режим фильма"
+      "note": "путь к файлу или ссылка; пусто - режим фильма",
+      "default": ""
     },
     "subject": {
       "type": "string",
-      "note": "тема фильма, если нет source"
+      "note": "тема фильма, если нет source",
+      "default": ""
     },
     "count": {
       "type": "int",
@@ -60,8 +62,9 @@
       "note": "по умолчанию язык оригинала"
     },
     "style": {
-      "type": "house|chalk|threejs|watercolor|paper-cutout",
-      "note": "только для фильма; пусто - спросить"
+      "type": "string",
+      "default": "",
+      "note": "house|chalk|threejs|watercolor|paper-cutout; only for a film; empty - ask"
     },
     "publish_text": {
       "type": "bool",
@@ -634,6 +637,7 @@
         "folder != ''"
       ]
     },
-    "live": "реальная 3-минутная запись; 1 клип 30-45 с, 1080x1920, субтитры на кириллице, проверка verify по семплам кадров; для фильма - стиль chalk, тема из трёх предложений"
+    "live": "реальная 3-минутная запись; 1 клип 30-45 с, 1080x1920, субтитры на кириллице, проверка verify по семплам кадров; для фильма - стиль chalk, тема из трёх предложений",
+    "note": "Tested on stubs: every outside action answers from a stub. Not live yet: ffmpeg, Whisper and yt-dlp (or the film pipeline) on a machine that has them. See `live` for the acceptance run."
   }
 }

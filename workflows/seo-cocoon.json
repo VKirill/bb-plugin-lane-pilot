@@ -31,7 +31,7 @@
     "insights-post",
     "analyze-plan-execute"
   ],
-  "status": "draft",
+  "status": "tested",
   "tags": [
     "seo",
     "content",
@@ -43,7 +43,8 @@
       "required": true
     },
     "geo": {
-      "type": "string"
+      "type": "string",
+      "default": ""
     },
     "language": {
       "type": "string",
@@ -51,7 +52,8 @@
     },
     "site_goal": {
       "type": "string",
-      "note": "тип сайта и цель: интернет-магазин / услуги / блог / медиа"
+      "note": "тип сайта и цель: интернет-магазин / услуги / блог / медиа",
+      "default": ""
     },
     "site_url": {
       "type": "string"
@@ -463,6 +465,7 @@
         "files exist: handoff.md, architecture.json"
       ]
     },
-    "live": "небольшая тема (до 8 страниц), без платных API; handoff разделяет доказательства и гипотезы; сайт не тронут"
+    "live": "небольшая тема (до 8 страниц), без платных API; handoff разделяет доказательства и гипотезы; сайт не тронут",
+    "note": "Tested on stubs: every outside action answers from a stub. Not live yet: the specialist runs the DrMax cocoon engine; paid SEO tools only with the owner's consent. See `live` for the acceptance run."
   }
 }

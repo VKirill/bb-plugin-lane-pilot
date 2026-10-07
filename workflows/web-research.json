@@ -31,7 +31,7 @@
     "seo-cocoon",
     "analyze-code"
   ],
-  "status": "draft",
+  "status": "tested",
   "tags": [
     "research",
     "web"
@@ -108,7 +108,7 @@
         "clarification": "string"
       },
       "guards": {
-        "maxVisits": 1,
+        "maxVisits": 2,
         "timeoutMin": 5
       }
     },
@@ -358,6 +358,7 @@
         "every sentence with a number has [n]"
       ]
     },
-    "live": "реальный запрос с ключом из Env Catalog; в отчёте ни одной ссылки, которой нет в списке; ключ не появляется ни в выводе, ни в логах"
+    "live": "реальный запрос с ключом из Env Catalog; в отчёте ни одной ссылки, которой нет в списке; ключ не появляется ни в выводе, ни в логах",
+    "note": "Tested on stubs: every outside action answers from a stub. Not live yet: Tavily search with a key from Env Catalog and live links for the citation check. See `live` for the acceptance run."
   }
 }

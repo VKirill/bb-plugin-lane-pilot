@@ -27,7 +27,7 @@
     "analyze-code",
     "roadmap-driven"
   ],
-  "status": "draft",
+  "status": "published",
   "inputs": {
     "goal": {
       "type": "string",

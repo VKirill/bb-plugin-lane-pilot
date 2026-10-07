@@ -27,7 +27,7 @@
     "security-audit",
     "quality-loop"
   ],
-  "status": "draft",
+  "status": "published",
   "inputs": {
     "range": {
       "type": "string"

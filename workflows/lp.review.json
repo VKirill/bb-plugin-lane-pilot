@@ -231,5 +231,6 @@
       "to": "result",
       "pass": "artifact"
     }
-  ]
+  ],
+  "status": "published"
 }

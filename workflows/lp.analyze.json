@@ -164,5 +164,6 @@
       "to": "done",
       "pass": "artifact"
     }
-  ]
+  ],
+  "status": "published"
 }

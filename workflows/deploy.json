@@ -29,7 +29,7 @@
   "not_for": [
     "analyze-plan-execute"
   ],
-  "status": "draft",
+  "status": "tested",
   "tags": [
     "ops",
     "deploy"
@@ -60,7 +60,8 @@
     },
     "incident": {
       "type": "string",
-      "note": "причина для повторного дневного выката плагина; становится LP_DEPLOY_INCIDENT"
+      "note": "причина для повторного дневного выката плагина; становится LP_DEPLOY_INCIDENT",
+      "default": ""
     }
   },
   "outputs": {
@@ -534,6 +535,7 @@
         ]
       }
     },
-    "live": "staging-проект песочницы (тестовый FTP или скрипт); для плагина LP - только вручную владельцем, в обычном live-тесте не запускать (правило «не чаще раза в день»)"
+    "live": "staging-проект песочницы (тестовый FTP или скрипт); для плагина LP - только вручную владельцем, в обычном live-тесте не запускать (правило «не чаще раза в день»)",
+    "note": "Tested on stubs: every outside action answers from a stub. Not live yet: a real push of the plugin or a deploy to a server; run only as a dry run in acceptance. See `live` for the acceptance run."
   }
 }

@@ -31,7 +31,7 @@
     "web-research",
     "seo-cocoon"
   ],
-  "status": "draft",
+  "status": "tested",
   "tags": [
     "social",
     "research",
@@ -44,7 +44,8 @@
     },
     "post_urls": {
       "type": "string[]",
-      "note": "если даны - поиск пропускается"
+      "note": "если даны - поиск пропускается",
+      "default": []
     },
     "platform": {
       "type": "threads|instagram|vk",
@@ -430,6 +431,7 @@
         "draft_path == ''"
       ]
     },
-    "live": "один живой пост в Threads (post_urls), 40-80 комментариев; validate_artifacts.py проходит; в summary.md цитаты с id и ни одной выдуманной (проверка: цитата - подстрока comments.jsonl)"
+    "live": "один живой пост в Threads (post_urls), 40-80 комментариев; validate_artifacts.py проходит; в summary.md цитаты с id и ни одной выдуманной (проверка: цитата - подстрока comments.jsonl)",
+    "note": "Tested on stubs: every outside action answers from a stub. Not live yet: social-browser on Threads/Instagram/VK and the social-insights and text-insights scripts on the machine that has them. See `live` for the acceptance run."
   }
 }

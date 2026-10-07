@@ -149,5 +149,6 @@
       "to": "partial",
       "pass": "artifact"
     }
-  ]
+  ],
+  "status": "published"
 }

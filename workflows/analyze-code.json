@@ -27,7 +27,7 @@
     "plan-only",
     "code-review"
   ],
-  "status": "draft",
+  "status": "published",
   "inputs": {
     "goal": {
       "type": "string",

@@ -15,9 +15,12 @@ import { ok, wf } from "./engine-helpers";
 const PROJECT = "proj-1", PM = "pm-thread-1", RUN = "lprun-1";
 const published = (): ReadonlyArray<{ name: string; value: unknown }> => BUILTIN_SOURCES.map((source) => ({ name: source.name, value: { ...(source.value as object), status: "published" } }));
 
+/** The catalog with every workflow a draft: the router must offer nothing from it (the shipped chains are published or tested). */
+const drafts = (): ReadonlyArray<{ name: string; value: unknown }> => BUILTIN_SOURCES.map((source) => ({ name: source.name, value: { ...(source.value as object), status: "draft" } }));
+
 let draftStore: WorkflowStore, publishedStore: WorkflowStore;
 beforeAll(async () => {
-  draftStore = await loadWorkflowStore({ builtin: BUILTIN_SOURCES });
+  draftStore = await loadWorkflowStore({ builtin: drafts() });
   publishedStore = await loadWorkflowStore({ builtin: published() });
 });
 
@@ -239,7 +242,7 @@ describe("the tools in the plugin", () => {
   let dispose: (() => Promise<void> | void) | null = null;
   afterEach(async () => { await dispose?.(); dispose = null; });
 
-  it("are registered, and a PM chat gets a clear refusal for a draft workflow of the real catalog", async () => {
+  it("are registered, and a PM chat gets a clear refusal for a fragment of the real catalog", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
     dispose = () => harness.lifecycle.dispose();
@@ -249,9 +252,9 @@ describe("the tools in the plugin", () => {
     const names = harness.registrations.agentTools.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining(["lane_pilot_route", "lane_pilot_run_workflow", "lane_pilot_workflow_status"]));
     const call = async (name: string, params: Record<string, unknown>) => parse(String(await harness.behavior.callAgentTool(name, params, { threadId: PM, projectId: PROJECT })));
-    const refusal = await call("lane_pilot_run_workflow", { workflowId: "code-review", inputs: {} });
+    const refusal = await call("lane_pilot_run_workflow", { workflowId: "lp.build", inputs: {} });
     expect(refusal).toMatchObject({ status: "refused" });
-    expect(refusal.reason).toMatch(/not_runnable: "code-review" is (draft|published)|unknown_workflow/);
+    expect(refusal.reason).toContain("fragment");
     const routed = await call("lane_pilot_route", { intent: "Go over PR 517 and list what's wrong with it" });
     expect(routed).toHaveProperty("decision");
     const status = await call("lane_pilot_workflow_status", { runId: "wfrun_missing" });

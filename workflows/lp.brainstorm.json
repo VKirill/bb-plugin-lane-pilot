@@ -218,5 +218,6 @@
       "to": "ok",
       "pass": "artifact"
     }
-  ]
+  ],
+  "status": "published"
 }
