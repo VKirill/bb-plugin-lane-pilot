@@ -11,7 +11,7 @@
   "examples": {
     "ru": [
       "Прогони цикл качества по проекту: ревью, тесты, починка",
-      "Подними качество модуля: найди проблемы, допиши тесты, исправь",
+      "Подними качество всего проекта: найди проблемы, добавь покрытие, исправь",
       "Ночной проход качества по репозиторию",
       "Проверь всё, что накопилось, и приведи в порядок до зелёного",
       "Сделай полную проверку качества с исправлением дефектов",
@@ -19,7 +19,7 @@
     ],
     "en": [
       "Run a quality loop over the project: review, tests, fixes",
-      "Raise the quality of this module: find problems, add tests, fix them",
+      "Raise the quality of the whole project: find problems, add coverage, fix them",
       "Nightly quality pass over the repository",
       "Check everything that has piled up and bring it to green",
       "Do a full quality sweep and fix the defects",
