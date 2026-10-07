@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -7,6 +7,9 @@ import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, s
 import { createCore } from "../src/server/core";
 import { runsRpc } from "../src/server/rpc/runs";
 import type { Services } from "../src/server/services";
+
+// The first test imports the whole app; a cold import alone can pass 5 s.
+vi.setConfig({ testTimeout: 30_000 });
 
 afterEach(() => cleanup());
 
