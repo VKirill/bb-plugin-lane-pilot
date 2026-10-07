@@ -7,6 +7,7 @@ import { spawnAsync } from "../spawn-async";
 import { isBookkeepingPath } from "../bookkeeping-paths";
 import { matchOwnsPath } from "../owns-paths";
 import { REPLAY_CHECK_FAILED } from "../failure-class";
+import { isAllowedProjectLifePath } from "../stages/project-life";
 
 export type GitIntegration = {
   status:"merged"|"up-to-date"|"conflict"|"failed"|"busy";
@@ -218,7 +219,9 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   /** The task's owns_paths: a bookkeeping file the task owns is its work, so the merge keeps the attempt's version of it. */
   ownsPaths?:string[];
   /** Run once the attempt was replayed on a moved main, before the merge (a semantic clash shows only there). */
-  replayCheck?:()=>Promise<ReplayCheckOutcome>}):Promise<GitIntegration> {
+  replayCheck?:()=>Promise<ReplayCheckOutcome>;
+  /** How long machine-written files staged in the base's index (a stage between `git add` and `git commit`) get to be committed by their stager; then they are committed here. */
+  stagedWaitMs?:number}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
   await recoverStaleGitLock(input.worktreePath);
   if(!input.committedOnly&&input.ownsPaths?.length) await stageOwnedBookkeeping(input.worktreePath,input.ownsPaths,input.bookkeeping??[]);
@@ -241,6 +244,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
     result=await withBaseLock(input.basePath,async()=>{
       await recoverStaleGitLock(input.basePath);
       await abortStaleMerge(input.basePath);
+      await settleStagedBookkeeping(input.basePath,input.bookkeeping??[],input.stagedWaitMs);
       const before=(await git(input.basePath,["rev-parse","HEAD"])).stdout.trim();
       // Main moved while the writer worked: replay the attempt on the current main first. Clean, it merges without
       // another writer turn; a real conflict is left as it was and the merge below reports it for the free redo.
@@ -359,6 +363,37 @@ async function stageOwnedBookkeeping(worktreePath:string, owns:readonly string[]
   if(files.length) await git(worktreePath,["add","-f","--",...files]);
 }
 
+/** Paths staged in the base checkout's index (relative to the repository top), or null when git cannot say. */
+async function stagedPaths(basePath:string):Promise<string[]|null> {
+  const staged=await git(basePath,["diff","--cached","--name-only","-z","HEAD"]);
+  return staged.ok?staged.stdout.split("\0").filter(Boolean):null;
+}
+
+/**
+ * Git's ort strategy refuses every merge while the index differs from HEAD, whatever the merge touches. The project-life
+ * stage works in this checkout and stages its files (PROGRESS, CHANGELOG, plan items) a moment before it commits them
+ * (drill 2026-10-07: the merge landed in that moment and failed as `merge_failed`). Machine-written files staged in the
+ * base get `waitMs` to be committed by whoever staged them; still staged, they are committed here, as staged, under the
+ * integration lock. Nothing is discarded, unstaged edits stay in the working tree, and a staged file that is anyone's
+ * work (an owner's product file) is left alone: the merge then reports it as a dirty base.
+ */
+async function settleStagedBookkeeping(basePath:string, extra:readonly string[], waitMs=20_000):Promise<void> {
+  let paths=await stagedPaths(basePath);
+  if(!paths?.length) return;
+  const deadline=Date.now()+waitMs;
+  while(paths?.length&&Date.now()<deadline) {
+    await new Promise((resolve)=>setTimeout(resolve,250));
+    paths=await stagedPaths(basePath);
+  }
+  if(!paths?.length) return;
+  const prefix=(await git(basePath,["rev-parse","--show-prefix"])).stdout.trim();
+  const machineWritten=(path:string)=>path.startsWith(prefix)&&(isBookkeepingPath(path.slice(prefix.length),extra)||isAllowedProjectLifePath(path.slice(prefix.length)));
+  if(!paths.every(machineWritten)) return;
+  const committed=await git(basePath,[...await identity(basePath),"commit","-q","-m","chore(progress): settle bookkeeping staged in the base before a merge"]);
+  if(committed.ok) console.warn(`lane-pilot: committed ${paths.length} machine-written file(s) left staged in ${basePath} before the merge: ${paths.slice(0,5).join(", ")}`);
+  else console.warn(`lane-pilot: could not commit the staged bookkeeping in ${basePath}: ${committed.reason.split("\n").slice(-3).join(" ")}`);
+}
+
 /**
  * The commit to merge in place of the writer's: its tree with every bookkeeping file (src/bookkeeping-paths.ts) set to
  * what main has. A hook or sibling agent edits those files in the base checkout meanwhile, and a merge that touched
@@ -414,6 +449,9 @@ async function merge(basePath:string,sha:string,message:string,bookkeeping:reado
   if(!conflicts.length&&/(?:local changes|untracked working tree files|будут перезаписаны).*would be overwritten by merge|would be overwritten by merge/i.test(merged.reason)) {
     const overwritten=merged.reason.split("\n").filter((line)=>/^\t/.test(line)).map((line)=>line.trim()).filter(Boolean);
     if(overwritten.length) return {status:"conflict",commit:null,conflicts:overwritten,reason:"base checkout has uncommitted changes in files this attempt also changes"};
+    // ort's own check of the index lists the files on one indented line, no tab, so nothing is parsed above: ask the index.
+    const staged=await stagedPaths(basePath);
+    if(staged?.length) return {status:"conflict",commit:null,conflicts:staged.slice(0,50),reason:"base checkout has uncommitted changes staged in its index and not committed"};
   }
   // A merge that failed without conflicted files is not a conflict: a stale index.lock, a hook, a refused checkout. Called a
   // conflict, it read as «main changed» and spent every SelfyStudio task's attempts on 2026-10-04 while main never moved.
@@ -582,7 +620,11 @@ async function copyTaskItems(basePath:string, worktreePath:string):Promise<void>
   const destReal=await realpath(dest).catch(()=>dest);
   if(srcReal===destReal) return;
   await mkdir(join(dest,".."),{recursive:true});
-  await cp(src,dest,{recursive:true,dereference:false,errorOnExist:false,force:true});
+  // A file the repository tracks (a project-life commit added it) already sits in the worktree as committed: the base's
+  // uncommitted edits of it are that stage's, and copied over it they went into the attempt's commit and blocked its merge.
+  const tracked=new Set((await git(worktreePath,["ls-files","-z","--",".agents/plans/items"])).stdout.split("\0").filter(Boolean));
+  await cp(src,dest,{recursive:true,dereference:false,errorOnExist:false,force:true,
+    filter:(_from,to)=>!tracked.has(relative(worktreePath,to).replace(/\\/g,"/"))});
 }
 
 export async function prepareWorktree(input:{basePath:string;worktreePath:string}):Promise<{linked:string[]}> {
