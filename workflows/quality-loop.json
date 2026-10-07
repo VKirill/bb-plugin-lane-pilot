@@ -1,0 +1,444 @@
+{
+  "id": "quality-loop",
+  "name": {
+    "en": "Quality loop",
+    "ru": "Цикл качества"
+  },
+  "description": {
+    "en": "Review, add missing tests by layers, classify failures (test/code/env defect), diagnose code defects, fix and re-check. A whole-area quality pass, also schedulable at night.",
+    "ru": "Ревью, добор недостающих тестов по слоям, классификация провалов (дефект теста / кода / окружения), диагноз дефектов кода, починка и перепроверка. Проход качества по области, можно по расписанию ночью."
+  },
+  "examples": {
+    "ru": [
+      "Прогони цикл качества по проекту: ревью, тесты, починка",
+      "Подними качество модуля: найди проблемы, допиши тесты, исправь",
+      "Ночной проход качества по репозиторию",
+      "Проверь всё, что накопилось, и приведи в порядок до зелёного",
+      "Сделай полную проверку качества с исправлением дефектов",
+      "Нужен общий аудит с тестами и починкой найденного"
+    ],
+    "en": [
+      "Run a quality loop over the project: review, tests, fixes",
+      "Raise the quality of this module: find problems, add tests, fix them",
+      "Nightly quality pass over the repository",
+      "Check everything that has piled up and bring it to green",
+      "Do a full quality sweep and fix the defects",
+      "I want a general audit with tests and fixes for what it finds"
+    ]
+  },
+  "not_for": [
+    "review-fix",
+    "code-review",
+    "security-audit",
+    "refactor"
+  ],
+  "status": "draft",
+  "tags": [
+    "code",
+    "quality",
+    "schedule"
+  ],
+  "inputs": {
+    "scope": {
+      "type": "string"
+    },
+    "goal": {
+      "type": "string",
+      "default": "raise quality of the scope"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "rounds": "int",
+    "tests_added": "int",
+    "defects_fixed": "int",
+    "env_issues": "string[]",
+    "remaining": "Finding[]"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "quick не допускается (минимум standard); full - слои тестов L0-L3 и браузер-проверка при UI"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "triggers": [
+    "chat",
+    "schedule"
+  ],
+  "budget": {
+    "max_steps": 100,
+    "max_minutes": 480,
+    "max_fan_out": 5
+  },
+  "entry": "review",
+  "nodes": [
+    {
+      "id": "review",
+      "type": "subworkflow",
+      "workflow": "lp.review",
+      "with": {
+        "range": "{{$inputs.scope}}",
+        "files": "{{$inputs.scope}}",
+        "dimensions": {
+          "by_mode": {
+            "quick": [
+              "correctness",
+              "security"
+            ],
+            "standard": [
+              "correctness",
+              "security",
+              "maintainability",
+              "silent_failures"
+            ],
+            "full": [
+              "correctness",
+              "security",
+              "performance",
+              "architecture",
+              "maintainability",
+              "best_practices",
+              "silent_failures"
+            ]
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "coverage",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Find test gaps by layer",
+        "ru": "Пробелы тестов по слоям"
+      },
+      "src": "maestro-flow:workflows/auto-test.md",
+      "prompt": "List what is not covered: requirements/acceptance lines with no test, changed files with no test, edge cases (at most 5 per file). Assign each gap a layer - L0 static (tsc/lint), L1 unit, L2 integration, L3 e2e - and a priority (MUST critical, SHOULD high, MAY medium).\nRead-only. Do not change existing tests.\n",
+      "out": {
+        "gaps": "Gap[]",
+        "gap_count": "int",
+        "framework_found": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "test_gen",
+      "type": "subworkflow",
+      "workflow": "test-gen",
+      "skip_when": "coverage.gap_count == 0 || !coverage.framework_found",
+      "skip_out": {
+        "status": "done",
+        "tests_added": 0,
+        "failures": "[]"
+      },
+      "with": {
+        "gaps": "{{coverage.gaps}}",
+        "scope": "{{$inputs.scope}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "classify",
+      "type": "agent",
+      "role": "triager",
+      "title": {
+        "en": "Classify failures",
+        "ru": "Классифицировать провалы"
+      },
+      "src": "maestro-flow:workflows/auto-test.md",
+      "prompt": "FAILURE_TRIAGE_METHOD. For every failing test decide test_defect (fix the test), code_defect (a confirmed bug in the code - do not retry, do not edit sources here) or env_issue (blocked). When in doubt - code_defect.\nFail-fast between layers: a critical failure in L1 stops L2, in L2 stops L3.\n",
+      "out": {
+        "failures": "Failure[]",
+        "code_defects": "Finding[]",
+        "test_defects": "int",
+        "env_issues": "string[]",
+        "code_defect_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "diagnose",
+      "type": "subworkflow",
+      "workflow": "debug",
+      "skip_when": "classify.code_defect_count == 0",
+      "skip_out": {
+        "status": "confirmed",
+        "fix_directions": "[]",
+        "diagnosis": ""
+      },
+      "with": {
+        "symptom": "{{classify.code_defects}}",
+        "mode": "from_failures"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "replan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "mode": "gaps",
+        "gaps": "{{review.findings}}",
+        "findings": "{{diagnose}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{replan.tasks}}",
+        "waves": "{{replan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "qa",
+      "type": "agent",
+      "role": "browser-qa",
+      "applicable_modes": [
+        "full"
+      ],
+      "skip_when": "!replan.has_ui",
+      "skip_out": {
+        "status": "pass",
+        "findings": "[]"
+      },
+      "prompt": "FRONTEND_VERIFY_METHOD over the fixed UI; silence is never pass.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "ask",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Still defects after two rounds",
+        "ru": "Дефекты остались после двух кругов"
+      },
+      "prompt": "List remaining findings and env issues; offer accept as risk, plan a separate task, abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "accept|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 480
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "rounds": "visits('build')",
+        "tests_added": "test_gen.tests_added",
+        "defects_fixed": "classify.code_defect_count",
+        "env_issues": "classify.env_issues",
+        "remaining": "[]"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "rounds": "visits('build')",
+        "tests_added": "test_gen.tests_added",
+        "env_issues": "classify.env_issues",
+        "remaining": "review.findings"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "review",
+      "to": "coverage",
+      "pass": "artifact"
+    },
+    {
+      "from": "coverage",
+      "to": "test_gen",
+      "pass": "artifact"
+    },
+    {
+      "from": "test_gen",
+      "to": "classify",
+      "pass": "artifact"
+    },
+    {
+      "from": "classify",
+      "to": "diagnose",
+      "pass": "artifact",
+      "when": "classify.code_defect_count > 0"
+    },
+    {
+      "from": "classify",
+      "to": "replan",
+      "pass": "artifact",
+      "when": "review.status == 'rework'"
+    },
+    {
+      "from": "classify",
+      "to": "done",
+      "pass": "artifact"
+    },
+    {
+      "from": "diagnose",
+      "to": "replan",
+      "pass": "artifact"
+    },
+    {
+      "from": "replan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "replan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "replan",
+      "to": "ask",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "qa",
+      "pass": "artifact",
+      "when": "build.status == 'done'"
+    },
+    {
+      "from": "build",
+      "to": "ask",
+      "pass": "artifact"
+    },
+    {
+      "from": "qa",
+      "to": "review",
+      "pass": "artifact",
+      "when": "qa.status == 'pass' && visits('review') < 2",
+      "label": "re-check"
+    },
+    {
+      "from": "qa",
+      "to": "done",
+      "pass": "artifact",
+      "when": "qa.status == 'pass'"
+    },
+    {
+      "from": "qa",
+      "to": "ask",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "ql-1",
+    "sim": {
+      "input": {
+        "scope": "src/orders",
+        "quality_mode": "standard"
+      },
+      "stubs": {
+        "lp.review#1": {
+          "status": "rework",
+          "findings": [
+            {
+              "severity": "high",
+              "file": "src/orders/total.ts",
+              "line": 31
+            }
+          ]
+        },
+        "coverage": {
+          "gap_count": 2,
+          "framework_found": true
+        },
+        "test-gen": {
+          "status": "done",
+          "tests_added": 2
+        },
+        "classify": {
+          "code_defect_count": 1,
+          "failures": [
+            {
+              "class": "code_defect"
+            }
+          ]
+        },
+        "debug": {
+          "status": "confirmed"
+        },
+        "lp.plan": {
+          "status": "ok"
+        },
+        "lp.build": {
+          "status": "done"
+        },
+        "lp.review#2": {
+          "status": "pass"
+        }
+      },
+      "expect_path": [
+        "review",
+        "coverage",
+        "test_gen",
+        "classify",
+        "diagnose",
+        "replan",
+        "build",
+        "qa",
+        "review",
+        "coverage",
+        "test_gen",
+        "classify",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "tests_added == 4"
+      ]
+    },
+    "live": "песочница: функция с известным багом в сумме корзины; цикл находит, дописывает тест, чинит, второй проход зелёный"
+  }
+}

@@ -1,93 +1,524 @@
 {
-  "schemaVersion": 1,
   "id": "analyze-plan-execute",
-  "name": "Analyze, plan, execute",
+  "name": {
+    "en": "Analyze, plan, execute",
+    "ru": "Разбор, план, исполнение"
+  },
   "description": {
-    "en": "The Lane Pilot task pipeline: the PM read, the plan critique (by quality mode), the specialist risk review, the ownership base, then the code task in its own worktree with checks, code critique and merge.",
-    "ru": "Конвейер задачи Lane Pilot: чтение PM, критика плана (по режиму качества), проверка рисков специалистом, база владения, затем кодовая задача в своём worktree с проверками, критикой кода и слиянием."
+    "en": "Default path for a normal code task - quick analysis, task contracts, plan critique, writers in worktrees with sandbox verification and code critic, merge, goal audit, memory.",
+    "ru": "Путь по умолчанию для обычной кодовой задачи - быстрый анализ, контракты задач, критика плана, исполнители в worktree с песочной проверкой и критиком кода, слияние, аудит целей, память."
   },
   "examples": {
-    "en": ["dispatch a code task to a writer", "implement this change in the project"],
-    "ru": ["отправь задачу писателю", "сделай эту правку в проекте"]
+    "ru": [
+      "Добавь в API эндпоинт /health и тесты к нему",
+      "Реализуй экспорт отчёта в CSV на странице статистики",
+      "Сделай так, чтобы настройки сохранялись между перезапусками",
+      "Нужна функция поиска по заметкам, разберись и сделай",
+      "Подключи вебхук оплаты и обработай статусы платежа",
+      "Допиши валидацию формы регистрации и тесты"
+    ],
+    "en": [
+      "Add a /health endpoint to the API with tests",
+      "Implement CSV export on the stats page",
+      "Make the settings persist across restarts",
+      "Build search across notes: figure it out and ship it",
+      "Wire up the payment webhook and handle the payment statuses",
+      "Add validation to the signup form, with tests"
+    ]
   },
-  "inputs": [
-    { "name": "taskId", "type": "string" },
-    { "name": "attemptId", "type": "string" }
+  "not_for": [
+    "companion",
+    "full-lifecycle",
+    "refactor",
+    "debug",
+    "impeccable-build",
+    "roadmap-driven"
   ],
-  "outputs": [
-    { "name": "reply", "type": "json", "description": "What the dispatch tool answers the PM with." }
+  "status": "draft",
+  "tags": [
+    "code",
+    "default"
   ],
-  "requires": { "plugins": [], "machines": [], "env": [], "browserSession": false },
-  "status": "published",
-  "version": 1,
-  "guards": { "maxSteps": 20, "maxFanOut": 1, "maxSubworkflowDepth": 3 },
-  "triggers": [{ "type": "chat" }],
-  "scope": { "level": "builtin" },
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "goals": {
+      "type": "Goal[]"
+    },
+    "boundary": {
+      "type": "Boundary"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    },
+    "wants_roadmap": {
+      "type": "bool",
+      "default": false
+    },
+    "tasks": {
+      "type": "Task[]",
+      "note": "готовый план (из plan-only): анализ и планирование пропускаются"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked|proposed",
+    "merged_commits": "string[]",
+    "goals_met": "bool",
+    "unmet_ids": "string[]",
+    "report_path": "string",
+    "proposed_workflow": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "§0.7; quick - без критики плана и кода, анализ в один проход; full - + второе мнение, браузер-проверка при UI"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [],
+    "secrets": [],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 60,
+    "max_minutes": 300,
+    "max_fan_out": 5
+  },
+  "entry": "contract",
   "nodes": [
-    { "id": "pm-read", "type": "agent", "label": "PM read", "role": "pm-reader", "uses": "lp.pm-read",
-      "output": [
-        { "name": "state", "type": "enum", "values": ["passed", "skipped", "failed"] },
-        { "name": "summary", "type": "string" },
-        { "name": "reason", "type": "string", "required": false }
-      ] },
-    { "id": "block-pm-read", "type": "action", "label": "Block: PM read failed", "uses": "lp.block-pm-read",
-      "output": [{ "name": "reply", "type": "json" }] },
-    { "id": "quality-mode", "type": "decision", "label": "Quality mode", "uses": "lp.quality-mode",
-      "output": [{ "name": "mode", "type": "enum", "values": ["quick", "standard", "full"] }] },
-    { "id": "plan-critique", "type": "agent", "label": "Plan critique", "role": "plan-critic", "uses": "lp.plan-critique",
-      "output": [
-        { "name": "allowed", "type": "boolean" },
-        { "name": "reason", "type": "string", "required": false }
-      ] },
-    { "id": "plan-critique-quick", "type": "agent", "label": "Plan critique (quick: skipped by its own receipt)", "role": "plan-critic", "uses": "lp.plan-critique",
-      "output": [
-        { "name": "allowed", "type": "boolean" },
-        { "name": "reason", "type": "string", "required": false }
-      ] },
-    { "id": "block-plan-critique", "type": "action", "label": "Block: plan critique", "uses": "lp.block-plan-critique",
-      "output": [{ "name": "reply", "type": "json" }] },
-    { "id": "specialist-review", "type": "agent", "label": "Specialist review", "role": "specialist-reviewer", "uses": "lp.specialist-review",
-      "output": [
-        { "name": "allowed", "type": "boolean" },
-        { "name": "reason", "type": "string", "required": false }
-      ] },
-    { "id": "block-specialist", "type": "action", "label": "Block: specialist review", "uses": "lp.block-specialist",
-      "output": [{ "name": "reply", "type": "json" }] },
-    { "id": "ownership-base", "type": "action", "label": "Ownership base", "uses": "lp.ownership-base",
-      "output": [
-        { "name": "ok", "type": "boolean" },
-        { "name": "live", "type": "boolean" },
-        { "name": "kind", "type": "enum", "values": ["unavailable", "persist_failed"], "required": false },
-        { "name": "reason", "type": "string", "required": false }
-      ] },
-    { "id": "block-ownership", "type": "action", "label": "Block: ownership base", "uses": "lp.block-ownership",
-      "output": [{ "name": "reply", "type": "json" }] },
-    { "id": "task-folder", "type": "action", "label": "Task folder", "uses": "lp.task-folder",
-      "output": [{ "name": "ok", "type": "boolean" }] },
-    { "id": "writer", "type": "lp-task", "label": "Code task", "uses": "lp-task",
-      "stages": ["writer-agent", "verification", "code-critique", "acceptance-receipt"],
-      "output": [{ "name": "reply", "type": "json" }] },
-    { "id": "inside-writer", "type": "note", "text": "Inside the code task (locked): workspace and worktree, the writer session and its turns, owns-paths and verification checks, repair rounds, code critique, merge intent and merge, integration gate, acceptance receipt, retries and fallbacks, memory and project-life after acceptance, browser check in quality mode full." }
+    {
+      "id": "contract",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "Boundary and goals",
+        "ru": "Граница и цели"
+      },
+      "skip_when": "$inputs.goals.length > 0",
+      "skip_out": {
+        "goals": "$inputs.goals",
+        "boundary": "$inputs.boundary"
+      },
+      "src": "maestro-flow:.claude/commands/maestro.md (decompose), maestro-ralph.md (S_DECOMPOSE)",
+      "prompt": "Turn the goal into boundary_contract (in_scope, out_of_scope, constraints) and 1-5 goals; each goal has done_when stated as an observable result and evidence (the command, file:line or test that proves it). No implementation words in done_when.",
+      "out": {
+        "goals": "Goal[]",
+        "boundary": "Boundary"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "analyze",
+      "type": "subworkflow",
+      "workflow": "lp.analyze",
+      "skip_when": "$inputs.tasks.length > 0",
+      "skip_out": {
+        "scope_verdict": "small",
+        "recommendation": "go",
+        "confidence": 100,
+        "decisions": "[]",
+        "risks": "[]",
+        "open_questions": "[]",
+        "residual_risks": "[]",
+        "anchors": "[]"
+      },
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "scope": "{{$inputs.scope}}",
+        "depth": {
+          "by_mode": {
+            "quick": "quick",
+            "standard": "standard",
+            "full": "deep"
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "ask_scope",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Scope unclear or risky",
+        "ru": "Объём неясен или рискован"
+      },
+      "prompt": "Say in two lines what analysis found (scope_verdict, recommendation, top risks) and offer - proceed, clarify (give me details), abort. Auto mode does not guess an unknown scope.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "proceed|clarify|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 120
+      }
+    },
+    {
+      "id": "propose_roadmap",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "roadmap-driven",
+      "inputs": {
+        "goal": "{{$inputs.goal}}",
+        "findings": "{{analyze}}"
+      }
+    },
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "skip_when": "$inputs.tasks.length > 0",
+      "skip_out": {
+        "status": "ok",
+        "tasks": "$inputs.tasks",
+        "waves": "[]",
+        "objective": "",
+        "has_ui": false,
+        "task_count": 0,
+        "plan_verdict": "skipped"
+      },
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "findings": "{{analyze}}",
+        "boundary": "{{contract.boundary}}",
+        "mode": "fresh"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan.tasks}}",
+        "waves": "{{plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 3
+      }
+    },
+    {
+      "id": "replan_failed",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "mode": "gaps",
+        "gaps": "{{build.failed_findings}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "ask_partial",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Part of the work failed",
+        "ru": "Часть работы не прошла"
+      },
+      "prompt": "List accepted and failed tasks with the top finding of each; offer - accept the partial result, abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "accept|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "qa",
+      "type": "agent",
+      "role": "browser-qa",
+      "title": {
+        "en": "Browser check",
+        "ru": "Проверка в браузере"
+      },
+      "applicable_modes": [
+        "full"
+      ],
+      "skip_when": "!plan.has_ui",
+      "skip_out": {
+        "status": "pass",
+        "findings": "[]"
+      },
+      "src": "maestro-flow:ref/frontend-verify.md",
+      "prompt": "FRONTEND_VERIFY_METHOD - per feature three layers (entry in UI exists, the write request is observed with the right payload, the result is in the DOM); a write endpoint without a UI entry is a defect; a check that did not run is rework, silence is never pass. Viewports 375 and 1280.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "close",
+      "type": "subworkflow",
+      "workflow": "lp.close",
+      "with": {
+        "goals": "{{contract.goals}}",
+        "boundary": "{{contract.boundary}}",
+        "goal": "{{$inputs.goal}}",
+        "merged_commits": "{{ctx.merged_commits}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "replan_unmet",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "mode": "gaps",
+        "gaps": "{{close.unmet_ids}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "merged_commits": "ctx.merged_commits",
+        "goals_met": true,
+        "unmet_ids": "[]",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "merged_commits": "ctx.merged_commits",
+        "goals_met": false,
+        "unmet_ids": "close.unmet_ids",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "merged_commits": "[]",
+        "goals_met": false
+      }
+    },
+    {
+      "id": "proposed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "proposed",
+        "proposed_workflow": "roadmap-driven"
+      }
+    }
   ],
   "edges": [
-    { "from": "start", "to": "pm-read" },
-    { "from": "pm-read", "to": "block-pm-read", "label": "failed", "when": { "field": "state", "op": "eq", "value": "failed" }, "with": { "reason": "pm-read.reason" } },
-    { "from": "pm-read", "to": "quality-mode", "label": "passed or skipped" },
-    { "from": "quality-mode", "to": "plan-critique-quick", "label": "quick", "when": { "field": "mode", "op": "eq", "value": "quick" }, "with": { "pmReadContext": "pm-read.summary" } },
-    { "from": "quality-mode", "to": "plan-critique", "label": "standard or full", "with": { "pmReadContext": "pm-read.summary" } },
-    { "from": "plan-critique-quick", "to": "block-plan-critique", "label": "not allowed", "when": { "field": "allowed", "op": "eq", "value": false }, "with": { "reason": "plan-critique-quick.reason" } },
-    { "from": "plan-critique-quick", "to": "specialist-review", "label": "allowed" },
-    { "from": "plan-critique", "to": "block-plan-critique", "label": "not allowed", "when": { "field": "allowed", "op": "eq", "value": false }, "with": { "reason": "plan-critique.reason" } },
-    { "from": "plan-critique", "to": "specialist-review", "label": "allowed" },
-    { "from": "specialist-review", "to": "block-specialist", "label": "not allowed", "when": { "field": "allowed", "op": "eq", "value": false }, "with": { "reason": "specialist-review.reason" } },
-    { "from": "specialist-review", "to": "ownership-base", "label": "allowed" },
-    { "from": "ownership-base", "to": "block-ownership", "label": "unavailable", "when": { "field": "ok", "op": "eq", "value": false }, "with": { "kind": "ownership-base.kind", "reason": "ownership-base.reason" } },
-    { "from": "ownership-base", "to": "task-folder", "label": "ready", "with": { "live": "ownership-base.live" } },
-    { "from": "task-folder", "to": "writer", "with": { "live": "ownership-base.live", "pmReadContext": "pm-read.summary" } },
-    { "from": "writer", "to": "end", "with": { "reply": "writer.reply" } },
-    { "from": "block-pm-read", "to": "end", "with": { "reply": "block-pm-read.reply" } },
-    { "from": "block-plan-critique", "to": "end", "with": { "reply": "block-plan-critique.reply" } },
-    { "from": "block-specialist", "to": "end", "with": { "reply": "block-specialist.reply" } },
-    { "from": "block-ownership", "to": "end", "with": { "reply": "block-ownership.reply" } }
-  ]
+    {
+      "from": "contract",
+      "to": "analyze",
+      "pass": "artifact"
+    },
+    {
+      "from": "analyze",
+      "to": "propose_roadmap",
+      "pass": "artifact",
+      "when": "analyze.scope_verdict == 'large' && $inputs.wants_roadmap"
+    },
+    {
+      "from": "analyze",
+      "to": "ask_scope",
+      "pass": "artifact",
+      "when": "analyze.scope_verdict == 'unknown' || analyze.recommendation == 'no_go' || analyze.confidence < 40"
+    },
+    {
+      "from": "analyze",
+      "to": "plan",
+      "pass": "artifact"
+    },
+    {
+      "from": "propose_roadmap",
+      "to": "proposed",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_scope",
+      "to": "analyze",
+      "pass": "artifact",
+      "when": "ask_scope.answer_kind == 'clarify'"
+    },
+    {
+      "from": "ask_scope",
+      "to": "plan",
+      "pass": "artifact",
+      "when": "ask_scope.answer_kind == 'proceed'"
+    },
+    {
+      "from": "ask_scope",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "replan_failed",
+      "pass": "artifact",
+      "when": "build.status == 'partial' && visits('replan_failed') == 0"
+    },
+    {
+      "from": "build",
+      "to": "ask_partial",
+      "pass": "artifact",
+      "when": "build.status != 'done'"
+    },
+    {
+      "from": "build",
+      "to": "qa",
+      "pass": "artifact"
+    },
+    {
+      "from": "replan_failed",
+      "to": "build",
+      "pass": "artifact",
+      "when": "replan_failed.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "replan_failed",
+      "to": "ask_partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_partial",
+      "to": "close",
+      "pass": "artifact",
+      "when": "ask_partial.answer_kind == 'accept'"
+    },
+    {
+      "from": "ask_partial",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "qa",
+      "to": "close",
+      "pass": "artifact",
+      "when": "qa.status == 'pass'"
+    },
+    {
+      "from": "qa",
+      "to": "ask_partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "close",
+      "to": "done",
+      "pass": "artifact",
+      "when": "close.status == 'closed'"
+    },
+    {
+      "from": "close",
+      "to": "replan_unmet",
+      "pass": "artifact",
+      "when": "close.status == 'unmet' && visits('replan_unmet') == 0"
+    },
+    {
+      "from": "close",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "replan_unmet",
+      "to": "build",
+      "pass": "artifact",
+      "when": "replan_unmet.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "replan_unmet",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "ape-1",
+    "sim": {
+      "input": {
+        "goal": "Add a --json flag to the report command with a test",
+        "scope": "src/cli/report.ts",
+        "quality_mode": "standard"
+      },
+      "stubs": {
+        "lp.analyze": {
+          "scope_verdict": "small",
+          "recommendation": "go",
+          "confidence": 80
+        },
+        "lp.plan": {
+          "status": "ok",
+          "task_count": 1,
+          "has_ui": false
+        },
+        "lp-task": {
+          "state": "accepted",
+          "merge_commit": "abc1234"
+        }
+      },
+      "expect_path": [
+        "contract",
+        "analyze",
+        "plan",
+        "build",
+        "qa",
+        "close",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "merged_commits.length == 1",
+        "goals_met == true"
+      ]
+    },
+    "live": "песочница proj_3tb652jpsi, задача «флаг --json», quality_mode=standard; приёмка - файл слит, тест добавлен и зелёный, goal_audit.all_met"
+  }
 }

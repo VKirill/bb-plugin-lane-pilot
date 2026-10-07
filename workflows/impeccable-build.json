@@ -1,0 +1,526 @@
+{
+  "id": "impeccable-build",
+  "name": {
+    "en": "Build a UI from scratch",
+    "ru": "Интерфейс с нуля"
+  },
+  "description": {
+    "en": "Design brief and direction contract, DESIGN.md pack and tokens, plan, build in worktrees, browser verification at 375 and 1280, bounded fresh-reviewer finish, DESIGN.md from the built result.",
+    "ru": "Бриф и контракт направления, пакет DESIGN.md и токены, план, исполнение в worktree, проверка в браузере на 375 и 1280, ограниченный финиш свежим ревьюером, DESIGN.md из собранного результата."
+  },
+  "examples": {
+    "ru": [
+      "Сделай с нуля страницу тарифов с дизайн-системой и проверкой в браузере",
+      "Нужен новый лендинг: продумай дизайн, собери и проверь вёрстку",
+      "Построй интерфейс личного кабинета красиво, с токенами и состояниями",
+      "Спроектируй и реализуй экран онбординга с нуля",
+      "Собери UI панели управления: стиль, компоненты, адаптив",
+      "Нарисуй и сверстай новую главную страницу сайта"
+    ],
+    "en": [
+      "Build the pricing page from scratch with a design system and browser verification",
+      "I need a new landing page: design it, build it, verify the layout",
+      "Build the account area UI, polished, with tokens and states",
+      "Design and implement the onboarding screen from scratch",
+      "Build the dashboard UI: style, components, responsiveness",
+      "Design and code the site's new home page"
+    ]
+  },
+  "not_for": [
+    "ui-audit",
+    "analyze-plan-execute"
+  ],
+  "status": "draft",
+  "tags": [
+    "ui",
+    "design",
+    "code"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "goals": {
+      "type": "Goal[]"
+    },
+    "boundary": {
+      "type": "Boundary"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    },
+    "surface_mode": {
+      "type": "persuade|operate|read|experience",
+      "note": "если пусто - выбирает brief"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "merged_commits": "string[]",
+    "design_score": "int",
+    "disposition": "ship|fix|rebuild|recapture",
+    "design_md": "string",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "full",
+    "effect": "UI всегда проверяется в браузере (browser-qa обязателен независимо от режима); quick - без финиш-ревью"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "impeccable-ui",
+      "design-taste",
+      "ui-ux-pro-max",
+      "page-prototype",
+      "web-design"
+    ],
+    "machines": [
+      "project writer host",
+      "browser machine"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 90,
+    "max_minutes": 600,
+    "max_fan_out": 4
+  },
+  "entry": "brief",
+  "nodes": [
+    {
+      "id": "brief",
+      "type": "agent",
+      "role": "specialist:design-lead",
+      "title": {
+        "en": "Surface brief and direction contract",
+        "ru": "Бриф поверхности и контракт направления"
+      },
+      "src": "impeccable (Apache-2.0): reference/new-work, shape",
+      "prompt": "Read PRODUCT.md and DESIGN.md if present (a brownfield without DESIGN.md gets one derived from the code first). Choose the surface mode - Persuade, Operate, Read or Experience.\nWrite the Direction contract in six blocks of at most 150 words (audience and job, content hierarchy, colour strategy, typography, motion, constraints) and the open questions that block the design. A brief beats taste; polish keeps the look, redesign replaces it.\nNothing is built before the contract exists. Do not write into the repository; the pack goes to the run artifacts.\n",
+      "out": {
+        "surface_mode": "string",
+        "contract": "string",
+        "open_questions": "string[]",
+        "has_design_md": "bool",
+        "new_world": "bool"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "ask_direction",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "One round of design questions",
+        "ru": "Один раунд вопросов по дизайну"
+      },
+      "skip_when": "brief.open_questions.length == 0",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "answered"
+      },
+      "prompt": "At most 4 questions with a recommended default for each; one round only.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "pack",
+      "type": "agent",
+      "role": "specialist:design-lead",
+      "title": {
+        "en": "DESIGN.md pack and tokens",
+        "ru": "Пакет DESIGN.md и токены"
+      },
+      "src": "impeccable (Apache-2.0): document, craft-floor",
+      "prompt": "DESIGN.md pack for the surface - tokens (colour, type, spacing, radii), components and their states (default, hover, focus, active, disabled, loading, empty, error), responsive rules for 375 and 1280, accessibility notes. Optionally a gray clickable prototype (page-prototype skill) for the hero and one section.\nFollow docs/DESIGN.md of the project; no generic gradients, no glow, no gradient text. Output goes to the run artifacts as files, not into the repository.\n",
+      "out": {
+        "pack_path": "string",
+        "token_count": "int",
+        "component_list": "string[]",
+        "prototype_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "findings": "{{pack}}",
+        "boundary": "{{$inputs.boundary}}",
+        "mode": "fresh",
+        "extra_rules": [
+          "UI is built as vertical slices, comps and tokens first, then sections, then motion and responsive",
+          "every wave has at least one [UI-observable] qa_case",
+          "task 1 adds the DESIGN.md pack and tokens from the run artifacts to the repository"
+        ]
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan.tasks}}",
+        "waves": "{{plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "qa",
+      "type": "agent",
+      "role": "browser-qa",
+      "title": {
+        "en": "Browser verification",
+        "ru": "Проверка в браузере"
+      },
+      "src": "maestro-flow:ref/frontend-verify.md",
+      "prompt": "FRONTEND_VERIFY_METHOD at 375 and 1280 px - entry in UI, write request observed, result in DOM; states from the pack (empty, error, loading) are exercised; screenshots saved. Not run means NEEDS_RETRY, never pass.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "screenshots": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "finish_review",
+      "type": "agent",
+      "role": "specialist:design-lead",
+      "session": "new",
+      "title": {
+        "en": "Finish review (fresh reviewer)",
+        "ru": "Финиш-ревью (свежий ревьюер)"
+      },
+      "applicable_modes": [
+        "standard",
+        "full"
+      ],
+      "skip_out": {
+        "disposition": "ship",
+        "score": 0,
+        "p0_count": 0,
+        "p1_count": 0,
+        "findings": "[]"
+      },
+      "src": "impeccable (Apache-2.0): critique, audit, finish",
+      "prompt": "No inherited history. Two isolated assessments: A - design review against the ten Nielsen heuristics scored 0-4 each (total /40; 36-40 excellent, 28-35 good, 20-27 acceptable, 12-19 poor, 0-11 critical) with cognitive load and personas; B - technical audit on five dimensions /20 (accessibility, performance, theming, responsiveness, implementation integrity). P0-P3 for each finding.\nDisposition: ship, fix (one batch of edits), rebuild, recapture (new screenshots then a full review). Unattended budget is two verdict rounds; stop as soon as a round resolves nothing. Do not invent thresholds and never report PASS without evidence.\n",
+      "out": {
+        "disposition": "ship|fix|rebuild|recapture",
+        "score": "int",
+        "p0_count": "int",
+        "p1_count": "int",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "fix_plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "mode": "gaps",
+        "gaps": "{{finish_review.findings}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "fix_build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{fix_plan.tasks}}",
+        "waves": "{{fix_plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "document",
+      "type": "lp-task",
+      "title": {
+        "en": "DESIGN.md from the built result",
+        "ru": "DESIGN.md из собранного"
+      },
+      "contract_template": "update docs/DESIGN.md and the design sidecar from the built components and the final tokens; owns_paths docs/DESIGN.md; acceptance - every component in the code has a DESIGN.md entry",
+      "quality_mode": "quick",
+      "out": {
+        "state": "accepted|failed|blocked|needs_human|cancelled",
+        "merge_commit": "string"
+      },
+      "guards": {
+        "maxAttempts": 2
+      }
+    },
+    {
+      "id": "close",
+      "type": "subworkflow",
+      "workflow": "lp.close",
+      "with": {
+        "goals": "{{$inputs.goals}}",
+        "boundary": "{{$inputs.boundary}}",
+        "goal": "{{$inputs.goal}}",
+        "merged_commits": "{{ctx.merged_commits}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "merged_commits": "ctx.merged_commits",
+        "design_score": "finish_review.score",
+        "disposition": "finish_review.disposition",
+        "design_md": "docs/DESIGN.md",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "merged_commits": "ctx.merged_commits",
+        "design_score": "finish_review.score",
+        "disposition": "finish_review.disposition",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "brief",
+      "to": "ask_direction",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_direction",
+      "to": "pack",
+      "pass": "artifact"
+    },
+    {
+      "from": "pack",
+      "to": "plan",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "qa",
+      "pass": "artifact",
+      "when": "build.merged_commits.length > 0"
+    },
+    {
+      "from": "build",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "qa",
+      "to": "finish_review",
+      "pass": "read-prior-session",
+      "when": "qa.status == 'pass'"
+    },
+    {
+      "from": "qa",
+      "to": "fix_plan",
+      "pass": "artifact",
+      "when": "qa.status == 'rework' && visits('fix_plan') == 0"
+    },
+    {
+      "from": "qa",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "finish_review",
+      "to": "document",
+      "pass": "artifact",
+      "when": "finish_review.disposition == 'ship'"
+    },
+    {
+      "from": "finish_review",
+      "to": "fix_plan",
+      "pass": "artifact",
+      "when": "finish_review.disposition == 'fix' && visits('fix_plan') == 0"
+    },
+    {
+      "from": "finish_review",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "fix_plan",
+      "to": "fix_build",
+      "pass": "artifact",
+      "when": "fix_plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "fix_plan",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "fix_build",
+      "to": "qa",
+      "pass": "artifact"
+    },
+    {
+      "from": "document",
+      "to": "close",
+      "pass": "artifact",
+      "when": "document.state == 'accepted'"
+    },
+    {
+      "from": "document",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "close",
+      "to": "done",
+      "pass": "artifact",
+      "when": "close.status == 'closed'"
+    },
+    {
+      "from": "close",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "ib-1",
+    "sim": {
+      "input": {
+        "goal": "Pricing page with three plans and a FAQ",
+        "quality_mode": "full"
+      },
+      "stubs": {
+        "brief": {
+          "open_questions": [],
+          "has_design_md": false
+        },
+        "pack": {
+          "token_count": 24
+        },
+        "lp.plan": {
+          "status": "ok",
+          "has_ui": true
+        },
+        "lp.build": {
+          "status": "done",
+          "merged_commits": [
+            "u1"
+          ]
+        },
+        "browser-qa#1": {
+          "status": "rework",
+          "findings": [
+            {
+              "severity": "high",
+              "file": "src/pricing.tsx",
+              "line": 55,
+              "evidence": "CTA not reachable at 375"
+            }
+          ]
+        },
+        "browser-qa#2": {
+          "status": "pass"
+        },
+        "finish_review": {
+          "disposition": "ship",
+          "score": 33,
+          "p0_count": 0
+        },
+        "document": {
+          "state": "accepted"
+        },
+        "lp.close": {
+          "status": "closed"
+        }
+      },
+      "expect_path": [
+        "brief",
+        "ask_direction",
+        "pack",
+        "plan",
+        "build",
+        "qa",
+        "fix_plan",
+        "fix_build",
+        "qa",
+        "finish_review",
+        "document",
+        "close",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "disposition == 'ship'",
+        "design_score >= 28"
+      ]
+    },
+    "live": "песочница, 375 и 1280 px; скриншоты в артефактах; в репозитории появляется/обновляется docs/DESIGN.md"
+  }
+}

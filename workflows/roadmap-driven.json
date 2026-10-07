@@ -1,0 +1,395 @@
+{
+  "id": "roadmap-driven",
+  "name": {
+    "en": "Roadmap and staged delivery",
+    "ru": "Дорожная карта и поэтапная поставка"
+  },
+  "description": {
+    "en": "For large goals - splits requirements into a DAG of sessions (default one), gets the owner's approval of the DAG, runs each session as analyze-plan-execute respecting dependencies, then closes.",
+    "ru": "Для больших целей - раскладывает требования в DAG сессий (по умолчанию одна), берёт одобрение DAG у владельца, прогоняет каждую сессию как analyze-plan-execute с учётом зависимостей, затем закрывает."
+  },
+  "examples": {
+    "ru": [
+      "Вот требования к новому проекту, разбей на этапы и последовательно сделай",
+      "Нужна дорожная карта и поэтапная реализация личного кабинета и биллинга",
+      "Разложи большую цель на несколько связанных сессий и выполни по порядку",
+      "Составь roadmap по этим требованиям и начни с первого этапа",
+      "Проект большой: раздели на релизы MVP, расширение, полировка и сделай",
+      "Распланируй разработку на несколько этапов и веди меня по ним"
+    ],
+    "en": [
+      "Here are the requirements for the new project: break them into stages and build them in order",
+      "I need a roadmap and phased delivery of the account area and billing",
+      "Split the big goal into several dependent sessions and execute in order",
+      "Draft a roadmap from these requirements and start with stage one",
+      "The project is large: split it into MVP, extension and polish releases and deliver",
+      "Plan the development in several stages and walk me through them"
+    ]
+  },
+  "not_for": [
+    "blueprint-driven",
+    "analyze-plan-execute",
+    "full-lifecycle"
+  ],
+  "status": "draft",
+  "tags": [
+    "code",
+    "planning",
+    "large"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "goals": {
+      "type": "Goal[]"
+    },
+    "boundary": {
+      "type": "Boundary"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    },
+    "requirements": {
+      "type": "string",
+      "required": true
+    },
+    "mode": {
+      "type": "auto|progressive|direct",
+      "default": "auto"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "sessions_total": "int",
+    "sessions_done": "string[]",
+    "sessions_blocked": "string[]",
+    "roadmap_path": "string",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "передаётся в каждую сессию"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true,
+      "passport": "recommended"
+    }
+  },
+  "budget": {
+    "max_steps": 120,
+    "max_minutes": 1440,
+    "max_fan_out": 2
+  },
+  "entry": "probe",
+  "nodes": [
+    {
+      "id": "probe",
+      "type": "action",
+      "action": "lp.state_probe",
+      "out": {
+        "has_passport": "bool",
+        "open_tasks": "int",
+        "plan_exists": "bool",
+        "has_ui": "bool"
+      }
+    },
+    {
+      "id": "analyze",
+      "type": "subworkflow",
+      "workflow": "lp.analyze",
+      "with": {
+        "goal": "{{$inputs.requirements}}",
+        "scope": "{{$inputs.scope}}",
+        "depth": "standard"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "roadmap",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "Decompose into sessions",
+        "ru": "Разложить на сессии"
+      },
+      "src": "maestro-flow:workflows/roadmap.md, roadmap-common.md",
+      "prompt": "Split the requirements into sessions; each session is a complete cycle (analyze, plan, execute, verify) with a meaningful delivery boundary.\nDefault is ONE session. Split only when ALL hold: (1) runtime dependency - code of B calls a real output of A and it cannot be mocked, (2) it cannot be parallelized by a contract/interface, (3) a full barrier - all of A before any of B. At least 5 tasks per session (merge smaller). More than 3 sessions needs a stated reason for each boundary.\nprogressive = layers MVP, Usable, Refined chained by depends_on (MVP self-sufficient); direct = independent parallel sessions. Each active requirement maps to exactly one session.\nEach session: id, intent, depends_on, scope, success_criteria (observable from the user's side - what must be TRUE), complexity small|medium|large.\n",
+      "out": {
+        "sessions": "Session[]",
+        "mode": "progressive|direct|single",
+        "session_count": "int",
+        "requirement_map": "any"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "validate",
+      "type": "action",
+      "action": "dag.validate",
+      "reads": [
+        "roadmap.sessions",
+        "roadmap.requirement_map"
+      ],
+      "out": {
+        "ok": "bool",
+        "errors": "string[]",
+        "cycles": "string[]"
+      }
+    },
+    {
+      "id": "approve",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve the session DAG",
+        "ru": "Одобрить DAG сессий"
+      },
+      "prompt": "Show sessions (intent, depends_on, complexity, success criteria) as a short table; choices - approve, modify (say what), abort. A split into more than 3 sessions shows the reason of every boundary.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|modify|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 480
+      }
+    },
+    {
+      "id": "sessions",
+      "type": "parallel",
+      "for_each": "roadmap.sessions",
+      "order": "depends_on",
+      "max_fan_out": 2,
+      "on_child_fail": "block_dependents",
+      "title": {
+        "en": "Run sessions",
+        "ru": "Выполнить сессии"
+      },
+      "child": {
+        "type": "subworkflow",
+        "workflow": "analyze-plan-execute",
+        "with": {
+          "goal": "{{item.intent}}",
+          "scope": "{{item.scope}}",
+          "goals": "{{item.goals}}",
+          "quality_mode": "{{$mode}}"
+        },
+        "out": {
+          "status": "string",
+          "merged_commits": "string[]"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "done_ids": "string[]",
+          "blocked_ids": "string[]",
+          "done_count": "int",
+          "blocked_count": "int"
+        },
+        "uses": "reduce.roadmap-driven.sessions"
+      }
+    },
+    {
+      "id": "close",
+      "type": "subworkflow",
+      "workflow": "lp.close",
+      "with": {
+        "goals": "{{$inputs.goals}}",
+        "boundary": "{{$inputs.boundary}}",
+        "goal": "{{$inputs.requirements}}",
+        "merged_commits": "{{sessions.done_ids}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "sessions_total": "roadmap.session_count",
+        "sessions_done": "sessions.done_ids",
+        "sessions_blocked": "[]",
+        "roadmap_path": "'roadmap.md'",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "sessions_total": "roadmap.session_count",
+        "sessions_done": "sessions.done_ids",
+        "sessions_blocked": "sessions.blocked_ids",
+        "roadmap_path": "'roadmap.md'",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "probe",
+      "to": "analyze",
+      "pass": "artifact"
+    },
+    {
+      "from": "analyze",
+      "to": "roadmap",
+      "pass": "artifact"
+    },
+    {
+      "from": "roadmap",
+      "to": "validate",
+      "pass": "artifact"
+    },
+    {
+      "from": "validate",
+      "to": "roadmap",
+      "pass": "same-session",
+      "when": "!validate.ok && visits('validate') < 3",
+      "label": "fix DAG"
+    },
+    {
+      "from": "validate",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "!validate.ok"
+    },
+    {
+      "from": "validate",
+      "to": "approve",
+      "pass": "artifact"
+    },
+    {
+      "from": "approve",
+      "to": "sessions",
+      "pass": "artifact",
+      "when": "approve.answer_kind == 'approve'"
+    },
+    {
+      "from": "approve",
+      "to": "roadmap",
+      "pass": "same-session",
+      "when": "approve.answer_kind == 'modify'"
+    },
+    {
+      "from": "approve",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "sessions",
+      "to": "close",
+      "pass": "artifact",
+      "when": "sessions.done_count > 0"
+    },
+    {
+      "from": "sessions",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "close",
+      "to": "done",
+      "pass": "artifact",
+      "when": "close.status == 'closed' && sessions.blocked_count == 0"
+    },
+    {
+      "from": "close",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "rd-1",
+    "sim": {
+      "input": {
+        "requirements": "Account area + billing: login, profile, plans, invoices",
+        "mode": "auto"
+      },
+      "stubs": {
+        "roadmap": {
+          "sessions": [
+            {
+              "id": "s1",
+              "intent": "login and profile",
+              "depends_on": []
+            },
+            {
+              "id": "s2",
+              "intent": "plans and invoices",
+              "depends_on": [
+                "s1"
+              ]
+            }
+          ],
+          "session_count": 2,
+          "mode": "progressive"
+        },
+        "validate": {
+          "ok": true
+        },
+        "approve": {
+          "answer_kind": "approve"
+        },
+        "analyze-plan-execute": {
+          "status": "done",
+          "merged_commits": [
+            "x"
+          ]
+        },
+        "lp.close": {
+          "status": "closed"
+        }
+      },
+      "expect_path": [
+        "probe",
+        "analyze",
+        "roadmap",
+        "validate",
+        "approve",
+        "sessions",
+        "close",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "sessions_done.length == 2",
+        "sessions_blocked.length == 0"
+      ],
+      "expect_order": "s1 завершается до старта s2 (depends_on)"
+    },
+    "live": "песочница: две зависимые мини-сессии; вторая стартует только после слияния первой"
+  }
+}

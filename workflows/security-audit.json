@@ -1,0 +1,263 @@
+{
+  "id": "security-audit",
+  "name": {
+    "en": "Security audit (read-only)",
+    "ru": "Аудит безопасности (только чтение)"
+  },
+  "description": {
+    "en": "Tiered read-only audit - OWASP Top 10, dependencies, secrets, CI/CD, and on the deep tier STRIDE and git history. Report with severity matrix and file:line. Secrets are reported by location, never by value.",
+    "ru": "Ярусный аудит только на чтение - OWASP Top 10, зависимости, секреты, CI/CD, а на глубоком ярусе STRIDE и история git. Отчёт с матрицей критичности и file:line. Секреты указываются по расположению, не по значению."
+  },
+  "examples": {
+    "ru": [
+      "Проверь проект на уязвимости, ничего не меняй",
+      "Проведи аудит безопасности авторизации и работы с токенами",
+      "Поищи в репозитории утёкшие секреты и опасные зависимости",
+      "Сделай глубокий аудит безопасности перед релизом"
+    ],
+    "en": [
+      "Scan the project for vulnerabilities, change nothing",
+      "Audit the security of authorization and token handling",
+      "Look for leaked secrets and risky dependencies in the repository",
+      "Do a deep security audit before release"
+    ]
+  },
+  "not_for": [
+    "code-review",
+    "quality-loop"
+  ],
+  "status": "draft",
+  "inputs": {
+    "scope": {
+      "type": "string"
+    },
+    "tier": {
+      "type": "quick|standard|deep",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "findings": "Finding[]",
+    "severity_distribution": "any",
+    "tier": "string",
+    "report_path": "string",
+    "proposed_workflow": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "ярус: quick - quick, standard - standard, full - deep"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "cybersecurity-audit"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 16,
+    "max_minutes": 90,
+    "max_fan_out": 5
+  },
+  "entry": "recon",
+  "nodes": [
+    {
+      "id": "recon",
+      "type": "agent",
+      "role": "analyst",
+      "src": "maestro-flow:odyssey-security.md",
+      "prompt": "Read-only reconnaissance - stack, entry points, authentication, data flows, secrets locations. No entry points found means BLOCKED.",
+      "out": {
+        "entry_points": "string[]",
+        "stack": "string[]",
+        "auth": "string",
+        "found_entry_points": "bool"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "scan",
+      "type": "parallel",
+      "for_each": {
+        "by": "$inputs.tier",
+        "quick": [
+          "owasp",
+          "secrets"
+        ],
+        "standard": [
+          "owasp",
+          "secrets",
+          "dependencies",
+          "ci_cd"
+        ],
+        "deep": [
+          "owasp",
+          "secrets",
+          "dependencies",
+          "ci_cd",
+          "stride",
+          "git_history"
+        ]
+      },
+      "max_fan_out": 5,
+      "child": {
+        "type": "agent",
+        "role": "code-critic",
+        "session": "new",
+        "src": "maestro-flow:odyssey-security.md",
+        "prompt": "Scan phase {{item}}. OWASP A01-A10 per entry point; dependencies by the package manager's audit (an unavailable audit is a warning, not a failure); secrets by LOCATION only, never print a value; STRIDE per trust boundary; git history for committed secrets. Do not lower an OWASP severity without a stated reason; a false positive is closed only with counter-evidence. Every finding: file:line, severity, remediation.",
+        "out": {
+          "phase": "string",
+          "findings": "Finding[]",
+          "warnings": "string[]"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "findings": "Finding[]",
+          "warnings": "string[]",
+          "critical_count": "int",
+          "high_count": "int"
+        },
+        "uses": "reduce.security-audit.scan"
+      }
+    },
+    {
+      "id": "report",
+      "type": "agent",
+      "role": "analyst",
+      "prompt": "Severity matrix CRITICAL/HIGH/MEDIUM/LOW with file:line, impact and remediation per finding; group by root cause; list scan phases that could not run.",
+      "out": {
+        "report_path": "string",
+        "severity_distribution": "any"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "offer",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "review-fix",
+      "inputs": {
+        "findings": "{{scan.findings}}"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "findings": "scan.findings",
+        "severity_distribution": "report.severity_distribution",
+        "tier": "$inputs.tier",
+        "report_path": "report.report_path"
+      }
+    },
+    {
+      "id": "done_offer",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "findings": "scan.findings",
+        "severity_distribution": "report.severity_distribution",
+        "tier": "$inputs.tier",
+        "report_path": "report.report_path",
+        "proposed_workflow": "review-fix"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "recon",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "!recon.found_entry_points"
+    },
+    {
+      "from": "recon",
+      "to": "scan",
+      "pass": "artifact"
+    },
+    {
+      "from": "scan",
+      "to": "report",
+      "pass": "artifact"
+    },
+    {
+      "from": "report",
+      "to": "offer",
+      "pass": "artifact",
+      "when": "scan.critical_count + scan.high_count > 0"
+    },
+    {
+      "from": "report",
+      "to": "done",
+      "pass": "artifact"
+    },
+    {
+      "from": "offer",
+      "to": "done_offer",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sa-1",
+    "sim": {
+      "input": {
+        "scope": ".",
+        "tier": "quick"
+      },
+      "stubs": {
+        "recon": {
+          "found_entry_points": true
+        },
+        "scan": {
+          "findings": [
+            {
+              "severity": "high",
+              "file": "src/auth.ts",
+              "line": 9,
+              "evidence": "token compared with =="
+            }
+          ],
+          "high_count": 1,
+          "critical_count": 0
+        }
+      },
+      "expect_path": [
+        "recon",
+        "scan",
+        "report",
+        "offer",
+        "done_offer"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "findings.length >= 1",
+        "no secret values in output"
+      ]
+    },
+    "live": "песочница с подложенным фальшивым ключом в .env.example: находка указывает место, значения в отчёте нет"
+  }
+}

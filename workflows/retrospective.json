@@ -1,0 +1,150 @@
+{
+  "id": "retrospective",
+  "name": {
+    "en": "Retrospective",
+    "ru": "Ретроспектива"
+  },
+  "description": {
+    "en": "Looks back on a finished run through four lenses (technical, process, quality, decision) and stages insights as rule or note candidates. Writes no knowledge without approval.",
+    "ru": "Оглядывается на завершённый прогон через четыре линзы (технический, процесс, качество, решения) и кладёт инсайты на стейджинг как кандидатов в правила или заметки. Знания без одобрения не пишет."
+  },
+  "examples": {
+    "ru": [
+      "Сделай ретроспективу последнего прогона",
+      "Что мы делали не так в этой фазе? Разбери по линзам",
+      "Подведи техническую и процессную ретро спринта",
+      "Выведи уроки из последних провалов и предложи правила"
+    ],
+    "en": [
+      "Run a retrospective on the last run",
+      "What did we do wrong in this phase? Go through the lenses",
+      "Give me a technical and process retro of the sprint",
+      "Draw lessons from the latest failures and propose rules"
+    ]
+  },
+  "not_for": [
+    "milestone-close"
+  ],
+  "status": "draft",
+  "inputs": {
+    "run_id": {
+      "type": "string"
+    },
+    "lenses": {
+      "type": "string[]",
+      "default": [
+        "technical",
+        "process",
+        "quality",
+        "decision"
+      ]
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "insights": "Insight[]",
+    "retro_path": "string",
+    "candidates_staged": "int"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "quick - 2 линзы"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 6,
+    "max_minutes": 40
+  },
+  "entry": "retro",
+  "nodes": [
+    {
+      "id": "retro",
+      "type": "agent",
+      "role": "memory",
+      "src": "maestro-flow:workflows/retrospective.md",
+      "prompt": "Metrics from the run (tasks planned/accepted/failed, rework iterations, severity distribution, failure classes), then the lenses in parallel inside one report. Insight id INS-{8hex} = hash of lens + title; wins, challenges, watch patterns per lens; route each as rule candidate, note or task, as a candidate only.",
+      "out": {
+        "insights": "Insight[]",
+        "retro_path": "string",
+        "metrics": "any"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "stage",
+      "type": "agent",
+      "role": "memory",
+      "prompt": "Stage the insights above the 0.5 confidence threshold as candidates; drop process narration. No publication.",
+      "out": {
+        "staged": "int"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "insights": "retro.insights",
+        "retro_path": "retro.retro_path",
+        "candidates_staged": "stage.staged"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "retro",
+      "to": "stage",
+      "pass": "artifact"
+    },
+    {
+      "from": "stage",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "rt-1",
+    "sim": {
+      "input": {
+        "run_id": "r-sample"
+      },
+      "stubs": {
+        "retro": {
+          "insights": [
+            {
+              "id": "INS-1a2b3c4d"
+            },
+            {
+              "id": "INS-5e6f7a8b"
+            }
+          ]
+        },
+        "stage": {
+          "staged": 2
+        }
+      },
+      "expect_path": [
+        "retro",
+        "stage",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "insights.length == 2",
+        "candidates_staged == 2"
+      ]
+    },
+    "live": "прогон песочницы; повторный запуск не плодит дубликатов (те же INS-id)"
+  }
+}

@@ -9,7 +9,7 @@ import type { EffectRow, Journal, RunRow, RunStatus, StepRow } from "./journal";
 import { executorKey, lowerWorkflow, outputFields } from "./lower";
 import { definitionSha256 } from "./store";
 import { WorkflowError, validateWorkflow } from "./validate";
-import { checkOutput, valueAtPath } from "./values";
+import { checkOutput, slugOf, valueAtPath } from "./values";
 
 /** What a step receives: only the mapped fields (mode artifact), and where they came from. */
 export type StepInput = {
@@ -342,7 +342,7 @@ export class WorkflowEngine {
         switch (ref.kind) {
           case "input": return { ran: true, value: valueAtPath(asObject(run.inputs_json), ref.path) };
           case "mode": return { ran: true, value: run.mode };
-          case "var": return { ran: true, value: ref.path[0] === "date" ? new Date(this.now()).toISOString().slice(0, 10) : run.id };
+          case "var": return { ran: true, value: ref.path[0] === "date" ? new Date(this.now()).toISOString().slice(0, 10) : ref.path[0] === "slug" ? slugOf(asObject(run.inputs_json)) : run.id };
           case "ctx": {
             const name = ref.path[0];
             const value = name === "run_id" ? run.id : name === "goal" ? asObject(run.inputs_json).goal : name === "merged_commits" ? this.mergedCommits(run.id) : undefined;

@@ -1,0 +1,536 @@
+{
+  "id": "blueprint-driven",
+  "name": {
+    "en": "Spec package first",
+    "ru": "Сначала пакет спецификаций"
+  },
+  "description": {
+    "en": "For a new product or service - brief, PRD with MoSCoW, architecture decisions, epics, a readiness score gate, the spec committed to the repository, then plan and build per epic.",
+    "ru": "Для нового продукта или сервиса - бриф, PRD с MoSCoW, архитектурные решения, эпики, оценка готовности как ворота, спецификация в репозиторий, затем план и исполнение по эпикам."
+  },
+  "examples": {
+    "ru": [
+      "Напиши полную спецификацию: бриф, PRD, архитектуру, эпики, затем построй",
+      "Нужен формальный пакет документов по продукту перед разработкой",
+      "Сначала оформи требования и ADR по новому сервису, потом реализуй",
+      "Подготовь продуктовые требования с MoSCoW и архитектурой, потом делай",
+      "Сделай blueprint для платформы интеграций и приступай к реализации",
+      "Хочу ТЗ по всем правилам - бриф, требования, архитектура, эпики - и после него разработку"
+    ],
+    "en": [
+      "Write the full specification: brief, PRD, architecture, epics, then build",
+      "I need a formal document package for the product before development",
+      "First formalize requirements and ADRs for the new service, then implement",
+      "Prepare product requirements with MoSCoW and architecture, then build",
+      "Make a blueprint for the integrations platform and proceed to implementation",
+      "I want a proper spec - brief, requirements, architecture, epics - and then the development"
+    ]
+  },
+  "not_for": [
+    "roadmap-driven",
+    "brainstorm-driven",
+    "analyze-plan-execute"
+  ],
+  "status": "draft",
+  "tags": [
+    "planning",
+    "docs",
+    "large"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "goals": {
+      "type": "Goal[]"
+    },
+    "boundary": {
+      "type": "Boundary"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    },
+    "idea": {
+      "type": "string",
+      "required": true
+    },
+    "depth": {
+      "type": "light|standard|comprehensive",
+      "default": "standard"
+    },
+    "spec_type": {
+      "type": "service|api|library|platform",
+      "default": "service"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "readiness_score": "int",
+    "spec_path": "string",
+    "epics": "string[]",
+    "merged_commits": "string[]",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "глубина: quick - light, standard - standard, full - comprehensive; порог готовности один (80)"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "tavily"
+    ],
+    "secrets": [
+      "TAVILY_API_KEY (внешнее исследование, по желанию)"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 110,
+    "max_minutes": 720,
+    "max_fan_out": 5
+  },
+  "entry": "discovery",
+  "nodes": [
+    {
+      "id": "discovery",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Discovery",
+        "ru": "Разведка"
+      },
+      "src": "maestro-flow:workflows/blueprint.md (P1, P1.5)",
+      "prompt": "Analyze the idea seed - domain, audience, constraints, existing code (file:line), comparable solutions when research is allowed. Choose the spec type and depth. Expand requirements by finding gaps (at most 5 rounds); skip expansion if upstream material is already given.",
+      "out": {
+        "seed": "string",
+        "spec_type": "string",
+        "glossary": "Term[]",
+        "glossary_count": "int",
+        "gaps": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "brief",
+      "type": "agent",
+      "role": "planner",
+      "src": "maestro-flow:workflows/blueprint.md (P2)",
+      "prompt": "Product Brief from three independent angles merged - product, technical, user. Goals, non-goals, success metrics, risks. At least 5 glossary terms are required to go on.",
+      "out": {
+        "brief": "string",
+        "term_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "prd",
+      "type": "agent",
+      "role": "planner",
+      "src": "maestro-flow:workflows/blueprint.md (P3)",
+      "prompt": "PRD - 3 to 7 functional requirements per goal (REQ-NNN, each 2-4 acceptance criteria written as checkable statements), NFRs, RFC 2119 keywords, MoSCoW table with the chosen MVP scope. The MoSCoW table is required to go on.",
+      "out": {
+        "prd": "string",
+        "req_count": "int",
+        "has_moscow": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "architecture",
+      "type": "agent",
+      "role": "planner",
+      "src": "maestro-flow:workflows/blueprint.md (P4)",
+      "prompt": "Architecture with ADR-NNN per significant decision (context, options, decision, consequences). Reference existing architecture constraints; do not contradict locked ones.",
+      "out": {
+        "architecture": "string",
+        "adr_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "epics",
+      "type": "agent",
+      "role": "planner",
+      "src": "maestro-flow:workflows/blueprint.md (P5)",
+      "prompt": "Epics EPIC-NNN with 2-5 stories each (\"As a ... I want ... so that ...\"), 2-4 acceptance criteria per story, size S/M/L/XL, a dependency map. Every REQ is covered by an epic.",
+      "out": {
+        "epics": "Epic[]",
+        "epic_count": "int",
+        "uncovered_reqs": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "readiness",
+      "type": "agent",
+      "role": "plan-critic",
+      "session": "new",
+      "src": "maestro-flow:workflows/blueprint.md (P6)",
+      "prompt": "Cross-document check over brief, PRD, architecture and epics. Score 4 dimensions of 25% each - completeness, consistency, traceability (REQ to epic to story), depth. Name the phase to fix for each defect; a finding without a quoted passage does not count.",
+      "out": {
+        "score": "int",
+        "completeness": "int",
+        "consistency": "int",
+        "traceability": "int",
+        "depth": "int",
+        "verdict": "pass|review|fail",
+        "fix_phases": "string[]",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "autofix",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "Fix the weak phases",
+        "ru": "Починить слабые фазы"
+      },
+      "prompt": "Rewrite only the phases named in readiness.fix_phases in dependency order (brief, prd, architecture, epics), keeping decisions already recorded.",
+      "out": {
+        "fixed_phases": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "ack",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Spec is in the review band",
+        "ru": "Спецификация в зоне доработки"
+      },
+      "prompt": "Score 60-79: show residual risks (max 5) and offer - go on with caveats, fix more, abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "go|fix|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "commit_spec",
+      "type": "lp-task",
+      "title": {
+        "en": "Commit the spec",
+        "ru": "Закоммитить спецификацию"
+      },
+      "contract_template": "write the five documents verbatim from artifacts into docs/specs/<slug>/ (product-brief.md, requirements/, architecture/, epics/, readiness-report.md); owns_paths docs/specs/<slug>/**; acceptance - the files exist and are non-empty",
+      "quality_mode": "quick",
+      "out": {
+        "state": "accepted|failed|blocked|needs_human|cancelled",
+        "merge_commit": "string",
+        "files": "string[]"
+      },
+      "guards": {
+        "maxAttempts": 2
+      }
+    },
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "findings": "{{epics.epics}}",
+        "boundary": "{{$inputs.boundary}}",
+        "mode": "fresh"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan.tasks}}",
+        "waves": "{{plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "close",
+      "type": "subworkflow",
+      "workflow": "lp.close",
+      "with": {
+        "goals": "{{$inputs.goals}}",
+        "boundary": "{{$inputs.boundary}}",
+        "goal": "{{$inputs.idea}}",
+        "merged_commits": "{{ctx.merged_commits}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "readiness_score": "readiness.score",
+        "spec_path": "docs/specs",
+        "epics": "epics.epics",
+        "merged_commits": "ctx.merged_commits",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "readiness_score": "readiness.score",
+        "spec_path": "docs/specs",
+        "merged_commits": "ctx.merged_commits",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "readiness_score": "readiness.score"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "discovery",
+      "to": "brief",
+      "pass": "artifact"
+    },
+    {
+      "from": "brief",
+      "to": "brief",
+      "pass": "same-session",
+      "when": "brief.term_count < 5 && visits('brief') < 2",
+      "label": "need 5 terms"
+    },
+    {
+      "from": "brief",
+      "to": "prd",
+      "pass": "artifact"
+    },
+    {
+      "from": "prd",
+      "to": "prd",
+      "pass": "same-session",
+      "when": "!prd.has_moscow && visits('prd') < 2",
+      "label": "need MoSCoW"
+    },
+    {
+      "from": "prd",
+      "to": "architecture",
+      "pass": "artifact"
+    },
+    {
+      "from": "architecture",
+      "to": "epics",
+      "pass": "artifact"
+    },
+    {
+      "from": "epics",
+      "to": "readiness",
+      "pass": "artifact"
+    },
+    {
+      "from": "readiness",
+      "to": "commit_spec",
+      "pass": "artifact",
+      "when": "readiness.verdict == 'pass'"
+    },
+    {
+      "from": "readiness",
+      "to": "ack",
+      "pass": "artifact",
+      "when": "readiness.verdict == 'review'"
+    },
+    {
+      "from": "readiness",
+      "to": "autofix",
+      "pass": "artifact",
+      "when": "readiness.verdict == 'fail' && visits('autofix') < 2"
+    },
+    {
+      "from": "readiness",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "autofix",
+      "to": "readiness",
+      "pass": "read-prior-session"
+    },
+    {
+      "from": "ack",
+      "to": "commit_spec",
+      "pass": "artifact",
+      "when": "ack.answer_kind == 'go'"
+    },
+    {
+      "from": "ack",
+      "to": "autofix",
+      "pass": "artifact",
+      "when": "ack.answer_kind == 'fix' && visits('autofix') < 2"
+    },
+    {
+      "from": "ack",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "commit_spec",
+      "to": "plan",
+      "pass": "artifact",
+      "when": "commit_spec.state == 'accepted'"
+    },
+    {
+      "from": "commit_spec",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "close",
+      "pass": "artifact",
+      "when": "build.status != 'blocked'"
+    },
+    {
+      "from": "build",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "close",
+      "to": "done",
+      "pass": "artifact",
+      "when": "close.status == 'closed' && build.status == 'done'"
+    },
+    {
+      "from": "close",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "bp-1",
+    "sim": {
+      "input": {
+        "idea": "Integration hub: connectors for CRM and email with retry and audit log",
+        "depth": "light"
+      },
+      "stubs": {
+        "brief": {
+          "term_count": 6
+        },
+        "prd": {
+          "has_moscow": true,
+          "req_count": 5
+        },
+        "epics": {
+          "epic_count": 3,
+          "uncovered_reqs": []
+        },
+        "readiness#1": {
+          "score": 55,
+          "verdict": "fail",
+          "fix_phases": [
+            "prd"
+          ]
+        },
+        "readiness#2": {
+          "score": 86,
+          "verdict": "pass"
+        },
+        "commit_spec": {
+          "state": "accepted"
+        },
+        "lp.plan": {
+          "status": "ok"
+        },
+        "lp.build": {
+          "status": "done"
+        },
+        "lp.close": {
+          "status": "closed"
+        }
+      },
+      "expect_path": [
+        "discovery",
+        "brief",
+        "prd",
+        "architecture",
+        "epics",
+        "readiness",
+        "autofix",
+        "readiness",
+        "commit_spec",
+        "plan",
+        "build",
+        "close",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "readiness_score >= 80"
+      ]
+    },
+    "live": "песочница: мини-сервис; в репозитории появляется docs/specs/<slug>/ с 4 разделами, эпики отражены в задачах плана"
+  }
+}

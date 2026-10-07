@@ -130,4 +130,5 @@ export interface Services {
   waitWriter: WriterDispatchApi["waitWriter"];
   workspaceDirt: WriterSpawnApi["workspaceDirt"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
 }

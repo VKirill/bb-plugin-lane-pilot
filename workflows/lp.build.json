@@ -70,7 +70,8 @@
           "failed_count": "int",
           "blocked_count": "int",
           "merged_commits": "string[]"
-        }
+        },
+        "uses": "reduce.lp.build.run_tasks"
       }
     },
     {

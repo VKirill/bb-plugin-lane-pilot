@@ -1,0 +1,284 @@
+{
+  "id": "issue-quick",
+  "name": {
+    "en": "Issue, quick path",
+    "ru": "Задача из очереди, быстрый путь"
+  },
+  "description": {
+    "en": "Small tracker task - plan, build, close the card on a green sandbox verification. No analysis stage and no separate review.",
+    "ru": "Мелкая задача из трекера - план, исполнение, закрытие карточки по зелёной песочной проверке. Без анализа и отдельного ревью."
+  },
+  "examples": {
+    "ru": [
+      "Быстро поправь задачу LP-143, там опечатка в тексте кнопки",
+      "Закрой мелкий тикет №58 без полного ревью",
+      "Исправь простое замечание из очереди быстрым путём",
+      "Мелкая задача из трекера: поменять цвет иконки, закрой её",
+      "Быстрая починка issue без анализа",
+      "Реши ISS-20261007-004 по-быстрому"
+    ],
+    "en": [
+      "Quickly fix task LP-143, it's a typo in a button label",
+      "Close the small ticket #58 without a full review",
+      "Fix the simple item from the queue on the fast path",
+      "Minor tracker task: change the icon color, then close it",
+      "Quick fix for the issue, skip the analysis",
+      "Resolve ISS-20261007-004 the quick way"
+    ]
+  },
+  "not_for": [
+    "issue-full",
+    "companion"
+  ],
+  "status": "draft",
+  "tags": [
+    "code",
+    "tracker"
+  ],
+  "inputs": {
+    "task_ref": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "status": "closed|partial|blocked|proposed",
+    "merged_commits": "string[]",
+    "card_status": "string",
+    "proposed_workflow": "string"
+  },
+  "quality_mode": {
+    "default": "quick",
+    "effect": "всегда quick: без критики плана и кода; только песочная проверка контракта"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "bb-tasks"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 20,
+    "max_minutes": 90
+  },
+  "entry": "load",
+  "nodes": [
+    {
+      "id": "load",
+      "type": "action",
+      "action": "bb.tasks.get",
+      "ref": "{{$inputs.task_ref}}",
+      "out": {
+        "id": "string",
+        "title": "string",
+        "description": "string",
+        "severity": "critical|high|medium|low",
+        "found": "bool"
+      }
+    },
+    {
+      "id": "escalate",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "issue-full",
+      "inputs": {
+        "task_ref": "{{$inputs.task_ref}}"
+      },
+      "note": "severity critical|high - предложить issue-full"
+    },
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{load.title}}",
+        "findings": "{{load.description}}",
+        "mode": "gaps",
+        "gaps": "{{load.description}}",
+        "boundary": {
+          "constraints": [
+            "quick: one task, existing tests only"
+          ]
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan.tasks}}",
+        "waves": "{{plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "close_card",
+      "type": "action",
+      "action": "bb.tasks.update",
+      "ref": "{{$inputs.task_ref}}",
+      "set": {
+        "status": "done",
+        "resolution": "fixed",
+        "comment": "commits {{build.merged_commits}}"
+      },
+      "out": {
+        "card_status": "string"
+      }
+    },
+    {
+      "id": "leave_open",
+      "type": "action",
+      "action": "bb.tasks.update",
+      "ref": "{{$inputs.task_ref}}",
+      "set": {
+        "status": "failed",
+        "comment": "quick path failed; consider issue-full"
+      },
+      "out": {
+        "card_status": "string"
+      }
+    },
+    {
+      "id": "closed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "closed",
+        "merged_commits": "ctx.merged_commits",
+        "card_status": "close_card.card_status"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "merged_commits": "ctx.merged_commits",
+        "card_status": "leave_open.card_status"
+      }
+    },
+    {
+      "id": "proposed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "proposed",
+        "proposed_workflow": "issue-full"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "!load.found"
+    },
+    {
+      "from": "load",
+      "to": "escalate",
+      "pass": "artifact",
+      "when": "load.severity in ['critical','high']"
+    },
+    {
+      "from": "load",
+      "to": "plan",
+      "pass": "artifact"
+    },
+    {
+      "from": "escalate",
+      "to": "proposed",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "leave_open",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "close_card",
+      "pass": "artifact",
+      "when": "build.status == 'done'"
+    },
+    {
+      "from": "build",
+      "to": "leave_open",
+      "pass": "artifact"
+    },
+    {
+      "from": "close_card",
+      "to": "closed",
+      "pass": "artifact"
+    },
+    {
+      "from": "leave_open",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "iq-1",
+    "sim": {
+      "input": {
+        "task_ref": "LP-143"
+      },
+      "stubs": {
+        "bb.tasks.get": {
+          "found": true,
+          "title": "Typo in button label",
+          "severity": "low"
+        },
+        "lp.plan": {
+          "status": "ok",
+          "task_count": 1
+        },
+        "lp.build": {
+          "status": "done",
+          "merged_commits": [
+            "q1"
+          ]
+        }
+      },
+      "expect_path": [
+        "load",
+        "plan",
+        "build",
+        "close_card",
+        "closed"
+      ],
+      "expect_outputs": [
+        "status == 'closed'",
+        "card_status == 'done'"
+      ]
+    },
+    "live": "карточка-опечатка в песочнице; закрывается по зелёной проверке; вторая карточка severity=high - ожидание: предложение issue-full"
+  }
+}

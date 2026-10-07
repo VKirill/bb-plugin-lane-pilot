@@ -1,0 +1,403 @@
+{
+  "id": "issue-full",
+  "name": {
+    "en": "Issue, full path",
+    "ru": "Задача из очереди, полный путь"
+  },
+  "description": {
+    "en": "Takes a task from BB Tasks, finds the root cause, plans a fix, builds it, reviews it and closes the card only after a green review.",
+    "ru": "Берёт задачу из BB Tasks, находит корневую причину, планирует починку, исполняет, ревьюит и закрывает карточку только после зелёного ревью."
+  },
+  "examples": {
+    "ru": [
+      "Возьми задачу LP-142 из BB Tasks и реши её с ревью",
+      "Разбери и исправь баг из трекера №57, нужна полноценная проверка",
+      "Закрой тикет про падение импорта: причина, исправление, ревью",
+      "Реши задачу «неверная сумма в корзине» со всей проверкой",
+      "Возьми приоритетную задачу из очереди и доведи до закрытия",
+      "Реши ISS-20261007-003 с анализом корня и ревью"
+    ],
+    "en": [
+      "Pick up task LP-142 from BB Tasks and resolve it with review",
+      "Analyze and fix tracker bug #57, full verification needed",
+      "Close the ticket about the import crash: cause, fix, review",
+      "Resolve the 'wrong cart total' task with all the checks",
+      "Take the top-priority item from the queue and see it through to closing",
+      "Resolve ISS-20261007-003 with root cause analysis and review"
+    ]
+  },
+  "not_for": [
+    "issue-quick",
+    "debug",
+    "analyze-plan-execute"
+  ],
+  "status": "draft",
+  "tags": [
+    "code",
+    "tracker"
+  ],
+  "inputs": {
+    "task_ref": {
+      "type": "string",
+      "required": true,
+      "note": "id карточки BB Tasks / ISS-… / URL"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "closed|partial|blocked",
+    "root_cause": "string",
+    "merged_commits": "string[]",
+    "review_status": "pass|rework|block",
+    "card_status": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "режим по severity карточки: critical/high - full, medium - standard, low - quick"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "bb-tasks"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 70,
+    "max_minutes": 360,
+    "max_fan_out": 5
+  },
+  "entry": "load",
+  "nodes": [
+    {
+      "id": "load",
+      "type": "action",
+      "action": "bb.tasks.get",
+      "ref": "{{$inputs.task_ref}}",
+      "out": {
+        "id": "string",
+        "title": "string",
+        "description": "string",
+        "severity": "critical|high|medium|low",
+        "priority": "int",
+        "status": "string",
+        "found": "bool"
+      }
+    },
+    {
+      "id": "not_found",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    },
+    {
+      "id": "root_cause",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Root cause of the task",
+        "ru": "Корневая причина задачи"
+      },
+      "src": "maestro-flow:ref/issue-gaps-analyze.md",
+      "prompt": "Read-only. Group by path prefix or component, load context per group, then write analysis: root_cause, affected_files (file:line), impact_scope, fix_direction, confidence, plus Locked/Free constraints for the planner.\nIf you cannot confirm a cause, say so and mark confidence low; do not invent one.\n",
+      "out": {
+        "root_cause": "string",
+        "affected_files": "string[]",
+        "impact_scope": "string",
+        "fix_direction": "string",
+        "confidence": "int",
+        "locked": "string[]",
+        "free": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "start",
+      "type": "action",
+      "action": "bb.tasks.update",
+      "ref": "{{$inputs.task_ref}}",
+      "set": {
+        "status": "in_progress",
+        "comment": "Lane Pilot workflow issue-full started"
+      }
+    },
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{load.title}}",
+        "findings": "{{root_cause}}",
+        "mode": "gaps",
+        "gaps": "{{root_cause.affected_files}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan.tasks}}",
+        "waves": "{{plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "review",
+      "type": "subworkflow",
+      "workflow": "lp.review",
+      "with": {
+        "range": "{{ctx.merged_commits}}",
+        "dimensions": {
+          "by_mode": {
+            "quick": [
+              "correctness"
+            ],
+            "standard": [
+              "correctness",
+              "security",
+              "maintainability"
+            ],
+            "full": [
+              "correctness",
+              "security",
+              "performance",
+              "architecture",
+              "maintainability",
+              "best_practices"
+            ]
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "replan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{load.title}}",
+        "mode": "gaps",
+        "gaps": "{{review.findings}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "close_card",
+      "type": "action",
+      "action": "bb.tasks.update",
+      "ref": "{{$inputs.task_ref}}",
+      "set": {
+        "status": "done",
+        "resolution": "fixed",
+        "comment": "commits {{build.merged_commits}}; root cause {{root_cause.root_cause}}"
+      },
+      "out": {
+        "card_status": "string"
+      }
+    },
+    {
+      "id": "memory",
+      "type": "agent",
+      "role": "memory",
+      "prompt": "Stage the lesson (root cause + fix pattern) as a candidate; no direct publication.",
+      "out": {
+        "staged": "int",
+        "deferred": "bool"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "leave_open",
+      "type": "action",
+      "action": "bb.tasks.update",
+      "ref": "{{$inputs.task_ref}}",
+      "set": {
+        "status": "failed",
+        "comment": "review not green after fix rounds; see run report"
+      },
+      "out": {
+        "card_status": "string"
+      }
+    },
+    {
+      "id": "closed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "closed",
+        "root_cause": "root_cause.root_cause",
+        "merged_commits": "ctx.merged_commits",
+        "review_status": "review.status",
+        "card_status": "close_card.card_status"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "root_cause": "root_cause.root_cause",
+        "merged_commits": "ctx.merged_commits",
+        "review_status": "review.status",
+        "card_status": "leave_open.card_status"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load",
+      "to": "not_found",
+      "pass": "artifact",
+      "when": "!load.found"
+    },
+    {
+      "from": "load",
+      "to": "root_cause",
+      "pass": "artifact"
+    },
+    {
+      "from": "root_cause",
+      "to": "start",
+      "pass": "artifact"
+    },
+    {
+      "from": "start",
+      "to": "plan",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "leave_open",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "review",
+      "pass": "artifact",
+      "when": "build.merged_commits.length > 0"
+    },
+    {
+      "from": "build",
+      "to": "leave_open",
+      "pass": "artifact"
+    },
+    {
+      "from": "review",
+      "to": "close_card",
+      "pass": "artifact",
+      "when": "review.status == 'pass'"
+    },
+    {
+      "from": "review",
+      "to": "replan",
+      "pass": "artifact",
+      "when": "review.status == 'rework' && visits('replan') == 0"
+    },
+    {
+      "from": "review",
+      "to": "leave_open",
+      "pass": "artifact"
+    },
+    {
+      "from": "replan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "replan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "replan",
+      "to": "leave_open",
+      "pass": "artifact"
+    },
+    {
+      "from": "close_card",
+      "to": "memory",
+      "pass": "artifact"
+    },
+    {
+      "from": "memory",
+      "to": "closed",
+      "pass": "artifact"
+    },
+    {
+      "from": "leave_open",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "if-1",
+    "sim": {
+      "input": {
+        "task_ref": "LP-142"
+      },
+      "stubs": {
+        "bb.tasks.get": {
+          "found": true,
+          "title": "Wrong cart total",
+          "severity": "high"
+        },
+        "lp.plan": {
+          "status": "ok"
+        },
+        "lp.build": {
+          "status": "done",
+          "merged_commits": [
+            "i1"
+          ]
+        },
+        "lp.review": {
+          "status": "pass"
+        }
+      },
+      "expect_path": [
+        "load",
+        "root_cause",
+        "start",
+        "plan",
+        "build",
+        "review",
+        "close_card",
+        "memory",
+        "closed"
+      ],
+      "expect_outputs": [
+        "status == 'closed'",
+        "card_status == 'done'"
+      ]
+    },
+    "live": "карточка в тестовом проекте BB Tasks; после прогона статус done, комментарий с коммитом и корневой причиной"
+  }
+}
