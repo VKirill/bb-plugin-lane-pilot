@@ -3,6 +3,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { getAttempt, getReasoningTrace, getRun, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt } from "../../database";
 import { SESSION_MAX_TURNS, failureClass } from "../../failure-class";
 import { stringAt } from "../values";
+import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
@@ -158,9 +159,13 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
     if (!window || used / window < STICKY_COMPACT_SHARE) return;
     ctx.log(`sticky writer ${threadId}: context ${Math.round(100 * used / window)}% full, compacting before the next turn`);
     await bb.sdk.threads.compact({ threadId }).catch(() => undefined);
+    let first = true;
     for (const deadline = Date.now() + 5 * 60_000; Date.now() < deadline && !ctx.isDisposed();) {
-      await new Promise((wake) => setTimeout(wake, 2_000));
+      // The first look comes after a plain pause: the compaction has not started the moment the call returns.
+      if (first) { first = false; await new Promise((wake) => setTimeout(wake, 2_000)); }
+      const mark = threadWatchMark(bb);
       if (stringAt(await bb.sdk.threads.get({ threadId }).catch(() => null), "status") === "idle") return;
+      await sleepUntilThreadSignal(bb, threadId, mark, 2_000);
     }
   }
 

@@ -16,7 +16,7 @@ import { needsHumanQuestion, outputText, providerLimitNotice, writerContextBlock
 import { isLiveDecision } from "../../live-folder";
 import { isMainfixTask } from "../../validate-output";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../integration-gate";
-import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
+import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { join, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
@@ -133,6 +133,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       for (;;) {
         if (ctx.state.disposed) throw new Error("Lane Pilot was reloaded while the writer ran");
         const pollStarted = Date.now();
+        const mark = threadWatchMark(bb);
         const currentThread = await getThreadBounded(input.writerThreadId);
         const currentStatus = stringAt(currentThread, "status");
         // The silence sweep nudged this writer twice and it stayed silent: the attempt ends and the task moves on.
@@ -159,7 +160,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const budgetStop = runningWriterBudgetStop(budget.check());
           if (budgetStop) return await stopRunningWriter(budgetStop);
         }
-        await new Promise((resolve) => setTimeout(resolve, Math.max(0, 2_000 - (Date.now() - pollStarted))));
+        // A run with a wall or token budget is read every 2 s, because the budget is checked here. Otherwise BB's events
+        // (idle, failed, archived) wake the loop, and a read every 20 s covers a lost event.
+        const pause = Math.max(0, 2_000 - (Date.now() - pollStarted));
+        if (watchBudget) await new Promise((resolve) => setTimeout(resolve, pause));
+        else await sleepUntilThreadSignal(bb, input.writerThreadId, mark, pause);
       }
       const currentAttempt = getAttempt(db, input.attemptId);
       if (currentAttempt?.state === "cancel_requested" || currentAttempt?.state === "canceled") {

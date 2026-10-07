@@ -10,7 +10,7 @@ import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDes
 import { configuredSetting } from "./context";
 import { fullAccessSpawn } from "./pm-spawn";
 import { stringAt } from "./values";
-import { waitThreadIdle } from "@lane-pilot/thread-observe";
+import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { basename, resolve } from "node:path";
 import { abortable, scheduleIsolated } from "./schedules";
 import type { ServerCore } from "./core";
@@ -134,7 +134,11 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         }
       }
       const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
-      while(stringAt(await bb.sdk.threads.get({threadId}).catch(()=>null),"status")==="starting") await new Promise((done)=>setTimeout(done,2_000));
+      for(;;){
+        const mark=threadWatchMark(bb);
+        if(stringAt(await bb.sdk.threads.get({threadId}).catch(()=>null),"status")!=="starting") break;
+        await sleepUntilThreadSignal(bb,threadId,mark,2_000);
+      }
       return threadId;
     });
     docsSpawnGate=turn.catch(()=>undefined);

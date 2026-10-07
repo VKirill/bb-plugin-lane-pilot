@@ -6,6 +6,16 @@ export {
   type ThreadCompletionDecision,
 } from "./completion";
 export {
+  createThreadSignalHub,
+  installThreadSignals,
+  sleepUntilThreadSignal,
+  threadSignalHub,
+  threadWatchMark,
+  SIGNAL_FALLBACK_MS,
+  type ThreadSignalHub,
+  type ThreadSignalReason,
+} from "./signals";
+export {
   eventsListQueryLabel,
   listThreadEventsRaw,
   waitThreadIdle,

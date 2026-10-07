@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.178
+
+H1 of the next plan: BB's thread events instead of polling.
+- **Watchers sleep until BB says a thread changed.** The factory subscribes once (`bb.events.on`) to `thread.idle`, `thread.failed`, `thread.archived`, `thread.deleted` and `experimental_thread.events` (the last one only while the thread is not `active`, so a running turn does not wake anyone) and keeps a per-thread signal hub (`packages/thread-observe/src/signals.ts`). `waitThreadIdle` and `observeStageChild` (the wait of every helper, stage child, critic, council seat and errand), the writer's finish loop (without a wall or token budget), the compaction wait of sticky writers and the docs thread start wait read the thread when the hub signals, and otherwise every 20 s. `decideThreadCompletion` and `threadFailure` stay the judge: an event only says «look now». A mark taken before the read keeps a change that arrives during the read from being lost; a reload wakes every sleeper at once.
+- **Measured** (tests/thread-signals.test.ts, a writer that works 45 s, fake clock): 47 `threads.get` + 47 `events.list` calls with the old 1 s poll, 4 + 4 with events (about 67 → 4 reads a minute), and the end is seen in the same tick, not up to a second later.
+- **Fallbacks.** No `bb.events` (an older host, a test host) or `LANE_PILOT_THREAD_SIGNALS=0`: the old poll, unchanged. A lost event costs at most one 20 s interval. A run with a wall or token budget keeps its 2 s loop, because the budget is checked there. The tests switch the events off (`tests/setup-jsdom.ts`): fake threads change state without them.
+- Not changed: the 500 ms wait for a worktree holder thread (it goes away with H9) and the sweeps (5 to 15 minutes).
+
 ## 0.1.177
 
 From the review of 2026-10-07 (bugs 1 and 7, D3/D4). Needs the core drain-fixes build (`bb.vk.instanceId`) for bug 1 in full; on an older core the oldest bound instance is drained, which is the one being replaced.

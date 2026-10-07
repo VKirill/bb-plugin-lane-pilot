@@ -32,6 +32,7 @@ import { createWriterVerify } from "./src/server/writer/verify";
 import { createWriterFinish } from "./src/server/writer/finish";
 import { createWriterStart } from "./src/server/writer/start";
 import { createWriterDispatch } from "./src/server/writer/dispatch";
+import { installThreadSignals } from "@lane-pilot/thread-observe";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export { experimental_vkLifecycle } from "./src/native-install-lifecycle";
 
@@ -40,6 +41,8 @@ export { rpcContract } from "./src/contracts";
 /** Entry only: storage, the shared core, every module on one services bag, then the registrations. */
 export default async function plugin(bb: BbPluginApi) {
   const db = openDatabase(bb);
+  // BB's thread events wake the watchers of writers and helper threads; without them they poll as before.
+  installThreadSignals(bb);
   const ctx = createCore(bb, db);
   const services = {} as Services;
   mountNativeWiring(ctx);
