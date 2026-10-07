@@ -63,6 +63,14 @@ it("still dispatches the -mainfix for the code failure that sits beside an envir
   expect(sent.some((text) => text.includes("because of the machine"))).toBe(true);
 });
 
+it("dispatches the -mainfix for a red test that merely logs EACCES", async () => {
+  const { sent, dispatchWriter } = await mergeThenCheck([
+    { command: "npx vitest run", exitCode: 1, stdout: " FAIL  tests/fs.test.ts > locked\n Tests  1 failed | 3 passed (4)", stderr: "Error: EACCES: permission denied, open '/root/secret'" },
+  ]);
+  expect(dispatchWriter).toHaveBeenCalled();
+  expect(sent.some((text) => text.includes("because of the machine"))).toBe(false);
+});
+
 it("names the post-merge check by the attempt and the merge commit it follows", async () => {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const seen: Array<unknown> = [];
