@@ -844,7 +844,7 @@ export const fieldEn = {
   field_s418: "Tests the sandbox cannot run",
   reason_s418: "Test files and folders (comma- or line-separated) that must be excluded from a whole-suite check; a task contract that runs the whole suite without excluding them is sent back before any writer starts",
   field_s419: "Secrets checks may use",
-  reason_s419: "Env Catalog names (comma- or line-separated) that a task's checks may receive as environment variables. A task gets a name only when its contract declares it and it is listed here; empty means none. Only you can change this list",
+  reason_s419: "Env Catalog names (comma- or line-separated) that a task's checks, a browser check's login or a deploy errand may be given. An agent gets a name only when it is declared for that step and listed here; empty means none. Only you can change this list",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1693,5 +1693,5 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   field_s418: "Тесты, которые песочница не запускает",
   reason_s418: "Тестовые файлы и папки (через запятую или с новой строки), которые нужно исключать из проверки всего набора; контракт задачи, который запускает весь набор без этих исключений, возвращается до старта исполнителя",
   field_s419: "Секреты, доступные проверкам",
-  reason_s419: "Имена из Env Catalog (через запятую или с новой строки), которые проверки задачи могут получать как переменные окружения. Задача получает имя, только если контракт её объявил и оно есть в этом списке; пусто — ничего. Менять список можете только вы",
+  reason_s419: "Имена из Env Catalog (через запятую или с новой строки), которые можно выдать проверкам задачи, входу браузерной проверки или деплою через поручение. Агент получает имя, только если оно названо для этого шага и есть в списке; пусто — ничего. Менять список можете только вы",
 };
