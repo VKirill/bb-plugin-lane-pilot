@@ -1,5 +1,6 @@
 import { estimateTokens } from "./candidates";
 import { memoryUsefulness } from "./lifecycle";
+import { memoryStem, memoryTokens } from "./terms";
 import type { MemoryRecord, MemorySettings } from "./settings";
 
 export function memoryMaintenancePrompt(input:{task:unknown;acceptedResult:unknown;settings:MemorySettings;agent?:string;/** Active notes close to this task, so a changed fact replaces its old note instead of piling up next to it. */existing?:Array<{id:string;content:string}>}):string {
@@ -23,4 +24,5 @@ export function memoryContext(records:MemoryRecord[],taskText:string,budget:numb
   return {text,records:selected,estimatedTokens:estimateTokens(text)};
 }
 
-function tokens(text:string):string[] { return (text.toLowerCase().match(/[\p{L}\p{N}_-]{3,}/gu)??[]); }
+/** Stems, so `ошибки` in the task finds `ошибка` in a note. */
+function tokens(text:string):string[] { return memoryTokens(text).map(memoryStem); }

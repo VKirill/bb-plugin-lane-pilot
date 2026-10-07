@@ -2,6 +2,7 @@ import { memoryContentIssue } from "./candidates";
 import type Database from "better-sqlite3";
 import { memoryRecordId } from "./candidates";
 import { OBSERVED_QUARANTINE_MS, expireMemory, hideRecord, idleSql, sameSubject } from "./lifecycle";
+import { memoryStem, memoryTokens } from "./terms";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine, MemoryStatus, MemoryTrust } from "./settings";
 
 /** The better-sqlite3 surface this package needs; BB's `bb.storage.database()` satisfies it. */
@@ -30,13 +31,39 @@ const toRecord = (row: Row): MemoryRecord => ({ id: row.id, projectId: row.proje
 const estimate = (text: string) => Math.ceil(Buffer.byteLength(text, "utf8") / 4);
 const isRule = (row: Pick<Row, "concepts_json">) => row.concepts_json.includes('"rule"');
 
+const trigramState = new WeakMap<object, boolean>();
+
+/**
+ * The trigram index (FTS5 `trigram` tokenizer: substrings and word forms). Made on first use rather than by a migration,
+ * because a host SQLite older than 3.34 has no such tokenizer and a failing migration would stop the plugin; where it
+ * cannot be made, search scans in code (`scanRows`). A new table is filled from the active records.
+ */
+export function trigramReady(db: MemoryDatabase): boolean {
+  const known = trigramState.get(db);
+  if (known !== undefined) return known;
+  let ok = false;
+  try {
+    db.transaction(() => {
+      if (db.prepare("SELECT 1 FROM sqlite_master WHERE name='lane_pilot_memory_trgm'").get()) return;
+      db.prepare("CREATE VIRTUAL TABLE lane_pilot_memory_trgm USING fts5(id UNINDEXED, project_id UNINDEXED, content, concepts, tokenize='trigram')").run();
+      db.prepare(`INSERT INTO lane_pilot_memory_trgm(id,project_id,content,concepts)
+        SELECT id,project_id,content,COALESCE((SELECT group_concat(value,' ') FROM json_each(concepts_json)),'') FROM lane_pilot_memory WHERE status='active'`).run();
+    })();
+    ok = true;
+  } catch { ok = false; }
+  trigramState.set(db, ok);
+  return ok;
+}
+
 /** Takes a record out of the search indexes (a hidden or deleted record is never found). */
 export function dropMemoryIndexes(db: MemoryDatabase, projectId: string, id: string): void {
   db.prepare("DELETE FROM lane_pilot_memory_fts WHERE project_id=? AND id=?").run(projectId, id);
+  if (trigramReady(db)) db.prepare("DELETE FROM lane_pilot_memory_trgm WHERE project_id=? AND id=?").run(projectId, id);
 }
 
 function addToIndexes(db: MemoryDatabase, projectId: string, id: string, content: string, concepts: string[]): void {
   db.prepare("INSERT INTO lane_pilot_memory_fts(id,project_id,content,concepts) VALUES(?,?,?,?)").run(id, projectId, content, concepts.join(" "));
+  if (trigramReady(db)) db.prepare("INSERT INTO lane_pilot_memory_trgm(id,project_id,content,concepts) VALUES(?,?,?,?)").run(id, projectId, content, concepts.join(" "));
 }
 
 export type StoreMemoryInput = { projectId: string; personalBot?: string; audience: MemoryAudience; sourceSha256: string; entries: MemoryCandidate[];
@@ -57,6 +84,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
   const now = input.now ?? Date.now();
   const trust = input.trust ?? "confirmed";
   const origin = input.origin ?? "maintainer";
+  trigramReady(db);
   return db.transaction(() => {
     const personalBot = input.personalBot ?? "";
     // The one door every write passes: rules and imports reach the corpus without the maintainer's parser.
@@ -156,21 +184,47 @@ function visibility(alias: string, options: SearchOptions): string {
 }
 
 export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query: string, limit: number, engine: MemorySearchEngine, audience: MemoryAudience = "subagent", personalBot = "", options: SearchOptions = {}): MemoryRecord[] {
-  const tokens = [...new Set(query.toLowerCase().match(/[\p{L}\p{N}_-]{3,}/gu) ?? [])].slice(0, 32);
+  const tokens = [...new Set(memoryTokens(query))].slice(0, 32);
   if (tokens.length === 0 || limit <= 0) return [];
   let rows: Row[];
   if (engine !== "bm25") {
     const match = tokens.map((word) => `"${word.replaceAll('"', "")}"`).join(" OR ");
-    rows = db.prepare(`SELECT ${cols("m.")}
+    const words = db.prepare(`SELECT ${cols("m.")}
       FROM lane_pilot_memory_fts f JOIN lane_pilot_memory m ON m.id=f.id AND m.project_id=f.project_id
       WHERE lane_pilot_memory_fts MATCH ? AND f.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility("m", options)}
       ORDER BY bm25(lane_pilot_memory_fts) LIMIT ?`).all(match, projectId, audience, personalBot, limit) as Row[];
+    // Word forms and substrings the whole-word index misses: the trigram index, or a scan where SQLite has none.
+    const stems = [...new Set(tokens.map(memoryStem))];
+    const parts = trigramReady(db)
+      ? db.prepare(`SELECT ${cols("m.")}
+        FROM lane_pilot_memory_trgm t JOIN lane_pilot_memory m ON m.id=t.id AND m.project_id=t.project_id
+        WHERE lane_pilot_memory_trgm MATCH ? AND t.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility("m", options)}
+        ORDER BY bm25(lane_pilot_memory_trgm) LIMIT ?`).all(stems.map((stem) => `"${stem.replaceAll('"', "")}"`).join(" OR "), projectId, audience, personalBot, limit) as Row[]
+      : scanRows(db, projectId, audience, personalBot, stems, options, limit);
+    rows = fuse([words, parts], limit);
   } else {
     const all = db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility("m", options)}`).all(projectId, audience, personalBot) as Row[];
     const score = (text: string) => tokens.reduce((sum, token) => sum + (text.toLowerCase().split(token).length - 1), 0);
     rows = all.map((row) => ({ ...row, _score: score(`${row.content} ${row.concepts_json}`) })).filter((row) => row._score > 0).sort((a, b) => b._score - a._score || b.created_at - a.created_at).slice(0, limit);
   }
   return rows.map(toRecord);
+}
+
+/** Reciprocal rank fusion of ranked lists with equal weight: a record both lists find outranks one only a list finds. */
+function fuse(lists: Row[][], limit: number): Row[] {
+  const scored = new Map<string, { row: Row; score: number }>();
+  for (const list of lists) list.forEach((row, rank) => {
+    const hit = scored.get(row.id);
+    if (hit) hit.score += 1 / (60 + rank + 1); else scored.set(row.id, { row, score: 1 / (60 + rank + 1) });
+  });
+  return [...scored.values()].sort((a, b) => b.score - a.score || b.row.created_at - a.row.created_at).slice(0, limit).map((item) => item.row);
+}
+
+/** The in-code stand-in for the trigram index: records whose text contains the stems, most stems first. */
+function scanRows(db: MemoryDatabase, projectId: string, audience: MemoryAudience, personalBot: string, stems: string[], options: SearchOptions, limit: number): Row[] {
+  const all = db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility("m", options)}`).all(projectId, audience, personalBot) as Row[];
+  const score = (row: Row) => { const text = `${row.content} ${row.concepts_json}`.toLowerCase(); return stems.filter((stem) => text.includes(stem)).length; };
+  return all.map((row) => ({ row, score: score(row) })).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || b.row.created_at - a.row.created_at).slice(0, limit).map((item) => item.row);
 }
 
 /**
