@@ -6,7 +6,7 @@ import type { WorkflowAgents } from "./workflow-agent";
 import type { ChainRuntime } from "./workflow-runtime";
 
 /**
- * The model step of `lane_pilot_route`: a read-only helper thread of the PM chat that sees the owner's request and the cards of
+ * The escalation of `lane_pilot_route` (Jev decides the clear cases first, src/jev/route-model.ts): a read-only helper thread of the PM chat that sees the owner's request and the cards of
  * the top candidates and chooses among them, with the evidence the router records (the pattern, the rejected options, a
  * confidence, questions). It chooses only among the candidates; the router discards an answer outside them and falls back to its
  * scorer, and the confidence rule (below 60 means questions) stays in code.

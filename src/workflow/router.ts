@@ -40,7 +40,7 @@ export type RouterCard = {
   examples: { en: string[]; ru: string[] };
   not_for: string[];
   tags: string[];
-  inputs: Array<{ name: string; type: string; required: boolean; description?: string }>;
+  inputs: Array<{ name: string; type: string; required: boolean; description?: string; values?: string[] }>;
   outputs: Array<{ name: string; type: string; description?: string }>;
   requires: Workflow["requires"];
   /** Search score with rule boosts, 0 and up; a model may use it as a hint. */
@@ -58,6 +58,8 @@ export type RouterModelOutput = {
   pattern: string;
   rejected: Array<{ id: string; reason: string }>;
   questions: string[];
+  /** Closed-set inputs (an enum value, a yes/no switch) of the chosen workflow that the request states; the router checks them against the workflow. */
+  inputs?: Record<string, unknown>;
 };
 export type RouterModel = (input: RouterModelInput) => Promise<RouterModelOutput>;
 
@@ -334,8 +336,8 @@ export function scoreConfidence(top: number, second: number, ruleHits: number): 
   return Math.round(100 * Math.min(1, 0.4 * strength + 0.5 * margin + 0.1 * Math.min(1, ruleHits)));
 }
 
-/** The default model: no network, no randomness. It trusts the search score and the rules, so it is only as good as the catalog text. */
-export const deterministicRouterModel: RouterModel = async ({ candidates }) => {
+/** The default model, synchronous: no network, no randomness. It trusts the search score and the rules, so it is only as good as the catalog text. */
+export function scorerOutput(candidates: RouterCard[]): RouterModelOutput {
   const [first, second] = candidates;
   if (!first || first.score <= 0) return { choice: null, confidence: 0, pattern: "no candidate matches", rejected: [], questions: [] };
   const confidence = scoreConfidence(first.score, second?.score ?? 0, first.rules.length);
@@ -345,7 +347,8 @@ export const deterministicRouterModel: RouterModel = async ({ candidates }) => {
     rejected: candidates.slice(1).map((card) => ({ id: card.id, reason: `scores lower (${card.score.toFixed(2)} against ${first.score.toFixed(2)})` })),
     questions: [],
   };
-};
+}
+export const deterministicRouterModel: RouterModel = async ({ candidates }) => scorerOutput(candidates);
 
 // ------------------------------------------------------------------ the decision
 
@@ -380,7 +383,7 @@ export type RouteDecision = {
 
 const cardOf = (workflow: Workflow, score: number, rules: string[]): RouterCard => ({
   id: workflow.id, name: workflow.name, description: workflow.description, examples: workflow.examples, not_for: workflow.not_for, tags: workflow.tags,
-  inputs: workflow.inputs.map((field) => ({ name: field.name, type: field.type, required: field.required, ...(field.description ? { description: field.description } : {}) })),
+  inputs: workflow.inputs.map((field) => ({ name: field.name, type: field.type, required: field.required, ...(field.description ? { description: field.description } : {}), ...(field.values ? { values: field.values } : {}) })),
   outputs: workflow.outputs.map((field) => ({ name: field.name, type: field.type, ...(field.description ? { description: field.description } : {}) })),
   requires: workflow.requires, score: Math.round(score * 1000) / 1000, rules,
 });
@@ -419,7 +422,7 @@ function questionsFor(input: { ru: boolean; broad: boolean; top: Workflow[]; mis
 const TEXT_INPUTS = new Set(["goal", "question", "symptom", "topic", "query", "idea", "requirements"]);
 
 /** What the request itself can fill: tracker ids, PR numbers, URLs and files are read from it; a free-text goal is a guess (the intent as is). */
-function fillInputs(workflow: Workflow, s: Signals, intent: string): { inputs: Record<string, unknown>; missing: string[]; guessed: string[] } {
+function fillInputs(workflow: Workflow, s: Signals, intent: string, stated: Record<string, unknown> = {}): { inputs: Record<string, unknown>; missing: string[]; guessed: string[] } {
   const inputs: Record<string, unknown> = {}, guessed: string[] = [];
   for (const field of workflow.inputs) {
     const name = field.name;
@@ -429,6 +432,12 @@ function fillInputs(workflow: Workflow, s: Signals, intent: string): { inputs: R
     else if (name === "post_urls" && s.urls.length && field.type === "array") inputs[name] = s.urls;
     else if (name === "files" && s.files.length && field.type === "array") inputs[name] = s.files;
     else if (TEXT_INPUTS.has(name) && field.type === "string") { inputs[name] = intent.trim(); guessed.push(name); }
+  }
+  // Closed-set inputs the model read from the request: only a declared enum value or a boolean, and never over a value read above.
+  for (const field of workflow.inputs) {
+    const value = stated[field.name];
+    if (inputs[field.name] !== undefined || value === undefined) continue;
+    if ((field.type === "enum" && typeof value === "string" && field.values?.includes(value)) || (field.type === "boolean" && typeof value === "boolean")) inputs[field.name] = value;
   }
   const missing = workflow.inputs.filter((field) => field.required && inputs[field.name] === undefined && field.default === undefined).map((field) => field.name);
   return { inputs, missing, guessed };
@@ -547,7 +556,7 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
     return empty({ confidence: Math.min(output.confidence, MIN_CONFIDENCE - 1), suggested: chosen?.id ?? null, evidence: record(output.pattern, output.rejected), candidates, questions, warnings });
   }
 
-  const filled = fillInputs(chosen, s, intent);
+  const filled = fillInputs(chosen, s, intent, output.inputs);
   if (chosen.id === "milestone-close" && (input.state?.openTasks?.() ?? 0) > 0) warnings.push(`${input.state!.openTasks!()} tasks of this run are still open: close the milestone only after they finish`);
   return empty({
     decision: "route", workflowId: chosen.id, confidence: output.confidence, evidence: record(output.pattern, output.rejected), candidates, warnings,

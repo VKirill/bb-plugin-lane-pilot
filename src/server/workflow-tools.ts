@@ -10,6 +10,8 @@ import type { WorkflowStore } from "../workflow/store";
 import { fenceOutside, registerObservedTool } from "./tool-result";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
+import { jev } from "../jev/runtime";
+import { createJevRouterModel } from "../jev/route-model";
 import { createRouterModel } from "./workflow-router-model";
 import type { ChainRuntime } from "./workflow-runtime";
 
@@ -24,8 +26,8 @@ export type WorkflowToolDeps = {
   runtime(input: { pmThreadId: string; projectId: string; runId: string }): ChainRuntime;
   /** What the router may know about the environment; undefined facts count as available. */
   state?(input: { projectId: string; runId: string | null }): RouterState;
-  /** The model step of the router for this PM chat (a helper thread); without it the deterministic scorer decides. */
-  model?(input: { pmThreadId: string; projectId: string; runId: string }): RouterModel;
+  /** The model step of the router for this PM chat (Jev, then a helper thread); without it the deterministic scorer decides. */
+  model?(input: { pmThreadId: string; projectId: string; runId: string | null }): RouterModel | undefined;
   warn(message: string): void;
 };
 
@@ -59,7 +61,7 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
   const store = await deps.store();
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   const state = deps.state?.({ projectId: context.projectId, runId });
-  const model = runId ? deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId }) : undefined;
+  const model = deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId });
   const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(params.context ? { context: params.context } : {}), workflows: store.list().map((item) => item.workflow), ...(state ? { state } : {}), ...(model ? { model } : {}) });
   const noWorkflow = decision.candidates.length === 0;
   return JSON.stringify({
@@ -146,7 +148,11 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
       // Only what is read from the database here; skills, plugins and secrets stay unknown (available) until a probe is plugged in.
       openTasks: () => (runId ? listTaskTerminalStates(db, runId).filter((state) => OPEN_ATTEMPT_STATES.has(state)).length : undefined),
     }),
-    model: ({ pmThreadId, projectId, runId }) => createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowAgents),
+    // Jev decides a clear case; the helper thread (needs a run) is the escalation. A chat without a run and without Jev has no model.
+    model: ({ pmThreadId, projectId, runId }) => (runId || jev()
+      ? createJevRouterModel({ jev, settings: async () => (await ctx.effectiveProjectSettings(projectId)).values, projectId, runId,
+        legacy: runId ? createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowAgents) : null })
+      : undefined),
     warn: (message) => bb.log.warn(message),
   };
 

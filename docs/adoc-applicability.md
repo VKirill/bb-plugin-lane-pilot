@@ -15,11 +15,11 @@ language: ru
 
 | Решение | Число |
 |---|---:|
-| editable | 204 |
+| editable | 207 |
 | read-only | 91 |
 | gap | 0 |
 | excluded | 130 |
-| **сумма** | **425** |
+| **сумма** | **428** |
 
 Из бывших 88 read-only: (a) канал найден и поле стало editable — 0; (b) неприменимо в BB — 50; (c) gap без контракта upstream/SDK — 33.
 
@@ -450,3 +450,6 @@ language: ru
 | 422 | Lane Pilot Env Catalog | secrets.allow | src/server/secrets.ts | user | OWN | editable | Least privilege: only the Env Catalog names listed here may be handed to a task's checks (declared in verification[].secrets), a browser check's login (login: NAME) or a deploy errand (accounts); empty means any Env Catalog name the task itself names, values never reach the writer. Only the owner can change it (`src/server/secrets.ts:9; src/server/lint-task.ts:50`) |
 | 423 | Lane Pilot quality mode | quality_mode | src/stages/quality-mode.ts | user | OWN | editable | Which review stages a task goes through: quick has no plan critique and no code critic; standard is the behaviour before this setting existed (the plan critique by its risk policy, the code critic when it is on); full runs the plan critique and the code critic on every task and requires a browser check for a task that carries qa_cases. A task contract may set its own quality_mode, which wins (`src/stages/quality-mode.ts:1; src/server/critique-runs.ts`) |
 | 424 | Lane Pilot writer pools | ops.provider_pool | src/provider-pool.ts:6 | user | OWN | editable | A cap on simultaneous writers per provider, across runs (for example codex=2, claude-code=3); a task over the cap waits in the queue and starts when a slot frees. A provider not listed has no cap beyond the run's pool (`src/provider-pool.ts:6; src/server/writer/start.ts:365`) |
+| 425 | Lane Pilot Jev judgments | jev.enabled | src/jev/thresholds.ts:12 | user | OWN | editable | False turns every Jev judgment off for the project: the code keeps its deterministic behaviour and the helper threads decide as before (`src/jev/thresholds.ts:12`) |
+| 426 | Lane Pilot Jev judgments | jev.thresholds | src/jev/thresholds.ts:13 | user | OWN | editable | Thresholds of the Jev judgments, one pair each (for example route.workflow.min_p=0.7); the receipts table lane_pilot_jev_receipt holds the data to tune them on (`src/jev/thresholds.ts:13`) |
+| 427 | Lane Pilot Jev judgments | jev.modes | src/jev/thresholds.ts:14 | user | OWN | editable | The mode of a Jev judgment: off keeps the old behaviour, shadow asks Jev and only records the answer next to the old decision, active lets Jev decide the clear cases (`src/jev/thresholds.ts:14`) |

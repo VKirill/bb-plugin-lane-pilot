@@ -855,6 +855,12 @@ export const fieldEn = {
   reason_s423: "quick: no plan critique and no code critic. standard: as before (the plan critique by its risk policy, the code critic only if it is on). full: plan critique and code critic on every task, and a browser check for a task with qa_cases. A task can set its own mode.",
   field_s430: "Writers at once per provider",
   reason_s430: "A cap on simultaneous writers per provider, across all runs of this project, as provider=limit pairs, for example codex=2, claude-code=3 (limit 1-15). A task over the cap waits in the queue and starts when a slot frees. A provider that is not listed has no cap beyond the run's own pool",
+  field_s440: "Jev judgments",
+  reason_s440: "Turns every Jev judgment off for this project when false: the code keeps its deterministic behaviour and the helper threads decide as before",
+  field_s441: "Jev thresholds",
+  reason_s441: "Thresholds of the Jev judgments as judgment.name=number pairs, for example route.workflow.min_p=0.7 (probability, 0.6 to 0.95). A value outside the allowed range is clamped; empty means the defaults",
+  field_s442: "Jev modes",
+  reason_s442: "The mode of a Jev judgment as judgment=off|shadow|active pairs, for example route.workflow=active. off keeps the old behaviour, shadow asks Jev and only records its answer next to the old decision, active lets Jev decide the clear cases and hands the unclear ones to the old judge",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1714,4 +1720,10 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s423: "quick: без проверки плана и без критика кода. standard: как раньше (проверка плана по политике риска, критик кода только если он включён). full: проверка плана и критик кода на каждой задаче и проверка в браузере для задачи с кейсами QA. Задача может задать свой режим.",
   field_s430: "Писателей одновременно на провайдера",
   reason_s430: "Предел одновременных писателей на провайдера по всем прогонам проекта, парами провайдер=предел, например codex=2, claude-code=3 (предел 1-15). Задача сверх предела ждёт в очереди и стартует, когда слот освободится. Провайдер без записи не ограничен, кроме пула самого прогона",
+  field_s440: "Решения Jev",
+  reason_s440: "Если выключить, все решения Jev в проекте отключены: код работает по своим правилам, а решают по-прежнему помощники-потоки",
+  field_s441: "Пороги Jev",
+  reason_s441: "Пороги решений Jev парами решение.имя=число, например route.workflow.min_p=0.7 (вероятность, от 0.6 до 0.95). Значение вне допустимого диапазона обрезается; пусто означает значения по умолчанию",
+  field_s442: "Режимы Jev",
+  reason_s442: "Режим решения Jev парами решение=off|shadow|active, например route.workflow=active. off оставляет прежнее поведение, shadow спрашивает Jev и только записывает ответ рядом со старым решением, active отдаёт Jev ясные случаи, а неясные передаёт прежнему судье",
 };

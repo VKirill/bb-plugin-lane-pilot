@@ -1,4 +1,7 @@
 import { PROVIDER_POOL_KEY, providerPoolProblem } from "./provider-pool";
+import "./jev/judgments/route-workflow";
+import { listJudgments } from "./jev/registry";
+import { jevSettingProblem } from "./jev/thresholds";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "./ui-catalog";
 
 export type SettingValidationError = {
@@ -35,6 +38,10 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
   }
   if (key === PROVIDER_POOL_KEY) {
     const problem = providerPoolProblem(value);
+    return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;
+  }
+  if (key === "jev.thresholds" || key === "jev.modes") {
+    const problem = jevSettingProblem(key, value, listJudgments());
     return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;
   }
   if (key === "usage.skip_percent" && value !== undefined && value !== null && value !== "") {
