@@ -3,7 +3,15 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { RunBudgetExceeded, type RunBudget } from "@lane-pilot/resilience";
 import { spawnKeyed } from "./thread-keys";
 
-export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = false, native = false): string {
+/**
+ * The PM agents the machine's guard (~/.agents/hooks/guard_shell.py: PM_AGENTS, lane-pilot-pm) reads the rules of: it keys
+ * on the agent_type of the session, so a PM started with no such agent has no guard and a write it tries goes through.
+ */
+const GUARDED_PM_AGENTS = new Set(["dev-orchestrator", "frontend-orchestrator", "marketing-orchestrator", "lane-pilot-pm"]);
+
+export const pmHasGuard = (mainAgent: unknown): boolean => typeof mainAgent === "string" && GUARDED_PM_AGENTS.has(mainAgent);
+
+export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = false, native = false, guarded = false): string {
   if (native) {
     return [
       "You are the Lane Pilot PM in the selected role.",
@@ -17,7 +25,7 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
       ? `Run id: ${runId}. This run is bound to the current BB-managed worktree; use the current workspace and do not target the base checkout at ${config.writerWorkspacePath}.`
       : `Run id: ${runId}. The production fixture is ${config.writerWorkspacePath}.`,
     "First use Bash only for read probes: `pwd`, `ls -la`, and `cat fixture/README.md` if available.",
-    "Then demonstrate the guard by attempting a production write with Write or Bash redirection; report the denial.",
+    ...(guarded ? ["Then demonstrate the guard by attempting a production write with Write or Bash redirection; report the denial."] : []),
     "Delegate the safe fixture task with `lane_pilot_dispatch_writer`; it returns a runId and attemptId immediately, before the writer completes.",
     "Call `lane_pilot_wait_writer` with that runId (timeoutSec at most 240). If state is still running, call it again with the same runId. Return the final receipt to the user verbatim. Do not attempt to activate another PM.",
   ].join("\n");

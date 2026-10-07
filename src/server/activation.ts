@@ -8,7 +8,7 @@ import { writerExecutionSelection } from "../jev-reasoning";
 import { buildRunPolicy } from "../stages/run-policy";
 import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../workspace/routing";
 import { excludeBookkeeping } from "./bookkeeping-exclude";
-import { fullAccessSpawn, pmPrompt } from "./pm-spawn";
+import { fullAccessSpawn, pmHasGuard, pmPrompt } from "./pm-spawn";
 import { requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { id, stringAt, valueAt } from "./values";
 import type { ServerCore } from "./core";
@@ -146,7 +146,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
         ...(native
           ? writerExecutionSelection(spawnProviderId, spawnModel, native.reasoningLevel, spawnTier)
           : { providerId: spawnProviderId, model: spawnModel, executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const } }),
-        prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native)),
+        prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native), pmHasGuard(settings["main.agent"])),
         environment: (snapshotEnv ?? (managedWorkspace
           ? { type:"host", hostId:config.hostId, workspace:{ type:"managed-worktree", baseBranch:{ kind:"default" } } }
           : { type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.pmWorkspacePath } })) as never,
