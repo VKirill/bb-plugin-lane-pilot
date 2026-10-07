@@ -22,6 +22,7 @@ import { recordStage } from "./stage-records";
 import { stringAt, valueAt } from "./values";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { installJev } from "../jev/runtime";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../database";
 
@@ -64,6 +65,8 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     jevKeyCache = { value, at: Date.now() };
     return value;
   }
+  // The Jev layer (src/jev): one client with this key reader, receipts in the plugin database; dropped on reload.
+  bb.onDispose(installJev({ apiKey: catalogJevKey, db, log: (message) => bb.log.warn(message) }));
   const deployDrain = createDeployDrain(() => state.disposed);
   bb.onDispose(bindDrainTarget({ drain: deployDrain, log: (line) => bb.log.info(line) }, (bb as unknown as { vk?: { instanceId?: string } }).vk?.instanceId));
   const rawCall = rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>;

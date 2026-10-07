@@ -16,6 +16,7 @@ import { recordMemoryAccepted } from "@lane-pilot/memory-core";
 import { workflowMigrations } from "./workflow/journal";
 import { workflowOpsMigrations } from "./workflow/ops-store";
 import { draftMigrations } from "./workflow/draft-store";
+import { jevMigrations } from "./jev/receipts";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -291,6 +292,8 @@ export const migrations = [
   ...draftMigrations,
   // Receipts of workflow test runs (W7), goals of a run (K7), the automations of schedule triggers (W9).
   ...workflowOpsMigrations,
+  // Jev judgments: one receipt per judgment asked (src/jev).
+  ...jevMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

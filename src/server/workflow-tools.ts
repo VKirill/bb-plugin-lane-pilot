@@ -16,6 +16,8 @@ import type { WorkflowStore } from "../workflow/store";
 import { fenceOutside, registerObservedTool } from "./tool-result";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
+import { jev } from "../jev/runtime";
+import { createJevRouterModel } from "../jev/route-model";
 import { createRouterModel } from "./workflow-router-model";
 import { realDeps } from "./workflow-architect";
 import { createWorkflowPreflight } from "./workflow-preflight";
@@ -34,10 +36,10 @@ export type WorkflowToolDeps = {
   state?(input: { projectId: string; runId: string | null }): RouterState;
   /** How each workflow has run so far: the router's tiebreaker between alike matches. */
   stats?(): ReadonlyMap<string, RunRecord>;
-  /** The model step of the router for this PM chat (a helper thread); without it the deterministic scorer decides. */
-  model?(input: { pmThreadId: string; projectId: string; runId: string }): RouterModel;
   /** The check of what the workflow needs (skills, plugins, MCP servers, secrets, commands, logins) before a live run; without it nothing is checked. */
   preflight?(workflow: Workflow, input: { projectId: string; threadId: string }): Promise<PreflightResult>;
+  /** The model step of the router for this PM chat (Jev, then a helper thread); without it the deterministic scorer decides. */
+  model?(input: { pmThreadId: string; projectId: string; runId: string | null }): RouterModel | undefined;
   warn(message: string): void;
 };
 
@@ -71,7 +73,7 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
   const store = await deps.store();
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   const state = deps.state?.({ projectId: context.projectId, runId });
-  const model = runId ? deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId }) : undefined;
+  const model = deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId });
   const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(params.context ? { context: params.context } : {}), workflows: store.list().map((item) => item.workflow), ...(state ? { state } : {}), ...(model ? { model } : {}), ...(deps.stats ? { stats: deps.stats() } : {}) });
   const noWorkflow = decision.candidates.length === 0;
   return JSON.stringify({
@@ -206,7 +208,11 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
     }),
     preflight: (workflow, input) => preflight.check(workflow, input),
     stats: () => runRecords(db),
-    model: ({ pmThreadId, projectId, runId }) => createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowAgents),
+    // Jev decides a clear case; the helper thread (needs a run) is the escalation. A chat without a run and without Jev has no model.
+    model: ({ pmThreadId, projectId, runId }) => (runId || jev()
+      ? createJevRouterModel({ jev, settings: async () => (await ctx.effectiveProjectSettings(projectId)).values, projectId, runId,
+        legacy: runId ? createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowAgents) : null })
+      : undefined),
     warn: (message) => bb.log.warn(message),
   };
 
