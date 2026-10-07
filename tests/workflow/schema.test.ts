@@ -23,6 +23,16 @@ describe("workflow schema", () => {
     expect(codes(problems({ ...base, nodes: [node, ...(base.nodes as unknown[]).slice(1)] }))).toContain("schema");
   });
 
+  it("knows the fast tier and the ultracode effort of an agent step, and the canvas positions of the file", () => {
+    const base = workflow();
+    const agent = { id: "write", type: "agent", prompt: "x", output: [{ name: "text", type: "string" }], provider: "codex", model: "gpt-6-luna", reasoning: "ultracode", service_tier: "fast" };
+    const next = { ...base, nodes: [(base.nodes as unknown[])[0], agent], ui: { positions: { search: { x: 10, y: -4.5 }, write: { x: 300, y: 0 } } } };
+    expect(codes(problems(next))).not.toContain("schema");
+    expect(parseWorkflow(next).ui?.positions.search).toEqual({ x: 10, y: -4.5 });
+    expect(codes(problems({ ...next, nodes: [(base.nodes as unknown[])[0], { ...agent, service_tier: "turbo" }] }))).toContain("schema");
+    expect(codes(problems({ ...base, ui: { positions: { a: { x: 1 } } } }))).toContain("schema");
+  });
+
   it("needs both languages in the description and a known status", () => {
     expect(codes(problems({ ...workflow(), description: { en: "only" } }))).toContain("schema");
     expect(codes(problems({ ...workflow(), status: "ready" }))).toContain("schema");

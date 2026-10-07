@@ -69,6 +69,12 @@ describe("which model a workflow agent step runs on", () => {
     expect(pick("analyst", { provider: "codex" }, {}, pm).issues).toEqual(["provider_without_model"]);
   });
 
+  it("carries the node's fast mode to the spawn and counts it as the node's own choice", () => {
+    expect(pick("worker", { service_tier: "fast" }, {}, pm)).toMatchObject({ providerId: "codex", model: "gpt-6-luna", serviceTier: "fast", source: "node", inherited: false });
+    expect(pick("worker", {}, {}, pm)).toMatchObject({ serviceTier: null, inherited: true });
+    expect(pick("worker", { service_tier: "turbo" }, {}, pm).serviceTier).toBeNull();
+  });
+
   it("flags a half-set selection and skips it", () => {
     expect(pick("worker", {}, { "workflow.agent.provider": "codex" }, pm)).toMatchObject({ source: "pm", issues: ["incomplete_selection"] });
     expect(pick("analyst", {}, { "pm_read.model": "x" }, pm)).toMatchObject({ source: "pm", issues: ["incomplete_selection"] });
