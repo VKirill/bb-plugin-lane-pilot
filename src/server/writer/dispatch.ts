@@ -22,7 +22,6 @@ import { id, stringAt, valueAt } from "../values";
 import { buildTask } from "../writer-task";
 import { countRunNudges } from "../writer-silence";
 import { isAbsolute, relative, resolve } from "node:path";
-import { parseIntegrationGateSettings } from "../integration-gate";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
@@ -260,18 +259,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       });
       // The writer's brief carries the read stage's facts, not its open questions: those are the PM's to settle.
       const openQuestions = pmRead.summary ? pmReadBrief(pmRead.summary).openQuestions : [];
-      const settings = loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId));
-      const gateSettings = parseIntegrationGateSettings(settings);
       const warnings: string[] = lint.warnings.map((warning) => warning.message);
       if (live) warnings.push("mode live-folder: this folder has no git. The writer edits the live files in place; nothing is committed or merged, so there is no ship step. One writer at a time works in the folder, later tasks queue. A task that is not accepted is rolled back from a backup of its owns_paths (~/.lane-pilot/live-backups, kept 7 days); files outside owns_paths are not rolled back.");
-      if (gateSettings.gateCommand) {
-        for (const [idx, v] of (valid.task.verification ?? []).entries()) {
-          const cmd = v.command.trim();
-          if (/(?:^|[;&|]\s*)(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test)(?:\s|$)/i.test(cmd) && !cmd.includes("related") && !cmd.includes("-- ")) {
-            warnings.push(`Verification command [${idx}] looks like a full test suite while an integration gate is configured. Consider a focused check (e.g. \`npx vitest related <files> --run\`).`);
-          }
-        }
-      }
       return { runId, taskId, attemptId, writerThreadId:null, state:"queued", stages:listStageReceipts(db, runId, taskId),
         ...(warnings.length ? { warnings } : {}),
         ...(openQuestions.length ? { pmReadOpenQuestions:openQuestions,

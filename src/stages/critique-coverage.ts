@@ -125,6 +125,49 @@ export function findSandboxUnsafeMissingExcludes(command: string, patterns: read
   }
   return patterns.filter((pattern) => !existingExcludes.has(pattern));
 }
+/** Flags that narrow a pytest run without a path: by name, marker or changed files. */
+const PYTEST_VALUE_FLAGS=new Set(["-k","-m","-c","-p","-o","--rootdir","--tb","--junitxml","--durations","--maxfail","--ignore","--deselect","--confcutdir","--basetemp","-n"]);
+
+/**
+ * Whether one check runs a project's whole test suite: a bare `vitest run` / `npx jest` / `pytest` / `npm test` with
+ * nothing that names files, tests or a workspace. A run narrowed by a path, `related`, `-t`, `-k` or `-- <args>` is a focused check.
+ */
+export function runsWholeSuite(command:string):boolean {
+  for(const part of command.split(/&&|;|\|\||\|/)) {
+    const value=part.trim();
+    if(!value)continue;
+    const tokens=value.split(/\s+/);
+    const bin=tokens.findIndex((token)=>/(?:^|\/)(?:vitest|jest)$/.test(token));
+    if(bin>=0) {
+      const rest=tokens.slice(bin+1);
+      if(rest.some((token)=>/^(?:-t|--testNamePattern(?:=.*)?|--changed(?:=.*)?|--related|--onlyChanged|--findRelatedTests)$/.test(token)))continue;
+      if(runnerFilterArgs(part).some((arg)=>!/^(?:run|watch|dev|bench|list|\.|\.\/)$/.test(arg)))continue;
+      return true;
+    }
+    const py=tokens.findIndex((token,index)=>/(?:^|\/)(?:pytest|py\.test)$/.test(token)||(token==="-m"&&tokens[index+1]==="pytest"));
+    if(py>=0) {
+      const rest=tokens.slice(tokens[py]==="-m"?py+2:py+1);
+      let focused=false;
+      for(let i=0;i<rest.length;i++) {
+        const token=rest[i]!;
+        if(/^(?:-k|-m)$/.test(token)||/^(?:-k|-m)\S/.test(token)||/^--(?:lf|last-failed|sw|stepwise)$/.test(token)){focused=true;break;}
+        if(PYTEST_VALUE_FLAGS.has(token)){i++;continue;}
+        if(!token.startsWith("-")){focused=true;break;}
+      }
+      if(!focused)return true;
+      continue;
+    }
+    // `npm test`, `npm run test`, `pnpm test`, `yarn test`, `bun run test`: the whole script unless it gets arguments or names a workspace.
+    const script=/^(?:npm|pnpm|yarn|bun)\s+(?:run(?:-script)?\s+)?(?:test|t)(?:\s|$)/.exec(value);
+    if(script) {
+      const rest=value.slice(script[0].length).trim().split(/\s+/).filter(Boolean);
+      if(rest.includes("--")&&rest.indexOf("--")<rest.length-1)continue;
+      if(rest.some((token)=>!token.startsWith("-")||/^(?:-w|-C|-F|--workspaces?|--prefix|--filter)(?:=|$)/.test(token)))continue;
+      return true;
+    }
+  }
+  return false;
+}
 const BINARY=/\.(?:woff2?|ttf|otf|eot|png|jpe?g|gif|webp|avif|ico|pdf|zip|gz|mp3|mp4|mov|wasm)$/i;
 /** Expected outputs a model cannot author (fonts, images, archives, media, wasm). */
 export function binaryOutputs(outputs:readonly string[]):string[] {return outputs.filter((entry)=>BINARY.test(entry.trim()));}

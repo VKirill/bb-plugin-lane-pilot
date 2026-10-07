@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { TaskV2 } from "../contracts";
 import { fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "../owns-paths";
-import { findSandboxUnsafeMissingExcludes, runnerFilterArgs } from "../stages/critique-coverage";
+import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../stages/critique-coverage";
 import { parseReadFirstHints } from "../stages/read-first";
 import { isOutputPath, unownedExpectedOutputs } from "../validate-output";
 import { SANDBOX_OWN_ENV } from "../verification/sandbox";
@@ -19,6 +19,8 @@ export type LintInput = {
   /** Kinds of lintProbePaths on the workspace's machine; null when that machine could not be asked (those rules then stay silent). */
   kinds:ReadonlyMap<string, PathKind> | null;
   sandboxUnsafe:readonly string[];
+  /** The project's integration gate (explicit or detected) runs the whole suite once per batch; absent or null when there is none. */
+  gate?:{ command:string } | null;
   /** Other open tasks of the project. */
   openTasks:readonly LintOpenTask[];
   /** depends_on names whose latest task ended blocked or canceled and that nothing restarts or vouches for. */
@@ -113,6 +115,12 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     }
   }
   for (const check of task.verification) {
+    // With a gate, a task's check is its own files: the whole suite is the gate's, once per batch (so no exclusions to add either).
+    if (input.gate && runsWholeSuite(check.command)) {
+      errors.push({ code:"whole_suite_with_gate", message:`verification command "${check.command}" runs the whole test suite; the integration gate (${input.gate.command}) runs the whole suite once per batch, so check only this task's files, e.g. npx vitest run <its test files>, plus the typecheck`,
+        data:{ gateCommand:input.gate.command } });
+      continue;
+    }
     const missing = findSandboxUnsafeMissingExcludes(check.command, input.sandboxUnsafe);
     if (!missing.length) continue;
     const suggestedFlags = missing.map((pattern) => `--exclude "${pattern}"`).join(" ");

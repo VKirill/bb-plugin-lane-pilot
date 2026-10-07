@@ -119,6 +119,36 @@ describe("contract lint rules", () => {
     });
   });
 
+  describe("whole-suite checks while an integration gate is active", () => {
+    const gate = { command:"npm test" };
+    const folder = { "src/a.ts":"file" as const };
+    const withGate = (command:string, input:Partial<LintInput> = {}) => lint({ verification:[{ command, cwd:root }] }, { gate, ...input }, folder);
+    it("rejects each whole-suite form, with the fix", () => {
+      for (const command of ["npx vitest run", "vitest run", "npm test", "npm run test --silent", "pnpm test", "pytest", "pytest -q", "python -m pytest", "npx jest", "npx jest --coverage", "cd pkg && npx vitest run --reporter dot"]) {
+        const { errors } = withGate(command);
+        expect(codes({ errors, warnings:[] }), command).toEqual(["whole_suite_with_gate"]);
+        expect(errors[0]!.message).toContain("the integration gate (npm test) runs the whole suite once per batch");
+        expect(errors[0]!.message).toContain("check only this task's files, e.g. npx vitest run <its test files>");
+        expect(errors[0]!.data).toEqual({ gateCommand:"npm test" });
+      }
+    });
+    it("lets a focused check through", () => {
+      for (const command of ["npx vitest run tests/a.test.ts", "npx vitest related src/a.ts --run", "npm test -- tests/a.test.ts", "npm run test:unit", "npm -w packages/x test", "npx tsc --noEmit -p .",
+        "pytest tests/test_a.py", "pytest -k parser", "python -m pytest tests/test_a.py -q", "npx jest src/a.test.ts", "npx jest -t parser"]) {
+        expect(codes(withGate(command)), command).toEqual([]);
+      }
+    });
+    it("does nothing without a gate, so a project with the gate off keeps its whole-suite checks", () => {
+      expect(codes(lint({ verification:[{ command:"npm test", cwd:root }] }, {}, folder))).toEqual([]);
+      expect(codes(lint({ verification:[{ command:"npm test", cwd:root }] }, { gate:null }, folder))).toEqual([]);
+    });
+    it("replaces the sandbox_unsafe exclusions for the same check, and keeps that rule where there is no gate", () => {
+      const unsafe = { sandboxUnsafe:["tests/pipeline.test.ts"] };
+      expect(codes(withGate("npx vitest run", unsafe))).toEqual(["whole_suite_with_gate"]);
+      expect(codes(lint({ verification:[{ command:"npx vitest run", cwd:root }] }, unsafe, folder))).toEqual(["sandbox_unsafe"]);
+    });
+  });
+
   describe("depends_on", () => {
     it("sends the PM back to replan when a dependency ended blocked or canceled", () => {
       const { errors } = lint({ depends_on:["P1", "P2"] }, { deadDependencies:[{ id:"P1", state:"blocked" }, { id:"P2", state:"canceled" }] }, { "src/a.ts":"file" });
@@ -148,7 +178,7 @@ const config = {
 };
 
 /** The dispatch of a task through the real plugin; the host answers snapshotDryRun from `kinds` or fails when it is null. */
-async function setup(kinds:Record<string, PathKind> | null, targets:Record<string, "file" | "directory" | "missing"> = {}) {
+async function setup(kinds:Record<string, PathKind> | null, targets:Record<string, "file" | "directory" | "missing"> = {}, probeOutput = "") {
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
     sdk:{ threads:{
@@ -167,6 +197,7 @@ async function setup(kinds:Record<string, PathKind> | null, targets:Record<strin
           ...(targets[path.slice(root.length + 1)] ? { targetKind:targets[path.slice(root.length + 1)] } : {}) })) };
       }
       if (call.method === "gitOwnershipBase") return new Promise(() => undefined);
+      if (call.method === "runCommand" && String((call.input as { command?:string }).command ?? "").includes("@@package.json")) return { hostId:"host-test", exitCode:0, stdout:probeOutput, stderr:"" };
       return { hostId:"host-test", exitCode:0, stdout:String((call.input as { command?:string }).command ?? "").includes("porcelain") ? "[]" : "", stderr:"" };
     },
   });
@@ -219,6 +250,27 @@ describe("contract lint at dispatch", () => {
     transitionAttempt(db, "dep-attempt-2", "queued");
     const queued = await dispatch({ depends_on:["dep-1"] });
     expect(queued).toMatchObject({ taskId:"lint-task", state:"queued" });
+    await harness.lifecycle.dispose();
+  });
+
+  it("sends a whole-suite check back while the project has a gate, and takes it when the gate is off", async () => {
+    const { db, harness, dispatch } = await setup({ "src/a.ts":"file" });
+    saveProjectSetting(db, projectId, "integration.gate_command", "npm run gate");
+    const reply = await dispatch({ verification:[{ command:"npx vitest run", cwd:root }] });
+    expect(reply).toMatchObject({ runId, state:"validation_failed" });
+    expect(String(reply.reason)).toContain("the integration gate (npm run gate) runs the whole suite once per batch");
+    expect(taskCount(db)).toBe(0);
+    saveProjectSetting(db, projectId, "integration.gate_command", "off");
+    expect(await dispatch({ verification:[{ command:"npx vitest run", cwd:root }] })).toMatchObject({ taskId:"lint-task", state:"queued" });
+    await harness.lifecycle.dispose();
+  });
+
+  it("detects the gate on the host for the lint when no command is set", async () => {
+    const { db, harness, dispatch } = await setup({ "src/a.ts":"file" }, {}, "@@package.json\n{\"scripts\":{\"test\":\"vitest run\"}}\n");
+    const reply = await dispatch({ verification:[{ command:"npm test", cwd:root }] });
+    expect(reply).toMatchObject({ state:"validation_failed" });
+    expect(String(reply.reason)).toContain("the integration gate (npm test) runs the whole suite once per batch");
+    expect(taskCount(db)).toBe(0);
     await harness.lifecycle.dispose();
   });
 
