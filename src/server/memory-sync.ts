@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   exportedFileName,
+  hideRecordsOfFile,
   laneMemoryFileToCandidate,
   parseLaneMemoryFile,
   parseMemoryCandidates,
@@ -48,13 +49,13 @@ export async function listMemoryFiles(ctx: ServerCore, place: Place): Promise<Ar
     .filter((entry) => !entry.path.slice(dir.length + 1).includes("/"));
 }
 
-export type MemoryImportResult = { runId: string; files: number; imported: number; skipped: Array<{ file: string; reason: string }>; state: "imported" | "skipped"; reason?: string };
+export type MemoryImportResult = { runId: string; files: number; imported: number; /** Records hidden because their file is no longer active or its date passed. */ hidden: number; skipped: Array<{ file: string; reason: string }>; state: "imported" | "skipped"; reason?: string };
 
 /** File records become SQLite records; the same claim imported twice is one record. */
 export async function importFileMemory(ctx: ServerCore, input: { projectId: string; runId: string }): Promise<MemoryImportResult> {
   const { db } = ctx;
   const settings = memorySettingsFor(db, input.projectId);
-  const base = { runId: input.runId, files: 0, imported: 0, skipped: [] as MemoryImportResult["skipped"] };
+  const base = { runId: input.runId, files: 0, imported: 0, hidden: 0, skipped: [] as MemoryImportResult["skipped"] };
   if (!settings.enabled) return { ...base, state: "skipped", reason: "memory_disabled" };
   const place = await placeForRun(ctx, input.projectId, input.runId);
   const files = await listMemoryFiles(ctx, place);
@@ -68,10 +69,16 @@ export async function importFileMemory(ctx: ServerCore, input: { projectId: stri
     const parsed = parseLaneMemoryFile(text);
     if (!parsed) { base.skipped.push({ file: file.name, reason: "no front matter or id" }); continue; }
     const mapped = laneMemoryFileToCandidate(parsed);
-    if (!mapped) { base.skipped.push({ file: file.name, reason: `status ${parsed.status}` }); continue; }
+    if (!mapped) {
+      // The file stopped being true after an earlier import: the record it made stops reaching writers.
+      base.hidden += hideRecordsOfFile(db, input.projectId, settings.personalBot, parsed.id, parsed.status === "superseded" ? "superseded" : "expired").length;
+      base.skipped.push({ file: file.name, reason: parsed.status === "active" ? "expired" : `status ${parsed.status}` });
+      continue;
+    }
     try {
-      const [candidate] = parseMemoryCandidates([mapped.candidate], { ...settings, coreBudget: Number.MAX_SAFE_INTEGER, noteBudget: Number.MAX_SAFE_INTEGER, indexBudget: Number.MAX_SAFE_INTEGER });
-      byAudience.set(mapped.audience, [...(byAudience.get(mapped.audience) ?? []), candidate!]);
+      const [candidate] = parseMemoryCandidates([{ kind: mapped.candidate.kind, content: mapped.candidate.content, concepts: mapped.candidate.concepts }], { ...settings, coreBudget: Number.MAX_SAFE_INTEGER, noteBudget: Number.MAX_SAFE_INTEGER, indexBudget: Number.MAX_SAFE_INTEGER });
+      const { sourceFileId, validUntil } = mapped.candidate;
+      byAudience.set(mapped.audience, [...(byAudience.get(mapped.audience) ?? []), { ...candidate!, sourceFileId, ...(validUntil != null ? { validUntil } : {}) }]);
     } catch (cause) {
       base.skipped.push({ file: file.name, reason: cause instanceof Error ? cause.message : String(cause) });
     }
@@ -79,7 +86,7 @@ export async function importFileMemory(ctx: ServerCore, input: { projectId: stri
   const sourceSha256 = createHash("sha256").update(files.map((file) => file.path).join("\n")).digest("hex");
   let imported = 0;
   for (const [audience, entries] of byAudience) {
-    const store = (batch: MemoryCandidate[]) => storeMemoryRecords(db, { projectId: input.projectId, personalBot: settings.personalBot, audience, sourceSha256, entries: batch, coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget }).insertedIds.length;
+    const store = (batch: MemoryCandidate[]) => storeMemoryRecords(db, { projectId: input.projectId, personalBot: settings.personalBot, audience, sourceSha256, entries: batch, origin: "import", coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget }).insertedIds.length;
     try { imported += store(entries); } catch {
       for (const entry of entries) { try { imported += store([entry]); } catch { base.skipped.push({ file: entry.concepts[0] ?? "?", reason: "memory budget reached" }); } }
     }
@@ -90,7 +97,7 @@ export async function importFileMemory(ctx: ServerCore, input: { projectId: stri
 export type MemoryExportResult = { runId: string; records: number; written: number; existing: number; removed: number; state: "exported" | "skipped"; reason?: string };
 
 function listAllRecords(db: LanePilotDatabase, projectId: string, personalBot: string): Array<MemoryRecord & { audience: MemoryAudience }> {
-  const rows = db.prepare("SELECT id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? ORDER BY created_at ASC")
+  const rows = db.prepare("SELECT id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND status='active' ORDER BY created_at ASC")
     .all(projectId, personalBot) as Array<{ id: string; project_id: string; personal_bot: string; kind: "core" | "note"; audience: MemoryAudience; content: string; concepts_json: string; source_sha256: string; created_at: number }>;
   return rows.map((row) => ({ id: row.id, projectId: row.project_id, personalBot: row.personal_bot, kind: row.kind, audience: row.audience, content: row.content, concepts: JSON.parse(row.concepts_json) as string[], sourceSha256: row.source_sha256, createdAt: row.created_at }));
 }

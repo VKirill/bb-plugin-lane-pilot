@@ -102,7 +102,8 @@ export function laneMemoryFileToCandidate(file: LaneMemoryFile, now = new Date()
   const hintTerms = file.hint.split(/[,;]/).map((term) => term.trim().toLowerCase()).filter(Boolean);
   const concepts = [...new Set([file.id.toLowerCase(), ...file.areas.map((area) => area.toLowerCase()), ...hintTerms])].slice(0, 24);
   const kind: MemoryKind = file.contextPriority === "always" ? "core" : "note";
-  return { candidate: { kind, content, concepts }, audience: audienceForSensitivity(file.sensitivity) };
+  const until = file.validUntil ? Date.parse(file.validUntil) : NaN;
+  return { candidate: { kind, content, concepts, sourceFileId: file.id, ...(Number.isNaN(until) ? {} : { validUntil: until }) }, audience: audienceForSensitivity(file.sensitivity) };
 }
 
 /** The file name Lane Pilot uses for a record it exports; stable per record, never colliding with hand-written ids. */

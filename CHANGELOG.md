@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **K8, knowledge: a full memory budget no longer stops memory.** Before, one over-budget batch was refused whole and a full corpus silently took no new notes. Now the notes that served briefs least (fewest accepted attempts, then fewest uses, then oldest) are hidden to make room and the stage result lists them (`evictedIds`); core records and rules are never hidden, and an entry that would not fit even on an empty shelf changes nothing. A core corpus already over a lowered core budget no longer blocks notes.
+- **K8: an imported record follows its file.** `lane_pilot_memory_import` now hides the record of a file that is no longer `active` (`superseded` or `expired`) or whose `valid_until` passed, and replaces the record of an edited claim (the old one is `superseded`, kept, pointing at the new one). The result has a `hidden` count. Hidden records stay in the table, out of every index.
+- **K8: a note from a CLI session reaches writers only after a second source states it or a day has passed.** `session_memory_write` records `trust=observed`, `origin=session`; the same note from another source says `corroborated` and is confirmed at once. The session itself finds its own note (`session_memory_search`, `session_memory_core`) immediately. Writer briefs, the council and the PM context skip an observed note in quarantine.
+- Migration (append only): `lane_pilot_memory` gets `status`, `superseded_by`, `valid_until`, `last_used_at`, `use_count`, `accepted_count`, `trust`, `origin`, `source_file_id`.
+
 ## 0.1.180
 
 - **A folder without git: only what the writer did counts as its touch.** Edited paths, command text and tool arguments; a command's output does not. A plain `ls` listed the PM's `index.md` and the writer was blamed for it, so the 0.1.179 fix never applied (drill 2026-10-07).

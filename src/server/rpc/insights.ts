@@ -53,7 +53,7 @@ export function insightsRpc(ctx: ServerCore, services: Services) {
     },
     /** Each folder of the project on each machine: does it keep docs, why, how often, and when tasks last read them. */
     memory_records_list: async ({ projectId }) => {
-      const rows = db.prepare("SELECT id, kind, audience, content, concepts_json, created_at FROM lane_pilot_memory WHERE project_id=? ORDER BY created_at DESC LIMIT 500")
+      const rows = db.prepare("SELECT id, kind, audience, content, concepts_json, created_at FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY created_at DESC LIMIT 500")
         .all(projectId) as Array<{ id: string; kind: "core" | "note"; audience: string; content: string; concepts_json: string; created_at: number }>;
       return { records: rows.map((row) => {
         let concepts: string[] = [];

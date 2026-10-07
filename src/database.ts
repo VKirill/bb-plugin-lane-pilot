@@ -262,6 +262,18 @@ export const migrations = [
   // 0.1.177: the Lane Pilot build that created the attempt; null on attempts made before. A parked task restarts when the
   // running build differs from the one its failed attempt ran under, not from the build that happened to park it.
   `ALTER TABLE lane_pilot_attempt ADD COLUMN harness_version TEXT`,
+  // K8 knowledge: a record can be replaced, expire, be evicted for budget (kept, hidden), come from a session or a file whose
+  // state it follows, and carry how often it was mixed into a brief and how often that attempt was accepted.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','superseded','expired'))`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN superseded_by TEXT`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN valid_until INTEGER`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN last_used_at INTEGER`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN accepted_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN trust TEXT NOT NULL DEFAULT 'confirmed' CHECK(trust IN ('confirmed','observed'))`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN origin TEXT NOT NULL DEFAULT 'maintainer'`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN source_file_id TEXT`,
+  `CREATE INDEX lane_pilot_memory_scope_status ON lane_pilot_memory(project_id,personal_bot,audience,status)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
