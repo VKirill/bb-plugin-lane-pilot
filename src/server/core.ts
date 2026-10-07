@@ -1,4 +1,5 @@
 import { parseOwnedAgents } from "../agent-profile";
+import { redactKnown } from "../redact";
 import { bindDrainTarget, createDeployDrain } from "./deploy-drain";
 import { currentScheduleSignal } from "./schedules";
 import { createHostJobs, isHostJobKind } from "./host-jobs";
@@ -26,6 +27,11 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   // Set before the database closes on reload (dispose hooks run LIFO); detached writer tasks check it.
   const state = { disposed: false };
   bb.onDispose(() => { state.disposed = true; });
+  // Secret values handed to a check, a browser check or an errand never reach the plugin log (Env Catalog, J3).
+  for (const level of ["debug", "info", "warn", "error"] as const) {
+    const original = bb.log[level]?.bind(bb.log);
+    if (original) try { bb.log[level] = (message:string) => original(redactKnown(String(message))); } catch { /* a frozen logger stays as it is */ }
+  }
   setIllegalTransitionLog((message) => bb.log.warn(message));
 
   const rawHost = bb.hosts.experimental_client({ contract:hostContract });
