@@ -7,6 +7,9 @@ import type { WorkflowProblem } from "./validate";
  * What the owner's side of the workflow library keeps beside the journal: the receipts of green test runs of a workflow file
  * (W7), and later the goals of a run and the triggers' automations. Appended to the END of the plugin's migrations (they are positional).
  */
+export const PIPELINE_RUNS_ATTRIBUTION = `UPDATE lane_pilot_wf_run SET workflow_id='lp-task-pipeline'
+  WHERE workflow_id='analyze-plan-execute' AND parent_run_id IS NULL AND (idem_key LIKE 'lp-task:%' OR link_attempt_id IS NOT NULL)`;
+
 export const workflowOpsMigrations: string[] = [
   // The last test run of a workflow file, keyed by the exact definition that was tested: a file edited afterwards has no receipt.
   `CREATE TABLE lane_pilot_wf_test (
@@ -30,6 +33,9 @@ export const workflowOpsMigrations: string[] = [
   )`,
   // K7: the goals a run was started for (JSON, the router's shape); their changes and the audit before closing are events of the run.
   `ALTER TABLE lane_pilot_wf_run ADD COLUMN goals_json TEXT`,
+  // Stats per real workflow: until 0.1.187 the per-task pipeline (one run per dispatched task, keyed `lp-task:<attempt>`) was called
+  // analyze-plan-execute, the id the outer chain of the chains spec has now. Those runs are attributed to the pipeline they were.
+  PIPELINE_RUNS_ATTRIBUTION,
 ];
 
 export type StatusVerdict = { status: Workflow["status"]; notes: WorkflowProblem[] };
