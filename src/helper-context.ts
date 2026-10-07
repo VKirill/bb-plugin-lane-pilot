@@ -157,6 +157,9 @@ export function roleAccessFromSettings(input: Record<string, unknown>): Partial<
 }
 
 /** What one group of a role effectively loads: a list (mandatory included) or null for «everything BB has». */
+/** Names added to one spawn's role profile on top of the role's own (a browser check that must sign in gets Env Catalog). */
+export type ExtraAccess = { bbPlugins?: string[]; skills?: string[] };
+
 export function effectiveGroup(role: HelperRole, group: AccessGroup, access: RoleAccess = {}): { names: string[] | null; source: "role" | "owner" } {
   const own = access[group];
   const mandatory = group === "bbPlugins" ? MANDATORY_BB_PLUGINS : group === "mcpServers" ? MANDATORY_MCP_SERVERS : [];
@@ -175,11 +178,12 @@ export function effectiveSwitch(sw: AccessSwitch, access: RoleAccess = {}): { in
   return { include: sw === "projectInstructions", source: "role" };
 }
 
-export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}): VkSessionPolicy {
+export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}, extra: ExtraAccess = {}): VkSessionPolicy {
   const policy: VkSessionPolicy = { claudeAiSync: false, required: true };
   for (const group of ACCESS_GROUPS) {
     const { names } = effectiveGroup(role, group, access);
-    if (names) policy[group] = { mode: "allow", names };
+    const added = group === "bbPlugins" ? extra.bbPlugins : group === "skills" ? extra.skills : undefined;
+    if (names) policy[group] = { mode: "allow", names: added?.length ? [...new Set([...names, ...added])] : names };
   }
   if (!effectiveSwitch("userInstructions", access).include) policy.userInstructions = false;
   if (!effectiveSwitch("projectInstructions", access).include) policy.projectInstructions = false;
@@ -336,6 +340,7 @@ export function requiredSessionPolicySpawnBinding(input: {
   advertised?: RequiredSessionAdvertisement | null;
   providerId?: string;
   role?: HelperRole;
+  extra?: ExtraAccess;
 }): { experimental_vkRequiredSessionPolicy: RequiredSessionPolicySpawn } | Record<string, never> {
   if (input.snapshot.mode === "inherit") return {};
   if (input.snapshot.mode === "roles") {
@@ -345,7 +350,7 @@ export function requiredSessionPolicySpawnBinding(input: {
     const groups = input.advertised.providerGroups[input.providerId as keyof typeof CORE_PROVIDER_GROUPS];
     const switches = input.advertised.instructionSwitches[input.providerId as keyof typeof CORE_INSTRUCTION_SWITCHES];
     if (!groups || !switches) return {};
-    return { experimental_vkRequiredSessionPolicy: { version: 1, policy: spawnPolicyForProvider(roleProfilePolicy(input.role, input.snapshot.settings.roleAccess?.[input.role]), groups, switches, true) } };
+    return { experimental_vkRequiredSessionPolicy: { version: 1, policy: spawnPolicyForProvider(roleProfilePolicy(input.role, input.snapshot.settings.roleAccess?.[input.role], input.extra), groups, switches, true) } };
   }
   if (input.capability !== "required" || !input.advertised) {
     throw new Error("helper_context_required_api_unavailable");

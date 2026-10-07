@@ -1815,6 +1815,32 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("does not start a browser check whose login case cannot be served, and records no stage (J5)", async () => {
+    const chrome = await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    await chrome.harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await chrome.harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const runner = JSON.parse(String(await chrome.harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"https://shop.example/", cases:["login: SHOP_QA - open the cabinet"], envClass:"staging", viewports:"375", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(runner.state).toBe("blocked");
+    expect(runner.reason).toContain("login_cases_need_the_bb_browser_backend");
+    expect(listStageReceipts(chrome.db,"stage-run",task.id).find((row) => row.stageId === "browser-qa")).toBeUndefined();
+    await chrome.harness.lifecycle.dispose();
+
+    const thread = await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"browser_qa.backend":"bb-browser"});
+    await thread.harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
+    await thread.harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
+    const spawnsBefore = thread.spawned.length;
+    const blocked = JSON.parse(String(await thread.harness.behavior.callAgentTool("lane_pilot_browser_qa", {
+      runId:"stage-run", taskId:task.id, url:"https://shop.example/", cases:["login: SHOP_QA - open the cabinet"], envClass:"staging", viewports:"375", authorized:false,
+    }, { threadId:pmThreadId, projectId })));
+    expect(blocked).toMatchObject({ state:"blocked", reason:"waiting_secret:SHOP_QA" });
+    expect(JSON.stringify(blocked.fix)).toMatch(/secrets\.allow|env_request|Env Catalog is not answering/);
+    expect(thread.spawned.length).toBe(spawnsBefore);
+    expect(listStageReceipts(thread.db,"stage-run",task.id).find((row) => row.stageId === "browser-qa")).toBeUndefined();
+    await thread.harness.lifecycle.dispose();
+  });
+
   it("blocks browser QA when the selected host is missing", async () => {
     const missing = await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"browser_qa.host_id":""});
     await missing.harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });

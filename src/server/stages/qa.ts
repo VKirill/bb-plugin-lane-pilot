@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listStageReceipts } from "../../database";
+import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../database";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY, qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../../qa-host";
 import { sha256 } from "../../stages/contract";
 import { parseOpenCodeToolTelemetry } from "../../stages/opencode-telemetry";
@@ -7,7 +7,8 @@ import { MAIN_ATTEMPT_LIMIT } from "../../state-machine";
 import { configuredSetting } from "../context";
 import { freezeRunRouting, inheritedProjectSettings } from "../run-routing";
 import { recordStage } from "../stage-records";
-import { awaitQaVerdict, runQaThread } from "./qa-thread";
+import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../secrets";
+import { awaitQaVerdict, parseQaCases, runQaThread } from "./qa-thread";
 import { stringAt, valueAt } from "../values";
 import type { ServerCore } from "../core";
 
@@ -49,6 +50,20 @@ export function createQaStages(ctx: ServerCore) {
     const backend = backendValue == null || backendValue === "bb-browser" ? "bb-browser"
       : backendValue === "chrome-qa" || backendValue === "live-chrome" || backendValue === "headless" ? backendValue : null;
     const threadQa = backend === "bb-browser";
+    // A case that signs in names its login («login: NAME»): the owner must have allowed it and it must be a login in Env Catalog.
+    // Nothing is recorded, so the PM can call again once access is in place (J5/J6).
+    const logins = parseQaCases(args.cases).logins;
+    if (logins.length) {
+      if (!threadQa) return { runId:args.runId,taskId:args.taskId,state:"blocked",reason:"login_cases_need_the_bb_browser_backend: only the browser-check thread can read a login from Env Catalog; set the browser backend to bb-browser or drop the login: prefix" };
+      const gate = await ctx.secrets.check({ declared:logins, allowed:allowedSecretNames(loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId))), kinds:["login"] }, { fresh:true });
+      const problem = secretProblem(gate);
+      if (problem.length || gate.unavailable) {
+        return { runId:args.runId,taskId:args.taskId,state:"blocked",reason:waitingSecretReason(problem.length ? problem : logins),
+          next:"Nothing was started. Fix the access below, then call lane_pilot_browser_qa again with the same arguments:",fix:secretFixLines(gate) };
+      }
+      // The values are fetched only to be masked: whatever the check thread prints of them never reaches the verdict or the PM.
+      for (const name of logins) await ctx.secrets.record(name);
+    }
     const base = { runId:args.runId, taskId:args.taskId, stageId:"browser-qa" as const,
       input:JSON.stringify(requestInput),
       attempt:countAttempts(db,args.runId,args.taskId), providerId:threadQa ? "browser-qa-thread" : `browser-qa-${provider}`,
@@ -206,7 +221,7 @@ export function createQaStages(ctx: ServerCore) {
           url:args.url, cases:args.cases, viewports:args.viewports, envClass:args.envClass, authorized:args.authorized, devServer:args.devServer, vpnAddress:vpn?.address ?? null, agent,
           // spawnAttempted stays: without it a second call would claim the stage again and start another check.
           onSpawned:(threadId, deadline) => recordStage(db,{...dispatchedBase,state:"running",
-            result:{...targetSnapshot,spawnAttempted:true,threadId,link:`@thread:${threadId}`,deadline,timeoutSec}}),
+            result:{...targetSnapshot,spawnAttempted:true,threadId,link:`@thread:${threadId}`,deadline,timeoutSec,...(logins.length ? { logins } : {})}}),
         });
         const state = verdict.verdict;
         const snapshot = { ...targetSnapshot, url:args.url, backend:"bb-browser", agent, ...verdict };
@@ -285,8 +300,10 @@ export function createQaStages(ctx: ServerCore) {
         continue;
       }
       const timeoutSec = typeof frozen.timeoutSec === "number" ? frozen.timeoutSec : 1800;
+      // After a reload the remembered values are gone: fetch the logins again so the verdict is masked as it would have been.
+      const logins = Array.isArray(frozen.logins) ? frozen.logins.filter((name): name is string => typeof name === "string") : [];
       const deadline = typeof frozen.deadline === "number" ? frozen.deadline : stage.updatedAt + timeoutSec * 1000;
-      void awaitQaVerdict(ctx, threadId, deadline, timeoutSec).then((verdict) => {
+      void Promise.all(logins.map((name) => ctx.secrets.record(name))).then(() => awaitQaVerdict(ctx, threadId, deadline, timeoutSec)).then((verdict) => {
         if (!verdict) return;
         const reason = verdict.verdict === "passed" ? undefined : verdict.summary || undefined;
         recordStage(db, { ...base, state:verdict.verdict, result:{ ...frozen, backend:"bb-browser", ...verdict }, ...(reason ? { reason } : {}) });

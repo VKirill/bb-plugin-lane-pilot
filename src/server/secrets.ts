@@ -59,13 +59,17 @@ export const WAITING_SECRET_PREFIX = "waiting_secret:";
 export const waitingSecretReason = (names:readonly string[]):string => `${WAITING_SECRET_PREFIX}${[...new Set(names)].join(",")}`;
 
 /** What the PM does about each kind of missing access; one message per task while it waits. */
-export function waitingSecretNote(taskId:string, check:SecretCheck):string {
+export function secretFixLines(check:SecretCheck):string[] {
   const lines:string[] = [];
   if (check.unavailable) lines.push("Env Catalog is not answering (not installed, disabled or restarting); the task starts by itself once it answers.");
   if (check.denied.length) lines.push(`${check.denied.join(", ")}: the owner has not allowed it for checks. Ask the owner to add it to the project setting «Secrets checks may use» (secrets.allow); you cannot change that setting.`);
   if (check.missing.length && !check.unavailable) lines.push(`${check.missing.join(", ")}: not in Env Catalog. Call env_request for it now (name, the kind, a purpose) so the owner gets a form on the phone; do not ask for the value in chat.`);
-  if (check.wrongKind.length) lines.push(`${check.wrongKind.join(", ")}: SSH or FTP access cannot go to a check; send the task again without it (a deploy step goes to lane_pilot_errand).`);
-  return `Lane Pilot: ${taskId} waits for access its checks declare, no attempt is spent, and it starts by itself once that is in place.\n${lines.map((line) => `- ${line}`).join("\n")}`;
+  if (check.wrongKind.length) lines.push(`${check.wrongKind.join(", ")}: not of a kind this step can take (a check takes a secret or a login, a browser case a login; SSH and FTP access is for lane_pilot_errand).`);
+  return lines;
+}
+
+export function waitingSecretNote(taskId:string, check:SecretCheck):string {
+  return `Lane Pilot: ${taskId} waits for access its checks declare, no attempt is spent, and it starts by itself once that is in place.\n${secretFixLines(check).map((line) => `- ${line}`).join("\n")}`;
 }
 
 /** A check's declared secrets cannot be handed out now (the catalog lost one, the owner took it off the allow list). */
@@ -115,7 +119,7 @@ export function createSecrets(deps:{ bb:BbPluginApi; now?:() => number }) {
   }
 
   /** Names only, no value read: what a declared list lacks. Used by the lint and by a waiting task's poll. */
-  async function check(input:{ declared:readonly string[]; allowed:readonly string[] }, options:{ fresh?:boolean } = {}):Promise<SecretCheck & { catalog:CatalogEntry[] | null }> {
+  async function check(input:{ declared:readonly string[]; allowed:readonly string[]; kinds?:readonly CredentialKind[] }, options:{ fresh?:boolean } = {}):Promise<SecretCheck & { catalog:CatalogEntry[] | null }> {
     const declared = [...new Set(input.declared)];
     const result:SecretCheck & { catalog:CatalogEntry[] | null } = { missing:[], denied:[], wrongKind:[], unavailable:false, catalog:null };
     if (!declared.length) return result;
@@ -126,7 +130,7 @@ export function createSecrets(deps:{ bb:BbPluginApi; now?:() => number }) {
       if (!input.allowed.includes(name)) { result.denied.push(name); continue; }
       const entry = catalog.find((row) => row.name === name);
       if (!entry) result.missing.push(name);
-      else if (entry.kind !== "secret" && entry.kind !== "login") result.wrongKind.push(name);
+      else if (!(input.kinds ?? ["secret", "login"]).includes(entry.kind)) result.wrongKind.push(name);
     }
     return result;
   }
