@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+Stabilization phase E (release train, own worktrees, drills):
+- **Self-repair threads work in their own worktree (E2).** Each repair gets a Lane Pilot worktree of the configured checkout (`~/.lane-pilot/worktrees`, branch `lane/self-repair-<hash>-<time>`) and runs there as an unmanaged workspace. The prompt tells it to commit on its branch and not to deploy, bump the version, push or release. With the verdict `fixed` the plugin merges the branch like a writer's (`gitIntegrate`, base lock, rebase); a conflict is retried on 4 passes and then left for the owner; any other verdict, or a day without one, saves the worktree as a patch under `~/.lane-pilot/released` and removes it. No worktree, no repair: the shared checkout is not a fallback. `self_repair_status` shows `branch` and `outcome` per kind.
+- **Sandbox drills as a script (E3).** `scripts/lp-drill.sh` runs three parallel tasks in the sandbox project and writes a receipt to `.agents/runs/drills/<date>.json`.
+- Deploy side (outside this repository, `infrastructure/plugin-deploy/bb-plugin-push`): the E1 release-train gates.
+
 ## 0.1.171
 
 - **A docs pass stopped by a plugin reload no longer logs failures.** During the 0.1.170 deploy, passes still running on treba, treba-sites and my-album.art logged «nightly docs failed … stale API handle» and «The database connection is not open», and the self-repair watcher reads such lines as Lane Pilot faults. Those passes were already set to resume by the catch-up. A closed database now counts as a stop, as a stale handle already did (`pluginStopped`). The unit and pass catch blocks and the docs merge stay quiet on a stop, and a stopped unit keeps its saved progress.

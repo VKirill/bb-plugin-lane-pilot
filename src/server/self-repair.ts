@@ -64,9 +64,15 @@ export type Incident = {
 
 export const VERDICTS = ["fixed", "already-fixed", "not-lane-pilot", "needs-owner"] as const;
 export type Verdict = (typeof VERDICTS)[number];
+/** The repair thread's own git worktree on lane/self-repair-…, forked from the shared checkout's HEAD (E2). */
+export type RepairWorktree = { hostId: string; basePath: string; path: string; branch: string; mergeTries?: number };
 type SignatureRecord = {
   firstAt: number; lastAt: number; count: number; threadId: string | null; spawnedAt: number | null; samples: Incident[];
   spawnVersion?: string; verdict?: Verdict | null;
+  /** Set while the repair's worktree exists; null/absent once it was merged or released. */
+  worktree?: RepairWorktree | null;
+  /** What became of the repair's branch: «merged <sha>», «up-to-date», «released», or why it was left. */
+  outcome?: string | null;
 };
 type SelfRepairState = { cursor: number; lastTickAt: number | null; signatures: Record<string, SignatureRecord>; spawned: Array<{ at: number; threadId: string; signature: string }> };
 
@@ -93,6 +99,10 @@ const LOG_NOT_OURS = /^self-repair|writer attempt \S+ failed|writer spawn for \S
 const LOG_TAIL_BYTES = 1_000_000;
 const REPEAT_AFTER_MS = 86_400_000;
 const FORGET_MS = 30 * 86_400_000;
+/** A fixed repair whose branch will not merge is retried on this many passes, then left on its branch for the owner. */
+const MERGE_TRIES = 4;
+/** A repair thread that ended without a verdict for this long is abandoned: its worktree is saved as a patch and released. */
+const ABANDON_MS = 86_400_000;
 
 /** A reason with its ids, paths, hashes and numbers blanked, so one problem in many tasks is one signature. */
 export function reasonSignature(kind: Incident["kind"], reason: string): string {
@@ -155,7 +165,7 @@ function readTail(path: string, bytes: number): string {
   } finally { closeSync(fd); }
 }
 
-export function repairPrompt(incidents: Incident[], signature: string): string {
+export function repairPrompt(incidents: Incident[], signature: string, workspace: { path: string; branch: string; basePath: string }): string {
   const lines = incidents.slice(0, 6).map((row) =>
     `- ${row.kind} · ${new Date(row.at).toISOString()} · project ${row.projectId} · run ${row.runId} · task ${row.taskId} · attempt ${row.attemptId}` +
     `${row.pmThreadId ? ` · PM @thread:${row.pmThreadId}` : ""}${row.writerThreadId ? ` · writer @thread:${row.writerThreadId}` : ""}\n  reason: ${row.reason.slice(0, 600)}`);
@@ -175,20 +185,20 @@ export function repairPrompt(incidents: Incident[], signature: string): string {
     "1. Reproduce from data. Run data is on the hub: ssh -i ~/.ssh/oracle_bb ubuntu@10.8.0.1, sqlite3 /home/ubuntu/.bb/plugins/lane-pilot/data.db (lane_pilot_attempt, lane_pilot_stage_receipt, lane_pilot_failure_triage). Threads: bb thread messages <id> --json, bb thread output <id>. Plugin log: /home/ubuntu/.bb/plugins/lane-pilot/logs/plugin.log on the hub.",
     "2. Check whether it is already fixed: compare the failure time with git log and CHANGELOG.md. The watcher can report a failure that happened just before a fix was deployed. If a later release fixed it and the log shows no new occurrence, change no code; go to step 6.",
     "3. Decide whose fault it is. If it is not Lane Pilot's (writer mistake, wrong task contract, the project's own code or machine), change no code, because a code change here would hide a problem that belongs to the PM; go to step 6 and tell the PM what to do differently.",
-    "4. If it is Lane Pilot's (or Lane Stack's guard, or the VK core), fix the cause, not the symptom. Follow AGENTS.md and CLAUDE.md here (GitNexus impact before edits, detect-changes before commit) and add a test that fails without the fix. Verify live, because unit tests here have missed real failures before: a real PM/writer run in the sandbox project proj_3tb652jpsi, or the real failing case on its machine; for UI, the real BB page.",
-    "5. Ship. Run the full suite (npx vitest run) first and continue only when it is green: bb-plugin-push runs it again and refuses a red suite, so a red suite never reaches a project, and running it yourself shows you the failures while you can still fix them. Then npm run build, deploy with bash /Users/vechkasov/Documents/BB-сервис/infrastructure/plugin-deploy/bb-plugin-push lane-pilot, bump package.json, CHANGELOG entry, commit, git push origin main, gh release create. This checkout is shared with the owner's own sessions and the deploy ships the whole working tree: stage only the files you changed (git add <paths>, never git add -A), and if git status shows uncommitted changes that are not yours, commit your fix but do not deploy; say in the report that the deploy waits for that work.",
+    "4. If it is Lane Pilot's (or Lane Stack's guard, or the VK core), fix the cause, not the symptom. Follow AGENTS.md and CLAUDE.md here (GitNexus impact before edits, detect-changes before commit) and add a test that fails without the fix. Verify against the real case, because unit tests here have missed real failures before: build the test from the failing data you pulled in step 1 and run what you can from your worktree. The code you commit runs nowhere until the release train deploys it, so name in the report what must be checked live after that deploy (scripts/lp-drill.sh runs the sandbox drills).",
+    `5. Commit, do not ship. Your workspace ${workspace.path} is your own git worktree on branch ${workspace.branch}, forked from the shared checkout ${workspace.basePath}; the owner and other sessions work in that checkout, so never edit files there. Run the full suite (npx vitest run) first and continue only when it is green. Commit the fix and its test on your branch (git add <paths>, never git add -A) and add a CHANGELOG entry under a «## Unreleased» heading. Do NOT deploy, bump the version, push, merge or create a release: bb-plugin-push is the release train (one deploy a day, from a clean pushed tree, on a green suite) and it is not yours to run. When you finish with the verdict fixed, Lane Pilot merges your branch into the shared checkout itself; with any other verdict it releases your worktree, so commit only a change you want merged.`,
     `6. Tell the affected PM thread${pms.length > 1 ? "s" : ""} (${pms.map((id) => `@thread:${id}`).join(", ") || "none known"}) what happened and what to do next (dispatch again, accept leftover work, change the contract): bb thread tell <id> "…".`,
     "",
-    "Done when: the cause is named with evidence, and it is either fixed and live (with version) or shown to be already fixed or not Lane Pilot's; the PM is told.",
-    "Finish with a short report in Russian for the owner: cause, what you changed (or why nothing), how you verified it, version.",
+    "Done when: the cause is named with evidence, and it is either fixed and committed on your branch (with the commit) or shown to be already fixed or not Lane Pilot's; the PM is told.",
+    "Finish with a short report in Russian for the owner: cause, what you changed (or why nothing), how you verified it, the commit.",
     "The very last line of your final message is the verdict, for the watcher that reads it to decide whether this kind of problem needs another repair: SELF-REPAIR-VERDICT: fixed | already-fixed | not-lane-pilot | needs-owner",
     "",
-    "Change code only in Lane Pilot, Lane Stack or the VK core: other projects belong to their PMs. If a fix needs a decision only the owner can make (money, deleting data, security), stop and put the question in the report instead of acting.",
+    "Change code only in Lane Pilot (your worktree): a fix that belongs in Lane Stack or the VK core goes into the report with the verdict needs-owner, and other projects belong to their PMs. If a fix needs a decision only the owner can make (money, deleting data, security), stop and put the question in the report instead of acting.",
   ].join("\n");
 }
 
 export function createSelfRepair(ctx: ServerCore) {
-  const { bb, db } = ctx;
+  const { bb, db, host } = ctx;
 
   async function config(): Promise<SelfRepairConfig> {
     const raw = await bb.storage.kv.get(CONFIG_KEY).catch(() => null);
@@ -320,6 +330,61 @@ export function createSelfRepair(ctx: ServerCore) {
   }
 
   /**
+   * The repair thread's own worktree (E2). Repair threads used to work in the checkout the owner and other sessions
+   * share and deployed from it, so a repair's half-done edits could ride along in someone else's deploy. Now each repair
+   * gets a Lane Pilot worktree under ~/.lane-pilot/worktrees on a lane/self-repair-… branch from that checkout's HEAD;
+   * its host and path are the configured environment's.
+   */
+  async function createRepairWorktree(cfg: SelfRepairConfig, signature: string, now: number): Promise<RepairWorktree> {
+    const environment = await bb.sdk.environments.get({ environmentId: cfg.environmentId });
+    const hostId = stringAt(environment, "hostId"), basePath = stringAt(environment, "path");
+    if (!hostId || !basePath) throw new Error(`environment ${cfg.environmentId} has no host path`);
+    const name = `self-repair-${createHash("sha256").update(signature).digest("hex").slice(0, 8)}-${now.toString(36)}`;
+    const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath, name }, { hostId, timeoutMs: 120_000 });
+    if (created.status !== "ready" || !created.path || !created.branch) throw new Error(`worktree not created: ${created.reason ?? "unknown"}`);
+    // node_modules and built output are linked in so the suite runs there at once; without them the repair reinstalls.
+    await host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath, worktreePath: created.path }, { hostId, timeoutMs: 600_000 }).catch(() => undefined);
+    return { hostId, basePath, path: created.path, branch: created.branch };
+  }
+
+  /** The worktree goes away; whatever it still holds is first saved as a patch under ~/.lane-pilot/released. */
+  async function releaseWorktree(worktree: RepairWorktree): Promise<void> {
+    const name = worktree.branch.replace(/^lane\//, "");
+    await host.call("gitWorktreeSnapshot", { requestedHostId: worktree.hostId, worktreePath: worktree.path, name }, { hostId: worktree.hostId, timeoutMs: 120_000 }).catch(() => null);
+    await host.call("gitRemoveWorktree", { requestedHostId: worktree.hostId, basePath: worktree.basePath, worktreePath: worktree.path }, { hostId: worktree.hostId, timeoutMs: 120_000 }).catch(() => null);
+  }
+
+  /**
+   * A repair thread that stopped: verdict fixed — its branch is merged into the shared checkout the way a writer's work
+   * is (under the base lock, rebased on the current HEAD, the worktree removed). A conflict or failure is retried on
+   * later passes, then the branch is left for the owner. Any other verdict — nothing of it is merged, the worktree is
+   * saved as a patch and released. Nothing here deploys: the release train does.
+   */
+  async function settleWorktree(record: SignatureRecord, signature: string, now: number): Promise<void> {
+    const worktree = record.worktree!;
+    if (record.verdict === "fixed") {
+      const title = signature.split(":").slice(2).join(":").slice(0, 100);
+      const result = await host.call("gitIntegrate", { requestedHostId: worktree.hostId, basePath: worktree.basePath, worktreePath: worktree.path,
+        message: `self-repair: ${title}`, removeWorktree: true }, { hostId: worktree.hostId, timeoutMs: 300_000 })
+        .catch((cause) => ({ status: "failed" as const, commit: null, reason: cause instanceof Error ? cause.message : String(cause) }));
+      if (result.status === "merged" || result.status === "up-to-date") {
+        record.worktree = null;
+        record.outcome = result.status === "merged" ? `merged ${String(result.commit ?? "").slice(0, 12)}` : "up-to-date";
+        ctx.log(`self-repair: ${record.outcome} from ${worktree.branch}; it ships with the next release`);
+        return;
+      }
+      if (result.status !== "busy") worktree.mergeTries = (worktree.mergeTries ?? 0) + 1;
+      record.outcome = `${result.status}: ${String(result.reason ?? "").slice(0, 200)}`;
+      if ((worktree.mergeTries ?? 0) >= MERGE_TRIES) ctx.log(`self-repair: ${worktree.branch} is left at ${worktree.path} for the owner: ${record.outcome}`);
+      return;
+    }
+    if (!record.verdict && now - (record.spawnedAt ?? now) < ABANDON_MS) return;
+    await releaseWorktree(worktree);
+    record.worktree = null;
+    record.outcome = `released: ${record.verdict ?? "no verdict"}`;
+  }
+
+  /**
    * One pass: collect since the cursor, remember each kind of problem with a few samples, start at most one repair
    * thread for the oldest kind nobody has taken yet. Kinds that wait (a repair running, the daily limit) stay in the
    * state and are taken on a later pass; a kind seen again a day after its repair started gets a new repair.
@@ -348,6 +413,12 @@ export function createSelfRepair(ctx: ServerCore) {
         .then((result) => { const value = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text; return typeof value === "string" ? value.slice(-4000) : ""; })
         .catch(() => ""));
     }
+    if (!options.dryRun) {
+      for (const [signature, record] of Object.entries(current.signatures)) {
+        if (!record.worktree || !record.threadId || (record.worktree.mergeTries ?? 0) >= MERGE_TRIES || await threadBusy(record.threadId)) continue;
+        await settleWorktree(record, signature, now);
+      }
+    }
     const due = Object.entries(current.signatures)
       .filter(([, record]) => isDue(record, now))
       .sort(([, a], [, b]) => a.firstAt - b.firstAt);
@@ -361,27 +432,34 @@ export function createSelfRepair(ctx: ServerCore) {
     else if (due.length && options.dryRun) reason = `would start a repair for ${due[0]![0]}`;
     else if (due.length) {
       const [signature, record] = due[0]!;
+      let worktree: RepairWorktree | null = null;
       try {
+        // No worktree, no repair: the shared checkout is not a fallback (that is the fault E2 removes); the kind stays due.
+        worktree = await createRepairWorktree(cfg, signature, now);
         const result = await fullAccessSpawn(bb, {
           projectId: cfg.projectId,
-          environment: { type: "reuse", environmentId: cfg.environmentId },
+          environment: { type: "host", hostId: worktree.hostId, workspace: { type: "unmanaged", path: worktree.path } },
           title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
-          prompt: repairPrompt(record.samples, signature),
+          prompt: repairPrompt(record.samples, signature, worktree),
           ...writerExecutionSelection(cfg.providerId, cfg.model, cfg.reasoningLevel, "default"),
-          pluginMetadata: { role: "self-repair", signature },
+          pluginMetadata: { role: "self-repair", signature, repairBranch: worktree.branch },
         } as Parameters<typeof fullAccessSpawn>[1]);
         spawned = stringAt(result, "id");
+        if (!spawned) await releaseWorktree(worktree);
         if (spawned) {
           record.threadId = spawned;
           record.spawnedAt = now;
           record.spawnVersion = VERSION;
           record.verdict = null;
+          record.worktree = worktree;
+          record.outcome = null;
           current.spawned = [...today, { at: now, threadId: spawned, signature }];
           ctx.log(`self-repair: started @thread:${spawned} for ${signature}`);
           if (cfg.sectionId) await placeThread(spawned, cfg.projectId, cfg.sectionId);
           reason = "started";
         }
       } catch (cause) {
+        if (worktree) await releaseWorktree(worktree);
         reason = `spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`;
         ctx.log(`self-repair: ${reason}`);
       }
@@ -416,6 +494,7 @@ export function createSelfRepair(ctx: ServerCore) {
       knownSignatures: Object.keys(current.signatures).length,
       waiting: Object.entries(current.signatures).map(([signature, record]) => ({
         signature: signature.slice(0, 140), count: record.count, due: isDue(record, Date.now()), verdict: record.verdict ?? null, threadId: record.threadId,
+        branch: record.worktree?.branch ?? null, outcome: record.outcome ?? null,
       })),
     };
   }

@@ -4,18 +4,23 @@ import { openDatabase } from "../../src/database";
 import { createSelfRepair, isDue, logIncidents, parseVerdict, reasonSignature, repairPrompt, VERSION } from "../../src/server/self-repair";
 import type { ServerCore } from "../../src/server/core";
 
-function setup(threadStatus: Record<string, string> = {}, outputs: Record<string, string> = {}) {
+type HostCall = { method: string; input: Record<string, unknown> };
+
+function setup(threadStatus: Record<string, string> = {}, outputs: Record<string, string> = {}, hostResults: Record<string, unknown> = {}) {
   const spawns: Array<Record<string, unknown>> = [];
+  const hostCalls: HostCall[] = [];
   const placed: unknown[] = [];
   let next = 0;
   const { bb } = createFakePluginHost({
     pluginId: "lane-pilot",
     sdk: {
+      environments: { get: async ({ environmentId }: { environmentId: string }) => ({ id: environmentId, hostId: "host_mac", path: "/repo/lane-pilot" }) as never },
       plugins: { callRpc: async (args: { method: string; input: unknown }) => { placed.push([args.method, args.input]); return { ok: true }; } },
       threads: {
         output: async ({ threadId }: { threadId: string }) => ({ output: outputs[threadId] ?? "" }) as never,
         get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: threadStatus[threadId] ?? "idle" }) as never,
         spawn: async (input: unknown) => {
+          if (hostResults.spawn instanceof Error) throw hostResults.spawn;
           spawns.push(input as Record<string, unknown>);
           return { id: `thr_repair${++next}` } as never;
         },
@@ -23,7 +28,21 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
     } as never,
   });
   const db = openDatabase(bb);
-  const ctx = { bb, db, log: () => undefined, isDisposed: () => false } as unknown as ServerCore;
+  const host = {
+    call: async (method: string, input: Record<string, unknown>) => {
+      hostCalls.push({ method, input });
+      if (method in hostResults) {
+        const result = hostResults[method];
+        if (result instanceof Error) throw result;
+        return result;
+      }
+      if (method === "gitCreateWorktree") return { status: "ready", path: `/wt/${String(input.name)}/lane-pilot`, branch: `lane/${String(input.name)}`, reason: null };
+      if (method === "gitIntegrate") return { status: "merged", commit: "abcdef1234567890", conflicts: [], reason: null };
+      return { ok: true };
+    },
+  };
+  const logs: string[] = [];
+  const ctx = { bb, db, host, log: (message: string) => logs.push(message), isDisposed: () => false } as unknown as ServerCore;
   const now = Date.now();
   db.prepare("INSERT INTO lane_pilot_run (id,project_id,pm_thread_id,state,created_at,updated_at) VALUES (?,?,?,?,?,?)").run("lprun_a", "proj_real", "thr_pm", "running", now, now);
   db.prepare("INSERT INTO lane_pilot_run (id,project_id,pm_thread_id,state,created_at,updated_at) VALUES (?,?,?,?,?,?)").run("lprun_s", "proj_3tb652jpsi", "thr_pm2", "running", now, now);
@@ -32,7 +51,7 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
   const triage = (id: string, project: string, run: string, reason: string, origin = "orchestrator") =>
     db.prepare(`INSERT INTO lane_pilot_failure_triage (project_id,attempt_id,run_id,task_id,reason_sha256,reason,origin,status,failed_at,triaged_at)
       VALUES (?,?,?,?,?,?,?,'ok',?,?)`).run(project, id, run, `task-${id}`, "x", reason, origin, now, now);
-  return { ctx, db, spawns, placed, attempt, triage, now };
+  return { ctx, db, spawns, placed, attempt, triage, now, hostCalls, logs };
 }
 
 describe("self-repair", () => {
@@ -60,7 +79,7 @@ describe("self-repair", () => {
     expect(spawns).toHaveLength(1);
     expect(spawns[0]).toMatchObject({
       projectId: "proj_ejbam66722",
-      environment: { type: "reuse", environmentId: "env_bfv6wmb79r" },
+      environment: { type: "host", hostId: "host_mac", workspace: { type: "unmanaged", path: expect.stringMatching(/^\/wt\/self-repair-[0-9a-f]{8}-[a-z0-9]+\/lane-pilot$/) } },
       providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high", serviceTier: "default", permissionMode: "full",
     });
     expect(String(spawns[0]!.prompt)).toContain("@thread:thr_pm");
@@ -193,14 +212,141 @@ describe("self-repair", () => {
     expect((await createSelfRepair(busy.ctx).collect(0, await createSelfRepair(busy.ctx).config())).filter((row) => row.kind === "queued")).toEqual([]);
   });
 
-  it("the prompt tells the agent to verify live, ship only on green and report to the PM", () => {
-    const text = repairPrompt([{ signature: "s", kind: "blocked", projectId: "p", runId: "r", taskId: "t", attemptId: "a", pmThreadId: "thr_pm", writerThreadId: null, reason: "x", at: 0 }], "blocked:abc:x");
-    expect(text).toMatch(/Verify live/);
+  it("the prompt keeps the repair in its worktree: commit on the branch, never deploy, report to the PM", () => {
+    const workspace = { path: "/wt/self-repair-1/lane-pilot", branch: "lane/self-repair-1", basePath: "/repo/lane-pilot" };
+    const text = repairPrompt([{ signature: "s", kind: "blocked", projectId: "p", runId: "r", taskId: "t", attemptId: "a", pmThreadId: "thr_pm", writerThreadId: null, reason: "x", at: 0 }], "blocked:abc:x", workspace);
+    expect(text).toMatch(/Verify against the real case/);
+    expect(text).toContain("/wt/self-repair-1/lane-pilot is your own git worktree on branch lane/self-repair-1");
+    expect(text).toMatch(/Do NOT deploy, bump the version, push, merge or create a release/);
+    expect(text).not.toMatch(/gh release create|bash \/Users|origin main/);
     expect(text).toMatch(/continue only when it is green/);
     expect(text).toMatch(/<incidents>[\s\S]*1970-01-01T00:00:00.000Z[\s\S]*<\/incidents>/);
     expect(text).toMatch(/never git add -A/);
     expect(text).toMatch(/already fixed/);
     expect(text.trim().split("\n").at(-3)).toMatch(/SELF-REPAIR-VERDICT: fixed \| already-fixed \| not-lane-pilot \| needs-owner/);
     expect(text).toContain("bb thread tell");
+  });
+
+  describe("own worktree (E2)", () => {
+    const fixed = "Готово.\nSELF-REPAIR-VERDICT: fixed";
+
+    it("each repair gets a Lane Pilot worktree of the configured checkout and the thread works in it", async () => {
+      const env = setup();
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const repair = createSelfRepair(env.ctx);
+      expect((await repair.tick({ since: 0 })).spawned).toBe("thr_repair1");
+      const created = env.hostCalls.find((call) => call.method === "gitCreateWorktree")!;
+      expect(created.input).toMatchObject({ requestedHostId: "host_mac", basePath: "/repo/lane-pilot" });
+      expect(String(created.input.name)).toMatch(/^self-repair-[0-9a-f]{8}-[a-z0-9]+$/);
+      expect(env.hostCalls.map((call) => call.method)).toEqual(["gitCreateWorktree", "gitPrepareWorktree"]);
+      const record = Object.values((await repair.state()).signatures)[0]!;
+      expect(record.worktree).toMatchObject({ hostId: "host_mac", basePath: "/repo/lane-pilot", branch: `lane/${String(created.input.name)}` });
+      const prompt = String(env.spawns[0]!.prompt);
+      expect(prompt).toContain(`/wt/${String(created.input.name)}/lane-pilot is your own git worktree on branch lane/${String(created.input.name)}`);
+      expect(prompt).toContain("Do NOT deploy");
+      expect(env.spawns[0]!.pluginMetadata).toMatchObject({ role: "self-repair", repairBranch: `lane/${String(created.input.name)}` });
+    });
+
+    it("no worktree, no repair: the shared checkout is not a fallback and the kind stays due", async () => {
+      const env = setup({}, {}, { gitCreateWorktree: { status: "failed", path: null, branch: null, reason: "disk full" } });
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const repair = createSelfRepair(env.ctx);
+      const result = await repair.tick({ since: 0 });
+      expect(result.spawned).toBeNull();
+      expect(result.reason).toContain("worktree not created: disk full");
+      expect(env.spawns).toHaveLength(0);
+      expect(Object.values((await repair.state()).signatures)[0]!.spawnedAt).toBeNull();
+    });
+
+    it("a spawn that throws releases the worktree it just made", async () => {
+      const env = setup({}, {}, { spawn: new Error("provider down") });
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const result = await createSelfRepair(env.ctx).tick({ since: 0 });
+      expect(result.reason).toBe("spawn failed: provider down");
+      expect(env.hostCalls.map((call) => call.method)).toEqual(["gitCreateWorktree", "gitPrepareWorktree", "gitWorktreeSnapshot", "gitRemoveWorktree"]);
+    });
+
+    it("a fixed repair is merged like a writer's work, its worktree is removed, and nothing deploys", async () => {
+      const env = setup({}, { thr_repair1: fixed });
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const repair = createSelfRepair(env.ctx);
+      await repair.tick({ since: 0 });
+      const worktree = (Object.values((await repair.state()).signatures)[0]!).worktree!;
+      env.hostCalls.length = 0;
+      await repair.tick();
+      expect(env.hostCalls).toHaveLength(1);
+      expect(env.hostCalls[0]).toMatchObject({ method: "gitIntegrate", input: { basePath: "/repo/lane-pilot", worktreePath: worktree.path, removeWorktree: true } });
+      expect(String(env.hostCalls[0]!.input.message)).toMatch(/^self-repair: /);
+      const record = Object.values((await repair.state()).signatures)[0]!;
+      expect(record.verdict).toBe("fixed");
+      expect(record.worktree).toBeNull();
+      expect(record.outcome).toBe("merged abcdef123456");
+      expect(env.logs.some((line) => line.startsWith("self-repair: merged abcdef123456") && !/failed/i.test(line))).toBe(true);
+      env.hostCalls.length = 0;
+      await repair.tick();
+      expect(env.hostCalls).toEqual([]);
+    });
+
+    it("a conflict is retried on later passes, then the branch is left for the owner", async () => {
+      const env = setup({}, { thr_repair1: fixed }, { gitIntegrate: { status: "conflict", commit: null, conflicts: ["a.ts"], reason: "CONFLICT in a.ts" } });
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const repair = createSelfRepair(env.ctx);
+      await repair.tick({ since: 0 });
+      for (let pass = 0; pass < 6; pass++) await repair.tick();
+      expect(env.hostCalls.filter((call) => call.method === "gitIntegrate")).toHaveLength(4);
+      const record = Object.values((await repair.state()).signatures)[0]!;
+      expect(record.worktree?.mergeTries).toBe(4);
+      expect(record.outcome).toBe("conflict: CONFLICT in a.ts");
+      expect(env.logs.filter((line) => line.includes("is left at"))).toHaveLength(1);
+    });
+
+    it("a busy base checkout is not a failed try", async () => {
+      const env = setup({}, { thr_repair1: fixed }, { gitIntegrate: { status: "busy", commit: null, conflicts: [], reason: "merge lock held", holder: "x" } });
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const repair = createSelfRepair(env.ctx);
+      await repair.tick({ since: 0 });
+      for (let pass = 0; pass < 6; pass++) await repair.tick();
+      expect(Object.values((await repair.state()).signatures)[0]!.worktree?.mergeTries ?? 0).toBe(0);
+    });
+
+    it("any other verdict saves the worktree as a patch and releases it without merging", async () => {
+      const env = setup({}, { thr_repair1: "Не наша.\nSELF-REPAIR-VERDICT: not-lane-pilot" });
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const repair = createSelfRepair(env.ctx);
+      await repair.tick({ since: 0 });
+      env.hostCalls.length = 0;
+      await repair.tick();
+      expect(env.hostCalls.map((call) => call.method)).toEqual(["gitWorktreeSnapshot", "gitRemoveWorktree"]);
+      const record = Object.values((await repair.state()).signatures)[0]!;
+      expect(record.worktree).toBeNull();
+      expect(record.outcome).toBe("released: not-lane-pilot");
+    });
+
+    it("a repair that ends without a verdict keeps its worktree for a day, then it is released", async () => {
+      const env = setup({}, { thr_repair1: "no verdict here" });
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const repair = createSelfRepair(env.ctx);
+      await repair.tick({ since: 0 });
+      env.hostCalls.length = 0;
+      await repair.tick();
+      expect(env.hostCalls).toEqual([]);
+      const state = await repair.state();
+      Object.values(state.signatures)[0]!.spawnedAt = Date.now() - 25 * 3_600_000;
+      await env.ctx.bb.storage.kv.set("self-repair:state", state as never);
+      await repair.tick();
+      // The day-old kind is due again, so a new repair follows the release.
+      expect(env.hostCalls.map((call) => call.method).slice(0, 2)).toEqual(["gitWorktreeSnapshot", "gitRemoveWorktree"]);
+      expect(env.spawns).toHaveLength(2);
+    });
+
+    it("a dry run touches no worktree", async () => {
+      const env = setup({}, { thr_repair1: fixed });
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const repair = createSelfRepair(env.ctx);
+      await repair.tick({ since: 0 });
+      env.hostCalls.length = 0;
+      await repair.tick({ dryRun: true });
+      expect(env.hostCalls).toEqual([]);
+    });
   });
 });
