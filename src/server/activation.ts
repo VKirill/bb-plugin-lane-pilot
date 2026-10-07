@@ -7,6 +7,7 @@ import { claimActivation, createRun, freezeRunBinding, getActivation, importSett
 import { writerExecutionSelection } from "../jev-reasoning";
 import { buildRunPolicy } from "../stages/run-policy";
 import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../workspace/routing";
+import { excludeBookkeeping } from "./bookkeeping-exclude";
 import { fullAccessSpawn, pmPrompt } from "./pm-spawn";
 import { requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { id, stringAt, valueAt } from "./values";
@@ -170,6 +171,8 @@ export function createActivation(ctx: ServerCore, services: Services) {
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("threads.spawn returned no PM thread id");
     const bindResolvedEnvironment = native || managedWorkspace;
+    // Where the project's checkout is on its machine: bookkeeping paths are excluded there once the binding is known.
+    let checkout:{ hostId:string; path:string } | null = bindResolvedEnvironment ? null : { hostId:config.hostId, path:config.writerWorkspacePath };
     if (bindResolvedEnvironment) {
       const environmentId = stringAt(spawned, "environmentId");
       try {
@@ -182,6 +185,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
           if (!freezeRunBinding(db, runId, { hostId, workspacePath: path, environmentId })) {
             throw new Error("native environment CAS failed; run is no longer pending or already has a binding");
           }
+          checkout = { hostId, path };
         } else {
           const hostId = stringAt(environment, "hostId") ?? config.hostId;
           const workspace = resolveManagedWorkspace(environment, hostId);
@@ -189,6 +193,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
           if (!setRunWorkspace(db, runId, workspace.path, workspace.environmentId ?? environmentId)) {
             throw new Error("managed workspace CAS failed; run is no longer pending or already has a workspace binding");
           }
+          checkout = { hostId, path:workspace.path };
         }
       } catch (cause) {
         setRunState(db, runId, "blocked");
@@ -199,8 +204,12 @@ export function createActivation(ctx: ServerCore, services: Services) {
     }
     setRunThread(db, runId, threadId);
     claimActivation(db, { projectId, pmThreadId:threadId, runId });
+    // Bookkeeping folders that do not belong in history go to the repository's .git/info/exclude (no commit, no .gitignore edit).
+    const excluded = checkout
+      ? await excludeBookkeeping((input) => host.call("runCommand", input, { hostId:input.requestedHostId, timeoutMs:30_000 }), checkout.hostId, checkout.path, ctx.log)
+      : [];
     await services.resumeOrphans(projectId);
-    return { threadId, runId };
+    return { threadId, runId, ...(excluded.length ? { bookkeepingExcluded:excluded } : {}) };
   }
 
   return { assertComposerEnvironment, activate };
