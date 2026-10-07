@@ -75,6 +75,8 @@ export type EngineOptions = {
   /** What a reload does to a run that was in flight: pick up where the journal stopped, or end it as interrupted. */
   resumePolicy?: (run: RunRow) => "continue" | "interrupt";
   leaseMs?: number;
+  /** Called after every journal event of a run (a step moved, the run changed): the hook for live screens. */
+  onEvent?: (runId: string) => void;
   /** Test hook: called at named points of the driver; throwing simulates the process dying there. */
   fault?: (point: string) => void;
 };
@@ -119,7 +121,7 @@ export class WorkflowEngine {
 
   constructor(private readonly options: EngineOptions) {
     this.now = options.now ?? Date.now;
-    this.journal = createJournal(options.db, this.now);
+    this.journal = createJournal(options.db, this.now, options.onEvent);
     this.instanceId = options.instanceId ?? `engine-${randomUUID().slice(0, 8)}`;
     this.leaseMs = options.leaseMs ?? 90_000;
     this.registerBuiltins();

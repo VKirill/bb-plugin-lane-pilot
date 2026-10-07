@@ -175,6 +175,63 @@ const coexistenceOperationResult = z.object({
   owner: z.enum(["lane-pilot", "user", "upstream", "unknown"]), evidence: z.array(coexistenceEvidence), reason: z.string().nullable(),
 }).strict();
 
+const bilingualSchema = z.object({ en: z.string(), ru: z.string() }).strict();
+const viewFieldSchema = z.object({ name: z.string(), type: z.string(), required: z.boolean(), values: z.array(z.string()).optional(), note: z.string().optional() }).strict();
+export const WORKFLOW_NODE_TONES = ["plan", "build", "qa", "review", "agent", "action", "decision", "human", "flow", "sub", "note", "terminal"] as const;
+export const workflowViewNodeSchema = z.object({
+  id: z.string(), kind: z.enum(["agent", "lp-task", "action", "decision", "human", "parallel", "join", "subworkflow", "note", "start", "end"]),
+  tone: z.enum(WORKFLOW_NODE_TONES), title: bilingualSchema.nullable(), label: z.string().nullable(),
+  role: z.string().nullable(), excerpt: z.string().nullable(), uses: z.string().nullable(),
+  out: z.array(z.string()), maxVisits: z.number().int().nullable(), stages: z.array(z.string()),
+  /** A subworkflow node: the workflow it calls. */
+  calls: z.object({ id: z.string(), version: z.number().int().nullable() }).strict().nullable(),
+  modes: z.array(z.string()).nullable(),
+}).strict();
+export const workflowViewEdgeSchema = z.object({
+  index: z.number().int(), from: z.string(), to: z.string(), when: z.string().nullable(), label: z.string().nullable(),
+  pass: z.enum(["artifact", "same-session", "read-prior-session", "fork"]), carries: z.array(z.string()),
+}).strict();
+export const workflowViewSchema = z.object({ nodes: z.array(workflowViewNodeSchema), edges: z.array(workflowViewEdgeSchema) }).strict();
+export const workflowStatsSchema = z.object({
+  runs: z.number().int(), succeeded: z.number().int(), failed: z.number().int(), active: z.number().int(),
+  /** Succeeded over finished runs; null before any run has finished. */
+  successRate: z.number().nullable(), lastRunAt: z.number().int().nullable(), lastStatus: z.string().nullable(), lastRunId: z.string().nullable(),
+}).strict();
+const workflowSummarySchema = z.object({
+  id: z.string(), name: bilingualSchema, description: bilingualSchema, status: z.enum(["draft", "tested", "published", "deprecated"]), version: z.number().int(),
+  scope: z.enum(["builtin", "global", "project"]), internal: z.boolean(), tags: z.array(z.string()), nodes: z.number().int(), warnings: z.number().int(),
+  stats: workflowStatsSchema,
+}).strict();
+const workflowRunRowSchema = z.object({
+  id: z.string(), status: z.string(), reason: z.string().nullable(), mode: z.string().nullable(), createdAt: z.number().int(), updatedAt: z.number().int(),
+  tokens: z.number().int(), costUsd: z.number(), parentRunId: z.string().nullable(),
+}).strict();
+const workflowDetailSchema = workflowSummarySchema.extend({
+  examples: z.object({ en: z.array(z.string()), ru: z.array(z.string()) }).strict(),
+  inputs: z.array(viewFieldSchema), outputs: z.array(viewFieldSchema),
+  triggers: z.array(z.string()), requires: z.array(z.string()),
+  budget: z.object({ maxSteps: z.number().nullable(), maxTokens: z.number().nullable(), maxCostUsd: z.number().nullable(), maxWallSeconds: z.number().nullable() }).strict(),
+  qualityMode: z.string().nullable(), source: z.string(), sha256: z.string(),
+  warningMessages: z.array(z.string()),
+  graph: workflowViewSchema,
+  runs: z.array(workflowRunRowSchema),
+}).strict();
+const workflowStepSchema = z.object({
+  key: z.string(), nodeId: z.string(), state: z.string(), visit: z.number().int(), scope: z.string(), attempt: z.number().int(),
+  parentKey: z.string().nullable(), edgeIndex: z.number().int().nullable(),
+  startedAt: z.number().int().nullable(), endedAt: z.number().int().nullable(), error: z.string().nullable(),
+  threadId: z.string().nullable(), handoff: z.string().nullable(), awaiting: z.string().nullable(),
+  /** The step's output; a large one is replaced by `{ truncated: true, preview }`. */
+  output: z.unknown(),
+}).strict();
+const workflowRunSnapshotSchema = z.object({
+  run: workflowRunRowSchema.extend({ workflowId: z.string(), version: z.number().int(), projectId: z.string().nullable(), parentStepKey: z.string().nullable(), stepsUsed: z.number().int(), inputs: z.unknown(), output: z.unknown() }).strict(),
+  graph: workflowViewSchema,
+  steps: z.array(workflowStepSchema),
+  children: z.array(z.object({ runId: z.string(), stepKey: z.string(), workflowId: z.string(), status: z.string() }).strict()),
+  events: z.array(z.object({ seq: z.number().int(), stepKey: z.string().nullable(), kind: z.string(), from: z.string().nullable(), to: z.string().nullable(), detail: z.string().nullable(), at: z.number().int() }).strict()),
+}).strict();
+
 export const hostContract = defineRpcContract({
   nativeInstall: {
     input: z.object({ requestedHostId: z.string().min(1), action: z.enum(["install", "enable", "disable", "remove", "status"]) }).strict(),
@@ -330,6 +387,10 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"),
       roots:z.array(z.string().min(1).max(240).regex(/^(?!\/)(?!.*\.\.)[^\0]+$/)).max(500).optional(), skipOversized:z.boolean().optional() }).strict(),
     output: z.object({hostId:z.string(), oversized:z.array(z.string()).optional(), pages:z.array(z.object({path:z.string(),modifiedAt:z.number().int().nonnegative(),sha256:z.string().regex(/^[a-f0-9]{64}$/),content:z.string()}).strict())}).strict(),
+  },
+  listWorkflowFiles: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/") }).strict(),
+    output: z.object({ hostId:z.string(), files:z.array(z.object({ path:z.string(), content:z.string() }).strict()) }).strict(),
   },
   applyOnboardingPages: {
     input: z.object({
@@ -1442,5 +1503,23 @@ export const rpcContract = defineRpcContract({
   token_usage_sync: {
     input: z.object({}).strict(),
     output: z.object({ started: z.boolean() }).strict(),
+  },
+  workflow_list: {
+    input: z.object({ projectId: z.string().min(1).optional() }).strict(),
+    output: z.object({
+      workflows: z.array(workflowSummarySchema),
+      /** Files that did not load: where, and why. */
+      problems: z.array(z.object({ origin: z.enum(["builtin", "global", "project"]), source: z.string(), messages: z.array(z.string()) }).strict()),
+      /** `unavailable`: the project's machine could not be read, so only built-in and global workflows are listed. */
+      project: z.enum(["not_requested", "ok", "no_machine", "unavailable"]),
+    }).strict(),
+  },
+  workflow_get: {
+    input: z.object({ id: z.string().min(1), projectId: z.string().min(1).optional() }).strict(),
+    output: z.object({ workflow: workflowDetailSchema.nullable() }).strict(),
+  },
+  workflow_run_snapshot: {
+    input: z.object({ runId: z.string().min(1) }).strict(),
+    output: z.object({ snapshot: workflowRunSnapshotSchema.nullable() }).strict(),
   },
 });
