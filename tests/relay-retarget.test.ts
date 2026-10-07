@@ -171,9 +171,12 @@ describe("relay retargeting and canceled task dropping", () => {
       sdk: {
         threads: {
           send: (async (opts: any) => {
+            // A message with `sendAt` is held in BB's queue until then (the reminder's time); only the others arrive now.
+            if (opts.sendAt !== undefined) return { delivery: "queued" as const, ok: true as const, queuedMessage: { id: "row-1" } };
             sent.push({ threadId: opts.threadId, text: opts.input[0]?.text ?? "" });
             return { delivery: "sent" as const, ok: true as const };
           }) as any,
+          queuedMessages: { delete: async () => ({ ok: true }), list: async () => [{ id: "row-1" }] } as any,
         } as any,
       } as any,
     });

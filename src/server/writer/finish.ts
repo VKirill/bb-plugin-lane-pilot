@@ -16,12 +16,12 @@ import { needsHumanQuestion, outputText, providerLimitNotice, writerContextBlock
 import { isLiveDecision } from "../../live-folder";
 import { isMainfixTask } from "../../validate-output";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../integration-gate";
-import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
+import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { join, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 import { isRunHalted } from "../runs-halt";
-import { loadFollowUp } from "./sticky";
+import { clearFollowUpCancelled, followUpCancelled, loadFollowUp } from "./sticky";
 import { askGuestsToCommit } from "../checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "../writer-silence";
@@ -29,6 +29,8 @@ import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnviro
 import { bookkeepingSetting } from "../../bookkeeping-paths";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../merge-intent";
 import { sendServiceMessage } from "../service-message";
+
+const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this writer";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
 const MERGE_QUEUE_MS = 15 * 60_000;
@@ -105,14 +107,16 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       };
       // A continued thread is idle from its previous task until the new turn starts: wait for the turn sent after `since`.
+      clearFollowUpCancelled(bb, input.attemptId);
       const followUpSince = await loadFollowUp(bb.storage.kv, input.attemptId);
       if (followUpSince !== null) {
         try {
+          const deleted = () => followUpCancelled(bb, input.attemptId) ? FOLLOW_UP_DELETED : null;
           if (!watchBudget) {
-            await waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince);
+            await waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince, deleted);
           } else {
             let waiting = true;
-            const idle = waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince)
+            const idle = waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince, deleted)
               .finally(() => { waiting = false; });
             while (waiting) {
               await noteWriterTokens();
@@ -125,6 +129,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         } catch (cause) {
           if (ctx.state.disposed) throw new Error("Lane Pilot was reloaded while the writer ran");
           const reason = cause instanceof Error ? cause.message : String(cause);
+          // The owner deleted the queued instruction: it never reaches the writer, so the task is blocked, not retried.
+          if (reason.endsWith(FOLLOW_UP_DELETED)) return await stopRunningWriter(`follow_up_deleted: ${FOLLOW_UP_DELETED}`);
           transitionAttempt(db, input.attemptId, "provider_error", { reason });
           return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
         }
@@ -134,6 +140,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       for (;;) {
         if (ctx.state.disposed) throw new Error("Lane Pilot was reloaded while the writer ran");
         const pollStarted = Date.now();
+        const mark = threadWatchMark(bb);
         const currentThread = await getThreadBounded(input.writerThreadId);
         const currentStatus = stringAt(currentThread, "status");
         // The silence sweep nudged this writer twice and it stayed silent: the attempt ends and the task moves on.
@@ -160,7 +167,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const budgetStop = runningWriterBudgetStop(budget.check());
           if (budgetStop) return await stopRunningWriter(budgetStop);
         }
-        await new Promise((resolve) => setTimeout(resolve, Math.max(0, 2_000 - (Date.now() - pollStarted))));
+        // A run with a wall or token budget is read every 2 s, because the budget is checked here. Otherwise BB's events
+        // (idle, failed, archived) wake the loop, and a read every 20 s covers a lost event.
+        const pause = Math.max(0, 2_000 - (Date.now() - pollStarted));
+        if (watchBudget) await new Promise((resolve) => setTimeout(resolve, pause));
+        else await sleepUntilThreadSignal(bb, input.writerThreadId, mark, pause);
       }
       const currentAttempt = getAttempt(db, input.attemptId);
       if (currentAttempt?.state === "cancel_requested" || currentAttempt?.state === "canceled") {

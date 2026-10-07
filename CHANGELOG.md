@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.180
+
+H5: reminders live in BB's own message queue.
+- **`lane_pilot_remind` queues the reminder in BB** with `bb.sdk.threads.send({ mode:"queue-if-active", sendAt:dueAt })`. It shows as a queued card in the PM chat with its time, BB's clock sends it, and it survives a reload of the plugin (the old list in plugin KV and a 30 s sweep did the same, invisibly). The reminder keeps the id of its row (`queuedMessageId`).
+- **The early wake stays.** A watched thread that finishes its turn (`watchThreadId`) or tasks that all finish (`taskIds`) delete the row first (`bb.sdk.threads.queuedMessages.delete`) and then send the reminder at once. If the row is already gone (BB sent it a moment ago) no second one is sent. A cancelled reminder (`lane_pilot_relay_list` with `cancelReminderId`), a reminder closed because the thread it waited on answered, and a reminder left with no tasks delete their row too. A failed delete still sends the early reminder (a repeat is better than a lost one).
+- **The sweep only looks at a queued reminder.** Past its time, a row that BB no longer has counts as sent (`firedBy: time`); a row still waiting (the PM chat is busy) is left to BB. The events `message.dispatched` and `message.cancelled` close the reminder at once (`time`, or `canceled` when the owner deleted the card).
+- **Fallback.** A reminder that cannot be queued (BB refused, an older host) has no `queuedMessageId` and the sweep sends it when due, as before; `LANE_PILOT_NATIVE_REMINDERS=0` switches the queue off. Asks and watched-thread settling are unchanged.
+
+## 0.1.179
+
+H2: Lane Pilot reacts to BB's lifecycle events when they happen (`src/server/lifecycle-events.ts`); the sweeps stay as the net for a lost event. Same switch as H1 (`LANE_PILOT_THREAD_SIGNALS=0` turns the handlers off); each listener is registered on its own, so a BB that does not know an event only loses that listener.
+- **`thread.archived` / `thread.deleted` of a PM chat** closes its run at once (the 15-minute run sweep did it before). Same rule as the sweep: a run with an open attempt is left alone. `closeAbandonedRuns` takes an optional PM thread id for this.
+- **`interaction.pending` on a running writer** (a question or an approval nobody sees): the PM gets one message naming the task, the writer thread and what it asks, and the attempt's `blockedBy` gets a `human` row with the interaction id, so if the attempt later ends blocked, `lane_pilot_wait_writer` says why. Repeats of the same interaction are not sent again.
+- **`message.cancelled`**: the owner deleted a follow-up turn Lane Pilot had queued for a writer (a continued thread). Its attempt stopped waiting for ever and held a writer slot; now the wait ends and the attempt is blocked `follow_up_deleted` (`waitThreadIdle` takes an optional `shouldStop`). Rows of other plugins, other threads and older turns are ignored.
+- **`experimental_host.deleted`** (BB core with the event; not in the pinned SDK types 0.4.104, so it is registered defensively): the machine's native-install registry row and error, and its background host-job keys, are dropped, so enable/disable/remove no longer try a machine that is gone. A log line names runs with open attempts that still point at it.
+
+## 0.1.178
+
+H1 of the next plan: BB's thread events instead of polling.
+- **Watchers sleep until BB says a thread changed.** The factory subscribes once (`bb.events.on`) to `thread.idle`, `thread.failed`, `thread.archived`, `thread.deleted` and `experimental_thread.events` (the last one only while the thread is not `active`, so a running turn does not wake anyone) and keeps a per-thread signal hub (`packages/thread-observe/src/signals.ts`). `waitThreadIdle` and `observeStageChild` (the wait of every helper, stage child, critic, council seat and errand), the writer's finish loop (without a wall or token budget), the compaction wait of sticky writers and the docs thread start wait read the thread when the hub signals, and otherwise every 20 s. `decideThreadCompletion` and `threadFailure` stay the judge: an event only says «look now». A mark taken before the read keeps a change that arrives during the read from being lost; a reload wakes every sleeper at once.
+- **Measured** (tests/thread-signals.test.ts, a writer that works 45 s, fake clock): 47 `threads.get` + 47 `events.list` calls with the old 1 s poll, 4 + 4 with events (about 67 → 4 reads a minute), and the end is seen in the same tick, not up to a second later.
+- **Fallbacks.** No `bb.events` (an older host, a test host) or `LANE_PILOT_THREAD_SIGNALS=0`: the old poll, unchanged. A lost event costs at most one 20 s interval. A run with a wall or token budget keeps its 2 s loop, because the budget is checked there. The tests switch the events off (`tests/setup-jsdom.ts`): fake threads change state without them.
+- Not changed: the 500 ms wait for a worktree holder thread (it goes away with H9) and the sweeps (5 to 15 minutes).
+
 ## 0.1.177
 
 From the review of 2026-10-07 (bugs 1 and 7, D3/D4). Needs the core drain-fixes build (`bb.vk.instanceId`) for bug 1 in full; on an older core the oldest bound instance is drained, which is the one being replaced.

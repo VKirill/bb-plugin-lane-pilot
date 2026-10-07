@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { decideThreadCompletion, THREAD_WATCH_EVENT_TYPES } from "./completion";
+import { sleepUntilThreadSignal, threadWatchMark } from "./signals";
 
 function stringAt(value: unknown, key: string): string | null {
   const found = value && typeof value === "object" ? Reflect.get(value, key) : undefined;
@@ -37,10 +38,15 @@ export async function listThreadEventsRaw(
  * Waits for a child thread's turn with no overall deadline: BB's events say when it failed (see
  * threadFailure), so a slow but working model is never cut off. `probeMs` bounds a diagnostic probe only.
  */
-export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number, requestedAfter?: number): Promise<void> {
+export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number, requestedAfter?: number, shouldStop?: () => string | null): Promise<void> {
   let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
   const deadline = probeMs === undefined ? Infinity : Date.now() + probeMs;
   while (Date.now() < deadline) {
+    // The caller knows something BB's thread events do not (the queued instruction was deleted): it ends the wait.
+    const stop = shouldStop?.();
+    if (stop) throw new Error(`${timeoutMessage}:${stop}`);
+    // BB's events say when to look again; the mark is taken before the read so a change during it is not missed.
+    const mark = threadWatchMark(bb);
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const listed = await listThreadEventsRaw(bb, {
       threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
@@ -58,7 +64,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
       throw new Error(`${timeoutMessage}:${decision.via}:${decision.detail}`);
     }
     lastDetail = decision.detail;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await sleepUntilThreadSignal(bb, threadId, mark, 1000);
   }
   throw new Error(`${timeoutMessage}:incomplete:${lastDetail}`);
 }
@@ -76,6 +82,7 @@ export async function observeStageChild(
   let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
   const deadline = Date.now() + Math.max(1, timeoutMs);
   while (Date.now() < deadline) {
+    const mark = threadWatchMark(bb);
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const listed = await listThreadEventsRaw(bb, {
       threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
@@ -92,7 +99,7 @@ export async function observeStageChild(
       return { kind:"product_failure", via:decision.via, detail:decision.detail };
     }
     lastDetail = decision.detail;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await sleepUntilThreadSignal(bb, threadId, mark, 1000);
   }
   return { kind:"observing", detail:lastDetail };
 }

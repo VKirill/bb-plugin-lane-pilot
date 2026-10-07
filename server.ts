@@ -33,6 +33,9 @@ import { createWriterVerify } from "./src/server/writer/verify";
 import { createWriterFinish } from "./src/server/writer/finish";
 import { createWriterStart } from "./src/server/writer/start";
 import { createWriterDispatch } from "./src/server/writer/dispatch";
+import { relayFor } from "./src/server/relay";
+import { installThreadSignals } from "@lane-pilot/thread-observe";
+import { mountLifecycleEvents } from "./src/server/lifecycle-events";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export { experimental_vkLifecycle } from "./src/native-install-lifecycle";
 
@@ -41,6 +44,8 @@ export { rpcContract } from "./src/contracts";
 /** Entry only: storage, the shared core, every module on one services bag, then the registrations. */
 export default async function plugin(bb: BbPluginApi) {
   const db = openDatabase(bb);
+  // BB's thread events wake the watchers of writers and helper threads; without them they poll as before.
+  installThreadSignals(bb);
   const ctx = createCore(bb, db);
   bindToolLocale(bb, await toolLocale(bb));
   const services = {} as Services;
@@ -69,6 +74,10 @@ export default async function plugin(bb: BbPluginApi) {
     { ruleScan: createRuleScan(ctx, services) },
     createStability(ctx, services),
   );
+  mountLifecycleEvents(ctx, { onQueued: (name, entry) => {
+    const id = entry && typeof entry === "object" ? Reflect.get(entry, "id") : undefined;
+    if (typeof id === "string") return relayFor(ctx).queueEvent(name, id).then(() => undefined);
+  } });
   registerRpc(ctx, services);
   registerTools(ctx, services);
   registerCli(ctx, services);

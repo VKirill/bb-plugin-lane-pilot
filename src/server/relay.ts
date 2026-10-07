@@ -18,9 +18,15 @@ export type RelayAsk = {
 };
 export type RelayReminder = {
   kind:"remind"; id:string; projectId:string; threadId:string; note:string; dueAt:number;
-  watchThreadId:string|null; createdAt:number; firedAt:number|null; firedBy:"time"|"watch"|"answered"|"tasks"|null;
+  watchThreadId:string|null; createdAt:number; firedAt:number|null; firedBy:"time"|"watch"|"answered"|"tasks"|"canceled"|null;
   /** Lane Pilot tasks the reminder waits for: it fires when every one has finished, instead of polling by time. */
   taskIds?:string[];
+  /**
+   * The reminder's time is kept by BB's own message queue: this is the queued row (`threads.send` with `sendAt`), shown
+   * as a card in the chat and surviving a reload. An early wake (a watched thread, finished tasks), a cancel or an answer
+   * deletes the row first. Absent: the sweep sends the reminder when it is due, as before.
+   */
+  queuedMessageId?:string|null;
 };
 export type RelayItem = RelayAsk | RelayReminder;
 
@@ -46,6 +52,12 @@ export type RelayDeps = {
   latestFamilyMember?(projectId:string, taskId:string):Promise<{ taskId:string; state:string|null } | null>;
   now():number;
   log(message:string):void;
+  /** Puts the text into BB's queue for `sendAt`; the queued row's id, or null when it could not be queued (the sweep then sends). */
+  scheduleQueued?(threadId:string, text:string, sendAt:number):Promise<string | null>;
+  /** Deletes a queued row. `gone`: it is not there (already sent, or deleted by the owner); `failed`: unknown. */
+  dropQueued?(threadId:string, queuedMessageId:string):Promise<"deleted" | "gone" | "failed">;
+  /** Whether the row still waits in the queue; `unknown` when BB could not say. */
+  queuedState?(threadId:string, queuedMessageId:string):Promise<"waiting" | "gone" | "unknown">;
 };
 
 /** A task is finished when its latest attempt is accepted (merged), blocked after its retries, or canceled. */
@@ -72,13 +84,22 @@ export function createRelay(deps:RelayDeps) {
    * The thread a reminder waited on has answered: the reminder would only arrive after the answer and read as
    * stale («это напоминание устарело»), so it is closed without a message.
    */
-  function closeAnsweredWaits(items:RelayItem[], askerId:string, answeredBy:string) {
+  async function closeAnsweredWaits(items:RelayItem[], askerId:string, answeredBy:string) {
     for (const item of items) {
       if (item.kind === "remind" && !item.firedAt && item.threadId === askerId && item.watchThreadId === answeredBy) {
         item.firedAt = deps.now();
         item.firedBy = "answered";
+        await dropQueuedRow(item);
       }
     }
+  }
+
+  /** Takes a reminder's row out of BB's queue; true when the row is not there any more (it was already sent or deleted). */
+  async function dropQueuedRow(item:RelayReminder):Promise<boolean> {
+    if (!item.queuedMessageId || !deps.dropQueued) return false;
+    const dropped = await deps.dropQueued(item.threadId, item.queuedMessageId).catch(() => "failed" as const);
+    if (dropped === "failed") deps.log(`relay: could not delete the queued reminder ${item.queuedMessageId} of ${item.id}`);
+    return dropped === "gone";
   }
 
   async function ask(input:{projectId:string; fromThreadId:string; toThreadId:string; question:string}):Promise<RelayAsk & { alreadyWaiting?:true }> {
@@ -116,13 +137,13 @@ export function createRelay(deps:RelayDeps) {
       if (item.answeredAt) return item;
       await deps.send(item.fromThreadId, `Lane Pilot: reply from @thread:${item.toThreadId} to ${item.id}:\n\n${input.answer}`, item.toThreadId);
       item.answeredAt = deps.now();
-      closeAnsweredWaits(items, item.fromThreadId, item.toThreadId);
+      await closeAnsweredWaits(items, item.fromThreadId, item.toThreadId);
       return item;
     });
   }
 
   async function remind(input:{projectId:string; threadId:string; note:string; inMinutes:number; watchThreadId?:string|null; taskIds?:string[]}) {
-    return update((items) => {
+    return update(async (items) => {
       const mine = items.filter((row):row is RelayReminder => row.kind === "remind" && row.threadId === input.threadId);
       if (mine.filter((row) => !row.firedAt).length >= RELAY_LIMITS.openRemindersPerThread) {
         throw new Error(`relay limit: ${RELAY_LIMITS.openRemindersPerThread} open reminders; cancel one first`);
@@ -133,27 +154,55 @@ export function createRelay(deps:RelayDeps) {
       const item:RelayReminder = { kind:"remind", id:id("rem"), projectId:input.projectId, threadId:input.threadId, note:input.note,
         dueAt:deps.now() + input.inMinutes * 60_000, watchThreadId:input.watchThreadId ?? null, createdAt:deps.now(), firedAt:null, firedBy:null,
         ...(input.taskIds?.length ? { taskIds:[...new Set(input.taskIds)] } : {}) };
+      // BB's queue keeps the time: the reminder is a card in the chat, due at `dueAt`, and survives a reload of this plugin.
+      if (deps.scheduleQueued) {
+        item.queuedMessageId = await deps.scheduleQueued(item.threadId, reminderText(item, "time"), item.dueAt)
+          .catch((cause:unknown) => { deps.log(`relay: could not queue reminder ${item.id}, the sweep will send it: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+      }
       items.push(item);
       return item;
     });
   }
 
   async function cancel(input:{threadId:string; reminderId:string}) {
-    return update((items) => {
+    return update(async (items) => {
       const item = items.find((row):row is RelayReminder => row.kind === "remind" && row.id === input.reminderId && row.threadId === input.threadId);
       if (!item || item.firedAt) return false;
       item.firedAt = deps.now();
+      await dropQueuedRow(item);
       return true;
     });
   }
 
-  async function fire(item:RelayReminder, by:"time"|"watch"|"tasks", states?:Record<string, string|null>) {
+  const reminderText = (item:RelayReminder, by:"time"|"watch"|"tasks", states?:Record<string, string|null>) => {
     const why = by === "watch" ? `thread @thread:${item.watchThreadId} finished its turn`
       : by === "tasks" ? `tasks completed: ${Object.entries(states ?? {}).map(([task, state]) => `${task} — ${state}`).join(", ")}`
       : "time reached";
-    await deps.send(item.threadId, `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_remind with a larger interval.`, by === "watch" ? item.watchThreadId ?? undefined : undefined);
+    return `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_remind with a larger interval.`;
+  };
+
+  async function fire(item:RelayReminder, by:"time"|"watch"|"tasks", states?:Record<string, string|null>) {
+    // An early wake takes the queued time-reminder out first. If the row is already gone, BB sent it at the due time (or the
+    // owner deleted it): a second reminder now would only be stale.
+    if (by !== "time" && await dropQueuedRow(item)) {
+      item.firedAt = deps.now();
+      item.firedBy = "time";
+      return;
+    }
+    await deps.send(item.threadId, reminderText(item, by, states), by === "watch" ? item.watchThreadId ?? undefined : undefined);
     item.firedAt = deps.now();
     item.firedBy = by;
+  }
+
+  /** BB announced a row of its queue: our reminder was sent at its time, or the owner deleted it from the card. */
+  async function queueEvent(kind:"message.dispatched" | "message.cancelled", queuedMessageId:string) {
+    return update((items) => {
+      const item = items.find((row):row is RelayReminder => row.kind === "remind" && !row.firedAt && row.queuedMessageId === queuedMessageId);
+      if (!item) return false;
+      item.firedAt = deps.now();
+      item.firedBy = kind === "message.dispatched" ? "time" : "canceled";
+      return true;
+    });
   }
 
   /** A watched or asked thread finished its turn: wake whoever waits on it, pass its answer back if it gave none. */
@@ -169,7 +218,7 @@ export function createRelay(deps:RelayDeps) {
           const text = (await deps.output(threadId).catch(() => "")).trim().slice(-4000);
           await deps.send(item.fromThreadId, `Lane Pilot: @thread:${threadId} finished its turn without answering ${item.id}. Its last message:\n\n${text || "(empty)"}`, threadId);
           item.answeredAt = deps.now();
-          closeAnsweredWaits(items, item.fromThreadId, threadId);
+          await closeAnsweredWaits(items, item.fromThreadId, threadId);
           woken++;
         }
       }
@@ -211,6 +260,7 @@ export function createRelay(deps:RelayDeps) {
           if (item.taskIds.length === 0 && !item.watchThreadId) {
             item.firedAt = deps.now();
             item.firedBy = "tasks";
+            await dropQueuedRow(item);
             continue;
           }
 
@@ -220,7 +270,16 @@ export function createRelay(deps:RelayDeps) {
             continue;
           }
         }
-        if (item.dueAt <= deps.now()) { await fire(item, "time"); fired++; }
+        if (item.dueAt <= deps.now()) {
+          if (item.queuedMessageId && deps.queuedState) {
+            // BB sends it at its time. A row that is gone was sent, or deleted by the owner (the event may have been
+            // lost to a reload): either way nothing more to send. If BB cannot say, the next sweep asks again.
+            const queued = await deps.queuedState(item.threadId, item.queuedMessageId).catch(() => "unknown" as const);
+            if (queued === "gone") { item.firedAt = deps.now(); item.firedBy = "time"; }
+            continue;
+          }
+          await fire(item, "time"); fired++;
+        }
         else if (item.watchThreadId) watched.add(item.watchThreadId);
       }
       for (const item of items) if (item.kind === "ask" && !item.answeredAt) watched.add(item.toThreadId);
@@ -244,7 +303,7 @@ export function createRelay(deps:RelayDeps) {
       : !item.answeredAt ? [item.toThreadId] : []));
   }
 
-  return { ask, reply, remind, cancel, threadSettled, sweep, list, watchedThreads };
+  return { ask, reply, remind, cancel, threadSettled, sweep, list, watchedThreads, queueEvent };
 }
 
 export type Relay = ReturnType<typeof createRelay>;
@@ -293,6 +352,27 @@ export function relayFor(ctx:ServerContext):Relay {
       const value = result.output ?? result.text;
       return typeof value === "string" ? value : JSON.stringify(value ?? "");
     },
+    // The time of a reminder is kept by BB's own queue (threads.send with sendAt, threads.queuedMessages): a card in the chat that
+    // survives a reload. LANE_PILOT_NATIVE_REMINDERS=0 goes back to the sweep sending it when due.
+    ...(process.env.LANE_PILOT_NATIVE_REMINDERS === "0" ? {} : {
+      scheduleQueued:async (threadId:string, text:string, sendAt:number) => {
+        const sent = await bb.sdk.threads.send({ threadId, mode:"queue-if-active", sendAt, input:[{ type:"text", text, mentions:[] }] } as never);
+        // Anything but a queued row means BB took no `sendAt`: it cannot be undone, so say so loudly and let the sweep carry on.
+        if (sent.delivery !== "queued") { ctx.log(`relay: BB sent a reminder at once instead of queueing it for ${new Date(sendAt).toISOString()}`); return null; }
+        return sent.queuedMessage.id;
+      },
+      dropQueued:async (threadId:string, queuedMessageId:string) => {
+        try { await bb.sdk.threads.queuedMessages.delete({ threadId, queuedMessageId }); return "deleted" as const; }
+        // 404: not there (sent or deleted). 409: BB has taken it for dispatch this moment. Neither is a row to wait for.
+        catch (cause) { return /\b(404|409)\b|not found/i.test(cause instanceof Error ? cause.message : String(cause)) ? "gone" as const : "failed" as const; }
+      },
+      queuedState:async (threadId:string, queuedMessageId:string) => {
+        try {
+          const rows = await bb.sdk.threads.queuedMessages.list({ threadId });
+          return rows.some((row) => row.id === queuedMessageId) ? "waiting" as const : "gone" as const;
+        } catch (cause) { return /\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause)) ? "gone" as const : "unknown" as const; }
+      },
+    }),
     now:() => Date.now(),
     log:ctx.log,
   });

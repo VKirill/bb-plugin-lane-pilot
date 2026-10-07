@@ -66,6 +66,13 @@ export function createNativeInstaller(input: {
   };
   return {
     install,
+    /** The machine was removed: its remembered installation error and registry row are dropped. */
+    async forget(hostId: string) {
+      errors.delete(hostId);
+      pending.delete(hostId);
+      await input.kv.delete(`${PREFIX}${hostId}`);
+      await input.kv.delete(`${ERROR_PREFIX}${hostId}`);
+    },
     /** Installs or repairs Claude Lane ahead of the first send, e.g. when Lane Pilot is enabled in the composer. */
     async start(hostId: string) {
       if (!pending.has(hostId)) void start(hostId);
