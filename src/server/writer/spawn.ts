@@ -37,7 +37,8 @@ export function worktreeCreateError(reason: string | null): string {
 
 /** The project has a root source on this host and the run folder is not it: BB's managed worktree would fork that root. */
 async function hasOtherRootSource(bb:ServerCore["bb"], projectId:string, hostId:string, path:string):Promise<boolean> {
-  const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
+  // A lookup that cannot run (it may throw before returning a promise) keeps the old path: BB's managed worktree.
+  const project = await Promise.resolve().then(() => bb.sdk.projects.get({ projectId })).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
   const roots = (project?.sources ?? []).filter((source) => source.hostId === hostId && typeof source.path === "string");
   return roots.length > 0 && !roots.some((source) => resolve(source.path!) === resolve(path));
 }
