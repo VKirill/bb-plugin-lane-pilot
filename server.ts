@@ -13,6 +13,7 @@ import { adoptWaitingRules } from "./src/server/insights";
 import { createRuleScan } from "./src/server/rule-scan";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/server/run-finish";
 import { registerRpc } from "./src/server/rpc";
+import { DRAIN_SNAPSHOT_KEY } from "./src/server/deploy-drain";
 import { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./src/server/writer-silence";
 import type { Services } from "./src/server/services";
 import { createStageChildren } from "./src/server/stages/children";
@@ -111,6 +112,17 @@ export default async function plugin(bb: BbPluginApi) {
         try { await work(); } catch (cause) { bb.log.warn(`Lane Pilot ${name} skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
       };
       void (async () => {
+        // VK core: why this instance started and whether the one before it drained (read here, not in the factory,
+        // where `afterDrain` is still false). The recovery below runs once, from this service, in every case; a
+        // drained reload only says what the old instance left (stages and checkout writes were let finish).
+        const vk = (bb as unknown as { vk?: { startReason?: string; afterDrain?: boolean } }).vk;
+        if (vk?.startReason) {
+          bb.log.info(`Lane Pilot startup recovery: ${vk.startReason}${vk.afterDrain ? ", after a clean drain" : ""}`);
+          await step("drain snapshot", async () => {
+            const snapshot = await bb.storage.kv.get<{ action?: string; clean?: boolean; inFlight?: unknown[] }>(DRAIN_SNAPSHOT_KEY);
+            if (snapshot) { bb.log.info(`Lane Pilot drain before this start: ${snapshot.action ?? "?"}, ${snapshot.clean ? "nothing in flight" : `${snapshot.inFlight?.length ?? 0} call(s) cut`}`); await bb.storage.kv.delete(DRAIN_SNAPSHOT_KEY); }
+          });
+        }
         // A reload drops the loops that watch background helpers; the stages are idempotent and find their child thread
         // again. Started in the factory, their first host call failed with «unavailable during factory registration».
         await step("resume of background helpers", () => {

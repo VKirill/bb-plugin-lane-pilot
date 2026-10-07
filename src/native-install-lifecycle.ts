@@ -1,11 +1,12 @@
 import type { PluginKvStorage, PluginRpcContract } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contracts";
+import { drainForLifecycle } from "./server/deploy-drain";
 
 const PREFIX = "native-install:host:";
 const ERROR_PREFIX = "native-install:error:";
-type Action = "enable" | "disable" | "remove";
+type Action = "enable" | "disable" | "remove" | "reload" | "shutdown";
 type LifecycleContext = {
-  action: Action; kv: PluginKvStorage; signal: AbortSignal;
+  action: Action; kv: PluginKvStorage; signal: AbortSignal; deadline?: number;
   callHost(args: { contract: PluginRpcContract; method: string; input: unknown; hostId: string; timeoutMs?: number; signal?: AbortSignal }): Promise<unknown>;
 };
 
@@ -14,6 +15,9 @@ export async function registerNativeInstallHost(kv: PluginKvStorage, hostId: str
 }
 
 export async function experimental_vkLifecycle(ctx: LifecycleContext): Promise<void> {
+  // VK core drain (vk.lifecycle.drain): a reload or server stop lets the running checkout writes and checks finish.
+  // Never destructive and never installs; a throw here is only logged by the core.
+  if (ctx.action === "reload" || ctx.action === "shutdown") { await drainForLifecycle(ctx); return; }
   for (const key of await ctx.kv.list(PREFIX)) {
     ctx.signal.throwIfAborted();
     const row = await ctx.kv.get<{ hostId: string }>(key);
