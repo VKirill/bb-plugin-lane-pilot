@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";
 import { HARNESS_VERSION, createAttempt, createRun, createTask, getAttempt, openDatabase, setRunThread } from "../src/database";
 import { LANE_WORKTREE_PROVIDER_ID, LANE_WORKTREE_RETIRE_GRACE_MS, laneWorktreeInputs, registerLaneWorktreeProvider } from "../src/server/environment-provider";
-import { STICKY_WINDOW_MS } from "../src/server/writer/sticky";
 import { createWriterSpawn } from "../src/server/writer/spawn";
 import { PROVIDER_FAILURES_BEFORE_DISABLE, createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../src/workspace/provider-gate";
 
@@ -47,12 +46,12 @@ function removeContext(over: Record<string, unknown>) {
 }
 
 describe("the lane-pilot-worktree environment provider", () => {
-  it("registers with a path key per attempt, a grace past the sticky window and strict inputs", () => {
+  it("registers with a path key per attempt, a short retire grace and strict inputs", () => {
     const { registered, provider } = providerEnv(() => ({}));
     expect(registered).toBe(true);
     expect(provider.policy.pathKeys).toBe("per-attempt");
     expect(provider.policy.retireGraceMs).toBe(LANE_WORKTREE_RETIRE_GRACE_MS);
-    expect(LANE_WORKTREE_RETIRE_GRACE_MS).toBeGreaterThan(STICKY_WINDOW_MS);
+    expect(LANE_WORKTREE_RETIRE_GRACE_MS).toBe(5 * 60_000);
     expect(laneWorktreeInputs.safeParse({ basePath: "repo", name: "a1" }).success).toBe(false);
     expect(laneWorktreeInputs.safeParse({ basePath: base, name: "a/1" }).success).toBe(false);
     expect(laneWorktreeInputs.safeParse({ basePath: base, name: "a1", path: worktree }).success).toBe(true);

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.178
+
+H9: a writer attempt's worktree is a BB environment of Lane Pilot's own provider, not a holder thread's.
+- **Environment provider `lane-pilot-worktree`** (`src/server/environment-provider.ts`, `bb.experimental_environments.register`, modelled on the official environment-git-worktree plugin). Inputs `{basePath, name, path?}`; `pathKeys: "per-attempt"`, `retireGraceMs` 5 min (as BB's own worktree: a worktree is ~2 GB). `create` takes the worktree Lane Pilot already made, or makes it with the existing host functions (`gitCreateWorktree`, which knows the subfolder prefix and nested layouts, then `gitPrepareWorktree`); `remove` saves what the writer left (`gitWorktreeSnapshot`) and calls `gitRemoveWorktree`, and leaves a worktree an attempt went on with without an environment (the fallback). Registers nothing on a BB without the API.
+- **No holder thread, no model turn.** Lane Pilot makes the worktree first (the packet, task folder and dirt baseline are read from it before the thread exists), then spawns the writer with `environment: {type: "provider", environmentProviderId: "lane-pilot-worktree", inputs, machine: {type: "existing", hostId}}`, waits for the environment to be ready and records its id on the attempt, so the existing sweeps (snapshot, archive threads, delete) find it. Used for a project root, a section with its own repository and a subfolder of a larger repo; a folder without git stays in place and never sees the provider.
+- **On by default; `workspace.provider` (`auto` | `off`) is only the emergency switch** (settings, Workspace, advanced).
+- **Silent fallback per attempt.** A BB without the API, a provider BB does not list, a worktree that could not be made, BB refusing the provider at the spawn, an environment that goes to error or is not ready in 2 minutes: the attempt starts again on the old path over the same worktree (the failed provider thread is stopped and archived), is not failed and not charged, one log line.
+- **Per-machine self-disable.** Three provider errors in a row on one machine switch the provider off there until the plugin version changes (KV `workspace-provider:host:<id>`); the warning `Lane Pilot workspace provider failed 3 times in a row on host <id> ...` is a plugin-log failure line, so self-repair sees it as an incident. A success clears the count.
+- **Drill:** scenario `provider` (one task: accepted, the attempt has an environment and no holder thread) and the same check in `parallel3`, so the pre-deploy `--quick` run fails on a provider that silently falls back. `LP_DRILL_REQUIRE_PROVIDER=0` skips it for the first build that has the provider.
+- Tests: `tests/workspace-provider.test.ts` (provider create/remove, gate, wait, spawn on a subfolder repo, a section repo, a project root, a nested OVH-like path, no-git, resume, every fallback, self-disable).
+
 ## 0.1.177
 
 From the review of 2026-10-07 (bugs 1 and 7, D3/D4). Needs the core drain-fixes build (`bb.vk.instanceId`) for bug 1 in full; on an older core the oldest bound instance is drained, which is the one being replaced.

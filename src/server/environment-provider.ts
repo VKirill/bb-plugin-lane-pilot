@@ -1,16 +1,15 @@
 import { z } from "zod";
 import type { ServerCore } from "./core";
-import { STICKY_WINDOW_MS } from "./writer/sticky";
 
 /** The environment provider Lane Pilot registers for writer attempts (H9); BB's provider ids are global. */
 export const LANE_WORKTREE_PROVIDER_ID = "lane-pilot-worktree";
 
 /**
- * BB retires an environment once its last thread leaves; the sweeps of Lane Pilot normally delete it long before.
- * This is only the net under them, and it is longer than an area's sticky window so a worktree kept for the area's
- * next task is never retired from under it.
+ * BB retires an environment this long after its last thread is archived. A worktree is about 2 GB (110 of them filled
+ * the OVH disk on 2026-10-03), so this stays short, as for BB's own managed worktree. A worktree an area keeps for its
+ * next task is not at risk: Lane Pilot leaves that writer's thread unarchived for the sticky window.
  */
-export const LANE_WORKTREE_RETIRE_GRACE_MS = STICKY_WINDOW_MS + 60 * 60_000;
+export const LANE_WORKTREE_RETIRE_GRACE_MS = 5 * 60_000;
 
 /**
  * `basePath` is the run folder the worktree forks (a project root, a section with its own repository, or a subfolder of
