@@ -1,4 +1,4 @@
-import { memoryUsefulness } from "@lane-pilot/memory-core";
+import { REVIEWER_CONCEPTS, memoryUsefulness } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "./contracts";
 
 /**
@@ -35,7 +35,40 @@ export function pathAnchors(task:Pick<TaskV2, "owns_paths" | "read_first">):stri
  */
 export function writerMemory(notes:readonly MemoryNote[], task:Pick<TaskV2, "owns_paths" | "read_first">):string {
   // One line per note: a note with line breaks could forge the next heading of the brief.
-  return writerMemoryPicks(notes, task).map((note) => `- ${note.content.replace(/\s+/g, " ").trim()}`).join("\n");
+  return writerMemoryPicks(notes, task).map(memoryLine).join("\n");
+}
+
+/** One bullet per note, on one line, without the wrapper tags of the block it goes into: a note cannot close the block or forge a heading. */
+export function memoryLine(note:Pick<MemoryNote, "content">):string {
+  return `- ${note.content.replace(/<\/?project_memory>/gi, "").replace(/\s+/g, " ").trim()}`;
+}
+
+const REVIEW_LIMIT = 5;
+
+/**
+ * The notes a reviewer or critic gets, at most five: review-tagged notes about the task's paths, then ones the task's
+ * words found, then other notes about its paths, the project's core conventions (a reviewer judges against them), and
+ * last the remaining review-tagged notes. `found` is the search for the task's text, `always` the review-tagged notes and
+ * core conventions whatever the text; rules never go in.
+ */
+export function reviewerMemoryPicks<T extends MemoryNote>(found:readonly T[], always:readonly T[], task:Pick<TaskV2, "owns_paths" | "read_first">, limit = REVIEW_LIMIT):T[] {
+  const anchors = pathAnchors(task);
+  const keyOf = (note:T) => note.id ?? note.content;
+  const foundKeys = new Set(found.map(keyOf));
+  const merged = new Map<string, T>();
+  for (const note of [...found, ...always]) if (!merged.has(keyOf(note))) merged.set(keyOf(note), note);
+  const usable = [...merged.values()].filter((note) => !note.concepts.includes("lesson") && !note.concepts.includes("rule"));
+  const isTagged = (note:T) => note.concepts.some((concept) => (REVIEWER_CONCEPTS as readonly string[]).includes(concept));
+  const about = (note:T) => anchors.some((anchor) => note.content.includes(anchor));
+  const byUse = (a:T, b:T) => memoryUsefulness(b) - memoryUsefulness(a);
+  const tiers:T[][] = [
+    usable.filter((note) => isTagged(note) && about(note)),
+    usable.filter((note) => isTagged(note) && !about(note) && foundKeys.has(keyOf(note))),
+    usable.filter((note) => !isTagged(note) && about(note)),
+    usable.filter((note) => !isTagged(note) && !about(note) && note.kind === "core"),
+    usable.filter((note) => isTagged(note) && !about(note) && !foundKeys.has(keyOf(note))),
+  ].map((tier) => tier.sort(byUse));
+  return tiers.flat().slice(0, limit);
 }
 
 /** The notes `writerMemory` writes out; within each group the one that served accepted attempts goes first. */

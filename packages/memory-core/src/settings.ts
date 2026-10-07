@@ -24,6 +24,10 @@ export type MemoryRecord=MemoryCore & {id:string;projectId:string;personalBot:st
   useCount?:number;acceptedCount?:number;lastUsedAt?:number|null};
 
 export const MAX_BUDGET=1_000_000;
+/** The settings keys `parseMemorySettings` reads. */
+export const MEMORY_SETTING_KEYS=["memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine","memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget"] as const;
+/** Tags that mark a note as something a reviewer or critic should check: a pitfall, an invariant, a security or regression concern. */
+export const REVIEWER_CONCEPTS=["review","reviewer","pitfall","gotcha","invariant","regression","security"] as const;
 
 function bool(value:unknown,fallback:boolean,name:string):boolean {
   if(value==null)return fallback;

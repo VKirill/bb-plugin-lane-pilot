@@ -19,6 +19,7 @@ import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "..
 import { MAIN_ATTEMPT_LIMIT } from "../state-machine";
 import { configuredSetting } from "./context";
 import { fullAccessSpawn } from "./pm-spawn";
+import { reviewerMemoryFor } from "./memory-mix";
 import { clearSpawnMarker } from "./thread-keys";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { recordStage } from "./stage-records";
@@ -477,7 +478,7 @@ export async function runCodeCritique(input:{
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
       ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-      prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes }),
+      prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task) }),
       environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
         ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
       pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,

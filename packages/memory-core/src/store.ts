@@ -172,3 +172,16 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
   }
   return rows.map(toRecord);
 }
+
+/**
+ * Visible records of a kind and/or carrying any of the given tags, newest first: what a role wants regardless of the
+ * words of the task at hand (a reviewer's checks, the project's core conventions).
+ */
+export function listMemory(db: MemoryDatabase, projectId: string, filter: { kind?: MemoryKind; concepts?: readonly string[] }, limit: number, audience: MemoryAudience = "subagent", personalBot = "", options: SearchOptions = {}): MemoryRecord[] {
+  if (limit <= 0) return [];
+  const concepts = filter.concepts ?? [];
+  const where = [filter.kind ? "m.kind=?" : "", concepts.length ? `(${concepts.map(() => "m.concepts_json LIKE ?").join(" OR ")})` : ""].filter(Boolean);
+  const args = [...(filter.kind ? [filter.kind] : []), ...concepts.map((concept) => `%"${concept}"%`)];
+  return (db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? ${where.map((part) => `AND ${part}`).join(" ")} AND ${visibility("m", options)}
+    ORDER BY m.created_at DESC LIMIT ?`).all(projectId, audience, personalBot, ...args, limit) as Row[]).map(toRecord);
+}
