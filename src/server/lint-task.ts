@@ -20,7 +20,8 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
     if (probes.length) {
       try {
         const snapshot = await host.call("snapshotDryRun", { requestedHostId:hostId, paths:probes }, { hostId, timeoutMs:15_000 });
-        kinds = new Map(snapshot.entries.map((entry) => [entry.path, entry.kind]));
+        // A symlink to a file counts as that file (AGENTS.md → CLAUDE.md); one to a folder as a folder; a dangling one stays a symlink.
+        kinds = new Map(snapshot.entries.map((entry) => [entry.path, entry.kind === "symlink" && entry.targetKind && entry.targetKind !== "missing" ? entry.targetKind : entry.kind]));
       } catch {
         // Listing is best-effort; a spawn still fail-closes on a read_first it cannot read.
       }

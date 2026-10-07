@@ -56,4 +56,15 @@ describe("sandbox-unsafe verification checking", () => {
     const missing = findSandboxUnsafeMissingExcludes(command, unsafePatterns);
     expect(missing).toEqual([]);
   });
+
+  it("treats a folder filter with a trailing slash as focused", () => {
+    expect(findSandboxUnsafeMissingExcludes("npx vitest run tests/server/", unsafePatterns)).toEqual([]);
+    expect(findSandboxUnsafeMissingExcludes("vitest run tests/server/ --exclude tests/x/", unsafePatterns)).toEqual([]);
+  });
+
+  it("does not read the value of a flag as a filter", () => {
+    expect(findSandboxUnsafeMissingExcludes("npx vitest run --pool forks", unsafePatterns)).toEqual(unsafePatterns);
+    expect(findSandboxUnsafeMissingExcludes("npx vitest run --retry 2 --maxWorkers 4", unsafePatterns)).toEqual(unsafePatterns);
+    expect(findSandboxUnsafeMissingExcludes("npx vitest run --pool forks tests/a.test.ts", unsafePatterns)).toEqual([]);
+  });
 });

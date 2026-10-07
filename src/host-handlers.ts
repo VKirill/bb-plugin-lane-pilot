@@ -7,7 +7,7 @@ import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts a
 import { createHash, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { chmod, lstat, mkdir, open, statfs, readFile, readlink, readdir, realpath, rename, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, stat, statfs, readFile, readlink, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
@@ -599,7 +599,10 @@ export const snapshotDryRun: ExperimentalHostRpcHandlers<typeof hostContract>["s
   entries: await Promise.all(input.paths.map(async (path) => {
     try {
       const info = await lstat(path);
-      if (info.isSymbolicLink()) return { path, kind:"symlink" as const, sha256:null, symlinkTarget:await readlink(path) };
+      if (info.isSymbolicLink()) {
+        const target = await stat(path).then((followed) => followed.isFile() ? "file" as const : followed.isDirectory() ? "directory" as const : "other" as const, () => "missing" as const);
+        return { path, kind:"symlink" as const, sha256:null, symlinkTarget:await readlink(path), targetKind:target };
+      }
       if (info.isFile()) return { path, kind:"file" as const, sha256:await hashFile(path), symlinkTarget:null };
       if (info.isDirectory()) return { path, kind:"directory" as const, sha256:null, symlinkTarget:null };
       return { path, kind:"other" as const, sha256:null, symlinkTarget:null };
