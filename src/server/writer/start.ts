@@ -23,6 +23,7 @@ import { closeWriterStages, recordStage } from "../stage-records";
 import { id, stringAt } from "../values";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { resolve } from "node:path";
+import { findThreadsByMetadata } from "../thread-keys";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
@@ -398,6 +399,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               projectId:input.projectId, originPluginId:"lane-pilot", includeHidden:true, archived:false, limit, offset,
             })).map((thread) => ({ id:thread.id })),
             metadata: async (threadId) => bb.sdk.threads.getPluginMetadata({ threadId }),
+            find: (match) => findThreadsByMetadata(bb, match, input.projectId),
           }, { lanePilotRunId:attempt.run_id, lanePilotTaskId:attempt.task_id, attemptId:attempt.id });
           if (scanned.kind === "blocked" || scanned.kind === "error") {
             if (scanned.kind === "blocked") transitionAttempt(db, attempt.id, "blocked", { reason:`reconcile_${scanned.reason}` });
