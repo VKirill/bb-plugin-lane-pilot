@@ -132,6 +132,8 @@ const noteNode = z.object({
 export const nodeSchema = z.discriminatedUnion("type", [agentNode, lpTaskNode, actionNode, decisionNode, humanNode, parallelNode, joinNode, subworkflowNode, noteNode]);
 export type WorkflowNode = z.infer<typeof nodeSchema>;
 export type NodeType = WorkflowNode["type"];
+/** A node that runs: everything but a note. */
+export type GraphNode = Exclude<WorkflowNode, { type: "note" }>;
 
 export const edgeSchema = z.object({
   from: z.string().min(1).max(48),

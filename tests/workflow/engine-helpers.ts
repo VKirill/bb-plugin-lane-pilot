@@ -1,0 +1,33 @@
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import type { LanePilotDatabase } from "../../src/database";
+import { CrashError, WorkflowEngine } from "../../src/workflow/engine";
+import type { EngineOptions, NodeExecutor, StepContext } from "../../src/workflow/engine";
+import { workflowMigrations } from "../../src/workflow/journal";
+import type { Workflow } from "../../src/workflow/schema";
+import { parseWorkflow } from "../../src/workflow/validate";
+import { workflow } from "./fixtures";
+
+/** A database with only the journal tables: the engine needs nothing else. */
+export function journalDb(): LanePilotDatabase {
+  const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const db = bb.storage.database();
+  bb.storage.migrate(db, workflowMigrations);
+  return db;
+}
+
+export const wf = (extra: Parameters<typeof workflow>[0] = {}): Workflow => parseWorkflow(workflow(extra));
+
+export const ok = (fn: (ctx: StepContext) => Record<string, unknown> | Promise<Record<string, unknown>>, extra: Partial<NodeExecutor> = {}): NodeExecutor =>
+  ({ reentrant: true, run: async (ctx) => ({ output: await fn(ctx) }), ...extra });
+
+export function engineOn(db: LanePilotDatabase, executors: Record<string, NodeExecutor> = {}, options: Partial<EngineOptions> = {}): WorkflowEngine {
+  const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0", ...options });
+  for (const [key, executor] of Object.entries(executors)) engine.register(key, executor);
+  return engine;
+}
+
+export const rows = <T = Record<string, unknown>>(db: LanePilotDatabase, sql: string, ...args: unknown[]) => db.prepare(sql).all(...args) as T[];
+export const stepStates = (db: LanePilotDatabase, runId: string) =>
+  Object.fromEntries(rows<{ step_key: string; state: string }>(db, "SELECT step_key, state FROM lane_pilot_wf_step WHERE run_id=? ORDER BY rowid", runId).map((row) => [row.step_key, row.state]));
+
+export { CrashError };

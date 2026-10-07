@@ -13,6 +13,7 @@ import { GLOBAL_SETTINGS_PROJECT_ID } from "./lp-defaults";
 import packageJson from "../package.json";
 import { IllegalTransitionError, isLegalMove } from "./state-machine";
 import { recordMemoryAccepted } from "@lane-pilot/memory-core";
+import { workflowMigrations } from "./workflow/journal";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -282,6 +283,8 @@ export const migrations = [
   `ALTER TABLE lane_pilot_memory ADD COLUMN origin TEXT NOT NULL DEFAULT 'maintainer'`,
   `ALTER TABLE lane_pilot_memory ADD COLUMN source_file_id TEXT`,
   `CREATE INDEX lane_pilot_memory_scope_status ON lane_pilot_memory(project_id,personal_bot,audience,status)`,
+  // W2: the workflow engine's journal (run, step, join arrival, effect, append-only events).
+  ...workflowMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
