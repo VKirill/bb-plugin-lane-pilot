@@ -18,8 +18,20 @@ const JUDGMENT = /needs_human/i;
 const MERGE = /(^|: )merge_conflict/i;
 // Before 0.1.117 a merge that git refused for another reason (a stale index.lock) was called a conflict with no files.
 const MISLABELED_MERGE = /merge_conflict: main changed since this attempt started:\s*$/i;
+/** The attempt replayed on a moved main failed the task's own checks there; part of the merge-conflict reason, so the redo is free. */
+export const REPLAY_CHECK_FAILED = "checks red after the replay on main";
 // Linux git 2.43 names no lock in «Unable to write index» (OVH 2026-10-06); the wording is added beside index.lock.
-const INFRA = /ENOSPC|no space left|EACCES|EPERM|permission denied|PermissionError|disk_low|index\.lock|unable to write (new )?index|host is not connected|host offline|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED/i;
+const INFRA = /ENOSPC|no space left|PermissionError|disk_low|index\.lock|unable to write (new )?index|host is not connected|host offline|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED/i;
+// A permission error is the machine's only when it is not a check's own output: a red test that logs «EACCES» is the task's
+// (0.1.177). A reason built from a check names the environment itself (ENVIRONMENT_REASON); any other reason keeps the wording.
+const PERMISSION = /\b(?:EACCES|EPERM)\b|permission denied/i;
+/** The marker validate-output puts after «verification failed (cmd): » when the check died of the environment, not of the code. */
+export const ENVIRONMENT_REASON = "environment: ";
+const CHECK_REASON = /verification failed \([^)]*\): /;
+const isEnvironmentReason = (text:string):boolean => {
+  const check = CHECK_REASON.exec(text);
+  return check ? text.slice(check.index + check[0].length).startsWith(ENVIRONMENT_REASON) : PERMISSION.test(text);
+};
 // Same list the self-repair watcher treats as Lane Pilot's own fault, plus the thread lookups that broke on 2026-10-04.
 const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing|reconcile_|attempt_worktree_|attempt_workspace_|writer reconcile|its retry was lost|reconcile completed on a short page|sticky_send_failed|sticky_failed/i;
 // A folder without git is a mode of its own (live-folder.ts): its limits are the folder's, so the owner's to settle — never a
@@ -44,7 +56,7 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   if (NO_GIT.test(text)) return "contract";
   if (MISLABELED_MERGE.test(text)) return "harness";
   if (MERGE.test(text)) return "merge";
-  if (INFRA.test(text)) return "infra";
+  if (INFRA.test(text) || isEnvironmentReason(text)) return "infra";
   if (HARNESS.test(text)) return "harness";
   if (CONTRACT.test(text)) return "contract";
   if (PROVIDER_STATES.has(state) || /^(writer_provider_unavailable|writer_model_unavailable|writer_service_tier_unavailable)/.test(text)) return "provider";
@@ -82,10 +94,21 @@ export function taskFamily(taskId:string):string {
 }
 
 // The machine, not the merged code: root-owned files left by a deploy (OVH `rmSync …/.output`), a stale output folder.
-const ENVIRONMENT_CHECK_ERROR = /\b(?:EACCES|EPERM|EEXIST)\b|permission denied/i;
+// An error line that names a path or a system call (`EACCES: permission denied, rmSync '/x/.output'`, `npm error code EACCES`),
+// or the shell refusing the command itself (`sh: 1: vitest: Permission denied`).
+const ENVIRONMENT_LINE = new RegExp([
+  /\b(?:EACCES|EPERM|EEXIST)\b[^\n]*(?:['"`]\/|['"`][A-Za-z]:\\|\bsyscall\b|\b(?:rm|rmSync|rmdir|rmdirSync|unlink|unlinkSync|mkdir|mkdirSync|mkdtemp|open|openSync|opendir|scandir|copyfile|cp|rename|symlink|link|chmod|chown|access|lstat|utime)\b)/.source,
+  /^[^\n]*: (?:\S+: )?permission denied\s*$/.source,
+  /\bnpm (?:error|ERR!) (?:code )?(?:EACCES|EPERM)\b/.source,
+].join("|"), "im");
+// A test runner reporting failing tests (vitest/jest «1 failed», node --test «fail 1», TAP «not ok», assertions, compiler errors): the
+// code is red whatever else the output says, and a test that logs an EACCES string is not an environment fault.
+const TEST_REPORT_RED = /\b[1-9]\d* (?:failed|failing)\b|^\W*(?:#|ℹ)?\s*fail [1-9]|^\s*not ok \d+|^\s*(?:FAIL|✗|×|✖)\s|\bAssertionError\b|\berror TS\d+\b/im;
 /** A failing check whose output shows the environment broke it: no writer can fix that in owns_paths. */
-export const isEnvironmentCheckFailure = (check:{ stdout?:string; stderr?:string }):boolean =>
-  ENVIRONMENT_CHECK_ERROR.test(`${check.stderr ?? ""}\n${check.stdout ?? ""}`);
+export const isEnvironmentCheckFailure = (check:{ stdout?:string; stderr?:string }):boolean => {
+  const output = `${check.stderr ?? ""}\n${check.stdout ?? ""}`;
+  return ENVIRONMENT_LINE.test(output) && !TEST_REPORT_RED.test(output);
+};
 
 /** Failures that do not spend one of the task's attempts. */
 export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "harness", "infra", "budget", "limit"]);

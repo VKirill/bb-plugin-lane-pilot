@@ -1,5 +1,4 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import { spawnSync } from "node:child_process";
 import { z } from "zod";
 import { findOpenNativeRun, getRun, getRunSettingsScopes, loadProjectSettings } from "../database";
 import { writerExecutionSelection } from "../jev-reasoning";
@@ -10,6 +9,7 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { stringAt } from "./values";
 import { outputText } from "./writer-task";
 import { fenceOutside, registerObservedTool } from "./tool-result";
+import { detectRepoEdits, gitRepoStatus } from "./repo-edits";
 import type { ServerCore } from "./core";
 
 const ERRAND_MODEL = "claude-opus-5-5";
@@ -62,29 +62,6 @@ export function errandVerdict(output: string): { state: "done" | "blocked"; reas
   return { state: "blocked", reason: verdict.replace(/^blocked\s*:?\s*/i, "").trim() || "blocked without a reason" };
 }
 
-function gitRepoStatus(cwd: string): Set<string> {
-  const res = spawnSync("git", ["status", "--porcelain", "-uall"], { cwd, encoding: "utf8", windowsHide: true });
-  if (res.status !== 0 || !res.stdout) return new Set();
-  const files = new Set<string>();
-  for (const line of res.stdout.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const name = trimmed.slice(2).trim();
-    if (name) files.add(name.split(" -> ").pop()!.trim());
-  }
-  return files;
-}
-
-function detectRepoEdits(before: Set<string>, after: Set<string>, allowed: (file: string) => boolean): string[] {
-  const changed: string[] = [];
-  for (const file of after) {
-    if (!before.has(file) && !allowed(file)) {
-      changed.push(file);
-    }
-  }
-  return changed.sort();
-}
-
 export function mountErrands(ctx: ServerCore): void {
   const { bb, db, host } = ctx;
 
@@ -135,7 +112,7 @@ export function mountErrands(ctx: ServerCore): void {
     },
   });
 
-  const errandSnapshots = new Map<string, { cwd: string; before: Set<string> }>();
+  const errandSnapshots = new Map<string, { hostId: string; cwd: string; before: Set<string> }>();
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_errand",
@@ -154,7 +131,8 @@ export function mountErrands(ctx: ServerCore): void {
       if (!environmentId) throw new Error("errand_needs_pm_environment");
       const envObj = await bb.sdk.environments.get({ environmentId }).catch(() => null);
       const checkoutPath = stringAt(envObj, "path") ?? "";
-      const beforeStatus = checkoutPath ? gitRepoStatus(checkoutPath) : new Set<string>();
+      const checkoutHostId = stringAt(envObj, "hostId") ?? "";
+      const beforeStatus = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
       const setup = browserSetup(context.projectId, runId);
       const helperPolicy = requireHelperSpawn({ bb, db, projectId: context.projectId, runId });
       const placement = await helperChildPlacement({ bb, db, projectId: context.projectId, runId, role: "errand", taskTitle: params.title ?? params.task.slice(0, 60) });
@@ -168,7 +146,7 @@ export function mountErrands(ctx: ServerCore): void {
       } as Parameters<typeof fullAccessSpawn>[1]);
       const threadId = stringAt(spawned, "id");
       if (!threadId) throw new Error("errand_thread_id_missing");
-      if (checkoutPath) errandSnapshots.set(threadId, { cwd: checkoutPath, before: beforeStatus });
+      if (beforeStatus) errandSnapshots.set(threadId, { hostId: checkoutHostId, cwd: checkoutPath, before: beforeStatus });
       return JSON.stringify({ threadId, state: "running", browserMachine: setup.hostId, link: `@thread:${threadId}` }, null, 2);
     },
   });
@@ -187,8 +165,8 @@ export function mountErrands(ctx: ServerCore): void {
           const snapshot = errandSnapshots.get(params.threadId);
           if (snapshot) {
             errandSnapshots.delete(params.threadId);
-            const afterStatus = gitRepoStatus(snapshot.cwd);
-            const edited = detectRepoEdits(snapshot.before, afterStatus, (f) => f.startsWith(".bb/chats/"));
+            const afterStatus = await gitRepoStatus(host, snapshot.hostId, snapshot.cwd);
+            const edited = afterStatus ? detectRepoEdits(snapshot.before, afterStatus, (f) => f.startsWith(".bb/chats/")) : [];
             if (edited.length > 0) {
               return JSON.stringify({ threadId: params.threadId, state: "blocked", reason: "repo_edited", files: edited, output: fenceOutside("errand", `Helper edited repository files: ${edited.join(", ")}`) }, null, 2);
             }

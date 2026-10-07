@@ -1,4 +1,5 @@
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "./owns-paths";
+import { ENVIRONMENT_REASON, isEnvironmentCheckFailure } from "./failure-class";
 import { cleanCheckOutput } from "./output-excerpt";
 import type { TaskV2 } from "./contracts";
 
@@ -117,7 +118,7 @@ export function classifyWriterOutput(input: {
       return {
         ok:false,
         state:"validation_failed",
-        reason:`verification failed (${verify.command}): ${cleaned || `exit ${verify.exitCode}`}`,
+        reason:`verification failed (${verify.command}): ${isEnvironmentCheckFailure(verify) ? ENVIRONMENT_REASON : ""}${cleaned || `exit ${verify.exitCode}`}`,
       };
     }
   }

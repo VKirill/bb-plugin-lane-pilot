@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { spawnAsync } from "../spawn-async";
 import { isBookkeepingPath } from "../bookkeeping-paths";
+import { matchOwnsPath } from "../owns-paths";
+import { REPLAY_CHECK_FAILED } from "../failure-class";
 
 export type GitIntegration = {
   status:"merged"|"up-to-date"|"conflict"|"failed"|"busy";
@@ -17,7 +19,13 @@ export type GitIntegration = {
   rebased?:boolean;
   /** Workspace packages rebuilt in the base checkout after the merge, with how each build ended. */
   rebuilt?:Array<{dir:string;ok:boolean;detail:string|null}>;
+  /** With «conflict» and no files: the task's checks that went red on the attempt replayed on the moved main. */
+  checks?:ReplayCheck[];
 };
+
+export type ReplayCheck = {command:string;exitCode:number;stdout:string;stderr:string};
+/** What the checks run on the replayed attempt said: green, or the checks that are red. A check that could not run is no red. */
+export type ReplayCheckOutcome = {ok:true} | {ok:false;failed:ReplayCheck[]};
 
 /** The base checkout is held by a live integration; the caller waits and tries again instead of failing. */
 export class BaseLockBusyError extends Error {
@@ -206,9 +214,14 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   /** Merge only what is committed: the docs worktree holds other units' unchecked pages beside the commit. */
   committedOnly?:boolean;
   /** The project's own bookkeeping patterns (bookkeeping.paths), settled to main's version in the merge. */
-  bookkeeping?:string[]}):Promise<GitIntegration> {
+  bookkeeping?:string[];
+  /** The task's owns_paths: a bookkeeping file the task owns is its work, so the merge keeps the attempt's version of it. */
+  ownsPaths?:string[];
+  /** Run once the attempt was replayed on a moved main, before the merge (a semantic clash shows only there). */
+  replayCheck?:()=>Promise<ReplayCheckOutcome>}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
   await recoverStaleGitLock(input.worktreePath);
+  if(!input.committedOnly&&input.ownsPaths?.length) await stageOwnedBookkeeping(input.worktreePath,input.ownsPaths,input.bookkeeping??[]);
   const dirty=input.committedOnly?{ok:true as const,stdout:"",reason:""}:await git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
   if(!dirty.ok) return fail(`worktree status: ${dirty.reason}`);
   if(dirty.stdout.trim()) {
@@ -232,7 +245,15 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
       // Main moved while the writer worked: replay the attempt on the current main first. Clean, it merges without
       // another writer turn; a real conflict is left as it was and the merge below reports it for the free redo.
       const rebased=branch.startsWith("lane/")&&before?await rebaseOntoBase(input.worktreePath,before):null;
-      const merged=await merge(input.basePath,rebased??sha,input.message,input.bookkeeping);
+      // main moved and the attempt was replayed on it: the replayed result has not been run anywhere yet, and two tasks
+      // that merge cleanly can still break each other. Red, nothing merges: the writer gets the output as a free redo.
+      if(rebased&&input.replayCheck) {
+        const replay=await input.replayCheck();
+        if(!replay.ok) {
+          return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${replay.failed.map((check)=>check.command).join(", ")})`,checks:replay.failed};
+        }
+      }
+      const merged=await merge(input.basePath,rebased??sha,input.message,input.bookkeeping,input.ownsPaths);
       if(rebased&&merged.status==="merged") merged.rebased=true;
       if(merged.status==="merged"&&before) merged.rebuilt=await rebuildChangedPackages(input.basePath,before);
       return merged;
@@ -317,12 +338,32 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
   return {status:"ready",path,branch,reason:null};
 }
 
+/** Files only machines write (receipts, episodes, locks): never the work of a task, whatever owns_paths names. */
+const MACHINE_WRITTEN = [".agents/runs/", ".bb/chats/", "notes/lock/", ".agents/memory/episodes/"];
+/** A bookkeeping path a task's owns_paths names; a catch-all pattern owns no particular file. */
+function ownedBookkeeping(rel:string, owns:readonly string[]):boolean {
+  const clean = rel.replace(/^\.\//, "");
+  if (MACHINE_WRITTEN.some((prefix) => clean.startsWith(prefix))) return false;
+  return owns.some((pattern) => pattern.trim() !== "**" && matchOwnsPath(clean, pattern));
+}
+
+/**
+ * Bookkeeping folders sit in the repository's info/exclude (activation), so `git add -A` leaves out a file the task
+ * owns there (`.agents/reports/audit.md`) and the work is lost with the worktree. Such files are added by force.
+ */
+async function stageOwnedBookkeeping(worktreePath:string, owns:readonly string[], extra:readonly string[]):Promise<void> {
+  const ignored=await git(worktreePath,["ls-files","--others","--ignored","--exclude-standard","-z"]);
+  if(!ignored.ok) return;
+  const files=ignored.stdout.split("\0").filter((file)=>file&&isBookkeepingPath(file,extra)&&ownedBookkeeping(file,owns));
+  if(files.length) await git(worktreePath,["add","-f","--",...files]);
+}
+
 /**
  * The commit to merge in place of the writer's: its tree with every bookkeeping file (src/bookkeeping-paths.ts) set to
  * what main has. A hook or sibling agent edits those files in the base checkout meanwhile, and a merge that touched
  * them stopped on «local changes would be overwritten» or on a conflict nobody could redo away.
  */
-async function resolveBookkeepingToMain(basePath:string, sha:string, extra:readonly string[]):Promise<string> {
+async function resolveBookkeepingToMain(basePath:string, sha:string, extra:readonly string[], owns:readonly string[]=[]):Promise<string> {
   const raw = await git(basePath, ["diff", "--raw", "--no-abbrev", "-z", "--no-renames", "HEAD", sha]);
   if (!raw.ok) return sha;
   const prefix = (await git(basePath, ["rev-parse", "--show-prefix"])).stdout.trim();
@@ -332,6 +373,8 @@ async function resolveBookkeepingToMain(basePath:string, sha:string, extra:reado
     const meta = /^:(\d+) \d+ ([0-9a-f]+) [0-9a-f]+ \w+$/.exec(parts[i] ?? "");
     const path = parts[i + 1]!;
     if (!meta || !path.startsWith(prefix) || !isBookkeepingPath(path.slice(prefix.length), extra)) continue;
+    // A bookkeeping file the task owns (expected output `.agents/reports/audit.md`) is the task's work, not a hook's noise.
+    if (ownedBookkeeping(path.slice(prefix.length), owns)) continue;
     // main's version (old side of the diff); a file main lacks is removed from the merged tree.
     entries.push(/^0+$/.test(meta[2]!) ? `0 ${meta[2]}\t${path}` : `${meta[1]} ${meta[2]}\t${path}`);
   }
@@ -355,8 +398,8 @@ async function resolveBookkeepingToMain(basePath:string, sha:string, extra:reado
   }
 }
 
-async function merge(basePath:string,sha:string,message:string,bookkeeping:readonly string[]=[]):Promise<GitIntegration> {
-  const targetSha = await resolveBookkeepingToMain(basePath, sha, bookkeeping);
+async function merge(basePath:string,sha:string,message:string,bookkeeping:readonly string[]=[],ownsPaths:readonly string[]=[]):Promise<GitIntegration> {
+  const targetSha = await resolveBookkeepingToMain(basePath, sha, bookkeeping, ownsPaths);
   if((await git(basePath,["merge-base","--is-ancestor",targetSha,"HEAD"])).ok) {
     return {status:"up-to-date",commit:(await git(basePath,["rev-parse","HEAD"])).stdout.trim()||null,conflicts:[],reason:null};
   }

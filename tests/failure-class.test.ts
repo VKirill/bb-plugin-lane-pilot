@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { FREE_CLASSES, PARKED_CLASSES, failureClass, nextStep, repeatedFailureReason, taskFamily } from "../src/failure-class";
+import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, taskFamily } from "../src/failure-class";
+import { classifyWriterOutput } from "../src/validate-output";
+import type { TaskV2 } from "../src/contracts";
 import { providerLimitNotice } from "../src/server/writer-task";
 
 describe("failure classes", () => {
@@ -23,6 +25,47 @@ describe("failure classes", () => {
     // Linux git 2.43 names no lock file: «error: Unable to write index.» (OVH 2026-10-06).
     expect(failureClass("validation_failed", "git merge failed: error: Unable to write index.")).toBe("infra");
     expect(failureClass("validation_failed", "git merge failed: error: Unable to write index. (index.lock present)")).toBe("infra");
+  });
+});
+
+describe("a permission error is the machine's only when the code is not red", () => {
+  const EACCES = "[nitro] ERROR Error: EACCES: permission denied, rmSync '/work/base/apps/web/.output/public/_nuxt'";
+  const vitestRed = "stderr | tests/fs.test.ts > reads a locked file\nError: EACCES: permission denied, open '/root/secret'\n\n FAIL  tests/fs.test.ts > reads a locked file\nAssertionError: expected 1 to be 2\n\n Test Files  1 failed (1)\n      Tests  1 failed | 3 passed (4)";
+  const task = { expected_outputs:["src/a.ts"], owns_paths:["src/"], never_touch:[], verify:"none", verification:[] } as unknown as TaskV2;
+  const reasonOf = (check:{ stdout:string; stderr:string }) => {
+    const result = classifyWriterOutput({ task, produced:["src/a.ts"], contents:{ "src/a.ts":"x" }, verifies:[{ command:"npm run build", exitCode:1, ...check }] });
+    if (result.ok) throw new Error("expected a failed check");
+    return result.reason;
+  };
+
+  it("keeps a red test that logs EACCES a task failure, with its two attempts", () => {
+    expect(isEnvironmentCheckFailure({ stdout:vitestRed })).toBe(false);
+    expect(isEnvironmentCheckFailure({ stderr:"Error: EPERM: operation not permitted, unlink '/x'", stdout:"FAIL src/b.test.ts\n Tests  2 failed (5)" })).toBe(false);
+    expect(isEnvironmentCheckFailure({ stdout:"# pass 3\n# fail 1\nnot ok 4 - reads a locked file\n  error: 'EACCES: permission denied, open \\'/x\\''" })).toBe(false);
+    const reason = reasonOf({ stdout:vitestRed, stderr:"Error: EACCES: permission denied, open '/root/secret'" });
+    expect(reason).toMatch(/^verification failed \(npm run build\): Error: EACCES/);
+    expect(failureClass("validation_failed", reason)).toBe("task");
+    expect(failureClass("validation_failed", `turn limit 5 reached: ${reason}`)).toBe("task");
+  });
+
+  it("keeps a bare mention of a permission string out of the environment class", () => {
+    expect(isEnvironmentCheckFailure({ stderr:"expected the handler to survive EACCES" })).toBe(false);
+    expect(failureClass("validation_failed", "verification failed (npm test): expected the handler to survive EACCES")).toBe("task");
+  });
+
+  it("still reads a check that died of the machine as infra, before any test ran", () => {
+    expect(isEnvironmentCheckFailure({ stderr:EACCES })).toBe(true);
+    expect(isEnvironmentCheckFailure({ stderr:"sh: 1: vitest: Permission denied" })).toBe(true);
+    expect(isEnvironmentCheckFailure({ stderr:"npm error code EACCES\nnpm error syscall mkdir" })).toBe(true);
+    const reason = reasonOf({ stdout:"", stderr:EACCES });
+    expect(reason).toContain("environment: ");
+    expect(failureClass("validation_failed", reason)).toBe("infra");
+    expect(failureClass("validation_failed", `turn limit 5 reached: ${reason}`)).toBe("infra");
+  });
+
+  it("keeps the infra class for the snapshot's PermissionError and for non-check reasons", () => {
+    expect(failureClass("validation_failed", "snapshot_failed: PermissionError: [Errno 13] Permission denied: '/x'")).toBe("infra");
+    expect(failureClass("validation_failed", "merge failed: error: cannot open .git/FETCH_HEAD: Permission denied")).toBe("infra");
   });
 });
 

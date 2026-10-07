@@ -94,7 +94,7 @@ export type TaskV2 = z.infer<typeof taskV2Schema>;
  * Host calls that run as background jobs: a separate process the host daemon's deadline cannot cut off (B4). A kind is
  * the name of the ordinary host method whose handler the job runs; its input is that method's own input.
  */
-export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "coexistenceInventory", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa"] as const;
+export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "coexistenceInventory", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa", "gateRun", "gateBisect"] as const;
 export type HostJobKind = (typeof HOST_JOB_KINDS)[number];
 const hostJobId = z.string().regex(/^job_[a-z0-9]{10,40}$/);
 const hostJobRef = z.object({ requestedHostId:z.string().min(1), jobId:hostJobId }).strict();
@@ -221,8 +221,14 @@ export const hostContract = defineRpcContract({
   },
   gitIntegrate: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), message:z.string().min(1).max(500), removeWorktree:z.boolean().optional(),
-      committedOnly:z.boolean().optional(), bookkeeping:z.array(z.string().max(300)).max(100).optional() }).strict(),
+      committedOnly:z.boolean().optional(), bookkeeping:z.array(z.string().max(300)).max(100).optional(),
+      // The task's owns_paths: a bookkeeping file it owns keeps the attempt's version in the merge (additive; an older host ignores it).
+      ownsPaths:z.array(z.string().max(300)).max(200).optional(),
+      // The task's checks, run in the attempt's worktree when it was replayed on a moved main, before the merge (additive).
+      replayChecks:z.object({ workspacePath:z.string().startsWith("/"), backend:z.enum(["auto","macos-seatbelt","linux-bubblewrap"]).optional(),
+        commands:z.array(z.object({ command:z.string().min(1).max(32_000), cwd:z.string().startsWith("/"), timeoutSec:z.number().int().min(1).max(7200).optional() }).strict()).min(1).max(20) }).strict().optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["merged","up-to-date","conflict","failed","busy"]), commit:z.string().nullable(), conflicts:z.array(z.string()), reason:z.string().nullable(), holder:z.string().nullable().optional(), rebased:z.boolean().optional(),
+      checks:z.array(z.object({ command:z.string(), exitCode:z.number().int(), stdout:z.string(), stderr:z.string() }).strict()).optional(),
       rebuilt:z.array(z.object({ dir:z.string(), ok:z.boolean(), detail:z.string().nullable() }).strict()).optional() }).strict(),
   },
   gitDocsScope: {
@@ -414,6 +420,16 @@ export const hostContract = defineRpcContract({
       stdout: z.string(),
       stderr: z.string(),
     }).strict(),
+  },
+  // The integration gate runs on the project's host (a project on another machine has no path on the hub): both are job kinds.
+  gateRun: {
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), command:z.string().min(1).max(32_000), timeoutSec:z.number().int().min(1).max(7200) }).strict(),
+    output: z.object({ hostId:z.string(), exitCode:z.number().int(), stdout:z.string(), stderr:z.string(), head:z.string().nullable() }).strict(),
+  },
+  gateBisect: {
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), command:z.string().min(1).max(32_000),
+      goodSha:z.string().regex(/^[a-f0-9]{7,64}$/), badSha:z.string().regex(/^[a-f0-9]{7,64}$/), timeoutSec:z.number().int().min(1).max(7200) }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["found", "none", "failed"]), commit:z.string().nullable(), reason:z.string().nullable() }).strict(),
   },
   runCommand: {
     input: z.object({

@@ -11,7 +11,7 @@ export const isHostJobKind = (method: string): method is HostJobKind => (HOST_JO
 /** The least a job may be waited for: its caller's own call timeout was sized for a call, not for the work behind it. */
 const MIN_WAIT_MS: Partial<Record<HostJobKind, number>> = {
   detect: 180_000, install: 600_000, rollback: 600_000, snapshot: 600_000, importConfig: 600_000, connectOpencode: 600_000,
-  coexistenceOperation: 600_000, coexistenceInventory: 180_000, gitIntegrate: 900_000, gitPrepareWorktree: 900_000,
+  coexistenceOperation: 600_000, coexistenceInventory: 180_000, gitIntegrate: 900_000, gitPrepareWorktree: 900_000, gateRun: 600_000, gateBisect: 600_000,
 };
 /** Slack on top of a caller's own limit (runSandboxedCommand, runBrowserQa): the job's start-up is not the check's time. */
 const START_SLACK_MS = 60_000;
@@ -35,9 +35,12 @@ export function createHostJobs(deps: {
   const status = async (hostId: string, jobId: string) => await deps.call("jobStatus", { requestedHostId: hostId, jobId }, { hostId, timeoutMs: 20_000 }) as JobStatusReply;
 
   return {
-    async run(kind: HostJobKind, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }, directCall: () => Promise<unknown>): Promise<unknown> {
+    async run(kind: HostJobKind, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }, directCall: () => Promise<unknown>, jobKey?: string): Promise<unknown> {
       const { hostId } = options;
-      const key = `host-job:${kind}:${hostId}:${createHash("sha256").update(JSON.stringify(input)).digest("hex").slice(0, 24)}`;
+      const key = `host-job:${kind}:${hostId}:${createHash("sha256").update(JSON.stringify(input)).digest("hex").slice(0, 24)}${jobKey ? `:${createHash("sha256").update(jobKey).digest("hex").slice(0, 16)}` : ""}`;
+      // A check's verdict is of one moment: a finished one is taken again only by the call that named it (same jobKey, e.g. after
+      // a reload), never by a later call whose input happens to be identical (a second merge's post-merge check).
+      const takeFinished = kind !== "runSandboxedCommand" || Boolean(jobKey);
       const minWait = MIN_WAIT_MS[kind] ?? 0;
       const waitMs = Math.max(options.timeoutMs ?? 0, minWait) + (minWait ? 0 : START_SLACK_MS);
       let entry = await deps.kv.get<JobEntry>(key);
@@ -45,7 +48,7 @@ export function createHostJobs(deps: {
       if (entry) {
         // A host that cannot answer keeps the entry: the caller's retry finds the job again instead of starting a second one.
         last = await status(entry.hostId, entry.jobId);
-        const reusable = last.state === "running" || ((last.state === "succeeded" || last.state === "failed") && now() - last.progress.updatedAt <= REUSE_FINISHED_MS);
+        const reusable = last.state === "running" || (takeFinished && (last.state === "succeeded" || last.state === "failed") && now() - last.progress.updatedAt <= REUSE_FINISHED_MS);
         if (!reusable) { await deps.kv.delete(key); entry = undefined; last = null; }
         else deps.log?.(`lane-pilot: host ${kind} picked up job ${entry.jobId} (${last.state})`);
       }
