@@ -843,6 +843,8 @@ export const fieldEn = {
   reason_s417: "Used when the gate runs after every N merged tasks. Empty means 5",
   field_s418: "Tests the sandbox cannot run",
   reason_s418: "Test files and folders (comma- or line-separated) that must be excluded from a whole-suite check; a task contract that runs the whole suite without excluding them is sent back before any writer starts",
+  field_s419: "Skip a provider at usage",
+  reason_s419: "When a usage window of the writer's provider (read from BB's usage sources) is at or above this percentage, the task goes to the next model of the writer chain until the window resets. 0 turns it off. Empty means 90; without usage data nothing is skipped",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1690,4 +1692,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s417: "Работает, когда ворота идут после каждых N слитых задач. Пусто означает 5",
   field_s418: "Тесты, которые песочница не запускает",
   reason_s418: "Тестовые файлы и папки (через запятую или с новой строки), которые нужно исключать из проверки всего набора; контракт задачи, который запускает весь набор без этих исключений, возвращается до старта исполнителя",
+  field_s419: "Пропускать провайдера при расходе",
+  reason_s419: "Когда окно расхода провайдера писателя (из источников расхода BB) достигло этого процента, задачу берёт следующая модель цепочки писателей до сброса окна. 0 выключает. Пусто означает 90; без данных о расходе ничего не пропускается",
 };

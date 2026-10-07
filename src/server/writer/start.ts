@@ -2,12 +2,13 @@ import { retryBudgetReason, spendRetryBudget } from "../../retry-budget";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../database";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "../../owns-paths";
 import { reconcile } from "../../reconcile";
 import { emergencyFallbackDecision } from "../../stages/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
+import { usageHoldReason, usageSkipPercent } from "../provider-usage";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../failure-class";
 import { isTaskSatisfied } from "../blocked-by";
@@ -70,6 +71,20 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     } catch {
       // Usage is informational; a host that cannot list events does not fail the attempt.
     }
+  }
+
+  /**
+   * The chain entries whose provider usage window is not spent (provider-usage, I1); `room` says whether any is. When every
+   * entry is spent the whole chain stays: the reading may be stale, and a spent window still fails in the provider's own
+   * words, as before.
+   */
+  async function chainWithRoom<T extends { providerId:string; model:string }>(chain:T[], hostId:string, settings:Record<string, unknown>, taskId:string):Promise<{ chain:T[]; room:boolean }> {
+    const threshold = usageSkipPercent(settings);
+    if (!chain.length || threshold <= 0) return { chain, room:chain.length > 0 };
+    const holds = await Promise.all(chain.map((entry) => services.providerUsage.hold({ providerId:entry.providerId, model:entry.model, hostId, threshold })));
+    const usable = chain.filter((_, index) => !holds[index]);
+    if (usable.length) chain.forEach((entry, index) => { if (holds[index]) ctx.log(`writer ${taskId}: ${entry.providerId}/${entry.model} skipped, ${usageHoldReason(entry.providerId, entry.model, holds[index]!)}`); });
+    return usable.length ? { chain:usable, room:true } : { chain, room:false };
   }
 
   function startWriterTask(input:{
@@ -234,6 +249,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         await new Promise((wake) => setTimeout(wake, 10_000));
       }
     };
+    /** Gives up the threads of this task's failed attempts: provider-retry's queued retries in them are cancelled (I2). */
+    const releaseFailedThreads = async () => {
+      for (const row of listAttemptsForTask(db, input.runId, input.taskId)) {
+        if (row.thread_id && row.state !== "accepted") await services.providerRetry.abandon(row.thread_id);
+      }
+    };
     void (async () => {
       const policy=runPolicyFor(input.runId);
       const runSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
@@ -381,6 +402,18 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           }
         }
         if (!writerThreadId && !halfBound && last.status !== "accepted") {
+          // The writer's provider window is nearly spent (provider-usage): another model of the chain takes the task at once,
+          // instead of a failed attempt that opens the breaker. Nothing is skipped when no other pair has room.
+          const primaryPair = { providerId:typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : freshConfig.writerProviderId,
+            model:typeof runSettings["writer.model"] === "string" && runSettings["writer.model"] ? runSettings["writer.model"] as string : freshConfig.writerModel };
+          const spentWindow = await services.providerUsage.hold({ ...primaryPair, hostId:freshConfig.hostId, threshold:usageSkipPercent(runSettings) });
+          if (spentWindow && (await chainWithRoom(writerFallbackChain(primaryPair, writerFallbacks(runSettings), { providerId:freshConfig.pmProviderId, model:freshConfig.pmModel }), freshConfig.hostId, runSettings, input.taskId)).room) {
+            const reason = usageHoldReason(primaryPair.providerId, primaryPair.model, spentWindow);
+            transitionAttempt(db, attemptId, "blocked", { reason });
+            last = { status:"blocked", reason, attemptId };
+            primaryFailure = { status:"spawn_rejected", reason, attemptId };
+            break;
+          }
           // The task's overall budget of writers, kept across reloads and restarts (retry-budget.ts).
           const spent = await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "attempt");
           if (!spent.ok) {
@@ -570,7 +603,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // empty_output, a repeated failure) gets no fallback writer — another model meets the same task.
         const primaryClass = failureClass(String(primaryFailure.status), typeof primaryFailure.reason === "string" ? primaryFailure.reason : null);
         const chain = primaryClass === "provider" || primaryClass === "limit"
-          ? writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection)
+          ? (await chainWithRoom(writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection),input.config.hostId,settings,input.taskId)).chain
           : [];
         let failure:Record<string, unknown>=primaryFailure;
         const primaryAttemptId=typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId;
@@ -597,6 +630,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             break;
           }
           await rollbackLive();
+          // The task moves to another writer: a retry BB's provider-retry queued in a failed thread must not wake it later.
+          await releaseFailedThreads();
           const emergencySelection={providerId:fallback.providerId,model:fallback.model};
             const emergencyAttemptId=id("lpattempt");
             createAttempt(db,{id:emergencyAttemptId,runId:input.runId,taskId:input.taskId});
@@ -647,6 +682,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
       // Whatever the writers left in a folder without git is taken back when no attempt was accepted.
       if (last.status !== "accepted") await rollbackLive();
+      // The task is over for these writers (a writer's question keeps its thread: its answer goes on there).
+      if (last.status !== "accepted" && failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) !== "judgment") await releaseFailedThreads();
       // The writer's turns on this task (its first answer and every feedback turn), kept in the stage receipt.
       const turns = writerThreadId ? countThreadTurns(db, input.runId, input.taskId, writerThreadId) : 0;
       if (turns) last = { ...last, turns };

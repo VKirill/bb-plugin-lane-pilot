@@ -56,6 +56,8 @@ export interface Services {
   activate: ActivationApi["activate"];
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   providerBreaker: WriterStateApi["providerBreaker"];
+  providerUsage: WriterStateApi["providerUsage"];
+  providerRetry: WriterStateApi["providerRetry"];
   runBudgets: WriterStateApi["runBudgets"];
   runBudgetFor: WriterStateApi["runBudgetFor"];
   applyOnboardingPreview: OnboardingStageApi["applyOnboardingPreview"];

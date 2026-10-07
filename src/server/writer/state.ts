@@ -1,5 +1,7 @@
 import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunBudget } from "@lane-pilot/resilience";
 import { RunWriterPool } from "../../stages/run-policy";
+import { createProviderUsage } from "../provider-usage";
+import { createProviderRetryGuard } from "../provider-retry";
 import type { ServerCore } from "../core";
 
 /** State shared by the writer modules: the live task set, the provider pool, the provider breaker and one budget per run. */
@@ -10,6 +12,12 @@ export function createWriterState(ctx: ServerCore) {
 
   /** Opens for a provider/model after repeated provider failures; poor work never trips it. */
   const providerBreaker = createProviderBreaker();
+
+  /** Provider usage windows read from BB's usage sources; a writer pair whose window is nearly spent is skipped, never failed. */
+  const providerUsage = createProviderUsage(ctx.bb);
+
+  /** Cancels the retry BB's provider-retry queued in a writer thread once the task moved on to another writer. */
+  const providerRetry = createProviderRetryGuard(ctx.bb);
 
   const runBudgets = new Map<string, RunBudget>();
 
@@ -25,5 +33,5 @@ export function createWriterState(ctx: ServerCore) {
     return budget;
   }
 
-  return { activeWriterTasks, runWriterPool, providerBreaker, runBudgets, runBudgetFor };
+  return { activeWriterTasks, runWriterPool, providerBreaker, providerUsage, providerRetry, runBudgets, runBudgetFor };
 }

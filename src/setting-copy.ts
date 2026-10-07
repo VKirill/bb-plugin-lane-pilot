@@ -116,6 +116,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "integration.gate_when": { label: "field_s416", help: "reason_s416" },
   "integration.gate_every": { label: "field_s417", help: "reason_s417", unit: "fieldUnitTasks" },
   "verification.sandbox_unsafe": { label: "field_s418", help: "reason_s418" },
+  "usage.skip_percent": { label: "field_s419", help: "reason_s419", unit: "fieldUnitPercent" },
   "run.gate": { label: "settingRunGate", help: "settingRunGateHelp" },
 };
 
