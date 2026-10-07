@@ -1,7 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.1.169
 
+- **Contract lint before any task exists (B5).** One message to the PM lists every problem with its fix, and no attempt is spent. It checks:
+  - `read_first` exists on the workspace's machine, with folders marked as folders;
+  - ownership patterns are safe, an owned path is not inside never_touch, and expected outputs are owned and not in never_touch;
+  - folder filters in vitest/jest checks end with `/`;
+  - a bare full suite is rejected when sandbox-unsafe tests are configured;
+  - `depends_on` a blocked or canceled task is answered «replan» instead of a blocked cascade.
+- **Bookkeeping files never count as work and never fail a merge (B3).** One list in `src/bookkeeping-paths.ts`, extendable with the project setting `bookkeeping.paths`, is used by the ownership gates and the merge. It covers `.agents/PROGRESS.md`, `.agents/CHANGELOG.md`, `.agents/memory/episodes/**`, `.agents/runs/**`, `.agents/reports/**`, `.bb/chats/**` and `notes/lock/**`. On merge, main's version of those files wins.
+- **Main moved? The attempt is rebased, not redone (B6).** Under the integration lock, a `lane/*` attempt is replayed on the current main first. A clean rebase merges without another writer turn (`rebased: true` in the receipt). A real conflict still goes back to the same writer for free.
+- **Environment errors after a merge open no mainfix (B7).** A post-merge check failing on `EACCES`/`EPERM`/`EEXIST`/permission denied is an infra incident with one PM message.
 - **Long host calls are background jobs (B4).** `jobStart(kind, input)`, `jobStatus(jobId)` and `jobCancel(jobId)` are ordinary short host calls. The work runs in a detached process of its own, with its log and result under `~/.lane-pilot/jobs/<jobId>/`, so the daemon's deadline and the 5 s SIGKILL of the worker no longer reach it. The server runs `detect`, `install`, `rollback`, `snapshot`, `importConfig`, `connectOpencode`, `coexistenceOperation`, `gitIntegrate` (merge, `npm run build` of changed packages), `gitPrepareWorktree` (`npm ci`) and `runBrowserQa` as jobs, and the post-merge check (`runSandboxedCommand` with `job:true`). It polls with backoff and keeps the job id in KV, so a reload or restart picks the job up again. A host without jobs gets the ordinary call.
 - **No child process blocks the host worker.** The synchronous git, `opencode --version`, `gitnexus` and clone calls in git-integrate, git-ownership, coexistence, stack-ops, upstream, opencode-connect, critique-coverage and the stability drill use `spawnAsync`. `tests/host-no-sync-spawn.test.ts` fails on a `spawnSync`/`execFileSync`/`execSync` anywhere host.ts can reach.
 
