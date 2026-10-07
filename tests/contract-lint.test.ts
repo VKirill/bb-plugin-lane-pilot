@@ -91,6 +91,15 @@ describe("contract lint rules", () => {
       expect(runnerFilterArgs("npx vitest run --exclude tests/slow --config vite.config.ts && echo done")).toEqual(["run"]);
       expect(runnerFilterArgs("npx tsc --noEmit -p .")).toEqual([]);
     });
+    it("does not read the value of --pool, --retry and the like as a filter", () => {
+      expect(runnerFilterArgs("npx vitest run --pool forks --retry 2 --maxWorkers 4 tests/a.test.ts")).toEqual(["run", "tests/a.test.ts"]);
+      expect(runnerFilterArgs("npx vitest run --pool=forks")).toEqual(["run"]);
+    });
+    it("counts a folder filter with a slash as focused under sandbox_unsafe, and a value flag as no filter at all", () => {
+      const unsafe = { sandboxUnsafe:["tests/pipeline.test.ts"] };
+      expect(codes(lint({ verification:[{ command:"npx vitest run tests/server/", cwd:root }] }, unsafe, folder))).toEqual([]);
+      expect(codes(lint({ verification:[{ command:"npx vitest run --pool forks", cwd:root }] }, unsafe, folder))).toEqual(["sandbox_unsafe"]);
+    });
     it("requires a trailing slash on a folder", () => {
       const task = { verification:[{ command:"npx vitest run tests/server", cwd:root }] };
       const { errors } = lint(task, {}, folder);
@@ -139,7 +148,7 @@ const config = {
 };
 
 /** The dispatch of a task through the real plugin; the host answers snapshotDryRun from `kinds` or fails when it is null. */
-async function setup(kinds:Record<string, PathKind> | null) {
+async function setup(kinds:Record<string, PathKind> | null, targets:Record<string, "file" | "directory" | "missing"> = {}) {
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
     sdk:{ threads:{
@@ -154,7 +163,8 @@ async function setup(kinds:Record<string, PathKind> | null) {
       if (call.method === "snapshotDryRun") {
         if (!kinds) throw new Error("host went away");
         const paths = (call.input as { paths:string[] }).paths;
-        return { hostId:"host-test", entries:paths.map((path) => ({ path, kind:kinds[path.slice(root.length + 1)] ?? "missing", sha256:null, symlinkTarget:null })) };
+        return { hostId:"host-test", entries:paths.map((path) => ({ path, kind:kinds[path.slice(root.length + 1)] ?? "missing", sha256:null, symlinkTarget:null,
+          ...(targets[path.slice(root.length + 1)] ? { targetKind:targets[path.slice(root.length + 1)] } : {}) })) };
       }
       if (call.method === "gitOwnershipBase") return new Promise(() => undefined);
       return { hostId:"host-test", exitCode:0, stdout:String((call.input as { command?:string }).command ?? "").includes("porcelain") ? "[]" : "", stderr:"" };
@@ -210,6 +220,16 @@ describe("contract lint at dispatch", () => {
     const queued = await dispatch({ depends_on:["dep-1"] });
     expect(queued).toMatchObject({ taskId:"lint-task", state:"queued" });
     await harness.lifecycle.dispose();
+  });
+
+  it("accepts a read_first symlink that points at a file, and still rejects one that points nowhere", async () => {
+    const { db, harness, dispatch } = await setup({ "AGENTS.md":"symlink" }, { "AGENTS.md":"file" });
+    expect(await dispatch({ read_first:["AGENTS.md"] })).toMatchObject({ taskId:"lint-task", state:"queued" });
+    expect(taskCount(db)).toBe(1);
+    await harness.lifecycle.dispose();
+    const dangling = await setup({ "AGENTS.md":"symlink" }, { "AGENTS.md":"missing" });
+    expect(await dangling.dispatch({ read_first:["AGENTS.md"] })).toMatchObject({ state:"validation_failed" });
+    await dangling.harness.lifecycle.dispose();
   });
 
   it("dispatches as before when the machine cannot be asked about the paths", async () => {

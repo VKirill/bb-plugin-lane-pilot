@@ -83,15 +83,37 @@ export function parseSandboxUnsafePatterns(settingValue: unknown): string[] {
   return [];
 }
 
+/** Flags of vitest/jest that take a value: that value is not a test filter. */
+const VALUE_FLAGS = new Set(["--exclude", "-x", "--config", "-c", "--root", "-r", "--reporter", "--project", "--dir", "--environment", "--testNamePattern", "-t", "--outputFile", "--shard",
+  "--pool", "--retry", "--testTimeout", "--hookTimeout", "--bail", "--maxWorkers", "--minWorkers", "--maxConcurrency", "--workspace", "--mode"]);
+
+/** Positional arguments a vitest/jest run, or an npm/pnpm/yarn script after «--», receives. */
+export function runnerFilterArgs(command:string):string[] {
+  const found:string[] = [];
+  for (const part of command.split(/&&|;|\|\|/)) {
+    const tokens = part.trim().split(/\s+/);
+    let from = tokens.findIndex((token) => /(?:^|\/)(?:vitest|jest)$/.test(token));
+    if (from < 0 && /^(?:npm|pnpm|yarn)$/.test(tokens[0] ?? "")) from = tokens.indexOf("--");
+    if (from < 0) continue;
+    for (let i = from + 1; i < tokens.length; i++) {
+      const token = tokens[i]!.replace(/^["']|["']$/g, "");
+      if (VALUE_FLAGS.has(token)) { i++; continue; }
+      if (/^[\w@.][\w@./-]*$/.test(token) && !token.startsWith("--")) found.push(token);
+    }
+  }
+  return found;
+}
+
 export function findSandboxUnsafeMissingExcludes(command: string, patterns: readonly string[]): string[] {
   if (!patterns.length) return [];
   const value = command.trim();
   if (!value) return [];
   const isVitestCommand = /(?:^|[;&|]\s*)(?:npx\s+)?vitest(?:\s+run)?(?:\s+|$)/i.test(value);
   if (!isVitestCommand) return [];
-  // If target arguments contain test files outside of --exclude/-x, it's a focused check
+  // A positional filter outside --exclude/-x makes it a focused check
   const strippedOfExcludes = value.replace(/(?:--exclude(?:=|\s+)|-x\s+)(?:'[^']+'|"[^"]+"|\S+)/g, "");
-  if (/(?:test:unit|vitest|jest).+\.(?:ts|tsx|js|mjs|cjs|py)\b/i.test(strippedOfExcludes)) return [];
+  // A file, a folder («tests/server/») or any word after the subcommand narrows the run; value flags (--pool forks, --retry 2) do not.
+  if (runnerFilterArgs(strippedOfExcludes).some((arg) => !/^(?:run|watch|dev|bench|list|\.|\.\/)$/.test(arg))) return [];
 
   // Parse existing --exclude flags
   // Flags can be --exclude <val>, --exclude=<val>, or -x <val>

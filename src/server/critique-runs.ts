@@ -19,6 +19,7 @@ import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "..
 import { MAIN_ATTEMPT_LIMIT } from "../state-machine";
 import { configuredSetting } from "./context";
 import { fullAccessSpawn } from "./pm-spawn";
+import { clearSpawnMarker } from "./thread-keys";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { recordStage } from "./stage-records";
 import { stringAt } from "./values";
@@ -333,6 +334,7 @@ export async function runCodeCritique(input:{
         lanePilotRunId: input.runId, lanePilotTaskId: input.taskId, stageId: "code-critique", role: "code-critic",
       });
       if (recovered.kind === "found") {
+        await clearSpawnMarker(input.bb, { role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId, stageId:"code-critique" });
         recordStage(input.db, { ...base, state:"running", providerId:existing.providerId, model:existing.model,
           threadId:recovered.threadId, result:{ ...ledgerCarry, ...hashFields, spawnAttempted:true, policy:frozen ?? critiquePolicyFromResult(existing.result) } });
         try {
@@ -426,6 +428,7 @@ export async function runCodeCritique(input:{
         lanePilotRunId: input.runId, lanePilotTaskId: input.taskId, stageId: "code-critique", role: "code-critic",
       });
       if (recovered.kind === "found") {
+        await clearSpawnMarker(input.bb, { role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId, stageId:"code-critique" });
         recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId:recovered.threadId, result:{ ...snapshot, spawnAttempted:true, threadId:recovered.threadId, policy } });
         threadId = recovered.threadId;
         await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");

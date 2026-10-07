@@ -432,7 +432,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       prompt:nightlyDocsPrompt({since:docs.since,hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
         agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts,decisionDrafts}),
       environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
-      pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly"}});
+      pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly",spawnId:`${ctx.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}:${before.localDate}`}});
     // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
     const record:DocsUnitRecord={version:1,projectId:ctx.projectId,place,...(ctx.basePath&&ctx.basePath!==place.path?{basePath:ctx.basePath}:{}),label,unit,threadId,phase:"writing",beforeDirty:before.dirty,localDate:before.localDate,
       since:docs.since,roots:ctx.roots,workspaces:ctx.workspaces,hasDocs,changedCount:changed.length,refresh,gaps,

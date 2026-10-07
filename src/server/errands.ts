@@ -5,6 +5,7 @@ import { writerExecutionSelection } from "../jev-reasoning";
 import { QA_HOST_KEY } from "../qa-host";
 import { configuredSetting } from "./context";
 import { fullAccessSpawn } from "./pm-spawn";
+import { spawnTextId } from "./thread-keys";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { stringAt } from "./values";
 import { outputText } from "./writer-task";
@@ -142,7 +143,7 @@ export function mountErrands(ctx: ServerCore): void {
         ...writerExecutionSelection("claude-code", ERRAND_MODEL, "high", null),
         prompt: errandPrompt({ task: params.task, browserHostId: setup.hostId, authorized: params.authorized }),
         environment: { type: "reuse", environmentId },
-        pluginMetadata: { role: "errand", lanePilotRunId: runId, parentPmThreadId: context.threadId, helperMode: helperPolicy.mode },
+        pluginMetadata: { role: "errand", spawnId: `${runId}:${spawnTextId(params.task)}`, lanePilotRunId: runId, parentPmThreadId: context.threadId, helperMode: helperPolicy.mode },
       } as Parameters<typeof fullAccessSpawn>[1]);
       const threadId = stringAt(spawned, "id");
       if (!threadId) throw new Error("errand_thread_id_missing");

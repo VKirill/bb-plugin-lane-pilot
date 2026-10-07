@@ -370,6 +370,8 @@ export const hostContract = defineRpcContract({
         kind: z.enum(["missing", "file", "directory", "symlink", "other"]),
         sha256: z.string().nullable(),
         symlinkTarget: z.string().nullable(),
+        /** What a symlink points at once followed (stat); absent from an older host. */
+        targetKind: z.enum(["missing", "file", "directory", "other"]).optional(),
       }).strict()),
     }).strict(),
   },

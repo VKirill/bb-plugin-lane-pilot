@@ -1,0 +1,283 @@
+{
+ "_comment": "Everything in src/ui-catalog.ts and src/i18n-fields.ts that scripts/generate-ui-catalog.py does not derive from the upstream matrix: edits to generated rows, rows added by hand (s366+), their labels, and the section order. The generator applies it so a regeneration reproduces the checked-in catalog. Add a new hand row here (with its field_/reason_ pair), not in the generated files.",
+ "section_order": [
+  "writer",
+  "jev",
+  "night-review",
+  "browser-qa",
+  "docs",
+  "memory",
+  "specialist",
+  "onboard",
+  "stages",
+  "council",
+  "workspace",
+  "pm-read",
+  "language",
+  "setup",
+  "ops",
+  "guard",
+  "other"
+ ],
+ "row_overrides": {
+  "s019": {
+   "values": "bb-browser,live-chrome,chrome-qa,headless"
+  },
+  "s040": {
+   "values": "worktree,auto"
+  },
+  "s054": {
+   "values": "worktree|auto"
+  },
+  "s093": {
+   "options": []
+  },
+  "s103": {
+   "defaultValue": "true"
+  },
+  "s106": {
+   "evidence": "server.ts:1237"
+  },
+  "s115": {
+   "values": "auto/true/false",
+   "defaultValue": "auto",
+   "options": [
+    "auto",
+    "true",
+    "false"
+   ]
+  },
+  "s127": {
+   "values": "bb-browser,live-chrome,chrome-qa,headless"
+  },
+  "s153": {
+   "values": "bb-browser,live-chrome,chrome-qa,headless"
+  },
+  "s325": {
+   "values": "1-15",
+   "defaultValue": "15",
+   "options": [
+    "1-15"
+   ],
+   "max": 15
+  },
+  "s331": {
+   "values": "1-15",
+   "options": [
+    "1-15"
+   ],
+   "max": 15
+  }
+ },
+ "rows": [
+  {"id": "s366", "index": 366, "area": "Lane Pilot helper session filter", "setting": "helper.context_mode", "location": "src/helper-context.ts:36", "category": "user", "invType": "enum", "values": "roles,inherit,selected,none", "defaultValue": "roles", "scope": "project", "control": "select", "options": ["roles", "inherit", "selected", "none"], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Persisted helper session filter; inherit is unrestricted BB context; selected/none are not fail-closed until a required static core policy exists", "evidence": "src/helper-context.ts:36", "matrixStatus": "readonly", "storageKey": "helper.context_mode", "options_compact": true},
+  {"id": "s367", "index": 367, "area": "Lane Pilot helper session filter", "setting": "helper.skills", "location": "src/helper-context.ts:40", "category": "user", "invType": "csv", "values": "comma-separated skill names", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Allowlist used only when helper.context_mode is selected; empty means none, not inherit", "evidence": "src/helper-context.ts:40", "matrixStatus": "readonly", "storageKey": "helper.skills"},
+  {"id": "s368", "index": 368, "area": "Lane Pilot helper session filter", "setting": "helper.mcp_servers", "location": "src/helper-context.ts:41", "category": "user", "invType": "csv", "values": "comma-separated MCP server names", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Allowlist used only when helper.context_mode is selected; empty means none, not inherit", "evidence": "src/helper-context.ts:41", "matrixStatus": "readonly", "storageKey": "helper.mcp_servers"},
+  {"id": "s369", "index": 369, "area": "Lane Pilot helper session filter", "setting": "helper.bb_plugins", "location": "src/helper-context.ts:42", "category": "user", "invType": "csv", "values": "comma-separated BB plugin ids", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Allowlist used only when helper.context_mode is selected; empty means none, not inherit", "evidence": "src/helper-context.ts:42", "matrixStatus": "readonly", "storageKey": "helper.bb_plugins"},
+  {"id": "s370", "index": 370, "area": "Lane Pilot helper session filter", "setting": "helper.native_plugins", "location": "src/helper-context.ts:43", "category": "user", "invType": "csv", "values": "comma-separated native CLI plugin names", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Allowlist used only when helper.context_mode is selected; empty means none, not inherit", "evidence": "src/helper-context.ts:43", "matrixStatus": "readonly", "storageKey": "helper.native_plugins"},
+  {"id": "s371", "index": 371, "area": "Lane Pilot helper placement", "setting": "helper.placement", "location": "src/helper-placement.ts:1", "category": "user", "invType": "enum", "values": "plugin,project_tree", "defaultValue": "plugin", "scope": "project", "control": "select", "options": ["plugin", "project_tree"], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "New helper threads stay hidden in Lane Pilot or appear in the same project tree as the parent session; workspace holder stays hidden", "evidence": "src/helper-placement.ts:1", "matrixStatus": "readonly", "storageKey": "helper.placement", "options_compact": true},
+  {"id": "s372", "index": 372, "area": "Lane Pilot native code critique", "setting": "code_critique.enabled", "location": "src/stages/code-critique.ts:1", "category": "user", "invType": "bool", "values": "true/false", "defaultValue": "false", "scope": "project", "control": "switch", "options": ["true", "false"], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Post-writer independent critique before final acceptance; default off keeps legacy behavior", "evidence": "src/stages/code-critique.ts:1", "matrixStatus": "readonly", "storageKey": "code_critique.enabled", "options_compact": true},
+  {"id": "s373", "index": 373, "area": "Lane Pilot native code critique", "setting": "code_critique.mode", "location": "src/stages/code-critique.ts:1", "category": "user", "invType": "enum", "values": "advisory,gate", "defaultValue": "gate", "scope": "project", "control": "select", "options": ["advisory", "gate"], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Gate blocks final acceptance on changes_requested; advisory records findings", "evidence": "src/stages/code-critique.ts:1", "matrixStatus": "readonly", "storageKey": "code_critique.mode", "options_compact": true},
+  {"id": "s374", "index": 374, "area": "Lane Pilot native code critique", "setting": "code_critique.provider", "location": "src/stages/code-critique.ts:1", "category": "user", "invType": "enum", "values": "BB provider ID", "defaultValue": "inherit writer selection", "scope": "project", "control": "select", "options": [], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Independent reviewer provider validated against the live host catalog", "evidence": "src/stages/code-critique.ts:1", "matrixStatus": "readonly", "storageKey": "code_critique.provider"},
+  {"id": "s375", "index": 375, "area": "Lane Pilot native code critique", "setting": "code_critique.model", "location": "src/stages/code-critique.ts:1", "category": "user", "invType": "str", "values": "BB model ID", "defaultValue": "inherit writer selection", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Independent reviewer model validated against the live host catalog", "evidence": "src/stages/code-critique.ts:1", "matrixStatus": "readonly", "storageKey": "code_critique.model"},
+  {"id": "s376", "index": 376, "area": "Lane Pilot native code critique", "setting": "code_critique.reasoning_effort", "location": "src/stages/code-critique.ts:1", "category": "user", "invType": "str", "values": "Model-supported reasoning level", "defaultValue": "medium", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Independent reviewer effort validated against the live host catalog", "evidence": "src/stages/code-critique.ts:1", "matrixStatus": "readonly", "storageKey": "code_critique.reasoning_effort"},
+  {"id": "s377", "index": 377, "area": "Lane Pilot native code critique", "setting": "code_critique.service_tier", "location": "src/stages/code-critique.ts:1", "category": "user", "invType": "enum", "values": "standard,fast", "defaultValue": "standard", "scope": "project", "control": "select", "options": ["standard", "fast"], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Independent reviewer tier validated against the live host catalog", "evidence": "src/stages/code-critique.ts:1", "matrixStatus": "readonly", "storageKey": "code_critique.service_tier", "options_compact": true},
+  {"id": "s378", "index": 378, "area": "Lane Pilot native code critique", "setting": "code_critique.agent", "location": "src/stages/code-critique.ts:1", "category": "user", "invType": "str", "values": "Role label", "defaultValue": "code-critic", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Role label included in the code-critique prompt", "evidence": "src/stages/code-critique.ts:1", "matrixStatus": "readonly", "storageKey": "code_critique.agent"},
+  {"id": "s379", "index": 379, "area": "Lane Pilot native code critique", "setting": "code_critique.auto_fix", "location": "src/stages/code-critique.ts:1", "category": "user", "invType": "bool", "values": "true/false", "defaultValue": "true", "scope": "project", "control": "switch", "options": ["true", "false"], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Return actionable findings to the original writer for a bounded repair", "evidence": "src/stages/code-critique.ts:1", "matrixStatus": "readonly", "storageKey": "code_critique.auto_fix", "options_compact": true},
+  {"id": "s380", "index": 380, "area": "Lane Pilot native code critique", "setting": "code_critique.max_rounds", "location": "src/stages/code-critique.ts:1", "category": "user", "invType": "int", "values": "1-3", "defaultValue": "1", "scope": "project", "control": "number", "options": ["1-3"], "min": 1, "max": 3, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Maximum automatic writer repair rounds after code critique", "evidence": "src/stages/code-critique.ts:1", "matrixStatus": "readonly", "storageKey": "code_critique.max_rounds"},
+  {"id": "s381", "index": 381, "area": "Lane Pilot native project-life stage", "setting": "project_life.enabled", "location": "src/stages/project-life.ts:1", "category": "user", "invType": "bool", "values": "true/false", "defaultValue": "true", "scope": "project", "control": "select", "options": ["true", "false"], "min": null, "max": null, "section": "project_life", "channel": "OWN", "uiStatus": "editable", "rationale": "Background stage the plugin spawns after an accepted wave goes idle; rewrites PROGRESS.md, plan ticks and ROADMAP, and links todo runs. LESSONS.md and docs/decisions.md stay with the PM", "evidence": "src/stages/project-life.ts:1", "matrixStatus": "readonly", "storageKey": "project_life.enabled", "options_compact": true},
+  {"id": "s382", "index": 382, "area": "Lane Pilot native project-life stage", "setting": "project_life.provider", "location": "src/stages/project-life.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB provider ID", "defaultValue": "codex", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "project_life", "channel": "OWN", "uiStatus": "editable", "rationale": "Native project-life stage selection is validated against the live BB provider/model catalog and defaults to a cheap fixed writer, independent of the project's main writer profile", "evidence": "src/stages/project-life.ts:1", "matrixStatus": "readonly", "storageKey": "project_life.provider"},
+  {"id": "s383", "index": 383, "area": "Lane Pilot native project-life stage", "setting": "project_life.model", "location": "src/stages/project-life.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB model ID", "defaultValue": "gpt-6-luna", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "project_life", "channel": "OWN", "uiStatus": "editable", "rationale": "Native project-life stage selection is validated against the live BB provider/model catalog and defaults to a cheap fixed writer, independent of the project's main writer profile", "evidence": "src/stages/project-life.ts:1", "matrixStatus": "readonly", "storageKey": "project_life.model"},
+  {"id": "s384", "index": 384, "area": "Lane Pilot native project-life stage", "setting": "project_life.reasoning_effort", "location": "src/stages/project-life.ts:1", "category": "user", "invType": "native BB provider selection", "values": "Model-supported reasoning level", "defaultValue": "high", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "project_life", "channel": "OWN", "uiStatus": "editable", "rationale": "Native project-life stage selection is validated against the live BB provider/model catalog and defaults to a cheap fixed writer, independent of the project's main writer profile", "evidence": "src/stages/project-life.ts:1", "matrixStatus": "readonly", "storageKey": "project_life.reasoning_effort"},
+  {"id": "s385", "index": 385, "area": "Lane Pilot native project-life stage", "setting": "project_life.service_tier", "location": "src/stages/project-life.ts:1", "category": "user", "invType": "native BB provider selection", "values": "Provider-supported service tier", "defaultValue": "fast", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "project_life", "channel": "OWN", "uiStatus": "editable", "rationale": "Native project-life stage selection is validated against the live BB provider/model catalog and defaults to a cheap fixed writer, independent of the project's main writer profile", "evidence": "src/stages/project-life.ts:1", "matrixStatus": "readonly", "storageKey": "project_life.service_tier"},
+  {"id": "s386", "index": 386, "area": "Lane Pilot run budget", "setting": "run.max_attempts", "location": "packages/resilience/src/budget.ts:1", "category": "user", "invType": "int", "values": "positive integer; empty means no limit", "defaultValue": "", "scope": "project", "control": "number", "options": [], "min": 1, "max": null, "section": "ops", "channel": "OWN", "uiStatus": "editable", "rationale": "Writer attempts in one run before new tasks are blocked with the exact reason", "evidence": "src/server/writer/start.ts:20", "matrixStatus": "readonly", "storageKey": "run.max_attempts"},
+  {"id": "s387", "index": 387, "area": "Lane Pilot run budget", "setting": "run.max_wall_minutes", "location": "packages/resilience/src/budget.ts:1", "category": "user", "invType": "int", "values": "positive integer; empty means no limit", "defaultValue": "", "scope": "project", "control": "number", "options": [], "min": 1, "max": null, "section": "ops", "channel": "OWN", "uiStatus": "editable", "rationale": "Wall-clock minutes a run may take from its first writer attempt", "evidence": "src/server/writer/start.ts:20", "matrixStatus": "readonly", "storageKey": "run.max_wall_minutes"},
+  {"id": "s388", "index": 388, "area": "Lane Pilot run budget", "setting": "run.max_tokens", "location": "packages/resilience/src/budget.ts:1", "category": "user", "invType": "int", "values": "positive integer; empty means no limit", "defaultValue": "", "scope": "project", "control": "number", "options": [], "min": 1, "max": null, "section": "ops", "channel": "OWN", "uiStatus": "editable", "rationale": "Total tokens of writer threads in a run, from BB usage events", "evidence": "src/server/writer/start.ts:20", "matrixStatus": "readonly", "storageKey": "run.max_tokens"},
+  {"id": "s389", "index": 389, "area": "Lane Pilot run budget", "setting": "run.max_children", "location": "packages/resilience/src/budget.ts:1", "category": "user", "invType": "int", "values": "positive integer; empty means no limit", "defaultValue": "", "scope": "project", "control": "number", "options": [], "min": 1, "max": null, "section": "ops", "channel": "OWN", "uiStatus": "editable", "rationale": "Writer and helper threads one run may spawn", "evidence": "src/server/writer/start.ts:20", "matrixStatus": "readonly", "storageKey": "run.max_children"},
+  {"id": "s390", "index": 390, "area": "Lane Pilot council of directors", "setting": "council.product.provider", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB provider ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.product.provider"},
+  {"id": "s391", "index": 391, "area": "Lane Pilot council of directors", "setting": "council.product.model", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB model ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.product.model"},
+  {"id": "s392", "index": 392, "area": "Lane Pilot council of directors", "setting": "council.product.reasoning_effort", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "Model-supported reasoning level", "defaultValue": "high", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Reasoning level of this seat", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.product.reasoning_effort"},
+  {"id": "s393", "index": 393, "area": "Lane Pilot council of directors", "setting": "council.demand.provider", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB provider ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.demand.provider"},
+  {"id": "s394", "index": 394, "area": "Lane Pilot council of directors", "setting": "council.demand.model", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB model ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.demand.model"},
+  {"id": "s395", "index": 395, "area": "Lane Pilot council of directors", "setting": "council.demand.reasoning_effort", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "Model-supported reasoning level", "defaultValue": "high", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Reasoning level of this seat", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.demand.reasoning_effort"},
+  {"id": "s396", "index": 396, "area": "Lane Pilot council of directors", "setting": "council.audience.provider", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB provider ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.audience.provider"},
+  {"id": "s397", "index": 397, "area": "Lane Pilot council of directors", "setting": "council.audience.model", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB model ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.audience.model"},
+  {"id": "s398", "index": 398, "area": "Lane Pilot council of directors", "setting": "council.audience.reasoning_effort", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "Model-supported reasoning level", "defaultValue": "high", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Reasoning level of this seat", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.audience.reasoning_effort"},
+  {"id": "s399", "index": 399, "area": "Lane Pilot council of directors", "setting": "council.skeptic.provider", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB provider ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.skeptic.provider"},
+  {"id": "s400", "index": 400, "area": "Lane Pilot council of directors", "setting": "council.skeptic.model", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB model ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.skeptic.model"},
+  {"id": "s401", "index": 401, "area": "Lane Pilot council of directors", "setting": "council.skeptic.reasoning_effort", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "Model-supported reasoning level", "defaultValue": "high", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Reasoning level of this seat", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.skeptic.reasoning_effort"},
+  {"id": "s402", "index": 402, "area": "Lane Pilot council of directors", "setting": "council.growth.provider", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB provider ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.growth.provider"},
+  {"id": "s403", "index": 403, "area": "Lane Pilot council of directors", "setting": "council.growth.model", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB model ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.growth.model"},
+  {"id": "s404", "index": 404, "area": "Lane Pilot council of directors", "setting": "council.growth.reasoning_effort", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "Model-supported reasoning level", "defaultValue": "high", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Reasoning level of this seat", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.growth.reasoning_effort"},
+  {"id": "s405", "index": 405, "area": "Lane Pilot council of directors", "setting": "council.ux.provider", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB provider ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.ux.provider"},
+  {"id": "s406", "index": 406, "area": "Lane Pilot council of directors", "setting": "council.ux.model", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB model ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.ux.model"},
+  {"id": "s407", "index": 407, "area": "Lane Pilot council of directors", "setting": "council.ux.reasoning_effort", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "Model-supported reasoning level", "defaultValue": "high", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Reasoning level of this seat", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.ux.reasoning_effort"},
+  {"id": "s408", "index": 408, "area": "Lane Pilot council of directors", "setting": "council.chair.provider", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB provider ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.chair.provider"},
+  {"id": "s409", "index": 409, "area": "Lane Pilot council of directors", "setting": "council.chair.model", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "BB model ID", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.chair.model"},
+  {"id": "s410", "index": 410, "area": "Lane Pilot council of directors", "setting": "council.chair.reasoning_effort", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "native BB provider selection", "values": "Model-supported reasoning level", "defaultValue": "high", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Reasoning level of this seat", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.chair.reasoning_effort"},
+  {"id": "s411", "index": 411, "area": "Lane Pilot council of directors", "setting": "council.judge", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "bool", "values": "true, false", "defaultValue": "true", "scope": "project", "control": "switch", "options": ["true", "false"], "min": null, "max": null, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Jev decides whether a seat wants the floor and whether the room is done; off means the built-in rule", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.judge"},
+  {"id": "s412", "index": 412, "area": "Lane Pilot council of directors", "setting": "council.max_rounds", "location": "packages/council/src/roles.ts:1", "category": "user", "invType": "int", "values": "integer 1-6", "defaultValue": "3", "scope": "project", "control": "number", "options": [], "min": 1, "max": 6, "section": "council", "channel": "OWN", "uiStatus": "editable", "rationale": "Laps of discussion before the chair decides", "evidence": "src/server/council.ts:1", "matrixStatus": "readonly", "storageKey": "council.max_rounds"},
+  {"id": "s413", "index": 413, "area": "Lane Pilot writer watchdog", "setting": "writer.silence_nudge_min", "location": "src/server/writer-silence.ts:5", "category": "user", "invType": "int", "values": "positive integer; empty means 20", "defaultValue": "20", "scope": "project", "control": "number", "options": [], "min": 1, "max": null, "section": "writer", "channel": "OWN", "uiStatus": "editable", "rationale": "Minutes a running writer may stay silent before it is nudged; the third silence ends its attempt", "evidence": "src/server/writer-silence.ts:5", "matrixStatus": "readonly", "storageKey": "writer.silence_nudge_min"},
+  {"id": "s414", "index": 414, "area": "Lane Pilot bookkeeping", "setting": "bookkeeping.paths", "location": "src/bookkeeping-paths.ts:25", "category": "user", "invType": "csv", "values": "comma- or line-separated owns_paths patterns", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "ops", "channel": "OWN", "uiStatus": "editable", "rationale": "The project's own bookkeeping files on top of the built-in list: ownership gates skip them, a merge settles them to main's version", "evidence": "src/bookkeeping-paths.ts:25", "matrixStatus": "readonly", "storageKey": "bookkeeping.paths"},
+  {"id": "s415", "index": 415, "area": "Lane Pilot integration gate", "setting": "integration.gate_command", "location": "src/server/integration-gate.ts:22", "category": "user", "invType": "string", "values": "shell command; empty means no gate", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "ops", "channel": "OWN", "uiStatus": "editable", "rationale": "The whole-suite check that runs once after a batch of tasks merged; a failure goes to the writer whose task caused it", "evidence": "src/server/integration-gate.ts:22", "matrixStatus": "readonly", "storageKey": "integration.gate_command"},
+  {"id": "s416", "index": 416, "area": "Lane Pilot integration gate", "setting": "integration.gate_when", "location": "src/server/integration-gate.ts:25", "category": "user", "invType": "enum", "values": "queue_drained, every_n", "defaultValue": "queue_drained", "scope": "project", "control": "select", "options": ["queue_drained", "every_n"], "min": null, "max": null, "section": "ops", "channel": "OWN", "uiStatus": "editable", "rationale": "When the gate runs: once the task queue is drained, or after every N merged tasks", "evidence": "src/server/integration-gate.ts:25", "matrixStatus": "readonly", "storageKey": "integration.gate_when"},
+  {"id": "s417", "index": 417, "area": "Lane Pilot integration gate", "setting": "integration.gate_every", "location": "src/server/integration-gate.ts:27", "category": "user", "invType": "int", "values": "positive integer; empty means 5", "defaultValue": "5", "scope": "project", "control": "number", "options": [], "min": 1, "max": null, "section": "ops", "channel": "OWN", "uiStatus": "editable", "rationale": "Merged tasks between two gate runs when integration.gate_when is every_n", "evidence": "src/server/integration-gate.ts:27", "matrixStatus": "readonly", "storageKey": "integration.gate_every"},
+  {"id": "s418", "index": 418, "area": "Lane Pilot verification sandbox", "setting": "verification.sandbox_unsafe", "location": "src/stages/critique-coverage.ts:68", "category": "user", "invType": "csv", "values": "comma- or line-separated test paths and globs, or a JSON list", "defaultValue": "", "scope": "project", "control": "input", "options": [], "min": null, "max": null, "section": "stages", "channel": "OWN", "uiStatus": "editable", "rationale": "Tests the verification sandbox cannot run: a whole-suite vitest check must exclude each of them with --exclude, and a task contract that does not is sent back before any writer starts", "evidence": "src/stages/critique-coverage.ts:68; src/server/lint-task.ts:45", "matrixStatus": "readonly", "storageKey": "verification.sandbox_unsafe"}
+ ],
+ "fields": {
+  "before_sections": [
+   ["field_s366", "Helper session filter", "Фильтр сессии помощников"],
+   ["reason_s366", "inherit keeps BB defaults; selected and none are stored allowlists, not a security sandbox", "«Как у BB» — текущее поведение; списки не являются песочницей"],
+   ["field_s367", "Helper skills", "Навыки помощников"],
+   ["reason_s367", "Comma-separated names when the filter is selected; empty means none", "Имена через запятую в режиме «только списки»; пусто значит ни одного"],
+   ["field_s368", "Helper MCP servers", "MCP помощников"],
+   ["reason_s368", "Comma-separated names when the filter is selected; empty means none", "Имена через запятую в режиме «только списки»; пусто значит ни одного"],
+   ["field_s369", "Helper BB plugins", "Плагины BB помощников"],
+   ["reason_s369", "Comma-separated ids when the filter is selected; empty means none", "Id через запятую в режиме «только списки»; пусто значит ни одного"],
+   ["field_s370", "Helper native plugins", "Нативные плагины помощников"],
+   ["reason_s370", "Comma-separated names when the filter is selected; empty means none", "Имена через запятую в режиме «только списки»; пусто значит ни одного"],
+   ["field_s371", "Where to show helpers", "Где показывать помощников"],
+   ["reason_s371", "Hidden inside Lane Pilot or visible in the same project tree", "Скрыто в Lane Pilot или видно в том же дереве проекта"],
+   ["field_s372", "Code critique", "Критика кода"],
+   ["reason_s372", "Independent review after writer verification and before final acceptance; off keeps legacy acceptance", "Независимый обзор после проверки писателя и до финального принятия; выкл сохраняет прежнее принятие"],
+   ["field_s373", "Code critique mode", "Режим критики кода"],
+   ["reason_s373", "Gate blocks acceptance; advisory only records findings", "Ворота блокируют принятие; совещательный режим только записывает находки"],
+   ["field_s374", "Code critique provider", "Провайдер критики кода"],
+   ["reason_s374", "Independent reviewer provider from the live host catalog", "Независимый рецензент из живого каталога хоста"],
+   ["field_s375", "Code critique model", "Модель критики кода"],
+   ["reason_s375", "Independent reviewer model from the live host catalog", "Независимая модель из живого каталога хоста"],
+   ["field_s376", "Code critique reasoning", "Рассуждения критики кода"],
+   ["reason_s376", "Independent reviewer effort from the live host catalog", "Уровень рассуждений рецензента из живого каталога хоста"],
+   ["field_s377", "Code critique service tier", "Тариф критики кода"],
+   ["reason_s377", "Independent reviewer tier from the live host catalog", "Тариф рецензента из живого каталога хоста"],
+   ["field_s378", "Code critique agent", "Агент критики кода"],
+   ["reason_s378", "Role label included in the code-critique prompt", "Метка роли в промпте критики кода"],
+   ["field_s379", "Auto-fix findings", "Автоисправлять находки"],
+   ["reason_s379", "Return actionable findings to the original writer for a bounded repair", "Вернуть actionable-находки тому же писателю на ограниченный ремонт"],
+   ["field_s380", "Maximum repair rounds", "Максимум кругов ремонта"],
+   ["reason_s380", "Automatic writer repair rounds after code critique, 1–3", "Автоматические круги ремонта писателя после критики кода, 1–3"]
+  ],
+  "after_sections": [
+   ["field_s386", "Attempts per run", "Попыток на запуск"],
+   ["reason_s386", "Writer attempts in one run before new tasks are blocked with the exact reason", "Попытки писателей в одном запуске; сверх лимита новые попытки блокируются с точной причиной"],
+   ["field_s387", "Wall minutes per run", "Минут на запуск"],
+   ["reason_s387", "Wall-clock minutes a run may take from its first writer attempt", "Минуты по часам от первой попытки писателя"],
+   ["field_s388", "Tokens per run", "Токенов на запуск"],
+   ["reason_s388", "Total tokens of writer threads in a run, from BB usage events", "Суммарные токены тредов писателей в запуске по событиям BB"],
+   ["field_s389", "Child threads per run", "Дочерних тредов на запуск"],
+   ["reason_s389", "Writer and helper threads one run may spawn", "Треды писателей и помощников, которые может породить один запуск"],
+   ["field_s390", "Product director: provider", "Директор по продукту: провайдер"],
+   ["reason_s390", "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "Провайдер этого места из живого каталога BB (OpenRouter и любой другой подключённый провайдер есть там же)"],
+   ["field_s391", "Product director: model", "Директор по продукту: модель"],
+   ["reason_s391", "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "Модель этого места; пусто означает, что место возьмёт свободную пару из настроек стадий"],
+   ["field_s392", "Product director: reasoning effort", "Директор по продукту: рассуждение"],
+   ["reason_s392", "Reasoning level of this seat", "Уровень рассуждений этого места"],
+   ["field_s393", "Demand director: provider", "Директор по спросу: провайдер"],
+   ["reason_s393", "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "Провайдер этого места из живого каталога BB (OpenRouter и любой другой подключённый провайдер есть там же)"],
+   ["field_s394", "Demand director: model", "Директор по спросу: модель"],
+   ["reason_s394", "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "Модель этого места; пусто означает, что место возьмёт свободную пару из настроек стадий"],
+   ["field_s395", "Demand director: reasoning effort", "Директор по спросу: рассуждение"],
+   ["reason_s395", "Reasoning level of this seat", "Уровень рассуждений этого места"],
+   ["field_s396", "Audience director: provider", "Директор по аудитории: провайдер"],
+   ["reason_s396", "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "Провайдер этого места из живого каталога BB (OpenRouter и любой другой подключённый провайдер есть там же)"],
+   ["field_s397", "Audience director: model", "Директор по аудитории: модель"],
+   ["reason_s397", "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "Модель этого места; пусто означает, что место возьмёт свободную пару из настроек стадий"],
+   ["field_s398", "Audience director: reasoning effort", "Директор по аудитории: рассуждение"],
+   ["reason_s398", "Reasoning level of this seat", "Уровень рассуждений этого места"],
+   ["field_s399", "Skeptic: provider", "Скептик: провайдер"],
+   ["reason_s399", "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "Провайдер этого места из живого каталога BB (OpenRouter и любой другой подключённый провайдер есть там же)"],
+   ["field_s400", "Skeptic: model", "Скептик: модель"],
+   ["reason_s400", "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "Модель этого места; пусто означает, что место возьмёт свободную пару из настроек стадий"],
+   ["field_s401", "Skeptic: reasoning effort", "Скептик: рассуждение"],
+   ["reason_s401", "Reasoning level of this seat", "Уровень рассуждений этого места"],
+   ["field_s402", "Growth director: provider", "Директор по росту: провайдер"],
+   ["reason_s402", "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "Провайдер этого места из живого каталога BB (OpenRouter и любой другой подключённый провайдер есть там же)"],
+   ["field_s403", "Growth director: model", "Директор по росту: модель"],
+   ["reason_s403", "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "Модель этого места; пусто означает, что место возьмёт свободную пару из настроек стадий"],
+   ["field_s404", "Growth director: reasoning effort", "Директор по росту: рассуждение"],
+   ["reason_s404", "Reasoning level of this seat", "Уровень рассуждений этого места"],
+   ["field_s405", "UX director: provider", "UX-директор: провайдер"],
+   ["reason_s405", "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "Провайдер этого места из живого каталога BB (OpenRouter и любой другой подключённый провайдер есть там же)"],
+   ["field_s406", "UX director: model", "UX-директор: модель"],
+   ["reason_s406", "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "Модель этого места; пусто означает, что место возьмёт свободную пару из настроек стадий"],
+   ["field_s407", "UX director: reasoning effort", "UX-директор: рассуждение"],
+   ["reason_s407", "Reasoning level of this seat", "Уровень рассуждений этого места"],
+   ["field_s408", "Chair: provider", "Председатель: провайдер"],
+   ["reason_s408", "Provider of this seat, chosen from the live BB catalog (OpenRouter and any other configured provider appear there)", "Провайдер этого места из живого каталога BB (OpenRouter и любой другой подключённый провайдер есть там же)"],
+   ["field_s409", "Chair: model", "Председатель: модель"],
+   ["reason_s409", "Model of this seat; empty means the seat takes a distinct pair from the stage selections", "Модель этого места; пусто означает, что место возьмёт свободную пару из настроек стадий"],
+   ["field_s410", "Chair: reasoning effort", "Председатель: рассуждение"],
+   ["reason_s410", "Reasoning level of this seat", "Уровень рассуждений этого места"],
+   ["field_s411", "Jev judges the council", "Jev судит совет"],
+   ["reason_s411", "Jev decides whether a seat wants the floor and whether the room is done; off means the built-in rule", "Jev решает, хочет ли место говорить и закончено ли обсуждение; выкл означает встроенное правило"],
+   ["field_s412", "Council laps", "Кругов совета"],
+   ["reason_s412", "Laps of discussion before the chair decides", "Кругов обсуждения до решения председателя"],
+   ["field_s413", "Writer silence before a nudge", "Тишина писателя до напоминания"],
+   ["reason_s413", "Minutes a running writer may stay silent before it is nudged; the third silence ends its attempt. Empty means 20", "Сколько минут работающий писатель может молчать до напоминания; третья тишина заканчивает его попытку. Пусто означает 20"],
+   ["field_s414", "Project bookkeeping paths", "Служебные пути проекта"],
+   ["reason_s414", "Files of your own that hooks and agents write into a checkout, on top of the built-in list (.agents/runs/, .bb/chats/ and the like): they never count as the writer's change. Comma- or line-separated paths and patterns", "Ваши собственные файлы, которые хуки и агенты пишут в рабочую копию, сверх встроенного списка (.agents/runs/, .bb/chats/ и подобные): они никогда не считаются изменением писателя. Пути и шаблоны через запятую или с новой строки"],
+   ["field_s415", "Integration gate command", "Команда интеграционных ворот"],
+   ["reason_s415", "The whole-suite check that runs once after a batch of tasks merged; a failure goes to the writer whose task caused it. Empty means no gate", "Проверка всего набора тестов, которая идёт один раз после слияния пачки задач; провал уходит писателю, чья задача его вызвала. Пусто означает без ворот"],
+   ["field_s416", "Integration gate runs", "Когда идут ворота"],
+   ["reason_s416", "When the gate runs: once the task queue is drained, or after every N merged tasks", "Когда идут ворота: один раз, когда очередь задач опустела, или после каждых N слитых задач"],
+   ["field_s417", "Merged tasks between gate runs", "Слитых задач между воротами"],
+   ["reason_s417", "Used when the gate runs after every N merged tasks. Empty means 5", "Работает, когда ворота идут после каждых N слитых задач. Пусто означает 5"],
+   ["field_s418", "Tests the sandbox cannot run", "Тесты, которые песочница не запускает"],
+   ["reason_s418", "Test files and folders (comma- or line-separated) that must be excluded from a whole-suite check; a task contract that runs the whole suite without excluding them is sent back before any writer starts", "Тестовые файлы и папки (через запятую или с новой строки), которые нужно исключать из проверки всего набора; контракт задачи, который запускает весь набор без этих исключений, возвращается до старта исполнителя"]
+  ],
+  "overrides": {
+   "field_s073": [
+    "Check the plan before work",
+    "Проверять план перед выполнением"
+   ],
+   "field_s074": [
+    "Plan check mode",
+    "Режим проверки плана"
+   ],
+   "field_s103": [
+    "Project memory",
+    "Память проекта"
+   ],
+   "field_s104": [
+    "Update memory",
+    "Обновление памяти"
+   ],
+   "field_s105": [
+    "Add memory to context",
+    "Добавление памяти в контекст"
+   ],
+   "field_s107": [
+    "Recipients",
+    "Получатели"
+   ],
+   "field_s108": [
+    "Search method",
+    "Способ поиска"
+   ],
+   "field_s109": [
+    "Core memory limit",
+    "Лимит ядра памяти"
+   ],
+   "field_s110": [
+    "Note memory limit",
+    "Лимит заметок"
+   ],
+   "field_s111": [
+    "Total index limit",
+    "Общий лимит индекса"
+   ],
+   "field_s112": [
+    "Injected context limit",
+    "Лимит памяти в контексте"
+   ],
+   "field_s113": [
+    "Memory partition",
+    "Раздел памяти"
+   ],
+   "section_memory": [
+    "Project memory",
+    "Память проекта"
+   ]
+  }
+ }
+}

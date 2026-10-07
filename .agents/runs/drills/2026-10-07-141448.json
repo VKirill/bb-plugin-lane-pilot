@@ -1,0 +1,262 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-10-07",
+  "stamp": "20261007-141448",
+  "startedAt": 1791375288376,
+  "finishedAt": 1791375942964,
+  "durationSec": 655,
+  "project": "proj_3tb652jpsi",
+  "runId": "lprun_2b7f3d702cdb441babd0bf059c8721b7",
+  "pmThread": "thr_anhwc4g96p",
+  "sourceThread": "thr_pzwfb37c9h",
+  "mode": "full",
+  "scenarioNames": [
+    "parallel3",
+    "conflict",
+    "main_moved",
+    "provider_limit",
+    "reload",
+    "nogit"
+  ],
+  "result": "pass",
+  "problems": [],
+  "checks": {
+    "allAccepted": true,
+    "eachInOwnWorktree": true,
+    "filesInSandbox": true
+  },
+  "tasks": [
+    {
+      "task": "drill-20261007-141448-a",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_f69f93e6c09942bfb057bcbf65e8faeb",
+      "writerThread": "thr_b59qzmveum",
+      "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_cs6kce6pye-1/lp-sandbox-rules",
+      "file": "notes/drill/20261007-141448-a.md",
+      "fileInSandbox": true
+    },
+    {
+      "task": "drill-20261007-141448-b",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_f7a85d822032423f9d2d71fcef684a45",
+      "writerThread": "thr_tnnkgqp6sr",
+      "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_n2n8yk6kj6-1/lp-sandbox-rules",
+      "file": "notes/drill/20261007-141448-b.md",
+      "fileInSandbox": true
+    },
+    {
+      "task": "drill-20261007-141448-c",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_56fe4a32f56248f9b2031cc42aa366b9",
+      "writerThread": "thr_2iaukv4uvb",
+      "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_rb2bgiv66y-1/lp-sandbox-rules",
+      "file": "notes/drill/20261007-141448-c.md",
+      "fileInSandbox": true
+    }
+  ],
+  "dispatch": {
+    "drill-20261007-141448-a": "{\n  \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n  \"taskId\": \"drill-20261007-141448-a\",\n  \"attemptId\": \"lpattempt_f69f93e6c09942bfb057bcbf65e8faeb\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n      \"taskId\": \"drill-20261007-141448-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"77a9db81b6743746d1c2182c29ccef71ccb30d080a0feae2368354473be4777b\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n ",
+    "drill-20261007-141448-b": "{\n  \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n  \"taskId\": \"drill-20261007-141448-b\",\n  \"attemptId\": \"lpattempt_f7a85d822032423f9d2d71fcef684a45\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n      \"taskId\": \"drill-20261007-141448-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"e15c9d7386e8e99c2c33f1fa4cd2d13bf7d33308b6939eb6deacafd5f373766c\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n ",
+    "drill-20261007-141448-c": "{\n  \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n  \"taskId\": \"drill-20261007-141448-c\",\n  \"attemptId\": \"lpattempt_56fe4a32f56248f9b2031cc42aa366b9\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n      \"taskId\": \"drill-20261007-141448-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"3a8b2ea82d244bbe5820e1b006bef468b952300c6d6a40e35a0f5cfd420620c7\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n "
+  },
+  "scenarios": [
+    {
+      "name": "parallel3",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261007-141448-a",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_f69f93e6c09942bfb057bcbf65e8faeb",
+          "writerThread": "thr_b59qzmveum",
+          "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_cs6kce6pye-1/lp-sandbox-rules",
+          "file": "notes/drill/20261007-141448-a.md",
+          "fileInSandbox": true
+        },
+        {
+          "task": "drill-20261007-141448-b",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_f7a85d822032423f9d2d71fcef684a45",
+          "writerThread": "thr_tnnkgqp6sr",
+          "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_n2n8yk6kj6-1/lp-sandbox-rules",
+          "file": "notes/drill/20261007-141448-b.md",
+          "fileInSandbox": true
+        },
+        {
+          "task": "drill-20261007-141448-c",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_56fe4a32f56248f9b2031cc42aa366b9",
+          "writerThread": "thr_2iaukv4uvb",
+          "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_rb2bgiv66y-1/lp-sandbox-rules",
+          "file": "notes/drill/20261007-141448-c.md",
+          "fileInSandbox": true
+        }
+      ],
+      "checks": {
+        "allAccepted": true,
+        "eachInOwnWorktree": true,
+        "filesInSandbox": true
+      },
+      "dispatch": {
+        "drill-20261007-141448-a": "{\n  \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n  \"taskId\": \"drill-20261007-141448-a\",\n  \"attemptId\": \"lpattempt_f69f93e6c09942bfb057bcbf65e8faeb\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n      \"taskId\": \"drill-20261007-141448-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"77a9db81b6743746d1c2182c29ccef71ccb30d080a0feae2368354473be4777b\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n ",
+        "drill-20261007-141448-b": "{\n  \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n  \"taskId\": \"drill-20261007-141448-b\",\n  \"attemptId\": \"lpattempt_f7a85d822032423f9d2d71fcef684a45\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n      \"taskId\": \"drill-20261007-141448-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"e15c9d7386e8e99c2c33f1fa4cd2d13bf7d33308b6939eb6deacafd5f373766c\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n ",
+        "drill-20261007-141448-c": "{\n  \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n  \"taskId\": \"drill-20261007-141448-c\",\n  \"attemptId\": \"lpattempt_56fe4a32f56248f9b2031cc42aa366b9\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_2b7f3d702cdb441babd0bf059c8721b7\",\n      \"taskId\": \"drill-20261007-141448-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"3a8b2ea82d244bbe5820e1b006bef468b952300c6d6a40e35a0f5cfd420620c7\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n "
+      }
+    },
+    {
+      "name": "conflict",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261007-141448-conflict-X",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_9d0e81eba34b4734a119cbb5bba558cb",
+          "writerThread": "thr_md4z9rdajg",
+          "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_c2g9jeqsdt-1/lp-sandbox-rules"
+        },
+        {
+          "task": "drill-20261007-141448-conflict-Y",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_1abcb2b5712b409690f2291d55f43195",
+          "writerThread": "thr_y7pxpx9xqr",
+          "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_57z9u86xuh-1/lp-sandbox-rules"
+        }
+      ],
+      "line2": "line: Y"
+    },
+    {
+      "name": "main_moved",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261007-141448-moved",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_13090d8303774be480f860c68e644132",
+          "writerThread": "thr_7fdnrw67vr",
+          "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_tvip342net-1/lp-sandbox-rules",
+          "file": "notes/drill/20261007-141448-moved.md",
+          "fileInSandbox": true
+        }
+      ],
+      "mainCommit": "f2f9fc94d52eb48b677076837094e8c1fb2c62ca"
+    },
+    {
+      "name": "provider_limit",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261007-141448-limit",
+          "attempts": 3,
+          "states": [
+            "spawn_rejected",
+            "blocked",
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_ab7859a704484456b7c936f4f275cef2",
+          "writerThread": "thr_viv9vtyqb2",
+          "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_xx8ttnfttb-1/lp-sandbox-rules",
+          "file": "notes/drill/20261007-141448-limit.md",
+          "fileInSandbox": true
+        }
+      ],
+      "badModel": "lp-drill-model-that-does-not-exist",
+      "restored": "gpt-6-luna"
+    },
+    {
+      "name": "reload",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261007-141448-reload",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_cbaafea263d64866b6277149a4b884d2",
+          "writerThread": "thr_jqczzju76x",
+          "workspace": "/Users/vechkasov/.bb-machines/vechkasov.getbb.app/plugins/environment-git-worktree/host-data/worktrees/thr_ggj7azxtdt-1/lp-sandbox-rules",
+          "file": "notes/drill/20261007-141448-reload.md",
+          "fileInSandbox": true
+        }
+      ]
+    },
+    {
+      "name": "nogit",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261007-141448-nogit",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_07f118f6c6c4419885f49751d33cd7f7",
+          "writerThread": "thr_2iemxgfw85",
+          "workspace": "/Users/vechkasov/lp-sandbox-layouts/n-nogit",
+          "file": "drill-20261007-141448-nogit.md",
+          "fileInSandbox": true
+        }
+      ],
+      "project": "proj_mzm4k9xd4c",
+      "runId": "lprun_fef29d859ea04ba28070bb4beb27664b",
+      "configuredByDrill": false
+    }
+  ]
+}

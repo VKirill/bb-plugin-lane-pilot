@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import packageJson from "../../package.json";
 import { fullAccessSpawn } from "./pm-spawn";
+import { clearSpawnMarker, keyedSpawnSupported } from "./thread-keys";
 import { scheduleIsolated } from "./schedules";
 import { HOOK_TIMEOUTS_KEY, type HookTimeoutRecord } from "./hook-timeouts";
 import { writerExecutionSelection } from "../jev-reasoning";
@@ -75,6 +76,11 @@ type SignatureRecord = {
   worktree?: RepairWorktree | null;
   /** What became of the repair's branch: «merged <sha>», «up-to-date», «released», or why it was left. */
   outcome?: string | null;
+  /**
+   * A spawn that threw, so whether the thread exists is unknown. Its worktree is kept and the next pass repeats the spawn
+   * under the same key (the same thread comes back when it was made); only a spawn that cannot be settled releases it.
+   */
+  pending?: { worktree: RepairWorktree; at: number } | null;
 };
 type SelfRepairState = { cursor: number; lastTickAt: number | null; signatures: Record<string, SignatureRecord>; spawned: Array<{ at: number; threadId: string; signature: string }> };
 
@@ -87,6 +93,8 @@ const STAGE_MS = 3_600_000;
 const REPEAT_TASKS = 3;
 const FAILED_STATES = "'blocked','validation_failed','spawn_rejected','provider_error','empty_output'";
 const MUTE_MS = 7 * 86_400_000;
+/** How long a worktree waits for a spawn of unknown outcome to settle before it is released. */
+const PENDING_MS = 30 * 60_000;
 /** Stops by design: a question for the PM or a dependency that ended blocked. */
 const NOT_A_FAULT = /needs_human|depends_on|workspace_not_repo_root/i;
 export const VERSION: string = packageJson.version;
@@ -420,7 +428,10 @@ export function createSelfRepair(ctx: ServerCore) {
       record.samples = [...record.samples, ...fresh].slice(-6);
       current.signatures[signature] = record;
     }
-    for (const [signature, record] of Object.entries(current.signatures)) if (now - record.lastAt > FORGET_MS) delete current.signatures[signature];
+    for (const [signature, record] of Object.entries(current.signatures)) if (now - record.lastAt > FORGET_MS) {
+      if (record.pending && !options.dryRun) await releaseWorktree(record.pending.worktree);
+      delete current.signatures[signature];
+    }
     for (const record of Object.values(current.signatures)) {
       signal?.throwIfAborted();
       if (!record.threadId || record.verdict || await threadBusy(record.threadId)) continue;
@@ -450,20 +461,25 @@ export function createSelfRepair(ctx: ServerCore) {
     else if (due.length) {
       const [signature, record] = due[0]!;
       let worktree: RepairWorktree | null = null;
+      let spawnCalled = false;
+      // One id per repair of a kind: a spawn repeated after a lost answer is the same repair thread, not a second one.
+      const spawnId = `${signature}:${record.spawnedAt ?? 0}`;
       try {
         // An aborted tick starts nothing: a repair thread begun after the abort has nobody watching it.
         signal?.throwIfAborted();
         // No worktree, no repair: the shared checkout is not a fallback (that is the fault E2 removes); the kind stays due.
-        worktree = await createRepairWorktree(cfg, signature, now);
+        worktree = record.pending?.worktree ?? await createRepairWorktree(cfg, signature, now);
+        spawnCalled = true;
         const result = await fullAccessSpawn(bb, {
           projectId: cfg.projectId,
           environment: { type: "host", hostId: worktree.hostId, workspace: { type: "unmanaged", path: worktree.path } },
           title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
           prompt: repairPrompt(record.samples, signature, worktree),
           ...writerExecutionSelection(cfg.providerId, cfg.model, cfg.reasoningLevel, "default"),
-          pluginMetadata: { role: "self-repair", signature, repairBranch: worktree.branch },
+          pluginMetadata: { role: "self-repair", signature, spawnId, repairBranch: worktree.branch },
         } as Parameters<typeof fullAccessSpawn>[1]);
         spawned = stringAt(result, "id");
+        record.pending = null;
         if (!spawned) await releaseWorktree(worktree);
         if (spawned) {
           record.threadId = spawned;
@@ -478,7 +494,18 @@ export function createSelfRepair(ctx: ServerCore) {
           reason = "started";
         }
       } catch (cause) {
-        if (worktree) await releaseWorktree(worktree);
+        if (worktree && !spawned) {
+          // The spawn threw: the thread may exist although its answer was lost, and a live repair thread must not lose its
+          // worktree. With thread keys the next pass repeats the spawn and gets that thread back; without them, or after
+          // PENDING_MS, the spawn is taken as not made.
+          if (spawnCalled && keyedSpawnSupported(bb) && now - (record.pending?.at ?? now) < PENDING_MS) {
+            record.pending = { worktree, at: record.pending?.at ?? now };
+          } else {
+            await releaseWorktree(worktree);
+            record.pending = null;
+            if (spawnCalled) await clearSpawnMarker(bb, { role: "self-repair", spawnId });
+          }
+        }
         reason = `spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`;
         ctx.log(`self-repair: ${reason}`);
       }

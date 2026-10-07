@@ -15,11 +15,11 @@ language: ru
 
 | Решение | Число |
 |---|---:|
-| editable | 160 |
+| editable | 198 |
 | read-only | 91 |
 | gap | 0 |
 | excluded | 130 |
-| **сумма** | **381** |
+| **сумма** | **419** |
 
 Из бывших 88 read-only: (a) канал найден и поле стало editable — 0; (b) неприменимо в BB — 50; (c) gap без контракта upstream/SDK — 33.
 
@@ -65,7 +65,7 @@ language: ru
 | 37 | adoc internal tables | PREFERRED_CURSOR_MODELS | bin/agents-doctor:397-399 | internal | N/A | excluded | Исключено — внутренняя реализация upstream (см. §9 инвентаризации AG-179), не настройка Lane Pilot (`bin/agents-doctor:397`) |
 | 38 | adoc internal tables | DEFAULT_CURSOR_MODEL/EFFORT/TIER | bin/agents-doctor:400-402 | internal | N/A | excluded | Исключено — внутренняя реализация upstream (см. §9 инвентаризации AG-179), не настройка Lane Pilot (`bin/agents-doctor:400`) |
 | 39 | adoc internal tables | FALLBACK_CODEX_MODEL/EFFORT/TIER | bin/agents-doctor:403-405 | internal | N/A | excluded | Исключено — applied only when writer auto-picked codex (`bin/agents-doctor:403`) |
-| 40 | adoc capabilities/profile write | workspace.mode | bin/agents-doctor:654-656,688-690,746-749 | user | OWN | editable | Native workspace routing: in_place uses the configured path; worktree provisions a managed BB worktree; auto selects managed isolation (`server.ts:596`) |
+| 40 | adoc capabilities/profile write | workspace.mode | bin/agents-doctor:654-656,688-690,746-749 | user | OWN | editable | Native workspace routing: auto gives every writer attempt its own git worktree; worktree provisions one managed BB worktree for the run (`server.ts:596`) |
 | 41 | adoc capabilities/profile write | workspace.worktree_min_score | bin/agents-doctor:657,690,750-752 | user | OWN | editable | Native task-level workspace router applies this setting before writer spawn and persists the decision with attempt CAS (`bin/agents-doctor:657`) |
 | 42 | adoc capabilities/profile write | workspace.worktree_on_multi_write | bin/agents-doctor:691,753-757 | user | OWN | editable | Native task-level workspace router applies this setting before writer spawn and persists the decision with attempt CAS (`bin/agents-doctor:691`) |
 | 43 | adoc capabilities/profile write | workspace.session_max_tasks | bin/agents-doctor:658,692,758-761 | user | OPS-DIRECT | editable | OPS-DIRECT --max-tasks on lane-ctl start (bin/lane-ctl:3449) (`bin/lane-ctl:3449`) |
@@ -79,7 +79,7 @@ language: ru
 | 51 | adoc capabilities/profile write | night-shift.yaml auto_merge | bin/agents-doctor:902 | user | OWN | editable | Native Lane Pilot night-review stage setting; selection is validated against the live BB provider catalog before dispatch (`bin/agents-doctor:902`) |
 | 52 | routing_profile.py | KNOWN_WRITERS | bin/routing_profile.py:14 | internal | N/A | excluded | Исключено — anything else collapses to kimi in resolve_writer() (`bin/routing_profile.py:14`) |
 | 53 | routing_profile.py | WORKSPACE_MODES | bin/routing_profile.py:19 | internal | N/A | excluded | Исключено — внутренняя реализация upstream (см. §9 инвентаризации AG-179), не настройка Lane Pilot (`bin/routing_profile.py:19`) |
-| 54 | routing_profile.py | DEFAULT_WORKSPACE_MODE | bin/routing_profile.py:20 | user | OWN | editable | Native workspace routing: in_place uses the configured path; worktree provisions a managed BB worktree; auto selects managed isolation (`server.ts:596`) |
+| 54 | routing_profile.py | DEFAULT_WORKSPACE_MODE | bin/routing_profile.py:20 | user | OWN | editable | Native workspace routing: auto gives every writer attempt its own git worktree; worktree provisions one managed BB worktree for the run (`server.ts:596`) |
 | 55 | routing_profile.py | DEFAULT_WORKTREE_MIN_SCORE | bin/routing_profile.py:21 | user | OWN | editable | Native task-level workspace router applies this setting before writer spawn and persists the decision with attempt CAS (`bin/routing_profile.py:21`) |
 | 56 | routing_profile.py | DEFAULT_SESSION_MAX_TASKS | bin/routing_profile.py:22 | user | OPS-DIRECT | editable | Native CLI run settings carry this project-scoped task cap to lane-ctl --max-tasks (`server.ts:641`) |
 | 57 | routing_profile.py | HARD_SESSION_MAX_TASKS | bin/routing_profile.py:23 | internal | N/A | excluded | Исключено — hard ceiling, not raisable (`bin/routing_profile.py:23`) |
@@ -391,11 +391,11 @@ language: ru
 | 363 | Lane Pilot native onboarding stage | onboarding.agent | server.ts:1849 | user | OWN | editable | Native onboarding preview uses live BB provider/model capabilities, bounded role/depth controls, exact preview hashes, explicit confirmation, and host compare-and-swap for writes (`server.ts:1849`) |
 | 364 | Lane Pilot native onboarding stage | onboarding.depth | server.ts:1850 | user | OWN | editable | Native onboarding preview uses live BB provider/model capabilities, bounded role/depth controls, exact preview hashes, explicit confirmation, and host compare-and-swap for writes (`server.ts:1850`) |
 | 365 | Lane Pilot host verification sandbox | sandbox.backend | src/verification/sandbox.ts:22 | user | OWN | editable | Native verification stage selects Seatbelt on macOS or bubblewrap on Linux; absent backend and unprotectable workspace guard paths fail closed (`src/verification/sandbox.ts:22; server.ts:998`) |
-| 366 | Lane Pilot helper session filter | helper.context_mode | src/helper-context.ts:36 | user | OWN | editable | Persisted inherit/selected/none filter; not fail-closed until a required static core policy exists (`src/helper-context.ts:36`) |
-| 367 | Lane Pilot helper session filter | helper.skills | src/helper-context.ts:40 | user | OWN | editable | Selected-mode allowlist; empty means none, not inherit (`src/helper-context.ts:40`) |
-| 368 | Lane Pilot helper session filter | helper.mcp_servers | src/helper-context.ts:41 | user | OWN | editable | Selected-mode allowlist; empty means none, not inherit (`src/helper-context.ts:41`) |
-| 369 | Lane Pilot helper session filter | helper.bb_plugins | src/helper-context.ts:42 | user | OWN | editable | Selected-mode allowlist; empty means none, not inherit (`src/helper-context.ts:42`) |
-| 370 | Lane Pilot helper session filter | helper.native_plugins | src/helper-context.ts:43 | user | OWN | editable | Selected-mode allowlist; empty means none, not inherit (`src/helper-context.ts:43`) |
+| 366 | Lane Pilot helper session filter | helper.context_mode | src/helper-context.ts:36 | user | OWN | editable | Persisted helper session filter; inherit is unrestricted BB context; selected/none are not fail-closed until a required static core policy exists (`src/helper-context.ts:36`) |
+| 367 | Lane Pilot helper session filter | helper.skills | src/helper-context.ts:40 | user | OWN | editable | Allowlist used only when helper.context_mode is selected; empty means none, not inherit (`src/helper-context.ts:40`) |
+| 368 | Lane Pilot helper session filter | helper.mcp_servers | src/helper-context.ts:41 | user | OWN | editable | Allowlist used only when helper.context_mode is selected; empty means none, not inherit (`src/helper-context.ts:41`) |
+| 369 | Lane Pilot helper session filter | helper.bb_plugins | src/helper-context.ts:42 | user | OWN | editable | Allowlist used only when helper.context_mode is selected; empty means none, not inherit (`src/helper-context.ts:42`) |
+| 370 | Lane Pilot helper session filter | helper.native_plugins | src/helper-context.ts:43 | user | OWN | editable | Allowlist used only when helper.context_mode is selected; empty means none, not inherit (`src/helper-context.ts:43`) |
 | 371 | Lane Pilot helper placement | helper.placement | src/helper-placement.ts:1 | user | OWN | editable | New helper threads stay hidden in Lane Pilot or appear in the same project tree as the parent session; workspace holder stays hidden (`src/helper-placement.ts:1`) |
 | 372 | Lane Pilot native code critique | code_critique.enabled | src/stages/code-critique.ts:1 | user | OWN | editable | Post-writer independent critique before final acceptance; default off keeps legacy behavior (`src/stages/code-critique.ts:1`) |
 | 373 | Lane Pilot native code critique | code_critique.mode | src/stages/code-critique.ts:1 | user | OWN | editable | Gate blocks final acceptance on changes_requested; advisory records findings (`src/stages/code-critique.ts:1`) |
@@ -443,3 +443,4 @@ language: ru
 | 415 | Lane Pilot integration gate | integration.gate_command | src/server/integration-gate.ts:22 | user | OWN | editable | The whole-suite check that runs once after a batch of tasks merged; a failure goes to the writer whose task caused it (`src/server/integration-gate.ts:22`) |
 | 416 | Lane Pilot integration gate | integration.gate_when | src/server/integration-gate.ts:25 | user | OWN | editable | When the gate runs: once the task queue is drained, or after every N merged tasks (`src/server/integration-gate.ts:25`) |
 | 417 | Lane Pilot integration gate | integration.gate_every | src/server/integration-gate.ts:27 | user | OWN | editable | Merged tasks between two gate runs when integration.gate_when is every_n (`src/server/integration-gate.ts:27`) |
+| 418 | Lane Pilot verification sandbox | verification.sandbox_unsafe | src/stages/critique-coverage.ts:68 | user | OWN | editable | Tests the verification sandbox cannot run: a whole-suite vitest check must exclude each of them with --exclude, and a task contract that does not is sent back before any writer starts (`src/stages/critique-coverage.ts:68; src/server/lint-task.ts:45`) |

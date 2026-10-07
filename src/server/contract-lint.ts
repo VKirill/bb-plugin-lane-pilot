@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { TaskV2 } from "../contracts";
 import { fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "../owns-paths";
-import { findSandboxUnsafeMissingExcludes } from "../stages/critique-coverage";
+import { findSandboxUnsafeMissingExcludes, runnerFilterArgs } from "../stages/critique-coverage";
 import { parseReadFirstHints } from "../stages/read-first";
 import { isOutputPath, unownedExpectedOutputs } from "../validate-output";
 import { safeRelative, validateOwnershipContract } from "../verification/ownership";
@@ -23,26 +23,8 @@ export type LintInput = {
   deadDependencies:readonly { id:string; state:"blocked" | "canceled" }[];
 };
 
-/** Flags of vitest/jest that take a value: that value is not a test filter. */
-const VALUE_FLAGS = new Set(["--exclude", "-x", "--config", "-c", "--root", "-r", "--reporter", "--project", "--dir", "--environment", "--testNamePattern", "-t", "--outputFile", "--shard"]);
+export { runnerFilterArgs };
 const MAX_PROBES = 128;
-
-/** Positional arguments a vitest/jest run, or an npm/pnpm/yarn script after «--», receives. */
-export function runnerFilterArgs(command:string):string[] {
-  const found:string[] = [];
-  for (const part of command.split(/&&|;|\|\|/)) {
-    const tokens = part.trim().split(/\s+/);
-    let from = tokens.findIndex((token) => /(?:^|\/)(?:vitest|jest)$/.test(token));
-    if (from < 0 && /^(?:npm|pnpm|yarn)$/.test(tokens[0] ?? "")) from = tokens.indexOf("--");
-    if (from < 0) continue;
-    for (let i = from + 1; i < tokens.length; i++) {
-      const token = tokens[i]!.replace(/^["']|["']$/g, "");
-      if (VALUE_FLAGS.has(token)) { i++; continue; }
-      if (/^[\w@.][\w@./-]*$/.test(token) && !token.startsWith("--")) found.push(token);
-    }
-  }
-  return found;
-}
 
 const folderFilters = (task:TaskV2) => task.verification.flatMap((check, index) =>
   runnerFilterArgs(check.command).filter((arg) => !arg.endsWith("/")).map((arg) => ({ index, command:check.command, arg, path:resolve(check.cwd, arg) })));

@@ -1,0 +1,48 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-10-07",
+  "stamp": "20261007-141222",
+  "startedAt": 1791375142236,
+  "finishedAt": 1791375274166,
+  "durationSec": 132,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "nogit"
+  ],
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "nogit",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261007-141222-nogit",
+          "attempts": 2,
+          "states": [
+            "validation_failed",
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_35b6bd4b233f4ca0b46e319e494f9e5b",
+          "writerThread": "thr_7f3jbx3rfj",
+          "workspace": "/Users/vechkasov/lp-sandbox-layouts/n-nogit",
+          "file": "drill-20261007-141222-nogit.md",
+          "fileInSandbox": true
+        }
+      ],
+      "project": "proj_mzm4k9xd4c",
+      "runId": "lprun_d2708fe484c745db96e347b2c0d07387",
+      "configuredByDrill": true
+    }
+  ]
+}

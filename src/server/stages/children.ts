@@ -4,7 +4,7 @@ import { reconcile } from "../../reconcile";
 import type { ReconcileResult } from "../../reconcile";
 import type { StageId } from "../../stages/contract";
 import type { ProjectLifeTaskSummary } from "../../stages/project-life";
-import { findThreadsByMetadata } from "../thread-keys";
+import { clearSpawnMarker, findThreadsByMetadata } from "../thread-keys";
 import type { ServerCore } from "../core";
 
 export function createStageChildren(ctx: ServerCore) {
@@ -17,7 +17,7 @@ export function createStageChildren(ctx: ServerCore) {
     const receipt = listStageReceipts(db, runId, taskId).find((row) => row.stageId === stageId);
     const result = receipt?.result && typeof receipt.result === "object" ? receipt.result as Record<string, unknown> : {};
     if (result.spawnAttempted !== true) return { kind:"not_found" };
-    return reconcile({
+    const found = await reconcile({
       list: async ({ limit, offset }) => (await bb.sdk.threads.list({
         projectId, originPluginId:"lane-pilot", includeHidden:true, limit, offset,
       })).map((thread) => ({ id:thread.id })),
@@ -32,6 +32,9 @@ export function createStageChildren(ctx: ServerCore) {
       find: (match) => findThreadsByMetadata(bb, match, projectId),
     }, { lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId:stageId },
     { match:{ role, stageId, lanePilotRunId:runId, lanePilotTaskId:taskId } });
+    // Adopted instead of answered: the next spawn of this stage must not get this thread back (thread-keys.ts).
+    if (found.kind === "found") await clearSpawnMarker(bb, { role, stageId, lanePilotRunId:runId, lanePilotTaskId:taskId });
+    return found;
   }
 
   async function reconcileDocsChild(projectId:string, runId:string, taskId:string) {

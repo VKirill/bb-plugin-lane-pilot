@@ -5,6 +5,7 @@ import { findOpenNativeRun, getRun } from "../database";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { mentionContext } from "../native-dispatch";
 import { fullAccessSpawn } from "./pm-spawn";
+import { spawnTextId } from "./thread-keys";
 import { storeNativeSelection } from "./native-profile";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { stringAt } from "./values";
@@ -60,7 +61,7 @@ export function mountSpecialists(ctx: ServerCore): void {
       ...writerExecutionSelection("claude-code", SPECIALIST_MODEL, "high", null),
       prompt: specialistPrompt(mentionContext(selection), input.role, input.task),
       environment: { type: "reuse", environmentId },
-      pluginMetadata: { role: "specialist", specialist: input.role, lanePilotRunId: runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },
+      pluginMetadata: { role: "specialist", specialist: input.role, spawnId: `${runId}:${input.role}:${spawnTextId(input.task)}`, lanePilotRunId: runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("specialist_thread_id_missing");

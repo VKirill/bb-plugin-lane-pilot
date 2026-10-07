@@ -30,15 +30,22 @@ export const metadataLookupSupported = (bb: BbPluginApi) => typeof threadsOf(bb)
 /** What makes one logical spawn: the same identity repeated after a lost answer means the same thread. */
 export type SpawnIdentity = { stable: string; role: string };
 
+/** A short stable id for free text (a task, a title) inside a `spawnId`. */
+export const spawnTextId = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 16);
+
 /**
- * The identity a spawn has when its metadata names it, or null: a helper that has no stable owner (a specialist, an
- * errand, a browser check, a nightly docs pass, a repair thread) gets a key of its own per call, which keeps an
- * answer-lost recovery and never merges two helpers that merely look alike.
+ * The identity a spawn has when its metadata names it, or null: a helper that names no owner and no `spawnId` gets a
+ * key of its own per call, which keeps an answer-lost recovery and never merges two helpers that merely look alike.
+ * Specialists, council seats, browser checks, errands, repair threads, rules analyzers and nightly docs passes name
+ * their spawn with `spawnId`, so a repeated call after a lost answer returns the thread that call made.
  */
 export function spawnIdentity(metadata: Record<string, unknown> | undefined): SpawnIdentity | null {
   const text = (name: string) => typeof metadata?.[name] === "string" && metadata[name] ? metadata[name] as string : null;
   const role = text("role");
   if (!role) return null;
+  // A helper with no task or attempt of its own names its spawn itself (`spawnId`): the same id repeated is the same spawn.
+  const spawnId = text("spawnId");
+  if (spawnId) return { stable: spawnId, role };
   if (role === "workspace-provisioner") {
     const attempt = text("workspaceAttemptId");
     return attempt ? { stable: attempt, role } : null;
@@ -61,6 +68,18 @@ export function spawnKey(stable: string, role: string, n: number): string {
 }
 
 const markerKey = (identity: SpawnIdentity) => `spawn-key:${identity.stable}:${identity.role}`;
+
+/**
+ * The spawn of this identity is settled although no spawn call said so: its thread was adopted through reconcile. The
+ * marker of a spawn whose answer was lost would otherwise hand that same thread to the identity's next spawn (the next
+ * critic round read the previous round's verdict). Never throws.
+ */
+export async function clearSpawnMarker(bb: BbPluginApi, metadata: Record<string, unknown>): Promise<void> {
+  try {
+    const identity = spawnIdentity(metadata);
+    if (identity && keyedSpawnSupported(bb)) await bb.storage.kv.delete(markerKey(identity));
+  } catch { /* a marker that stays only costs one extra look at the key */ }
+}
 
 /**
  * Spawns through `experimental_vkSpawnKeyed` when the core has it; the caller's `plain` spawn otherwise (the old path,
