@@ -13,6 +13,9 @@ import { useObservedWidth } from "./panel-layout";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { nodeTitle } from "./workflow-titles";
 import { pickRun, runView, stepStatus, type NodeRun, type RunSnapshot, type RunStep } from "./workflow-run";
+import { ModelsPanel, providerMap, useModelCatalog, useStepExecutors, issueText } from "./workflow-models";
+import { choiceRefusal, clearModelOps, choiceOps, type ModelChoice } from "./workflow-model-ops";
+import { getDraft } from "./workflow-drafts";
 import type { Expansions } from "./workflow-layout";
 
 /** Loaded when a graph is first shown: xyflow and elkjs are most of a megabyte. */
@@ -134,6 +137,8 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
   const [loading, setLoading] = useState<ReadonlySet<string>>(new Set());
   const generation = useRef(0);
   const scope = projectId ?? undefined;
+  const modelCatalog = useModelCatalog();
+  const stepModels = useStepExecutors({ workflowId: id, projectId, revision: detail && detail !== "missing" ? `${detail.version}:${detail.sha256}` : null });
 
   const loadDetail = useCallback(async () => {
     try {
@@ -299,6 +304,33 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
     } catch (cause) { setStarting({ busy: false, error: cause instanceof Error ? cause.message : String(cause) }); }
   };
 
+  /** A model chosen for an own workflow opens a draft of it with the change; the choice is checked against the catalog first, so a refused one opens nothing. */
+  const chooseModel = async (workflow: Detail, nodeId: string, choice: ModelChoice | null): Promise<string | null> => {
+    if (!editProjectId || !onEditDraft || !modelCatalog) return t("wfEditStartError").replace("{error}", "-");
+    const refused = choice ? choiceRefusal(modelCatalog, choice) : null;
+    if (refused) return issueText(refused.code === "no_effort" ? "no_effort" : refused.code);
+    setStarting({ busy: true, error: null });
+    try {
+      const created = await rpc.call("workflow_draft_create", { projectId: editProjectId, workflowId: workflow.id, mode: "edit", scope: projectId ? "project" : "global" });
+      if (!created.draftId) throw new Error(created.reason ?? "no draft");
+      const doc = await getDraft(rpc, created.draftId);
+      if (!doc || typeof doc.workflow !== "object" || doc.workflow === null) throw new Error("no draft");
+      const definition = doc.workflow as Record<string, unknown>;
+      const made = choice ? choiceOps(definition, modelCatalog, nodeId, choice) : { ok: true as const, ops: clearModelOps(definition, nodeId) ?? [] };
+      if (!made.ok) { setStarting({ busy: false, error: null }); return issueText(made.code); }
+      if (!made.ops.length) { setStarting({ busy: false, error: null }); return issueText("no_node"); }
+      const patched = await rpc.call("workflow_draft_patch", { draftId: created.draftId, ops: made.ops, ...(doc.version ? { expectedVersion: doc.version } : {}) });
+      if (!patched.ok) throw new Error("the draft refused the change");
+      setStarting({ busy: false, error: null });
+      onEditDraft(created.draftId);
+      return null;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setStarting({ busy: false, error: message });
+      return message;
+    }
+  };
+
   const selectedNode = selected ? lookup(selected) : null;
   const direction = width > 0 && width < 560 ? "DOWN" : "RIGHT";
 
@@ -360,7 +392,8 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
           {graph ? (
             <Suspense fallback={<p className="py-10 text-center text-xs text-muted-foreground" role="status">{t("wfGraphLoading")}</p>}>
               <WorkflowGraph graph={graph} locale={locale} expansions={expansions} runs={runStates} takenEdges={takenEdges} selected={selected} loadingKeys={loading}
-                onSelect={onSelect} onToggleExpand={toggle} direction={direction} height={direction === "DOWN" ? 420 : 460} />
+                onSelect={onSelect} onToggleExpand={toggle} direction={direction} height={direction === "DOWN" ? 420 : 460}
+                {...(runMode ? {} : { models: { executors: stepModels.byNode, providers: providerMap(modelCatalog) } })} />
             </Suspense>
           ) : null}
         </SurfaceBody>
@@ -371,6 +404,10 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
           onOpenThread: (threadId) => openThread(threadId, nodeTitle(selectedNode, locale)), onClose: () => setSelected(null) };
         return renderNodePanel ? renderNodePanel(context) : <NodePanel {...context} />;
       })() : null}
+
+      <ModelsPanel graph={detail.graph} locale={locale} executors={stepModels.list} loaded={stepModels.loaded} catalog={modelCatalog} wide={width >= 720} busy={starting.busy}
+        access={detail.scope === "builtin" ? "builtin" : editProjectId && onEditDraft ? "own" : "readonly"} onChoose={(nodeId, choice) => chooseModel(detail, nodeId, choice)}
+        onDuplicate={editProjectId && onEditDraft ? () => void startEdit(detail) : null} />
 
       <Surface testId="wf-info">
         <SurfaceHeader><h3 className="text-sm font-medium">{t("wfDefinition")}</h3></SurfaceHeader>

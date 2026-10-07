@@ -9,7 +9,7 @@ import type { WorkflowView, ViewNode, ViewEdge } from "../workflow/view";
 type ElkNode = { id: string; x?: number; y?: number; width?: number; height?: number; children?: ElkNode[]; edges?: ElkExtendedEdge[]; layoutOptions?: Record<string, string> };
 type ElkExtendedEdge = { id: string; sources: string[]; targets: string[] };
 
-export const CARD = { width: 264, height: 116 } as const;
+export const CARD = { width: 264, height: 140 } as const;
 const TERMINAL = { width: 76, height: 34 } as const;
 export const GROUP_PAD = { top: 40, side: 14, bottom: 14 } as const;
 

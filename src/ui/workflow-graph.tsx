@@ -10,6 +10,7 @@ import type { NodeTone, ViewEdge, ViewNode, WorkflowView } from "../workflow/vie
 import { layoutGraph, type Direction, type Expansions, type Layout } from "./workflow-layout";
 import { nodeTitle } from "./workflow-titles";
 import type { NodeRun, NodeStatus } from "./workflow-run";
+import { ModelBadge, executorFor, type GraphModels, type StepExecutor } from "./workflow-models";
 
 /**
  * The read-only canvas of a workflow: role-coloured node cards with ports, edges that carry their condition and passing
@@ -58,6 +59,8 @@ const PASS_KEY: Record<ViewEdge["pass"], I18nKey> = {
 type CardData = {
   view: ViewNode; locale: Locale; direction: Direction; run: NodeRun | null; selected: boolean; changed: boolean; expanded: boolean; loading: boolean;
   onToggle: (() => void) | null; onAddAfter: (() => void) | null; onPick: () => void; problems: string[]; level: "error" | "warning"; editing: boolean;
+  /** Who works on this step and the providers' names and logos (the model badge); absent when the models were not read. */
+  executor: StepExecutor | null; providers: GraphModels["providers"];
 };
 type EdgeData = { edge: ViewEdge; active: boolean | null; changed: boolean; direction: Direction; selected: boolean; problems: string[]; level: "error" | "warning"; onPick: () => void };
 type FlowNode = Node<CardData>;
@@ -81,7 +84,7 @@ function StatusPill({ run }: { run: NodeRun }) {
 }
 
 const NodeCard = memo(function NodeCard({ data, id }: NodeProps<FlowNode>) {
-  const { view, locale, direction, run, selected, changed, expanded, loading, onToggle, onAddAfter, onPick, problems, level, editing } = data;
+  const { view, locale, direction, run, selected, changed, expanded, loading, onToggle, onAddAfter, onPick, problems, level, editing, executor, providers } = data;
   const side = ports(direction);
   const title = nodeTitle(view, locale);
   const kind = t(KIND_KEY[view.kind] ?? "wfKind_agent");
@@ -100,6 +103,7 @@ const NodeCard = memo(function NodeCard({ data, id }: NodeProps<FlowNode>) {
       </div>
       <div className="mt-1.5 truncate text-sm font-medium leading-5" title={title}>{title}</div>
       {view.excerpt ? <p className="mt-0.5 line-clamp-2 break-words text-xs leading-4 text-muted-foreground">{view.excerpt}</p> : null}
+      {executor ? <ModelBadge executor={executor} providers={providers} id={id} /> : null}
       {view.calls ? <p className="mt-0.5 truncate font-mono text-xs leading-4 text-muted-foreground">{view.calls.id}</p> : null}
       {onToggle && view.calls ? (
         <button type="button" className="lp-wf-expand nodrag nopan" data-testid={`wf-expand-${id}`} disabled={loading} aria-expanded={expanded}
@@ -220,15 +224,18 @@ export type WorkflowGraphProps = {
   focusKey?: string | null;
   /** `first` fits the view once per graph and leaves it where the owner put it after an edit; `always` (the default) refits on every new layout. */
   refit?: "always" | "first";
+  /** The model of each step (a badge on the card); the cards are drawn without it until it is read. */
+  models?: GraphModels;
   /** Narrow panels lay the graph out top to bottom. */
   direction?: Direction;
   height?: number;
 };
 
 const NO_PROBLEMS: GraphProblems = { nodes: new Map(), edges: new Map(), errors: new Set() };
+const NO_PROVIDERS: GraphModels["providers"] = new Map();
 
 function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, changedEdges, selected = null, loadingKeys, onSelect, onToggleExpand, onAddAfter, onConnect, selectedEdge = null, onSelectEdge,
-  problems = NO_PROBLEMS, focusKey = null, refit = "always", direction = "RIGHT", height = 440 }: WorkflowGraphProps) {
+  problems = NO_PROBLEMS, focusKey = null, refit = "always", direction = "RIGHT", height = 440, models }: WorkflowGraphProps) {
   const [layout, setLayout] = useState<Layout | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<Direction>(direction);
@@ -264,10 +271,11 @@ function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, cha
       style: { width: placed.width, height: placed.height }, draggable: false, selectable: false, connectable: editing,
       data: { view, locale, direction: orientation, run: runs?.get(key) ?? null, selected: selected === key, changed: changedNodes?.has(key) ?? false, expanded: placed.group, loading: loadingKeys?.has(key) ?? false,
         problems: problems.nodes.get(key) ?? [], level: problems.errors.has(`node:${key}`) ? "error" : "warning", editing,
+        executor: models && !placed.parent && !placed.group ? executorFor(models.executors, view) ?? null : null, providers: models?.providers ?? NO_PROVIDERS,
         onPick: () => pick(key), onToggle: canExpand ? () => handlers.current.onToggleExpand?.(key, view) : null,
         onAddAfter: hasAdd && view.kind !== "end" && !placed.group ? () => handlers.current.onAddAfter?.(key) : null },
     } satisfies FlowNode;
-  }), [layout, locale, orientation, runs, selected, changedNodes, loadingKeys, hasToggle, hasAdd, editing, problems, pick]);
+  }), [layout, locale, orientation, runs, selected, changedNodes, loadingKeys, hasToggle, hasAdd, editing, problems, pick, models]);
 
   const edges = useMemo<FlowEdge[]>(() => (layout?.edges ?? []).map((placed) => ({
     id: placed.key, source: placed.source, target: placed.target, type: "flow", selectable: false, focusable: false,
