@@ -2155,9 +2155,32 @@ describe("stage → native writer → receipt", () => {
   const codeOn={"code_critique.enabled":true,"code_critique.provider":"critic","code_critique.model":"critic-model"};
   const finding='{"decision":"changes_requested","summary":"Missing invariant coverage","findings":[{"id":"f1","severity":"blocking","finding":"note.txt omits the required invariant","criterion":"invariants"}]}';
   const approved='{"decision":"approve","summary":"Candidate checked","findings":[]}';
-  function setupCode(snapshots:Array<Array<Record<string,string>>>, extra?:{outputs?:string[];repair?:string;idleWait?:string;holdEvents?:string[]}) {
-    return setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,codeOn,undefined,undefined,undefined,undefined,undefined,snapshots,false,0,undefined,undefined,undefined,undefined,undefined,undefined,extra?.idleWait,false,{},extra?.holdEvents??[],extra?.outputs,extra?.repair);
+  function setupCode(snapshots:Array<Array<Record<string,string>>>, extra?:{outputs?:string[];repair?:string;idleWait?:string;holdEvents?:string[];settings?:Record<string,unknown>}) {
+    return setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,extra?.settings??codeOn,undefined,undefined,undefined,undefined,undefined,snapshots,false,0,undefined,undefined,undefined,undefined,undefined,undefined,extra?.idleWait,false,{},extra?.holdEvents??[],extra?.outputs,extra?.repair);
   }
+
+  const noteSnaps=[[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]];
+  const criticOf=(spawned:Array<Record<string,unknown>>)=>spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique") as Record<string,unknown>;
+
+  it("reviews the code on another model than the writer's when the critic's pair equals it (G9)",async()=>{
+    // The writer is codex/gpt-6-luna; the critic is set to the same pair, and the plan critique's pair is on the host.
+    const {harness,spawned}=await setupCode(noteSnaps,{settings:{"code_critique.enabled":true,"code_critique.provider":"codex","code_critique.model":"gpt-6-luna",
+      "plan_critique.provider":"critic","plan_critique.model":"critic-model"}});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    expect(criticOf(spawned)).toMatchObject({providerId:"critic",model:"critic-model"});
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("keeps the writer's pair for the critic when no other pair is configured (the PM's is the writer's), and still accepts (G9)",async()=>{
+    const {harness,spawned}=await setupCode(noteSnaps,{settings:{"code_critique.enabled":true,"code_critique.provider":"codex","code_critique.model":"gpt-6-luna"}});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    expect(criticOf(spawned)).toMatchObject({providerId:"codex",model:"gpt-6-luna"});
+    await harness.lifecycle.dispose();
+  },20_000);
 
   it("a queued task waiting for its dependency does not hold an earlier-sent task of its area (no deadlock)",async()=>{
     const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"adoc.040":"worktree"});

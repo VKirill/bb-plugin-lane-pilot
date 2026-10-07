@@ -2,6 +2,7 @@ import { unownedExpectedOutputs } from "../validate-output";
 import { hostContract, taskV2Schema } from "../contracts";
 import type { PrototypeConfig, TaskV2 } from "../contracts";
 import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, loadProjectSettings, openDatabase } from "../database";
+import { criticPairCandidates, latestWriterPair, pairApartFromWriter, sdkCriticCatalog } from "../critic-pair";
 import { bbServiceTier, writerExecutionSelection, writerServiceTier } from "../jev-reasoning";
 import { qaSpawnClaimed } from "../qa-host";
 import { reconcileCritic } from "../reconcile";
@@ -376,12 +377,19 @@ export async function runCodeCritique(input:{
   const liveSelection = resolveStageWriterSelection({
     settings, config:input.config, stageProviderKey:"code_critique.provider", stageModelKey:"code_critique.model",
   });
-  const providerId = frozen?.providerId ?? liveSelection.providerId;
-  const modelId = frozen?.model ?? liveSelection.model;
   const configuredEffort = frozen?.reasoningEffort ?? (typeof settings["code_critique.reasoning_effort"] === "string"
     ? settings["code_critique.reasoning_effort"] as string
     : typeof settings["writer.reasoning_effort"] === "string" ? settings["writer.reasoning_effort"] as string : "medium");
   const savedTier = frozen?.serviceTier ?? settings["code_critique.service_tier"];
+  // G9: another model than the writer's when the host has one (a frozen policy keeps the pair it began with).
+  const apart = frozen ? null : await pairApartFromWriter({
+    current:{ providerId:liveSelection.providerId, model:liveSelection.model }, writer:latestWriterPair(input.db, input.runId, input.taskId),
+    candidates:criticPairCandidates(settings, input.config), effort:configuredEffort,
+    tier:savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings), catalog:sdkCriticCatalog(input.bb, input.config.hostId),
+  });
+  if (apart?.changed) input.bb.log.info(`code critic for ${input.taskId}: ${apart.pair.providerId}/${apart.pair.model} instead of the writer's own pair`);
+  const providerId = frozen?.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
+  const modelId = frozen?.model ?? apart?.pair.model ?? liveSelection.model;
   const policy = frozen ?? freezeCritiquePolicy({
     settings:parsed, providerId, model:modelId, reasoningEffort:configuredEffort,
     serviceTier:typeof savedTier === "string" && savedTier ? String(savedTier) : "standard",
