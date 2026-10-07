@@ -2,12 +2,13 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { noOptionalPlugins } from "./optional-plugin-stubs";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/database";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/database";
 import { createCore } from "../src/server/core";
 import type { Services } from "../src/server/services";
 import { recordStage, reopenWriterStages } from "../src/server/stage-records";
 import { createWriterStart } from "../src/server/writer/start";
 import { LIVE_FOLDER_REASON } from "../src/live-folder";
+import { RunWriterPool } from "../src/stages/run-policy";
 
 const WORKSPACE = "/ws";
 
@@ -271,5 +272,32 @@ it("a git folder is not held by a writer's question", async () => {
   const t2 = services(env, [{ accept: true }], false);
   start(env, t2.all, "T2");
   await vi.waitFor(() => expect(t2.spawned).toEqual(["T2-a1"]));
+  await env.harness.lifecycle.dispose();
+});
+
+it("holds a task in the queue while its provider is at its cap (ops.provider_pool), and starts it once a slot frees", async () => {
+  const env = setup();
+  saveProjectSetting(env.db, "proj1", "ops.provider_pool", "p=1, other=3");
+  const { all, spawned } = services(env, [{ accept: true }], false);
+  const pool = new RunWriterPool();
+  (all as unknown as { runWriterPool: RunWriterPool }).runWriterPool = pool;
+  const busy = await pool.acquire("provider-pool:p", 1);
+  start(env, all);
+  await new Promise((wake) => setTimeout(wake, 150));
+  expect(spawned).toEqual([]);
+  expect(writerStage(env.db).state).not.toBe("failed");
+  busy();
+  await vi.waitFor(() => expect(spawned).toEqual(["T1-a1"]));
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
+  await env.harness.lifecycle.dispose();
+});
+
+it("takes no provider slot when ops.provider_pool lists another provider or is unset", async () => {
+  const env = setup();
+  saveProjectSetting(env.db, "proj1", "ops.provider_pool", "other=1");
+  const { all, acquired, spawned } = services(env, [{ accept: true }], false);
+  start(env, all);
+  await vi.waitFor(() => expect(spawned).toEqual(["T1-a1"]));
+  expect(acquired.map((row) => row.key)).toEqual(["run1"]);
   await env.harness.lifecycle.dispose();
 });

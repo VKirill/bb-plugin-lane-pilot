@@ -118,6 +118,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"usage.skip_percent", channel:"OWN", reason:"Native Lane Pilot provider usage: share of a usage window from which a writer provider/model is skipped until its reset" },
   { key:"tasks.mirror", channel:"OWN", reason:"Native Lane Pilot BB Tasks mirror: copy this project's tasks into the linked BB Tasks project" },
   { key:"secrets.allow", channel:"OWN", reason:"Native Lane Pilot least privilege: the Env Catalog names a task's checks may receive" },
+  { key:"ops.provider_pool", channel:"OWN", reason:"Native Lane Pilot writer pools: a cap on simultaneous writers per provider, as provider=limit pairs" },
   { key:"council.product.provider", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.product.model", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.product.reasoning_effort", channel:"OWN", reason:"Native Lane Pilot council seat setting" },

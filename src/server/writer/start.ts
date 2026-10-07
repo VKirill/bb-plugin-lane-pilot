@@ -2,6 +2,7 @@ import { retryBudgetReason, spendRetryBudget } from "../../retry-budget";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
+import { providerPoolCap } from "../../provider-pool";
 import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../database";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "../../owns-paths";
@@ -357,6 +358,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const releaseRunSlot = releaseWriterSlot;
         const releaseHostSlot = await services.runWriterPool.acquire(`concurrency-limit:${input.config.hostId}`, Math.min(hostCap, 15));
         releaseWriterSlot = () => { releaseHostSlot(); releaseRunSlot?.(); };
+      }
+      // G9: a cap on simultaneous writers of one provider (ops.provider_pool); a task over it waits here, queued, not failed.
+      // It counts the task's writer provider; a fallback of the chain is not counted. No entry, no cap.
+      const poolProvider = typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : input.config.writerProviderId;
+      const providerCap = providerPoolCap(runSettings, poolProvider);
+      if (providerCap !== null && !liveFolder) {
+        const releaseHeld = releaseWriterSlot;
+        const releaseProviderSlot = await services.runWriterPool.acquire(`provider-pool:${poolProvider}`, providerCap);
+        releaseWriterSlot = () => { releaseProviderSlot(); releaseHeld?.(); };
       }
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){

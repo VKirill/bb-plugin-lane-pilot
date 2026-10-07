@@ -1,3 +1,4 @@
+import { PROVIDER_POOL_KEY, providerPoolProblem } from "./provider-pool";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "./ui-catalog";
 
 export type SettingValidationError = {
@@ -31,6 +32,10 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
       return { code:"invalid_choice", key, params:[key, "integer 1-3"] };
     }
     return null;
+  }
+  if (key === PROVIDER_POOL_KEY) {
+    const problem = providerPoolProblem(value);
+    return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;
   }
   if (key === "usage.skip_percent" && value !== undefined && value !== null && value !== "") {
     const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
