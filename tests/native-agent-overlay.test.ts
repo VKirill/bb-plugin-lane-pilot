@@ -144,7 +144,11 @@ it("gives specialists no bb-bridge tools and keeps the PM core plus browser QA",
     "mcp__bb-bridge__lane_pilot_run_workflow",
     "mcp__bb-bridge__lane_pilot_workflow_status",
     "mcp__bb-bridge__lane_pilot_workflow_amend",
+    // Without ToolSearch Claude Code sends every MCP schema at the start; with it the schemas load when the PM asks.
+    "ToolSearch",
   ]);
+  expect(overlaySessionTools("copy-lead", ["Read"])).not.toContain("ToolSearch");
+  expect(overlaySessionTools("dev-orchestrator", ["Read", "ToolSearch"]).filter((tool) => tool === "ToolSearch")).toHaveLength(1);
   const overlay = stockAgentsOverlayFromInstalled({
     agentId: "dev-orchestrator",
     source: "plugin:lane-stack",
