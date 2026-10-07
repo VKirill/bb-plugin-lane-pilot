@@ -761,7 +761,8 @@ export const rpcContract = defineRpcContract({
         }).strict(),
       }).strict().optional(),
     }).strict(),
-    output: z.object({ threadId: z.string().min(1), runId: z.string().min(1) }).strict(),
+    /** bookkeepingExcluded: the lines activation just added to the project's .git/info/exclude; absent when none were missing. */
+    output: z.object({ threadId: z.string().min(1), runId: z.string().min(1), bookkeepingExcluded: z.array(z.string()).optional() }).strict(),
   },
   activation_context: {
     input: z.object({

@@ -50,6 +50,24 @@ export function appendExcludeCommand(line:string):string {
 grep -qxF '${quoted}' "$f" 2>/dev/null || { mkdir -p "$(dirname "$f")" && printf '%s\\n' '${quoted}' >> "$f"; }`;
 }
 
+/** What ensureExcludeLinesCommand prints: «lp:added <line>» for each line it appended, «lp:not-git» outside a repository. */
+export const EXCLUDE_ADDED = "lp:added ";
+export const EXCLUDE_NOT_GIT = "lp:not-git";
+
+/**
+ * Like appendExcludeCommand for several lines at once, telling which ones were missing and are now there. A last line
+ * without a newline is closed first, so the first appended line is not glued to it. Idempotent POSIX sh.
+ */
+export function ensureExcludeLinesCommand(lines:readonly string[]):string {
+  const quoted=lines.map((line)=>`'${line.replace(/'/g,"'\\''")}'`).join(" ");
+  return `f=$(git rev-parse --git-path info/exclude 2>/dev/null) || { echo '${EXCLUDE_NOT_GIT}'; exit 0; }
+mkdir -p "$(dirname "$f")" || exit 1
+for l in ${quoted}; do
+  grep -qxF -- "$l" "$f" 2>/dev/null && continue
+  { [ ! -s "$f" ] || [ -z "$(tail -c1 "$f")" ] || printf '\\n' >> "$f"; } && printf '%s\\n' "$l" >> "$f" && printf '${EXCLUDE_ADDED}%s\\n' "$l"
+done`;
+}
+
 export async function persistTaskFolder(input:{
   taskId:string; plan:string;
   /** Appends the exclude line to the repo's real info/exclude on the workspace's host; a failure skips only the line. */

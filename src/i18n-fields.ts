@@ -831,6 +831,16 @@ export const fieldEn = {
   reason_s411: "Jev decides whether a seat wants the floor and whether the room is done; off means the built-in rule",
   field_s412: "Council laps",
   reason_s412: "Laps of discussion before the chair decides",
+  field_s413: "Writer silence before a nudge",
+  reason_s413: "Minutes a running writer may stay silent before it is nudged; the third silence ends its attempt. Empty means 20",
+  field_s414: "Project bookkeeping paths",
+  reason_s414: "Files of your own that hooks and agents write into a checkout, on top of the built-in list (.agents/runs/, .bb/chats/ and the like): they never count as the writer's change. Comma- or line-separated paths and patterns",
+  field_s415: "Integration gate command",
+  reason_s415: "The whole-suite check that runs once after a batch of tasks merged; a failure goes to the writer whose task caused it. Empty means no gate",
+  field_s416: "Integration gate runs",
+  reason_s416: "When the gate runs: once the task queue is drained, or after every N merged tasks",
+  field_s417: "Merged tasks between gate runs",
+  reason_s417: "Used when the gate runs after every N merged tasks. Empty means 5",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1666,4 +1676,14 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s411: "Jev решает, хочет ли место говорить и закончено ли обсуждение; выкл означает встроенное правило",
   field_s412: "Кругов совета",
   reason_s412: "Кругов обсуждения до решения председателя",
+  field_s413: "Тишина писателя до напоминания",
+  reason_s413: "Сколько минут работающий писатель может молчать до напоминания; третья тишина заканчивает его попытку. Пусто означает 20",
+  field_s414: "Служебные пути проекта",
+  reason_s414: "Ваши собственные файлы, которые хуки и агенты пишут в рабочую копию, сверх встроенного списка (.agents/runs/, .bb/chats/ и подобные): они никогда не считаются изменением писателя. Пути и шаблоны через запятую или с новой строки",
+  field_s415: "Команда интеграционных ворот",
+  reason_s415: "Проверка всего набора тестов, которая идёт один раз после слияния пачки задач; провал уходит писателю, чья задача его вызвала. Пусто означает без ворот",
+  field_s416: "Когда идут ворота",
+  reason_s416: "Когда идут ворота: один раз, когда очередь задач опустела, или после каждых N слитых задач",
+  field_s417: "Слитых задач между воротами",
+  reason_s417: "Работает, когда ворота идут после каждых N слитых задач. Пусто означает 5",
 };

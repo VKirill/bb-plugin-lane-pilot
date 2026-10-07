@@ -15,6 +15,13 @@ export const BOOKKEEPING_PATHS = [
   "notes/lock/**",
 ];
 
+/**
+ * The bookkeeping folders that do not belong in a project's history: activation adds them to the repository's
+ * `.git/info/exclude` (never `.gitignore`: no commit, no change the owner has to review). The leading double star
+ * makes one line match at any depth, so a workspace that is a repo subfolder is covered too.
+ */
+export const BOOKKEEPING_EXCLUDE_LINES = [".agents/runs/", ".agents/reports/", ".bb/chats/", "notes/lock/"].map((dir) => `**/${dir}`);
+
 export const BOOKKEEPING_SETTING = "bookkeeping.paths";
 
 /** The project's extra bookkeeping patterns: an array, or one string split on newlines and commas. */
