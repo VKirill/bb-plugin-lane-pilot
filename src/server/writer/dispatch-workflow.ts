@@ -3,7 +3,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../stages/quality-mode";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
 import { pmReadBrief } from "../../writer-brief";
-import { ANALYZE_PLAN_EXECUTE, builtinWorkflow } from "../../workflow/builtin";
+import { LP_TASK_PIPELINE, builtinWorkflow } from "../../workflow/builtin";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow/engine";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../critique-runs";
 import { recordStage } from "../stage-records";
@@ -11,7 +11,7 @@ import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
 /**
- * The built-in workflow `analyze-plan-execute` (workflows/analyze-plan-execute.json) executed by the workflow engine.
+ * The built-in workflow `lp-task-pipeline` (workflows/lp-task-pipeline.json) executed by the workflow engine.
  * Each executor wraps the stage function dispatchWriter's `runStages` calls; the blocking branches repeat that closure's
  * glue line by line (the closure stays as the kill-switch path, `LANE_PILOT_WORKFLOW_ENGINE=0`), and the equivalence test
  * compares the receipts of both paths.
@@ -208,8 +208,8 @@ function pollAttempt(engine: WorkflowEngine, runId: string, taskId: string) {
 
 /** Starts the dispatch pipeline as a workflow run keyed by the attempt; throws when the engine cannot start it. */
 export function startDispatchRun(engine: WorkflowEngine, runtime: DispatchRuntime): { runId: string; done: Promise<RunSummary> } {
-  const workflow = builtinWorkflow(ANALYZE_PLAN_EXECUTE);
-  if (!workflow) throw new Error(`built-in workflow ${ANALYZE_PLAN_EXECUTE} is not loaded`);
+  const workflow = builtinWorkflow(LP_TASK_PIPELINE);
+  if (!workflow) throw new Error(`built-in workflow ${LP_TASK_PIPELINE} is not loaded`);
   return engine.start({
     workflow, inputs: { taskId: runtime.taskId, attemptId: runtime.attemptId }, key: `lp-task:${runtime.attemptId}`, runtime,
     link: { projectId: runtime.projectId, runId: runtime.runId, taskId: runtime.taskId, attemptId: runtime.attemptId },

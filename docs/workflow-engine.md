@@ -4,7 +4,7 @@ Written before the code (2026-10-07) and kept in step with it. Sources: `workflo
 
 ## 1. What changes and what does not
 
-The per-task pipeline of Lane Pilot becomes the built-in workflow `analyze-plan-execute`. A workflow engine executes it. Every dispatch goes through the engine; `LANE_PILOT_WORKFLOW_ENGINE=0` (read at call time, default on) switches to the old direct path. The stage functions (`runPmRead`, `runPlanCritique`, `runSpecialistReview`, `startWriterTask`) are not rewritten: the node executors call them. The old `runStages` closure in `dispatch.ts` stays untouched as the kill-switch path; the new glue lives in `src/server/writer/dispatch-workflow.ts`. Equivalence is proven by tests (section 9).
+The per-task pipeline of Lane Pilot becomes the built-in workflow `lp-task-pipeline` (W3 renamed it from `analyze-plan-execute`, which is now the outer chain of the chains spec). A workflow engine executes it. Every dispatch goes through the engine; `LANE_PILOT_WORKFLOW_ENGINE=0` (read at call time, default on) switches to the old direct path. The stage functions (`runPmRead`, `runPlanCritique`, `runSpecialistReview`, `startWriterTask`) are not rewritten: the node executors call them. The old `runStages` closure in `dispatch.ts` stays untouched as the kill-switch path; the new glue lives in `src/server/writer/dispatch-workflow.ts`. Equivalence is proven by tests (section 9).
 
 ## 2. The pipeline mapped onto node types
 

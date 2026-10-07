@@ -1,5 +1,5 @@
 import { HARNESS_VERSION } from "../database";
-import { ANALYZE_PLAN_EXECUTE, builtinWorkflow } from "../workflow/builtin";
+import { LP_TASK_PIPELINE, builtinWorkflow } from "../workflow/builtin";
 import { WorkflowEngine } from "../workflow/engine";
 import { registerDispatchExecutors } from "./writer/dispatch-workflow";
 import type { ServerCore } from "./core";
@@ -18,7 +18,7 @@ export function createWorkflowEngine(ctx: ServerCore) {
     resolveWorkflow: (id, version) => builtinWorkflow(id, version),
     isDisposed: ctx.isDisposed,
     // A reload ends a dispatch that was between its stages, as it always did: the attempt is blocked and the PM sends the task again.
-    resumePolicy: (run) => (run.workflow_id === ANALYZE_PLAN_EXECUTE ? "interrupt" : "continue"),
+    resumePolicy: (run) => (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:") ? "interrupt" : "continue"),
   });
   registerDispatchExecutors(engine);
   bb.onDispose(() => engine.dispose());

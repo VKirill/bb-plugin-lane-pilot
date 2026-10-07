@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "analyze-plan-execute",
-  "name": "Analyze, plan, execute",
+  "id": "lp-task-pipeline",
+  "name": "Task pipeline",
   "description": {
     "en": "The Lane Pilot task pipeline: the PM read, the plan critique (by quality mode), the specialist risk review, the ownership base, then the code task in its own worktree with checks, code critique and merge.",
     "ru": "Конвейер задачи Lane Pilot: чтение PM, критика плана (по режиму качества), проверка рисков специалистом, база владения, затем кодовая задача в своём worktree с проверками, критикой кода и слиянием."

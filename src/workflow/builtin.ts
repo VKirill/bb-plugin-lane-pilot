@@ -1,13 +1,14 @@
-import analyzePlanExecute from "../../workflows/analyze-plan-execute.json";
+import lpTaskPipeline from "../../workflows/lp-task-pipeline.json";
 import type { Workflow } from "./schema";
 import { parseWorkflow } from "./validate";
 
 /** The workflows that ship with Lane Pilot (`workflows/*.json`, inlined by the bundler). Add a file here to add one. */
 export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = [
-  { name: "analyze-plan-execute.json", value: analyzePlanExecute },
+  { name: "lp-task-pipeline.json", value: lpTaskPipeline },
 ];
 
-export const ANALYZE_PLAN_EXECUTE = "analyze-plan-execute";
+/** The per-task pipeline every dispatch runs through (PM read, critiques, ownership base, writer). */
+export const LP_TASK_PIPELINE = "lp-task-pipeline";
 
 const parsed = new Map<string, Workflow>();
 for (const source of BUILTIN_SOURCES) {
