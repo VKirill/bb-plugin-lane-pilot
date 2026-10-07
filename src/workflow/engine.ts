@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { LanePilotDatabase } from "../database";
-import { MAX_SUBWORKFLOW_DEPTH } from "./schema";
-import type { GraphNode as WorkflowNode, PassMode, Workflow, WorkflowEdge } from "./schema";
+import { MissingValueError, evalCondition, evalSpec, parseExpr, refOf, renderValue, toExpr, valueSpecOf } from "./expr";
+import type { EvalEnv, Expr, Ref } from "./expr";
+import { MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES } from "./schema";
+import type { Field, GraphNode as WorkflowNode, PassMode, QualityMode, Workflow, WorkflowEdge } from "./schema";
 import { createJournal, sha256, stableId, TERMINAL_RUN } from "./journal";
 import type { EffectRow, Journal, RunRow, RunStatus, StepRow } from "./journal";
-import { outputFields, parseRef, resolvePath, validateWorkflow, WorkflowError } from "./validate";
-import { checkOutput, evalCondition, MissingValueError, renderTemplate, valueAtPath } from "./values";
+import { executorKey, lowerWorkflow, outputFields } from "./lower";
 import { definitionSha256 } from "./store";
+import { WorkflowError, validateWorkflow } from "./validate";
+import { checkOutput, valueAtPath } from "./values";
 
 /** What a step receives: only the mapped fields (mode artifact), and where they came from. */
 export type StepInput = {
@@ -27,11 +30,16 @@ export interface StepContext<R = unknown> {
   runId: string; stepKey: string; nodeId: string; node: WorkflowNode; workflow: Workflow;
   /** The try of this visit, from 1. A resumed step keeps its number, so the spawn key stays the same. */
   attempt: number; input: StepInput; runtime: R | undefined;
+  /** The quality mode of the run (`$mode`). */
+  mode: QualityMode;
   /** sha256(run | step | attempt): put it in the metadata of a spawned thread to find a lost spawn again. */
   spawnKey: string; signal: AbortSignal;
-  /** The value of `node.field`, `input.name`, `item` or `index` as this step sees it. */
+  /** The value of `node.field`, `$inputs.name`, `ctx.x`, `item` or `index` as this step sees it. */
   resolve(ref: string): unknown;
+  /** Writes `{{ref}}` placeholders into a text. */
   render(template: string): string;
+  /** A value in an expression-valued position (`'text'`, `node.field`, `a + b`, a bare word is itself). */
+  value(spec: unknown): unknown;
   /** An external call recorded as intended before and done after, so a reload neither repeats nor forgets it. */
   effect<T>(key: string, kind: string, fn: () => Promise<T>, options?: { intent?: unknown; reconcile?: EffectReconcile<T> }): Promise<T>;
 }
@@ -64,6 +72,8 @@ export type EngineOptions = {
   /** Asked before every step: false stops the run at this boundary and leaves the step pending (drain, shutdown). */
   admit?: () => boolean | Promise<boolean>;
   isDisposed?: () => boolean;
+  /** What a reload does to a run that was in flight: pick up where the journal stopped, or end it as interrupted. */
+  resumePolicy?: (run: RunRow) => "continue" | "interrupt";
   leaseMs?: number;
   /** Test hook: called at named points of the driver; throwing simulates the process dying there. */
   fault?: (point: string) => void;
@@ -71,17 +81,25 @@ export type EngineOptions = {
 
 /** Thrown by the test hook; never treated as a step failure. */
 export class CrashError extends Error {}
+export { MissingValueError };
 
 class RouteFailure extends Error { constructor(readonly code: string, message: string) { super(message); } }
 const isEngineBug = (cause: unknown) => cause instanceof CrashError || (cause instanceof Error && /database connection is not open|closed/i.test(cause.message));
 
-type Compiled = { wf: Workflow; nodes: Map<string, WorkflowNode>; out: Map<string, Array<{ edge: WorkflowEdge; index: number }>> };
+type Out = Array<{ edge: WorkflowEdge; index: number }>;
+type Compiled = {
+  wf: Workflow; nodes: Map<string, WorkflowNode>; out: Map<string, Out>;
+  /** Conditions parsed once, by edge index and by node id (skip_when). */
+  when: Map<number, Expr>; skip: Map<string, Expr>;
+  joinOf: Map<string, Extract<WorkflowNode, { type: "join" }>>;
+};
 
 const scopeChain = (scope: string): string[] => {
   const parts = scope ? scope.split("/") : [];
   return [...parts.map((_part, index) => parts.slice(0, parts.length - index).join("/")), ""];
 };
 const asObject = (text: string | null): Record<string, unknown> => (text ? JSON.parse(text) as Record<string, unknown> : {});
+const STARTED = ["succeeded", "failed", "running", "waiting", "interrupted"];
 
 export class WorkflowEngine {
   readonly journal: Journal;
@@ -113,41 +131,40 @@ export class WorkflowEngine {
 
   // ---------------------------------------------------------------- definitions
 
-  private keyFor(node: WorkflowNode): string | null {
-    switch (node.type) {
-      case "parallel": return "builtin:parallel";
-      case "join": return "builtin:join";
-      case "subworkflow": return "builtin:subworkflow";
-      case "decision": return node.uses ?? (node.reads ? "builtin:decision" : null);
-      case "human": return node.uses ?? "builtin:human";
-      case "agent": return node.uses ?? "agent";
-      case "lp-task": return node.uses ?? "lp-task";
-      case "action": return node.uses ?? node.action ?? null;
-      default: return null;
-    }
+  private compile(wf: Workflow): Compiled {
+    const nodes = new Map<string, WorkflowNode>(wf.nodes.filter((node): node is WorkflowNode => node.type !== "note").map((node) => [node.id, node]));
+    const out = new Map<string, Out>();
+    const when = new Map<number, Expr>(), skip = new Map<string, Expr>();
+    wf.edges.forEach((edge, index) => {
+      const list = out.get(edge.from) ?? []; list.push({ edge, index }); out.set(edge.from, list);
+      if (edge.when !== undefined && edge.from !== "start") when.set(index, toExpr(edge.when, edge.from));
+    });
+    for (const node of nodes.values()) if (node.skip_when !== undefined) skip.set(node.id, toExpr(node.skip_when, node.id));
+    const joinOf = new Map<string, Extract<WorkflowNode, { type: "join" }>>();
+    for (const node of nodes.values()) if (node.type === "join") joinOf.set(node.parallel, node);
+    return { wf, nodes, out, when, skip, joinOf };
   }
 
-  private compile(workflow: Workflow): Compiled {
-    const nodes = new Map<string, WorkflowNode>(workflow.nodes.filter((node): node is WorkflowNode => node.type !== "note").map((node) => [node.id, node]));
-    const out = new Map<string, Array<{ edge: WorkflowEdge; index: number }>>();
-    workflow.edges.forEach((edge, index) => { const list = out.get(edge.from) ?? []; list.push({ edge, index }); out.set(edge.from, list); });
-    return { wf: workflow, nodes, out };
-  }
-
+  /** `definition_json` holds the lowered workflow: children resolved and pinned, nothing left to expand. */
   private compiled(run: RunRow): Compiled {
     let found = this.compiledRuns.get(run.id);
     if (!found) { found = this.compile(JSON.parse(run.definition_json) as Workflow); this.compiledRuns.set(run.id, found); }
     return found;
   }
 
-  /** Why a workflow cannot run here: invalid, or a node whose executor is not registered. */
+  /** Why a workflow cannot run here: invalid, an executor not registered, or a feature the engine does not run yet. */
   preflight(workflow: Workflow): string[] {
     const problems = validateWorkflow(workflow, { resolve: this.options.resolveWorkflow }).filter((problem) => problem.level === "error").map((problem) => problem.message);
-    for (const node of workflow.nodes) {
+    const lowered = lowerWorkflow(workflow, this.options.resolveWorkflow);
+    for (const node of lowered.nodes) {
       if (node.type === "note") continue;
-      const key = this.keyFor(node);
+      const key = executorKey(node);
       if (!key) problems.push(`node "${node.id}" has no executor (set "uses"${node.type === "action" ? " or \"action\"" : ""})`);
       else if (!this.executors.has(key)) problems.push(`node "${node.id}": executor "${key}" is not registered`);
+      if (node.type === "join" && node.policy !== "all") problems.push(`node "${node.id}": join policy "${node.policy}" is not run by the engine yet`);
+      if (node.type === "parallel" && node.order) problems.push(`node "${node.id}": order "${node.order}" is not run by the engine yet`);
+      if (node.type === "parallel" && node.on_child_fail) problems.push(`node "${node.id}": on_child_fail "${node.on_child_fail}" is not run by the engine yet`);
+      if (node.type === "agent" && (node.votes ?? 1) > 1) problems.push(`node "${node.id}": votes ${node.votes} is not run by the engine yet`);
     }
     return problems;
   }
@@ -156,7 +173,7 @@ export class WorkflowEngine {
 
   /** Starts a run, or returns the one that already has this key. `done` settles when the run stops: finished, waiting or stopped. */
   start<R>(input: {
-    workflow: Workflow; inputs?: Record<string, unknown>; key?: string; runtime?: R;
+    workflow: Workflow; inputs?: Record<string, unknown>; key?: string; runtime?: R; mode?: QualityMode;
     link?: { projectId?: string; runId?: string; taskId?: string; attemptId?: string };
     parent?: { runId: string; stepKey: string }; depth?: number;
   }): { runId: string; created: boolean; done: Promise<RunSummary> } {
@@ -168,19 +185,24 @@ export class WorkflowEngine {
     }
     const problems = this.preflight(workflow);
     if (problems.length) throw new WorkflowError(problems.map((message) => ({ level: "error" as const, code: "preflight", message })));
-    const inputs = checkOutput(workflow.inputs, input.inputs ?? {});
+    const withDefaults = { ...(input.inputs ?? {}) };
+    for (const field of workflow.inputs) if (withDefaults[field.name] === undefined && field.default !== undefined) withDefaults[field.name] = field.default;
+    const inputs = checkOutput(workflow.inputs, withDefaults);
     const depth = input.depth ?? 0;
     if (depth > Math.min(workflow.guards.maxSubworkflowDepth, MAX_SUBWORKFLOW_DEPTH)) throw new MissingValueError("subworkflow_depth", `subworkflows go ${depth} deep; the limit is ${MAX_SUBWORKFLOW_DEPTH}`);
+    const given = inputs.quality_mode;
+    const mode: QualityMode = (QUALITY_MODES as readonly unknown[]).includes(given) ? given as QualityMode : input.mode ?? workflow.quality_mode?.default ?? "standard";
     const runId = `wfrun_${randomUUID().replaceAll("-", "")}`;
     const j = this.journal, at = this.now();
-    const c = this.compile(workflow);
+    const lowered = lowerWorkflow(workflow, this.options.resolveWorkflow);
+    const c = this.compile(lowered);
     const entry = c.out.get("start")![0]!;
     j.db.transaction(() => {
       j.db.prepare(`INSERT INTO lane_pilot_wf_run(id,idem_key,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,link_run_id,link_task_id,link_attempt_id,
-        parent_run_id,parent_step_key,depth,status,inputs_json,harness_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?)`)
-        .run(runId, input.key ?? null, workflow.id, workflow.version, definitionSha256(workflow), JSON.stringify(workflow), input.link?.projectId ?? null, input.link?.runId ?? null,
-          input.link?.taskId ?? null, input.link?.attemptId ?? null, input.parent?.runId ?? null, input.parent?.stepKey ?? null, depth, JSON.stringify(inputs), this.options.harnessVersion, at, at);
-      j.event(runId, null, "run", null, "running", `${workflow.id}@${workflow.version}`);
+        parent_run_id,parent_step_key,depth,status,mode,inputs_json,harness_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?)`)
+        .run(runId, input.key ?? null, workflow.id, workflow.version, definitionSha256(workflow), JSON.stringify(lowered), input.link?.projectId ?? null, input.link?.runId ?? null,
+          input.link?.taskId ?? null, input.link?.attemptId ?? null, input.parent?.runId ?? null, input.parent?.stepKey ?? null, depth, mode, JSON.stringify(inputs), this.options.harnessVersion, at, at);
+      j.event(runId, null, "run", null, "running", `${workflow.id}@${workflow.version} mode ${mode}`);
       this.compiledRuns.set(runId, c);
       const run = j.getRun(runId)!;
       this.deliver(run, c, null, entry.edge, entry.index, { scope: "", fromScope: "", suffix: "" });
@@ -296,16 +318,96 @@ export class WorkflowEngine {
     return null;
   }
 
+  // ---------------------------------------------------------------- reading values
+
+  private mergedCommits(runId: string): string[] {
+    const out: string[] = [];
+    const walk = (id: string) => {
+      const rows = this.journal.db.prepare("SELECT output_json FROM lane_pilot_wf_step WHERE run_id=? AND state='succeeded' AND output_json LIKE '%merged_commits%' ORDER BY rowid").all(id) as Array<{ output_json: string }>;
+      for (const row of rows) { const value = asObject(row.output_json).merged_commits; if (Array.isArray(value)) for (const commit of value) if (typeof commit === "string" && !out.includes(commit)) out.push(commit); }
+      for (const child of this.journal.db.prepare("SELECT id FROM lane_pilot_wf_run WHERE parent_run_id=?").all(id) as Array<{ id: string }>) walk(child.id);
+    };
+    walk(runId);
+    return out;
+  }
+
+  /** The values a step's expressions see: inputs, mode, context, the item of its branch, and the latest output of each node. */
+  private env(run: RunRow, step: StepRow | null, item?: { value: unknown; index?: number }): EvalEnv {
+    const scopes = scopeChain(step?.scope ?? "");
+    const stepInput = step ? asObject(step.input_json) : {};
+    return {
+      read: (ref: Ref) => {
+        switch (ref.kind) {
+          case "input": return { ran: true, value: valueAtPath(asObject(run.inputs_json), ref.path) };
+          case "mode": return { ran: true, value: run.mode };
+          case "var": return { ran: true, value: ref.path[0] === "date" ? new Date(this.now()).toISOString().slice(0, 10) : run.id };
+          case "ctx": {
+            const name = ref.path[0];
+            const value = name === "run_id" ? run.id : name === "goal" ? asObject(run.inputs_json).goal : name === "merged_commits" ? this.mergedCommits(run.id) : undefined;
+            return { ran: true, value: valueAtPath(value, ref.path.slice(1)) };
+          }
+          case "item": {
+            const base = item ? item.value : stepInput.item;
+            return { ran: item !== undefined || stepInput.item !== undefined, value: valueAtPath(base, ref.path) };
+          }
+          case "index": return { ran: true, value: item ? item.index : stepInput.index };
+          default: {
+            const row = this.journal.db.prepare(`SELECT output_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id=? AND state IN ('succeeded','skipped') AND scope IN (${scopes.map(() => "?").join(",")}) ORDER BY rowid DESC LIMIT 1`)
+              .get(run.id, ref.node, ...scopes) as { output_json: string | null } | undefined;
+            if (!row) return { ran: false, value: undefined };
+            const output = asObject(row.output_json);
+            return { ran: true, value: ref.path.length ? valueAtPath(output, ref.path) : output };
+          }
+        }
+      },
+      visits: (node) => (this.journal.db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_wf_step WHERE run_id=? AND node_id=? AND state IN (${STARTED.map(() => "?").join(",")}) AND scope IN (${scopes.map(() => "?").join(",")})`)
+        .get(run.id, node, ...STARTED, ...scopes) as { n: number }).n,
+    };
+  }
+
+  private read(run: RunRow, step: StepRow | null, text: string): unknown {
+    const ref = refOf(text);
+    const found = this.env(run, step).read(ref);
+    if (!found.ran) throw new MissingValueError("reference_missing", `"${text}" has no value yet`);
+    return found.value;
+  }
+
+  private refRequired(c: Compiled, text: string): boolean {
+    const ref = refOf(text);
+    if (ref.kind !== "node" && ref.kind !== "input") return false;
+    const fields = ref.kind === "input" ? c.wf.inputs : (c.nodes.get(ref.node!) ? outputFields(c.wf, c.nodes.get(ref.node!)) : []);
+    if (fields === "unknown") return false;
+    const field = fields.find((candidate) => candidate.name === ref.path[0]);
+    return Boolean(field?.required) && ref.path.length === 1;
+  }
+
+  private mapWith(run: RunRow, c: Compiled, from: StepRow | null, edge: WorkflowEdge): Record<string, unknown> {
+    const data: Record<string, unknown> = {};
+    for (const [name, text] of Object.entries(edge.with ?? {})) {
+      const ref = refOf(text);
+      const found = this.env(run, from).read(ref);
+      if (!found.ran || found.value === undefined || found.value === null) {
+        if (this.refRequired(c, text)) throw new RouteFailure("mapping_field_missing", `"${text}" has no value for "${name}" on the edge ${edge.from} -> ${edge.to}`);
+        continue;
+      }
+      data[name] = found.value;
+    }
+    return data;
+  }
+
   // ---------------------------------------------------------------- one step
 
   private contextFor(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode, attempt: number, signal: AbortSignal): StepContext {
     const j = this.journal;
     const input = JSON.parse(step.input_json) as StepInput;
-    const resolve = (ref: string) => this.lookup(run, step, ref);
+    const env = this.env(run, step);
+    const resolve = (text: string) => { const found = env.read(refOf(text)); return found.ran ? found.value : undefined; };
     return {
-      runId: run.id, stepKey: step.step_key, nodeId: node.id, node, workflow: c.wf, attempt, input, runtime: this.runtimes.get(run.id), signal,
+      runId: run.id, stepKey: step.step_key, nodeId: node.id, node, workflow: c.wf, attempt, input, runtime: this.runtimes.get(run.id), signal, mode: run.mode as QualityMode,
       spawnKey: sha256(`${run.id}|${step.step_key}|${attempt}`).slice(0, 32),
-      resolve, render: (template) => renderTemplate(template, resolve),
+      resolve,
+      render: (template) => String(renderValue(template, (ref, text) => { const found = env.read(ref); if (!found.ran) throw new MissingValueError("reference_missing", `"${text}" has no value yet`); return found.value; }, run.mode) ?? ""),
+      value: (spec) => evalSpec(valueSpecOf(spec), env, `${node.id}`),
       effect: (key, kind, fn, options) => this.runEffect(j, run.id, step.step_key, key, kind, fn, options),
     };
   }
@@ -344,6 +446,26 @@ export class WorkflowEngine {
     }
   }
 
+  /** Why a node is skipped before it starts: outside its quality modes, or its skip_when holds. */
+  private skipReason(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode): string | null {
+    if (node.type === "join") return null;
+    if (node.applicable_modes && !node.applicable_modes.includes(run.mode as QualityMode)) return `mode ${run.mode} is not one of ${node.applicable_modes.join(", ")}`;
+    const expr = c.skip.get(node.id);
+    if (expr && evalCondition(expr, this.env(run, step), `${node.id} skip_when`)) return "skip_when";
+    return null;
+  }
+
+  /** A skipped node still has a typed output: `skip_out`, checked against its declared fields. */
+  private skipOutput(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode): Record<string, unknown> {
+    const env = this.env(run, step);
+    const target = node.type === "parallel" ? c.joinOf.get(node.id) ?? node : node;
+    const given = Object.fromEntries(Object.entries(node.skip_out ?? {}).map(([name, value]) => [name, evalSpec(valueSpecOf(value), env, `${node.id} skip_out.${name}`)]));
+    const fields = outputFields(c.wf, target);
+    if (fields === "unknown") return given;
+    if (node.type === "agent" && given.handoff === undefined) given.handoff = "skipped";
+    return checkOutput(fields, given);
+  }
+
   /** Runs one pending step to its end; "stop" when the engine was asked to halt at this boundary. */
   private async execStep(runId: string, stepKey: string): Promise<"done" | "stop" | "skip"> {
     const j = this.journal;
@@ -352,17 +474,56 @@ export class WorkflowEngine {
     const run = j.getRun(runId)!;
     if (TERMINAL_RUN.includes(run.status)) return "skip";
     const c = this.compiled(run);
-    const step = j.getStep(runId, stepKey)!;
+    let step = j.getStep(runId, stepKey)!;
     if (step.state !== "pending") return "skip";
     const node = c.nodes.get(step.node_id)!;
     const limit = this.checkLimits(run, c);
     if (limit) { if (j.setRunStatus(runId, ["running", "waiting"], "blocked", limit)) this.cancelOpenSteps(runId); return "skip"; }
+
+    // Skipped before it starts: the quality mode or skip_when says so; the node keeps a typed output.
+    try {
+      const why = this.skipReason(run, c, step, node);
+      if (why) {
+        const output = this.skipOutput(run, c, step, node);
+        j.db.transaction(() => {
+          if (!j.moveStep(runId, stepKey, "pending", "skipped", { output_json: JSON.stringify(output), ended: true, receipt_json: JSON.stringify({ executor: executorKey(node), skipped: why, harnessVersion: this.options.harnessVersion }) })) return;
+          if (node.type === "parallel") this.skipFan(run, c, step, node, output);
+        })();
+        return "done";
+      }
+    } catch (cause) {
+      if (isEngineBug(cause)) throw cause;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      const code = cause instanceof MissingValueError ? cause.code : "skip_failed";
+      j.db.transaction(() => { if (j.moveStep(runId, stepKey, "pending", "canceled", { error: message, ended: true })) this.failRun(runId, `${code}:${node.id}`); })();
+      return "done";
+    }
+
+    // The node's own inputs: templates written into the step's input, once.
+    try {
+      if (node.with && !asObject(step.input_json).withRendered) {
+        const env = this.env(run, step);
+        const rendered = renderValue(node.with, (ref, text) => { const found = env.read(ref); if (!found.ran) throw new MissingValueError("reference_missing", `"${text}" has no value yet`); return found.value; }, run.mode) as Record<string, unknown>;
+        const input = asObject(step.input_json) as unknown as StepInput & { withRendered?: boolean };
+        input.with = { ...input.with, ...rendered };
+        input.withRendered = true;
+        j.db.prepare("UPDATE lane_pilot_wf_step SET input_json=? WHERE run_id=? AND step_key=?").run(JSON.stringify(input), runId, stepKey);
+        step = j.getStep(runId, stepKey)!;
+      }
+    } catch (cause) {
+      if (isEngineBug(cause)) throw cause;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      const code = cause instanceof MissingValueError ? cause.code : "with_failed";
+      j.db.transaction(() => { if (j.moveStep(runId, stepKey, "pending", "canceled", { error: message, ended: true })) this.failRun(runId, `${code}:${node.id}`); })();
+      return "done";
+    }
+
     const startAttempt = Math.max(1, step.attempt);
     const spawnKey = sha256(`${runId}|${stepKey}|${startAttempt}`).slice(0, 32);
     this.fault("before-start");
     if (!j.moveStep(runId, stepKey, "pending", "running", { started: true, harness_version: this.options.harnessVersion, attempt: startAttempt, spawn_key: spawnKey })) return "skip";
     j.db.prepare("UPDATE lane_pilot_wf_run SET steps_used=steps_used+1, updated_at=? WHERE id=?").run(this.now(), runId);
-    const executor = this.executors.get(this.keyFor(node)!)!;
+    const executor = this.executors.get(executorKey(node)!)!;
     const abort = this.aborts.get(runId) ?? new AbortController();
     this.aborts.set(runId, abort);
     let outcome: StepOutcome | null = null, lastError: unknown = null;
@@ -377,12 +538,15 @@ export class WorkflowEngine {
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           const running = executor.run(this.contextFor(run, c, fresh, node, attempt, attemptAbort.signal));
-          const limited = node.timeoutSec === undefined ? running : Promise.race([running, new Promise<never>((_resolve, reject) => {
+          const limited = node.timeoutSec === undefined || node.type === "human" ? running : Promise.race([running, new Promise<never>((_resolve, reject) => {
             timer = setTimeout(() => { attemptAbort.abort(); reject(new Error(`timeout after ${node.timeoutSec}s`)); }, node.timeoutSec! * 1000);
           })]);
           outcome = await limited;
         } finally { clearTimeout(timer); abort.signal.removeEventListener("abort", forward); }
-        if (!("wait" in outcome)) outcome = { ...outcome, output: checkOutput(outputFields(c.wf, node), outcome.output) };
+        if (!("wait" in outcome)) {
+          const fields = outputFields(c.wf, node);
+          outcome = { ...outcome, output: fields === "unknown" ? outcome.output : checkOutput(fields, outcome.output) };
+        }
         lastError = null;
         break;
       } catch (cause) {
@@ -395,7 +559,7 @@ export class WorkflowEngine {
     this.fault("after-run");
     const current = j.getRun(runId)!;
     if (TERMINAL_RUN.includes(current.status)) { j.moveStep(runId, stepKey, "running", "canceled", { ended: true }); return "skip"; }
-    const receipt = (extra: Record<string, unknown>) => JSON.stringify({ executor: this.keyFor(node), harnessVersion: this.options.harnessVersion, ...extra });
+    const receipt = (extra: Record<string, unknown>) => JSON.stringify({ executor: executorKey(node), harnessVersion: this.options.harnessVersion, ...extra });
     if (!outcome) {
       const message = lastError instanceof Error ? lastError.message : String(lastError);
       const code = lastError instanceof MissingValueError ? lastError.code : "step_failed";
@@ -418,42 +582,18 @@ export class WorkflowEngine {
     return "done";
   }
 
-  // ---------------------------------------------------------------- reading values
-
-  private lookup(run: RunRow, step: StepRow | null, text: string): unknown {
-    const ref = parseRef(text);
-    if (!ref) return undefined;
-    if (ref.kind === "input") return valueAtPath(asObject(run.inputs_json), ref.path);
-    if (ref.kind === "item" || ref.kind === "index") {
-      const input = step ? asObject(step.input_json) : {};
-      return ref.kind === "index" ? input.index : valueAtPath(input.item, ref.path);
-    }
-    const scopes = scopeChain(step?.scope ?? "");
-    const row = this.journal.db.prepare(`SELECT output_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id=? AND state='succeeded' AND scope IN (${scopes.map(() => "?").join(",")}) ORDER BY rowid DESC LIMIT 1`)
-      .get(run.id, ref.node, ...scopes) as { output_json: string | null } | undefined;
-    return row?.output_json ? valueAtPath(JSON.parse(row.output_json), ref.path) : undefined;
-  }
-
-  private refRequired(c: Compiled, text: string): boolean {
-    const ref = parseRef(text);
-    if (!ref) return false;
-    if (ref.kind === "item" || ref.kind === "index") return false;
-    const fields = ref.kind === "input" ? c.wf.inputs : (c.nodes.get(ref.node!) ? outputFields(c.wf, c.nodes.get(ref.node!)!) : []);
-    const resolved = resolvePath(fields, ref.path);
-    return !("error" in resolved) && resolved.required && !resolved.length;
-  }
-
-  private mapWith(run: RunRow, c: Compiled, from: StepRow | null, edge: WorkflowEdge): Record<string, unknown> {
-    const data: Record<string, unknown> = {};
-    for (const [name, ref] of Object.entries(edge.with ?? {})) {
-      const value = this.lookup(run, from, ref);
-      if (value === undefined || value === null) {
-        if (this.refRequired(c, ref)) throw new RouteFailure("mapping_field_missing", `"${ref}" has no value for "${name}" on the edge ${edge.from} -> ${edge.to}`);
-        continue;
-      }
-      data[name] = value;
-    }
-    return data;
+  /** A skipped fan-out has no branches: the join it belongs to is skipped with the same typed output. */
+  private skipFan(run: RunRow, c: Compiled, fan: StepRow, node: WorkflowNode, output: Record<string, unknown>): void {
+    const join = c.joinOf.get(node.id);
+    if (!join) return;
+    const j = this.journal;
+    const visit = this.visitsOf(run.id, join.id, fan.scope) + 1;
+    const stepKey = `${join.id}#${visit}${fan.scope ? `@${stableId(fan.scope).slice(0, 6)}` : ""}`;
+    j.db.prepare(`INSERT OR IGNORE INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,scope,parent_key,edge_index,state,input_json,output_json,routed,ended_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,'skipped',?,?,0,?,?)`)
+      .run(run.id, stepKey, stableId("join", fan.step_key, join.id), join.id, visit, fan.scope, fan.step_key, null, JSON.stringify({ with: {}, via: { mode: "artifact", fromStep: fan.step_key } }), JSON.stringify(output), this.now(), this.now());
+    j.db.prepare("UPDATE lane_pilot_wf_step SET routed=1 WHERE run_id=? AND step_key=?").run(run.id, fan.step_key);
+    j.event(run.id, stepKey, "step", null, "skipped", `join of skipped ${fan.step_key}`);
   }
 
   // ---------------------------------------------------------------- routing
@@ -486,10 +626,9 @@ export class WorkflowEngine {
 
   private routeEdges(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode): void {
     const out = c.out.get(node.id) ?? [];
-    const output = asObject(step.output_json);
-    const fields = outputFields(c.wf, node);
-    const matching = out.filter((item) => item.edge.when && evalCondition(item.edge.when, output, fields, `${node.id}`));
-    const fallback = out.find((item) => !item.edge.when);
+    const env = this.env(run, step);
+    const matching = out.filter((item) => { const expr = c.when.get(item.index); return expr !== undefined && evalCondition(expr, env, `${node.id} -> ${item.edge.to}`); });
+    const fallback = out.find((item) => item.edge.when === undefined);
     const candidates = [...matching, ...(fallback ? [fallback] : [])];
     if (!candidates.length) throw new RouteFailure("no_matching_edge", `no condition matched and there is no fallback edge`);
     let exhausted: string | null = null;
@@ -507,30 +646,59 @@ export class WorkflowEngine {
     throw new RouteFailure(`guard:maxVisits`, `"${exhausted}" has used its visits`);
   }
 
+  /** The list a for_each walks: a reference (with an optional `where`), a literal list, or a list picked by an input or the mode. */
+  private forEachItems(run: RunRow, step: StepRow, node: Extract<WorkflowNode, { type: "parallel" }>): unknown[] {
+    const source = node.for_each;
+    const env = this.env(run, step);
+    let items: unknown;
+    if (Array.isArray(source)) items = source;
+    else if (typeof source === "string") {
+      const [reference, where] = source.split(/\s+where\s+/, 2) as [string, string | undefined];
+      const found = env.read(refOf(reference.trim()));
+      if (!found.ran) throw new RouteFailure("foreach_missing", `"${reference.trim()}" has no value`);
+      items = found.value;
+      if (where !== undefined && Array.isArray(items)) {
+        const expr = parseExpr(where, { itemScope: true });
+        items = items.filter((item, index) => evalCondition(expr, this.env(run, step, { value: item, index }), `${node.id} where`));
+      }
+    } else if (source && typeof source === "object") {
+      const table = source as { by: string } & Record<string, unknown>;
+      const picked = env.read(refOf(table.by));
+      const key = String(picked.value);
+      items = key in table ? table[key] : table.default;
+    }
+    if (!Array.isArray(items)) throw new RouteFailure("foreach_not_array", `for_each of "${node.id}" is not a list`);
+    if (node.batch_size && node.batch_size > 1) {
+      const chunks: unknown[][] = [];
+      for (let at = 0; at < items.length; at += node.batch_size) chunks.push(items.slice(at, at + node.batch_size));
+      return chunks;
+    }
+    return items;
+  }
+
   private routeParallel(run: RunRow, c: Compiled, step: StepRow, node: Extract<WorkflowNode, { type: "parallel" }>): void {
     const out = c.out.get(node.id) ?? [];
-    const limit = node.maxFanOut ?? c.wf.guards.maxFanOut;
+    const limit = node.max_fan_out ?? c.wf.guards.maxFanOut;
     let branches: Array<{ edge: WorkflowEdge; index: number; item?: unknown; idx: number }>;
-    if (node.foreach) {
-      const items = this.lookup(run, step, node.foreach);
-      if (!Array.isArray(items)) throw new RouteFailure("foreach_not_array", `"${node.foreach}" is not a list`);
-      let list = items;
+    if (node.for_each !== undefined) {
+      const list = this.forEachItems(run, step, node);
+      let used = list;
       if (list.length > limit) {
-        if (node.onOverflow === "truncate") { list = list.slice(0, limit); this.journal.event(run.id, step.step_key, "fan_out_truncated", null, null, `${items.length} -> ${limit}`); }
-        else throw new RouteFailure("guard:maxFanOut", `${items.length} items exceed the fan-out limit ${limit}`);
+        if (node.onOverflow === "truncate") { used = list.slice(0, limit); this.journal.event(run.id, step.step_key, "fan_out_truncated", null, null, `${list.length} -> ${limit}`); }
+        else throw new RouteFailure("guard:maxFanOut", `${list.length} items exceed the fan-out limit ${limit}`);
       }
-      branches = list.map((item, idx) => ({ edge: out[0]!.edge, index: out[0]!.index, item, idx }));
+      branches = used.map((item, idx) => ({ edge: out[0]!.edge, index: out[0]!.index, item, idx }));
     } else {
       if (out.length > limit) throw new RouteFailure("guard:maxFanOut", `${out.length} branches exceed the fan-out limit ${limit}`);
       branches = out.map((item, idx) => ({ edge: item.edge, index: item.index, idx }));
     }
     this.journal.db.prepare("UPDATE lane_pilot_wf_step SET fan_count=? WHERE run_id=? AND step_key=?").run(branches.length, run.id, step.step_key);
-    const joinNode = c.wf.nodes.find((candidate) => candidate.type === "join" && candidate.parallel === node.id)!;
+    const joinNode = c.joinOf.get(node.id)!;
     for (const branch of branches) {
       const scope = `${step.scope ? `${step.scope}/` : ""}${step.step_key}~${branch.idx}`;
       this.deliver(run, c, step, branch.edge, branch.index, { scope, fromScope: step.scope, suffix: `~${branch.idx}`, item: branch.item, index: branch.item === undefined ? undefined : branch.idx, group: { key: step.step_key, branch: branch.idx } });
     }
-    if (branches.length === 0) this.tryJoin(run, c, step.step_key, joinNode as Extract<WorkflowNode, { type: "join" }>, step.scope);
+    if (branches.length === 0) this.tryJoin(run, c, step.step_key, joinNode, step.scope);
   }
 
   /** Hands the data of an edge to its target: the exit, a join arrival, or a new step. */
@@ -598,19 +766,24 @@ export class WorkflowEngine {
   // ---------------------------------------------------------------- builtin executors
 
   private registerBuiltins(): void {
-    this.register("builtin:parallel", { reentrant: true, run: async (ctx) => {
-      const node = ctx.node as Extract<WorkflowNode, { type: "parallel" }>;
-      if (node.foreach && !Array.isArray(ctx.resolve(node.foreach))) throw new Error(`foreach "${node.foreach}" is not a list`);
-      return { output: {} };
-    } });
+    this.register("builtin:parallel", { reentrant: true, run: async () => ({ output: {} }) });
     this.register("builtin:join", { reentrant: true, run: async (ctx) => {
-      const results = (ctx.input.with.results as unknown[]) ?? [];
-      return { output: { results, count: results.length } };
+      const results = (ctx.input.with.results as Array<Record<string, unknown>>) ?? [];
+      const output: Record<string, unknown> = { results, count: results.length };
+      // The default reducer: a declared array field is the concatenation of the same field of every branch.
+      for (const field of outputFields(ctx.workflow, ctx.node) as Field[]) {
+        if (field.type === "array" && output[field.name] === undefined) output[field.name] = results.flatMap((row) => (Array.isArray(row[field.name]) ? row[field.name] as unknown[] : []));
+      }
+      return { output };
     } });
     this.register("builtin:decision", { reentrant: true, run: async (ctx) => {
       const node = ctx.node as Extract<WorkflowNode, { type: "decision" }>;
-      const fields = outputFields(ctx.workflow, node);
-      return { output: Object.fromEntries(fields.map((field) => [field.name, ctx.resolve(`${node.reads}.${field.name}`)]).filter(([, value]) => value !== undefined)) };
+      const fields = outputFields(ctx.workflow, node) as Field[];
+      return { output: Object.fromEntries(fields.map((field) => [field.name, ctx.resolve(`${node.reads_node}.${field.name}`)]).filter(([, value]) => value !== undefined)) };
+    } });
+    this.register("builtin:emit", { reentrant: true, run: async (ctx) => {
+      const node = ctx.node as Extract<WorkflowNode, { type: "action" }>;
+      return { output: Object.fromEntries(Object.entries(node.map ?? {}).map(([name, value]) => [name, ctx.value(value)]).filter(([, value]) => value !== undefined)) };
     } });
     this.register("builtin:human", {
       run: async (ctx) => {
@@ -621,8 +794,11 @@ export class WorkflowEngine {
       poll: async (step, { node }) => {
         const human = node as Extract<WorkflowNode, { type: "human" }>;
         if (!step.await.deadline || this.now() < step.await.deadline) return null;
+        // A question whose answer kinds include `timeout` is answered by the clock; otherwise onTimeout says.
+        const kind = human.out.find((field) => field.name === "answer_kind");
+        if (kind?.values?.includes("timeout")) return { output: { answer: "", answer_kind: "timeout" } };
         if (human.onTimeout === "default" && human.defaultOption) {
-          const field = human.output.find((candidate) => candidate.type === "string" || candidate.type === "enum");
+          const field = human.out.find((candidate) => candidate.type === "string" || candidate.type === "enum");
           return { output: field ? { [field.name]: human.defaultOption } : {} };
         }
         return { error: "human_timeout" };
@@ -636,9 +812,11 @@ export class WorkflowEngine {
         if (depth > Math.min(ctx.workflow.guards.maxSubworkflowDepth, MAX_SUBWORKFLOW_DEPTH)) throw new MissingValueError("subworkflow_depth", `subworkflows go ${depth} deep; the limit is ${MAX_SUBWORKFLOW_DEPTH}`);
         const child = this.options.resolveWorkflow?.(node.workflow, node.version);
         if (!child) throw new Error(`workflow "${node.workflow}" was not found`);
-        const inputs = Object.fromEntries(Object.entries(node.inputs).map(([name, ref]) => [name, ctx.resolve(ref)]).filter(([, value]) => value !== undefined));
-        const started = this.start({ workflow: child, inputs, key: `child:${ctx.runId}:${ctx.stepKey}`, parent: { runId: ctx.runId, stepKey: ctx.stepKey }, depth,
-          link: { projectId: run.project_id ?? undefined, runId: run.link_run_id ?? undefined, taskId: run.link_task_id ?? undefined } });
+        const mapped = Object.fromEntries(Object.entries(node.inputs).map(([name, ref]) => [name, ctx.resolve(ref)]).filter(([, value]) => value !== undefined));
+        const inputs = { ...mapped, ...ctx.input.with };
+        const known = new Set(child.inputs.map((field) => field.name));
+        const started = this.start({ workflow: child, inputs: Object.fromEntries(Object.entries(inputs).filter(([name]) => known.has(name))), key: `child:${ctx.runId}:${ctx.stepKey}`, mode: ctx.mode,
+          parent: { runId: ctx.runId, stepKey: ctx.stepKey }, depth, link: { projectId: run.project_id ?? undefined, runId: run.link_run_id ?? undefined, taskId: run.link_task_id ?? undefined } });
         return this.childOutcome(await started.done, node);
       },
       poll: async (step, { node }) => {
@@ -671,9 +849,16 @@ export class WorkflowEngine {
       taken.push(row.id);
       if (options.runtimeFor && !this.runtimes.has(row.id)) this.runtimes.set(row.id, options.runtimeFor(row));
       const c = this.compiled(row);
+      if (this.options.resumePolicy?.(row) === "interrupt") {
+        for (const step of j.steps(row.id).filter((item) => item.state === "running")) j.moveStep(row.id, step.step_key, "running", "interrupted", { error: "interrupted by a reload", ended: true });
+        j.setRunStatus(row.id, ["running"], "interrupted", "interrupted_by_reload");
+        this.cancelOpenSteps(row.id);
+        this.release(row.id);
+        continue;
+      }
       for (const step of j.steps(row.id).filter((item) => item.state === "running")) {
         const node = c.nodes.get(step.node_id);
-        const executor = node ? this.executors.get(this.keyFor(node) ?? "") : undefined;
+        const executor = node ? this.executors.get(executorKey(node) ?? "") : undefined;
         const sameBuild = step.harness_version === this.options.harnessVersion;
         if (executor?.reentrant && sameBuild) { j.moveStep(row.id, step.step_key, "running", "pending"); continue; }
         const why = executor?.reentrant ? "harness_changed" : "not_reentrant";
@@ -698,7 +883,7 @@ export class WorkflowEngine {
       if (this.stopped()) break;
       const run = j.getRun(row.runId)!, step = j.getStep(row.runId, row.stepKey)!;
       const node = this.compiled(run).nodes.get(step.node_id);
-      const executor = node ? this.executors.get(this.keyFor(node) ?? "") : undefined;
+      const executor = node ? this.executors.get(executorKey(node) ?? "") : undefined;
       if (!node || !executor?.poll) continue;
       const wait = asObject(step.await_json) as { kind: string; detail?: unknown; deadline?: number };
       let result: PollResult;
@@ -729,7 +914,7 @@ export class WorkflowEngine {
         return true;
       }
       let output: Record<string, unknown>;
-      try { output = checkOutput(outputFields(c.wf, node), result.output); }
+      try { const fields = outputFields(c.wf, node); output = fields === "unknown" ? result.output : checkOutput(fields, result.output); }
       catch (cause) {
         if (!j.moveStep(runId, stepKey, "waiting", "failed", { error: cause instanceof Error ? cause.message : String(cause), ended: true })) return false;
         this.failRun(runId, `output_invalid:${node.id}`);
@@ -768,3 +953,4 @@ export class WorkflowEngine {
     try { this.options.db.prepare("UPDATE lane_pilot_wf_run SET owner_id=NULL, lease_until=0 WHERE owner_id=?").run(this.instanceId); } catch { /* the database is already closed */ }
   }
 }
+

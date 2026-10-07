@@ -175,7 +175,7 @@ describe("parallel and join", () => {
     const failed = await run(engineOn(journalDb(), executors(items)), fan());
     expect(failed).toMatchObject({ status: "failed" });
     expect(failed.reason).toContain("guard:maxFanOut");
-    const truncated = await run(engineOn(journalDb(), executors(items)), fan({ onOverflow: "truncate", maxFanOut: 4 }));
+    const truncated = await run(engineOn(journalDb(), executors(items)), fan({ onOverflow: "truncate", max_fan_out: 4 }));
     expect(truncated.status).toBe("succeeded");
     expect(truncated.output).toEqual({ total: [0, 1, 2, 3].reduce((sum, n) => sum + n * 10 + n, 0) });
   });

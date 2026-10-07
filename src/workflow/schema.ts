@@ -1,9 +1,11 @@
 import { z } from "zod";
 
 /**
- * The workflow file format (W1). A workflow is a graph of typed nodes; every node declares the fields of its output and a
- * condition or a mapping may read only those fields. The schema is closed: an unknown key is an error, not a silently
- * ignored typo. Graph-level checks (references, cycles, joins) are in `validate.ts`.
+ * The workflow file format (W1). A workflow is a graph of typed nodes; every node declares the fields of its output, and a
+ * condition or a reference may read only declared fields. The schema is closed: an unknown key is an error, not a silently
+ * ignored typo. Authoring conveniences of the chains spec (`out:` maps with type hints, `guards:`, `entry:`, `emit` nodes,
+ * snake_case budget, string triggers) are accepted and normalized by `normalizeWorkflow` before the closed schema runs, so
+ * a file in either spelling loads to the same value. Graph-level checks are in `validate.ts`.
  */
 export const WORKFLOW_SCHEMA_VERSION = 1 as const;
 /** Reserved node ids: the entry (its output is the workflow's inputs) and the exit (edges into it carry the workflow's outputs). */
@@ -22,6 +24,10 @@ export const fieldSchema = z.object({
   type: z.enum(FIELD_TYPES),
   values: z.array(z.string().min(1).max(80)).min(1).max(50).optional(),
   required: z.boolean().default(true),
+  /** The named shape of an object or of the items of an array (`Finding`, `Task`): a hint for readers and the editor. */
+  ref: z.string().max(40).optional(),
+  default: z.unknown().optional(),
+  note: z.string().max(400).optional(),
   description: z.string().max(300).optional(),
 }).strict().superRefine((field, ctx) => {
   if (field.type === "enum" && !field.values) ctx.addIssue({ code: "custom", message: `enum field ${field.name} needs values` });
@@ -44,15 +50,24 @@ export const conditionSchema: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ any: z.array(conditionSchema).min(1).max(20) }).strict(),
   z.object({ not: conditionSchema }).strict(),
 ]));
+/** A condition is the structured form or an expression string (`"build.status == 'done' && visits('fix') < 2"`). */
+export const whenSchema = z.union([conditionSchema, z.string().min(1).max(600)]);
 
 export const QUALITY_MODES = ["quick", "standard", "full"] as const;
+export type QualityMode = (typeof QUALITY_MODES)[number];
 export const PASS_MODES = ["artifact", "same-session", "read-prior-session", "fork"] as const;
 export type PassMode = (typeof PASS_MODES)[number];
+export const JOIN_POLICIES = ["all", "majority", "all_or_low_confidence"] as const;
 
+const position = z.object({ x: z.number(), y: z.number() }).strict().optional();
+
+/** What every node but a note carries (without its id, so a parallel's child can reuse it). */
 const nodeBase = {
-  id: nodeId,
+  title: bilingual.optional(),
   label: z.string().max(80).optional(),
-  output: z.array(fieldSchema).max(30).default([]),
+  /** Where the text of this node comes from (THIRD_PARTY_NOTICES). */
+  src: z.string().max(300).optional(),
+  out: z.array(fieldSchema).max(40).default([]),
   /** Executor key. Empty means the default of the type. */
   uses: z.string().regex(/^[a-z][a-z0-9_.:-]{0,63}$/).optional(),
   /** How often the node may run in one scope (a branch or the whole run). Cycles must set it. */
@@ -60,74 +75,114 @@ const nodeBase = {
   /** Tries of one visit before the step fails. */
   maxAttempts: z.number().int().min(1).max(5).default(1),
   timeoutSec: z.number().int().min(1).max(86_400).optional(),
-  position: z.object({ x: z.number(), y: z.number() }).strict().optional(),
+  /** The node runs only in these quality modes; elsewhere it is skipped and its output is `skip_out`. */
+  applicable_modes: z.array(z.enum(QUALITY_MODES)).min(1).max(3).optional(),
+  skip_when: whenSchema.optional(),
+  /** The output of a skipped node: expression-valued (spec section 0.3). Without it a skipped node has no output. */
+  skip_out: z.record(z.string(), z.unknown()).optional(),
+  /** The inputs of the node: `{{ref}}` templates, nested lists and objects, `{by_mode: {...}}`. */
+  with: z.record(z.string(), z.unknown()).optional(),
+  /** Data this node reads, as references; checked like any reference. */
+  reads: z.array(z.string()).max(30).optional(),
+  model_preset: z.string().max(64).optional(),
+  profile: z.object({ skills: z.array(z.string().min(1).max(120)).max(12).default([]) }).strict().optional(),
+  position,
 };
 
-const agentNode = z.object({
-  ...nodeBase, type: z.literal("agent"),
-  role: z.string().max(64).default("worker"),
-  prompt: z.string().max(8000).default(""),
+const agentBody = {
+  role: z.string().max(80).default("worker"),
+  prompt: z.string().max(12_000).default(""),
   provider: z.string().max(64).optional(),
   model: z.string().max(120).optional(),
   reasoning: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
   skills: z.array(z.string().min(1).max(120)).max(8).default([]),
   environment: z.enum(["worktree", "project", "personal", "none"]).default("none"),
-}).strict();
-
-const lpTaskNode = z.object({
-  ...nodeBase, type: z.literal("lp-task"),
-  quality_mode: z.enum(QUALITY_MODES).optional(),
+  session: z.enum(["new", "same"]).optional(),
+  authorized: z.boolean().optional(),
+  /** Independent copies of this child run per item and decided by a mechanical majority (a parallel child). */
+  votes: z.number().int().min(1).max(9).optional(),
+};
+const lpTaskBody = {
+  quality_mode: z.string().max(40).optional(),
+  contract: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
+  contract_template: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
   owns_paths: z.array(z.string().min(1)).max(50).default([]),
   /** Stage ids the code task runs inside (writer, checks, critic, merge ...). Locked: not edited in an editor. */
   stages: z.array(z.string().min(1).max(64)).max(30).default([]),
-}).strict();
-
-const actionNode = z.object({
-  ...nodeBase, type: z.literal("action"),
+};
+const actionBody = {
   action: z.string().regex(/^[a-z][a-z0-9_.:-]{0,63}$/).optional(),
   params: z.record(z.string(), z.unknown()).default({}),
-}).strict();
-
-const decisionNode = z.object({
-  ...nodeBase, type: z.literal("decision"),
-  /** Takes its output from another node's output (the declared fields must exist there). Without it the executor computes it. */
-  reads: nodeId.optional(),
-}).strict();
-
-const humanNode = z.object({
-  ...nodeBase, type: z.literal("human"),
-  question: z.string().min(1).max(2000),
+  /** `emit` only: the status and fields the workflow ends with (expression-valued). */
+  map: z.record(z.string(), z.unknown()).optional(),
+  test_mode: z.string().max(300).optional(),
+};
+const humanBody = {
+  question: z.string().min(1).max(4000),
   options: z.array(z.string().min(1).max(120)).max(10).default([]),
   onTimeout: z.enum(["stop", "default"]).default("stop"),
   defaultOption: z.string().max(120).optional(),
+};
+const subworkflowBody = {
+  workflow: z.string().regex(/^[a-z][a-z0-9.-]{0,47}$/),
+  version: z.number().int().min(1).optional(),
+  /** Input name of the child to `node.field`: the first spelling; `with` is the second. */
+  inputs: z.record(z.string(), z.string()).default({}),
+};
+
+export const FOR_EACH_SOURCES = z.union([
+  z.string().min(1).max(300),
+  z.array(z.unknown()).max(50),
+  z.object({ by: z.string().min(1).max(120) }).catchall(z.array(z.unknown())),
+]);
+
+/** The body of a parallel node's child: one of the runnable types, without an id. */
+const childSchema = z.discriminatedUnion("type", [
+  z.object({ ...nodeBase, type: z.literal("agent"), ...agentBody }).strict(),
+  z.object({ ...nodeBase, type: z.literal("lp-task"), ...lpTaskBody }).strict(),
+  z.object({ ...nodeBase, type: z.literal("action"), ...actionBody }).strict(),
+  z.object({ ...nodeBase, type: z.literal("subworkflow"), ...subworkflowBody }).strict(),
+]);
+export type ParallelChild = z.infer<typeof childSchema>;
+
+const joinPolicy = z.object({
+  policy: z.enum(JOIN_POLICIES).default("all"),
+  out: z.array(fieldSchema).max(40).default([]),
+  /** Executor key of the reducer that builds `out` from the children's results; without it arrays of the same name are concatenated. */
+  uses: z.string().regex(/^[a-z][a-z0-9_.:-]{0,63}$/).optional(),
 }).strict();
 
+const agentNode = z.object({ id: nodeId, ...nodeBase, type: z.literal("agent"), ...agentBody }).strict();
+const lpTaskNode = z.object({ id: nodeId, ...nodeBase, type: z.literal("lp-task"), ...lpTaskBody }).strict();
+const actionNode = z.object({ id: nodeId, ...nodeBase, type: z.literal("action"), ...actionBody }).strict();
+const decisionNode = z.object({
+  id: nodeId, ...nodeBase, type: z.literal("decision"),
+  /** Takes its output from another node's output (the declared fields must exist there). Without it the executor computes it. */
+  reads_node: nodeId.optional(),
+}).strict();
+const humanNode = z.object({ id: nodeId, ...nodeBase, type: z.literal("human"), ...humanBody }).strict();
 const parallelNode = z.object({
-  ...nodeBase, type: z.literal("parallel"),
-  /** `node.field` of an array: one branch per item. Without it every outgoing edge is one branch. */
-  foreach: z.string().max(120).optional(),
-  maxFanOut: z.number().int().min(1).max(50).optional(),
+  id: nodeId, ...nodeBase, type: z.literal("parallel"),
+  /** One branch per item: a reference to a list, a literal list, `ref where <condition on the item>`, or `{by, <value>: [...]}` picking a list by an input or the mode. */
+  for_each: FOR_EACH_SOURCES.optional(),
+  order: z.enum(["depends_on"]).optional(),
+  max_fan_out: z.number().int().min(1).max(50).optional(),
+  batch_size: z.number().int().min(1).max(500).optional(),
+  on_child_fail: z.enum(["block_dependents"]).optional(),
   onOverflow: z.enum(["fail", "truncate"]).default("fail"),
+  /** The body of one branch. Without it the branches are the outgoing edges and a separate `join` node collects them. */
+  child: childSchema.optional(),
+  join: joinPolicy.optional(),
 }).strict();
-
 const joinNode = z.object({
-  ...nodeBase, type: z.literal("join"),
+  id: nodeId, ...nodeBase, type: z.literal("join"),
   parallel: nodeId,
   wait: z.literal("all").default("all"),
+  /** `all`: every branch; `majority` and `all_or_low_confidence` are accepted by the schema and refused by the engine until they are built. */
+  policy: z.enum(JOIN_POLICIES).default("all"),
 }).strict();
-
-const subworkflowNode = z.object({
-  ...nodeBase, type: z.literal("subworkflow"),
-  workflow: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/),
-  version: z.number().int().min(1).optional(),
-  /** Input name of the child to `node.field` of this workflow. */
-  inputs: z.record(z.string(), z.string()).default({}),
-}).strict();
-
-const noteNode = z.object({
-  id: nodeId, type: z.literal("note"), text: z.string().max(2000).default(""),
-  position: z.object({ x: z.number(), y: z.number() }).strict().optional(),
-}).strict();
+const subworkflowNode = z.object({ id: nodeId, ...nodeBase, type: z.literal("subworkflow"), ...subworkflowBody }).strict();
+const noteNode = z.object({ id: nodeId, type: z.literal("note"), text: z.string().max(2000).default(""), position }).strict();
 
 export const nodeSchema = z.discriminatedUnion("type", [agentNode, lpTaskNode, actionNode, decisionNode, humanNode, parallelNode, joinNode, subworkflowNode, noteNode]);
 export type WorkflowNode = z.infer<typeof nodeSchema>;
@@ -138,9 +193,9 @@ export type GraphNode = Exclude<WorkflowNode, { type: "note" }>;
 export const edgeSchema = z.object({
   from: z.string().min(1).max(48),
   to: z.string().min(1).max(48),
-  when: conditionSchema.optional(),
+  when: whenSchema.optional(),
   label: z.string().max(80).optional(),
-  /** Name to `node.field` (or `input.name`, `item`, `index`): the only data the target gets in mode artifact. */
+  /** Name to `node.field` (or `input.name`, `item`, `index`): data handed to the target in mode artifact. */
   with: z.record(z.string(), z.string()).optional(),
   pass: z.enum(PASS_MODES).default("artifact"),
 }).strict();
@@ -152,17 +207,23 @@ const trigger = z.object({
 }).strict();
 
 export const workflowSchema = z.object({
-  schemaVersion: z.literal(WORKFLOW_SCHEMA_VERSION),
-  id: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/, "workflow id: lowercase letters, digits and -"),
-  name: z.string().min(1).max(80),
+  schemaVersion: z.literal(WORKFLOW_SCHEMA_VERSION).default(WORKFLOW_SCHEMA_VERSION),
+  id: z.string().regex(/^[a-z][a-z0-9.-]{0,47}$/, "workflow id: lowercase letters, digits, . and -"),
+  name: bilingual,
   description: bilingual,
   examples: z.object({ en: z.array(z.string().min(3).max(300)).max(20).default([]), ru: z.array(z.string().min(3).max(300)).max(20).default([]) }).strict().default({ en: [], ru: [] }),
-  inputs: z.array(fieldSchema).max(30).default([]),
-  outputs: z.array(fieldSchema).max(30).default([]),
+  /** Ids of neighbouring workflows this one is confused with; shown to the router's model as «not suitable if...». */
+  not_for: z.array(z.string()).max(20).default([]),
+  tags: z.array(z.string().max(40)).max(20).default([]),
+  /** A fragment called by a subworkflow node; it is not offered by the router. */
+  internal: z.boolean().default(false),
+  inputs: z.array(fieldSchema).max(40).default([]),
+  outputs: z.array(fieldSchema).max(40).default([]),
   requires: z.object({
-    plugins: z.array(z.string()).default([]), machines: z.array(z.string()).default([]),
-    env: z.array(z.string()).default([]), browserSession: z.boolean().default(false),
-  }).strict().default({ plugins: [], machines: [], env: [], browserSession: false }),
+    plugins: z.array(z.string()).default([]), skills: z.array(z.string()).default([]), secrets: z.array(z.string()).default([]),
+    machines: z.array(z.string()).default([]), env: z.array(z.string()).default([]), browserSession: z.boolean().default(false),
+    project: z.record(z.string(), z.unknown()).optional(),
+  }).strict().default({ plugins: [], skills: [], secrets: [], machines: [], env: [], browserSession: false }),
   status: z.enum(["draft", "tested", "published", "deprecated"]).default("draft"),
   version: z.number().int().min(1).default(1),
   budget: z.object({
@@ -176,15 +237,143 @@ export const workflowSchema = z.object({
     maxFanOut: z.number().int().min(1).max(50).default(12),
     maxSubworkflowDepth: z.number().int().min(1).max(MAX_SUBWORKFLOW_DEPTH).default(MAX_SUBWORKFLOW_DEPTH),
   }).strict().default({ maxSteps: 60, maxFanOut: 12, maxSubworkflowDepth: MAX_SUBWORKFLOW_DEPTH }),
-  quality_mode: z.enum(QUALITY_MODES).optional(),
+  /** `default` is `$mode` when the run is started without one; `effect` says in words what the mode changes here. */
+  quality_mode: z.object({ default: z.enum(QUALITY_MODES).default("standard"), effect: z.string().max(600).optional() }).strict().optional(),
   triggers: z.array(trigger).max(10).default([]),
   scope: z.object({
     level: z.enum(["builtin", "global", "project", "section"]).default("global"),
     projectId: z.string().optional(),
   }).strict().default({ level: "global" }),
-  nodes: z.array(nodeSchema).min(1).max(60),
-  edges: z.array(edgeSchema).min(1).max(200),
+  /** The first node. Without it the graph has an explicit edge from `start`. */
+  entry: nodeId.optional(),
+  /** A test case: `sim` (stubs, expected path) and `live`; run by W7, only its shape is checked here. */
+  test: z.object({ id: z.string().max(80), sim: z.unknown().optional(), live: z.string().max(1000).optional() }).passthrough().optional(),
+  nodes: z.array(nodeSchema).min(1).max(80),
+  edges: z.array(edgeSchema).min(1).max(300),
 }).strict();
 
 export type Workflow = z.infer<typeof workflowSchema>;
 export type WorkflowInput = z.input<typeof workflowSchema>;
+
+// ------------------------------------------------------------------ authoring spellings
+
+const PRIMITIVE_HINTS: Record<string, { type: FieldType; ref?: string }> = {
+  string: { type: "string" }, str: { type: "string" }, int: { type: "number" }, integer: { type: "number" }, number: { type: "number" }, float: { type: "number" },
+  bool: { type: "boolean" }, boolean: { type: "boolean" }, any: { type: "json" }, json: { type: "json" }, object: { type: "object" },
+};
+
+/** `string`, `int`, `bool`, `Finding[]`, `Verdict`, `pass|rework|block`, `string|null` to a field type. A trailing `?` marks it optional. */
+export function parseTypeHint(hint: string): { type: FieldType; values?: string[]; ref?: string; optional?: boolean } {
+  let text = hint.trim();
+  const optional = text.endsWith("?");
+  if (optional) text = text.slice(0, -1).trim();
+  const parts = text.split("|").map((part) => part.trim()).filter(Boolean);
+  const nullable = parts.includes("null");
+  const rest = parts.filter((part) => part !== "null");
+  const one = (part: string): { type: FieldType; ref?: string } => {
+    if (part.endsWith("[]")) { const inner = part.slice(0, -2); return { type: "array", ...(/^[A-Z]/.test(inner) ? { ref: inner.replace(/\[\]/g, "") } : {}) }; }
+    if (PRIMITIVE_HINTS[part]) return PRIMITIVE_HINTS[part]!;
+    if (/^[A-Z][A-Za-z0-9]*$/.test(part)) return { type: "object", ref: part };
+    return { type: "json" };
+  };
+  const base = (() => {
+    if (rest.length === 1) return one(rest[0]!);
+    if (rest.length > 1 && rest.every((part) => /^[a-z0-9][a-z0-9_.-]*$/.test(part) && !PRIMITIVE_HINTS[part])) return { type: "enum" as const, values: rest };
+    return { type: "json" as const };
+  })();
+  return { ...base, ...(optional || nullable ? { optional: true } : {}) };
+}
+
+type Raw = Record<string, unknown>;
+const isRaw = (value: unknown): value is Raw => typeof value === "object" && value !== null && !Array.isArray(value);
+
+function fieldFrom(name: string, spec: unknown, defaultRequired: boolean): Raw {
+  if (typeof spec === "string") {
+    const parsed = parseTypeHint(spec);
+    return { name, type: parsed.type, ...(parsed.values ? { values: parsed.values } : {}), ...(parsed.ref ? { ref: parsed.ref } : {}), required: parsed.optional ? false : defaultRequired };
+  }
+  if (isRaw(spec)) {
+    const parsed = typeof spec.type === "string" ? parseTypeHint(spec.type) : { type: "json" as FieldType };
+    const required = typeof spec.required === "boolean" ? spec.required : parsed.optional ? false : "default" in spec ? false : defaultRequired;
+    const { type: _type, required: _required, ...extra } = spec;
+    return { name, ...extra, type: parsed.type, ...(parsed.values ? { values: parsed.values } : {}), ...(parsed.ref ? { ref: parsed.ref } : {}), required };
+  }
+  return { name, type: "json", required: defaultRequired };
+}
+
+/** A field list as an array, from an array of fields or a `{name: "hint" | {type, required, default}}` map. */
+function fieldList(value: unknown, defaultRequired: boolean): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (!isRaw(item) || typeof item.type !== "string" || (FIELD_TYPES as readonly string[]).includes(item.type)) return item;
+      return fieldFrom(String(item.name), item, defaultRequired);
+    });
+  }
+  if (isRaw(value)) return Object.entries(value).map(([name, spec]) => fieldFrom(name, spec, defaultRequired));
+  return value;
+}
+
+const bilingualOf = (value: unknown): unknown => (typeof value === "string" ? { en: value, ru: value } : value);
+
+const NODE_KEYS = new Set(["id", "type", "title", "label", "src", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
+  "model_preset", "profile", "position", "role", "prompt", "provider", "model", "reasoning", "skills", "environment", "session", "authorized", "votes", "quality_mode", "contract", "contract_template",
+  "owns_paths", "stages", "action", "params", "map", "test_mode", "question", "options", "onTimeout", "defaultOption", "workflow", "version", "inputs", "reads_node", "for_each", "foreach", "order", "max_fan_out",
+  "batch", "batch_size", "on_child_fail", "onOverflow", "child", "join", "parallel", "wait", "text"]);
+
+function normalizeNode(node: unknown, isChild = false): unknown {
+  if (!isRaw(node)) return node;
+  const next: Raw = { ...node };
+  if ("out" in next) { next.out = fieldList(next.out, true); }
+  if ("output" in next) { next.out = fieldList(next.output, true); delete next.output; }
+  if (isRaw(next.guards)) {
+    const { maxVisits, maxAttempts, timeoutMin, timeoutSec } = next.guards;
+    if (maxVisits !== undefined) next.maxVisits = maxVisits;
+    if (maxAttempts !== undefined) next.maxAttempts = maxAttempts;
+    if (typeof timeoutMin === "number") next.timeoutSec = Math.round(timeoutMin * 60);
+    if (typeof timeoutSec === "number") next.timeoutSec = timeoutSec;
+    delete next.guards;
+  }
+  if ("foreach" in next) { next.for_each = next.foreach; delete next.foreach; }
+  if ("batch" in next && !("batch_size" in next)) { next.batch_size = next.batch; delete next.batch; }
+  if (next.type === "decision" && "reads" in next && typeof next.reads === "string") { next.reads_node = next.reads; delete next.reads; }
+  if (next.type === "human" && typeof next.prompt === "string" && !("question" in next)) { next.question = next.prompt; delete next.prompt; }
+  if (next.type === "parallel") {
+    if ("child" in next) next.child = normalizeNode(next.child, true);
+    if (isRaw(next.join)) next.join = { ...next.join, ...("out" in next.join ? { out: fieldList(next.join.out, true) } : {}) };
+  }
+  if (next.type === "action") {
+    // The parameters of an action sit beside its other keys in the authoring spelling.
+    const params: Raw = isRaw(next.params) ? { ...next.params } : {};
+    for (const key of Object.keys(next)) if (!NODE_KEYS.has(key)) { params[key] = next[key]; delete next[key]; }
+    if (Object.keys(params).length) next.params = params;
+  }
+  if (isChild) delete next.id;
+  if (next.type !== "note" && isRaw(next.title) === false && typeof next.title === "string") next.title = bilingualOf(next.title);
+  return next;
+}
+
+/** The authoring spelling to the closed schema's: type hints, `out`, `guards`, `entry`, snake_case budget, string triggers, a name in one language. */
+export function normalizeWorkflow(raw: unknown): unknown {
+  if (!isRaw(raw)) return raw;
+  const next: Raw = { ...raw };
+  delete next.common_inputs;
+  next.name = bilingualOf(next.name);
+  if ("inputs" in next) next.inputs = fieldList(next.inputs, false);
+  if ("outputs" in next) next.outputs = fieldList(next.outputs, true);
+  if (typeof next.quality_mode === "string") next.quality_mode = { default: next.quality_mode };
+  if (Array.isArray(next.triggers)) next.triggers = next.triggers.map((item) => (typeof item === "string" ? { type: item } : item));
+  if (isRaw(next.budget)) {
+    const { max_steps, max_minutes, max_fan_out, max_usd, ...rest } = next.budget as Raw;
+    const budget: Raw = { ...rest };
+    if (max_steps !== undefined) budget.maxSteps = max_steps;
+    if (typeof max_minutes === "number") budget.maxWallSeconds = Math.round(max_minutes * 60);
+    if (max_usd !== undefined) budget.maxCostUsd = max_usd;
+    next.budget = budget;
+    if (max_fan_out !== undefined) next.guards = { ...(isRaw(next.guards) ? next.guards : {}), maxFanOut: max_fan_out };
+  }
+  if (Array.isArray(next.nodes)) next.nodes = next.nodes.map((node) => normalizeNode(node));
+  return next;
+}
+
+/** Parses a workflow in either spelling with the closed schema (zod issues carry the path in the normalized value). */
+export const parseWorkflowObject = (raw: unknown) => workflowSchema.safeParse(normalizeWorkflow(raw));

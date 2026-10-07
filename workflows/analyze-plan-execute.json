@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "id": "analyze-plan-execute",
+  "name": "Analyze, plan, execute",
+  "description": {
+    "en": "The Lane Pilot task pipeline: the PM read, the plan critique (by quality mode), the specialist risk review, the ownership base, then the code task in its own worktree with checks, code critique and merge.",
+    "ru": "Конвейер задачи Lane Pilot: чтение PM, критика плана (по режиму качества), проверка рисков специалистом, база владения, затем кодовая задача в своём worktree с проверками, критикой кода и слиянием."
+  },
+  "examples": {
+    "en": ["dispatch a code task to a writer", "implement this change in the project"],
+    "ru": ["отправь задачу писателю", "сделай эту правку в проекте"]
+  },
+  "inputs": [
+    { "name": "taskId", "type": "string" },
+    { "name": "attemptId", "type": "string" }
+  ],
+  "outputs": [
+    { "name": "reply", "type": "json", "description": "What the dispatch tool answers the PM with." }
+  ],
+  "requires": { "plugins": [], "machines": [], "env": [], "browserSession": false },
+  "status": "published",
+  "version": 1,
+  "guards": { "maxSteps": 20, "maxFanOut": 1, "maxSubworkflowDepth": 3 },
+  "triggers": [{ "type": "chat" }],
+  "scope": { "level": "builtin" },
+  "nodes": [
+    { "id": "pm-read", "type": "agent", "label": "PM read", "role": "pm-reader", "uses": "lp.pm-read",
+      "output": [
+        { "name": "state", "type": "enum", "values": ["passed", "skipped", "failed"] },
+        { "name": "summary", "type": "string" },
+        { "name": "reason", "type": "string", "required": false }
+      ] },
+    { "id": "block-pm-read", "type": "action", "label": "Block: PM read failed", "uses": "lp.block-pm-read",
+      "output": [{ "name": "reply", "type": "json" }] },
+    { "id": "quality-mode", "type": "decision", "label": "Quality mode", "uses": "lp.quality-mode",
+      "output": [{ "name": "mode", "type": "enum", "values": ["quick", "standard", "full"] }] },
+    { "id": "plan-critique", "type": "agent", "label": "Plan critique", "role": "plan-critic", "uses": "lp.plan-critique",
+      "output": [
+        { "name": "allowed", "type": "boolean" },
+        { "name": "reason", "type": "string", "required": false }
+      ] },
+    { "id": "plan-critique-quick", "type": "agent", "label": "Plan critique (quick: skipped by its own receipt)", "role": "plan-critic", "uses": "lp.plan-critique",
+      "output": [
+        { "name": "allowed", "type": "boolean" },
+        { "name": "reason", "type": "string", "required": false }
+      ] },
+    { "id": "block-plan-critique", "type": "action", "label": "Block: plan critique", "uses": "lp.block-plan-critique",
+      "output": [{ "name": "reply", "type": "json" }] },
+    { "id": "specialist-review", "type": "agent", "label": "Specialist review", "role": "specialist-reviewer", "uses": "lp.specialist-review",
+      "output": [
+        { "name": "allowed", "type": "boolean" },
+        { "name": "reason", "type": "string", "required": false }
+      ] },
+    { "id": "block-specialist", "type": "action", "label": "Block: specialist review", "uses": "lp.block-specialist",
+      "output": [{ "name": "reply", "type": "json" }] },
+    { "id": "ownership-base", "type": "action", "label": "Ownership base", "uses": "lp.ownership-base",
+      "output": [
+        { "name": "ok", "type": "boolean" },
+        { "name": "live", "type": "boolean" },
+        { "name": "kind", "type": "enum", "values": ["unavailable", "persist_failed"], "required": false },
+        { "name": "reason", "type": "string", "required": false }
+      ] },
+    { "id": "block-ownership", "type": "action", "label": "Block: ownership base", "uses": "lp.block-ownership",
+      "output": [{ "name": "reply", "type": "json" }] },
+    { "id": "task-folder", "type": "action", "label": "Task folder", "uses": "lp.task-folder",
+      "output": [{ "name": "ok", "type": "boolean" }] },
+    { "id": "writer", "type": "lp-task", "label": "Code task", "uses": "lp-task",
+      "stages": ["writer-agent", "verification", "code-critique", "acceptance-receipt"],
+      "output": [{ "name": "reply", "type": "json" }] },
+    { "id": "inside-writer", "type": "note", "text": "Inside the code task (locked): workspace and worktree, the writer session and its turns, owns-paths and verification checks, repair rounds, code critique, merge intent and merge, integration gate, acceptance receipt, retries and fallbacks, memory and project-life after acceptance, browser check in quality mode full." }
+  ],
+  "edges": [
+    { "from": "start", "to": "pm-read" },
+    { "from": "pm-read", "to": "block-pm-read", "label": "failed", "when": { "field": "state", "op": "eq", "value": "failed" }, "with": { "reason": "pm-read.reason" } },
+    { "from": "pm-read", "to": "quality-mode", "label": "passed or skipped" },
+    { "from": "quality-mode", "to": "plan-critique-quick", "label": "quick", "when": { "field": "mode", "op": "eq", "value": "quick" }, "with": { "pmReadContext": "pm-read.summary" } },
+    { "from": "quality-mode", "to": "plan-critique", "label": "standard or full", "with": { "pmReadContext": "pm-read.summary" } },
+    { "from": "plan-critique-quick", "to": "block-plan-critique", "label": "not allowed", "when": { "field": "allowed", "op": "eq", "value": false }, "with": { "reason": "plan-critique-quick.reason" } },
+    { "from": "plan-critique-quick", "to": "specialist-review", "label": "allowed" },
+    { "from": "plan-critique", "to": "block-plan-critique", "label": "not allowed", "when": { "field": "allowed", "op": "eq", "value": false }, "with": { "reason": "plan-critique.reason" } },
+    { "from": "plan-critique", "to": "specialist-review", "label": "allowed" },
+    { "from": "specialist-review", "to": "block-specialist", "label": "not allowed", "when": { "field": "allowed", "op": "eq", "value": false }, "with": { "reason": "specialist-review.reason" } },
+    { "from": "specialist-review", "to": "ownership-base", "label": "allowed" },
+    { "from": "ownership-base", "to": "block-ownership", "label": "unavailable", "when": { "field": "ok", "op": "eq", "value": false }, "with": { "kind": "ownership-base.kind", "reason": "ownership-base.reason" } },
+    { "from": "ownership-base", "to": "task-folder", "label": "ready", "with": { "live": "ownership-base.live" } },
+    { "from": "task-folder", "to": "writer", "with": { "live": "ownership-base.live", "pmReadContext": "pm-read.summary" } },
+    { "from": "writer", "to": "end", "with": { "reply": "writer.reply" } },
+    { "from": "block-pm-read", "to": "end", "with": { "reply": "block-pm-read.reply" } },
+    { "from": "block-plan-critique", "to": "end", "with": { "reply": "block-plan-critique.reply" } },
+    { "from": "block-specialist", "to": "end", "with": { "reply": "block-specialist.reply" } },
+    { "from": "block-ownership", "to": "end", "with": { "reply": "block-ownership.reply" } }
+  ]
+}

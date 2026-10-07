@@ -20,7 +20,9 @@ type StepRunner = (name:string, work:() => Promise<unknown> | unknown) => Promis
  *  2. (start-up only) resume the attempts in flight, with the caller's steps that follow;
  *  3. orphan writer stages: a failed attempt waiting for a retry that died with its loop ends here;
  *  4. parking: tasks blocked by Lane Pilot's or the machine's fault, that one included, are parked;
- *  5. the parked-task sweep restarts those whose fault is fixed or whose backoff is over.
+ *  5. the parked-task sweep restarts those whose fault is fixed or whose backoff is over;
+ *  6. the workflow runs: those a reload left are picked up or ended, and a run waiting for its code task is settled
+ *     from the task's attempt, which steps 1-5 have just brought up to date.
  */
 export function createTaskReconcile(ctx:ServerCore, services:Services) {
   const { bb, db } = ctx;
@@ -43,6 +45,10 @@ export function createTaskReconcile(ctx:ServerCore, services:Services) {
     });
     await step("parking of blocked tasks", () => services.stability.adoptBlockedByFaults(options.now));
     await step("parked-task sweep", () => services.stability.sweep(options.now));
+    await step("workflow runs", async () => {
+      await services.workflowEngine?.resume();
+      await services.workflowEngine?.poll();
+    });
   }
 
   return { reconcileTasks, recoverMergeIntents:intents.recoverMergeIntents };

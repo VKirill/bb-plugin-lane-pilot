@@ -21,6 +21,7 @@ import { runPlanCritique, runPmRead, runSpecialistReview } from "../critique-run
 import { closeWriterStages, recordStage } from "../stage-records";
 import { id, stringAt, valueAt } from "../values";
 import { buildTask } from "../writer-task";
+import { dispatchReply, startDispatchRun, workflowEngineEnabled } from "./dispatch-workflow";
 import { countRunNudges } from "../writer-silence";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
@@ -268,7 +269,22 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         ...(openQuestions.length ? { pmReadOpenQuestions:openQuestions,
           pmReadNote:"The writer does not see these questions. If one changes what the writer should do, wait for this attempt's receipt and, if it is not accepted, dispatch again with the answer in the plan; otherwise the writer decides from the code." } : {}) };
     };
-    const work = runStages().catch((cause): Record<string,unknown> => {
+    const pendingReply = (): Record<string,unknown> => ({ runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),
+      note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn with lane_pilot_remind on the task id. Do not send the task again: the same id and contract returns this task." });
+    // The same pipeline as a workflow run (workflows/analyze-plan-execute.json, executors in dispatch-workflow.ts). The direct
+    // `runStages` above stays as the path for LANE_PILOT_WORKFLOW_ENGINE=0 and for an engine that cannot start the run.
+    const runViaEngine = async (): Promise<Record<string,unknown>> => {
+      let started: ReturnType<typeof startDispatchRun>;
+      try {
+        started = startDispatchRun(services.workflowEngine, { ctx, services, threadId:args.threadId, projectId:args.projectId, baseRef:args.baseRef, runId, taskId, attemptId,
+          config, runConfig, workspacePath, task:valid.task, plan:canonicalPlan, lintWarnings:lint.warnings.map((warning) => warning.message) });
+      } catch (cause) {
+        bb.log.warn(`Lane Pilot workflow engine could not start the dispatch of ${taskId}, running it directly: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return runStages();
+      }
+      return dispatchReply(await started.done) ?? pendingReply();
+    };
+    const work = (workflowEngineEnabled() && services.workflowEngine ? runViaEngine() : runStages()).catch((cause): Record<string,unknown> => {
       const reason = `dispatch_failed:${cause instanceof Error ? cause.message : String(cause)}`;
       bb.log.warn(`Lane Pilot dispatch of ${taskId} failed: ${reason}`);
       transitionAttempt(db, attemptId, "blocked", { reason });
@@ -282,8 +298,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const early = await Promise.race([work, new Promise<null>((done) => { timer = setTimeout(() => done(null), dispatchAnswerMs()); })]);
     clearTimeout(timer);
     if (early) return early;
-    return { runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),
-      note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn with lane_pilot_remind on the task id. Do not send the task again: the same id and contract returns this task." };
+    return pendingReply();
   }
 
   /**

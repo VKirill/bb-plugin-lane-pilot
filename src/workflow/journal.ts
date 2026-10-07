@@ -23,6 +23,7 @@ export const workflowMigrations: string[] = [
     depth INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL CHECK(status IN ('running','waiting','succeeded','failed','blocked','interrupted','canceled')),
     reason TEXT,
+    mode TEXT,
     inputs_json TEXT NOT NULL DEFAULT '{}',
     output_json TEXT,
     harness_version TEXT,
@@ -120,7 +121,7 @@ export const STEP_TRANSITIONS: Record<StepState, readonly StepState[]> = {
 export type RunRow = {
   id: string; idem_key: string | null; workflow_id: string; workflow_version: number; workflow_sha256: string; definition_json: string;
   project_id: string | null; link_run_id: string | null; link_task_id: string | null; link_attempt_id: string | null;
-  parent_run_id: string | null; parent_step_key: string | null; depth: number; status: RunStatus; reason: string | null;
+  parent_run_id: string | null; parent_step_key: string | null; depth: number; status: RunStatus; reason: string | null; mode: string | null;
   inputs_json: string; output_json: string | null; harness_version: string | null;
   steps_used: number; tokens_used: number; cost_micro_usd: number; owner_id: string | null; lease_until: number; created_at: number; updated_at: number;
 };

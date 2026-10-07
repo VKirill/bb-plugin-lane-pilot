@@ -19,7 +19,7 @@ describe("workflow store", () => {
     const store = await loadWorkflowStore({ builtin: [{ name: "demo.json", value: workflow() }], globalDir: globalWorkflowDir(home), projectDir: projectWorkflowDir(project) });
     expect(store.problems).toEqual([]);
     expect(store.list().map((item) => item.workflow.id).sort()).toEqual(["demo", "only-global"]);
-    expect(store.get("demo")).toMatchObject({ origin: "project", workflow: { name: "Project demo" } });
+    expect(store.get("demo")).toMatchObject({ origin: "project", workflow: { name: { en: "Project demo" } } });
     expect(store.get("only-global")?.origin).toBe("global");
   });
 
@@ -28,7 +28,7 @@ describe("workflow store", () => {
     put(globalWorkflowDir(home), "demo.json", { ...workflow(), name: "Broken", edges: [] });
     put(globalWorkflowDir(home), "garbage.json", "{ not json");
     const store = await loadWorkflowStore({ builtin: [{ name: "demo.json", value: workflow() }], globalDir: globalWorkflowDir(home) });
-    expect(store.get("demo")).toMatchObject({ origin: "builtin", workflow: { name: "Demo" } });
+    expect(store.get("demo")).toMatchObject({ origin: "builtin", workflow: { name: { en: "Demo" } } });
     expect(store.problems.map((item) => item.source.split("/").pop()).sort()).toEqual(["demo.json", "garbage.json"]);
   });
 

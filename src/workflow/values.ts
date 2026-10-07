@@ -1,9 +1,7 @@
-import type { Condition, Field } from "./schema";
+import { MissingValueError } from "./expr";
+import type { Field } from "./schema";
 
-/** A condition or a mapping met a value that is not there. The step fails closed instead of taking a default branch. */
-export class MissingValueError extends Error {
-  constructor(readonly code: string, message: string) { super(message); }
-}
+export { MissingValueError };
 
 export function valueAtPath(value: unknown, path: readonly string[]): unknown {
   let current = value;
@@ -14,43 +12,6 @@ export function valueAtPath(value: unknown, path: readonly string[]): unknown {
     current = (current as Record<string, unknown>)[part];
   }
   return current;
-}
-
-const same = (a: unknown, b: unknown): boolean => a === b || (a !== null && b !== null && typeof a === "object" && typeof b === "object" && JSON.stringify(a) === JSON.stringify(b));
-
-/**
- * Evaluates a condition on a node's output. A required declared field that is absent is an error (the output was checked
- * when the step ended, so this means a bug); an absent optional field or a deeper path makes every comparison false and
- * `exists` false. Maestro compared a missing value as 0, so `x < 60` held for nothing at all.
- */
-export function evalCondition(condition: Condition, output: Record<string, unknown>, fields: readonly Field[], where = "condition"): boolean {
-  if ("all" in condition) return condition.all.every((item) => evalCondition(item, output, fields, where));
-  if ("any" in condition) return condition.any.some((item) => evalCondition(item, output, fields, where));
-  if ("not" in condition) return !evalCondition(condition.not, output, fields, where);
-  const path = condition.field.split(".");
-  const root = fields.find((field) => field.name === path[0]);
-  const value = valueAtPath(output, path);
-  if (condition.op === "exists") {
-    const present = value !== undefined && value !== null;
-    return condition.value === false ? !present : present;
-  }
-  if (value === undefined || value === null) {
-    if (root?.required && path.length === 1 && root.type !== "json") {
-      throw new MissingValueError("condition_field_missing", `${where}: required field "${condition.field}" has no value`);
-    }
-    return false;
-  }
-  switch (condition.op) {
-    case "eq": return same(value, condition.value);
-    case "ne": return !same(value, condition.value);
-    case "in": return Array.isArray(condition.value) && condition.value.some((item) => same(item, value));
-    case "notIn": return Array.isArray(condition.value) && !condition.value.some((item) => same(item, value));
-    default: {
-      if (typeof value !== "number" || typeof condition.value !== "number") return false;
-      return condition.op === "gt" ? value > condition.value : condition.op === "gte" ? value >= condition.value
-        : condition.op === "lt" ? value < condition.value : value <= condition.value;
-    }
-  }
 }
 
 const typeOk = (field: Field, value: unknown): boolean => {

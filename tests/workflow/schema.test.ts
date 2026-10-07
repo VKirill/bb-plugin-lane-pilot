@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { workflowSchema } from "../../src/workflow/schema";
 import type { Workflow } from "../../src/workflow/schema";
-import { loadWorkflow, outputFields, parseWorkflow, WorkflowError } from "../../src/workflow/validate";
+import { outputFields } from "../../src/workflow/lower";
+import { loadWorkflow, parseWorkflow, WorkflowError } from "../../src/workflow/validate";
 import { codes, workflow } from "./fixtures";
 
 const problems = (source: unknown, options = {}) => { const loaded = loadWorkflow(source, options); return loaded.ok ? loaded.warnings : loaded.problems; };
@@ -18,7 +19,7 @@ describe("workflow schema", () => {
   it("is closed: an unknown key is an error, at the top and in a node", () => {
     expect(workflowSchema.safeParse({ ...workflow(), colour: "red" }).success).toBe(false);
     const base = workflow();
-    const node = { id: "x", type: "action", action: "x", typo: 1 };
+    const node = { id: "x", type: "agent", prompt: "x", typo: 1 };
     expect(codes(problems({ ...base, nodes: [node, ...(base.nodes as unknown[]).slice(1)] }))).toContain("schema");
   });
 
@@ -69,10 +70,10 @@ describe("conditions read only declared fields", () => {
 
   it("checks the type of the field against the operator and the value", () => {
     expect(codes(problems(withEdge({ field: "kind", op: "gt", value: 1 })))).toContain("condition_type");
-    expect(codes(problems(withEdge({ field: "count", op: "gt", value: "5" })))).toContain("condition_value");
+    expect(codes(problems(withEdge({ field: "count", op: "gt", value: "5" })))).toContain("condition_type");
     expect(codes(problems(withEdge({ field: "kind", op: "eq", value: "rotten" })))).toContain("condition_value");
-    expect(codes(problems(withEdge({ field: "kind", op: "in", value: [] })))).toContain("condition_value");
-    expect(codes(problems(withEdge({ field: "items", op: "eq", value: [] })))).toContain("condition_value");
+    expect(codes(problems(withEdge({ field: "kind", op: "in", value: [] })))).toContain("condition_type");
+    expect(codes(problems(withEdge({ field: "items", op: "eq", value: [] })))).toContain("condition_type");
   });
 
   it("checks the nested parts of all, any and not", () => {
@@ -166,7 +167,7 @@ describe("references", () => {
 
   it("gives an agent a handoff field without declaring it", () => {
     const parsed = parseWorkflow(workflow({ nodes: [{ id: "search", type: "action", output: [{ name: "items", type: "array" }] }, { id: "write", type: "agent", prompt: "x", output: [{ name: "text", type: "string" }] }] }));
-    expect(outputFields(parsed, parsed.nodes[1]!).map((field) => field.name)).toEqual(["text", "handoff"]);
+    expect((outputFields(parsed, parsed.nodes[1]!) as Array<{ name: string }>).map((field) => field.name)).toEqual(["text", "handoff"]);
     const withHandoff = workflow({
       nodes: [{ id: "search", type: "action" }, { id: "write", type: "agent", prompt: "x", output: [{ name: "text", type: "string" }] }],
       edges: [{ from: "start", to: "search" }, { from: "search", to: "write" }, { from: "write", to: "end", with: { result: "write.handoff" } }],
@@ -220,7 +221,7 @@ describe("parallel and join", () => {
   it("needs a join, a join of a parallel and a foreach of an array", () => {
     expect(codes(problems(fan({}, null)))).toEqual(expect.arrayContaining(["no_join"]));
     expect(codes(problems(fan({}, { id: "gather", type: "join", parallel: "search" })))).toEqual(expect.arrayContaining(["join_parallel", "no_join"]));
-    expect(codes(problems(fan({ foreach: "search.items.length" })))).toContain("foreach_type");
+    expect(codes(problems(fan({ foreach: "search.items.length" })))).toContain("for_each_type");
   });
 
   it("does not allow a condition on a branch edge, nor a branch that escapes its join", () => {

@@ -1,10 +1,8 @@
-import type { WorkflowInput } from "../../src/workflow/schema";
-
 type Node = Record<string, unknown>;
 type Edge = Record<string, unknown>;
 
 /** A small valid workflow; tests change one thing at a time. */
-export function workflow(extra: Partial<Record<string, unknown>> & { nodes?: Node[]; edges?: Edge[] } = {}): WorkflowInput {
+export function workflow(extra: Partial<Record<string, unknown>> & { nodes?: Node[]; edges?: Edge[] } = {}): Record<string, unknown> {
   return {
     schemaVersion: 1, id: "demo", name: "Demo",
     description: { en: "A demo chain", ru: "Учебная цепочка" },
@@ -20,7 +18,7 @@ export function workflow(extra: Partial<Record<string, unknown>> & { nodes?: Nod
       { from: "write", to: "end", with: { result: "write.text" } },
     ],
     ...extra,
-  } as WorkflowInput;
+  };
 }
 
 export const codes = (problems: Array<{ code: string; level: string }>, level: "error" | "warning" = "error") =>
