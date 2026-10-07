@@ -192,6 +192,36 @@ export const workflowViewEdgeSchema = z.object({
   pass: z.enum(["artifact", "same-session", "read-prior-session", "fork"]), carries: z.array(z.string()),
 }).strict();
 export const workflowViewSchema = z.object({ nodes: z.array(workflowViewNodeSchema), edges: z.array(workflowViewEdgeSchema) }).strict();
+/** Who works on a step and with which model, as the Models view and the graph cards show it (see server/workflow-step-executors.ts). */
+const executorPairSchema = z.object({ providerId: z.string().nullable(), model: z.string().nullable(), reasoningEffort: z.string().nullable(), serviceTier: z.string().nullable() }).strict();
+export const stepExecutorSchema = z.object({
+  /** The id of the node on the graph (`<id>:child` for the body of a parallel). */
+  nodeId: z.string(), kind: z.string(), uses: z.string().nullable(),
+  /** `model`: one model call; `chain`: a writer and its fallback chain; `helper`: a fixed helper thread; `none`: no model works here. */
+  mode: z.enum(["model", "chain", "helper", "none"]),
+  agent: z.object({ role: z.string().nullable(), helper: z.string().nullable(), label: z.string() }).strict(),
+  providerId: z.string().nullable(), model: z.string().nullable(), reasoningEffort: z.string().nullable(), serviceTier: z.string().nullable(),
+  source: z.enum(["node", "preset", "stage", "role-default", "writer", "helper", "none"]),
+  /** The setting key, the preset name or the helper the value comes from. */
+  sourceKey: z.string().nullable(),
+  inherited: z.boolean(),
+  /** The writer chain after the writer's own model: fallback 1, fallback 2, then the PM's model (`pm`). */
+  fallbacks: z.array(z.object({ providerId: z.string().nullable(), model: z.string().nullable(), reasoningEffort: z.string().nullable(), pm: z.boolean() }).strict()),
+  /** Further models of the same step: the code critic of a code task. */
+  parts: z.array(executorPairSchema.extend({ stage: z.string(), source: z.string(), sourceKey: z.string().nullable() }).strict()),
+  /** Whether a patch of the node changes it; otherwise the Settings of `settingsKey` do. */
+  overridable: z.boolean(), settingsKey: z.string().nullable(),
+  costTier: z.enum(["none", "low", "medium", "high", "unknown"]),
+  /** Problems found: `unknown_preset`, `provider_without_model`, `provider_unavailable`, `model_unavailable` ... */
+  issues: z.array(z.string()),
+}).strict();
+export const modelCatalogSchema = z.object({
+  hosts: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean() }).strict()),
+  providers: z.array(z.object({
+    id: z.string(), displayName: z.string(), logoUrl: z.string().nullable(), family: z.string().nullable(), supportsServiceTier: z.boolean(), serviceTiers: z.array(z.string()), hostIds: z.array(z.string()),
+    models: z.array(z.object({ id: z.string(), model: z.string(), displayName: z.string(), efforts: z.array(z.string()), defaultEffort: z.string().nullable(), hostIds: z.array(z.string()) }).strict()),
+  }).strict()),
+}).strict();
 export const workflowStatsSchema = z.object({
   runs: z.number().int(), succeeded: z.number().int(), failed: z.number().int(), active: z.number().int(),
   /** Succeeded over finished runs; null before any run has finished. */
@@ -1596,6 +1626,16 @@ export const rpcContract = defineRpcContract({
   workflow_draft_create: {
     input: z.object({ projectId: z.string().min(1), workflowId: z.string().min(1), mode: z.enum(["edit", "duplicate"]), scope: z.enum(["global", "project"]).optional() }).strict(),
     output: z.object({ draftId: z.string().nullable(), workflowId: z.string().nullable(), reused: z.boolean(), reason: z.string().optional() }).strict(),
+  },
+  /** Who works on every step of a workflow or draft: agent, provider, model, effort and where each value comes from (node, Settings, role default, writer chain). */
+  workflow_step_executors: {
+    input: z.object({ workflowId: z.string().min(1).optional(), draftId: z.string().min(1).optional(), projectId: z.string().min(1).optional() }).strict(),
+    output: z.object({ found: z.boolean(), executors: z.array(stepExecutorSchema), pm: z.object({ providerId: z.string(), model: z.string() }).strict().nullable() }).strict(),
+  },
+  /** Every provider and model the hub's machines offer, with the machines each is available on; the pickers of the Workflows tab list this. */
+  workflow_model_catalog: {
+    input: z.object({ refresh: z.boolean().optional() }).strict(),
+    output: modelCatalogSchema,
   },
   /** What a node may use: skills, plugins, MCP servers, Env Catalog names (never values), machines, specialist roles. */
   workflow_capabilities: {

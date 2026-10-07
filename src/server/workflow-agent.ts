@@ -24,11 +24,11 @@ import type { ChainRuntime } from "./workflow-runtime";
  * spawn key and plugin metadata after a reload (`lanePilotWorkflowRunId`, `lanePilotWorkflowStep`), so a lost spawn is not a second
  * helper. The same machinery runs a delegated action (a Telegram send, a skill script) and the router's model step.
  */
-const DEFAULT_PROVIDER = "claude-code";
-const DEFAULT_MODEL = "claude-opus-5-5";
-const DEFAULT_REASONING = "high";
+export const DEFAULT_PROVIDER = "claude-code";
+export const DEFAULT_MODEL = "claude-opus-5-5";
+export const DEFAULT_REASONING = "high";
 /** Model presets a node may name; an unknown preset is the default. */
-const PRESETS: Record<string, { model: string; reasoning: string }> = { "cheap-fast": { model: "claude-sonnet-5-5", reasoning: "low" } };
+export const PRESETS: Record<string, { model: string; reasoning: string }> = { "cheap-fast": { model: "claude-sonnet-5-5", reasoning: "low" } };
 
 export type RoleSpec = { helper: HelperRole; metadata: string; specialist?: string; readOnly: boolean; editable: (file: string) => boolean };
 
