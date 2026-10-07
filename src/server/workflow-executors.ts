@@ -9,7 +9,7 @@ import type { RunRow } from "../workflow/journal";
 import { outputFields } from "../workflow/lower";
 import type { Field, GraphNode } from "../workflow/schema";
 import { createTaskLinter } from "./lint-task";
-import { agentRequest, createWorkflowAgents } from "./workflow-agent";
+import { agentRequest, createWorkflowAgents, withResolvedModel } from "./workflow-agent";
 import type { WorkflowAgents } from "./workflow-agent";
 import { lpTaskPipelineExecutor } from "./writer/dispatch-workflow";
 import type { DispatchRuntime } from "./writer/dispatch-workflow";
@@ -109,7 +109,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     get reentrant() { return keyedSpawnSupported(bb); },
     run: async (c) => {
       need(c);
-      const result = await agents.run(agentRequest(c, c.node as Extract<GraphNode, { type: "agent" }>));
+      const result = await agents.run(await withResolvedModel(agentRequest(c, c.node as Extract<GraphNode, { type: "agent" }>)));
       return { output: result.output, threadId: result.threadId };
     },
   } as NodeExecutor<ChainRuntime>);
@@ -383,7 +383,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
         const prompt = agentPrompt({ workflow: c.workflow.id, node: node.id, title, role: "errand", mode: c.mode, readOnly: key === "lp.preflight" || key === "bb.tasks.get",
           task: `${spec.how}\n\nAction: ${key}\nParameters: ${redactKnown(JSON.stringify(params))}`, inputs: { ...c.input.with, ...reads }, contract: outputContract(fields),
           skills: [...spec.skills, ...stringList(params.skill)] });
-        const result = await agents.run({ rt, workflowRunId: c.runId, stepKey: c.stepKey, nodeId: node.id, spawnKey: c.spawnKey, role: spec.role, title, prompt, fields, skills: [...spec.skills, ...stringList(params.skill)], signal: c.signal });
+        const result = await agents.run(await withResolvedModel({ rt, workflowRunId: c.runId, stepKey: c.stepKey, nodeId: node.id, spawnKey: c.spawnKey, role: spec.role, title, prompt, fields, ...(node.model_preset ? { preset: node.model_preset } : {}), skills: [...spec.skills, ...stringList(params.skill)], signal: c.signal }));
         return { output: result.output, threadId: result.threadId };
       },
     } as NodeExecutor<ChainRuntime>);

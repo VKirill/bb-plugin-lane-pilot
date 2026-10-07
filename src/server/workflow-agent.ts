@@ -1,4 +1,5 @@
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
+import { getRunSettingsScopes } from "../database";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { ROLE_PROFILES } from "../helper-context";
 import type { ExtraAccess, HelperRole } from "../helper-context";
@@ -16,7 +17,9 @@ import { detectRepoEdits, gitRepoStatus } from "./repo-edits";
 import { SPECIALIST_ROLES } from "./specialists";
 import { findThreadsByMetadata, keyedSpawnSupported } from "./thread-keys";
 import { stringAt } from "./values";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "./workflow-agent-model";
 import { outputText } from "./writer-task";
+import type { ServerCore } from "./core";
 import type { ChainRuntime } from "./workflow-runtime";
 
 /**
@@ -25,11 +28,6 @@ import type { ChainRuntime } from "./workflow-runtime";
  * spawn key and plugin metadata after a reload (`lanePilotWorkflowRunId`, `lanePilotWorkflowStep`), so a lost spawn is not a second
  * helper. The same machinery runs a delegated action (a Telegram send, a skill script) and the router's model step.
  */
-export const DEFAULT_PROVIDER = "claude-code";
-export const DEFAULT_MODEL = "claude-opus-5-5";
-export const DEFAULT_REASONING = "high";
-/** Model presets a node may name; an unknown preset is the default. */
-export const PRESETS: Record<string, { model: string; reasoning: string }> = { "cheap-fast": { model: "claude-sonnet-5-5", reasoning: "low" } };
 
 export type RoleSpec = { helper: HelperRole; metadata: string; specialist?: string; readOnly: boolean; editable: (file: string) => boolean };
 
@@ -107,14 +105,13 @@ export function createWorkflowAgents() {
     } else {
       threadId = await lookup(rt, request);
       if (!threadId) {
-        const preset = request.preset ? PRESETS[request.preset] : undefined;
         const providerId = request.provider ?? DEFAULT_PROVIDER;
         const policy = requireHelperSpawn({ bb, db, projectId: rt.projectId, runId: rt.runId });
         const placement = await helperChildPlacement({ bb, db, projectId: rt.projectId, runId: rt.runId, role: spec.metadata, taskTitle: `${request.title}`.slice(0, 80) });
         const spawned = await fullAccessSpawn(bb, {
           ...placement,
           ...requiredPolicyField(bb, policy, providerId, spec.helper, extraAccessOf(request)),
-          ...writerExecutionSelection(providerId, request.model ?? preset?.model ?? DEFAULT_MODEL, request.reasoning ?? preset?.reasoning ?? DEFAULT_REASONING, null),
+          ...writerExecutionSelection(providerId, request.model ?? DEFAULT_MODEL, request.reasoning ?? DEFAULT_REASONING, null),
           prompt: request.prompt,
           environment: { type: "reuse", environmentId },
           pluginMetadata: {
@@ -194,6 +191,28 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
     ...(node.provider ? { provider: node.provider } : {}), ...(node.model ? { model: node.model } : {}), ...(node.reasoning ? { reasoning: node.reasoning } : {}), ...(node.model_preset ? { preset: node.model_preset } : {}),
     skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
   };
+}
+
+/** The model the PM chat runs on; null when BB cannot say. */
+export async function pmPairOfThread(bb: ServerCore["bb"], threadId: string): Promise<{ providerId: string; model: string } | null> {
+  try {
+    const options = await bb.sdk.threads.defaultExecutionOptions({ threadId });
+    const providerId = stringAt(options, "providerId"), model = stringAt(options, "model");
+    return providerId && model ? { providerId, model } : null;
+  } catch { return null; }
+}
+
+/**
+ * The request with the model the step will run on written into it: the node's fields, its preset, the role's stage selection, the
+ * generic agent selection, the PM's model (resolveAgentModel decides; the Models view calls the same function). Applied to the
+ * generic agent node and to the actions that run in an errand helper; the router, the architect and the audits keep their own.
+ */
+export async function withResolvedModel(request: HelperRequest): Promise<HelperRequest> {
+  const { rt } = request;
+  const settings = (await rt.ctx.effectiveProjectSettings(rt.projectId, getRunSettingsScopes(rt.ctx.db, rt.runId)).catch(() => ({ values: {} }))).values;
+  const pm = await pmPairOfThread(rt.ctx.bb, rt.pmThreadId);
+  const chosen = resolveAgentModel({ role: request.role, node: { provider: request.provider, model: request.model, reasoning: request.reasoning, model_preset: request.preset }, settings, pm });
+  return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort };
 }
 
 export const agentUsesKeyedSpawn = (rt: ChainRuntime | undefined) => Boolean(rt && keyedSpawnSupported(rt.ctx.bb));

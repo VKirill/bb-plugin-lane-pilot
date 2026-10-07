@@ -4,19 +4,21 @@ import { automaticEffortRoutingEnabled, writerServiceTier } from "../jev-reasoni
 import { resolveStageWriterSelection } from "../stage-writer-selection";
 import { writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
 import { costTier, validateChoice, type ModelCatalog } from "../workflow/model-catalog";
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, PRESETS, roleSpec } from "./workflow-agent";
+import { roleSpec } from "./workflow-agent";
+import { resolveAgentModel } from "./workflow-agent-model";
 
 /**
  * Who works on a step, and with which model. One place answers it for every node type, from the same rules the executors
  * use, so the card on the graph and the table in the Models view say what will run, not what someone hopes will:
  *
- *  - an agent node: the node's own `provider`/`model`/`reasoning`, then its `model_preset`, then the workflow agent's default
- *    (workflow-agent.ts). Settings do not reach it: the stage selections of Settings belong to the pipeline's own stages;
+ *  - a generic agent node: the node's own `provider`/`model`/`reasoning`, then its `model_preset` (a named setting), then the
+ *    role's stage selection in Settings, the generic `workflow.agent.*` selection and the PM's model (resolveAgentModel,
+ *    workflow-agent-model.ts, the function the executor calls);
  *  - the pipeline's stages (`lp.pm-read`, `lp.plan-critique`, `lp.specialist-review`): the stage's selection in Settings,
  *    else the writer's profile (`writer.provider` / `writer.model`), as `resolveStageWriterSelection` does;
  *  - a code task (`lp-task`): the writer's model from `writer.*`, then fallback 1, fallback 2 and the PM's model; its code critic
  *    is the `code_critique` selection;
- *  - an action that goes through a helper thread (a Telegram send, a skill script): the errand helper on the agent default;
+ *  - an action that goes through a helper thread (a Telegram send, a skill script): the errand helper, resolved like an agent node;
  *  - every other action, a decision, a question to the owner, a call of another workflow: no model.
  */
 export type StepExecutor = z.infer<typeof stepExecutorSchema>;
@@ -69,23 +71,16 @@ const none = (node: Raw, id: string, kind: string, label: string, extra: Partial
   overridable: false, settingsKey: null, costTier: "none", issues: [], ...extra,
 });
 
-function agentNode(node: Raw, id: string): StepExecutor {
+function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null): StepExecutor {
   const role = text(node.role) ?? "worker";
   const helper = roleSpec(role).helper;
-  const own = { provider: text(node.provider), model: text(node.model), reasoning: text(node.reasoning) };
-  const presetName = text(node.model_preset);
-  const preset = presetName ? PRESETS[presetName] : undefined;
-  const set = Boolean(own.provider || own.model || own.reasoning);
-  const providerId = own.provider ?? DEFAULT_PROVIDER;
-  const model = own.model ?? preset?.model ?? DEFAULT_MODEL;
-  const issues: string[] = [];
-  if (presetName && !preset) issues.push("unknown_preset");
-  if (own.provider && !own.model) issues.push("provider_without_model");
+  // The same function the executor calls (withResolvedModel, workflow-agent.ts): the card says what will be spawned.
+  const chosen = resolveAgentModel({ role, node: { provider: text(node.provider), model: text(node.model), reasoning: text(node.reasoning), model_preset: text(node.model_preset) }, settings, pm });
   return {
     nodeId: id, kind: "agent", uses: text(node.uses), mode: "model", agent: { role, helper, label: role },
-    providerId, model, reasoningEffort: own.reasoning ?? preset?.reasoning ?? DEFAULT_REASONING, serviceTier: null,
-    source: set ? "node" : preset ? "preset" : "role-default", sourceKey: set ? null : presetName ?? null, inherited: !set,
-    fallbacks: [], parts: [], overridable: true, settingsKey: null, costTier: costTier(model), issues,
+    providerId: chosen.providerId, model: chosen.model, reasoningEffort: chosen.reasoningEffort, serviceTier: null,
+    source: chosen.source, sourceKey: chosen.sourceKey, inherited: chosen.inherited,
+    fallbacks: [], parts: [], overridable: true, settingsKey: null, costTier: costTier(chosen.model), issues: chosen.issues,
   };
 }
 
@@ -129,13 +124,13 @@ function stepOf(node: Raw, id: string, settings: Settings, pm: PmPair | null): S
     case "note": case "join": case "parallel": return null;
     case "agent": {
       const stage = uses ? STAGE_NODES[uses] : undefined;
-      return stage ? stageNode(node, id, stage, settings) : agentNode(node, id);
+      return stage ? stageNode(node, id, stage, settings) : agentNode(node, id, settings, pm);
     }
     case "lp-task": return codeTask(node, id, settings, pm);
     case "action": {
       const key = uses ?? text(node.action);
       if (key && (DELEGATED_ACTIONS as readonly string[]).includes(key)) {
-        return { ...agentNode({ role: "errand" }, id), kind: "action", uses, mode: "helper", agent: { role: "errand", helper: "errand", label: key }, source: "helper", sourceKey: "errand", inherited: true, overridable: false };
+        return { ...agentNode({ role: "errand", model_preset: node.model_preset }, id, settings, pm), kind: "action", uses, mode: "helper", agent: { role: "errand", helper: "errand", label: key }, source: "helper", sourceKey: "errand", inherited: true, overridable: false };
       }
       return none(node, id, kind, text(node.action) ?? "action");
     }

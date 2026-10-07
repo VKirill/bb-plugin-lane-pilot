@@ -4,6 +4,7 @@ import { ExprSyntaxError, checkExpr, checkRef, exprRefs, parseExpr, placeholders
 import type { CheckEnv, Ref, Typed } from "./expr";
 import { cronProblem, timezoneProblem } from "./cron";
 import { EMIT, executorKey, lowerWorkflow, outputFields } from "./lower";
+import { PRESET_SLUGS, presetSlug } from "./model-presets";
 import { END, MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES, START, parseWorkflowObject } from "./schema";
 import type { Field, GraphNode, Workflow, WorkflowNode } from "./schema";
 
@@ -299,6 +300,7 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       if (!key) error("executor_missing", `${node.id}: no executor (set "uses"${node.type === "action" ? " or \"action\"" : ""})`, extra);
       else if (!options.hasExecutor(key)) error("executor_missing", `${node.id}: no executor "${key}"`, extra);
     }
+    if (node.model_preset && !presetSlug(node.model_preset)) warn("unknown_preset", `${node.id}: model preset "${node.model_preset}" is not known (${PRESET_SLUGS.join(", ")}); the step falls through to Settings and the PM chat's model`, extra);
     if (node.type === "agent") {
       const handoff = node.out.find((field) => field.name === "handoff");
       if (handoff && handoff.type !== "string") error("handoff_type", `${node.id}: handoff must be a string`, extra);

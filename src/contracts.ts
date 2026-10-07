@@ -201,7 +201,7 @@ export const stepExecutorSchema = z.object({
   mode: z.enum(["model", "chain", "helper", "none"]),
   agent: z.object({ role: z.string().nullable(), helper: z.string().nullable(), label: z.string() }).strict(),
   providerId: z.string().nullable(), model: z.string().nullable(), reasoningEffort: z.string().nullable(), serviceTier: z.string().nullable(),
-  source: z.enum(["node", "preset", "stage", "role-default", "writer", "helper", "none"]),
+  source: z.enum(["node", "preset", "stage", "agent", "pm", "role-default", "writer", "helper", "none"]),
   /** The setting key, the preset name or the helper the value comes from. */
   sourceKey: z.string().nullable(),
   inherited: z.boolean(),

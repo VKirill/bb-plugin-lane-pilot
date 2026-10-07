@@ -22,6 +22,8 @@ export function allowedSettingChoices(key: string): string[] | null {
   return choices.size ? [...choices] : null;
 }
 
+const WORKFLOW_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+
 export function validateSettingValue(key: string, value: unknown): SettingValidationError | null {
   const minimum = key === "plan_critique.min_score" ? 0
     : key === "plan_critique.min_write_tasks" ? 1
@@ -35,6 +37,10 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
       return { code:"invalid_choice", key, params:[key, "integer 1-3"] };
     }
     return null;
+  }
+  // The efforts a workflow node may name (the `reasoning` enum of the agent node); a preset or the generic agent with another word would fail at the spawn.
+  if (/^workflow\.(agent|debugger|preset\.[a-z-]+)\.reasoning_effort$/.test(key) && value !== undefined && value !== null && value !== "") {
+    return typeof value === "string" && WORKFLOW_EFFORTS.includes(value) ? null : { code: "invalid_choice", key, params: [key, WORKFLOW_EFFORTS.join(", ")] };
   }
   if (key === PROVIDER_POOL_KEY) {
     const problem = providerPoolProblem(value);

@@ -23,18 +23,27 @@ const catalog: ModelCatalog = {
 };
 
 describe("step executors by node type", () => {
-  it("an agent node with nothing set runs on the workflow agent's default (role default)", () => {
+  it("an agent node with nothing set runs on the PM chat's model; with the PM unknown, on the built-in default (role default)", () => {
     expect(one({ id: "a", type: "agent", role: "analyst" })).toMatchObject({
-      mode: "model", providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "role-default", inherited: true, overridable: true,
+      mode: "model", providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "pm", inherited: true, overridable: true,
       agent: { role: "analyst", helper: "analyst" }, costTier: "high", issues: [],
     });
+    expect(one({ id: "a", type: "agent", role: "analyst" }, writer, { pm: null })).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "role-default" });
   });
 
-  it("node fields beat a preset, and a preset beats the default; an unknown preset is flagged and changes nothing", () => {
-    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast" })).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "low", source: "preset", sourceKey: "cheap-fast", inherited: true });
+  it("an agent node takes the role's stage selection, then the generic workflow agent, from Settings", () => {
+    expect(one({ id: "a", type: "agent", role: "analyst" }, { ...writer, "pm_read.provider": "acp-opencode", "pm_read.model": "router9/ag/gemini-3.8-flash-high" }))
+      .toMatchObject({ providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "low", source: "stage", sourceKey: "pm_read.model", inherited: true, costTier: "low" });
+    expect(one({ id: "a", type: "agent", role: "worker" }, { ...writer, "workflow.agent.provider": "codex", "workflow.agent.model": "gpt-6-luna", "workflow.agent.reasoning_effort": "medium" }))
+      .toMatchObject({ providerId: "codex", model: "gpt-6-luna", reasoningEffort: "medium", source: "agent", sourceKey: "workflow.agent.model" });
+  });
+
+  it("node fields beat a preset, and a preset beats the default; an unknown preset is flagged and the step goes to the next level", () => {
+    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast" })).toMatchObject({ model: "claude-haiku-5-5", reasoningEffort: "low", source: "preset", sourceKey: "cheap-fast", inherited: true });
     expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast", provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium" }))
       .toMatchObject({ providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", source: "node", inherited: false, costTier: "low" });
-    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "strong" })).toMatchObject({ model: "claude-opus-5-5", source: "role-default", issues: ["unknown_preset"] });
+    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "strong" })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high", source: "preset", sourceKey: "strong", issues: [] });
+    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "no-such-preset" })).toMatchObject({ model: "claude-opus-5-5", source: "pm", issues: ["unknown_preset"] });
   });
 
   it("a provider with no model keeps the default model and says so; a model with no provider runs on the default provider", () => {
@@ -94,7 +103,7 @@ describe("step executors by node type", () => {
       { id: "j", type: "join", parallel: "fan" }, { id: "n", type: "note", text: "hi" }, { id: "bare", type: "parallel" },
     ]);
     expect(steps.map((step) => step.nodeId)).toEqual(["fan:child"]);
-    expect(steps[0]).toMatchObject({ source: "preset", model: "claude-sonnet-5-5" });
+    expect(steps[0]).toMatchObject({ source: "preset", model: "claude-haiku-5-5" });
   });
 
   it("works on a draft that is not finished (no type, no role)", () => {

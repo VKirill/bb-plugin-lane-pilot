@@ -72,6 +72,8 @@ export function sourceText(executor: Pick<StepExecutor, "source" | "sourceKey" |
   switch (executor.source) {
     case "preset": return t("wfModelSrc_preset").replace("{key}", executor.sourceKey ?? "");
     case "stage": return t("wfModelSrc_stage").replace("{key}", executor.sourceKey ?? executor.settingsKey ?? "");
+    case "agent": return t("wfModelSrc_agent").replace("{key}", executor.sourceKey ?? "");
+    case "pm": return t("wfModelSrc_pm");
     case "role-default": return t("wfModelSrc_role_default");
     case "writer": return `${t("wfModelSrc_writer")}${executor.sourceKey ? ` (${executor.sourceKey})` : ""}`;
     case "helper": return t("wfModelSrc_helper");
