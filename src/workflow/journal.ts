@@ -144,7 +144,7 @@ export const sha256 = (text: string): string => createHash("sha256").update(text
 export const stableId = (...parts: Array<string | number>): string => sha256(parts.join("\u0000")).slice(0, 16);
 
 /** The journal's database access. No logic about graphs here. */
-export function createJournal(db: LanePilotDatabase, now: () => number = Date.now) {
+export function createJournal(db: LanePilotDatabase, now: () => number = Date.now, onEvent?: (runId: string) => void) {
   const getRun = (id: string) => db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(id) as RunRow | undefined;
   const getStep = (runId: string, stepKey: string) => db.prepare("SELECT * FROM lane_pilot_wf_step WHERE run_id=? AND step_key=?").get(runId, stepKey) as StepRow | undefined;
   const steps = (runId: string) => db.prepare("SELECT * FROM lane_pilot_wf_step WHERE run_id=? ORDER BY rowid").all(runId) as StepRow[];
@@ -152,6 +152,8 @@ export function createJournal(db: LanePilotDatabase, now: () => number = Date.no
   function event(runId: string, stepKey: string | null, kind: string, from: string | null, to: string | null, detail?: unknown): void {
     db.prepare("INSERT INTO lane_pilot_wf_event(run_id,step_key,kind,from_state,to_state,detail,at) VALUES (?,?,?,?,?,?,?)")
       .run(runId, stepKey, kind, from, to, detail === undefined ? null : typeof detail === "string" ? detail : JSON.stringify(detail), now());
+    // A screen watching the run reads again; a failing listener never fails the transition.
+    try { onEvent?.(runId); } catch { /* the journal is the truth, the signal is a courtesy */ }
   }
 
   /** Moves a step along the table; false (and a logged refusal) when it is no longer in `from`. */

@@ -8,7 +8,8 @@
     "lib": ["ES2022", "DOM"],
     "types": ["node", "vitest/globals"],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "elkjs/lib/elk.bundled.js": ["./src/ui/elk-shim.d.ts"]
     },
     "noEmit": true,
     "resolveJsonModule": true,

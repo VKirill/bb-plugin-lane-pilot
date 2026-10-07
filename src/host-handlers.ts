@@ -290,6 +290,21 @@ export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["li
   return {hostId:input.requestedHostId,pages,...(input.skipOversized?{oversized}:{})};
 };
 
+/** The project's own workflows: the `.json` files of `<project>/.lane-pilot/workflows`, small regular files only. A missing folder is an empty list. */
+export const listWorkflowFiles: ExperimentalHostRpcHandlers<typeof hostContract>["listWorkflowFiles"] = async (input) => {
+  const dir = join(input.projectCwd, ".lane-pilot", "workflows");
+  let names: string[] = [];
+  try { names = (await readdir(dir)).filter((name) => name.endsWith(".json")).sort(); }
+  catch (cause) { if ((cause as NodeJS.ErrnoException).code !== "ENOENT" && (cause as NodeJS.ErrnoException).code !== "ENOTDIR") throw cause; }
+  const files: Array<{ path: string; content: string }> = [];
+  for (const name of names.slice(0, 200)) {
+    const info = await lstat(join(dir, name));
+    if (!info.isFile() || info.isSymbolicLink() || info.size > 262_144) continue;
+    files.push({ path: name, content: await readFile(join(dir, name), "utf8") });
+  }
+  return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, files };
+};
+
 type MarkdownWrite = Parameters<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>[0];
 
 /** Onboarding previews stay small; the docs builders rewrite whole pages of up to 40000 bytes. */
