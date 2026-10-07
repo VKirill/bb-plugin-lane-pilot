@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.182
+
+- The settings page nav no longer touches the page header: the first item («Общие настройки», raised when chosen) sat right under the Lane Pilot title card.
+
 ## 0.1.181
 
 - **G9: a check's timeout comes from its own history.** Each green run of a verification command is stored (table `lane_pilot_check_duration`, per project and command, last 100 kept); the check's timeout becomes max(the configured one, p95 of the last 20 green runs x 2), the history part capped at 30 minutes and used only after 3 runs. A command with fewer runs, or a configured timeout already higher, is unchanged.
