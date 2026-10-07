@@ -85,6 +85,25 @@ describe("rebase of the attempt onto the current main before the merge", () => {
     expect(spawnSync("git", ["rev-parse", "--verify", "REBASE_HEAD"], { cwd: two }).status).not.toBe(0);
   });
 
+  it("replays a BB-managed bb/ attempt branch on the current main too", async () => {
+    const managed = await mkdtemp(join(tmpdir(), "lp-rebase-bb-"));
+    try {
+      git(base, "worktree", "add", "-b", "bb/attempt", managed, "HEAD");
+      await work(managed, "managed", { "managed.ts": "export const managed = 1;\n" });
+      await work(one, "one", { "one.ts": "export const one = 1;\n" });
+      expect((await integrateWorktree({ basePath: base, worktreePath: one, message: "one" })).status).toBe("merged");
+      const mainAfterFirst = git(base, "rev-parse", "HEAD");
+
+      const res = await integrateWorktree({ basePath: base, worktreePath: managed, message: "managed" });
+
+      expect(res).toMatchObject({ status: "merged", rebased: true });
+      expect(git(base, "rev-parse", "HEAD^2^")).toBe(mainAfterFirst);
+    } finally {
+      try { git(base, "worktree", "remove", "--force", managed); } catch {}
+      await rm(managed, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
   it("does not rewrite a branch that is not Lane Pilot's own", async () => {
     const other = await mkdtemp(join(tmpdir(), "lp-rebase-other-"));
     try {
