@@ -309,6 +309,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       releaseWriterSlot=liveFolder
         ? await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(runFolder)}`,1)
         : await services.runWriterPool.acquire(input.runId,policy.pools.provider);
+      // BB's concurrency-limit plugin caps the threads a host runs at once: writers beyond it would only wait in BB's queue,
+      // so they wait here, before their attempt starts (no pool slot is held by a writer that cannot run). No plugin, no cap.
+      const hostCap = await services.concurrencyLimit.hostCap(input.config.hostId);
+      if (hostCap !== null && !liveFolder) {
+        const releaseRunSlot = releaseWriterSlot;
+        const releaseHostSlot = await services.runWriterPool.acquire(`concurrency-limit:${input.config.hostId}`, Math.min(hostCap, 15));
+        releaseWriterSlot = () => { releaseHostSlot(); releaseRunSlot?.(); };
+      }
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){
         if(latestAttempt?.state==="canceled"){

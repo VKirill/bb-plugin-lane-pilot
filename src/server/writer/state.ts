@@ -3,6 +3,7 @@ import { RunWriterPool } from "../../stages/run-policy";
 import { createProviderUsage } from "../provider-usage";
 import { createProviderRetryGuard } from "../provider-retry";
 import { createTasksMirror } from "../tasks-mirror";
+import { createConcurrencyLimit } from "../concurrency-limit";
 import { getRunSettingsScopes } from "../../database";
 import type { ServerCore } from "../core";
 
@@ -24,6 +25,9 @@ export function createWriterState(ctx: ServerCore) {
   /** Copies a project's tasks into BB Tasks when the project turns `tasks.mirror` on; writes only, never read back. */
   const tasksMirror = createTasksMirror(ctx.bb, async (projectId, runId) => (await ctx.effectiveProjectSettings(projectId, getRunSettingsScopes(ctx.db, runId))).values);
 
+  /** BB's concurrency-limit plugin: how many writers a host may run; null without the plugin. */
+  const concurrencyLimit = createConcurrencyLimit(ctx.bb);
+
   const runBudgets = new Map<string, RunBudget>();
 
   /** The budget of a run, created from its effective settings the first time a writer starts there. */
@@ -38,5 +42,5 @@ export function createWriterState(ctx: ServerCore) {
     return budget;
   }
 
-  return { activeWriterTasks, runWriterPool, providerBreaker, providerUsage, providerRetry, tasksMirror, runBudgets, runBudgetFor };
+  return { activeWriterTasks, runWriterPool, providerBreaker, providerUsage, providerRetry, tasksMirror, concurrencyLimit, runBudgets, runBudgetFor };
 }

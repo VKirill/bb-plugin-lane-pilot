@@ -59,6 +59,7 @@ export interface Services {
   providerUsage: WriterStateApi["providerUsage"];
   providerRetry: WriterStateApi["providerRetry"];
   tasksMirror: WriterStateApi["tasksMirror"];
+  concurrencyLimit: WriterStateApi["concurrencyLimit"];
   runBudgets: WriterStateApi["runBudgets"];
   runBudgetFor: WriterStateApi["runBudgetFor"];
   applyOnboardingPreview: OnboardingStageApi["applyOnboardingPreview"];

@@ -61,7 +61,10 @@ const queueLog:string[]=[];
 /** The BB Tasks plugin: null is a hub where it is absent or disabled; calls are what Lane Pilot sent it. */
 let tasksPlugin:{linkedProjectId:string|null}|null=null;
 const tasksCalls:Array<{method:string;input:Record<string,unknown>}>=[];
-afterEach(()=>{usageReadings=null;usageCalls.length=0;queuedRetries=[];queueLog.length=0;tasksPlugin=null;tasksCalls.length=0;});
+/** BB's concurrency-limit plugin: the effective limit of the stage host; null is a hub without it. */
+let concurrencyPlugin:{limit:number}|null=null;
+const concurrencyCalls:string[]=[];
+afterEach(()=>{concurrencyPlugin=null;concurrencyCalls.length=0;usageReadings=null;usageCalls.length=0;queuedRetries=[];queueLog.length=0;tasksPlugin=null;tasksCalls.length=0;});
 function holdEvents(threadId:string):()=>void {
   let release=()=>{};
   heldEvents.set(threadId,new Promise<void>((resolve)=>{release=()=>{heldEvents.delete(threadId);resolve();};}));
@@ -258,6 +261,11 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           return [{pluginId:"provider-codex"}];
         },
         callRpc:async ({pluginId,method,input}:{pluginId:string;method:string;input?:unknown})=>{
+          if(pluginId==="concurrency-limit"){
+            if(!concurrencyPlugin) throw new Error("plugin concurrency-limit is not enabled");
+            concurrencyCalls.push(method);
+            return {globalLimit:null,hostOverrides:[],hosts:[{id:config.hostId,name:"stage",status:"connected",availableParallelism:8,automaticLimit:8,effectiveLimit:concurrencyPlugin.limit,override:null}]};
+          }
           if(pluginId==="tasks"){
             if(!tasksPlugin) throw new Error("plugin tasks is not enabled");
             const args=(input??{}) as Record<string,unknown>;
@@ -1464,6 +1472,19 @@ describe("stage → native writer → receipt", () => {
       const done=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
       expect(done.state,JSON.stringify([plugin,extra])).toBe("accepted");
       expect(tasksCalls.filter((call)=>call.method!=="listProjects"),JSON.stringify([plugin,extra])).toEqual([]);
+      await harness.lifecycle.dispose();
+    }
+  });
+
+  // concurrency-limit (I4): the host's limit caps the writers Lane Pilot starts there; without the plugin nothing changes.
+  it("starts the writer under a host limit read from concurrency-limit, and under none",async()=>{
+    for(const plugin of [{limit:1},null]){
+      concurrencyPlugin=plugin;concurrencyCalls.length=0;
+      const {harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false});
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+      const done=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
+      expect(done.state,JSON.stringify(plugin)).toBe("accepted");
+      expect(concurrencyCalls).toEqual(plugin?["getConfiguration"]:[]);
       await harness.lifecycle.dispose();
     }
   });

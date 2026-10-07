@@ -34,6 +34,25 @@ export async function listThreadEventsRaw(
 }
 
 /**
+ * Whether a turn of the thread is held in the queue by a plugin's dispatch hook (BB's concurrency-limit: «N of N running
+ * on host»). Such a turn is waiting its turn, not a provider that never started, so the start limit of `threadFailure` does
+ * not apply to it. False when nothing is held, the queue cannot be read or no such plugin exists.
+ */
+export async function turnHeldByPlugin(bb: BbPluginApi, threadId: string): Promise<boolean> {
+  try {
+    const rows = await bb.sdk.threads.queue.list({ threadId });
+    return (Array.isArray(rows) ? rows : []).some((row) => row.waitingOn?.kind === "plugin");
+  } catch {
+    return false;
+  }
+}
+
+/** A failure that is only the start limit, while the turn waits in a plugin's queue, is no failure. */
+export async function startLimitWaiting(bb: BbPluginApi, threadId: string, failure: string | null): Promise<boolean> {
+  return Boolean(failure && failure.startsWith("provider_not_started") && await turnHeldByPlugin(bb, threadId));
+}
+
+/**
  * Waits for a child thread's turn with no overall deadline: BB's events say when it failed (see
  * threadFailure), so a slow but working model is never cut off. `probeMs` bounds a diagnostic probe only.
  */
@@ -54,7 +73,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
       requestedAfter,
     });
     if (decision.ok) return;
-    if (decision.via === "error" || decision.via === "canceled") {
+    if ((decision.via === "error" || decision.via === "canceled") && !(decision.via === "error" && await startLimitWaiting(bb, threadId, decision.detail))) {
       throw new Error(`${timeoutMessage}:${decision.via}:${decision.detail}`);
     }
     lastDetail = decision.detail;
@@ -88,7 +107,7 @@ export async function observeStageChild(
       events:listed.events,
     });
     if (decision.ok) return { kind:"completed" };
-    if (decision.via === "error" || decision.via === "canceled") {
+    if ((decision.via === "error" || decision.via === "canceled") && !(decision.via === "error" && await startLimitWaiting(bb, threadId, decision.detail))) {
       return { kind:"product_failure", via:decision.via, detail:decision.detail };
     }
     lastDetail = decision.detail;
