@@ -261,7 +261,9 @@ export function writerBriefInput(task: TaskV2, segments: BriefSegment[], provide
   const parts = [part(`Lane Pilot task ${task.id}: ${task.title}`, false)];
   let group: BriefSegment[] = [];
   const flush = () => {
-    if (group.length) parts.push(part(group.map((segment) => segment.text).join("\n\n"), group[0]!.hidden));
+    // The chat shows the visible parts one after another with nothing between them: «…titleTask contract:» (H4). The contract
+    // part opens with the break.
+    if (group.length) parts.push(part((group[0]!.hidden ? "" : "\n\n") + group.map((segment) => segment.text).join("\n\n"), group[0]!.hidden));
     group = [];
   };
   for (const segment of segments) {

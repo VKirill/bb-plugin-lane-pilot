@@ -25,9 +25,20 @@ describe("writer brief as BB input parts", () => {
       expect(hidden).toContain(secret);
       expect(visible).not.toContain(secret);
     }
-    // Nothing is lost on the way to the agent, and the order is the brief's own.
-    expect(parts.slice(1).map((part) => part.text).join("\n\n")).toBe(writerPrompt(...args));
+    // Nothing is lost on the way to the agent, and the order is the brief's own (bar the break that opens the visible contract).
+    expect(parts.slice(1).map((part) => part.text.replace(/^\n\n/, "")).join("\n\n")).toBe(writerPrompt(...args));
     expect(parts.every((part) => part.type === "text" && Array.isArray(part.mentions))).toBe(true);
+  });
+
+  it("opens the visible contract with a line break, so the chat does not run the title into «Task contract:» (H4)", () => {
+    for (const providerId of ["claude-code", "codex", "acp-opencode"]) {
+      const parts = writerBriefInput(task, writerBriefSegments(...args), providerId);
+      const visible = parts.filter((part) => !part.visibility);
+      expect(visible[0]!.text).toBe("Lane Pilot task t-1: Add the footer");
+      expect(visible[1]!.text.startsWith("\n\nTask contract:")).toBe(true);
+      // What the chat shows: the title, a blank line, then the contract.
+      expect(visible.map((part) => part.text).join("")).toMatch(/^Lane Pilot task t-1: Add the footer\n\nTask contract:/);
+    }
   });
 
   it("never opens with an agent-only part (BB reads such a message as a seed)", () => {

@@ -4,6 +4,7 @@
 
 - **Every writer of a git project works in its own worktree, of any task kind and risk.** A low-risk `kind:"bb"` task (dispatch-bb, plugin-page runs) fell under the `worktree_min_score` threshold and ran «in place» in the shared project folder. Three tasks sent seconds apart then saw each other's files, rejected one another (`owns_paths rejected <another task's file>`), and the retry's dirt baseline lacked the sibling's file, so the same-diff rule blocked the task as «no progress» (live sandbox 2026-10-07, 0.1.181). Routing now gives every auto-mode attempt its own worktree (the workspace decision reads `own_worktree` instead of `below_threshold`) with the same rules as a native chat: BB environment provider, Lane Pilot's own worktree, or the subfolder prefix. A folder without git keeps the live-folder mode (one writer at a time); the run's explicit `worktree` mode is unchanged. `adoc.041` (`worktree_min_score`) no longer decides anything.
 - A finished attempt in Lane Pilot's own worktree sends later stages back to the run folder for every run kind (before, only native chats), so a dispatched task's retry no longer points at a removed worktree.
+- H4: the writer's first message no longer runs the task title into «Task contract:». The visible contract part now opens with a blank line (the chat shows visible parts back to back).
 
 ## 0.1.182
 
