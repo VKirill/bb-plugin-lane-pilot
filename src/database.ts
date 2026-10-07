@@ -657,6 +657,13 @@ export function setAttemptWorkspace(db:LanePilotDatabase, attemptId:string, bind
   return changed===1;
 }
 
+/** The BB environment of an attempt that started on Lane Pilot's own provider, known once its thread exists. */
+export function setAttemptEnvironment(db:LanePilotDatabase, attemptId:string, environmentId:string):boolean {
+  if (!environmentId.trim()) throw new Error("attempt environment id must be non-empty");
+  return db.prepare("UPDATE lane_pilot_attempt SET environment_id=?,updated_at=? WHERE id=? AND environment_id IS NULL AND workspace_path IS NOT NULL")
+    .run(environmentId,Date.now(),attemptId).changes===1;
+}
+
 export function setAttemptHolderThread(db:LanePilotDatabase, attemptId:string, holderThreadId:string):boolean {
   if (!holderThreadId.trim()) throw new Error("holder thread id must be non-empty");
   const changed=db.prepare(`UPDATE lane_pilot_attempt SET holder_thread_id=?,updated_at=?

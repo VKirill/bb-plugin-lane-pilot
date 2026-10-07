@@ -8,6 +8,8 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
   provider_limit a bad writer.model in the sandbox: the task still ends accepted through the next writer; the setting is restored
   reload         `bb plugin reload lane-pilot` while a writer works: the task still ends accepted (skipped when a non-sandbox
                  project has open attempts)
+  provider       one task: its attempt runs on a BB environment of Lane Pilot's own worktree provider (environment_id set, no
+                 holder thread, own worktree). A silent fallback to the old path fails it: a broken provider must not ship
   nogit          a project whose folder is not a git repo (live-folder mode): accepted, file in the folder, no .git created
 
 Usage: scripts/lp-drill.sh [--quick] [--scenario a,b] [--dry-run]
@@ -50,7 +52,7 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["parallel3", "conflict", "main_moved", "provider_limit", "reload", "nogit"]
+ALL = ["parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit"]
 
 
 def log(message: str) -> None:
@@ -151,7 +153,7 @@ class Context:
 
     def rows(self, ids: list[str]) -> list[dict]:
         quoted = ",".join("'" + i.replace("'", "''") + "'" for i in ids)
-        return hubsql(f"select id, task_id, state, reason, thread_id, workspace_path, created_at from lane_pilot_attempt where run_id='{self.run_id}' and task_id in ({quoted});")
+        return hubsql(f"select id, task_id, state, reason, thread_id, workspace_path, environment_id, holder_thread_id, created_at from lane_pilot_attempt where run_id='{self.run_id}' and task_id in ({quoted});")
 
     def wait_ended(self, ids: list[str], timeout_min: int = TIMEOUT_MIN) -> list[dict]:
         """Rows once every task's latest attempt is accepted, blocked or canceled, twice in a row; the last rows seen on timeout."""
@@ -231,7 +233,8 @@ def summarize(rows: list[dict], task_id: str, cwd: str, output: str | None = Non
     last = mine[-1] if mine else None
     out = {"task": task_id, "attempts": len(mine), "states": [r["state"] for r in mine], "state": last["state"] if last else None,
            "reason": (last["reason"] or "")[:200] if last else None, "attempt": last["id"] if last else None,
-           "writerThread": last["thread_id"] if last else None, "workspace": last["workspace_path"] if last else None}
+           "writerThread": last["thread_id"] if last else None, "workspace": last["workspace_path"] if last else None,
+           "environment": last.get("environment_id") if last else None, "holder": last.get("holder_thread_id") if last else None}
     if output:
         out["file"] = output
         out["fileInSandbox"] = (Path(cwd) / output).is_file()
@@ -240,6 +243,20 @@ def summarize(rows: list[dict], task_id: str, cwd: str, output: str | None = Non
 
 def verdict(name: str, problems: list[str], **details) -> dict:
     return {"name": name, "result": "pass" if not problems else "fail", "problems": problems, **details}
+
+
+def provider_problems(tasks: list[dict]) -> list[str]:
+    """The accepted attempts ran on the worktree provider: an environment of its own, no holder thread (the old path's model turn)."""
+    problems = []
+    for t in tasks:
+        # LP_DRILL_REQUIRE_PROVIDER=0 only for the drill of the first build that has the provider: the deployed one has none yet.
+        if t["state"] != "accepted" or os.environ.get("LP_DRILL_REQUIRE_PROVIDER", "1") == "0":
+            continue
+        if not t["environment"]:
+            problems.append(f"{t['task']}: no BB environment on the attempt, so the worktree provider was not used (it fell back to the old path)")
+        if t["holder"]:
+            problems.append(f"{t['task']}: a holder thread {t['holder']} was spawned for the worktree")
+    return problems
 
 
 def conflict_markers(cwd: str, rel: str) -> bool:
@@ -325,8 +342,28 @@ def scenario_parallel3(ctx: Context) -> dict:
         problems.append("tasks did not each get a worktree of their own")
     if accepted and not merged:
         problems.append("an accepted task's file is not in the sandbox")
+    problems += provider_problems(tasks)
     return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged},
                    dispatch={s["id"]: ctx.dispatches.get(s["id"]) for s in specs})
+
+
+def task_provider(cwd: str) -> dict:
+    return note_task(f"drill-{STAMP}-provider", f"notes/drill/{STAMP}-provider.md", f"Drill {STAMP} provider", cwd)
+
+
+def scenario_provider(ctx: Context) -> dict:
+    spec = task_provider(ctx.cwd)
+    problems = [] if ctx.dispatch(spec) else ["dispatch-bb exited with an error"]
+    rows = ctx.wait_ended([spec["id"]])
+    row = summarize(rows, spec["id"], ctx.cwd, spec["expected_outputs"][0])
+    if row["state"] != "accepted":
+        problems.append(f"the task did not end accepted: {row['states']} {row['reason']}")
+    elif not row["fileInSandbox"]:
+        problems.append("the accepted task's file is not on main")
+    if row["workspace"] == ctx.cwd:
+        problems.append("the attempt ran in the sandbox folder, not in a worktree")
+    problems += provider_problems([row])
+    return verdict("provider", problems, tasks=[row])
 
 
 def scenario_conflict(ctx: Context) -> dict:
@@ -507,7 +544,7 @@ def dry_run(names: list[str]) -> None:
         for spec in tasks_parallel3(SANDBOX["cwd"]):
             print(json.dumps(spec))
     cwd = SANDBOX["cwd"]
-    documents = {"conflict": tasks_conflict(cwd), "main_moved": [task_moved(cwd)], "provider_limit": [task_limit(cwd)], "reload": [task_reload(cwd)], "nogit": [task_nogit(NOGIT["cwd"])]}
+    documents = {"conflict": tasks_conflict(cwd), "main_moved": [task_moved(cwd)], "provider": [task_provider(cwd)], "provider_limit": [task_limit(cwd)], "reload": [task_reload(cwd)], "nogit": [task_nogit(NOGIT["cwd"])]}
     for name in names:
         for spec in documents.get(name, []):
             print(f"scenario {name}: {json.dumps(spec)}")

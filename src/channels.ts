@@ -114,6 +114,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"integration.gate_when", channel:"OWN", reason:"Native Lane Pilot integration gate: run when the queue is drained or after every N merged tasks" },
   { key:"integration.gate_every", channel:"OWN", reason:"Native Lane Pilot integration gate: merged tasks between two runs when the gate is every_n" },
   { key:"verification.sandbox_unsafe", channel:"OWN", reason:"Native Lane Pilot contract lint: tests the verification sandbox cannot run, which a whole-suite check must exclude" },
+  { key:"workspace.provider", channel:"OWN", reason:"Native Lane Pilot writer worktrees: auto gives each attempt a BB environment of its own provider (with automatic fallback), off is the emergency switch to the old worktree path" },
   { key:"council.product.provider", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.product.model", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.product.reasoning_effort", channel:"OWN", reason:"Native Lane Pilot council seat setting" },

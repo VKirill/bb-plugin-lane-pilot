@@ -263,7 +263,7 @@ const SECTIONED_SETTING_KEYS = new Set([
   "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.search_engine",
   "memory.personal_bot", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget",
   "specialist.enabled", "specialist.when",
-  "onboarding.depth", "ops.max_tasks", "adoc.040", "adoc.041", "adoc.042", "sandbox.backend", "verification.sandbox_unsafe",
+  "onboarding.depth", "ops.max_tasks", "adoc.040", "adoc.041", "adoc.042", "workspace.provider", "sandbox.backend", "verification.sandbox_unsafe",
   "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
   "browser_qa.approve", "browser_qa.reasoning_effort",
 ]);
@@ -1682,7 +1682,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 {(() => { const row = catalogRow("adoc.040"); return row ? <SettingField row={row} value={displayedValue("adoc.040")} disabled={false}
                   onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("adoc.040", next)} /> : null; })()}
                 <AdvancedRows show={advanced}>
-                  {(["adoc.041","adoc.042","ops.max_tasks"] as const).map((key) => {
+                  {(["adoc.041","adoc.042","workspace.provider","ops.max_tasks"] as const).map((key) => {
                     const row = catalogRow(key);
                     return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
                       onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
