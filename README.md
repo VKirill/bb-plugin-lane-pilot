@@ -8,6 +8,9 @@ It builds on [Lane Stack](https://github.com/VKirill/claude-lane-stack) (MIT): t
 
 **По-русски коротко.** Lane Pilot делает из чата BB менеджера проекта. PM пишет план и задачи, каждую задачу делает отдельный исполнитель в своём треде BB и своём рабочем дереве git. Lane Pilot проверяет работу в песочнице, прогоняет ревью, сливает в `main`, а при блокировках сам спрашивает другие треды и ставит себе напоминания. Для полноценной работы нужно экспериментальное ядро BB, см. [Требования](#requirements).
 
+> [!WARNING]
+> **Feature freeze (2026-10-07) until phase E of the stabilization plan is done.** Only tasks from that plan and incident fixes are accepted; no new Lane Pilot features.
+
 > [!IMPORTANT]
 > **Lane Pilot needs the experimental BB core.** Use a BB server built from the fork [VKirill/bb, branch `vk/experimental`](https://github.com/VKirill/bb/tree/vk/experimental): the official BB release with additional `vk` functions on top. On a stock BB the plugin loads, but the PM chat cannot be enabled from the composer and Claude Lane is not installed on the machines. See [Requirements](#requirements).
 
