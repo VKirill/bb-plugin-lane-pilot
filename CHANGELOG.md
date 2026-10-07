@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The workflow router (W4).** The PM gets `lane_pilot_route` (intent, context: the best published workflow with its confidence, evidence, a boundary contract and goals, or up to three questions), `lane_pilot_run_workflow` (starts a published workflow through the engine and answers at once with the workflow run id; refuses unknown, unpublished and fragment ids, missing inputs and a chain whose executors are not registered, with the reason) and `lane_pilot_workflow_status` (steps, waiting steps, output). The router is pure (`src/workflow/router.ts`): word and trigram search over the card text (Russian and English), the priority rules and state checks of the chains spec in code, and a `RouterModel` port with a deterministic default scorer; a live model plugs in with `setRouterModel`. It gets 30 of 30 on the 30 phrases of the router evaluation set (`tests/workflow/router-eval.test.ts`). `docs/workflow-router.md` has the design.
+
 ## 0.1.184
 
 - The server bundle takes jsonc-parser's ESM build: its UMD build kept a runtime `require("./impl/format")` the bundle cannot resolve, and the 0.1.183 reload failed on the hub (0.1.182 kept running).
