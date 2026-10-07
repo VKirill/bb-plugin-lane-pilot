@@ -62,3 +62,15 @@ it("still dispatches the -mainfix for the code failure that sits beside an envir
   expect((dispatchWriter.mock.calls[0] as unknown as [{ task: { id: string; expected_outputs: string[] } }])[0].task).toMatchObject({ id: "site-fix-mainfix", expected_outputs: ["npx vitest run"] });
   expect(sent.some((text) => text.includes("because of the machine"))).toBe(true);
 });
+
+it("names the post-merge check by the attempt and the merge commit it follows", async () => {
+  const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const seen: Array<unknown> = [];
+  const ctx = { bb: { storage: bb.storage, sdk: { threads: { send: async () => ({}) }, files: { write: async () => ({}) } } }, db: {}, log: vi.fn(), state: { disposed: false }, host: { call: async () => ({}) } };
+  const services = { runVerification: async (...args: unknown[]) => { seen.push(args[4]); return []; }, dispatchWriter: vi.fn() };
+  const finish = createWriterFinish(ctx as never, services as never);
+  const base = { projectId: "P", pmThreadId: "pm", config: { hostId: "h" } as never, runId: "run", task, basePath: "/work/base", worktreePath: "/work/wt" };
+  await finish.checkMainAfterMerge({ ...base, attemptId: "lpattempt_1", mergeCommit: "aaa111" });
+  await finish.checkMainAfterMerge({ ...base, attemptId: "lpattempt_2", mergeCommit: "bbb222" });
+  expect(seen).toEqual([{ background: true, jobKey: "post-merge:lpattempt_1:aaa111" }, { background: true, jobKey: "post-merge:lpattempt_2:bbb222" }]);
+});

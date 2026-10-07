@@ -623,7 +623,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             });
           } else {
             void checkMainAfterMerge({ projectId:input.projectId, pmThreadId:input.pmThreadId, config:input.config,
-              runId:input.runId, task:input.task, basePath, worktreePath:bound.workspace_path });
+              runId:input.runId, task:input.task, basePath, worktreePath:bound.workspace_path, attemptId:input.attemptId, mergeCommit:merged.commit ?? undefined });
           }
         }
       }
@@ -648,11 +648,12 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
    * reported to the PM instead of chaining.
    */
   async function checkMainAfterMerge(input:{ projectId:string; pmThreadId:string; config:Parameters<typeof services.runVerification>[0];
-    runId:string; task:TaskV2; basePath:string; worktreePath:string }) {
+    runId:string; task:TaskV2; basePath:string; worktreePath:string;
+    /** The merge this check follows: one merge commit of one attempt is one check, never another's. */ attemptId?:string; mergeCommit?:string }) {
     if (!input.task.verification.length || !input.pmThreadId || await isRunHalted(bb.storage.kv as never, input.runId)) return;
     const onBase = (cwd:string) => resolve(cwd).startsWith(resolve(input.worktreePath)) ? join(input.basePath, relative(input.worktreePath, cwd)) : cwd;
     const onMain = { ...input.task, project_cwd:input.basePath, verification:input.task.verification.map((command) => ({ ...command, cwd:onBase(command.cwd) })) };
-    const checks = await services.runVerification(input.config, onMain, input.runId, undefined, { background:true }).catch((cause:unknown) => {
+    const checks = await services.runVerification(input.config, onMain, input.runId, undefined, { background:true, jobKey:`post-merge:${input.attemptId ?? input.task.id}:${input.mergeCommit ?? ""}` }).catch((cause:unknown) => {
       ctx.log(`post-merge check of ${input.task.id} could not run: ${cause instanceof Error ? cause.message : String(cause)}`);
       return null;
     });

@@ -58,13 +58,15 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     ...rawHost,
     call: (async (method: string, input: unknown, options: unknown) => await deployDrain.around(method, async () => {
       // `job: true` asks for a background job where it is not the rule (the post-merge check); the host never sees it.
-      const { job, ...hostOptions } = (options ?? {}) as { hostId: string; timeoutMs?: number; job?: boolean };
+      // `jobKey` names the one logical call a job answers (an attempt's post-merge check of one merge commit): a finished job
+      // is taken again only under the same key, never by another call with the same input.
+      const { job, jobKey, ...hostOptions } = (options ?? {}) as { hostId: string; timeoutMs?: number; job?: boolean; jobKey?: string };
       const direct = async () => {
         const key = JEV_METHODS.has(method) ? await catalogJevKey() : undefined;
         return await rawCall(method, key ? { ...(input as Record<string, unknown>), jevApiKey:key } : input, hostOptions);
       };
       // LANE_PILOT_HOST_JOBS=0 runs every call directly, as before jobs: a switch for a host where they misbehave.
-      if (process.env.LANE_PILOT_HOST_JOBS !== "0" && isHostJobKind(method) && (method !== "runSandboxedCommand" || job === true)) return await hostJobs.run(method, input, hostOptions, direct);
+      if (process.env.LANE_PILOT_HOST_JOBS !== "0" && isHostJobKind(method) && (method !== "runSandboxedCommand" || job === true)) return await hostJobs.run(method, input, hostOptions, direct, jobKey);
       return await direct();
     })) as typeof rawHost.call,
   } as typeof rawHost;

@@ -82,6 +82,34 @@ describe("host calls as background jobs", () => {
     expect(old.calls.map((call) => call.method)).toEqual(["jobStatus", "jobStart", "jobStatus"]);
   });
 
+  it("never hands a finished check to another call with the same input (the second merge's post-merge check)", async () => {
+    // The first call was cut by a reload and left its finished green job behind.
+    const first = setup([reply("running")], { disposed:() => true });
+    await first.jobs.run("runSandboxedCommand", { c:"npm test" }, options, never, "post-merge:a1:sha1").catch(() => undefined);
+    const entries = [...first.store];
+    const finished = reply("succeeded", { result:{ exitCode:0 } });
+
+    // Another merge (other commit) with the same command starts its own job and does not read the first job's answer.
+    const second = setup([finished, reply("succeeded", { result:{ exitCode:1 } })]);
+    for (const [key, value] of entries) second.store.set(key, value);
+    expect(await second.jobs.run("runSandboxedCommand", { c:"npm test" }, options, never, "post-merge:a2:sha2")).toEqual({ exitCode:0 });
+    expect(second.calls.map((call) => call.method)).toContain("jobStart");
+
+    // The same call after the reload takes its own finished job again.
+    const same = setup([finished]);
+    for (const [key, value] of entries) same.store.set(key, value);
+    expect(await same.jobs.run("runSandboxedCommand", { c:"npm test" }, options, never, "post-merge:a1:sha1")).toEqual({ exitCode:0 });
+    expect(same.calls.map((call) => call.method)).toEqual(["jobStatus"]);
+  });
+
+  it("does not reuse a finished sandbox check that carries no call key", async () => {
+    const entries = await interrupted("runSandboxedCommand", { c:"npm test" });
+    const t = setup([reply("succeeded", { result:{ exitCode:0 } })]);
+    for (const [key, value] of entries) t.store.set(key, value);
+    await t.jobs.run("runSandboxedCommand", { c:"npm test" }, options, never);
+    expect(t.calls.map((call) => call.method)).toEqual(["jobStatus", "jobStart", "jobStatus"]);
+  });
+
   it("throws a failed job's own message so callers keep classifying failures by it", async () => {
     const t = setup([reply("failed", { error:"sandbox_backend_unavailable: Seatbelt launch was denied by the host" })]);
     await expect(t.jobs.run("runSandboxedCommand", {}, options, never)).rejects.toThrow("sandbox_backend_unavailable: Seatbelt launch was denied by the host");
