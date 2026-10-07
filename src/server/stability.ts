@@ -1,6 +1,7 @@
 import packageJson from "../../package.json";
-import { PARKED_CLASSES, failureClass, failureFingerprint, type FailureClass } from "../failure-class";
-import { createAttempt, getAttempt, getRun } from "../database";
+import { PARKED_CLASSES, failureClass, failureFingerprint, isWaitingSecret, type FailureClass } from "../failure-class";
+import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "./secrets";
+import { createAttempt, getAttempt, getRun, getRunSettingsScopes, loadProjectSettings } from "../database";
 import { id } from "./values";
 import { reopenWriterStages } from "./stage-records";
 import { isRunHalted } from "./runs-halt";
@@ -23,6 +24,8 @@ const BREAKER_PROBE_MS = 30 * 60_000;
 const REDRIVE_PER_SWEEP = 3;
 const INFRA_BACKOFF_MS = 10 * 60_000;
 const INFRA_REDRIVE_LIMIT = 3;
+/** A task parked for a secret is dropped from the sweep after this long; the PM sends it again. */
+const SECRET_PARK_MS = 24 * 3600_000;
 const DISK_MIN_FREE_BYTES = 15 * 2 ** 30;
 const DISK_MIN_FREE_SHARE = 0.05;
 
@@ -115,7 +118,8 @@ export function createStability(ctx:ServerCore, services:Services) {
   async function onTaskFailed(input:{ projectId:string; runId:string; taskId:string; pmThreadId:string; state:string; reason:string }, now = Date.now()):Promise<boolean> {
     if (input.reason.startsWith("run_budget_exceeded:")) return false;
     const klass = failureClass(input.state, input.reason);
-    if (!PARKED_CLASSES.has(klass) || await isRunHalted(bb.storage.kv as never, input.runId)) return false;
+    const waitingSecret = isWaitingSecret(input.reason);
+    if (!(PARKED_CLASSES.has(klass) || waitingSecret) || await isRunHalted(bb.storage.kv as never, input.runId)) return false;
     const fingerprint = failureFingerprint(input.reason);
     if (klass === "harness") noteHarnessFailure(input.projectId, fingerprint, now);
     const list = await loadParked();
@@ -124,7 +128,8 @@ export function createStability(ctx:ServerCore, services:Services) {
       reason:input.reason.slice(0, 400), fingerprint, version:VERSION, at:now, since:previous?.since, redrives:previous?.redrives ?? 0 };
     await saveParked([...list.filter((row) => row !== previous), entry]);
     bb.log.info(`Lane Pilot parked ${input.taskId} (${klass}: ${fingerprint})`);
-    notePm(input.pmThreadId, `${input.taskId} hit ${klass === "harness" ? "a Lane Pilot fault" : "a machine fault"} (${input.reason.slice(0, 160)}); it is parked and restarts by itself ${klass === "harness" ? "once the fix ships" : "after a short wait"}.`);
+    if (waitingSecret) notePm(input.pmThreadId, `${input.taskId} waits for a secret its checks need (${input.reason.slice(0, 160)}); call env_request for it, or ask the owner to allow it in secrets.allow. It restarts by itself once the access is in place, no attempt is spent.`);
+    else notePm(input.pmThreadId, `${input.taskId} hit ${klass === "harness" ? "a Lane Pilot fault" : "a machine fault"} (${input.reason.slice(0, 160)}); it is parked and restarts by itself ${klass === "harness" ? "once the fix ships" : "after a short wait"}.`);
     return true;
   }
 
@@ -153,6 +158,14 @@ export function createStability(ctx:ServerCore, services:Services) {
       || (other.task_id === row.taskId && other.created_at > row.at)));
   }
 
+  /** A task parked for a secret is due once Env Catalog has every name in its reason and the owner allows it. */
+  async function secretsReady(row:ParkedTask):Promise<boolean> {
+    const names = row.reason.slice(WAITING_SECRET_PREFIX.length).split(/[:\s]/)[0]!.split(",").filter(Boolean);
+    const settings = loadProjectSettings(db, row.projectId, getRunSettingsScopes(db, row.runId));
+    const gate = await ctx.secrets.check({ declared:names, allowed:allowedSecretNames(settings) }, { fresh:true });
+    return !gate.unavailable && secretProblem(gate).length === 0;
+  }
+
   function dueForRedrive(row:ParkedTask, now:number):boolean {
     if (row.klass === "harness") return row.version !== VERSION;
     return row.redrives < INFRA_REDRIVE_LIMIT && now - row.at >= INFRA_BACKOFF_MS * 2 ** row.redrives;
@@ -171,7 +184,13 @@ export function createStability(ctx:ServerCore, services:Services) {
       const run = getRun(db, row.runId);
       if (!run || run.closed_at || superseded(row) || services.activeWriterTasks.has(`${row.runId}:${row.taskId}`) || await isRunHalted(bb.storage.kv as never, row.runId)) continue;
       const count = perProject.get(row.projectId) ?? 0;
-      if (!dueForRedrive(row, now) || count >= REDRIVE_PER_SWEEP || breakerHolds(row.projectId, now)) {
+      // A task waiting for a secret is not a fault: no breaker, no backoff, only the secret itself.
+      const waiting = isWaitingSecret(row.reason);
+      if (waiting && now - row.at > SECRET_PARK_MS) {
+        notePm(row.pmThreadId, `${row.taskId} waited ${SECRET_PARK_MS / 3600_000} hours for ${row.reason.slice(0, 120)} and is no longer restarted by itself; send it again once the access is in place.`);
+        continue;
+      }
+      if (waiting ? !await secretsReady(row) : (!dueForRedrive(row, now) || count >= REDRIVE_PER_SWEEP || breakerHolds(row.projectId, now))) {
         if (row.klass === "infra" && row.redrives >= INFRA_REDRIVE_LIMIT) {
           notePm(row.pmThreadId, `${row.taskId} still fails on a machine fault after ${INFRA_REDRIVE_LIMIT} retries (${row.reason.slice(0, 160)}); redispatch it once the machine is fixed.`);
           continue;
@@ -188,7 +207,7 @@ export function createStability(ctx:ServerCore, services:Services) {
       if (!ok) { keep.push({ ...row, redrives:row.redrives + 1, at:now }); continue; }
       perProject.set(row.projectId, count + 1);
       started.push(row.taskId);
-      notePm(row.pmThreadId, `${row.taskId} restarted from its writer stage (${row.klass === "harness" ? `Lane Pilot ${VERSION} fixed «${row.fingerprint}»` : "machine fault retry"}).`);
+      notePm(row.pmThreadId, `${row.taskId} restarted from its writer stage (${waiting ? "its secret is in place" : row.klass === "harness" ? `Lane Pilot ${VERSION} fixed «${row.fingerprint}»` : "machine fault retry"}).`);
     }
     await saveParked(keep);
     if (started.length) bb.log.info(`Lane Pilot restarted ${started.length} parked task(s): ${started.join(", ")}`);
