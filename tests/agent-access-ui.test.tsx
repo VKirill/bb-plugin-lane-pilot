@@ -125,7 +125,7 @@ describe("Agent access tab", () => {
       await openAccessTab(slot);
       for (const role of HELPER_ROLES) expect(slot.getByTestId(`access-role-${role.replace(/[:-]/g, "_")}`)).toBeTruthy();
       expect(slot.getByTestId("access-summary-writer").textContent).toBe("2 skills · 2 MCP");
-      expect(slot.getByTestId("access-summary-plan_critic").textContent).toBe("1 MCP");
+      expect(slot.getByTestId("access-summary-code_critic").textContent).toBe("1 MCP");
       expect(slot.getByTestId("access-summary-browser_qa").textContent).toBe("1 skill · 1 BB plugin");
       expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_role);
       expect(slot.getByTestId("access-providers").textContent).toContain("Claude Code and Codex: everything.");

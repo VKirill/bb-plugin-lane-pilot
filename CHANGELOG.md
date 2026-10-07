@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **One-shot readers carry no MCP.** The plan critic and the PM reader (also the workflow router's model step) answer from the message and made no code-graph call in any of 504 hub runs, so their role profile now loads only the mandatory `bb-bridge` (no code-graph server), and their prompts no longer tell the model to use `query`/`context`/`impact` (they already said to call no tools). The code critic, reviewers, triage and the thin chain roles keep the code graph. An owner's `helper.access.<role>` still decides. Saving is real where the provider loads MCP schemas eagerly (Claude Code); on OpenCode and Codex the hub shows the same hidden context with and without that server.
+
 ## 0.1.190
 
 - The architect's chat opens beside the library or graph inside the Workflows tab (ThreadChat, right column; stacked under on narrow screens), and a draft it creates or patches opens on the left by itself. Before, the chat replaced the Lane Pilot page.

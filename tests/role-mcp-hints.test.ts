@@ -15,10 +15,8 @@ describe("role MCP server configurations", () => {
     // 2. code roles get gitnexus
     const gitnexusRoles: HelperRole[] = [
       "code-critic",
-      "plan-critic",
       "night-reviewer",
       "specialist-reviewer",
-      "pm-reader",
       "gate-triage",
       "docs-maintainer",
       "onboarder",
@@ -33,6 +31,8 @@ describe("role MCP server configurations", () => {
 
     // 4. other roles have no optional mcp servers
     const otherRoles: HelperRole[] = [
+      "plan-critic",
+      "pm-reader",
       "memory-maintainer",
       "council-seat",
       "rules-analyzer",
@@ -108,9 +108,9 @@ describe("prompt hints for gitnexus and metamcp", () => {
 
   const expectedHint = "If you have the gitnexus tools and the project has a `.gitnexus/` index, use `query`/`context`/`impact` to check claims about callers and blast radius; grep for literals.";
 
-  it("critiquePrompt carries the gitnexus line", () => {
-    const prompt = critiquePrompt({ plan: "test-plan", task: { id: "t1" } });
-    expect(prompt).toContain(expectedHint);
+  it("critiquePrompt and pmReadPrompt no longer point at tools the role does not load", () => {
+    expect(critiquePrompt({ plan: "test-plan", task: { id: "t1" } })).not.toContain("gitnexus");
+    expect(pmReadPrompt({ agent: "pm-reader", packet: "packet", task: { id: "t1" } })).not.toContain("gitnexus");
   });
 
   it("codeCritiquePrompt carries the gitnexus line", () => {
@@ -124,11 +124,6 @@ describe("prompt hints for gitnexus and metamcp", () => {
       dirtOk: true,
     });
     const prompt = codeCritiquePrompt({ evidence, task: { id: "t1" } });
-    expect(prompt).toContain(expectedHint);
-  });
-
-  it("pmReadPrompt carries the gitnexus line", () => {
-    const prompt = pmReadPrompt({ agent: "pm-reader", packet: "packet", task: { id: "t1" } });
     expect(prompt).toContain(expectedHint);
   });
 });
