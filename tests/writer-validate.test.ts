@@ -423,7 +423,7 @@ describe("BB writer validation on the server path", () => {
       sdk:{
         threads:{
           getPluginMetadata:async ({ threadId }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:"run-rules" } : { role:"writer" },
-          spawn:async (input) => { spawnedPrompt = String((input as { prompt?:string }).prompt ?? ""); return { id:"writer-rules" }; },
+          spawn:async (input) => { spawnedPrompt = String((input as { prompt?:string }).prompt ?? ((input as { input?:Array<{ text?:string }> }).input ?? []).map((part) => part.text ?? "").join("\n\n")); return { id:"writer-rules" }; },
           wait:async () => ({ matched:true, thread:{ status:"idle" } }),
           get:withPm(async () => ({ id:"writer-rules", status:"idle" })),
           output:async () => ({ text:"NEEDS_HUMAN: stop here, the test only needs the prompt" }),

@@ -125,6 +125,8 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           : seededThreadMeta.get(threadId) ?? threadMeta.get(threadId) ?? { role:"writer" },
         spawn:async (args) => {
           const request = args as unknown as Record<string,unknown>;
+          // The writer's brief goes as input parts (some agent-only); a test reads it as the one text the agent gets.
+          if(request.prompt===undefined && Array.isArray(request.input)) request.prompt=(request.input as Array<{text?:string}>).map((part)=>part.text??"").join("\n\n");
           spawned.push(request);
           const stageId = (request.pluginMetadata as Record<string,unknown>).stageId;
           const role=(request.pluginMetadata as Record<string,unknown>).role;

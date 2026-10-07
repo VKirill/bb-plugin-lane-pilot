@@ -18,7 +18,7 @@ import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorks
 import { fullAccessSpawn } from "../pm-spawn";
 import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
 import { holderSpawnKey, stringAt } from "../values";
-import { planDigest, writerPrompt, type TaskFolderBrief } from "../writer-task";
+import { planDigest, writerBriefInput, writerBriefSegments, type TaskFolderBrief } from "../writer-task";
 import { areaHistoryText, loadArea } from "./sticky";
 import { taskFolderRel } from "../../verification/git-integrate";
 import { resolve } from "node:path";
@@ -388,9 +388,10 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const helperSnapshot = requireHelperSpawn({ bb, db, projectId:input.projectId, runId:input.runId });
       const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
       const taskFolder = await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
-      const writerBrief = writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
+      const briefSegments = writerBriefSegments(attemptTask,relevantMemory.text,executionPacket,input.emergency
         ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
         : undefined,writerAgent,input.pmReadContext ?? "",rulesText,input.previousAttempt ?? "",taskFolder,live);
+      const writerBrief = briefSegments.map(segment=>segment.text).join("\n\n");
       const existingTrace = getReasoningTrace(db, input.attemptId);
       if (existingTrace) {
         saveReasoningTrace(db, {
@@ -418,7 +419,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         ...placement,
         ...requiredPolicyField(bb, helperSnapshot, writerProviderId, "writer"),
         ...execution,
-        prompt: writerBrief,
+        input: writerBriefInput(attemptTask, briefSegments, writerProviderId),
         environment,
         pluginMetadata:{
           role:input.emergency ? "emergency-writer" : "writer",
