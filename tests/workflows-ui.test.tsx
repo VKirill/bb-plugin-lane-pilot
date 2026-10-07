@@ -318,9 +318,10 @@ describe("workflow drafts on the Workflows tab", () => {
     expect(slot.getByTestId("wf-draft-badge-draft_1").textContent).toBe("Draft");
     expect(slot.getByTestId("wf-draft-draft_1").textContent).toContain("version 3");
     fireEvent.click(slot.getByTestId("wf-architect-start"));
-    await waitFor(() => expect(opened).toHaveLength(1));
+    // The architect's chat opens beside the library, inside the tab (owner, 2026-10-07), not in another panel.
+    expect(await slot.findByTestId("wf-architect-chat")).toBeTruthy();
     expect(started).toEqual([{ projectId: "proj_1" }]);
-    expect(opened[0]).toMatchObject({ actionId: "lane-helper-thread", params: { threadId: "thr_architect" } });
+    expect(opened).toHaveLength(0);
   });
 
   it("works against a server without the draft RPCs: no drafts, and the button reports why", async () => {

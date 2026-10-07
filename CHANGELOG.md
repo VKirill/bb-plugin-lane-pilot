@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.190
+
+- The architect's chat opens beside the library or graph inside the Workflows tab (ThreadChat, right column; stacked under on narrow screens), and a draft it creates or patches opens on the left by itself. Before, the chat replaced the Lane Pilot page.
+- The profile marker of the architect's first message rides in the hidden part: the owner sees only «Собрать цепочку с архитектором.».
+
 ## 0.1.189
 
 - **«Собрать с архитектором» works.** The button called `workflow_architect_start`, which no server registered («plugin "lane-pilot" has no rpc method»). The RPC now exists (`projectId?`, `sectionId?`, `draftId?` -> `{threadId, projectId, reused}`): the server spawns a visible chat «Архитектор цепочек» with the Workflow architect already active (its profile token goes in the first message, so the dispatch hook binds the same session, overlay and tools as the composer's «Enable Lane Pilot»), always Claude Code, Opus 5.5, reasoning high, service tier `default` sent explicitly (never the remembered fast mode), in the project's own source folder on its machine. The tab opens it in the right side panel next to the graph. The chat opens with the architect's own greeting (an agent-only brief; with `draftId` it reads that draft and continues it). Project: `projectId`, else the draft's, else the Lane Pilot project of the hub (self-repair's); `sectionId` files the chat in that Project Folders section. A live (not archived, not failed) architect chat of the same project and draft is returned instead of a second one, also for a double click.

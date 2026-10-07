@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ThreadChat, useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract } from "../contracts";
 import { t, type I18nKey, type Locale } from "../../i18n";
@@ -10,7 +10,6 @@ import { LP_ALL_PROJECTS } from "../realtime-channel";
 import { CONTROL_H } from "./control-row";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { useLpRealtime } from "./use-lp-realtime";
-import { HELPER_PANEL_ACTION } from "./helper-threads";
 import { WorkflowDetail, type NodePanelRenderer } from "./workflow-detail";
 import { WorkflowDraftDetail } from "./workflow-draft-detail";
 import { listDrafts, startArchitect, type DraftRow } from "./workflow-drafts";
@@ -57,7 +56,8 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   renderNodePanel?: NodePanelRenderer;
 }) {
   const rpc = useRpc<typeof rpcContract>();
-  const navigate = useBbNavigate();
+  // The architect's chat sits beside the library or graph (owner, 2026-10-07): the chain it builds stays in view.
+  const [architectThread, setArchitectThread] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const [openDraft, setOpenDraft] = useState<string | null>(null);
   // A draft opened from a workflow's «Edit» goes straight to the editor; one opened from the list is first shown as it is.
@@ -84,7 +84,13 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   useEffect(() => { setListing(null); setDrafts([]); setOpenId(null); setOpenDraft(null); void load(); }, [load]);
 
   // The detail view has its own subscription; this one keeps the library's counts and «running» marks fresh.
-  const pollMs = useLpRealtime(projectId ?? LP_ALL_PROJECTS, ["workflow", "workflow-draft"], () => { if (!openId && !openDraft) void load(); });
+  const pollMs = useLpRealtime(projectId ?? LP_ALL_PROJECTS, ["workflow", "workflow-draft"], (signal) => {
+    // A draft the open architect chat just created or patched opens on the left, so the owner watches it being built.
+    if (signal?.kind === "workflow-draft" && signal.draftId && architectThread && signal.threadId === architectThread && openDraft !== signal.draftId) {
+      setOpenId(null); setEditFirst(false); setOpenDraft(signal.draftId); return;
+    }
+    if (!openId && !openDraft) void load();
+  });
   const hasActive = listing?.workflows.some((row) => row.stats.active > 0) ?? false;
   useEffect(() => {
     if ((!hasActive && !drafts.length) || openId || openDraft) return;
@@ -97,7 +103,7 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
     setArchitect({ busy: true, error: null });
     try {
       const threadId = await startArchitect(rpc, architectProjectId);
-      if (!navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: t("wfArchitectPanelTitle"), params: { threadId } })) navigate.toThread(threadId);
+      setArchitectThread(threadId);
       setArchitect({ busy: false, error: null });
       void load();
     } catch (cause) { setArchitect({ busy: false, error: cause instanceof Error ? cause.message : String(cause) }); }
@@ -106,14 +112,27 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   const shown = useMemo(() => (listing?.workflows ?? []).filter((row) =>
     matches(row, query) && (status === ANY || row.status === status) && (scope === ANY || row.scope === scope)), [listing, query, status, scope]);
 
-  if (openDraft) return <WorkflowDraftDetail draftId={openDraft} projectId={projectId} locale={locale} renderNodePanel={renderNodePanel} startEditing={editFirst} onBack={() => { setOpenDraft(null); setEditFirst(false); void load(); }} />;
+  const withArchitect = (content: ReactNode) => !architectThread ? content : (
+    <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start" data-testid="wf-architect-split">
+      <div className="min-w-0 flex-1">{content}</div>
+      <aside className="lp-card flex h-[70vh] min-h-[420px] w-full shrink-0 flex-col overflow-hidden xl:sticky xl:top-2 xl:h-[calc(100vh-7rem)] xl:w-[26rem]" data-testid="wf-architect-chat">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+          <span className="truncate text-sm font-medium">{t("wfArchitectPanelTitle")}</span>
+          <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" data-testid="wf-architect-close" onClick={() => setArchitectThread(null)}>{t("wfArchitectClose")}</Button>
+        </div>
+        <div className="min-h-0 flex-1"><ThreadChat threadId={architectThread} variant="compact" /></div>
+      </aside>
+    </div>
+  );
+
+  if (openDraft) return withArchitect(<WorkflowDraftDetail draftId={openDraft} projectId={projectId} locale={locale} renderNodePanel={renderNodePanel} startEditing={editFirst} onBack={() => { setOpenDraft(null); setEditFirst(false); void load(); }} />);
   if (openId) {
-    return <WorkflowDetail id={openId} projectId={projectId} locale={locale} renderNodePanel={renderNodePanel} editProjectId={architectProjectId} onEditDraft={(draftId) => { setOpenId(null); setEditFirst(true); setOpenDraft(draftId); }}
-      onBack={() => { setOpenId(null); void load(); }} />;
+    return withArchitect(<WorkflowDetail id={openId} projectId={projectId} locale={locale} renderNodePanel={renderNodePanel} editProjectId={architectProjectId} onEditDraft={(draftId) => { setOpenId(null); setEditFirst(true); setOpenDraft(draftId); }}
+      onBack={() => { setOpenId(null); void load(); }} />);
   }
 
   const notice = listing?.project === "unavailable" ? t("wfProjectUnavailable") : listing?.project === "no_machine" ? t("wfProjectNoMachine") : null;
-  return (
+  return withArchitect(
     <div className="min-w-0 space-y-4" data-testid="workflows">
       <div className="lp-strip flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">

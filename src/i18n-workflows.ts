@@ -137,6 +137,7 @@ export const workflowEn = {
   wfArchitectStarting: "Starting the architect",
   wfArchitectError: "Could not start the architect: {error}",
   wfArchitectPanelTitle: "Workflow architect",
+  wfArchitectClose: "Hide chat",
 } as const;
 
 export const workflowRu: { [K in keyof typeof workflowEn]: string } = {
@@ -276,5 +277,6 @@ export const workflowRu: { [K in keyof typeof workflowEn]: string } = {
   wfArchitectBuild: "Собрать с архитектором",
   wfArchitectStarting: "Запускаю архитектора",
   wfArchitectError: "Не удалось запустить архитектора: {error}",
-  wfArchitectPanelTitle: "Архитектор воркфлоу",
+  wfArchitectPanelTitle: "Архитектор цепочек",
+  wfArchitectClose: "Скрыть чат",
 };
