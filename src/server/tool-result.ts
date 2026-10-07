@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import { failureClass } from "../failure-class";
+import { boundPresentation } from "./tool-presentation";
 
 export type SideEffects = "none" | "unknown";
 
@@ -85,8 +86,10 @@ export function registerObservedTool<S extends z.ZodType>(
   },
 ): void {
   const execute = tool.execute;
+  const presentation = boundPresentation(agents, tool.name);
   agents.registerTool({
     ...tool,
+    ...(presentation ? { presentation } : {}),
     execute: async (params, context) => {
       try {
         return await execute(params, context) as string;

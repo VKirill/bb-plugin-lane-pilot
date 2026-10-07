@@ -25,6 +25,7 @@ import { createOnboardingStage } from "./src/server/stages/onboarding";
 import { createProjectLifeStage } from "./src/server/stages/project-life";
 import { createQaStages } from "./src/server/stages/qa";
 import { registerTools } from "./src/server/tools";
+import { bindToolLocale, toolLocale } from "./src/server/tool-presentation";
 import { createWriterHost } from "./src/server/writer-host";
 import { createWriterState } from "./src/server/writer/state";
 import { createWriterSpawn } from "./src/server/writer/spawn";
@@ -41,6 +42,7 @@ export { rpcContract } from "./src/contracts";
 export default async function plugin(bb: BbPluginApi) {
   const db = openDatabase(bb);
   const ctx = createCore(bb, db);
+  bindToolLocale(bb, await toolLocale(bb));
   const services = {} as Services;
   mountNativeWiring(ctx);
   Object.assign(
