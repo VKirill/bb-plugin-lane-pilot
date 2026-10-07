@@ -57,6 +57,12 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_remind: row("Setting a reminder", "Set a reminder", "Ставлю напоминание", "Напоминание поставлено", true),
   lane_pilot_relay_list: row("Listing relay items", "Listed relay items", "Смотрю вопросы и напоминания", "Вопросы и напоминания получены", true),
   lane_pilot_specialist: row("Starting a specialist", "Started a specialist", "Запускаю специалиста", "Специалист запущен"),
+  lane_pilot_workflow_draft_create: row("Starting a workflow draft", "Started a workflow draft", "Начинаю черновик цепочки", "Черновик цепочки создан"),
+  lane_pilot_workflow_draft_patch: row("Changing the workflow draft", "Changed the workflow draft", "Дорабатываю цепочку", "Цепочка доработана"),
+  lane_pilot_workflow_draft_get: row("Reading the workflow draft", "Read the workflow draft", "Читаю черновик цепочки", "Черновик цепочки прочитан", true),
+  lane_pilot_workflow_capabilities: row("Checking what a chain can use", "Checked what a chain can use", "Смотрю, что доступно цепочке", "Доступное цепочке проверено", true),
+  lane_pilot_workflow_draft_test: row("Testing the workflow on stubs", "Tested the workflow on stubs", "Проверяю цепочку на заглушках", "Цепочка проверена на заглушках"),
+  lane_pilot_workflow_draft_publish: row("Publishing the workflow", "Published the workflow", "Публикую цепочку", "Цепочка опубликована"),
   lane_pilot_wait_specialist: row("Waiting for a specialist", "Waited for a specialist", "Жду специалиста", "Дождался специалиста", true),
 };
 

@@ -15,6 +15,7 @@ import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contracts";
 import { isEnvironmentCheckFailure } from "./failure-class";
 import { readBoundedWorkspaceFile } from "./bounded-read";
+import { casWriteWorkflowFile } from "./workflow/files";
 import { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
 import { runBrowserQaOnHost } from "./stages/browser-qa";
 import { cancelHostJob, hostJobStatus, startHostJob } from "./jobs";
@@ -299,6 +300,21 @@ export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContra
 /** The builders write into any docs folder: the root docs/ or a monorepo workspace's own docs/. */
 export const writeDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["writeDocsPages"] = async (input) =>
   casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => /(^|\/)docs\//.test(path));
+
+/** Writes one chain file into the project's own `.lane-pilot/workflows` folder, which must not be a link out of the project. */
+export const writeWorkflowFile: ExperimentalHostRpcHandlers<typeof hostContract>["writeWorkflowFile"] = async (input) => {
+  const rootInfo = await lstat(input.projectCwd);
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error("workflow project root must be a real directory");
+  const root = await realpath(input.projectCwd);
+  let cursor = root;
+  for (const segment of [".lane-pilot", "workflows"]) {
+    cursor = join(cursor, segment);
+    const info = await lstat(cursor).catch((cause: NodeJS.ErrnoException) => { if (cause.code === "ENOENT") return null; throw cause; });
+    if (info && (info.isSymbolicLink() || !info.isDirectory())) throw new Error(`workflow folder must be a real directory: ${segment}`);
+  }
+  const written = await casWriteWorkflowFile(cursor, input.id, input.content, input.expectedSha256);
+  return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, status: written.status, path: `.lane-pilot/workflows/${input.id}.json`, beforeSha256: written.beforeSha256, afterSha256: written.afterSha256, reason: written.reason };
+};
 
 async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inScope:(path:string) => boolean):Promise<Awaited<ReturnType<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>>> {
   const suppliedPreviewSha256=createHash("sha256").update(JSON.stringify(input.edits),"utf8").digest("hex");

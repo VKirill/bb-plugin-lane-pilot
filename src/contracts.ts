@@ -346,6 +346,14 @@ export const hostContract = defineRpcContract({
     }).strict(),
     output:z.object({hostId:z.string(),previewSha256:z.string().regex(/^[a-f0-9]{64}$/),status:z.enum(["applied","conflict","blocked"]),writes:z.array(z.object({path:z.string(),beforeSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),afterSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),status:z.enum(["applied","conflict","blocked"]),reason:z.string().nullable()}).strict()),reason:z.string().nullable()}).strict(),
   },
+  /** The Workflow architect publishes a chain into `<project>/.lane-pilot/workflows/<id>.json`; the write is compare-and-swap on the file's hash. */
+  writeWorkflowFile: {
+    input: z.object({
+      requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), id:z.string().regex(/^[a-z][a-z0-9.-]{0,47}$/),
+      content:z.string().min(2).max(400_000), expectedSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+    }).strict(),
+    output:z.object({hostId:z.string(), status:z.enum(["applied","conflict"]), path:z.string(), beforeSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(), afterSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(), reason:z.string().nullable()}).strict(),
+  },
   coexistenceInventory: {
     input: z.object({ requestedHostId: z.string().min(1), projectId: z.string().min(1), targetSha: z.string().optional() }).strict(),
     output: coexistenceInventory,
@@ -612,6 +620,16 @@ const acceptanceTotalsSchema = z.object({
   redispatched:z.number(), families:z.number(), causes:z.record(z.string(), z.number()),
 });
 const acceptanceWeekSchema = acceptanceTotalsSchema.extend({ week:z.string() });
+
+const workflowDraftProblemSchema = z.object({ level: z.enum(["error", "warning"]), code: z.string(), message: z.string(), node: z.string().optional(), edge: z.number().int().optional() }).strict();
+export const workflowDraftCheckSchema = z.object({ valid: z.boolean(), errors: z.number().int(), warnings: z.number().int(), nodes: z.number().int(), edges: z.number().int(),
+  problems: z.array(workflowDraftProblemSchema) }).strict();
+/** One draft in a list: enough to draw a card and to know whether the open graph is behind (`version`). */
+export const workflowDraftSummarySchema = z.object({
+  id: z.string(), projectId: z.string(), threadId: z.string().nullable(), workflowId: z.string(), scope: z.enum(["global", "project"]),
+  name: z.object({ en: z.string(), ru: z.string() }).strict(), status: z.enum(["draft", "tested", "published"]), version: z.number().int(),
+  nodes: z.number().int(), edges: z.number().int(), errors: z.number().int(), tested: z.enum(["none", "red", "green"]), publishedPath: z.string().nullable(), updatedAt: z.number(),
+}).strict();
 
 export const rpcContract = defineRpcContract({
   get_preferences: {
@@ -1442,5 +1460,15 @@ export const rpcContract = defineRpcContract({
   token_usage_sync: {
     input: z.object({}).strict(),
     output: z.object({ started: z.boolean() }).strict(),
+  },
+  // The Workflow architect's drafts: the same value as a workflow file, with the validator's verdict and the last test.
+  workflow_draft_list: {
+    input: z.object({ projectId: z.string().min(1), threadId: z.string().min(1).optional() }).strict(),
+    output: z.object({ drafts: z.array(workflowDraftSummarySchema) }).strict(),
+  },
+  workflow_draft_get: {
+    input: z.object({ draftId: z.string().min(1), history: z.boolean().default(false) }).strict(),
+    output: z.object({ draft: workflowDraftSummarySchema.nullable(), definition: z.record(z.string(), z.unknown()).nullable(), check: workflowDraftCheckSchema.nullable(),
+      tests: z.unknown().nullable(), history: z.array(z.object({ version: z.number().int(), summary: z.string(), at: z.number() }).strict()).default([]) }).strict(),
   },
 });

@@ -126,11 +126,11 @@ export function createDraftStore(db: LanePilotDatabase, now: () => number = Date
       })();
     },
 
-    /** Stores the results of a test run of the current version; the draft is `tested` only when every case is green. */
-    recordTests(draftId: string, version: number, results: DraftTestResult[]): DraftRow | null {
+    /** Stores the results of a test run of the current version; the draft is `tested` only when every case ran (`complete`) and is green. */
+    recordTests(draftId: string, version: number, results: DraftTestResult[], complete = true): DraftRow | null {
       const draft = get(draftId);
       if (!draft || draft.version !== version) return draft;
-      const green = results.length > 0 && results.every((result) => result.green);
+      const green = complete && results.length > 0 && results.every((result) => result.green);
       const tests: DraftTests = { version, at: now(), green, results };
       db.prepare("UPDATE lane_pilot_wf_draft SET tests_json=?, tested_version=?, status=?, updated_at=? WHERE id=? AND version=?")
         .run(JSON.stringify(tests), version, green ? "tested" : "draft", now(), draftId, version);
