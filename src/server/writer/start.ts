@@ -2,7 +2,7 @@ import { retryBudgetReason, spendRetryBudget } from "../../retry-budget";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../database";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "../../owns-paths";
 import { reconcile } from "../../reconcile";
@@ -16,6 +16,7 @@ import { isMainfixTask } from "../../validate-output";
 import { openDatabase } from "../../database";
 import { createWriterSticky } from "./sticky";
 import { failureClass } from "../../failure-class";
+import { isRunHalted } from "../runs-halt";
 
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
 const DEPENDENCY_REDO_WAIT_MS = 6 * 3600_000;
@@ -180,6 +181,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     };
     const waitForOverlappingTasks = async (shouldStop?:()=>string|null) => {
       const base = getRun(db,input.runId)?.writer_workspace_path;
+      /** Another task of this folder that ended with a question nobody has answered; a halted run (the owner stopped it) holds nothing. */
+      const unansweredQuestionHolder = async () => {
+        for (const row of listUnansweredWriterQuestions(db)) {
+          if (row.task_id === input.taskId || row.project_id !== input.projectId) continue;
+          if (base && getRun(db,row.run_id)?.writer_workspace_path !== base) continue;
+          if (await isRunHalted(bb.storage.kv as never, row.run_id)) continue;
+          return row;
+        }
+        return undefined;
+      };
       let noted = "";
       for (;;) {
         if (ctx.isDisposed()) return;
@@ -204,14 +215,20 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (parsed.success && sameArea(parsed.data.area, input.task.area)) return true;
           return parsed.success && ownsPathsOverlap(parsed.data.owns_paths, input.task.owns_paths);
         });
-        if (!blocker) return;
-        if (noted !== blocker.id) {
-          noted = blocker.id;
-          ctx.log(`writer ${input.taskId} waits for ${blocker.task_id}: ${liveFolder ? "one writer at a time in a folder without git" : "their owns_paths overlap"}`);
+        // A writer's question is a pause, not a release: its files are still in the folder without git, and its answer goes on
+        // from them, so no other task may start there until the question is answered (or the task is sent again).
+        const asked = !blocker && liveFolder ? await unansweredQuestionHolder() : undefined;
+        const holder = blocker ?? asked;
+        if (!holder) return;
+        const why = asked ? "its writer's question is unanswered and the folder has no git, so it stays locked until lane_pilot_answer_writer answers it"
+          : liveFolder ? "one writer at a time in a folder without git" : "their owns_paths overlap";
+        if (noted !== holder.id) {
+          noted = holder.id;
+          ctx.log(`writer ${input.taskId} waits for ${holder.task_id}: ${why}`);
           const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
           if (!stage || stage.state === "pending") {
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:`waiting for ${blocker.task_id} (thread ${blocker.thread_id ?? "not started"}): ${liveFolder ? "one writer at a time in a folder without git" : `${input.task.area ? "same area or " : ""}owns_paths overlap`}` });
+              reason:`waiting for ${holder.task_id} (thread ${holder.thread_id ?? "not started"}): ${liveFolder ? why : `${input.task.area ? "same area or " : ""}owns_paths overlap`}` });
           }
         }
         await new Promise((wake) => setTimeout(wake, 10_000));
@@ -636,7 +653,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // A writer's question would wait unseen: writers are quiet children and do not wake the PM.
       if (!accepted && reason && failureClass(String(last.status), reason) === "judgment" && input.pmThreadId) {
         void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. Send the task again only when the contract itself must change; tasks that depend on it wait for that.\n${reason.slice(0, 1200)}` }] } as never).catch(() => undefined);
+          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. Send the task again only when the contract itself must change; tasks that depend on it wait for that.${liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }] } as never).catch(() => undefined);
       }
       if (!accepted && last.status !== "canceled") {
         void services.stability.onTaskFailed({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,

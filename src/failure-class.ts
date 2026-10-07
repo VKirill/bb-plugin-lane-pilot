@@ -107,6 +107,12 @@ export function nextStep(state:string, reason:string | null | undefined):string 
   }
 }
 
+/** What a wait receipt adds for a writer's unanswered question in a folder without git: its files stay put, so the folder stays locked. */
+export function liveFolderLockNote(state:string, reason:string | null | undefined, liveFolder:boolean):string {
+  return liveFolder && state === "blocked" && failureClass(state, reason) === "judgment"
+    ? "; this folder has no git, so it stays locked: other tasks for it queue until this question is answered (or the task is sent again)" : "";
+}
+
 /** Parked failures: the task waits for a fix or the machine, then restarts by itself. */
 export const PARKED_CLASSES:ReadonlySet<FailureClass> = new Set(["harness", "infra"]);
 /** Free retries a task may take on top of its two attempts, so a repeating free failure still ends. */

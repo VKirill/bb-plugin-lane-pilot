@@ -732,6 +732,20 @@ export function listOpenAttempts(db: LanePilotDatabase): Array<{
   }>;
 }
 
+/**
+ * Tasks whose latest attempt ended with the writer's question (`needs_human:`) and nobody has answered it yet. The writer's
+ * edits are still in the files where the folder has no git, so such a task still holds its folder.
+ */
+export function listUnansweredWriterQuestions(db: LanePilotDatabase): Array<{
+  id:string; run_id:string; task_id:string; thread_id:string|null; project_id:string; reason:string|null;
+}> {
+  return db.prepare(`SELECT a.id,a.run_id,a.task_id,a.thread_id,a.reason,r.project_id
+    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE a.state='blocked' AND a.reason LIKE 'needs_human:%' AND r.closed_at IS NULL
+      AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
+    ORDER BY a.created_at`).all() as Array<{ id:string; run_id:string; task_id:string; thread_id:string|null; project_id:string; reason:string|null }>;
+}
+
 /** A section's settings live under binding_id "section:<id>"; the project's own under "". */
 export function sectionBindingId(sectionId: string): string {
   return `section:${sectionId}`;
