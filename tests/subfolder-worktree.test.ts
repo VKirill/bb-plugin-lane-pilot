@@ -23,7 +23,7 @@ const task: TaskV2 = {
   objective: "edit the bot", acceptance: ["files exist"], verify: "none", verification: [],
 };
 
-function spawnEnv(options: { bound?: boolean; createReason?: string; kind?: "bb" | "cli"; projectRoot?: boolean } = {}) {
+function spawnEnv(options: { bound?: boolean; createReason?: string; kind?: "bb" | "cli"; projectRoot?: boolean; otherRoot?: string } = {}) {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   createRun(db, "run", "P", options.kind ?? "cli", folder);
@@ -40,7 +40,7 @@ function spawnEnv(options: { bound?: boolean; createReason?: string; kind?: "bb"
       storage: bb.storage,
       log: { info() {}, warn() {} },
       sdk: {
-        projects: { get: async () => ({ sources: options.projectRoot ? [{ hostId: "h", path: folder }] : [] }) },
+        projects: { get: async () => ({ sources: options.otherRoot ? [{ hostId: "h", path: options.otherRoot }] : options.projectRoot ? [{ hostId: "h", path: folder }] : [] }) },
         providers: {
           list: async () => [{ id: "codex", available: true, serviceTiers: [{ id: "default" }] }],
           models: async () => ({
@@ -93,6 +93,16 @@ it("gives a nested chat folder a worktree of its repo and runs the writer in the
 it("gives a project-root folder nested in a repo Lane Pilot's own worktree, not BB's managed one that starts at the repo root", async () => {
   // Live OVH 2026-10-07: a managed worktree put the writer at the repo root and it created a new index.md there.
   const { hostCalls, writer } = spawnEnv({ kind: "bb", projectRoot: true });
+  const result = await writer.spawnWriterAttempt({
+    projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "edit the bot", pmThreadId: "pm",
+  });
+  expect(result).toMatchObject({ ok: true, workspacePath: worktreeFolder });
+  expect(hostCalls).toContain("gitCreateWorktree");
+});
+
+it("gives a section with its own repo inside a non-git project Lane Pilot's own worktree, also outside a Lane chat", async () => {
+  // Live sandbox 2026-10-07 (A3): BB's managed worktree forked the non-git project root → «no usable git branch».
+  const { hostCalls, writer } = spawnEnv({ kind: "bb", otherRoot: "/repo" });
   const result = await writer.spawnWriterAttempt({
     projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "edit the bot", pmThreadId: "pm",
   });

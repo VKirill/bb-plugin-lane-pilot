@@ -33,6 +33,13 @@ export function worktreeCreateError(reason: string | null): string {
   return `attempt_worktree_failed:${reason ?? "unknown"}`;
 }
 
+/** The project has a root source on this host and the run folder is not it: BB's managed worktree would fork that root. */
+async function hasOtherRootSource(bb:ServerCore["bb"], projectId:string, hostId:string, path:string):Promise<boolean> {
+  const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
+  const roots = (project?.sources ?? []).filter((source) => source.hostId === hostId && typeof source.path === "string");
+  return roots.length > 0 && !roots.some((source) => resolve(source.path!) === resolve(path));
+}
+
 /** True when the attempt already works in the run folder, so there is no worktree to merge or remove. */
 export function shouldMergeAttemptWorktree(workspacePath:string|null|undefined, basePath:string|null|undefined):boolean {
   return Boolean(workspacePath && basePath && resolve(workspacePath) !== resolve(basePath));
@@ -244,7 +251,10 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         if (bound?.workspace_path && bound.environment_id) {
           workspacePath=bound.workspace_path;
           environment={type:"reuse",environmentId:bound.environment_id};
-        } else if ((nativeRun && !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path))
+        // BB's managed worktree forks the project's root source; a run folder that is not it (a section with its own
+        // repo inside a non-git project, live sandbox 2026-10-07: «no usable git branch») needs Lane Pilot's own.
+        } else if ((nativeRun ? !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path)
+            : await hasOtherRootSource(bb, input.projectId, input.config.hostId, run.writer_workspace_path))
           // BB's managed worktree starts the writer at the repo root; a folder nested in a larger repo needs the same
           // subfolder inside the worktree, which only Lane Pilot's own worktree gives (OVH live check 2026-10-07).
           || await nestedInRepo(input.config.hostId, run.writer_workspace_path)) {
