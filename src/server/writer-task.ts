@@ -90,7 +90,7 @@ export const WRITER_SETUP_LINES = [
     "Dependencies are installed from the lockfile: do not run npm install or anything else that rewrites package.json or a lockfile unless they are in owns_paths; a missing package is a blocker to report.",
     "If the project has a GitNexus index (a `.gitnexus/` folder) and you have the gitnexus tools, find code with them first: `query` for a concept, `context` for a symbol's callers and callees, `impact` before changing a shared function. Use grep for literals and when the index has no answer. For a library's API use the context7 docs (through metamcp) before guessing. If you lack a tool, read the code yourself; that is no reason to stop.",
     WORKTREE_SETUP_LINE,
-    "Secrets come from Env Catalog (env_get); never print or write one down. Delete with `~/.agents/bin/agent-trash <path>` (rm's flags), not rm.",
+    "You have no access to secrets: Env Catalog is not available to you. A check whose `secrets` list names a variable gets it from Lane Pilot as an environment variable, and its value is never shown to you; never put a secret in a file or in your output. If the task needs one the contract does not declare, end with `NEEDS_HUMAN: needs secret <NAME>`. Delete with `~/.agents/bin/agent-trash <path>` (rm's flags), not rm.",
     "If you need a decision, end with `NEEDS_HUMAN: <one question>`; the PM answers in this thread and you continue.",
     "Lane Pilot runs the contract's verification itself, in a sandbox. If a check fails because of the sandbox rather than your code (a missing network, port, binary or a read-only path), change nothing more and answer with the first line `NEEDS_HUMAN: check <command> cannot run in the sandbox: <error>`; do not edit code to get around it.",
 ];

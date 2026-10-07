@@ -81,6 +81,9 @@ export type HelperRole =
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
 const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
 const READER: RoleProfile = { bbPlugins: [], skills: [], mcpServers: ["gitnexus"] };
+// Env Catalog (J1): the roles that need an account or key get its tools. A writer does not: its checks get the secrets the
+// contract declares (verification[].secrets) from the server, by name. A browser check gets it only for a case that names
+// a login (qa-thread.ts, extraAccess).
 export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "writer": CODER,
   "code-repair": CODER,
@@ -102,10 +105,10 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "errand": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "computer-use", "env-catalog"], mcpServers: [] },
   "council-seat": { bbPlugins: [], skills: [], mcpServers: [] },
   "rules-analyzer": { bbPlugins: [], skills: [], mcpServers: [] },
-  "specialist:design-lead": { bbPlugins: [], skills: ["ui-ux-pro-max", "project-design", "project-onboard", "web-design", "design-taste", "impeccable-ui", "page-prototype"], mcpServers: ["metamcp"] },
-  "specialist:copy-lead": { bbPlugins: [], skills: ["copy-project-life", "site-copy-audience", "site-copy-headlines", "site-copy-ux", "copy-research", "tavily", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
-  "specialist:seo-specialist": { bbPlugins: [], skills: ["seo-project-life", "seo-drmax-orchestrator", "cocoon-chainsmith", "drmax-cocoon-engine-x4", "drmax-brandcore", "drmax-text-humanization", "ai-detect", "drmax-signalforge", "drmax-latent-intent", "drmax-market-scoped", "google", "yandex", "seo-tools", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
-  "specialist:tavily": { bbPlugins: [], skills: ["tavily"], mcpServers: [] },
+  "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "ui-ux-pro-max", "project-design", "project-onboard", "web-design", "design-taste", "impeccable-ui", "page-prototype"], mcpServers: ["metamcp"] },
+  "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copy-project-life", "site-copy-audience", "site-copy-headlines", "site-copy-ux", "copy-research", "tavily", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
+  "specialist:seo-specialist": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "seo-project-life", "seo-drmax-orchestrator", "cocoon-chainsmith", "drmax-cocoon-engine-x4", "drmax-brandcore", "drmax-text-humanization", "ai-detect", "drmax-signalforge", "drmax-latent-intent", "drmax-market-scoped", "google", "yandex", "seo-tools", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
+  "specialist:tavily": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "tavily"], mcpServers: [] },
 };
 
 export const HELPER_ROLES = Object.keys(ROLE_PROFILES) as HelperRole[];
