@@ -1,7 +1,7 @@
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "../../owns-paths";
 import { reconcile } from "../../reconcile";
@@ -88,7 +88,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     // An attempt resumed after a reload arrives bound to its own worktree. Every new attempt starts from the run's
     // workspace instead: that worktree is removed when the attempt fails, and a retry snapshotted inside it failed
     // with «spawnSync /bin/bash ENOENT» (project-folders, 2026-10-02).
-    const { task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, getRun(db, input.runId)?.writer_workspace_path ?? null);
+    let { task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, getRun(db, input.runId)?.writer_workspace_path ?? null);
     let activeConfig = input.config;
     let activeTask = input.task;
     let dirtBefore = input.dirtBefore ?? [];
@@ -235,6 +235,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           refreshRun(input.runId);
         }
         return;
+      }
+      // A queued task the PM corrected with lane_pilot_update_task starts from the stored contract and plan, not the
+      // ones it was dispatched with (live sandbox 2026-10-07: the writer ran the old plan after an update).
+      const storedTask=taskV2Schema.safeParse(getTask(db,input.taskId)?.contract);
+      const storedPlan=getTaskPlan(db,input.taskId);
+      if(!writerThreadId&&storedTask.success&&storedTask.data.id===input.taskId) {
+        input.task={...storedTask.data,project_cwd:input.task.project_cwd};
+        if(storedPlan&&storedPlan.trim()) input.plan=storedPlan;
+        activeTask=input.task;
+        ({ task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, getRun(db, input.runId)?.writer_workspace_path ?? null));
       }
       recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"running",
         input:input.plan, attempt:countAttempts(db, input.runId, input.taskId) });
@@ -466,7 +476,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         activeTask = freshTask;
         dirtBefore = [];
         executionPacketSha256 = null;
-        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief({ ...failedLast, produced:[] }, freshTask), failedBinding?.dirt_before)) {
+        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief({ ...failedLast, produced:[] }, freshTask, failedBinding?.dirt_before ?? []), failedBinding?.dirt_before)) {
           await removeFailedWorktree();
         }
         inSession = Boolean(redo && writerThreadId);

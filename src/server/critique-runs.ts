@@ -169,7 +169,8 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   if(coverageStatus==="unavailable") structuralFindings.push({code:"coverage_scan_truncated",path:".",severity:"warning",finding:"Workspace path listing is unavailable; only plan/TaskV2 data was reviewed"});
   const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}\n\nstructural_coverage=${coverageStatus}\n\nstructural_findings=${JSON.stringify(structuralFindings)}`;
   const base = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:source };
-  recordStage(input.db, { ...base, state:"pending" });
+  // An updated task runs its critique again over the receipt of the earlier contract (lane_pilot_update_task).
+  recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, restart:true });
   const enabled = settings["plan_critique.enabled"];
   const disabled = enabled === false || enabled === 0
     || (typeof enabled === "string" && ["0", "off", "false", "no"].includes(enabled.trim().toLowerCase()));

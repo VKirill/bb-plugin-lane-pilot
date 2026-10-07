@@ -150,7 +150,9 @@ export function failingCheckFiles(output:string):string[] {
   return [...found];
 }
 
-export function previousAttemptBrief(last:Record<string, unknown> | null | undefined, task?:Pick<TaskV2, "owns_paths"> & Partial<Pick<TaskV2, "never_touch">>):string {
+export function previousAttemptBrief(last:Record<string, unknown> | null | undefined, task?:Pick<TaskV2, "owns_paths"> & Partial<Pick<TaskV2, "never_touch">>,
+  /** The workspace's dirty files before the attempt: a stray file not among them held no one's uncommitted work. */
+  dirtBefore?:ReadonlyArray<{ path:string }>):string {
   if (!last || last.status === "accepted") return "";
   const status = String(last.status ?? "failed");
   const reason = typeof last.reason === "string" ? last.reason.slice(0, 400) : "";
@@ -185,6 +187,10 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
     if (never.length) bullets.push(`never_touch files (${never.join(", ")}) ${undo}`);
     if (outside.length) bullets.push(`files outside owns_paths (${outside.join(", ")}) ${undo}`);
     if (!task) bullets.push(`files outside owns_paths or in never_touch (${files.join(", ")}) ${undo}`);
+    // A writer told only «undo your own edits» kept a file it had created, unsure what was there before (live sandbox
+    // 2026-10-07, lpv-c2d). Lane Pilot knows: a file that was not dirty before the attempt held no one's work.
+    const clean = dirtBefore ? files.filter((file) => !dirtBefore.some((row) => row.path === file)) : [];
+    if (clean.length) bullets.push(`${clean.join(", ")} had no uncommitted changes before your attempt → delete ${clean.length > 1 ? "any of them" : "it"} you created, and restore any you changed with \`git checkout -- <file>\``);
     bullets.push(`if the task cannot be done without changing ${files.length > 1 ? "them" : "it"}, undo your edits there and answer \`${NEEDS_HUMAN_MARKER} the task needs ${files.join(", ")} changed (<why>); add ${files.length > 1 ? "them" : "it"} to owns_paths\``);
   }
   if (/changed no files|returned no (answer|output)/.test(reason)) {

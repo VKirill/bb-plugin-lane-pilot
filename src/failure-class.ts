@@ -19,7 +19,7 @@ const MERGE = /(^|: )merge_conflict/i;
 // Before 0.1.117 a merge that git refused for another reason (a stale index.lock) was called a conflict with no files.
 const MISLABELED_MERGE = /merge_conflict: main changed since this attempt started:\s*$/i;
 // Linux git 2.43 names no lock in «Unable to write index» (OVH 2026-10-06); the wording is added beside index.lock.
-const INFRA = /ENOSPC|no space left|disk_low|index\.lock|unable to write (new )?index|host is not connected|host offline|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED/i;
+const INFRA = /ENOSPC|no space left|EACCES|EPERM|permission denied|PermissionError|disk_low|index\.lock|unable to write (new )?index|host is not connected|host offline|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED/i;
 // Same list the self-repair watcher treats as Lane Pilot's own fault, plus the thread lookups that broke on 2026-10-04.
 const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing|reconcile_|attempt_worktree_|attempt_workspace_|writer reconcile|its retry was lost|reconcile completed on a short page|sticky_send_failed|sticky_failed/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;

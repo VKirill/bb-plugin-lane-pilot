@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.175
+
+From the live scenario matrix in the sandbox (2026-10-07):
+- **`lane_pilot_update_task` on a queued task works and reaches the writer.** Before, it failed with «illegal stage transition plan-critique: skipped -> pending» after it had already saved the new contract. The queued attempt then ran the old plan. Now plan critique runs again over the earlier receipt, and a queued task reads its stored contract and plan when it gets its writer slot.
+- **A writer is told it may delete a stray file it created.** When a file outside owns_paths had no uncommitted changes before the attempt, the feedback says: delete it if you created it, restore it with `git checkout` if you changed it. A writer used to keep such a file «not knowing what was there before» and lost the task to «no progress».
+- **A permission error is the machine's fault, not Lane Pilot's.** `EACCES`, `EPERM`, «permission denied» and `PermissionError` (for example at the workspace snapshot) now count as infra failures. Such a task is retried with backoff instead of being parked until the next plugin version.
+
 ## 0.1.174
 
 - **A project whose folder is a subfolder of a larger repo: the writer now works in that subfolder.** When the chat folder was the project's own root but sat inside a bigger git repo (a section, GitHub one level up), BB's managed worktree started the writer at the repo root. The writer then created new files at the root, the post-merge check in the subfolder failed, and a pointless `-mainfix` followed. Such a folder (`git rev-parse --show-prefix` on its own machine) now gets Lane Pilot's own worktree of the repo, with the writer in the same subfolder. Found in a live check on OVH, 2026-10-07.

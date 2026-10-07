@@ -92,3 +92,7 @@ describe("task families", () => {
     expect(providerLimitNotice("")).toBeNull();
   });
 });
+
+it("classes a permission error at the workspace snapshot as the machine's, not Lane Pilot's (live sandbox 2026-10-07)", () => {
+  expect(failureClass("blocked", "attempt_workspace_snapshot_failed:cannot read writer-workspace git diff: Traceback … PermissionError: [Errno 13] Permission denied: 'src/x.js'")).toBe("infra");
+});
