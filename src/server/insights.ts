@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, type MemoryCandidate, type MemorySettings } from "@lane-pilot/memory-core";
+import { dropMemoryIndexes, memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, type MemoryCandidate, type MemorySettings } from "@lane-pilot/memory-core";
 import {
   collectLessonSources, decideRuleProposal, getRuleProposal, lessonCandidates, listRuleProposals, logRuleEvent, parseGoldenCases, repeatedLessons,
   reviseAdoptedRule, reviseRuleProposal, routingHint, RULE_TRIAL, runGoldenEval, setRuleTrial, upsertRuleProposals, writerAcceptanceStats, type RuleProposal,
@@ -165,7 +165,7 @@ export function revokeRule(db: LanePilotDatabase, projectId: string, id: string)
 }
 
 export function deleteMemoryRecord(db: LanePilotDatabase, projectId: string, memoryId: string): void {
-  db.prepare("DELETE FROM lane_pilot_memory_fts WHERE project_id=? AND id=?").run(projectId, memoryId);
+  dropMemoryIndexes(db, projectId, memoryId);
   db.prepare("DELETE FROM lane_pilot_memory WHERE project_id=? AND id=?").run(projectId, memoryId);
 }
 

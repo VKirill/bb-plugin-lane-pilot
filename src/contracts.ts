@@ -1367,6 +1367,8 @@ export const rpcContract = defineRpcContract({
     output: z.object({ records: z.array(z.object({
       id: z.string(), kind: z.enum(["core", "note"]), audience: z.string(), content: z.string(), concepts: z.array(z.string()),
       createdAt: z.number().int(), rule: z.boolean(),
+      /** Times the note went into a brief, and how many of those attempts were accepted. */
+      useCount: z.number().int(), acceptedCount: z.number().int(),
     }).strict()) }).strict(),
   },
   memory_record_delete: {

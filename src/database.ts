@@ -12,6 +12,7 @@ import { sha256Buffer } from "./hash";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "./lp-defaults";
 import packageJson from "../package.json";
 import { IllegalTransitionError, isLegalMove } from "./state-machine";
+import { recordMemoryAccepted } from "@lane-pilot/memory-core";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -269,6 +270,18 @@ export const migrations = [
   `CREATE INDEX lane_pilot_check_duration_key ON lane_pilot_check_duration(project_id, command_key, at)`,
   // G9: what the run is for, in one sentence from the PM's first dispatch (the chat holds it otherwise, and a closed chat loses it).
   `ALTER TABLE lane_pilot_run ADD COLUMN objective TEXT`,
+  // K8 knowledge: a record can be replaced, expire, be evicted for budget (kept, hidden), come from a session or a file whose
+  // state it follows, and carry how often it was mixed into a brief and how often that attempt was accepted.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','superseded','expired'))`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN superseded_by TEXT`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN valid_until INTEGER`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN last_used_at INTEGER`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN accepted_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN trust TEXT NOT NULL DEFAULT 'confirmed' CHECK(trust IN ('confirmed','observed'))`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN origin TEXT NOT NULL DEFAULT 'maintainer'`,
+  `ALTER TABLE lane_pilot_memory ADD COLUMN source_file_id TEXT`,
+  `CREATE INDEX lane_pilot_memory_scope_status ON lane_pilot_memory(project_id,personal_bot,audience,status)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -901,7 +914,18 @@ export function transitionAttempt(
   db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
     .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
   if (changed && before.state !== state) attemptChanged(attemptId);
+  if (changed && state === "accepted" && before.state !== state) creditMemoryOfAttempt(db, attemptId);
   return changed;
+}
+
+/** An accepted attempt credits the memory notes its brief carried, so the notes that serve briefs well rank higher. Never fails the transition. */
+function creditMemoryOfAttempt(db: LanePilotDatabase, attemptId: string): void {
+  try {
+    const row = db.prepare(`SELECT r.project_id AS projectId, t.trace_json AS trace FROM lane_pilot_attempt a
+      JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id WHERE a.id=?`).get(attemptId) as { projectId: string; trace: string } | undefined;
+    const picked = row ? (JSON.parse(row.trace) as ReasoningTrace).dispatchContext?.memoryPicked : undefined;
+    if (row && Array.isArray(picked) && picked.length) recordMemoryAccepted(db, row.projectId, picked.filter((id): id is string => typeof id === "string"));
+  } catch { /* the counters are a ranking hint, not a gate */ }
 }
 
 /**
@@ -960,6 +984,8 @@ export type ReasoningTrace = {
   effortMode?:"automatic"|"manual";
   dispatchContext?:{
     memoryText:string;
+    /** Ids of the memory notes mixed into this brief; an accepted attempt credits each (`accepted_count`). Absent before K8. */
+    memoryPicked?:string[];
     /** Owner-confirmed project rules; absent in traces written before 0.1.37. */
     rulesText?:string;
     /** Which accepted rules System One picked for this task (ids), out of how many. */

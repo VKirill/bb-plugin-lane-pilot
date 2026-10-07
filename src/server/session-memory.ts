@@ -38,20 +38,23 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       try {
         const result = storeMemoryRecords(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
           sourceSha256: createHash("sha256").update(`session:${source ?? ""}`).digest("hex"), entries,
+          // One CLI session is one voice: its note reaches writers once a second source states it or a day has passed.
+          trust: "observed", origin: "session",
           coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget });
-        return { stored: result.insertedIds.length > 0, id: result.insertedIds[0] ?? null, reason: result.insertedIds.length ? null : "duplicate" };
+        const id = result.insertedIds[0] ?? result.corroboratedIds[0] ?? null;
+        return { stored: result.insertedIds.length > 0, id, reason: result.insertedIds.length ? null : result.corroboratedIds.length ? "corroborated" : "duplicate" };
       } catch (cause) {
         return { stored: false, id: null, reason: cause instanceof Error ? cause.message : String(cause) };
       }
     },
     session_memory_search: async ({ projectId, query, limit }) => {
       const settings = memorySettingsFor(db, projectId);
-      return { records: searchMemoryRecords(db, projectId, query, limit ?? 8, settings.searchEngine, "subagent", settings.personalBot)
+      return { records: searchMemoryRecords(db, projectId, query, limit ?? 8, settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true })
         .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts })) };
     },
     session_memory_core: async ({ projectId }) => {
-      const rows = db.prepare("SELECT id, content FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND audience='subagent' ORDER BY created_at")
-        .all(projectId) as Array<{ id: string; content: string }>;
+      const rows = db.prepare("SELECT id, content FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND audience='subagent' AND status='active' AND (valid_until IS NULL OR valid_until>?) ORDER BY created_at")
+        .all(projectId, Date.now()) as Array<{ id: string; content: string }>;
       return { records: rows };
     },
     // A lesson is a rule proposal: a repeat of a live rule counts towards it, a new one goes on trial within the cap.

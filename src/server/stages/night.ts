@@ -11,6 +11,7 @@ import { findUnownedChanges } from "../../verification/ownership";
 import { resolveManagedWorkspace } from "../../workspace/routing";
 import { NightChildSnapshot, childResultObject, nightChildSnapshot } from "../child-snapshots";
 import { fullAccessSpawn } from "../pm-spawn";
+import { reviewerMemoryFor } from "../memory-mix";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
 import { recordStage } from "../stage-records";
 import { stringAt, valueAt } from "../values";
@@ -135,7 +136,7 @@ export function createNightStages(ctx: ServerCore, services: Services) {
         bb, db, projectId:args.projectId, runId:args.runId, role:"night-reviewer",
       });
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, providerId, "night-reviewer"),...writerExecutionSelection(providerId,modelId,effort,tier),
-        prompt:nightReviewPrompt({agent:snapshot.agent,task,acceptedResult:accepted.result,workspace:task.project_cwd,maxFindings:20}),
+        prompt:nightReviewPrompt({agent:snapshot.agent,task,acceptedResult:accepted.result,workspace:task.project_cwd,maxFindings:20,memoryText:reviewerMemoryFor(db,args.projectId,args.runId,task)}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"night-reviewer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"night-review",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
       threadId=stringAt(spawned,"id");if(!threadId) throw new Error("night_review_thread_id_missing");
