@@ -692,6 +692,30 @@ export const workflowDraftSummarySchema = z.object({
   nodes: z.number().int(), edges: z.number().int(), errors: z.number().int(), tested: z.enum(["none", "red", "green"]), publishedPath: z.string().nullable(), updatedAt: z.number(),
 }).strict();
 
+const draftProblems = z.array(workflowDraftProblemSchema);
+export const workflowDraftPatchResultSchema = z.object({
+  ok: z.boolean(), applied: z.boolean(), reason: z.string().optional(), currentVersion: z.number().int().optional(),
+  /** Operations the draft could not take (nothing was changed). */
+  refused: z.array(z.object({ index: z.number().int(), op: z.string(), reason: z.string() }).strict()).optional(),
+  version: z.number().int().optional(), status: z.string().optional(), changes: z.array(z.string()).optional(),
+  valid: z.boolean().optional(), errors: z.number().int().optional(), warnings: z.number().int().optional(), nodes: z.number().int().optional(), edges: z.number().int().optional(),
+  problems: draftProblems.optional(), definition: z.record(z.string(), z.unknown()).optional(),
+});
+export const workflowDraftTestResultSchema = z.object({
+  draftId: z.string(), version: z.number().int(), ran: z.boolean(), green: z.boolean(), reason: z.string().optional(), allCasesRun: z.boolean().optional(),
+  cases: z.array(z.object({
+    caseId: z.string(), green: z.boolean(), status: z.string(), path: z.array(z.string()), output: z.unknown(), failures: z.array(z.string()),
+    runId: z.string().nullable(), failedNode: z.string().nullable(), stubbedCalls: z.array(z.string()), notChecked: z.array(z.string()).optional(),
+  })).optional(),
+  problems: draftProblems.optional(), note: z.string().optional(),
+});
+export const workflowDraftPublishResultSchema = z.object({
+  draftId: z.string(), published: z.boolean(), reason: z.string().optional(), next: z.string().optional(), problems: draftProblems.optional(), path: z.string().optional(),
+  failing: z.array(z.object({ caseId: z.string(), failures: z.array(z.string()) })).optional(),
+  workflowId: z.string().optional(), workflowVersion: z.number().int().optional(), scope: z.string().optional(),
+  liveReady: z.boolean().optional(), unregisteredExecutors: z.array(z.string()).optional(), warning: z.string().optional(),
+});
+
 export const rpcContract = defineRpcContract({
   get_preferences: {
     input: z.object({ suggestedLocale: z.enum(["en", "ru"]) }).strict(),
@@ -1549,5 +1573,33 @@ export const rpcContract = defineRpcContract({
     input: z.object({ draftId: z.string().min(1), history: z.boolean().default(false) }).strict(),
     output: z.object({ draft: workflowDraftSummarySchema.nullable(), definition: z.record(z.string(), z.unknown()).nullable(), check: workflowDraftCheckSchema.nullable(),
       tests: z.unknown().nullable(), history: z.array(z.object({ version: z.number().int(), summary: z.string(), at: z.number() }).strict()).default([]) }).strict(),
+  },
+  // The editor in the Workflows tab: the same operations the architect's tools run (draftOpSchema is checked on the server).
+  workflow_draft_patch: {
+    input: z.object({ draftId: z.string().min(1), ops: z.array(z.record(z.string(), z.unknown())).min(1).max(40), expectedVersion: z.number().int().min(1).optional() }).strict(),
+    output: workflowDraftPatchResultSchema,
+  },
+  /** Takes the draft back to the content of an earlier version, as a new version: undo and redo. */
+  workflow_draft_restore: {
+    input: z.object({ draftId: z.string().min(1), version: z.number().int().min(1), expectedVersion: z.number().int().min(1).optional() }).strict(),
+    output: z.object({ ok: z.boolean(), reason: z.string().optional(), currentVersion: z.number().int().optional(), version: z.number().int().optional(), definition: z.record(z.string(), z.unknown()).optional() }).strict(),
+  },
+  workflow_draft_test: {
+    input: z.object({ draftId: z.string().min(1), testCaseId: z.string().min(1).max(120).optional() }).strict(),
+    output: workflowDraftTestResultSchema,
+  },
+  workflow_draft_publish: {
+    input: z.object({ draftId: z.string().min(1) }).strict(),
+    output: workflowDraftPublishResultSchema,
+  },
+  /** Starts a draft from a workflow of the library: `edit` the owner's own file (same id, replaced on publish), or `duplicate` a built-in one under a new id. */
+  workflow_draft_create: {
+    input: z.object({ projectId: z.string().min(1), workflowId: z.string().min(1), mode: z.enum(["edit", "duplicate"]), scope: z.enum(["global", "project"]).optional() }).strict(),
+    output: z.object({ draftId: z.string().nullable(), workflowId: z.string().nullable(), reused: z.boolean(), reason: z.string().optional() }).strict(),
+  },
+  /** What a node may use: skills, plugins, MCP servers, Env Catalog names (never values), machines, specialist roles. */
+  workflow_capabilities: {
+    input: z.object({ projectId: z.string().min(1), draftId: z.string().min(1).optional() }).strict(),
+    output: z.object({ capabilities: z.record(z.string(), z.unknown()) }).strict(),
   },
 });

@@ -2,7 +2,8 @@ import { dirname } from "node:path";
 import type { z } from "zod";
 import type { rpcContract } from "../contracts";
 import { BUILTIN_SOURCES } from "../workflow/builtin";
-import type { Field } from "../workflow/schema";
+import type { Field, Workflow } from "../workflow/schema";
+import { sha256Text } from "../workflow/files";
 import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../workflow/store";
 import { workflowView, type WorkflowView } from "../workflow/view";
 import type { ServerCore } from "./core";
@@ -52,14 +53,14 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
     }
   }
 
-  async function loadStore(projectId?: string): Promise<{ store: WorkflowStore; project: ProjectState }> {
+  async function loadStore(projectId?: string): Promise<{ store: WorkflowStore; project: ProjectState; files: WorkflowFileSource }> {
     const project = projectId ? await readProjectFiles(projectId) : { files: new Map<string, string>(), dir: null, state: "not_requested" as const };
     const files: WorkflowFileSource = {
       list: async (dir) => (project.dir && dir === project.dir ? [...project.files.keys()].map((name) => `${dir}/${name}`).sort() : nodeFileSource.list(dir)),
       read: async (path) => (project.dir && dirname(path) === project.dir ? project.files.get(path.slice(project.dir.length + 1)) ?? "" : nodeFileSource.read(path)),
     };
     const store = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, files, globalDir, ...(project.dir ? { projectDir: project.dir } : {}) });
-    return { store, project: project.state };
+    return { store, project: project.state, files };
   }
 
   function statsFor(workflowId: string, projectId?: string): WorkflowStats {
@@ -92,6 +93,15 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
         problems: store.problems.map((row) => ({ origin: row.origin, source: row.source, messages: row.problems.map((problem) => problem.message) })),
         project,
       };
+    },
+
+    /** A workflow of the library with the file it was read from (its text hashed), so an editor can start from it and publish over that file and no other. */
+    async source(input: { id: string; projectId?: string }): Promise<{ workflow: Workflow; origin: StoredWorkflow["origin"]; path: string; fileSha256: string | null; ids: string[] } | null> {
+      const { store, files } = await loadStore(input.projectId);
+      const item = store.get(input.id);
+      if (!item) return null;
+      const text = item.origin === "builtin" ? null : await files.read(item.source).catch(() => null);
+      return { workflow: item.workflow, origin: item.origin, path: item.source, fileSha256: text === null ? null : sha256Text(text), ids: store.list().map((other) => other.workflow.id) };
     },
 
     async get(input: { id: string; projectId?: string }): Promise<Output<"workflow_get">> {

@@ -75,6 +75,8 @@ export type PatchResult =
   | { ok: true; draft: DraftRow; check: DraftCheck; changes: string[] }
   | { ok: false; reason: "not_found" | "version_conflict" | "refused"; refused?: Refusal[]; currentVersion?: number };
 
+export type RestoreResult = { ok: true; draft: DraftRow } | { ok: false; reason: "not_found" | "version_conflict" | "no_such_version"; currentVersion?: number };
+
 export function createDraftStore(db: LanePilotDatabase, now: () => number = Date.now) {
   const get = (id: string): DraftRow | null => {
     const raw = db.prepare("SELECT * FROM lane_pilot_wf_draft WHERE id=?").get(id) as Raw | undefined;
@@ -84,16 +86,24 @@ export function createDraftStore(db: LanePilotDatabase, now: () => number = Date
   return {
     get,
 
-    create(input: { projectId: string; threadId: string | null; scope: DraftScope["level"]; name: string | { en: string; ru: string }; description: string | { en: string; ru: string }; workflowId?: string }): DraftRow {
+    /**
+     * A new draft. `definition` starts it from an existing workflow instead of an empty frame (a copy of a built-in one, or the
+     * file of a workflow the owner edits); `base` is that file as published, so that publishing may replace it and no other.
+     */
+    create(input: { projectId: string; threadId: string | null; scope: DraftScope["level"]; name: string | { en: string; ru: string }; description: string | { en: string; ru: string }; workflowId?: string;
+      definition?: RawDefinition; base?: { path: string; sha256: string; version: number } }): DraftRow {
       const id = `wfd_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
       const nameText = typeof input.name === "string" ? input.name : input.name.en;
       const workflowId = input.workflowId ?? slugWorkflowId(nameText, id.slice(-4));
-      const definition = newDraftDefinition({ id: workflowId, name: input.name, description: input.description, scope: { level: input.scope, ...(input.scope === "project" ? { projectId: input.projectId } : {}) } });
+      const scope = { level: input.scope, ...(input.scope === "project" ? { projectId: input.projectId } : {}) };
+      const definition = input.definition
+        ? { ...input.definition, id: workflowId, status: "draft", scope }
+        : newDraftDefinition({ id: workflowId, name: input.name, description: input.description, scope });
       const at = now();
       db.transaction(() => {
-        db.prepare(`INSERT INTO lane_pilot_wf_draft(id,project_id,thread_id,scope,workflow_id,status,version,definition_json,created_at,updated_at) VALUES (?,?,?,?,?,'draft',1,?,?,?)`)
-          .run(id, input.projectId, input.threadId, input.scope, workflowId, JSON.stringify(definition), at, at);
-        db.prepare("INSERT INTO lane_pilot_wf_draft_version(draft_id,version,definition_json,summary,ops_json,at) VALUES (?,?,?,?,NULL,?)").run(id, 1, JSON.stringify(definition), "created", at);
+        db.prepare(`INSERT INTO lane_pilot_wf_draft(id,project_id,thread_id,scope,workflow_id,status,version,definition_json,published_version,published_path,published_sha256,created_at,updated_at) VALUES (?,?,?,?,?,'draft',1,?,?,?,?,?,?)`)
+          .run(id, input.projectId, input.threadId, input.scope, workflowId, JSON.stringify(definition), input.base?.version ?? null, input.base?.path ?? null, input.base?.sha256 ?? null, at, at);
+        db.prepare("INSERT INTO lane_pilot_wf_draft_version(draft_id,version,definition_json,summary,ops_json,at) VALUES (?,?,?,?,NULL,?)").run(id, 1, JSON.stringify(definition), input.definition ? "copied" : "created", at);
       })();
       return get(id)!;
     },
@@ -123,6 +133,23 @@ export function createDraftStore(db: LanePilotDatabase, now: () => number = Date
         db.prepare("INSERT INTO lane_pilot_wf_draft_version(draft_id,version,definition_json,summary,ops_json,at) VALUES (?,?,?,?,?,?)")
           .run(draftId, version, json, applied.changes.join("; ").slice(0, 2000), JSON.stringify(ops), at);
         return { ok: true, draft: get(draftId)!, check: checkDraft(applied.definition, options.validate), changes: applied.changes };
+      })();
+    },
+
+    /** Takes the draft back to the content of an earlier version, as a new version (the log keeps every step, so a restore can be restored). */
+    restore(draftId: string, version: number, options: { expectedVersion?: number } = {}): RestoreResult {
+      return db.transaction((): RestoreResult => {
+        const draft = get(draftId);
+        if (!draft) return { ok: false, reason: "not_found" };
+        if (options.expectedVersion !== undefined && options.expectedVersion !== draft.version) return { ok: false, reason: "version_conflict", currentVersion: draft.version };
+        const raw = db.prepare("SELECT definition_json FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version=?").get(draftId, version) as { definition_json: string } | undefined;
+        if (!raw) return { ok: false, reason: "no_such_version" };
+        const next = draft.version + 1, at = now();
+        const restoredId = (JSON.parse(raw.definition_json) as RawDefinition).id;
+        db.prepare("UPDATE lane_pilot_wf_draft SET definition_json=?, workflow_id=?, version=?, status='draft', updated_at=? WHERE id=? AND version=?")
+          .run(raw.definition_json, typeof restoredId === "string" ? restoredId : draft.workflowId, next, at, draftId, draft.version);
+        db.prepare("INSERT INTO lane_pilot_wf_draft_version(draft_id,version,definition_json,summary,ops_json,at) VALUES (?,?,?,?,NULL,?)").run(draftId, next, raw.definition_json, `restored version ${version}`, at);
+        return { ok: true, draft: get(draftId)! };
       })();
     },
 
