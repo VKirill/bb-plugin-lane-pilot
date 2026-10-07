@@ -106,7 +106,8 @@
           "critical_count": "int",
           "high_count": "int",
           "unchecked": "string[]"
-        }
+        },
+        "uses": "reduce.lp.review.dims"
       }
     },
     {
@@ -139,7 +140,8 @@
         "out": {
           "confirmed_ids": "string[]",
           "dropped_ids": "string[]"
-        }
+        },
+        "uses": "reduce.lp.review.confirm"
       },
       "skip_when": "dims.critical_count + dims.high_count == 0",
       "skip_out": {

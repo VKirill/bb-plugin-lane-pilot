@@ -1,0 +1,314 @@
+{
+  "id": "milestone-close",
+  "name": {
+    "en": "Close the milestone",
+    "ru": "Закрыть этап"
+  },
+  "description": {
+    "en": "Checks that the run is really finished (open tasks, unmerged work, gate), audits the goals, runs a short retrospective, stages knowledge candidates for the owner's approval, updates project life and archives the run.",
+    "ru": "Проверяет, что прогон действительно завершён (открытые задачи, неслитая работа, гейт), аудирует цели, проводит короткую ретроспективу, кладёт кандидатов знаний на одобрение владельца, обновляет жизнь проекта и архивирует прогон."
+  },
+  "examples": {
+    "ru": [
+      "Закрой этап: проверь, что всё сделано, подведи итоги",
+      "Заверши текущий прогон и сделай ретроспективу",
+      "Закрываем релиз, зафиксируй что получилось и что учесть дальше",
+      "Подведи итоги спринта и сохрани выводы",
+      "Всё сделано? Если да, закрой milestone",
+      "Закрой фазу и запиши уроки в память"
+    ],
+    "en": [
+      "Close the milestone: verify everything is done and wrap up",
+      "Finish the current run and run a retrospective",
+      "We're closing the release, record what worked and what to carry forward",
+      "Wrap up the sprint and save the lessons",
+      "Is everything done? If yes, close the milestone",
+      "Close the phase and write the lessons into memory"
+    ]
+  },
+  "not_for": [
+    "full-lifecycle"
+  ],
+  "status": "draft",
+  "tags": [
+    "closeout",
+    "memory"
+  ],
+  "inputs": {
+    "run_id": {
+      "type": "string",
+      "note": "по умолчанию текущий прогон PM"
+    },
+    "goals": {
+      "type": "Goal[]"
+    },
+    "goal": {
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "status": "closed|not_ready|halted",
+    "candidates_staged": "int",
+    "candidates_approved": "int",
+    "deferred": "bool",
+    "report_path": "string",
+    "retro_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "quick - без ретроспективы; full - + отдельная проверка аудита целей вторым агентом"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [],
+    "machines": []
+  },
+  "budget": {
+    "max_steps": 14,
+    "max_minutes": 120
+  },
+  "entry": "status",
+  "nodes": [
+    {
+      "id": "status",
+      "type": "action",
+      "action": "lp.run_status",
+      "run_id": "{{$inputs.run_id}}",
+      "out": {
+        "open_tasks": "int",
+        "failed_tasks": "int",
+        "unmerged": "int",
+        "gate_ok": "bool",
+        "running_attempts": "int",
+        "merged_commits": "string[]"
+      }
+    },
+    {
+      "id": "ask_finish",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "The run is not finished",
+        "ru": "Прогон не завершён"
+      },
+      "src": "maestro-flow:workflows/maestro.md (W003 milestone_close without all phases executed)",
+      "prompt": "List open, failed and unmerged tasks and the gate state; offer - finish first (cancel the close), close anyway (open tasks stay as deferred items), abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "finish_first|close_anyway|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "retro",
+      "type": "agent",
+      "role": "memory",
+      "title": {
+        "en": "Retrospective",
+        "ru": "Ретроспектива"
+      },
+      "applicable_modes": [
+        "standard",
+        "full"
+      ],
+      "skip_out": {
+        "insights": "[]",
+        "retro_path": "",
+        "metrics": "{}"
+      },
+      "src": "maestro-flow:workflows/retrospective.md",
+      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\n",
+      "out": {
+        "insights": "Insight[]",
+        "retro_path": "string",
+        "metrics": "any"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "close",
+      "type": "subworkflow",
+      "workflow": "lp.close",
+      "with": {
+        "goals": "{{$inputs.goals}}",
+        "goal": "{{$inputs.goal}}",
+        "merged_commits": "{{status.merged_commits}}",
+        "insights": "{{retro.insights}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "approve_knowledge",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve knowledge candidates",
+        "ru": "Одобрить кандидатов знаний"
+      },
+      "src": "maestro-flow:ref/knowledge-closeout.md",
+      "skip_when": "close.staged == 0",
+      "skip_out": {
+        "approved_ids": "[]",
+        "answer_kind": "none"
+      },
+      "prompt": "Show the frozen list of candidate ids (title, one line, evidence anchor). Approval is per listed id; a bulk \"all\" is allowed only for exactly the shown list. No answer means deferred - the milestone is closed anyway. An automatic mode is not approval.",
+      "out": {
+        "approved_ids": "string[]",
+        "answer_kind": "approved|none|deferred|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 60
+      }
+    },
+    {
+      "id": "archive",
+      "type": "action",
+      "action": "lp.run_close",
+      "run_id": "{{$inputs.run_id}}",
+      "out": {
+        "archived": "bool"
+      }
+    },
+    {
+      "id": "closed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "closed",
+        "candidates_staged": "close.staged",
+        "candidates_approved": "approve_knowledge.approved_ids.length",
+        "deferred": "approve_knowledge.answer_kind != 'approved'",
+        "report_path": "close.report_path",
+        "retro_path": "retro.retro_path"
+      }
+    },
+    {
+      "id": "not_ready",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "not_ready"
+      }
+    },
+    {
+      "id": "halted",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "halted",
+        "report_path": "close.report_path"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "status",
+      "to": "ask_finish",
+      "pass": "artifact",
+      "when": "status.open_tasks > 0 || status.unmerged > 0 || !status.gate_ok || status.running_attempts > 0"
+    },
+    {
+      "from": "status",
+      "to": "retro",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_finish",
+      "to": "retro",
+      "pass": "artifact",
+      "when": "ask_finish.answer_kind == 'close_anyway'"
+    },
+    {
+      "from": "ask_finish",
+      "to": "not_ready",
+      "pass": "artifact"
+    },
+    {
+      "from": "retro",
+      "to": "close",
+      "pass": "artifact"
+    },
+    {
+      "from": "close",
+      "to": "approve_knowledge",
+      "pass": "artifact",
+      "when": "close.status == 'closed'"
+    },
+    {
+      "from": "close",
+      "to": "halted",
+      "pass": "artifact"
+    },
+    {
+      "from": "approve_knowledge",
+      "to": "archive",
+      "pass": "artifact"
+    },
+    {
+      "from": "archive",
+      "to": "closed",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "mc-1",
+    "sim": {
+      "input": {
+        "goals": [
+          {
+            "id": "g1",
+            "done_when": "export button works",
+            "evidence": "test export.spec passes"
+          }
+        ],
+        "goal": "Stats export"
+      },
+      "stubs": {
+        "lp.run_status": {
+          "open_tasks": 0,
+          "unmerged": 0,
+          "gate_ok": true,
+          "running_attempts": 0,
+          "merged_commits": [
+            "m1",
+            "m2"
+          ]
+        },
+        "lp.close": {
+          "status": "closed",
+          "staged": 2,
+          "report_path": "reports/r1.md"
+        },
+        "approve_knowledge": {
+          "answer_kind": "deferred",
+          "approved_ids": []
+        }
+      },
+      "expect_path": [
+        "status",
+        "retro",
+        "close",
+        "approve_knowledge",
+        "archive",
+        "closed"
+      ],
+      "expect_outputs": [
+        "status == 'closed'",
+        "candidates_staged == 2",
+        "deferred == true"
+      ]
+    },
+    "live": "песочница: завершённый прогон; кандидаты остаются в стейджинге, ничего не опубликовано без ответа; второй сценарий с открытой задачей - ожидание: ask_finish и not_ready"
+  }
+}

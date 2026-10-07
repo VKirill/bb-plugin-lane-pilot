@@ -1,0 +1,292 @@
+{
+  "id": "test-gen",
+  "name": {
+    "en": "Generate tests",
+    "ru": "Дописать тесты"
+  },
+  "description": {
+    "en": "Writes missing tests for named gaps in the test paths only, runs them layer by layer, classifies failures (test/code/env defect) and iterates up to three times. Never edits source code or existing tests.",
+    "ru": "Пишет недостающие тесты по названным пробелам только в тестовых путях, прогоняет по слоям, классифицирует провалы (дефект теста / кода / окружения) и итерирует до трёх раз. Исходники и существующие тесты не трогает."
+  },
+  "examples": {
+    "ru": [
+      "Допиши тесты на модуль расчёта скидок",
+      "Покрой тестами обработчики вебхуков",
+      "Добавь недостающие юнит-тесты для сервиса пользователей",
+      "Закрой пробелы в покрытии, которые нашёл ревью"
+    ],
+    "en": [
+      "Write the missing tests for the discount calculation module",
+      "Cover the webhook handlers with tests",
+      "Add the missing unit tests for the users service",
+      "Close the coverage gaps the review found"
+    ]
+  },
+  "not_for": [
+    "quality-loop",
+    "refactor"
+  ],
+  "status": "draft",
+  "inputs": {
+    "scope": {
+      "type": "string"
+    },
+    "gaps": {
+      "type": "Gap[]"
+    },
+    "goal": {
+      "type": "string"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "tests_added": "int",
+    "pass_rate": "int",
+    "failures": "Failure[]",
+    "code_defects": "Finding[]",
+    "env_issues": "string[]"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "quick - слой L1; standard - L0-L2; full - L0-L3"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true,
+      "test_framework": "required"
+    }
+  },
+  "budget": {
+    "max_steps": 24,
+    "max_minutes": 120,
+    "max_fan_out": 3
+  },
+  "entry": "write_tests",
+  "nodes": [
+    {
+      "id": "write_tests",
+      "type": "lp-task",
+      "title": {
+        "en": "Write tests",
+        "ru": "Написать тесты"
+      },
+      "contract_template": "add tests for the given gaps; owns_paths only test directories and fixtures; never_touch source files and existing tests; acceptance - new tests run; a test expected to fail because of a confirmed bug is marked expected_fail with the bug in its name",
+      "quality_mode": "standard",
+      "out": {
+        "state": "accepted|failed|blocked|needs_human|cancelled",
+        "files": "string[]",
+        "tests_added": "int",
+        "merge_commit": "string"
+      },
+      "guards": {
+        "maxAttempts": 2
+      }
+    },
+    {
+      "id": "run",
+      "type": "action",
+      "action": "lp.project_checks",
+      "mode": "full",
+      "layers": [
+        "L0",
+        "L1",
+        "L2"
+      ],
+      "title": {
+        "en": "Run layers fail-fast",
+        "ru": "Прогон слоёв fail-fast"
+      },
+      "out": {
+        "ok": "bool",
+        "tests_passed": "int",
+        "tests_failed": "int",
+        "pass_rate": "int",
+        "failures": "Failure[]",
+        "no_framework": "bool"
+      }
+    },
+    {
+      "id": "classify",
+      "type": "agent",
+      "role": "triager",
+      "prompt": "FAILURE_TRIAGE_METHOD per failure: test_defect (fix the test), code_defect (confirmed bug - do not retry, do not edit sources), env_issue (blocked). A critical failure in a layer stops the next layer. In doubt - code_defect. Strategy: rounds 1-2 conservative; more than 80% pass with similar failures - broader; a regression - surgical rollback; stuck 3 rounds - reflect.",
+      "out": {
+        "test_defects": "Failure[]",
+        "code_defects": "Finding[]",
+        "env_issues": "string[]",
+        "test_defect_count": "int",
+        "converged": "bool"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "fix_tests",
+      "type": "lp-task",
+      "title": {
+        "en": "Fix the tests",
+        "ru": "Поправить тесты"
+      },
+      "contract_template": "fix only the listed test_defects in the test files this workflow added; owns_paths those files",
+      "quality_mode": "quick",
+      "out": {
+        "state": "accepted|failed|blocked|needs_human|cancelled",
+        "merge_commit": "string"
+      },
+      "guards": {
+        "maxAttempts": 1
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "tests_added": "write_tests.tests_added",
+        "pass_rate": "run.pass_rate",
+        "failures": "run.failures",
+        "code_defects": "classify.code_defects",
+        "env_issues": "classify.env_issues"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "tests_added": "write_tests.tests_added",
+        "pass_rate": "run.pass_rate",
+        "failures": "run.failures",
+        "code_defects": "classify.code_defects",
+        "env_issues": "classify.env_issues"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "write_tests",
+      "to": "run",
+      "pass": "artifact",
+      "when": "write_tests.state == 'accepted'"
+    },
+    {
+      "from": "write_tests",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "run",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "run.no_framework"
+    },
+    {
+      "from": "run",
+      "to": "done",
+      "pass": "artifact",
+      "when": "run.ok"
+    },
+    {
+      "from": "run",
+      "to": "classify",
+      "pass": "artifact"
+    },
+    {
+      "from": "classify",
+      "to": "done",
+      "pass": "artifact",
+      "when": "classify.converged && classify.test_defects.length == 0"
+    },
+    {
+      "from": "classify",
+      "to": "fix_tests",
+      "pass": "artifact",
+      "when": "classify.test_defects.length > 0 && visits('classify') < 3"
+    },
+    {
+      "from": "classify",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "fix_tests",
+      "to": "run",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "tg-1",
+    "sim": {
+      "input": {
+        "scope": "src/discount.ts",
+        "gaps": [
+          {
+            "file": "src/discount.ts",
+            "layer": "L1",
+            "priority": "high"
+          }
+        ]
+      },
+      "stubs": {
+        "write_tests": {
+          "state": "accepted",
+          "tests_added": 5
+        },
+        "run": {
+          "ok": false,
+          "failures": [
+            {
+              "id": "AF-1"
+            }
+          ],
+          "pass_rate": 80
+        },
+        "classify": {
+          "converged": true,
+          "test_defects": [],
+          "code_defects": [
+            {
+              "severity": "high",
+              "file": "src/discount.ts",
+              "line": 14
+            }
+          ]
+        }
+      },
+      "expect_path": [
+        "write_tests",
+        "run",
+        "classify",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "tests_added == 5",
+        "code_defects.length == 1"
+      ]
+    },
+    "live": "песочница: функция с известным багом скидки; тест на баг помечен expected_fail, исходники не изменены"
+  }
+}

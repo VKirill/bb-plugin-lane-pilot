@@ -1,0 +1,158 @@
+{
+  "id": "analyze-code",
+  "name": {
+    "en": "Analyze (read-only)",
+    "ru": "Разбор без правок"
+  },
+  "description": {
+    "en": "Understand or evaluate a module, idea or change and report decisions, risks, scope verdict and confidence. Changes nothing.",
+    "ru": "Разобраться или оценить модуль, идею или изменение и сообщить решения, риски, вердикт по объёму и уверенность. Ничего не меняет."
+  },
+  "examples": {
+    "ru": [
+      "Разберись, как устроена очередь слияния, и опиши риски",
+      "Оцени, насколько сложно перевести проект на новую версию фреймворка",
+      "Объясни, откуда берётся задержка при загрузке дашборда, без правок",
+      "Проанализируй модуль уведомлений и скажи, что в нём слабое"
+    ],
+    "en": [
+      "Figure out how the merge queue works and describe the risks",
+      "Assess how hard it is to move the project to the new framework version",
+      "Explain where the dashboard load delay comes from, no edits",
+      "Analyze the notifications module and tell me what is weak in it"
+    ]
+  },
+  "not_for": [
+    "debug",
+    "plan-only",
+    "code-review"
+  ],
+  "status": "draft",
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "summary": "string",
+    "decisions": "Decision[]",
+    "risks": "Risk[]",
+    "recommendation": "string",
+    "confidence": "int",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "глубина lp.analyze: quick/standard/deep"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 14,
+    "max_minutes": 60
+  },
+  "entry": "analyze",
+  "nodes": [
+    {
+      "id": "analyze",
+      "type": "subworkflow",
+      "workflow": "lp.analyze",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "scope": "{{$inputs.scope}}",
+        "depth": {
+          "by_mode": {
+            "quick": "quick",
+            "standard": "standard",
+            "full": "deep"
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "report",
+      "type": "action",
+      "action": "fs.write",
+      "path": "reports/analysis-{{run_id}}.md",
+      "template": "analysis report: goal, anchors, decisions (locked/free/deferred), risks, scope verdict, recommendation, open questions",
+      "out": {
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "summary": "analyze.recommendation",
+        "decisions": "analyze.decisions",
+        "risks": "analyze.risks",
+        "recommendation": "analyze.recommendation",
+        "confidence": "analyze.confidence",
+        "report_path": "report.report_path"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "analyze",
+      "to": "report",
+      "pass": "artifact"
+    },
+    {
+      "from": "report",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "ac-1",
+    "sim": {
+      "input": {
+        "goal": "Explain how the merge queue orders merges",
+        "scope": "src/server"
+      },
+      "stubs": {
+        "lp.analyze": {
+          "recommendation": "go",
+          "confidence": 78,
+          "risks": [
+            {
+              "risk": "lock leak"
+            }
+          ]
+        }
+      },
+      "expect_path": [
+        "analyze",
+        "report",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "confidence >= 60",
+        "report_path != ''"
+      ]
+    },
+    "live": "реальный разбор модуля LP на песочнице; в репозитории нет изменений"
+  }
+}

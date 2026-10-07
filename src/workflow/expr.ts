@@ -22,8 +22,8 @@ export type Expr =
   | { t: "list"; items: Expr[] }
   | { t: "bin"; op: "&&" | "||" | "==" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "+" | "-"; l: Expr; r: Expr };
 
-/** Names a run provides without any node: `{{date}}`, `{{run_id}}`. */
-export const RUN_VARS = ["date", "run_id"] as const;
+/** Names a run provides without any node: `{{date}}`, `{{run_id}}`, `{{slug}}` (the `slug` input, else a slug of the first of topic, question, subject, goal, source, title). */
+export const RUN_VARS = ["date", "run_id", "slug"] as const;
 /** What `ctx.` holds: the run id, the goal input, and the merged commits accumulated from every step that reports them. */
 export const CTX_VARS = ["run_id", "goal", "merged_commits"] as const;
 

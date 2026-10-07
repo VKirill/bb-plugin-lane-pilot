@@ -1,0 +1,435 @@
+{
+  "id": "insights-post",
+  "name": {
+    "en": "Audience insights for a post",
+    "ru": "Инсайты аудитории для поста"
+  },
+  "description": {
+    "en": "Finds the most discussed posts on a topic in Threads, Instagram or VK, mines their comments into verified insight artifacts (pains, beliefs, language, angles), enriches them with external research and counterevidence, and hands the author a writing pack. A draft in the author's voice only on request.",
+    "ru": "Находит самые обсуждаемые посты по теме в Threads, Instagram или VK, превращает комментарии в проверенные артефакты инсайтов (боли, убеждения, язык, углы), обогащает внешним исследованием и контрпримерами и отдаёт автору пакет для письма. Черновик в голосе автора - только по просьбе."
+  },
+  "examples": {
+    "ru": [
+      "Найди в Threads обсуждаемые посты про выгорание и разбери комментарии на инсайты",
+      "Собери инсайты аудитории по теме ремонт и подготовь материалы для поста",
+      "Разбери комментарии под этим постом и достань боли и язык аудитории",
+      "Подготовь пост с инсайтами из обсуждений про детские сны",
+      "Сделай исследовательский пакет по теме «удалёнка» для статьи",
+      "Выжми из комментариев в ВК про переезд боли и цитаты для текста"
+    ],
+    "en": [
+      "Find the most discussed Threads posts about burnout and mine the comments for insights",
+      "Collect audience insights on home renovation and prepare materials for a post",
+      "Analyze the comments under this post and extract audience pains and language",
+      "Prepare an insights post from discussions about kids' sleep",
+      "Build a research pack on remote work for an article",
+      "Squeeze the pains and quotes for a text out of the VK comments about relocation"
+    ]
+  },
+  "not_for": [
+    "x-to-telegram-digest",
+    "web-research",
+    "seo-cocoon"
+  ],
+  "status": "draft",
+  "tags": [
+    "social",
+    "research",
+    "content"
+  ],
+  "inputs": {
+    "topic": {
+      "type": "string",
+      "required": true
+    },
+    "post_urls": {
+      "type": "string[]",
+      "note": "если даны - поиск пропускается"
+    },
+    "platform": {
+      "type": "threads|instagram|vk",
+      "default": "threads"
+    },
+    "posts_count": {
+      "type": "int",
+      "default": 3
+    },
+    "draft": {
+      "type": "bool",
+      "default": false
+    },
+    "root": {
+      "type": "string",
+      "default": "~/Notes/Insights"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "posts": "string[]",
+    "summary_paths": "string[]",
+    "dossier_path": "string",
+    "writing_pack_path": "string",
+    "draft_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "full - второй независимый критик (preset 'INS - второй критик')"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "browser-automation"
+    ],
+    "skills": [
+      "social-insights",
+      "text-insights",
+      "social-browser",
+      "ru-text",
+      "vechkasov-voice"
+    ],
+    "secrets": [],
+    "machines": [
+      "browser machine with Threads/Instagram/VK login (cookies from MacBook Pro host_p7jhrgsapq via bb_browser_session_import)",
+      "machine with python3 for the skill scripts"
+    ]
+  },
+  "budget": {
+    "max_steps": 60,
+    "max_minutes": 240,
+    "max_fan_out": 3,
+    "max_usd": 12
+  },
+  "entry": "discover",
+  "nodes": [
+    {
+      "id": "discover",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "Find discussed posts",
+        "ru": "Найти обсуждаемые посты"
+      },
+      "skip_when": "$inputs.post_urls.length > 0",
+      "skip_out": {
+        "candidates": "$inputs.post_urls",
+        "count": "$inputs.post_urls.length",
+        "status": "done"
+      },
+      "src": "social-insights stage 1",
+      "prompt": "social-browser on `platform`: find posts on the topic ranked by discussion (comments, likes); write candidates.yaml with url, author, counts, a one-line why-lively. Read-only.",
+      "out": {
+        "candidates": "Candidate[]",
+        "count": "int",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "pick",
+      "type": "agent",
+      "role": "analyst",
+      "model_preset": "cheap-fast",
+      "prompt": "Pick up to posts_count posts with the liveliest discussion and distinct angles; drop ads and posts with fewer than 20 comments unless nothing better exists.",
+      "out": {
+        "picked": "string[]",
+        "picked_count": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 5
+      }
+    },
+    {
+      "id": "ask_none",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Nothing suitable found",
+        "ru": "Ничего подходящего"
+      },
+      "prompt": "No post with enough discussion was found for the topic. Offer - give post links, change platform/topic, abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "links|retry|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 480
+      }
+    },
+    {
+      "id": "posts",
+      "type": "parallel",
+      "for_each": "pick.picked",
+      "max_fan_out": 3,
+      "title": {
+        "en": "Analyze posts",
+        "ru": "Разобрать посты"
+      },
+      "child": {
+        "type": "subworkflow",
+        "workflow": "ins.post",
+        "with": {
+          "post_url": "{{item}}",
+          "topic": "{{$inputs.topic}}",
+          "root": "{{$inputs.root}}"
+        },
+        "out": {
+          "status": "string",
+          "post_folder": "string",
+          "summary_path": "string"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "ok_folders": "string[]",
+          "summary_paths": "string[]",
+          "ok_count": "int",
+          "failed_count": "int"
+        },
+        "uses": "reduce.insights-post.posts"
+      }
+    },
+    {
+      "id": "aggregate",
+      "type": "action",
+      "action": "shell.skill_script",
+      "skill": "social-insights",
+      "script": "scripts/aggregate.py",
+      "args": "{{$inputs.root}}/{{$inputs.topic}}",
+      "out": {
+        "index_path": "string",
+        "ok": "bool"
+      }
+    },
+    {
+      "id": "enrich",
+      "type": "agent",
+      "role": "analyst",
+      "model_preset": "strong",
+      "profile": {
+        "skills": [
+          "text-insights",
+          "tavily"
+        ]
+      },
+      "title": {
+        "en": "Enrich with external research",
+        "ru": "Обогатить внешним исследованием"
+      },
+      "src": "text-insights SKILL (enrichment mode)",
+      "prompt": "text-insights, enrichment mode over the analyzed posts as the corpus (do not re-download): external studies and context, counterevidence and alternative explanations BEFORE choosing a strong thesis, allowed wording for each claim (observation vs interpretation vs research result vs hypothesis).\n\"Unique\", \"nobody explains\", \"new trend\" need a comparison corpus; otherwise write \"editorial candidate\" and \"in the reviewed material\". Numbers belong to the declared sample; likes are visible reaction, not truth. Search results are candidates; unavailable sources are marked, not treated as absence.\nProduce dossier.json, sources/, research-notes.md, writing-pack.md, handoff.md under <topic>/research/<slug>/.\n",
+      "out": {
+        "dossier_path": "string",
+        "writing_pack_path": "string",
+        "ready": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 60
+      }
+    },
+    {
+      "id": "ready_check",
+      "type": "action",
+      "action": "shell.skill_script",
+      "skill": "text-insights",
+      "script": "scripts/validate_dossier.py",
+      "args": "{{enrich.dossier_path}} --ready",
+      "out": {
+        "ok": "bool",
+        "errors": "string[]"
+      }
+    },
+    {
+      "id": "draft_post",
+      "type": "agent",
+      "role": "specialist:copy-lead",
+      "profile": {
+        "skills": [
+          "vechkasov-voice",
+          "ru-text"
+        ]
+      },
+      "title": {
+        "en": "Draft in the author's voice (on request)",
+        "ru": "Черновик в голосе автора (по просьбе)"
+      },
+      "skip_when": "!$inputs.draft",
+      "skip_out": {
+        "draft_path": "",
+        "claims_used": 0
+      },
+      "prompt": "Draft one post from the writing pack only: use allowed claims with their wording, anonymize quotes (no handles), keep the author's platform voice. The author rewrites it herself - mark it as a draft. No fabricated quotes or numbers.",
+      "out": {
+        "draft_path": "string",
+        "claims_used": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "posts": "posts.ok_folders",
+        "summary_paths": "posts.summary_paths",
+        "dossier_path": "enrich.dossier_path",
+        "writing_pack_path": "enrich.writing_pack_path",
+        "draft_path": "draft_post.draft_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "posts": "posts.ok_folders",
+        "summary_paths": "posts.summary_paths",
+        "dossier_path": "enrich.dossier_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "discover",
+      "to": "ask_none",
+      "pass": "artifact",
+      "when": "discover.status == 'blocked' || discover.count == 0 && $inputs.post_urls.length == 0"
+    },
+    {
+      "from": "discover",
+      "to": "pick",
+      "pass": "artifact"
+    },
+    {
+      "from": "pick",
+      "to": "ask_none",
+      "pass": "artifact",
+      "when": "pick.picked_count == 0"
+    },
+    {
+      "from": "pick",
+      "to": "posts",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_none",
+      "to": "pick",
+      "pass": "artifact",
+      "when": "ask_none.answer_kind in ['links','retry']"
+    },
+    {
+      "from": "ask_none",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "posts",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "posts.ok_count == 0"
+    },
+    {
+      "from": "posts",
+      "to": "aggregate",
+      "pass": "artifact"
+    },
+    {
+      "from": "aggregate",
+      "to": "enrich",
+      "pass": "artifact"
+    },
+    {
+      "from": "enrich",
+      "to": "ready_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "ready_check",
+      "to": "enrich",
+      "pass": "same-session",
+      "when": "!ready_check.ok && visits('enrich') < 2",
+      "label": "dossier not ready"
+    },
+    {
+      "from": "ready_check",
+      "to": "partial",
+      "pass": "artifact",
+      "when": "!ready_check.ok"
+    },
+    {
+      "from": "ready_check",
+      "to": "draft_post",
+      "pass": "artifact"
+    },
+    {
+      "from": "draft_post",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "ip-1",
+    "sim": {
+      "input": {
+        "topic": "выгорание",
+        "platform": "threads",
+        "posts_count": 2,
+        "post_urls": [
+          "fixtures/post-a",
+          "fixtures/post-b"
+        ]
+      },
+      "stubs": {
+        "ins.post": {
+          "status": "ok",
+          "summary_path": "fixtures/summary.md"
+        },
+        "validate_artifacts.py": {
+          "ok": true
+        },
+        "enrich": {
+          "ready": true
+        },
+        "validate_dossier.py": {
+          "ok": true
+        }
+      },
+      "expect_path": [
+        "discover",
+        "pick",
+        "posts",
+        "aggregate",
+        "enrich",
+        "ready_check",
+        "draft_post",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "posts.length == 2",
+        "writing_pack_path != ''",
+        "draft_path == ''"
+      ]
+    },
+    "live": "один живой пост в Threads (post_urls), 40-80 комментариев; validate_artifacts.py проходит; в summary.md цитаты с id и ни одной выдуманной (проверка: цитата - подстрока comments.jsonl)"
+  }
+}

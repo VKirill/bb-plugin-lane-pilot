@@ -1,0 +1,348 @@
+{
+  "id": "brainstorm-driven",
+  "name": {
+    "en": "Brainstorm first",
+    "ru": "Сначала мозговой штурм"
+  },
+  "description": {
+    "en": "From a vague idea - optional web research, multi-role brainstorm with conflict resolution, guidance spec, plan, build and close.",
+    "ru": "От смутной идеи - при необходимости веб-исследование, многоролевой штурм с разрешением конфликтов, guidance-спецификация, план, исполнение и закрытие."
+  },
+  "examples": {
+    "ru": [
+      "Давай придумаем, как устроить систему подписок, потом реализуем",
+      "Нужен мозговой штурм по фичам нового дашборда, а затем план и выполнение",
+      "Обсудим идею с разных ролей — продукт, архитектор, UX — и сделаем",
+      "Есть смутная идея сервиса напоминаний, продумай и построй",
+      "Поисследуй варианты реализации и выбери лучший, затем делай",
+      "С чего начать с модулем рекомендаций? Продумай варианты и воплоти выбранный"
+    ],
+    "en": [
+      "Let's brainstorm how the subscription system should work, then build it",
+      "I need a brainstorm on the new dashboard's features, then a plan and execution",
+      "Discuss the idea from several roles — product, architect, UX — and build it",
+      "I have a vague idea for a reminders service, think it through and build it",
+      "Explore the implementation options, pick the best one, then do it",
+      "Where to start with a recommendations module? Think through options and build the chosen one"
+    ]
+  },
+  "not_for": [
+    "grill-driven",
+    "blueprint-driven",
+    "analyze-plan-execute"
+  ],
+  "status": "draft",
+  "tags": [
+    "code",
+    "ideation"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "goals": {
+      "type": "Goal[]"
+    },
+    "boundary": {
+      "type": "Boundary"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    },
+    "research": {
+      "type": "bool",
+      "default": false
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "guidance": "string",
+    "features": "Feature[]",
+    "merged_commits": "string[]",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "число ролей штурма: quick 2, standard 3, full 5; остальное §0.7"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "tavily"
+    ],
+    "secrets": [
+      "TAVILY_API_KEY (только при research=true)"
+    ],
+    "machines": [
+      "project writer host"
+    ]
+  },
+  "budget": {
+    "max_steps": 70,
+    "max_minutes": 420,
+    "max_fan_out": 5
+  },
+  "entry": "research",
+  "nodes": [
+    {
+      "id": "research",
+      "type": "agent",
+      "role": "specialist:tavily",
+      "skip_when": "!$inputs.research",
+      "skip_out": {
+        "report": "",
+        "sources": "[]"
+      },
+      "prompt": "Cited research on how others solve this: 3-5 approaches, each with sources (URL), trade-offs and what is NOT known. Output goes to the brainstorm as material.",
+      "out": {
+        "report": "string",
+        "sources": "Source[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "brainstorm",
+      "type": "subworkflow",
+      "workflow": "lp.brainstorm",
+      "with": {
+        "topic": "{{$inputs.goal}}",
+        "research": "{{research.report}}",
+        "roles": {
+          "by_mode": {
+            "quick": [
+              "product-manager",
+              "system-architect"
+            ],
+            "standard": [
+              "product-manager",
+              "system-architect",
+              "ux-expert"
+            ],
+            "full": [
+              "product-manager",
+              "system-architect",
+              "ux-expert",
+              "test-strategist",
+              "subject-matter-expert"
+            ]
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "findings": "{{brainstorm}}",
+        "boundary": "{{$inputs.boundary}}",
+        "mode": "fresh"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan.tasks}}",
+        "waves": "{{plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "replan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "mode": "gaps",
+        "gaps": "{{build.failed_findings}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "close",
+      "type": "subworkflow",
+      "workflow": "lp.close",
+      "with": {
+        "goals": "{{$inputs.goals}}",
+        "boundary": "{{$inputs.boundary}}",
+        "goal": "{{$inputs.goal}}",
+        "merged_commits": "{{ctx.merged_commits}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "guidance": "brainstorm.guidance",
+        "features": "brainstorm.features",
+        "merged_commits": "ctx.merged_commits",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "guidance": "brainstorm.guidance",
+        "features": "brainstorm.features",
+        "merged_commits": "ctx.merged_commits",
+        "report_path": "close.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "research",
+      "to": "brainstorm",
+      "pass": "artifact"
+    },
+    {
+      "from": "brainstorm",
+      "to": "plan",
+      "pass": "artifact",
+      "when": "brainstorm.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "brainstorm",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "close",
+      "pass": "artifact",
+      "when": "build.status == 'done'"
+    },
+    {
+      "from": "build",
+      "to": "replan",
+      "pass": "artifact",
+      "when": "build.status == 'partial' && visits('replan') == 0"
+    },
+    {
+      "from": "build",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "replan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "replan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "replan",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "close",
+      "to": "done",
+      "pass": "artifact",
+      "when": "close.status == 'closed'"
+    },
+    {
+      "from": "close",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "bd-1",
+    "sim": {
+      "input": {
+        "goal": "Reminders service: users get a push before a booking",
+        "research": false,
+        "quality_mode": "standard"
+      },
+      "stubs": {
+        "lp.brainstorm": {
+          "status": "ok",
+          "features": [
+            {
+              "id": "F-001"
+            },
+            {
+              "id": "F-002"
+            }
+          ]
+        },
+        "lp.plan": {
+          "status": "ok"
+        },
+        "lp.build": {
+          "status": "done",
+          "merged_commits": [
+            "b1"
+          ]
+        },
+        "lp.close": {
+          "status": "closed"
+        }
+      },
+      "expect_path": [
+        "research",
+        "brainstorm",
+        "plan",
+        "build",
+        "close",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "features.length >= 1",
+        "features.length <= 8"
+      ]
+    },
+    "live": "песочница: идея без кода; ожидание - guidance с ≤ 8 фичами и конфликтом ролей, разрешённым через форму владельца"
+  }
+}

@@ -1,0 +1,258 @@
+{
+  "id": "ins.post",
+  "internal": true,
+  "name": {
+    "en": "Analyze one post",
+    "ru": "Разбор одного поста"
+  },
+  "description": {
+    "en": "Collect comments of one post, analyze by lenses, psychology, critic with validator, digest.",
+    "ru": "Сбор комментариев одного поста, разбор по линзам, психология, критик с валидатором, сводка."
+  },
+  "inputs": {
+    "post_url": {
+      "type": "string",
+      "required": true
+    },
+    "topic": {
+      "type": "string",
+      "required": true
+    },
+    "root": {
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "status": "ok|rework_failed|blocked",
+    "post_folder": "string",
+    "summary_path": "string",
+    "validator_ok": "bool",
+    "rejects_open": "int"
+  },
+  "entry": "collect",
+  "nodes": [
+    {
+      "id": "collect",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "Collect post and comments",
+        "ru": "Собрать пост и комментарии"
+      },
+      "src": "social-insights SKILL stage 2",
+      "prompt": "social-browser: open the post, load all comments and replies (top-N by likes plus a random sample of the rest), save post.json and replies.json verbatim; record coverage. Read-only.",
+      "out": {
+        "post_json": "string",
+        "replies_json": "string",
+        "comments": "int",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "init",
+      "type": "action",
+      "action": "shell.skill_script",
+      "skill": "social-insights",
+      "script": "scripts/init_post.py",
+      "args": "--post {{collect.post_json}} --replies {{collect.replies_json}} --root {{$inputs.root}} --topic {{$inputs.topic}}",
+      "out": {
+        "post_folder": "string",
+        "ok": "bool"
+      }
+    },
+    {
+      "id": "lenses",
+      "type": "agent",
+      "role": "analyst",
+      "model_preset": "INS - анализ (Claude Opus 5)",
+      "profile": {
+        "skills": [
+          "social-insights"
+        ]
+      },
+      "src": "social-insights lenses.md",
+      "prompt": "Stage 3: comment_kinds, clusters, then lenses pains, beliefs, positions, language, stories, segments, angles. Quotes verbatim with comment_id; observation separate from interpretation; support_count and share against the evidence base; status ladder observation/normalized/pattern/hypothesis/candidate. Irrelevant lenses are skipped with a reason.",
+      "out": {
+        "lenses_done": "string[]",
+        "analysis_dir": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "psychology",
+      "type": "agent",
+      "role": "analyst",
+      "model_preset": "INS - психология (GPT-5.6 Luna)",
+      "profile": {
+        "skills": [
+          "social-insights"
+        ]
+      },
+      "prompt": "Stage 4: needs.yaml and dynamics.yaml as cautious interpretations with confidence; no diagnoses, no sex/age/status from names.",
+      "out": {
+        "needs_ok": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "critic",
+      "type": "agent",
+      "role": "auditor",
+      "model_preset": "INS - проверка (Grok 4.6)",
+      "prompt": "Stage 5: review.yaml - verdict per item against the original comments; reject unsupported quotes, inflated shares, 'unique' claims without a comparison corpus.",
+      "out": {
+        "rejects_open": "int",
+        "review_path": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "validate",
+      "type": "action",
+      "action": "shell.skill_script",
+      "skill": "social-insights",
+      "script": "scripts/validate_artifacts.py",
+      "args": "{{init.post_folder}}",
+      "out": {
+        "ok": "bool",
+        "errors": "string[]"
+      }
+    },
+    {
+      "id": "renorm",
+      "type": "action",
+      "action": "shell.skill_script",
+      "skill": "social-insights",
+      "script": "scripts/renormalize.py",
+      "args": "{{init.post_folder}}",
+      "out": {
+        "ok": "bool"
+      }
+    },
+    {
+      "id": "digest",
+      "type": "agent",
+      "role": "analyst",
+      "model_preset": "INS - сводка (Claude Sonnet 5)",
+      "prompt": "Stage 6: summary.md for the author - supported pains, angles and quotes with ids (up to 5/5/10; never pad to a quota).",
+      "out": {
+        "summary_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "ok",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "ok",
+        "post_folder": "init.post_folder",
+        "summary_path": "digest.summary_path",
+        "validator_ok": true,
+        "rejects_open": 0
+      }
+    },
+    {
+      "id": "failed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "rework_failed",
+        "post_folder": "init.post_folder",
+        "validator_ok": "validate.ok",
+        "rejects_open": "critic.rejects_open"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "collect",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "collect.status == 'blocked' || collect.comments < 5"
+    },
+    {
+      "from": "collect",
+      "to": "init",
+      "pass": "artifact"
+    },
+    {
+      "from": "init",
+      "to": "lenses",
+      "pass": "artifact",
+      "when": "init.ok"
+    },
+    {
+      "from": "init",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "lenses",
+      "to": "psychology",
+      "pass": "read-prior-session"
+    },
+    {
+      "from": "psychology",
+      "to": "critic",
+      "pass": "read-prior-session"
+    },
+    {
+      "from": "critic",
+      "to": "renorm",
+      "pass": "artifact"
+    },
+    {
+      "from": "renorm",
+      "to": "validate",
+      "pass": "artifact"
+    },
+    {
+      "from": "validate",
+      "to": "lenses",
+      "pass": "same-session",
+      "when": "(!validate.ok || critic.rejects_open > 0) && visits('lenses') < 2",
+      "label": "fix rejects"
+    },
+    {
+      "from": "validate",
+      "to": "failed",
+      "pass": "artifact",
+      "when": "!validate.ok || critic.rejects_open > 0"
+    },
+    {
+      "from": "validate",
+      "to": "digest",
+      "pass": "artifact"
+    },
+    {
+      "from": "digest",
+      "to": "ok",
+      "pass": "artifact"
+    }
+  ]
+}

@@ -43,6 +43,20 @@ export function checkOutput(fields: readonly Field[], output: unknown): Record<s
   return kept;
 }
 
+const SLUG_SOURCES = ["slug", "topic", "question", "subject", "goal", "source", "title"] as const;
+const TRANSLIT: Record<string, string> = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya" };
+
+/** A folder-safe name for a run's subject: `slug` as given, else made from the first text input among topic, question, subject, goal, source, title. */
+export function slugOf(inputs: Record<string, unknown>): string {
+  for (const name of SLUG_SOURCES) {
+    const value = inputs[name];
+    if (typeof value !== "string" || !value.trim()) continue;
+    const text = [...value.toLowerCase()].map((char) => TRANSLIT[char] ?? char).join("").replace(/https?:\/\//g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
+    if (text) return text;
+  }
+  return "run";
+}
+
 export function renderTemplate(template: string, lookup: (ref: string) => unknown): string {
   return template.replace(/\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g, (_match, ref: string) => {
     const value = lookup(ref);

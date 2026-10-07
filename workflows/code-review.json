@@ -1,0 +1,219 @@
+{
+  "id": "code-review",
+  "name": {
+    "en": "Code review (no fixes)",
+    "ru": "Ревью кода (без правок)"
+  },
+  "description": {
+    "en": "Independent multi-dimension review of a branch, PR, commit range or file set; returns a thresholded verdict and findings with file:line. Fixes nothing.",
+    "ru": "Независимое многомерное ревью ветки, PR, диапазона коммитов или файлов; возвращает вердикт по порогам и находки с file:line. Ничего не исправляет."
+  },
+  "examples": {
+    "ru": [
+      "Посмотри изменения в PR 482 и скажи, что не так",
+      "Сделай ревью последних трёх коммитов",
+      "Проверь ветку feature/search на ошибки и уязвимости, не исправляй",
+      "Оцени качество кода в папке src/billing"
+    ],
+    "en": [
+      "Look at the changes in PR 482 and tell me what's wrong",
+      "Review the last three commits",
+      "Check the feature/search branch for bugs and vulnerabilities, don't fix",
+      "Assess the code quality in the src/billing folder"
+    ]
+  },
+  "not_for": [
+    "review-fix",
+    "security-audit",
+    "quality-loop"
+  ],
+  "status": "draft",
+  "inputs": {
+    "range": {
+      "type": "string"
+    },
+    "pr": {
+      "type": "string"
+    },
+    "files": {
+      "type": "string[]"
+    },
+    "criteria": {
+      "type": "string[]"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "pass|rework|block",
+    "warn": "bool",
+    "findings": "Finding[]",
+    "critical_count": "int",
+    "high_count": "int",
+    "report_path": "string",
+    "proposed_workflow": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "число измерений §0.7"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 14,
+    "max_minutes": 60,
+    "max_fan_out": 6
+  },
+  "entry": "review",
+  "nodes": [
+    {
+      "id": "review",
+      "type": "subworkflow",
+      "workflow": "lp.review",
+      "with": {
+        "range": "{{$inputs.range}}",
+        "pr": "{{$inputs.pr}}",
+        "files": "{{$inputs.files}}",
+        "criteria": "{{$inputs.criteria}}",
+        "dimensions": {
+          "by_mode": {
+            "quick": [
+              "correctness",
+              "security"
+            ],
+            "standard": [
+              "correctness",
+              "security",
+              "maintainability",
+              "performance"
+            ],
+            "full": [
+              "correctness",
+              "security",
+              "performance",
+              "architecture",
+              "maintainability",
+              "best_practices",
+              "silent_failures"
+            ]
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "report",
+      "type": "action",
+      "action": "fs.write",
+      "path": "reports/review-{{run_id}}.md",
+      "template": "verdict, severity distribution, findings table (severity, file:line, evidence, impact, suggestion)",
+      "out": {
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "offer_fix",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "review-fix",
+      "inputs": {
+        "findings": "{{review.findings}}"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "review.status",
+        "warn": "review.warn",
+        "findings": "review.findings",
+        "critical_count": "review.critical_count",
+        "high_count": "review.high_count",
+        "report_path": "report.report_path"
+      }
+    },
+    {
+      "id": "done_offer",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "review.status",
+        "warn": "review.warn",
+        "findings": "review.findings",
+        "critical_count": "review.critical_count",
+        "high_count": "review.high_count",
+        "report_path": "report.report_path",
+        "proposed_workflow": "review-fix"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "review",
+      "to": "report",
+      "pass": "artifact"
+    },
+    {
+      "from": "report",
+      "to": "offer_fix",
+      "pass": "artifact",
+      "when": "review.status == 'rework'"
+    },
+    {
+      "from": "report",
+      "to": "done",
+      "pass": "artifact"
+    },
+    {
+      "from": "offer_fix",
+      "to": "done_offer",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "cr-1",
+    "sim": {
+      "input": {
+        "range": "main..feature/search",
+        "quality_mode": "standard"
+      },
+      "stubs": {
+        "lp.review": {
+          "status": "rework",
+          "findings": [
+            {
+              "severity": "high",
+              "file": "src/search.ts",
+              "line": 22,
+              "evidence": "await missing"
+            }
+          ],
+          "high_count": 1
+        }
+      },
+      "expect_path": [
+        "review",
+        "report",
+        "offer_fix",
+        "done_offer"
+      ],
+      "expect_outputs": [
+        "status == 'rework'",
+        "proposed_workflow == 'review-fix'",
+        "findings.length >= 1"
+      ]
+    },
+    "live": "ветка песочницы с заведомым пропущенным await; находка с file:line, правок нет"
+  }
+}

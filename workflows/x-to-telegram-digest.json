@@ -226,7 +226,7 @@
           "topics": "string[]",
           "kept_count": "int"
         },
-        "uses": "x.score-reduce"
+        "uses": "reduce.x-to-telegram-digest.score"
       }
     },
     {

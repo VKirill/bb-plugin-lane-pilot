@@ -118,7 +118,8 @@
       "out": {
         "status": "updated|no_change",
         "commit": "string"
-      }
+      },
+      "prompt": "Update the project's life files from what this run delivered (the merged commits, the audit report, the staged knowledge): .agents/PROGRESS.md, CHANGELOG.md, plans/ and todos/ entries. Touch nothing else; status no_change when there is nothing to record."
     },
     {
       "id": "report",

@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { NodeExecutor, StepContext } from "../../src/workflow/engine";
@@ -7,6 +7,7 @@ import type { Workflow } from "../../src/workflow/schema";
 import { loadWorkflowStore } from "../../src/workflow/store";
 import type { WorkflowStore } from "../../src/workflow/store";
 import { loadWorkflow, validateWorkflow } from "../../src/workflow/validate";
+import { BUILTIN_SOURCES } from "../../src/workflow/builtin";
 import { engineOn, journalDb, ok, rows, stepStates, wf } from "./engine-helpers";
 
 /**
@@ -15,15 +16,14 @@ import { engineOn, journalDb, ok, rows, stepStates, wf } from "./engine-helpers"
  * to the spec text, both defects the validator found: review-fix passed a `note` input lp.review does not have, and the join of
  * x-to-telegram-digest names its reducer (`uses`), which the default reducer cannot be for counts.
  */
-const dir = join(__dirname, "chains");
-const sources = readdirSync(dir).filter((name) => name.endsWith(".json")).sort().map((name) => ({ name, value: JSON.parse(readFileSync(join(dir, name), "utf8")) as unknown }));
-const load = (): Promise<WorkflowStore> => loadWorkflowStore({ builtin: sources });
+const dir = join(__dirname, "../../workflows");
+const load = (): Promise<WorkflowStore> => loadWorkflowStore({ builtin: BUILTIN_SOURCES });
 
 describe("chains of the spec in JSON", () => {
   it("all load and validate against each other", async () => {
     const store = await load();
     expect(store.problems.map((item) => [item.source, item.problems.filter((problem) => problem.level === "error").map((problem) => problem.message)])).toEqual([]);
-    expect(store.list().map((item) => item.workflow.id).sort()).toEqual(["analyze-plan-execute", "lp.analyze", "lp.build", "lp.close", "lp.plan", "lp.review", "review-fix", "x-to-telegram-digest"]);
+    expect(store.list().map((item) => item.workflow.id)).toEqual(expect.arrayContaining(["analyze-plan-execute", "lp.analyze", "lp.build", "lp.close", "lp.plan", "lp.review", "review-fix", "x-to-telegram-digest"]));
   });
 
   it("carries what the spec asked of the schema", async () => {
@@ -54,7 +54,7 @@ describe("chains of the spec in JSON", () => {
     const lowered = lowerWorkflow(store.get("x-to-telegram-digest")!.workflow, store.resolve);
     const ids = lowered.nodes.map((node) => node.id);
     expect(ids).toEqual(expect.arrayContaining(["score:fan", "score:child", "score"]));
-    expect(lowered.nodes.find((node) => node.id === "score")).toMatchObject({ type: "join", parallel: "score:fan", uses: "x.score-reduce" });
+    expect(lowered.nodes.find((node) => node.id === "score")).toMatchObject({ type: "join", parallel: "score:fan", uses: "reduce.x-to-telegram-digest.score" });
     expect(lowered.edges).toContainEqual(expect.objectContaining({ from: "dedupe", to: "score:fan" }));
     expect(lowered.edges).toContainEqual(expect.objectContaining({ from: "score", to: "summarize" }));
     expect(lowered.edges).toContainEqual(expect.objectContaining({ from: "$start", to: "collect" }));
@@ -84,14 +84,6 @@ describe("chains of the spec in JSON", () => {
       workflow.edges.find((edge) => edge.from === "collect" && edge.to === "widen")!.when = "collect.count < $inputs.min_items";
       workflow.edges.find((edge) => edge.from === "ask_thin" && edge.to === "widen")!.when = "ask_thin.answer_kind == 'widen'";
     })).toContain("cycle_unbounded");
-  });
-
-  it("reports the unfinished features at start instead of running them wrong", async () => {
-    const store = await load();
-    const engine = engineOn(journalDb(), {});
-    const problems = engine.preflight(store.get("lp.review")!.workflow);
-    expect(problems.some((message) => message.includes("join policy \"majority\""))).toBe(true);
-    expect(problems.some((message) => message.includes("votes 3"))).toBe(true);
   });
 
   it("the JSON the loader reads is the same value whether it comes as text or as an object", () => {
@@ -127,7 +119,7 @@ function stubs(world: { collect: unknown[]; sent: string[]; log: string[] }) {
       action("telegram.send_rich", () => { world.sent.push("sent"); return { message_id: "stub-1", message_url: "", status: "ok" }; }),
       action("fs.write", () => ({ archive_path: ".lane-pilot/digests/x" })),
     ]),
-    "x.score-reduce": ok((ctx) => {
+    "reduce.x-to-telegram-digest.score": ok((ctx) => {
       const kept = (ctx.input.with.results as Array<{ scores: Array<{ item: unknown }> }>).flatMap((row) => row.scores.map((score) => score.item));
       return { kept, topics: ["design"], kept_count: kept.length };
     }),
