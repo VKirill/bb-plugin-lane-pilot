@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **H6: the screens follow the server instead of polling.** The server publishes `bb.realtime.publish("lp:<project>", {kind, threadId?})` and the screens re-read on `useRealtime`: `kind` is `helpers` (a child thread of a PM chat was created, went active or idle, failed, was archived or deleted, or an attempt was created or changed state; `threadId` is the PM chat), `council` (every council message, state, agenda and floor change) or `rules` (every scan step, a PM proposal or lesson, an owner decision). Bursts are coalesced into one signal per 250 ms. The 2 s council poll, the 3 s rules-scan poll and the 4 s helper-squares poll are now a 30 s fallback while the live connection is up (4 s while it is connecting or reconnecting), and every screen re-reads once when the connection comes back after a drop. A BB without `bb.realtime` keeps the fast poll. `onAttemptChanged` in `src/database.ts` is the one additive hook in `createAttempt`/`transitionAttempt` (a listener never fails the write).
+
 ## 0.1.177
 
 From the review of 2026-10-07 (bugs 1 and 7, D3/D4). Needs the core drain-fixes build (`bb.vk.instanceId`) for bug 1 in full; on an older core the oldest bound instance is drained, which is the one being replaced.

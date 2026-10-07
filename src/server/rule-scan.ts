@@ -129,6 +129,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   async function setScan(projectId: string, patch: Partial<RuleScanState>): Promise<RuleScanState> {
     const next = { ...IDLE, ...(await bb.storage.kv.get(SCAN_KEY(projectId)) as Partial<RuleScanState> | undefined), ...patch };
     await bb.storage.kv.set(SCAN_KEY(projectId), next);
+    ctx.realtime.notify(projectId, "rules");
     return next;
   }
 

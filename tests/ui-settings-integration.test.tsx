@@ -252,6 +252,23 @@ describe("native writer settings against the registered SQLite backend", () => {
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
+  it("shows a rule the PM proposed as soon as the server signals the project's rules (H6)", async () => {
+    const rules:RuleRow[] = [
+      { id:"rule_a", rule:"Create every expected output before answering.", author:"model", state:"proposed", occurrences:3, taskCount:3, examples:[], evidence:[], lastSeenAt:1, decidedAt:null },
+    ];
+    const { harness, slot } = await mountWithBackend({ rules, ruleCalls:[] });
+    try {
+      fireEvent.mouseDown(slot.getByTestId("tab-rules"), { button:0 });
+      await slot.findByTestId("rule-rule_a");
+      rules.push({ id:"rule_new", rule:"Run the focused test before the full suite.", author:"pm", state:"proposed", occurrences:1, taskCount:1, examples:[], evidence:[], lastSeenAt:2, decidedAt:null });
+      await slot.behavior.emitRealtime(`lp:${projectId}`, { kind:"council" });
+      await slot.behavior.emitRealtime("lp:proj_other", { kind:"rules" });
+      expect(slot.queryByTestId("rule-rule_new")).toBeNull();
+      await slot.behavior.emitRealtime(`lp:${projectId}`, { kind:"rules" });
+      await slot.findByTestId("rule-rule_new");
+    } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
+  });
+
   it("saves one coherent provider/model/reasoning/service-tier selection with CAS and persists it", async () => {
     const { harness, slot, saveCalls } = await mountWithBackend();
     const before = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };

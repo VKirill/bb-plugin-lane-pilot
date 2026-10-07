@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../database";
 import { VISIBLE_CATALOG } from "../ui-catalog";
+import type { Realtime } from "./realtime";
 
 /** What every server module gets instead of reaching into the closure of `plugin()`. */
 export type ServerContext = {
@@ -8,6 +9,8 @@ export type ServerContext = {
   db: LanePilotDatabase;
   log: (message: string) => void;
   isDisposed: () => boolean;
+  /** Tells open screens to re-read; absent in a bare context built by a test. */
+  realtime?: Realtime;
 };
 
 /** A setting by its catalog name, whether stored under that name or under its storage key. */

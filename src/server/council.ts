@@ -92,6 +92,8 @@ export function createCouncil(ctx: ServerCore) {
   /** Who has the floor right now, per session; not persisted, a reload starts quiet. */
   const presence = new Map<string, { seatId: string | null; since: number }>();
   const OWNER_WAIT_MS = 10 * 60_000;
+  /** The council page re-reads on this signal instead of polling every two seconds. */
+  const changed = (projectId: string) => ctx.realtime.notify(projectId, "council");
 
   /** One System One call through the run's host; null when the judge is off or fails, so the rule answers. */
   async function judge(hostId: string, state: unknown, questions: Record<string, { instructions: string; criteria: Record<string, string> }>): Promise<{ answers: Record<string, string>; confidence: Record<string, number> } | null> {
@@ -224,9 +226,9 @@ export function createCouncil(ctx: ServerCore) {
         spawnTurn: (turn: { session: CouncilSession; seat: CouncilSeat | null; round: number; prompt: string }) => spawnTurn({ ...turn, pmThreadId: input.pmThreadId, place: input.place, chair: input.chair }),
         evidence: () => evidencePack(session.projectId, input.place, session.question, input.materials),
         save: {
-          agenda: (agenda: string[], criteria: string[]) => setCouncilAgenda(db, session.id, agenda, criteria),
-          message: (message: Omit<CouncilMessage, "seq" | "councilId" | "at">) => addCouncilMessage(db, { councilId: session.id, ...message }),
-          state: (patch: Parameters<typeof setCouncilState>[2]) => setCouncilState(db, session.id, patch),
+          agenda: (agenda: string[], criteria: string[]) => { setCouncilAgenda(db, session.id, agenda, criteria); changed(session.projectId); },
+          message: (message: Omit<CouncilMessage, "seq" | "councilId" | "at">) => { const saved = addCouncilMessage(db, { councilId: session.id, ...message }); changed(session.projectId); return saved; },
+          state: (patch: Parameters<typeof setCouncilState>[2]) => { setCouncilState(db, session.id, patch); changed(session.projectId); },
         },
         isStopped: () => ctx.isDisposed() || stopRequested.has(session.id),
         workspace: input.place.workspace,
@@ -241,7 +243,7 @@ export function createCouncil(ctx: ServerCore) {
           pollOwner: (afterSeq) => listCouncilMessages(db, session.id, afterSeq).filter((message) => message.kind === "owner"),
           waitForOwner: (afterSeq) => waitForOwner(session.id, afterSeq),
           decideRequested: () => decideRequested.has(session.id),
-          presence: (seatId) => presence.set(session.id, { seatId, since: Date.now() }),
+          presence: (seatId) => { presence.set(session.id, { seatId, since: Date.now() }); changed(session.projectId); },
           maxTurns: session.maxRounds * session.seats.length,
         });
       stopRequested.delete(session.id);
@@ -283,6 +285,7 @@ export function createCouncil(ctx: ServerCore) {
     const roundsSetting = configuredSetting(settings, "council.max_rounds");
     const session = createCouncilSession(db, { id: `cncl_${randomUUID().replaceAll("-", "").slice(0, 16)}`, projectId: input.projectId, runId: input.runId, question: input.question, seats, maxRounds: input.maxRounds ?? (Number(roundsSetting) >= 1 && Number(roundsSetting) <= 6 ? Number(roundsSetting) : 3) });
     addCouncilMessage(db, { councilId: session.id, seatId: "owner", round: 0, kind: "owner", text: input.question });
+    changed(session.projectId);
     runInBackground(session, { pmThreadId: input.pmThreadId, place: { hostId: config.hostId, workspace: config.writerWorkspacePath }, chair: chairPair, materials: input.materials ?? [], mode: input.mode ?? "room", judge: input.judge ?? !(judgeSetting === false || judgeSetting === "false" || judgeSetting === "0") });
     return session;
   }
@@ -296,7 +299,9 @@ export function createCouncil(ctx: ServerCore) {
   function say(id: string, text: string): CouncilMessage | null {
     const session = getCouncilSession(db, id);
     if (!session || ["done", "failed", "stopped"].includes(session.state)) return null;
-    return addCouncilMessage(db, { councilId: id, seatId: "owner", round: session.round, kind: "owner", text });
+    const saved = addCouncilMessage(db, { councilId: id, seatId: "owner", round: session.round, kind: "owner", text });
+    changed(session.projectId);
+    return saved;
   }
 
   function requestDecision(id: string): CouncilSession | null {

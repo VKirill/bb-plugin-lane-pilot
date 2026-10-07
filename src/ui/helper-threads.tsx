@@ -1,11 +1,11 @@
-import { useEffect, useState, type CSSProperties } from "react";
-import { ThreadChat, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { useLpRealtime } from "./use-lp-realtime";
 import type { rpcContract } from "../contracts";
 import { t, type I18nKey } from "../../i18n";
 import { Icon, type IconName } from "../../components/ui/icon";
 
 export const HELPER_PANEL_ACTION = "lane-helper-thread";
-const POLL_MS = 4_000;
 
 export type HelperThread = {
   id: string;
@@ -47,20 +47,37 @@ export function helperHint(row: HelperThread): string {
   return row.phase ? `${base} (${row.phase})` : base;
 }
 
-/** The PM chat's helpers that are still working and queued tasks, re-read every few seconds. */
+/**
+ * The PM chat's helpers that are still working and queued tasks. The server signals each change (a helper thread
+ * started, finished or failed, a task queued); the slow poll only catches a signal that never arrived.
+ */
 export function useHelperThreads(threadId: string | null): HelperThreadsResult {
   const rpc = useRpc<typeof rpcContract>();
+  const projectId = useBbContext().projectId;
   const [data, setData] = useState<HelperThreadsResult>({ threads: [], queued: [] });
+  const readNow = useRef<() => void>(() => undefined);
+  // A signal names the PM chat it concerns; another chat's helpers are not this badge's business.
+  const pollMs = useLpRealtime(projectId, ["helpers"], (signal) => { if (!signal?.threadId || signal.threadId === threadId) readNow.current(); });
   useEffect(() => {
     if (!threadId) { setData({ threads: [], queued: [] }); return; }
     let alive = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const read = () => void rpc.call("list_helper_threads", { threadId }).then((result) => {
-      if (alive) setData({ threads: result.threads, queued: result.queued ?? [] });
-    }).catch(() => undefined).finally(() => { if (alive) timer = setTimeout(read, POLL_MS); });
+    let inflight = false;
+    let again = false;
+    const read = () => {
+      if (inflight) { again = true; return; }
+      inflight = true;
+      void rpc.call("list_helper_threads", { threadId }).then((result) => {
+        if (alive) setData({ threads: result.threads, queued: result.queued ?? [] });
+      }).catch(() => undefined).finally(() => {
+        inflight = false;
+        if (alive && again) { again = false; read(); }
+      });
+    };
+    readNow.current = read;
     read();
-    return () => { alive = false; if (timer) clearTimeout(timer); };
-  }, [rpc, threadId]);
+    const timer = setInterval(read, pollMs);
+    return () => { alive = false; clearInterval(timer); readNow.current = () => undefined; };
+  }, [rpc, threadId, pollMs]);
   return data;
 }
 
