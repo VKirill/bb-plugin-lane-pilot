@@ -110,6 +110,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "ops.events_limit": { label: "settingOpsEventsLimit", help: "settingOpsCliHelp", unit: "fieldUnitTasks" },
   "ops.verify_pool_size": { label: "settingOpsVerifyPool", help: "settingOpsCliHelp", unit: "fieldUnitTasks" },
   "ops.command_timeout": { label: "settingOpsCommandTimeout", help: "settingOpsCliHelp", unit: "fieldUnitSeconds" },
+  "writer.silence_nudge_min": { label: "field_s413", help: "reason_s413", unit: "fieldUnitMinutes" },
   "run.gate": { label: "settingRunGate", help: "settingRunGateHelp" },
 };
 
