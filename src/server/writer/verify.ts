@@ -9,6 +9,8 @@ import { parseReadFirstHints } from "../../stages/read-first";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../stages/run-policy";
 import { classifyWriterOutput, isOutputPath } from "../../validate-output";
 import { cleanCheckOutput } from "../../output-excerpt";
+import { redactKnown, redactSecrets } from "../../redact";
+import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../secrets";
 import type { VerifyResult } from "../../validate-output";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../../owns-paths";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../../live-folder";
@@ -102,6 +104,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
   }>> {
     const policy=runId?runPolicyFor(runId):buildRunPolicy(loadProjectSettings(db,config.projectId));
     const verificationScopes=runId?getRunSettingsScopes(db,runId):[];
+    // Secrets a check declares (Env Catalog, J2): only declared and owner-allowed ones are fetched, and only their own check gets them.
+    const declaredSecrets=[...new Set(task.verification.flatMap((command)=>command.secrets??[]))];
+    const secrets=declaredSecrets.length?await ctx.secrets.resolve({declared:declaredSecrets,allowed:allowedSecretNames(loadProjectSettings(db,config.projectId,verificationScopes))}):null;
+    if(secrets&&secretProblem(secrets).length) throw new SecretsNotReadyError(secretProblem(secrets));
     return mapBounded(task.verification,policy.pools.verification,async(command)=>{
       const release=await services.runWriterPool.acquire(`verification:${runId??config.projectId}`,policy.pools.verification);
       try {
@@ -109,12 +115,15 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       const backend=(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto";
       // The sandbox gives a command 120 s when the task names no limit; waiting only 30 s cut longer checks short.
       const timeoutSec=command.timeout_sec ?? 120;
-      const inTerminal=writerThreadId ? await runInWriterTerminal({config,writerThreadId,workspacePath:task.project_cwd,cwd:command.cwd,
+      // A check with secrets runs through the host call, not a BB terminal: a terminal's command line and screen would carry the values.
+      const env=Object.assign({},...(command.secrets??[]).map((name)=>secrets?.byName[name]??{})) as Record<string,string>;
+      const hasSecrets=Object.keys(env).length>0;
+      const inTerminal=writerThreadId&&!hasSecrets ? await runInWriterTerminal({config,writerThreadId,workspacePath:task.project_cwd,cwd:command.cwd,
         command:command.command,backend,timeoutSec}).catch((cause:unknown)=>{
           bb.log.warn(`verification terminal failed, running on the host: ${cause instanceof Error?cause.message:String(cause)}`);
           return null;
         }) : null;
-      if (inTerminal) return {command:command.command,exitCode:inTerminal.exitCode,stdout:inTerminal.stdout,stderr:inTerminal.stderr,
+      if (inTerminal) return {command:command.command,exitCode:inTerminal.exitCode,stdout:redactKnown(inTerminal.stdout),stderr:redactKnown(inTerminal.stderr),
         sandboxBackend:inTerminal.backend,policySha256:inTerminal.policySha256,workspacePath:inTerminal.workspacePath};
       const ran = await host.call("runSandboxedCommand", {
         requestedHostId: config.hostId,
@@ -123,11 +132,13 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         command:command.command,
         cwd: command.cwd,
         timeoutSec,
-      }, { hostId:config.hostId, timeoutMs:(timeoutSec + 15) * 1000, ...(options?.background ? { job:true, ...(options.jobKey ? { jobKey:options.jobKey } : {}) } : {}) }).catch((cause: unknown) => ({
+        ...(hasSecrets ? { env } : {}),
+        // A background job is kept by the host with its input: a check with secrets runs as a plain call instead.
+      }, { hostId:config.hostId, timeoutMs:(timeoutSec + 15) * 1000, ...(options?.background && !hasSecrets ? { job:true, ...(options.jobKey ? { jobKey:options.jobKey } : {}) } : {}) }).catch((cause: unknown) => ({
         hostId: config.hostId,
         exitCode: 1,
         stdout: "",
-        stderr: cause instanceof Error ? cause.message : String(cause),
+        stderr: hasSecrets ? redactSecrets(cause instanceof Error ? cause.message : String(cause), Object.values(env)) : cause instanceof Error ? cause.message : String(cause),
         backend:null as "macos-seatbelt"|"linux-bubblewrap"|null,
         policySha256:null as string|null,
         workspacePath:task.project_cwd,
@@ -137,7 +148,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         return {command:command.command,exitCode:1,stdout:"",stderr:"sandbox result host did not match the configured host",
           sandboxBackend:null,policySha256:null,workspacePath:task.project_cwd};
       }
-      return {command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?ran.stdout:"",stderr:typeof ran.stderr==="string"?ran.stderr:"",
+      // The host masks them already; a second pass here costs nothing and covers an older host.
+      // Any check also loses the values this process handed to another run (redactKnown).
+      const mask=(text:string)=>redactKnown(hasSecrets?redactSecrets(text,Object.values(env)):text);
+      return {command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?mask(ran.stdout):"",stderr:typeof ran.stderr==="string"?mask(ran.stderr):"",
         sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,...("hostError" in ran?{hostError:true as const}:{})};
       },(line)=>bb.log.info(line));
       } finally { release(); }
@@ -320,7 +334,14 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       }).catch(() => null);
       contents[rel] = read ? stringAt(read, "content") : null;
     }
-    const verifies = await runVerification(input.config, input.task, input.runId, input.writerThreadId);
+    let verifies:Awaited<ReturnType<typeof runVerification>>;
+    try { verifies = await runVerification(input.config, input.task, input.runId, input.writerThreadId); }
+    catch (cause) {
+      // A secret the checks need went away or was taken off the allow list: the task waits for it, no attempt is spent.
+      if (!(cause instanceof SecretsNotReadyError)) throw cause;
+      recordGateEvaluation(db,{...input,gate:"verification",status:"skipped",input:JSON.stringify(input.task),summary:{reason:cause.message}});
+      return { status:"validation_failed", reason:cause.message, output:outputText(output), produced:checkedPaths, verification:[], diffKey };
+    }
     recordGateEvaluation(db,{...input,gate:"verification",status:verifies.length===0?"skipped":verifies.every((row)=>row.exitCode===0)?"passed":"failed",
       input:JSON.stringify(input.task),summary:{commandCount:verifies.length,failedCount:verifies.filter((row)=>row.exitCode!==0).length}});
     // A failing check's full output goes under the task folder logs/, so the retry reads it instead of rerunning blind.

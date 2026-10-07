@@ -5,6 +5,7 @@
  * - harness: Lane Pilot's own fault; the task is parked and restarts by itself once a fix ships.
  * - infra: the machine (disk, git lock, host offline); parked and retried with a backoff.
  * - contract, judgment: the PM's to fix or answer; never retried as is.
+ * - contract also holds a task that waits for a secret (`waiting_secret:NAME`, Env Catalog): uncharged and restarted when the secret is saved.
  * - budget: a run hit run.max_*; uncharged, not parked, not retried.
  * - limit: the writer's provider takes no work now (plan, quota, credits, or its breaker is open); uncharged, the task
  *   moves down the writer chain at once.
@@ -39,6 +40,9 @@ const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run s
 const NO_GIT = /not a git repository|no-git mode/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const BUDGET = /^run_budget_exceeded:/;
+/** A task waits for an Env Catalog secret its checks declare (J6): the PM's to ask the owner for, never the writer's fault. */
+const WAITING_SECRET = /^waiting_secret:/;
+export const isWaitingSecret = (reason:string | null | undefined):boolean => WAITING_SECRET.test(reason ?? "");
 /** The task spent its overall writer-attempt budget (retry-budget.ts): ends for the PM, never parked or redriven. */
 const RETRY_BUDGET = /^retry_budget_exhausted:/;
 const LIMIT = /writer_provider_limit:|^writer_provider_unavailable:breaker_open/;
@@ -55,7 +59,7 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   if (BUDGET.test(text) || RETRY_BUDGET.test(text)) return "budget";
   if (LIMIT.test(text)) return "limit";
   if (SILENT.test(text)) return "provider";
-  if (NO_GIT.test(text)) return "contract";
+  if (NO_GIT.test(text) || WAITING_SECRET.test(text)) return "contract";
   if (MISLABELED_MERGE.test(text)) return "harness";
   if (MERGE.test(text)) return "merge";
   if (INFRA.test(text) || isEnvironmentReason(text)) return "infra";
@@ -119,6 +123,7 @@ export function nextStep(state:string, reason:string | null | undefined):string 
   if (["queued", "running", "spawn_requested", "validating"].includes(state)) return "wait: the writer is still on it";
   if (NO_GIT.test(reason ?? "")) return "the folder has no git and does not fit the no-git mode (too many files or owned bytes): put it under git, or narrow owns_paths, then dispatch again";
   if (RETRY_BUDGET.test(reason ?? "")) return "the task spent its overall retry budget: read the failures, fix the plan or contract and dispatch it again as a new task";
+  if (WAITING_SECRET.test(reason ?? "")) return "waiting for an Env Catalog secret: call env_request for each name in the reason (or ask the owner to add it to the setting Secrets checks may use); the task restarts by itself once it is saved, no attempt is spent";
   switch (failureClass(state, reason)) {
     case "judgment": return "answer_writer: answer its question with lane_pilot_answer_writer (taskId, answer); the writer continues in its thread";
     case "harness": case "infra": return "parked: restarts by itself once the fault clears; do nothing";

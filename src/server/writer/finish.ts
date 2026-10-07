@@ -537,10 +537,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       let integration: { status:string; commit:string|null; conflicts:string[]; rebased?:boolean } | null = null;
       if (bound?.workspace_path && basePath && shouldMergeAttemptWorktree(bound.workspace_path, basePath)) {
         const checkSettings = loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId));
-        const replayChecks = input.task.verification.length ? {
+        const replayChecks = input.task.verification.some((command) => !command.secrets?.length) ? {
           workspacePath:input.task.project_cwd,
           backend:(checkSettings["sandbox.backend"] as "auto" | "macos-seatbelt" | "linux-bubblewrap" | undefined) ?? "auto",
-          commands:input.task.verification.slice(0, 20).map((command) => ({ command:command.command, cwd:command.cwd, timeoutSec:command.timeout_sec ?? 120 })),
+          // A check with secrets cannot run on the host's replay (it has no Env Catalog); the post-merge check on main still runs it.
+          commands:input.task.verification.filter((command) => !command.secrets?.length).slice(0, 20).map((command) => ({ command:command.command, cwd:command.cwd, timeoutSec:command.timeout_sec ?? 120 })),
         } : null;
         const replayMs = (replayChecks?.commands ?? []).reduce((sum, command) => sum + 2 * command.timeoutSec * 1000, 0);
         const integrate = () => host.call("gitIntegrate", {

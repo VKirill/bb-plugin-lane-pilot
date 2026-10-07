@@ -60,7 +60,9 @@ export function compactContract(task:TaskV2, readListShown:boolean):Record<strin
     if (value == null || value === "" || (Array.isArray(value) && !value.length)) continue;
     if (key === "verification" && Array.isArray(value)) {
       out[key] = value.map((command) => {
-        const row = command as { command?:string; cwd?:string; timeout_sec?:number };
+        const row = command as { command?:string; cwd?:string; timeout_sec?:number; secrets?:string[] };
+        // Names of the secrets a check gets stay visible (never their values); the rest collapses to the command.
+        if (row.secrets?.length) return row.cwd && row.cwd !== task.project_cwd ? row : { command:row.command, secrets:row.secrets };
         return row.cwd && row.cwd !== task.project_cwd ? row : row.command;
       });
       continue;
