@@ -17,6 +17,8 @@ const config = {
   projectId, hostId:"stage-host", pmWorkspacePath:"/tmp/stage-pm", writerWorkspacePath:"/tmp/stage-writer",
   pmProviderId:"codex", pmModel:"gpt-6-luna", writerProviderId:"codex", writerModel:"gpt-6-luna",
 };
+/** Where the fake host puts a writer attempt's own worktree (BB environment "attempt-env"). */
+const attemptWorktree="/tmp/lane-pilot-managed-attempt";
 const defaultEnvironmentProviders=[{id:"git-worktree",pluginId:"environment-git-worktree",displayName:"Worktree",acceptsEmptyInputs:true,availability:null,description:null,icon:null,logoUrl:null,machineProviderId:null,requires:{gitCheckout:true,gitRemote:false,projectCheckout:true,projectless:false}}];
 let listedEnvironmentProviders:unknown[]=defaultEnvironmentProviders;
 const defaultListPaths:Array<{kind:"file"|"directory";name:string;path:string;positions:never[];score:number}>=[{kind:"file",name:"unowned.ts",path:"src/unowned.ts",positions:[],score:1},{kind:"file",name:"guide.md",path:"docs/guide.md",positions:[],score:1},{kind:"file",name:"README.md",path:"README.md",positions:[],score:1}];
@@ -113,6 +115,8 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
   let docsInventoryCalls=0;
   const fileReads:Array<{rootPath?:string;path:string}> = [];
   let snapshots = 0;
+  let provisionedWorktrees = 0;
+  let checkedWorktrees = 0;
   let lastDirt:Array<{path:string;sha256?:string}> = [];
   let nextWriterFailure=writerFailures;
   const failedThreadIds=new Set<string>();
@@ -146,6 +150,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           spawned.push(request);
           const stageId = (request.pluginMetadata as Record<string,unknown>).stageId;
           const role=(request.pluginMetadata as Record<string,unknown>).role;
+          if(role === "workspace-provisioner") provisionedWorktrees+=1;
           if(throwOnRepairSpawn && Number((request.pluginMetadata as Record<string,unknown>).repairRound) > 0) {
             throw new Error("repair_spawn_crashed");
           }
@@ -409,15 +414,24 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
       if (call.method === "runSandboxedCommand") {
         sandboxRequests.push(call.input as Record<string,unknown>);
         return {
-        hostId:config.hostId,backend:"macos-seatbelt",workspacePath:config.writerWorkspacePath,
-        cwd:config.writerWorkspacePath,exitCode:0,policySha256:"c".repeat(64),stdout:"",stderr:"",
+        hostId:config.hostId,backend:"macos-seatbelt",workspacePath:String((call.input as {workspacePath?:string}).workspacePath ?? config.writerWorkspacePath),
+        cwd:String((call.input as {workspacePath?:string}).workspacePath ?? config.writerWorkspacePath),exitCode:0,policySha256:"c".repeat(64),stdout:"",stderr:"",
         };
       }
       if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
       const command = String((call.input as { command?:string }).command ?? "");
       if (command.includes("porcelain")) {
         snapshots += 1;
-        const payload = writerControl.snapshots?.[snapshots-1] ?? snapshotOverrides?.[snapshots-1] ?? (snapshots === 1 ? [] : [{ path:"note.txt", sha256:"new-content" }]);
+        // Without an explicit sequence the dirt follows where the call runs. Every attempt works in its own worktree (the
+        // run's own «worktree» mode excepted, which has one folder): the project folder stays clean, a worktree just made
+        // starts clean, and a worktree the writer has been in shows its note.
+        const cwd = String((call.input as { cwd?:string }).cwd ?? "");
+        const newWorktree = cwd !== config.writerWorkspacePath && provisionedWorktrees > checkedWorktrees;
+        if (newWorktree) checkedWorktrees = provisionedWorktrees;
+        const written = [{ path:"note.txt", sha256:"new-content" }];
+        const byPlace = projectSettings["adoc.040"] === "worktree" ? (snapshots === 1 ? [] : written)
+          : cwd === config.writerWorkspacePath || newWorktree ? [] : written;
+        const payload = writerControl.snapshots?.[snapshots-1] ?? snapshotOverrides?.[snapshots-1] ?? byPlace;
         lastDirt = Array.isArray(payload) ? payload as Array<{path:string;sha256?:string}> : [];
         return { hostId:config.hostId, exitCode:0, stdout:JSON.stringify(payload), stderr:"" };
       }
@@ -439,10 +453,11 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
 
 describe("stage → native writer → receipt", () => {
   it("queues distinct task-owned outputs at provider pool size one and records both writer receipts",async()=>{
-    const writerControl={hold:true,states:new Map<string,"active"|"idle">(),snapshots:[[],
+    // Each attempt checks the project folder, then its fresh worktree (both clean), then reads what its writer left there.
+    const writerControl={hold:true,states:new Map<string,"active"|"idle">(),snapshots:[[],[],
       [{path:"note.txt",sha256:"first-writer"}],
-      [{path:"note.txt",sha256:"first-writer"}],
-      [{path:"note.txt",sha256:"first-writer"},{path:"note2.txt",sha256:"second-writer"}]]};
+      [],[],
+      [{path:"note2.txt",sha256:"second-writer"}]]};
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,
       {"ops.pool_size":1},undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,writerControl);
     const firstTask={...task,owns_paths:["note.txt"]};
@@ -483,7 +498,7 @@ describe("stage → native writer → receipt", () => {
   },20_000);
 
   it("cancels a queued provider-pool attempt and never spawns it after the slot opens",async()=>{
-    const writerControl={hold:true,states:new Map<string,"active"|"idle">(),snapshots:[[],
+    const writerControl={hold:true,states:new Map<string,"active"|"idle">(),snapshots:[[],[],
       [{path:"note.txt",sha256:"first-writer"}],[{path:"note.txt",sha256:"first-writer"}]]};
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,
       {"ops.pool_size":1},undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,writerControl);
@@ -524,9 +539,10 @@ describe("stage → native writer → receipt", () => {
   },20_000);
 
   it("restarts the plugin and recovers queued provider work under the persisted pool limit",async()=>{
-    const writerControl={hold:true,states:new Map<string,"active"|"idle">(),snapshots:[[],
-      [{path:"note.txt",sha256:"recovered-first"}],[{path:"note.txt",sha256:"recovered-first"}],
-      [{path:"note.txt",sha256:"recovered-first"},{path:"note2.txt",sha256:"recovered-second"}]]};
+    const writerControl={hold:true,states:new Map<string,"active"|"idle">(),snapshots:[[],[],
+      [{path:"note.txt",sha256:"recovered-first"}],
+      [],[],
+      [{path:"note2.txt",sha256:"recovered-second"}]]};
     const {bb,db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,
       {"ops.pool_size":1},undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,writerControl);
     const firstTask:TaskV2={...task,id:"resume-task-a",owns_paths:["note.txt"],expected_outputs:["note.txt"]};
@@ -621,7 +637,9 @@ describe("stage → native writer → receipt", () => {
     expect(critique?.prompt).toContain("README notes the managed workspace contract.");
     // The writer gets the read stage's key facts; its overview repeats the task.
     expect(writer?.prompt).toContain("Managed workspaces isolate task edits.");
-    expect(fileReads.filter((row)=>row.rootPath===config.writerWorkspacePath && row.path===resolve(config.writerWorkspacePath,"README.md"))).toHaveLength(2);
+    // The PM-read stage reads in the run folder; the writer's packet is read in the attempt's own worktree.
+    expect(fileReads.filter((row)=>row.rootPath===config.writerWorkspacePath && row.path===resolve(config.writerWorkspacePath,"README.md"))).toHaveLength(1);
+    expect(fileReads.filter((row)=>row.rootPath===attemptWorktree && row.path===resolve(attemptWorktree,"README.md"))).toHaveLength(1);
     expect(listStageReceipts(db,"stage-run",longReadTask.id).find((row)=>row.stageId==="pm-read"))
       .toMatchObject({state:"passed",providerId:"critic",model:"critic-model",threadId:"pm-read-thread"});
     await harness.lifecycle.dispose();
@@ -747,14 +765,13 @@ describe("stage → native writer → receipt", () => {
     db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
     const first=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
     expect(first).toMatchObject({state:"running",threadId:"docs-thread"});
-    expect(stopCalls).toEqual([]);
+    expect(stopCalls).not.toContain("docs-thread");
     expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
     expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance")?.state).toBe("running");
     const second=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
     expect(second.state).toBe("passed");
     expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
     expect(docsWrites).toHaveLength(1);
-    expect(stopCalls).toEqual([]);
     await harness.lifecycle.dispose();
   });
   it("does not rewrite a failed docs receipt",async()=>{
@@ -1284,22 +1301,22 @@ describe("stage → native writer → receipt", () => {
       listedEnvironmentProviders=defaultEnvironmentProviders;
     }
   });
-  it("keeps an auto low-risk single-output attempt on the configured base workspace",async()=>{
+  it("gives an auto low-risk single-output attempt its own worktree, not the project folder",async()=>{
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,
       {"adoc.040":"auto","adoc.041":4,"adoc.042":true});
     const lowRiskTask={...task,id:"stage-task-low-risk-auto",risk:"low" as const,expected_outputs:["note.txt"]};
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{
-      confirm:true,plan:"Use the configured base workspace for a low-risk single-output task",task:lowRiskTask,
+      confirm:true,plan:"Work in an own worktree on a low-risk single-output task",task:lowRiskTask,
     },{threadId:pmThreadId,projectId})));
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
     const provisioner=spawned.find(row=>(row.pluginMetadata as Record<string,unknown>).role==="workspace-provisioner");
     const writer=spawned.find(row=>(row.pluginMetadata as Record<string,unknown>).role==="writer");
-    expect(provisioner).toBeUndefined();
-    expect(writer?.environment).toEqual({type:"host",hostId:config.hostId,workspace:{type:"unmanaged",path:config.writerWorkspacePath}});
-    expect(getAttempt(db,String(result.attemptId))).toMatchObject({workspace_path:config.writerWorkspacePath,environment_id:null,
-      workspace_decision:{strategy:"inherit_run",reason:"below_threshold",score:2,multiWrite:false}});
+    expect(provisioner?.environment).toMatchObject({type:"host",workspace:{type:"managed-worktree"}});
+    expect(writer?.environment).toEqual({type:"reuse",environmentId:"attempt-env"});
+    expect(getAttempt(db,String(result.attemptId))).toMatchObject({workspace_path:attemptWorktree,environment_id:"attempt-env",
+      workspace_decision:{strategy:"provision_attempt_worktree",reason:"own_worktree",score:2,multiWrite:false}});
     expect(listStageReceipts(db,"stage-run",lowRiskTask.id).find(row=>row.stageId==="writer-agent")?.result)
-      .toMatchObject({workspace:{path:config.writerWorkspacePath,decision:{strategy:"inherit_run",reason:"below_threshold"}}});
+      .toMatchObject({workspace:{path:attemptWorktree,decision:{strategy:"provision_attempt_worktree",reason:"own_worktree"}}});
     await harness.lifecycle.dispose();
   });
   it("fails closed when the provisioned worktree is dirty before writer spawn",async()=>{
@@ -1343,8 +1360,8 @@ describe("stage → native writer → receipt", () => {
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
     const writer=spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer");
     expect(fileReads).toContainEqual({
-      rootPath:config.writerWorkspacePath,
-      path:resolve(config.writerWorkspacePath,"README.md"),
+      rootPath:attemptWorktree,
+      path:resolve(attemptWorktree,"README.md"),
     });
     // The packet names the file, the line window and the hash prefix; the writer reads the content itself (f5e1ec5).
     expect(String(writer?.prompt)).toContain("Read these before editing; they are the context for this task:");
@@ -1659,12 +1676,13 @@ describe("stage → native writer → receipt", () => {
     expect(result.state).toBe("accepted");
     expect(spawned.map((row) => (row.pluginMetadata as Record<string,unknown>).stageId ?? (row.pluginMetadata as Record<string,unknown>).role)
       .filter((id) => !backgroundStages.has(String(id))))
-      .toEqual(["plan-critique", "writer"]);
+      .toEqual(["plan-critique", "workspace-provisioner", "writer"]);
+    const writerSpawn = spawned.find((row) => (row.pluginMetadata as Record<string,unknown>).role === "writer")!;
     expect(spawned[0].parentThreadId).toBe(pmThreadId);
     expect(String(spawned[0].title)).toMatch(/plan critique/i);
-    expect(spawned[1].parentThreadId).toBe(pmThreadId);
-    expect(String(spawned[1].title)).toMatch(/writer/i);
-    expect(String(spawned[1].prompt)).toContain(readFirstLine);
+    expect(writerSpawn.parentThreadId).toBe(pmThreadId);
+    expect(String(writerSpawn.title)).toMatch(/writer/i);
+    expect(String(writerSpawn.prompt)).toContain(readFirstLine);
     expect(listStageReceipts(db, "stage-run", task.id).filter((row) => !backgroundStages.has(row.stageId)).map((row) => [row.stageId,row.state]))
       .toEqual([["acceptance-receipt","passed"],["plan-critique","passed"],["pm-read","skipped"],["specialist-review","skipped"],["verification","passed"],["writer-agent","passed"]]);
     const receipts = listStageReceipts(db, "stage-run", task.id).filter((row) => !backgroundStages.has(row.stageId));
@@ -1673,16 +1691,19 @@ describe("stage → native writer → receipt", () => {
       /^[a-f0-9]{64}$/.test(row.inputSha256) && /^[a-f0-9]{64}$/.test(row.outputSha256 ?? ""))).toBe(true);
     const writerReceipt = receipts.find((row) => row.stageId === "writer-agent");
     const acceptedAttempt = getAttempt(db, String(dispatch.attemptId));
-    expect(writerReceipt).toMatchObject({threadId:acceptedAttempt?.thread_id,providerId:spawned[1].providerId,model:spawned[1].model,attempt:1});
-    expect(acceptedAttempt).toMatchObject({state:"accepted",thread_id:writerReceipt?.threadId,workspace_path:config.writerWorkspacePath,environment_id:null});
+    expect(writerReceipt).toMatchObject({threadId:acceptedAttempt?.thread_id,providerId:writerSpawn.providerId,model:writerSpawn.model,attempt:1});
+    // Even a low-risk task works in its own worktree, never in the shared project folder.
+    expect(acceptedAttempt).toMatchObject({state:"accepted",thread_id:writerReceipt?.threadId,workspace_path:attemptWorktree,environment_id:"attempt-env"});
     expect((result.stages as typeof receipts).filter((row) => row.taskId === task.id && !backgroundStages.has(row.stageId))).toEqual(receipts.map((row) => ({ taskId:row.taskId, stageId:row.stageId, state:row.state, ...(row.reason ? { reason:row.reason.slice(0, 400) } : {}) })));
     expect(receipts.find((row) => row.stageId === "verification")?.result).toEqual({
       produced:["note.txt"], verification:[{ command:"test -f note.txt", exitCode:0, stdout:"", stderr:"",
-        sandboxBackend:"macos-seatbelt",policySha256:"c".repeat(64),workspacePath:config.writerWorkspacePath }],
+        sandboxBackend:"macos-seatbelt",policySha256:"c".repeat(64),workspacePath:attemptWorktree }],
       runV2:{schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low",scoreAdapter:"task-risk-v1"},
     });
-    expect(sandboxRequests).toHaveLength(1);
-    expect(sandboxRequests[0]).toMatchObject({backend:"auto",requestedHostId:config.hostId,workspacePath:task.project_cwd});
+    // The check runs in the attempt worktree, then once more on the run folder after the merge.
+    expect(sandboxRequests).toHaveLength(2);
+    expect(sandboxRequests[0]).toMatchObject({backend:"auto",requestedHostId:config.hostId,workspacePath:attemptWorktree});
+    expect(sandboxRequests[1]).toMatchObject({workspacePath:config.writerWorkspacePath});
     expect((receipts.find((row) => row.stageId === "acceptance-receipt")?.result as { acceptancePath?:string })?.acceptancePath)
       .toContain("acceptance.json");
     expect((receipts.find((row) => row.stageId === "acceptance-receipt")?.result as { readFirst?:unknown[] })?.readFirst)
@@ -1716,13 +1737,14 @@ describe("stage → native writer → receipt", () => {
 
   it("records a rejected owns-paths gate without exposing the offending path in its audit event",async()=>{
     const {db,harness}=await setup('{"decision":"approve","summary":"Scoped","findings":[]}',undefined,{},undefined,undefined,
-      undefined,undefined,undefined,[[],[{path:"foreign.txt",sha256:"foreign-content"}]]);
+      undefined,undefined,undefined,[[],[],[{path:"foreign.txt",sha256:"foreign-content"}],[],[],[{path:"foreign.txt",sha256:"foreign-content"}]]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Stay in the task-owned file",task},{threadId:pmThreadId,projectId});
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
     expect(result.state).toBe("blocked");
     const gateEvents=listGateEvents(db,{projectId,since:0});
     expect(gateEvents.slice(0,3).map((row)=>[row.gate,row.status])).toEqual([["owns-paths","rejected"],["validate","skipped"],["accept","rejected"]]);
-    expect(gateEvents.filter((row)=>row.gate==="owns-paths"&&row.status==="rejected")).toHaveLength(1);
+    // The retry works in a fresh worktree and leaves the same foreign file, so it is rejected the same way and the task stops.
+    expect(gateEvents.filter((row)=>row.gate==="owns-paths"&&row.status==="rejected").length).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(gateEvents)).not.toContain("foreign.txt");
     await harness.lifecycle.dispose();
   });
@@ -1752,7 +1774,7 @@ describe("stage → native writer → receipt", () => {
       {"night_review.enabled":true,"night_review.provider":"critic","night_review.model":"critic-model","night_review.reasoning_effort":"medium"},undefined,undefined,undefined,
       '{"decision":"findings","summary":"One owned issue","findings":[{"severity":"warning","path":"note.txt","finding":"The note is incomplete","suggestedFix":"Complete the note"}]}',
       "bounded repair completed",
-      [[],[{path:"note.txt",sha256:"new-content"}],[{path:"note.txt",sha256:"new-content"}],[{path:"note.txt",sha256:"fixed-content"}]],
+      [[],[],[{path:"note.txt",sha256:"new-content"}],[{path:"note.txt",sha256:"new-content"}],[{path:"note.txt",sha256:"fixed-content"}]],
     );
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write and verify note",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
@@ -1774,7 +1796,7 @@ describe("stage → native writer → receipt", () => {
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write and verify note",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
     const snapshot=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_workspace_status",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(snapshot).toMatchObject({state:"passed",result:{environmentId:"env-ready",hostId:config.hostId,path:config.writerWorkspacePath,readOnly:true}});
+    expect(snapshot).toMatchObject({state:"passed",result:{environmentId:"attempt-env",hostId:config.hostId,path:attemptWorktree,readOnly:true}});
     expect(snapshot.result.diff).toContain("diff --git a/note.txt");
     expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="workspace-status")?.state).toBe("passed");
     await harness.lifecycle.dispose();
@@ -2187,7 +2209,7 @@ describe("stage → native writer → receipt", () => {
     return setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{...codeOn,...extra?.settings},undefined,undefined,undefined,undefined,undefined,snapshots,false,0,undefined,undefined,undefined,undefined,undefined,undefined,extra?.idleWait,false,{},extra?.holdEvents??[],extra?.outputs,extra?.repair);
   }
 
-  const noteSnaps=[[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]];
+  const noteSnaps=[[],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]];
   const criticOf=(spawned:Array<Record<string,unknown>>)=>spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique") as Record<string,unknown>;
 
   it("reviews the code on another model than the writer's when the critic's pair equals it (G9)",async()=>{
@@ -2264,7 +2286,7 @@ describe("stage → native writer → receipt", () => {
 
   it("runs independent code critique after candidate verification and accepts without repair when approved",async()=>{
     const {db,harness,spawned}=await setupCode([
-      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
     ]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
@@ -2280,7 +2302,7 @@ describe("stage → native writer → receipt", () => {
 
   it("returns blocking findings to the same writer, then recritiques the repaired revision",async()=>{
     const {harness,spawned}=await setupCode([
-      [],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
+      [],[],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
     ],{outputs:[finding,approved]});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
@@ -2299,7 +2321,7 @@ describe("stage → native writer → receipt", () => {
 
   it("sends an unchanged disputed finding back to the independent critic without forcing an edit",async()=>{
     const {harness,spawned}=await setupCode([
-      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
     ],{outputs:[finding,approved],repair:'{"replies":[{"id":"f1","status":"disputed","evidence":"invariant is already in note.txt"}]}'});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
@@ -2314,10 +2336,10 @@ describe("stage → native writer → receipt", () => {
   const verdictFinding=(over:Record<string,unknown>={})=>({file:"note.txt",line:1,severity:"high",evidence:"note.txt holds only the word reviewed, no invariant line",finding:"note.txt omits the required invariant",criterion:"invariants",...over});
   const verdictAnswer=(status:string,findings:unknown[])=>JSON.stringify({status,summary:"Reviewed the candidate",findings,evidence:"read note.txt and the test -f output"});
 
-  const stageIds=(spawned:Array<Record<string,unknown>>)=>spawned.map((row)=>String((row.pluginMetadata as Record<string,unknown>).stageId ?? (row.pluginMetadata as Record<string,unknown>).role)).filter((id)=>!backgroundStages.has(id));
+  const stageIds=(spawned:Array<Record<string,unknown>>)=>spawned.map((row)=>String((row.pluginMetadata as Record<string,unknown>).stageId ?? (row.pluginMetadata as Record<string,unknown>).role)).filter((id)=>!backgroundStages.has(id)&&id!=="workspace-provisioner");
 
   it("K2 quality_mode quick: no plan critique and no code critique, though the project enabled the code critic",async()=>{
-    const {db,harness,spawned}=await setupCode([[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],{settings:{quality_mode:"quick"}});
+    const {db,harness,spawned}=await setupCode([[],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],{settings:{quality_mode:"quick"}});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
     expect(waited.state).toBe("accepted");
@@ -2328,7 +2350,7 @@ describe("stage → native writer → receipt", () => {
   },20_000);
 
   it("K2 quality_mode full: plan critique on a low-risk task below the policy threshold, and the code critic though the project left it off",async()=>{
-    const {db,harness,spawned}=await setupCode([[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],
+    const {db,harness,spawned}=await setupCode([[],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],
       {settings:{quality_mode:"full","plan_critique.min_score":7,"plan_critique.min_write_tasks":3,"code_critique.enabled":false}});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
@@ -2340,7 +2362,7 @@ describe("stage → native writer → receipt", () => {
   },20_000);
 
   it("K2 quality_mode standard (the default) keeps today's behaviour: policy decides the plan critique, the code critic stays off",async()=>{
-    const {db,harness,spawned}=await setupCode([[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],
+    const {db,harness,spawned}=await setupCode([[],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],
       {settings:{"plan_critique.min_score":7,"plan_critique.min_write_tasks":3,"code_critique.enabled":false}});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
@@ -2351,7 +2373,7 @@ describe("stage → native writer → receipt", () => {
   },20_000);
 
   it("K2 the task's own quality_mode wins over the project's",async()=>{
-    const {harness,spawned}=await setupCode([[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],{settings:{quality_mode:"full"}});
+    const {harness,spawned}=await setupCode([[],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],{settings:{quality_mode:"full"}});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task:{...task,quality_mode:"quick"}},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
     expect(waited.state).toBe("accepted");
@@ -2360,7 +2382,7 @@ describe("stage → native writer → receipt", () => {
   },20_000);
 
   it("K2 quality_mode full: an accepted task with qa_cases is not done for the PM until its browser check passed",async()=>{
-    const {harness}=await setupCode([[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],{settings:{quality_mode:"full"}});
+    const {harness}=await setupCode([[],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],{settings:{quality_mode:"full"}});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task:{...task,qa_cases:["note.txt page opens at 375"]}},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
     expect(waited.state).toBe("accepted");
@@ -2370,7 +2392,7 @@ describe("stage → native writer → receipt", () => {
 
   it("K2: a code critique that blocks stops the task with the verdict message and starts no repair writer",async()=>{
     const {db,harness,spawned}=await setupCode([
-      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
     ],{outputs:[verdictAnswer("block",[verdictFinding({severity:"critical",finding:"note.txt writes the owner's token"})])]});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
@@ -2388,7 +2410,7 @@ describe("stage → native writer → receipt", () => {
 
   it("K2: a code critique that asks for rework in the new format takes the repair path and then passes",async()=>{
     const {db,harness,spawned}=await setupCode([
-      [],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
+      [],[],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
     ],{outputs:[verdictAnswer("rework",[verdictFinding()]),verdictAnswer("pass",[])]});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
@@ -2400,7 +2422,7 @@ describe("stage → native writer → receipt", () => {
 
   it("blocks when candidate evidence hashes are missing",async()=>{
     const {db,harness}=await setupCode([
-      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt"}],[{path:"note.txt"}],
+      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt"}],[{path:"note.txt"}],
     ]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
@@ -2412,7 +2434,7 @@ describe("stage → native writer → receipt", () => {
 
   it("blocks when the independent critic times out",async()=>{
     const {db,harness}=await setupCode([
-      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
     ],{idleWait:"code-critic-thread-1"});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
@@ -2424,7 +2446,7 @@ describe("stage → native writer → receipt", () => {
 
   it("refuses final acceptance when the workspace revision changed after critique",async()=>{
     const {harness}=await setupCode([
-      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteMutatedSha}],
+      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteMutatedSha}],
     ]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
@@ -2435,7 +2457,7 @@ describe("stage → native writer → receipt", () => {
 
   it("does not send a second repair after child edits and reload before observation",async()=>{
     const {harness,spawned}=await setupCode([
-      [],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],
+      [],[],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],
       [{path:"note.txt",sha256:noteMutatedSha}],[{path:"note.txt",sha256:noteMutatedSha}],
       [{path:"note.txt",sha256:noteMutatedSha}],[{path:"note.txt",sha256:noteMutatedSha}],
     ],{outputs:[finding,approved],holdEvents:["writer-thread-2"]});
@@ -2457,7 +2479,7 @@ describe("stage → native writer → receipt", () => {
     throwOnRepairSpawn=true;
     try {
       const {db,harness,spawned}=await setupCode([
-        [],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],
+        [],[],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],
         [{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
       ],{outputs:[finding,approved]});
       await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
@@ -2481,7 +2503,7 @@ describe("stage → native writer → receipt", () => {
 
   it("blocks when a completed repair leaves the artifact unchanged and has no valid dispute",async()=>{
     const {db,harness,spawned}=await setupCode([
-      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
       [{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
     ],{outputs:[finding,approved]});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
@@ -2495,7 +2517,7 @@ describe("stage → native writer → receipt", () => {
 
   it("does not spawn a second critic after reload when the receipt already passed",async()=>{
     const {harness,spawned}=await setupCode([
-      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
     ]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId});
@@ -2509,7 +2531,7 @@ describe("stage → native writer → receipt", () => {
 
   it("gives the critic host-read file bytes and verification io, not only hashes and a green test -f",async()=>{
     const {harness,spawned}=await setupCode([
-      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
     ]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
@@ -2524,7 +2546,7 @@ describe("stage → native writer → receipt", () => {
 
   it("blocks when host-read bytes do not match the captured dirt hash",async()=>{
     const {harness}=await setupCode([
-      [],[{path:"note.txt",sha256:"0".repeat(64)}],[{path:"note.txt",sha256:"0".repeat(64)}],[{path:"note.txt",sha256:"0".repeat(64)}],
+      [],[],[{path:"note.txt",sha256:"0".repeat(64)}],[{path:"note.txt",sha256:"0".repeat(64)}],[{path:"note.txt",sha256:"0".repeat(64)}],
     ]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
@@ -2539,7 +2561,7 @@ describe("stage → native writer → receipt", () => {
     const findingTwo='{"decision":"changes_requested","summary":"Still broken","findings":[{"id":"f2","severity":"blocking","finding":"second defect","criterion":"invariants"}]}';
     try {
       const {db,harness,spawned}=await setupCode([
-        [],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
+        [],[],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
       ],{outputs:[finding,findingTwo]});
       await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
       const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));

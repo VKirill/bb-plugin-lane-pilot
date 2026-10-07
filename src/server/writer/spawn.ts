@@ -142,11 +142,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const minScoreValue = settings["adoc.041"];
       const minScore = minScoreValue === undefined || minScoreValue === null || minScoreValue === "" ? 4 : Number(minScoreValue);
       const multiWriteEnabled = settings["adoc.042"] === undefined ? true : settings["adoc.042"] === true || settings["adoc.042"] === 1 || settings["adoc.042"] === "true";
-      // A native Lane chat gives every writer attempt its own worktree (in_place is gone, decision 2026-10-06):
-      // parallel writers never share a checkout, and acceptance merges each one into main.
+      // Every writer attempt, of a native Lane chat or a dispatched task of any risk, gets its own worktree (in_place is
+      // gone, decision 2026-10-06): parallel writers never share a checkout, and acceptance merges each one into main.
       const nativeRun = getRun(db, input.runId)?.kind === "cli";
       const routed = resolveAttemptWorkspace({mode:workspaceMode,risk:input.task.risk,
-        expectedOutputCount:input.task.expected_outputs.length,minScore:nativeRun&&workspaceMode==="auto"?0:minScore,multiWriteEnabled});
+        expectedOutputCount:input.task.expected_outputs.length,minScore,multiWriteEnabled});
       // A folder without git has no worktree to give: the writer edits the live files in the run's folder.
       const live = await liveFolder.isLiveFolder(input.runId,input.config.hostId,getRun(db,input.runId)?.writer_workspace_path ?? input.task.project_cwd);
       const workspaceDecision = live ? {...routed,strategy:"inherit_run" as const,reason:LIVE_FOLDER_REASON as typeof routed.reason} : routed;

@@ -23,6 +23,7 @@ import {
 import type { TaskV2 } from "../src/contracts";
 import { validateAcceptanceV2 } from "../src/acceptance-v2";
 import { familyDirtBaseline } from "../src/server/writer/verify";
+import { createFakeWorktreeHost } from "./own-worktree-host";
 
 // An in-place redispatch counts only the edits an earlier attempt of the same task family produced; owner or
 // other-task dirt in an owned file keeps its baseline and is never counted as produced.
@@ -54,6 +55,8 @@ const pmThreadId = "pm-thread";
 // The PM is a root chat (projectId only, no parent/source/owner), as on the hub; writer fakes answer the rest.
 const withPm = <A extends { threadId:string }, R>(get:(args:A) => Promise<R>) =>
   async (args:A) => args.threadId === pmThreadId ? { id:pmThreadId, status:"idle", projectId } as never : get(args);
+// Every writer attempt of a git project works in its own worktree; tests that follow one task through acceptance use this.
+const worktreeHost = (options:NonNullable<Parameters<typeof createFakePluginHost>[0]>) => createFakeWorktreeHost(options, "host-test");
 const config = {
   projectId,
   hostId:"host-test",
@@ -120,7 +123,7 @@ describe("BB writer validation on the server path", () => {
     const fileRoots:string[] = [];
     let spawnedInput:Record<string, unknown>|null = null;
     const delayed = new Promise<{matched:boolean; thread:{status:string}}>((resolve) => { releaseWait = resolve; });
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{ threads:{
         getPluginMetadata: async ({ threadId }) => threadId === pmThreadId
@@ -128,7 +131,7 @@ describe("BB writer validation on the server path", () => {
           : { role:"writer" },
         spawn: async (input) => {
           spawnedInput = input as unknown as Record<string, unknown>;
-          expect(input.environment).toMatchObject({ workspace:{ type:"unmanaged", path:taskWorkspace } });
+          expect(input.environment).toMatchObject({ workspace:{ type:"unmanaged", path:expect.stringContaining("/lane-pilot-test-worktrees/") } });
           return { id:"writer-delayed" };
         },
         wait: async () => delayed,
@@ -206,14 +209,16 @@ describe("BB writer validation on the server path", () => {
     });
     // Two dirt snapshots plus the task-folder exclude shell, which reaches the host as a runCommand.
     expect(cwdCalls.length).toBeGreaterThanOrEqual(2);
-    expect(fileRoots.every((root) => root === taskWorkspace)).toBe(true);
+    // Reads and writes go to the attempt's own worktree, never to the shared project folder.
+    expect(fileRoots.every((root) => root.includes("/lane-pilot-test-worktrees/") || root === taskWorkspace)).toBe(true);
+    expect(fileRoots.some((root) => root.includes("/lane-pilot-test-worktrees/"))).toBe(true);
     await harness.lifecycle.dispose();
   });
 
   it("uses the explicit manual reasoning fallback when the classifier RPC itself rejects", async () => {
     let snapshots = 0;
     let spawnedInput:Record<string, unknown>|null = null;
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
@@ -271,7 +276,7 @@ describe("BB writer validation on the server path", () => {
   it("accepts a resumed attempt whose worktree holds Lane Pilot's own receipt from the pass a reload cut off (live: gc-hub-port-full.2)", async () => {
     let snapshots = 0;
     const receipt = ".agents/runs/run-resumed-receipt/artifacts/resumed-task/acceptance.json";
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
@@ -361,7 +366,7 @@ describe("BB writer validation on the server path", () => {
 
   it("stops on a writer's NEEDS_HUMAN question without retry and hands the question to the PM", async () => {
     let spawns = 0;
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
@@ -418,7 +423,7 @@ describe("BB writer validation on the server path", () => {
   ])("puts only the accepted rules System One picks for the task into the writer prompt (jev $jev)", async ({ jev, expected, skipped }) => {
     let spawnedPrompt = "";
     const judged: Array<Record<string, unknown>> = [];
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
@@ -494,7 +499,7 @@ describe("BB writer validation on the server path", () => {
     let snapshots=0;
     const spawned:Array<Record<string,unknown>>=[];
     let threadNo=0;
-    const {bb,harness}=createFakePluginHost({
+    const {bb,harness}=worktreeHost({
       pluginId:"lane-pilot",
       sdk:{threads:{
         getPluginMetadata:async ({threadId})=>threadId===pmThreadId?{role:"pm",lanePilotRunId:"run-effort-retry"}:{role:"writer"},
@@ -545,7 +550,7 @@ describe("BB writer validation on the server path", () => {
     let classifyCalls=0;
     let snapshots=0;
     let spawnedInput:Record<string,unknown>|null=null;
-    const {bb,harness}=createFakePluginHost({
+    const {bb,harness}=worktreeHost({
       pluginId:"lane-pilot",
       sdk:{threads:{
         getPluginMetadata:async ({threadId})=>threadId===pmThreadId?{role:"pm",lanePilotRunId:"run-manual-high"}:{role:"writer"},
@@ -597,7 +602,7 @@ describe("BB writer validation on the server path", () => {
   it("records automatic low with a reason when Jev overrides a saved high", async () => {
     let snapshots=0;
     let spawnedInput:Record<string,unknown>|null=null;
-    const {bb,harness}=createFakePluginHost({
+    const {bb,harness}=worktreeHost({
       pluginId:"lane-pilot",
       sdk:{threads:{
         getPluginMetadata:async ({threadId})=>threadId===pmThreadId?{role:"pm",lanePilotRunId:"run-auto-low"}:{role:"writer"},
@@ -709,7 +714,7 @@ describe("BB writer validation on the server path", () => {
   it("writes upstream acceptance-v2 under the run/task artifact directory", async () => {
     const written = new Map<string, string>();
     let snapshots = 0;
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
@@ -766,11 +771,14 @@ describe("BB writer validation on the server path", () => {
     )));
     expect(result.state).toBe("accepted");
 
-    const acceptancePath = "/tmp/writer/.agents/runs/run-accepted/artifacts/accepted-task/acceptance.json";
+    // The files are written in the attempt's own worktree, and reach the run folder with its merge.
+    const artifactDir = ".agents/runs/run-accepted/artifacts/accepted-task";
+    const acceptancePath = [...written.keys()].find((path) => path.endsWith(`/${artifactDir}/acceptance.json`)) ?? "";
+    expect(acceptancePath).toMatch(/^\/tmp\/lane-pilot-test-worktrees\//);
     const acceptance = JSON.parse(written.get(acceptancePath) ?? "null") as unknown;
     expect(validateAcceptanceV2(acceptance)).toEqual({ ok:true });
-    expect(written.has("/tmp/writer/.agents/runs/run-accepted/artifacts/accepted-task/lane-pilot-receipt.json")).toBe(true);
-    expect(written.has("/tmp/writer/acceptance.json")).toBe(false);
+    expect(written.has(acceptancePath.replace("acceptance.json", "lane-pilot-receipt.json"))).toBe(true);
+    expect([...written.keys()].some((path) => path.endsWith("/acceptance.json") && !path.includes(artifactDir))).toBe(false);
 
     // A second task in the same run must not replace the first task's receipt in the PM's answer.
     await harness.behavior.callAgentTool(
@@ -793,7 +801,7 @@ describe("BB writer validation on the server path", () => {
     let snapshots = 0;
     let activeVerifications=0;
     let maxActiveVerifications=0;
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
@@ -868,7 +876,7 @@ describe("BB writer validation on the server path", () => {
     const created: Array<{ scope:unknown; command:string }> = [];
     const released: string[] = [];
     let snapshots = 0;
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
@@ -945,7 +953,7 @@ describe("BB writer validation on the server path", () => {
     const threadStates = new Map<string, string>();
     let spawnCount = 0;
     let statusPollCount = 0;
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
@@ -1009,7 +1017,7 @@ describe("BB writer validation on the server path", () => {
 
   it("marks an unexpected background writer exception terminal and releases the task", async () => {
     let statusUnavailable = true;
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{ threads:{
         getPluginMetadata: async ({ threadId }) => threadId === pmThreadId

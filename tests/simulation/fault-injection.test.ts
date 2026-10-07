@@ -178,7 +178,7 @@ async function simulate(seed:number):Promise<{ violations:string[]; summary:stri
           transitionAttempt(db, input.attemptId, "spawn_rejected", { reason:"spawn failed: HTTP 502" });
           return { ok:false, status:"spawn_rejected", reason:"spawn failed: HTTP 502", attemptId:input.attemptId };
         }
-        setAttemptWorkspace(db, input.attemptId, { path:WORKSPACE, environmentId:null, decision:{ strategy:"inherit_run", reason:"below_threshold" } });
+        setAttemptWorkspace(db, input.attemptId, { path:WORKSPACE, environmentId:null, decision:{ strategy:"inherit_run", reason:"explicit_worktree" } });
         transitionAttempt(db, input.attemptId, "spawn_requested");
         transitionAttempt(db, input.attemptId, "running", { threadId:`thr_${input.attemptId}` });
         model.worktrees.set(input.attemptId, { dirty:rand() < 0.5 });

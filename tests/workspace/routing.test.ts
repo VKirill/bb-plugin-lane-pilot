@@ -82,8 +82,11 @@ describe("workspace routing", () => {
       .toMatchObject({score:8,strategy:"provision_attempt_worktree",reason:"risk_threshold"});
     expect(resolveAttemptWorkspace({mode:"auto",risk:"low",expectedOutputCount:2,minScore:4,multiWriteEnabled:true}))
       .toMatchObject({score:2,multiWrite:true,strategy:"provision_attempt_worktree",reason:"multi_write"});
+    // Below every threshold the attempt still gets its own worktree: no writer shares the project folder.
     expect(resolveAttemptWorkspace({mode:"auto",risk:"low",expectedOutputCount:2,minScore:4,multiWriteEnabled:false}))
-      .toMatchObject({strategy:"inherit_run",reason:"below_threshold"});
+      .toMatchObject({strategy:"provision_attempt_worktree",reason:"own_worktree"});
+    expect(resolveAttemptWorkspace({mode:"auto",risk:"low",expectedOutputCount:1,minScore:10,multiWriteEnabled:false}))
+      .toMatchObject({strategy:"provision_attempt_worktree",reason:"own_worktree"});
     expect(resolveAttemptWorkspace({mode:"worktree",risk:"low",expectedOutputCount:1,minScore:9,multiWriteEnabled:false}))
       .toMatchObject({strategy:"inherit_run",reason:"explicit_worktree"});
     expect(()=>resolveAttemptWorkspace({mode:"auto",risk:"unknown",expectedOutputCount:1,minScore:4,multiWriteEnabled:true})).toThrow(/unsupported task risk/);

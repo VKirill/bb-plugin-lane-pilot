@@ -10,7 +10,7 @@ export type AttemptWorkspaceDecision = {
   multiWrite:boolean;
   multiWriteEnabled:boolean;
   strategy:AttemptWorkspaceStrategy;
-  reason:"explicit_worktree"|"risk_threshold"|"multi_write"|"below_threshold"|"live_folder";
+  reason:"explicit_worktree"|"risk_threshold"|"multi_write"|"own_worktree"|"live_folder";
 };
 
 /** «In the project folder» (in_place) is gone (decision 2026-10-06-worktree-only-writers): a saved one reads as auto. */
@@ -26,7 +26,12 @@ export function usesManagedWorktree(mode: WorkspaceMode): boolean {
   return mode === "worktree";
 }
 
-/** A Lane chat passes minScore 0, so each of its attempts gets its own worktree; «worktree» mode isolates the whole run in one. */
+/**
+ * Every writer attempt of a git project gets its own worktree, whatever the task kind and risk (decision 2026-10-06;
+ * live sandbox 2026-10-07: three low-risk tasks sharing the folder rejected each other's files). «worktree» mode
+ * isolates the whole run in one instead; a folder without git is the live-folder case, which the caller decides.
+ * The risk score and the multi-write switch now only name the reason.
+ */
 export function resolveAttemptWorkspace(input:{mode:WorkspaceMode;risk:unknown;expectedOutputCount:number;minScore:number;multiWriteEnabled:boolean}):AttemptWorkspaceDecision {
   if (!Number.isInteger(input.minScore)||input.minScore<0||input.minScore>10) throw new Error("workspace.worktree_min_score must be an integer from 0 to 10");
   if (!Number.isInteger(input.expectedOutputCount)||input.expectedOutputCount<0) throw new Error("expected output count must be a non-negative integer");
@@ -38,7 +43,7 @@ export function resolveAttemptWorkspace(input:{mode:WorkspaceMode;risk:unknown;e
   if(input.mode==="worktree") return {...common,strategy:"inherit_run",reason:"explicit_worktree"};
   if(score>=input.minScore) return {...common,strategy:"provision_attempt_worktree",reason:"risk_threshold"};
   if(multiWrite&&input.multiWriteEnabled) return {...common,strategy:"provision_attempt_worktree",reason:"multi_write"};
-  return {...common,strategy:"inherit_run",reason:"below_threshold"};
+  return {...common,strategy:"provision_attempt_worktree",reason:"own_worktree"};
 }
 
 export function requireManagedWorktreeProvider(providers: unknown): { id: string } {

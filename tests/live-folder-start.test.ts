@@ -70,7 +70,7 @@ function services(env: ReturnType<typeof setup>, script: Step[], live: boolean) 
       env.events.push(`spawn:${input.attemptId}`);
       spawned.push(input.attemptId);
       setAttemptWorkspace(env.db, input.attemptId, { path: WORKSPACE, environmentId: null,
-        decision: live ? { strategy: "inherit_run", reason: LIVE_FOLDER_REASON } : { strategy: "inherit_run", reason: "below_threshold" } });
+        decision: live ? { strategy: "inherit_run", reason: LIVE_FOLDER_REASON } : { strategy: "inherit_run", reason: "explicit_worktree" } });
       transitionAttempt(env.db, input.attemptId, "spawn_requested");
       transitionAttempt(env.db, input.attemptId, "running", { threadId: "thr_w" });
       // Every spawn snapshots the folder again, and the folder differs from the first snapshot (a stray file stayed).

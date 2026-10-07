@@ -11,10 +11,12 @@ describe("worktree-only unit tests", () => {
     expect(parseWorkspaceMode("")).toBe("auto");
   });
 
-  it("gives a Lane chat's attempt its own worktree at minScore 0 even when the project said in_place", () => {
+  it("gives every attempt its own worktree, whatever the risk, the threshold or a saved in_place", () => {
     for (const risk of ["low", "medium", "high", "critical"]) {
-      expect(resolveAttemptWorkspace({ mode: parseWorkspaceMode("in_place"), risk, expectedOutputCount: 1, minScore: 0, multiWriteEnabled: false }))
-        .toMatchObject({ strategy: "provision_attempt_worktree" });
+      for (const minScore of [0, 4, 10]) {
+        expect(resolveAttemptWorkspace({ mode: parseWorkspaceMode("in_place"), risk, expectedOutputCount: 1, minScore, multiWriteEnabled: false }))
+          .toMatchObject({ strategy: "provision_attempt_worktree" });
+      }
     }
   });
 });

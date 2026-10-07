@@ -175,12 +175,12 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     if(attemptId&&(!selected||selected.run_id!==runId||selected.task_id!==taskId)) throw new Error("attempt workspace binding does not belong to this task");
     const acceptedId=attemptId?null:[...listAttemptsForTask(db,runId,taskId)].reverse().find((attempt)=>attempt.state==="accepted")?.id;
     const binding=selected??(acceptedId?getAttempt(db,acceptedId):null);
-    // Lane Pilot's own attempt worktree (native run, no BB environment) is gone once merged or failed:
+    // Lane Pilot's own attempt worktree (no BB environment, any run kind) is gone once merged or failed:
     // accepted work is in the run workspace, and a retry gets a fresh worktree. An attempt still in flight
     // keeps its worktree: resumed after a reload it was checked against the base checkout and failed with
     // «ownership run scope invalid» (SelfyStudio, 2026-10-02).
     const inFlight=["queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(String(binding?.state));
-    const ownWorktree=getRun(db,runId)?.kind==="cli"&&binding?.environment_id===null&&!(selected&&inFlight);
+    const ownWorktree=binding?.environment_id===null&&!(selected&&inFlight);
     // An accepted attempt's work is merged into the run workspace; its BB worktree may stay for the area's next task,
     // and a stage writing there (PROGRESS.md after acceptance) slipped into that task's merge (SelfyStudio 2026-10-05).
     // A caller naming the attempt (workspace status, reconcile) still gets that attempt's own worktree.
