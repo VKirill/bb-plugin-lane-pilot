@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import packageJson from "../../package.json";
 import { fullAccessSpawn } from "./pm-spawn";
+import { scheduleIsolated } from "./schedules";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { stringAt } from "./values";
 import { writerBriefStats } from "../writer-brief";
@@ -441,10 +442,11 @@ export type SelfRepair = ReturnType<typeof createSelfRepair>;
 
 export function mountSelfRepair(ctx: ServerCore): SelfRepair {
   const repair = createSelfRepair(ctx);
-  ctx.bb.background.schedule("self-repair", "*/15 * * * *", async () => {
+  // Isolated where the core allows: a long schedule of its own or of another plugin must not hold the watcher back.
+  scheduleIsolated(ctx.bb, "self-repair", "*/15 * * * *", async () => {
     if (ctx.isDisposed()) return;
     const result = await repair.tick().catch((cause) => ({ incidents: 0, signatures: [], spawned: null, reason: String(cause) }));
     if (result.incidents) ctx.log(`self-repair tick: ${result.incidents} incident(s), ${result.signatures.length} kind(s): ${result.reason}`);
-  });
+  }, { timeoutMs: 20 * 60_000 });
   return repair;
 }

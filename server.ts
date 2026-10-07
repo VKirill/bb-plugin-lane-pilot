@@ -13,6 +13,7 @@ import { adoptWaitingRules } from "./src/server/insights";
 import { createRuleScan } from "./src/server/rule-scan";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/server/run-finish";
 import { registerRpc } from "./src/server/rpc";
+import { scheduleIsolated } from "./src/server/schedules";
 import { DRAIN_SNAPSHOT_KEY } from "./src/server/deploy-drain";
 import { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./src/server/writer-silence";
 import type { Services } from "./src/server/services";
@@ -80,13 +81,13 @@ export default async function plugin(bb: BbPluginApi) {
   const releasedLaneWorktrees = new Set<string>();
   const removeLaneWorktree = async (hostId:string, basePath:string, worktreePath:string) =>
     (await ctx.host.call("gitRemoveWorktree", { requestedHostId:hostId, basePath, worktreePath }, { hostId, timeoutMs:60_000 })).removed;
-  bb.background.schedule("attempt-worktree-sweep", "*/10 * * * *", () => Promise.all([sweepEnvironments(),
+  scheduleIsolated(bb, "attempt-worktree-sweep", "*/10 * * * *", () => Promise.all([sweepEnvironments(),
     cleanupStickyLaneWorktrees(db, removeLaneWorktree, releasedLaneWorktrees).then((removed) => {
       if (removed.length) bb.log.info(`Lane Pilot released ${removed.length} area worktree(s) after their sticky window`);
-    }, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot area worktree sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`))]).then(() => undefined));
+    }, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot area worktree sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`))]).then(() => undefined), { timeoutMs: 20 * 60_000 });
   const sweepParked = () => services.stability.sweep().then(() => undefined,
     (cause) => bb.log.warn(`Lane Pilot parked-task sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
-  bb.background.schedule("parked-task-sweep", "*/5 * * * *", sweepParked);
+  scheduleIsolated(bb, "parked-task-sweep", "*/5 * * * *", sweepParked, { timeoutMs: 10 * 60_000 });
   const sweepSilentWriters = () => sweepWriterSilence({
     bb, getThread:(threadId) => ctx.getThreadBounded(threadId), isDisposed:ctx.isDisposed, log:(line) => bb.log.info(line),
     openAttempts:() => listOpenAttempts(db),
@@ -95,7 +96,7 @@ export default async function plugin(bb: BbPluginApi) {
       return Number.isFinite(minutes) && minutes >= 1 ? minutes : DEFAULT_SILENCE_NUDGE_MIN;
     },
   }).then(() => undefined, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot writer silence sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
-  bb.background.schedule("writer-silence-sweep", "*/5 * * * *", sweepSilentWriters);
+  scheduleIsolated(bb, "writer-silence-sweep", "*/5 * * * *", sweepSilentWriters, { timeoutMs: 10 * 60_000 });
   // Mondays 05:00: away from the nightly docs (03:00) and rules (03:30) passes.
   bb.background.schedule("stability-drill", "0 5 * * 1", () => services.stability.drill().then(() => undefined,
     (cause) => bb.log.warn(`Lane Pilot fire drill skipped: ${cause instanceof Error ? cause.message : String(cause)}`)));
