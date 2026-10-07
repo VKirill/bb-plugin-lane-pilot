@@ -5,6 +5,7 @@ import { taskFamily } from "../failure-class";
 import { parseSandboxUnsafePatterns } from "../stages/critique-coverage";
 import { isTaskSatisfied } from "./blocked-by";
 import { lintContract, lintProbePaths } from "./contract-lint";
+import { allowedSecretNames } from "./secrets";
 import type { LintOpenTask, PathKind } from "./contract-lint";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
@@ -42,7 +43,11 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
       if (state === "blocked" && await isTaskSatisfied(bb.storage.kv as never, projectId, dep)) continue;
       deadDependencies.push({ id:dep, state });
     }
-    const sandboxUnsafe = parseSandboxUnsafePatterns(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))["verification.sandbox_unsafe"]);
-    return lintContract({ task, workspacePath, hostId, kinds, sandboxUnsafe, openTasks, deadDependencies });
+    const settings = loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId));
+    const sandboxUnsafe = parseSandboxUnsafePatterns(settings["verification.sandbox_unsafe"]);
+    const declared = [...new Set(task.verification.flatMap((check) => check.secrets ?? []))];
+    // Names only: the lint never reads a value.
+    const secrets = declared.length ? await ctx.secrets.check({ declared, allowed:allowedSecretNames(settings) }, { fresh:true }) : undefined;
+    return lintContract({ task, workspacePath, hostId, kinds, sandboxUnsafe, openTasks, deadDependencies, ...(secrets ? { secrets } : {}) });
   };
 }

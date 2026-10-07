@@ -4,6 +4,8 @@ import { fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "../own
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs } from "../stages/critique-coverage";
 import { parseReadFirstHints } from "../stages/read-first";
 import { isOutputPath, unownedExpectedOutputs } from "../validate-output";
+import { SANDBOX_OWN_ENV } from "../verification/sandbox";
+import type { CatalogEntry, SecretCheck } from "./secrets";
 import { safeRelative, validateOwnershipContract } from "../verification/ownership";
 
 /** One problem in a task contract, with the concrete fix; `data` rides along in the answer to the PM. */
@@ -21,9 +23,34 @@ export type LintInput = {
   openTasks:readonly LintOpenTask[];
   /** depends_on names whose latest task ended blocked or canceled and that nothing restarts or vouches for. */
   deadDependencies:readonly { id:string; state:"blocked" | "canceled" }[];
+  /** Env Catalog's answer for the secrets the checks declare (J2); absent when none is declared. */
+  secrets?:SecretCheck & { catalog:readonly CatalogEntry[] | null };
 };
 
 export { runnerFilterArgs };
+
+/** The catalog name closest to a declared one when they differ by case or a typo (at most two edits); null when none is near. */
+export function nearSecretName(name:string, catalog:readonly CatalogEntry[]):string | null {
+  const distance = (a:string, b:string):number => {
+    const row = Array.from({ length:b.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= a.length; i++) {
+      let diagonal = row[0]!;
+      row[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const above = row[j]!;
+        row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+        diagonal = above;
+      }
+    }
+    return row[b.length]!;
+  };
+  let best:{ name:string; d:number } | null = null;
+  for (const entry of catalog) {
+    const d = distance(name.toLowerCase(), entry.name.toLowerCase());
+    if (d <= 2 && (!best || d < best.d)) best = { name:entry.name, d };
+  }
+  return best?.name ?? null;
+}
 const MAX_PROBES = 128;
 
 const folderFilters = (task:TaskV2) => task.verification.flatMap((check, index) =>
@@ -91,6 +118,27 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     const suggestedFlags = missing.map((pattern) => `--exclude "${pattern}"`).join(" ");
     errors.push({ code:"sandbox_unsafe", message:`verification command "${check.command}" runs a full test suite without excluding sandbox-unsafe tests; add missing exclusions: ${suggestedFlags}`,
       data:{ missingExcludes:missing, suggestedFlags } });
+  }
+
+  // Secrets a check declares: a valid name, allowed by the owner, of a kind a check can take, and in Env Catalog.
+  // A name that is simply not saved yet is a warning: the task waits for it (waiting_secret) and starts once it is.
+  const declared = [...new Set(task.verification.flatMap((check) => check.secrets ?? []))];
+  const reserved = declared.filter((name) => SANDBOX_OWN_ENV.has(name));
+  for (const name of reserved) errors.push({ code:"secret_reserved", message:`verification secrets names ${name}, which the sandbox sets itself; pick another name in Env Catalog` });
+  const found = input.secrets;
+  if (found && declared.length) {
+    if (found.unavailable) {
+      errors.push({ code:"secret_catalog_unavailable", message:`verification declares secrets (${declared.join(", ")}) but Env Catalog is not installed or not answering, so no check can receive them; install and enable the env-catalog plugin, or drop secrets from the checks` });
+    } else {
+      if (found.denied.length) errors.push({ code:"secret_not_allowed", data:{ deniedSecrets:found.denied },
+        message:`verification secrets ${found.denied.join(", ")} are not allowed: only the owner can allow a name, in the project setting «Secrets checks may use» (secrets.allow); ask the owner, then send the task again` });
+      if (found.wrongKind.length) errors.push({ code:"secret_kind", message:`verification secrets ${found.wrongKind.join(", ")} are SSH or FTP access, which a check cannot take; a deploy step that needs them goes to lane_pilot_errand` });
+      for (const name of found.missing.filter((missing) => !reserved.includes(missing))) {
+        const near = found.catalog ? nearSecretName(name, found.catalog) : null;
+        if (near) errors.push({ code:"secret_name_unknown", message:`verification secrets ${name} is not in Env Catalog; did you mean ${near}? use the exact name` });
+        else warnings.push({ code:"secret_missing", message:`verification secrets ${name} is not in Env Catalog yet: call env_request for it now (name ${name}, with a purpose); the task waits (waiting_secret:${name}) and starts by itself once the owner saves it` });
+      }
+    }
   }
 
   // depends_on a task that already ended blocked or canceled: the PM replans before this one is queued (a loop or a self reference is the plan critique's).

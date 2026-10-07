@@ -849,6 +849,8 @@ export const fieldEn = {
   reason_s420: "When a usage window of the writer's provider (read from BB's usage sources) is at or above this percentage, the task goes to the next model of the writer chain until the window resets. 0 turns it off. Empty means 90; without usage data nothing is skipped",
   field_s421: "Mirror tasks into BB Tasks",
   reason_s421: "Each Lane Pilot task also appears in the BB Tasks project linked to this BB project, with its status, writer thread and a comment at each milestone. Needs the Tasks plugin and a linked tracker project; Lane Pilot never reads it back. On by default; nothing happens without a linked Tasks project",
+  field_s422: "Secrets checks may use",
+  reason_s422: "Empty: a task's checks, a browser check's login and a deploy errand may receive any Env Catalog entry they name; values go only into the check sandbox and are masked everywhere. List names here to restrict it.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1702,4 +1704,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s420: "Когда окно расхода провайдера писателя (из источников расхода BB) достигло этого процента, задачу берёт следующая модель цепочки писателей до сброса окна. 0 выключает. Пусто означает 90; без данных о расходе ничего не пропускается",
   field_s421: "Зеркалить задачи в BB Tasks",
   reason_s421: "Каждая задача Lane Pilot появляется и в проекте BB Tasks, привязанном к этому проекту BB: статус, тред писателя и комментарий на каждой вехе. Нужны плагин Tasks и привязанный проект трекера; Lane Pilot ничего не читает обратно. По умолчанию включено; без привязанного проекта Tasks ничего не происходит",
+  field_s422: "Секреты, доступные проверкам",
+  reason_s422: "Пусто: проверки задачи, логин проверки в браузере и поручение деплоя получают любую запись Env Catalog, которую сами назвали; значения попадают только в песочницу проверки и везде маскируются. Перечислите имена, чтобы ограничить.",
 };

@@ -10,7 +10,7 @@ import { emergencyFallbackDecision } from "../../stages/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { usageHoldReason, usageSkipPercent } from "../provider-usage";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../failure-class";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../failure-class";
 import { isTaskSatisfied } from "../blocked-by";
 import { previousAttemptBrief, stickyTurnPrompt } from "../writer-task";
 import { isMainfixTask } from "../../validate-output";
@@ -18,9 +18,13 @@ import { openDatabase } from "../../database";
 import { createWriterSticky } from "./sticky";
 import { failureClass } from "../../failure-class";
 import { isRunHalted } from "../runs-halt";
+import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../secrets";
 
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
 const DEPENDENCY_REDO_WAIT_MS = 6 * 3600_000;
+/** How long a task waits for an Env Catalog secret, and how often it asks the catalog (BB sends no server-side event when it changes). */
+const SECRET_WAIT_MS = 12 * 3600_000;
+const secretPollMs = () => Number(process.env.LANE_PILOT_SECRET_POLL_MS) || 20_000;
 import type { AttemptState } from "../../state-machine";
 import { closeWriterStages, recordStage } from "../stage-records";
 import { id, stringAt } from "../values";
@@ -198,6 +202,37 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         await new Promise((wake) => setTimeout(wake, 10_000));
       }
     };
+    /**
+     * The secrets the task's checks declare must be in Env Catalog and allowed before a writer starts (J6): a writer would
+     * do the work and then fail the checks for want of them. The task waits with the stage reason `waiting_secret:NAME`,
+     * no attempt is spent, the PM is told once what to do (env_request), and the wait ends by itself when the access is
+     * in place. Env Catalog's change event reaches only the app, so the catalog is asked every 20 seconds meanwhile.
+     */
+    const waitForSecrets = async (shouldStop?:()=>string|null): Promise<string | null> => {
+      const declared = [...new Set(input.task.verification.flatMap((check) => check.secrets ?? []))];
+      if (!declared.length) return null;
+      const since = Date.now();
+      let noted = "";
+      for (;;) {
+        if (ctx.isDisposed()) return null;
+        const stop = shouldStop?.();
+        if (stop) return stop;
+        const latest = getAttempt(db, attemptId);
+        if (!latest || ["canceled", "blocked", "accepted"].includes(latest.state)) return null;
+        const gate = await ctx.secrets.check({ declared, allowed:allowedSecretNames(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))) }, { fresh:true });
+        const names = secretProblem(gate);
+        if (!names.length && !gate.unavailable) return null;
+        const reason = waitingSecretReason(names.length ? names : declared);
+        if (noted !== reason) {
+          noted = reason;
+          ctx.log(`writer ${input.taskId} waits: ${reason}`);
+          recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason });
+          if (input.pmThreadId) void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:waitingSecretNote(input.taskId, gate) }] } as never).catch(() => undefined);
+        }
+        if (Date.now() - since > SECRET_WAIT_MS) return `${reason}: not provided within 12 hours; send the task again once it is saved`;
+        await new Promise((wake) => setTimeout(wake, secretPollMs()));
+      }
+    };
     const waitForOverlappingTasks = async (shouldStop?:()=>string|null) => {
       const base = getRun(db,input.runId)?.writer_workspace_path;
       /** Another task of this folder that ended with a question nobody has answered; a halted run (the owner stopped it) holds nothing. */
@@ -288,6 +323,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const overlapStop = await waitForOverlappingTasks(wallOrTokenStop);
       if (overlapStop) {
         blockBeforeWriter(overlapStop);
+        return;
+      }
+      const secretStop = await waitForSecrets(wallOrTokenStop);
+      if (secretStop) {
+        blockBeforeWriter(secretStop);
         return;
       }
       // Several tasks failed on the same Lane Pilot fault just now, or the disk is nearly full: starting more only burns them too.
@@ -547,7 +587,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           last = { ...last, status:"blocked" };
           break;
         }
-        if (PARKED_CLASSES.has(failedClass)) {
+        // A secret the checks need went away mid-task: the attempt is not charged and the task is parked until it is back.
+        if (PARKED_CLASSES.has(failedClass) || isWaitingSecret(typeof last.reason === "string" ? last.reason : null)) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
           last = { ...last, status:"blocked" };

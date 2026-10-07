@@ -30,11 +30,12 @@ describe("settings that code reads and the catalog now lists", () => {
     expect(row("verification.sandbox_unsafe")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "stages" });
     expect(row("workspace.provider")).toMatchObject({ uiStatus: "editable", control: "select", options: ["auto", "off"], defaultValue: "auto", section: "workspace" });
     expect(row("usage.skip_percent")).toMatchObject({ uiStatus: "editable", control: "number", min: 0, max: 100, defaultValue: String(DEFAULT_USAGE_SKIP_PERCENT), section: "writer" });
+    expect(row("secrets.allow")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "stages", scope: "project" });
     expect(bookkeepingSetting({ "bookkeeping.paths": row("bookkeeping.paths")!.defaultValue })).toEqual([]);
   });
 
   it("have a label and a reason in English and in Russian", () => {
-    for (const key of ["writer.silence_nudge_min", "bookkeeping.paths", "integration.gate_command", "integration.gate_when", "integration.gate_every", "verification.sandbox_unsafe", "workspace.provider", "usage.skip_percent", "tasks.mirror"]) {
+    for (const key of ["writer.silence_nudge_min", "bookkeeping.paths", "integration.gate_command", "integration.gate_when", "integration.gate_every", "verification.sandbox_unsafe", "workspace.provider", "usage.skip_percent", "tasks.mirror", "secrets.allow"]) {
       const id = row(key)!.id;
       for (const locale of [en, ru] as Array<Record<string, string>>) {
         expect(locale[`field_${id}`], `${key} field`).toBeTruthy();

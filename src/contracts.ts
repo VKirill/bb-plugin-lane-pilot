@@ -61,6 +61,9 @@ const rulesAnalyzerSchema = z.object({
   providerId: z.string().min(1), model: z.string().min(1), reasoningLevel: z.string().min(1), serviceTier: z.enum(["default", "fast"]).nullable(),
 }).strict();
 
+/** An environment variable name, as the sandbox passes it; Env Catalog names follow the same rule. */
+export const secretNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/);
+
 export const taskV2Schema = z.object({
   schema_version: z.literal(2),
   id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
@@ -83,6 +86,8 @@ export const taskV2Schema = z.object({
     command: z.string().min(1),
     cwd: z.string().startsWith("/"),
     timeout_sec: z.number().int().min(1).max(7200).optional(),
+    /** Env Catalog names this check needs (kind secret or login): the server passes their values to the check as environment variables, by name; the writer never sees them. */
+    secrets: z.array(secretNameSchema).max(16).optional(),
   }).strict()),
   /** The page or feature the task belongs to («page:/tools/cards»): one writer at a time per area, and the area's writer continues its next task. */
   area: z.string().trim().min(1).max(120).optional(),
@@ -467,6 +472,8 @@ export const hostContract = defineRpcContract({
       requestedHostId:z.string().min(1),workspacePath:z.string().startsWith("/"),cwd:z.string().startsWith("/"),
       backend:z.enum(["auto","macos-seatbelt","linux-bubblewrap"]).optional(),
       command:z.string().min(1).max(32_000),timeoutSec:z.number().int().min(1).max(7200).optional(),
+      /** Secret values for this one command (Env Catalog, J2): they go into the sandbox's environment only, and the host masks them in the output. */
+      env:z.record(secretNameSchema,z.string().max(65_536)).optional(),
     }).strict(),
     output:z.object({
       hostId:z.string(),backend:z.enum(["macos-seatbelt","linux-bubblewrap"]),workspacePath:z.string(),cwd:z.string(),

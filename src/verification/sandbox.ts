@@ -3,10 +3,13 @@ import { createHash } from "node:crypto";
 import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { redactSecrets } from "../redact";
 import { spawnAsync } from "../spawn-async";
 
 export type SandboxedCommandInput = {
   requestedHostId:string; workspacePath:string; cwd:string; command:string; backend?:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec?:number;
+  /** Secret values for this command (Env Catalog): set in its environment, masked in what it printed. */
+  env?:Record<string,string>;
 };
 export type SandboxedCommandResult = {
   hostId:string; backend:"macos-seatbelt"|"linux-bubblewrap"; workspacePath:string; cwd:string; exitCode:number;
@@ -14,6 +17,7 @@ export type SandboxedCommandResult = {
 };
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
+export const SANDBOX_OWN_ENV=new Set(["PATH","HOME","TMPDIR","TMP","TEMP","LANG","LC_ALL"]);
 const MAX_OUTPUT = 1_000_000;
 const MAX_TIMEOUT_MS = 7_200_000;
 const BWRAP_CANDIDATES = ["/usr/bin/bwrap","/bin/bwrap"] as const;
@@ -97,6 +101,16 @@ export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempP
   return args;
 }
 
+/** The variables a command may be given on top of the sandbox's own: valid names, never the sandbox's own ones. */
+export function sandboxSecretEnv(env:Record<string,string>|undefined):Record<string,string> {
+  const out:Record<string,string> = {};
+  for (const [name,value] of Object.entries(env ?? {})) {
+    if (/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name) && !SANDBOX_OWN_ENV.has(name) && typeof value === "string" && !value.includes("\0")) out[name]=value;
+  }
+  return out;
+}
+const maskSecrets=(text:string,secrets:Record<string,string>)=>Object.keys(secrets).length?redactSecrets(text,Object.values(secrets)):text;
+
 /** Guard paths the sandbox created, with how many running checks use each; checks of one attempt run at once. */
 const createdGuardUsers=new Map<string,number>();
 let guardLock:Promise<unknown>=Promise.resolve();
@@ -176,22 +190,28 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     if (backend === "linux-bubblewrap") {
       const {guardPaths,created}=await prepareGuardPaths(workspacePath);
       releaseGuards=()=>releaseGuardPaths(created);
+      // Secrets travel in bwrap's own environment, never in its arguments (a process list shows those); without --clearenv
+      // the sandbox keeps exactly them plus the variables --setenv gives it.
+      const secrets=sandboxSecretEnv(input.env);
       const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
       const policySha256=createHash("sha256").update(JSON.stringify(args),"utf8").digest("hex");
-      const child=await spawnAsync(bubblewrapPath!,[...args,input.command],{
-        cwd,env:{},timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
+      const child=await spawnAsync(bubblewrapPath!,[...(Object.keys(secrets).length?args.filter((arg)=>arg!=="--clearenv"):args),input.command],{
+        cwd,env:secrets,timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
       });
       if (child.error && ["EPERM","EACCES","ENOENT"].includes(String((child.error as NodeJS.ErrnoException).code))) {
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
       }
       return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
-        policySha256,stdout:(child.stdout ?? "").slice(0,200_000),stderr:(child.stderr ?? child.error?.message ?? "").slice(0,12_000)};
+        policySha256,stdout:maskSecrets((child.stdout ?? "").slice(0,200_000),secrets),stderr:maskSecrets((child.stderr ?? child.error?.message ?? "").slice(0,12_000),secrets)};
     }
     const profile = buildSeatbeltProfile(workspacePath,tempPath);
     const policySha256 = createHash("sha256").update(profile,"utf8").digest("hex");
+    const seatbeltSecrets=sandboxSecretEnv(input.env);
     const child = await spawnAsync(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],{
       cwd,
       env:{
+        // Secrets first: the sandbox's own variables below always win.
+        ...seatbeltSecrets,
         PATH:sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"),
         HOME:tempPath,TMPDIR:tempPath,TMP:tempPath,TEMP:tempPath,BB_DATA_DIR:bbDataDir(),
         LANG:"C",LC_ALL:"C",
@@ -207,7 +227,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     return {
       hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,
       exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,
-      stdout:(child.stdout ?? "").slice(0,200_000),stderr:(child.stderr ?? child.error?.message ?? "").slice(0,12_000),
+      stdout:maskSecrets((child.stdout ?? "").slice(0,200_000),seatbeltSecrets),stderr:maskSecrets((child.stderr ?? child.error?.message ?? "").slice(0,12_000),seatbeltSecrets),
     };
   } finally {
     await releaseGuards();
@@ -227,8 +247,6 @@ export type SandboxedCommandLine = {
  * owner can open and watch it, and BB reports its output and exit code. The caller releases it with
  * releaseSandboxedCommandLine once the terminal has exited.
  */
-const SANDBOX_OWN_ENV=new Set(["PATH","HOME","TMPDIR","TMP","TEMP","LANG","LC_ALL"]);
-
 /**
  * Words that hand the named variables from the terminal's shell into the sandbox: `${NAME+"NAME=$NAME"}` is one
  * word when NAME is set and nothing when it is not, in bash and zsh alike. Only names travel; values stay in the

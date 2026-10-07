@@ -1,4 +1,5 @@
 import { getRun, getRunSettingsScopes, loadProjectSettings, loadRunHelperPolicyJson, openDatabase, persistRunHelperPolicyJson } from "../database";
+import type { ExtraAccess } from "../helper-context";
 import { decideHelperDispatch, detectVkCapability, parseHelperContextSettings, parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding } from "../helper-context";
 import type { HelperPolicySnapshot, HelperRole } from "../helper-context";
 import { helperSpawnFields, resolveHelperPlacement } from "../helper-placement";
@@ -132,7 +133,7 @@ export function requireHelperSpawn(input:{bb:BbPluginApi;db:ReturnType<typeof op
   return decision.snapshot;
 }
 
-export function requiredPolicyField(bb: BbPluginApi, snapshot: HelperPolicySnapshot, providerId?: string, role?: HelperRole) {
+export function requiredPolicyField(bb: BbPluginApi, snapshot: HelperPolicySnapshot, providerId?: string, role?: HelperRole, extra?: ExtraAccess) {
   const agents = (bb as { agents?: { experimental_vkSessionPolicy?: unknown; experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {};
   return requiredSessionPolicySpawnBinding({
     capability: detectVkCapability(agents),
@@ -140,6 +141,7 @@ export function requiredPolicyField(bb: BbPluginApi, snapshot: HelperPolicySnaps
     snapshot,
     providerId,
     role,
+    extra,
   });
 }
 

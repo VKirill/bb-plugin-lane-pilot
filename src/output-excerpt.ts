@@ -4,6 +4,8 @@
  * cleaned text (retry-brief-clean-output, 2026-10-06).
  */
 
+import { redactKnown } from "./redact";
+
 /** A check's own complaint: the FAIL header, an assertion or diff, a compiler error, or any error/fail line. */
 const FAILURE_MARK = /\bFAIL\b|\bAssertionError\b|\bError:|\bExpected\b|\bReceived\b|error TS|error|fail/i;
 
@@ -12,7 +14,7 @@ const SUMMARY_MARK = /^\s*(?:Test Files|Tests)\b/;
 
 /** Escape sequences (OSC/CSI and leftovers), other control bytes, `npm notice` lines and blank-line runs, gone. */
 export function cleanCheckOutput(text: string): string {
-  return text
+  return redactKnown(text)
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
     .replace(/\x1b\[[0-9;:?]*[ -/]*[@-~]/g, "")
     .replace(/\x1b[@-_]/g, "")

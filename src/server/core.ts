@@ -1,4 +1,6 @@
 import { parseOwnedAgents } from "../agent-profile";
+import { redactKnown } from "../redact";
+import { createSecrets } from "./secrets";
 import { bindDrainTarget, createDeployDrain } from "./deploy-drain";
 import { currentScheduleSignal } from "./schedules";
 import { createHostJobs, isHostJobKind } from "./host-jobs";
@@ -28,6 +30,11 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   // Set before the database closes on reload (dispose hooks run LIFO); detached writer tasks check it.
   const state = { disposed: false };
   bb.onDispose(() => { state.disposed = true; });
+  // Secret values handed to a check, a browser check or an errand never reach the plugin log (Env Catalog, J3).
+  for (const level of ["debug", "info", "warn", "error"] as const) {
+    const original = bb.log[level]?.bind(bb.log);
+    if (original) try { bb.log[level] = (message:string) => original(redactKnown(String(message))); } catch { /* a frozen logger stays as it is */ }
+  }
   setIllegalTransitionLog((message) => bb.log.warn(message));
   // Open screens re-read on a signal instead of polling; a council or the rules call `ctx.realtime.notify` where they write.
   const realtime = createRealtime(bb, (message) => bb.log.warn(message));
@@ -341,7 +348,9 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
 
   const writerBindingKey = (projectId: string) => `writer-binding:${projectId}`;
 
-  return { bb, db, state, realtime, ownerAsk, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
+  const secrets = createSecrets({ bb });
+
+  return { bb, db, state, realtime, ownerAsk, secrets, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }
 
 export type ServerCore = ReturnType<typeof createCore>;

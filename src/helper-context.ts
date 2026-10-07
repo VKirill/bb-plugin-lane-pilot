@@ -81,6 +81,9 @@ export type HelperRole =
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
 const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
 const READER: RoleProfile = { bbPlugins: [], skills: [], mcpServers: ["gitnexus"] };
+// Env Catalog (J1): the roles that need an account or key get its tools. A writer does not: its checks get the secrets the
+// contract declares (verification[].secrets) from the server, by name. A browser check gets it only for a case that names
+// a login (qa-thread.ts, extraAccess).
 export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "writer": CODER,
   "code-repair": CODER,
@@ -102,10 +105,10 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "errand": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "computer-use", "env-catalog"], mcpServers: [] },
   "council-seat": { bbPlugins: [], skills: [], mcpServers: [] },
   "rules-analyzer": { bbPlugins: [], skills: [], mcpServers: [] },
-  "specialist:design-lead": { bbPlugins: [], skills: ["ui-ux-pro-max", "project-design", "project-onboard", "web-design", "design-taste", "impeccable-ui", "page-prototype"], mcpServers: ["metamcp"] },
-  "specialist:copy-lead": { bbPlugins: [], skills: ["copy-project-life", "site-copy-audience", "site-copy-headlines", "site-copy-ux", "copy-research", "tavily", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
-  "specialist:seo-specialist": { bbPlugins: [], skills: ["seo-project-life", "seo-drmax-orchestrator", "cocoon-chainsmith", "drmax-cocoon-engine-x4", "drmax-brandcore", "drmax-text-humanization", "ai-detect", "drmax-signalforge", "drmax-latent-intent", "drmax-market-scoped", "google", "yandex", "seo-tools", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
-  "specialist:tavily": { bbPlugins: [], skills: ["tavily"], mcpServers: [] },
+  "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "ui-ux-pro-max", "project-design", "project-onboard", "web-design", "design-taste", "impeccable-ui", "page-prototype"], mcpServers: ["metamcp"] },
+  "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copy-project-life", "site-copy-audience", "site-copy-headlines", "site-copy-ux", "copy-research", "tavily", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
+  "specialist:seo-specialist": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "seo-project-life", "seo-drmax-orchestrator", "cocoon-chainsmith", "drmax-cocoon-engine-x4", "drmax-brandcore", "drmax-text-humanization", "ai-detect", "drmax-signalforge", "drmax-latent-intent", "drmax-market-scoped", "google", "yandex", "seo-tools", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
+  "specialist:tavily": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "tavily"], mcpServers: [] },
 };
 
 export const HELPER_ROLES = Object.keys(ROLE_PROFILES) as HelperRole[];
@@ -154,6 +157,9 @@ export function roleAccessFromSettings(input: Record<string, unknown>): Partial<
 }
 
 /** What one group of a role effectively loads: a list (mandatory included) or null for «everything BB has». */
+/** Names added to one spawn's role profile on top of the role's own (a browser check that must sign in gets Env Catalog). */
+export type ExtraAccess = { bbPlugins?: string[]; skills?: string[] };
+
 export function effectiveGroup(role: HelperRole, group: AccessGroup, access: RoleAccess = {}): { names: string[] | null; source: "role" | "owner" } {
   const own = access[group];
   const mandatory = group === "bbPlugins" ? MANDATORY_BB_PLUGINS : group === "mcpServers" ? MANDATORY_MCP_SERVERS : [];
@@ -172,11 +178,12 @@ export function effectiveSwitch(sw: AccessSwitch, access: RoleAccess = {}): { in
   return { include: sw === "projectInstructions", source: "role" };
 }
 
-export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}): VkSessionPolicy {
+export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}, extra: ExtraAccess = {}): VkSessionPolicy {
   const policy: VkSessionPolicy = { claudeAiSync: false, required: true };
   for (const group of ACCESS_GROUPS) {
     const { names } = effectiveGroup(role, group, access);
-    if (names) policy[group] = { mode: "allow", names };
+    const added = group === "bbPlugins" ? extra.bbPlugins : group === "skills" ? extra.skills : undefined;
+    if (names) policy[group] = { mode: "allow", names: added?.length ? [...new Set([...names, ...added])] : names };
   }
   if (!effectiveSwitch("userInstructions", access).include) policy.userInstructions = false;
   if (!effectiveSwitch("projectInstructions", access).include) policy.projectInstructions = false;
@@ -333,6 +340,7 @@ export function requiredSessionPolicySpawnBinding(input: {
   advertised?: RequiredSessionAdvertisement | null;
   providerId?: string;
   role?: HelperRole;
+  extra?: ExtraAccess;
 }): { experimental_vkRequiredSessionPolicy: RequiredSessionPolicySpawn } | Record<string, never> {
   if (input.snapshot.mode === "inherit") return {};
   if (input.snapshot.mode === "roles") {
@@ -342,7 +350,7 @@ export function requiredSessionPolicySpawnBinding(input: {
     const groups = input.advertised.providerGroups[input.providerId as keyof typeof CORE_PROVIDER_GROUPS];
     const switches = input.advertised.instructionSwitches[input.providerId as keyof typeof CORE_INSTRUCTION_SWITCHES];
     if (!groups || !switches) return {};
-    return { experimental_vkRequiredSessionPolicy: { version: 1, policy: spawnPolicyForProvider(roleProfilePolicy(input.role, input.snapshot.settings.roleAccess?.[input.role]), groups, switches, true) } };
+    return { experimental_vkRequiredSessionPolicy: { version: 1, policy: spawnPolicyForProvider(roleProfilePolicy(input.role, input.snapshot.settings.roleAccess?.[input.role], input.extra), groups, switches, true) } };
   }
   if (input.capability !== "required" || !input.advertised) {
     throw new Error("helper_context_required_api_unavailable");

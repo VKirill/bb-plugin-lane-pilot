@@ -10,6 +10,9 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { stringAt } from "./values";
 import { outputText } from "./writer-task";
 import { fenceOutside, registerObservedTool } from "./tool-result";
+import { redactKnown } from "../redact";
+import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "./secrets";
+import type { CatalogEntry } from "./secrets";
 import { detectRepoEdits, gitRepoStatus } from "./repo-edits";
 import type { ServerCore } from "./core";
 
@@ -21,7 +24,25 @@ const WAIT_STEP_MS = 5_000;
  * PM had no way to do it — its shell may not drive the browser and its only delegate, the writer, edits code in a
  * worktree — so it sent the owner to click through Google Cloud Console by hand (thr_wb4dsw4usn, 2026-10-03).
  */
-export function errandPrompt(input: { task: string; browserHostId: string | null; authorized: boolean }): string {
+/**
+ * The accounts a PM handed to an errand (J7): a deploy step reaches a server or a hosting with an SSH key or an FTP login
+ * from Env Catalog, never from a file in a repository. Only the names are in the brief; the helper reads each with env_get.
+ */
+export function errandAccountLines(accounts: readonly CatalogEntry[]): string[] {
+  if (!accounts.length) return [];
+  const how = (kind: CatalogEntry["kind"]) => kind === "ssh"
+    ? "SSH key: write its privateKey to a new file under a `mktemp -d` folder outside every repository, `chmod 600` it, connect with `ssh -i <file> -o IdentitiesOnly=yes` (host, port, username and the fingerprint to check are in the record), and delete the file and the folder when you are done, also when a step fails"
+    : kind === "ftp" ? "FTP/FTPS/SFTP account: pass the password through an environment variable or a netrc file in a `mktemp -d` folder outside every repository, never on the command line, and delete it when you are done"
+    : kind === "login" ? "site login: type it into the sign-in form"
+    : "secret: use it as a header or variable of the one command that needs it";
+  return [
+    "Accounts the PM gave you for this task (Env Catalog); read each with `env_get` and its exact name, nothing else from the catalog:",
+    ...accounts.map((account) => `- ${account.name} (${account.kind}) - ${how(account.kind)}`),
+    "Never put a key, password or token in a repository, a commit, a log, a file inside a checkout, a screenshot note or your final answer; do not echo it, and keep it out of a command line where a process list would show it.",
+  ];
+}
+
+export function errandPrompt(input: { task: string; browserHostId: string | null; authorized: boolean; accounts?: readonly CatalogEntry[] }): string {
   const browser = input.browserHostId
     ? [
       `- The owner's own Chrome, signed in to their accounts, is on machine ${input.browserHostId}.`,
@@ -45,6 +66,7 @@ export function errandPrompt(input: { task: string; browserHostId: string | null
     "What you have:",
     ...browser,
     "- Accounts and keys: Env Catalog (skill env-catalog: env_list, then env_get with the exact name). Never print a secret. If an account is missing, env_request it and stop.",
+    ...errandAccountLines(input.accounts ?? []),
     "- Never change, commit or push this repository's files — no edits, no `git add`/`git commit`/`git push`, no redirects or `tee` into the checkout; reading the repository stays allowed. If the task asks for a repository change, stop right there with `ERRAND: blocked: repository edits go through the PM's writer task` and change nothing.",
     "",
     "Finish with what you did, what you saw (exact values, URLs, quotes), and proof (screenshot paths or the final URL). The very last line is exactly one of `ERRAND: done` or `ERRAND: blocked: <why>`. Without it the PM treats your work as unfinished.",
@@ -118,15 +140,28 @@ export function mountErrands(ctx: ServerCore): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_errand",
     description: "Hand a non-code task to a helper thread: a cloud console in the owner's browser, a mailbox, a screen recording, an account in Env Catalog.",
-    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal: every reversible step needed for the approved outcome inside the owner's accounts is authorized without asking step by step; ask the owner once up front only for destructive, paid, outgoing, permission or irreversible steps. Otherwise the helper only reads and reports. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the thread; call lane_pilot_wait_errand with its threadId, again while it is running, and show the owner the @thread link.",
+    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal: every reversible step needed for the approved outcome inside the owner's accounts is authorized without asking step by step; ask the owner once up front only for destructive, paid, outgoing, permission or irreversible steps. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the owner must have allowed each name in the setting secrets.allow, and if one is missing or not allowed nothing starts and the answer says what to do (env_request for a missing one), then call again. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the thread; call lane_pilot_wait_errand with its threadId, again while it is running, and show the owner the @thread link.",
     parameters: z.object({
       task: z.string().min(10).max(20_000),
       title: z.string().min(1).max(120).optional(),
       authorized: z.boolean().default(false),
+      accounts: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/)).max(8).optional(),
     }).strict(),
     execute: async (params, context) => {
       if (!context.threadId || !context.projectId) throw new Error("errand_needs_pm_thread");
       const runId = openRun(context.projectId, context.threadId);
+      // Accounts for a deploy step (ssh, ftp, a login or a key): only names the owner allowed, and only they are named to the helper.
+      let accounts: CatalogEntry[] = [];
+      if (params.accounts?.length) {
+        const gate = await ctx.secrets.check({ declared: params.accounts, allowed: allowedSecretNames(loadProjectSettings(db, context.projectId, getRunSettingsScopes(db, runId))), kinds: ["secret", "login", "ssh", "ftp"] }, { fresh: true });
+        const problem = secretProblem(gate);
+        if (problem.length || gate.unavailable) {
+          return JSON.stringify({ state: "blocked", reason: waitingSecretReason(problem.length ? problem : params.accounts), next: "No helper was started. Fix the access below, then call lane_pilot_errand again with the same arguments:", fix: secretFixLines(gate) }, null, 2);
+        }
+        accounts = params.accounts.map((name) => gate.catalog!.find((entry) => entry.name === name)!);
+        // Fetched only to be masked: whatever the helper prints of them never reaches the PM's view of its report.
+        for (const account of accounts) await ctx.secrets.record(account.name);
+      }
       const pm = await bb.sdk.threads.get({ threadId: context.threadId });
       const environmentId = stringAt(pm, "environmentId");
       if (!environmentId) throw new Error("errand_needs_pm_environment");
@@ -141,7 +176,7 @@ export function mountErrands(ctx: ServerCore): void {
         ...placement,
         ...requiredPolicyField(bb, helperPolicy, "claude-code", "errand"),
         ...writerExecutionSelection("claude-code", ERRAND_MODEL, "high", null),
-        prompt: errandPrompt({ task: params.task, browserHostId: setup.hostId, authorized: params.authorized }),
+        prompt: errandPrompt({ task: params.task, browserHostId: setup.hostId, authorized: params.authorized, accounts }),
         environment: { type: "reuse", environmentId },
         pluginMetadata: { role: "errand", spawnId: `${runId}:${spawnTextId(params.task)}`, lanePilotRunId: runId, parentPmThreadId: context.threadId, helperMode: helperPolicy.mode },
       } as Parameters<typeof fullAccessSpawn>[1]);
@@ -173,13 +208,13 @@ export function mountErrands(ctx: ServerCore): void {
             }
           }
           const raw = (await bb.sdk.threads.output({ threadId: params.threadId })).output;
-          const output = typeof raw === "string" ? raw : outputText(raw);
+          const output = redactKnown(typeof raw === "string" ? raw : outputText(raw));
           return JSON.stringify({ threadId: params.threadId, ...errandVerdict(output), output: fenceOutside("errand", output) }, null, 2);
         }
-        if (observed.kind === "product_failure") return JSON.stringify({ threadId: params.threadId, state: "failed", output: fenceOutside("errand", `${observed.via}: ${observed.detail}`) });
+        if (observed.kind === "product_failure") return JSON.stringify({ threadId: params.threadId, state: "failed", output: fenceOutside("errand", redactKnown(`${observed.via}: ${observed.detail}`)) });
         detail = observed.detail;
       }
-      return JSON.stringify({ threadId: params.threadId, state: "running", output: fenceOutside("errand", detail) });
+      return JSON.stringify({ threadId: params.threadId, state: "running", output: fenceOutside("errand", redactKnown(detail)) });
     },
   });
 }
