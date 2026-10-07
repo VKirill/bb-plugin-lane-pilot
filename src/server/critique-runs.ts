@@ -17,6 +17,9 @@ import { buildExecutionPacket, renderPacketExcerpts } from "../stages/execution-
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../stages/pm-read";
 import { boundedAgentName } from "../stages/role";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../stages/specialist";
+import { reasonForStatus } from "../stages/verdict";
+import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../stages/quality-mode";
+import type { Verdict, VerdictStatus } from "../stages/verdict";
 import { MAIN_ATTEMPT_LIMIT } from "../state-machine";
 import { configuredSetting } from "./context";
 import { fullAccessSpawn } from "./pm-spawn";
@@ -132,9 +135,23 @@ export function dependencyFindings(task:{id:string;depends_on?:readonly string[]
   return found;
 }
 
+/**
+ * What a critic that did not pass tells the PM. A rework is the existing path (the PM fixes the plan, the writer fixes the
+ * code) and keeps its reason; a block stops the task and carries the verdict's own message, in the receipt and in the reason.
+ */
+function verdictReasons(result:{status?:VerdictStatus;summary?:string;verdict?:Verdict}, stage:"plan-critique"|"code-critique"|"specialist-review"):{receipt:string;returned:string} {
+  const rework = { receipt:stage === "specialist-review" ? "specialist_review_blocked" : "critique_changes_requested", returned:`${stage.replace("-","_")}_blocked` };
+  if (result.status !== "block") return rework;
+  const text = reasonForStatus("block", stage, result, rework.returned);
+  return { receipt:text, returned:text };
+}
+
 export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string})
   : Promise<{allowed:boolean;reason?:string;critique?:unknown}> {
-  const settings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
+  const projectSettings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
+  // quality_mode (task, else project, else standard) decides whether this task goes through the plan critique at all.
+  const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
+  const settings = applyQualityMode(projectSettings,qualityMode);
   const selection=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
   const providerId=selection.providerId;
   const modelId=selection.model;
@@ -174,6 +191,10 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   const base = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:source };
   // An updated task runs its critique again over the receipt of the earlier contract (lane_pilot_update_task).
   recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, restart:true });
+  if (qualityMode === "quick") {
+    recordStage(input.db, { ...base, state:"skipped", reason:"quality_mode_quick", result:{ qualityMode } });
+    return { allowed:true };
+  }
   const enabled = settings["plan_critique.enabled"];
   const disabled = enabled === false || enabled === 0
     || (typeof enabled === "string" && ["0", "off", "false", "no"].includes(enabled.trim().toLowerCase()));
@@ -252,10 +273,11 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
     const critique = parseCritique(raw);
     const blocked = critique.decision === "changes_requested" && mode === "gate";
-    const result = { ...critique, mode, structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
+    const result = { ...critique, mode, ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
+    const why = verdictReasons(critique, "plan-critique");
     recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
-      threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
-    return blocked ? { allowed:false, reason:"plan_critique_blocked", critique:result } : { allowed:true, critique:result };
+      threadId, result, reason:blocked ? why.receipt : undefined });
+    return blocked ? { allowed:false, reason:why.returned, critique:result } : { allowed:true, critique:result };
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     if (threadId) {
@@ -284,7 +306,9 @@ export async function runCodeCritique(input:{
   bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;
   config:PrototypeConfig;task:TaskV2;evidence:CandidateEvidence;disputes?:unknown;frozenPolicy?:FrozenCritiquePolicy;
 }): Promise<{allowed:boolean;reason?:string;review:"passed"|"not_required";critique?:unknown;parsed?:ReturnType<typeof parseCodeCritique>;settings?:ReturnType<typeof parseCodeCritiqueSettings>;policy?:FrozenCritiquePolicy}> {
-  const settings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
+  const projectSettings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
+  const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
+  const settings = applyQualityMode(projectSettings,qualityMode);
   const existing = listStageReceipts(input.db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
   const frozen = input.frozenPolicy ?? critiquePolicyFromResult(existing?.result);
   let parsed:ReturnType<typeof parseCodeCritiqueSettings>;
@@ -321,9 +345,9 @@ export async function runCodeCritique(input:{
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
-          threadId:existing.threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+          threadId:existing.threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
         return blocked
-          ? { allowed:false, reason:"code_critique_blocked", critique:result, parsed:critique, settings:parsed, review:"not_required", policy:result.policy }
+          ? { allowed:false, reason:verdictReasons(critique,"code-critique").returned, critique:result, parsed:critique, settings:parsed, review:"not_required", policy:result.policy }
           : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy:result.policy };
       } catch (cause) {
         const reason = cause instanceof Error ? cause.message : String(cause);
@@ -347,9 +371,9 @@ export async function runCodeCritique(input:{
           const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
           const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
           recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
-            threadId:recovered.threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+            threadId:recovered.threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
           return blocked
-            ? { allowed:false, reason:"code_critique_blocked", critique:result, parsed:critique, settings:parsed, review:"not_required", policy:result.policy }
+            ? { allowed:false, reason:verdictReasons(critique,"code-critique").returned, critique:result, parsed:critique, settings:parsed, review:"not_required", policy:result.policy }
             : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy:result.policy };
         } catch (cause) {
           const reason = cause instanceof Error ? cause.message : String(cause);
@@ -396,7 +420,7 @@ export async function runCodeCritique(input:{
     serviceTier:typeof savedTier === "string" && savedTier ? String(savedTier) : "standard",
   });
   if (!parsed.enabled) {
-    recordStage(input.db, { ...base, state:"skipped", reason:"disabled_by_project_setting", result:{ ...ledgerCarry, ...hashFields, policy } });
+    recordStage(input.db, { ...base, state:"skipped", reason:qualityMode === "quick" ? "quality_mode_quick" : "disabled_by_project_setting", result:{ ...ledgerCarry, ...hashFields, policy } });
     return { allowed:true, review:"not_required", settings:parsed, policy };
   }
   if (input.evidence.truncated) {
@@ -428,9 +452,9 @@ export async function runCodeCritique(input:{
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier: writerServiceTier(settings) === "fast" ? "fast" : "standard", mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
-          threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+          threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
         return blocked
-          ? { allowed:false, reason:"code_critique_blocked", critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
+          ? { allowed:false, reason:verdictReasons(critique,"code-critique").returned, critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
           : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy };
       }
       const recovered = await reconcileCritic(criticReconcilePort(input.bb, input.projectId), {
@@ -447,9 +471,9 @@ export async function runCodeCritique(input:{
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...snapshot, ...critique, policy, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
-          threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+          threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
         return blocked
-          ? { allowed:false, reason:"code_critique_blocked", critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
+          ? { allowed:false, reason:verdictReasons(critique,"code-critique").returned, critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
           : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy };
       }
       const reason = recovered.kind === "error"
@@ -504,9 +528,9 @@ export async function runCodeCritique(input:{
     const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
     const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
     recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
-      threadId, result, reason:blocked ? "critique_changes_requested" : undefined });
+      threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
     return blocked
-      ? { allowed:false, reason:"code_critique_blocked", critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
+      ? { allowed:false, reason:verdictReasons(critique,"code-critique").returned, critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
       : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy };
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
@@ -579,9 +603,10 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     if (typeof raw !== "string" || !raw.trim()) throw new Error("specialist_output_empty");
     const review = parseSpecialistResult(raw);
     const blocked = review.decision === "block";
+    const why = verdictReasons(review, "specialist-review");
     recordStage(input.db,{...base,state:blocked ? "blocked" : "passed",providerId,model:modelId,threadId,
-      result:{...review,rawOutput:raw.slice(0,12_000)},reason:blocked ? "specialist_review_blocked" : undefined});
-    return blocked ? {allowed:false,reason:"specialist_review_blocked",review} : {allowed:true,review};
+      result:{...review,rawOutput:raw.slice(0,12_000)},reason:blocked ? why.receipt : undefined});
+    return blocked ? {allowed:false,reason:why.returned,review} : {allowed:true,review};
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     if (threadId) {

@@ -103,8 +103,9 @@ describe("JSON-answering prompts state the exact contract", () => {
       expect(prompt).toContain(NO_TOOLS);
       expect(prompt).toContain("full access to the project checkout");
     }
-    expect(prompts[0]).toContain('"info", "warning" or "blocking"');
-    expect(prompts[2]).toContain('"high" or "critical"');
+    expect(prompts[0]).toContain('status ("pass", "rework" or "block")');
+    expect(prompts[0]).toContain('"critical", "high", "medium", "low" or "info"');
+    expect(prompts[2]).toContain('"critical" or "high"');
     expect(prompts[4]).toContain("at most 5 objects");
     expect(prompts[4]).toContain("owns_paths covers");
   });
@@ -157,11 +158,11 @@ describe("code critique and its repair round", () => {
     expect(actionableFindings(blocked)).toHaveLength(1);
   });
 
-  it("the prompt asks for an id the code can rebuild and says when changes_requested applies", () => {
+  it("the prompt asks for an id the code can rebuild and says when each status applies", () => {
     const prompt = codeCritiquePrompt({ evidence: buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true }), task: {} });
     expect(prompt).not.toContain("Use a stable finding id");
     expect(prompt).toContain("kebab case");
-    expect(prompt).toContain("only when at least one finding is blocking");
+    expect(prompt).toContain("rework: the writer fixes the findings in its own thread");
   });
 
   it("a repeated problem is recognised by id or by file and criterion, even under a new id", () => {

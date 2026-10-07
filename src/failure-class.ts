@@ -40,6 +40,8 @@ const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run s
 const NO_GIT = /not a git repository|no-git mode/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const BUDGET = /^run_budget_exceeded:/;
+/** A critic's block verdict (verdict.ts): the task is stopped, not redone, until the PM or the owner changes the approach. */
+const VERDICT_BLOCK = /^verdict_block:/;
 /** A task waits for an Env Catalog secret its checks declare (J6): the PM's to ask the owner for, never the writer's fault. */
 const WAITING_SECRET = /^waiting_secret:/;
 export const isWaitingSecret = (reason:string | null | undefined):boolean => WAITING_SECRET.test(reason ?? "");
@@ -55,6 +57,7 @@ const PROVIDER_STATES = new Set(["provider_error", "timeout"]);
 
 export function failureClass(state:string, reason:string | null | undefined):FailureClass {
   const text = reason ?? "";
+  if (VERDICT_BLOCK.test(text)) return "contract";
   if (JUDGMENT.test(text)) return "judgment";
   if (BUDGET.test(text) || RETRY_BUDGET.test(text)) return "budget";
   if (LIMIT.test(text)) return "limit";
@@ -121,6 +124,7 @@ export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "harness
 /** What the PM does next about a task that did not end accepted, by its failure class; shown in wait receipts. */
 export function nextStep(state:string, reason:string | null | undefined):string {
   if (["queued", "running", "spawn_requested", "validating"].includes(state)) return "wait: the writer is still on it";
+  if (VERDICT_BLOCK.test(reason ?? "")) return "stopped by a block verdict (the reason names the stage, the finding and its file:line): do not send the same task again; settle what the finding says, by a different approach or by asking the owner, then dispatch a new task";
   if (NO_GIT.test(reason ?? "")) return "the folder has no git and does not fit the no-git mode (too many files or owned bytes): put it under git, or narrow owns_paths, then dispatch again";
   if (RETRY_BUDGET.test(reason ?? "")) return "the task spent its overall retry budget: read the failures, fix the plan or contract and dispatch it again as a new task";
   if (WAITING_SECRET.test(reason ?? "")) return "waiting for an Env Catalog secret: call env_request for each name in the reason (or ask the owner to add it to the setting Secrets checks may use); the task restarts by itself once it is saved, no attempt is spent";

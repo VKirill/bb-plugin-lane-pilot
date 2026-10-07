@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/database";
-import { createSelfRepair, isDue, logIncidents, parseVerdict, reasonSignature, repairPrompt, VERSION } from "../../src/server/self-repair";
+import { createSelfRepair, isDue, logIncidents, parseVerdict, reasonSignature, repairPrompt, repairStatus, VERSION } from "../../src/server/self-repair";
 import type { ServerCore } from "../../src/server/core";
 
 type HostCall = { method: string; input: Record<string, unknown> };
@@ -169,6 +169,20 @@ describe("self-repair", () => {
     const notOurs = { spawnedAt: now - 2 * 86_400_000, spawnVersion: VERSION, verdict: "not-lane-pilot" };
     expect(isDue(record([sample(now - 60_000, VERSION)], notOurs), now)).toBe(false);
     expect(isDue(record([sample(now - 60_000, VERSION)], notOurs), now + 7 * 86_400_000)).toBe(true);
+  });
+
+  it("K2: the repair's verdict is one of the unified statuses: fixed passes, not Lane Pilot's is a rework for the PM, the owner's is a block", async () => {
+    expect(["fixed", "already-fixed", "not-lane-pilot", "needs-owner"].map((verdict) => repairStatus(verdict as never))).toEqual(["pass", "pass", "rework", "block"]);
+    expect(repairStatus(null)).toBeNull();
+    const text = repairPrompt([], "blocked:abc:x", { path: "/wt/r/lane-pilot", branch: "lane/r", basePath: "/repo/lane-pilot" });
+    expect(text).toMatch(/fixed and already-fixed are a pass, not-lane-pilot a rework \(the PM changes something\), needs-owner a block/);
+    const env = setup({}, { thr_repair1: "Готово.\nSELF-REPAIR-VERDICT: not-lane-pilot" });
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    const repair = createSelfRepair(env.ctx);
+    await repair.tick({ since: 0 });
+    await repair.tick();
+    const waiting = ((await repair.status()) as { waiting: Array<{ verdict: string | null; status: string | null }> }).waiting;
+    expect(waiting[0]).toMatchObject({ verdict: "not-lane-pilot", status: "rework" });
   });
 
   it("reads the repair's verdict from its last line and stops repeating a not-ours kind", async () => {

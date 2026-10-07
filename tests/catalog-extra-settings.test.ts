@@ -32,11 +32,12 @@ describe("settings that code reads and the catalog now lists", () => {
     expect(row("usage.skip_percent")).toMatchObject({ uiStatus: "editable", control: "number", min: 0, max: 100, defaultValue: String(DEFAULT_USAGE_SKIP_PERCENT), section: "writer" });
     expect(row("secrets.allow")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "stages", scope: "project" });
     expect(row("ops.provider_pool")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "ops", scope: "project" });
+    expect(row("quality_mode")).toMatchObject({ uiStatus: "editable", control: "select", options: ["quick", "standard", "full"], defaultValue: "standard", section: "stages", scope: "project" });
     expect(bookkeepingSetting({ "bookkeeping.paths": row("bookkeeping.paths")!.defaultValue })).toEqual([]);
   });
 
   it("have a label and a reason in English and in Russian", () => {
-    for (const key of ["writer.silence_nudge_min", "bookkeeping.paths", "integration.gate_command", "integration.gate_when", "integration.gate_every", "verification.sandbox_unsafe", "workspace.provider", "usage.skip_percent", "tasks.mirror", "secrets.allow", "ops.provider_pool"]) {
+    for (const key of ["writer.silence_nudge_min", "bookkeeping.paths", "integration.gate_command", "integration.gate_when", "integration.gate_every", "verification.sandbox_unsafe", "workspace.provider", "usage.skip_percent", "tasks.mirror", "secrets.allow", "quality_mode", "ops.provider_pool"]) {
       const id = row(key)!.id;
       for (const locale of [en, ru] as Array<Record<string, string>>) {
         expect(locale[`field_${id}`], `${key} field`).toBeTruthy();

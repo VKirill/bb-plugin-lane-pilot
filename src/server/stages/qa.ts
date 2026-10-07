@@ -7,6 +7,7 @@ import { MAIN_ATTEMPT_LIMIT } from "../../state-machine";
 import { configuredSetting } from "../context";
 import { freezeRunRouting, inheritedProjectSettings } from "../run-routing";
 import { recordStage } from "../stage-records";
+import { qaStateToStatus } from "../../stages/verdict";
 import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../secrets";
 import { awaitQaVerdict, parseQaCases, runQaThread } from "./qa-thread";
 import { stringAt, valueAt } from "../values";
@@ -258,6 +259,7 @@ export function createQaStages(ctx: ServerCore) {
       const reason = mismatches.length ? `browser_qa_runtime_setting_mismatch:${mismatches.join("; ")}` : result.reason ?? undefined;
       const snapshot = {
         ...result,
+        status: qaStateToStatus(state),
         writerHostId: config.hostId,
         configuredHostId: qaTarget.hostId,
         workspacePath: qaTarget.workspacePath,

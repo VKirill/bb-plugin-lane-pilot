@@ -121,6 +121,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "tasks.mirror": { label: "field_s421", help: "reason_s421" },
   "secrets.allow": { label: "field_s422", help: "reason_s422" },
   "ops.provider_pool": { label: "field_s430", help: "reason_s430" },
+  "quality_mode": { label: "field_s423", help: "reason_s423" },
   "run.gate": { label: "settingRunGate", help: "settingRunGateHelp" },
 };
 

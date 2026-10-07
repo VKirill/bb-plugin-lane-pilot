@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "./model-json";
+import { isSerious, isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSummary, withoutDecision } from "./verdict";
+import type { Verdict, VerdictStatus } from "./verdict";
 
 export const specialistResultSchema = z.object({
   decision: z.enum(["approve", "block"]),
@@ -12,21 +14,36 @@ export const specialistResultSchema = z.object({
   }).strict()).max(30),
 }).strict();
 
-export type SpecialistResult = z.infer<typeof specialistResultSchema>;
+/** The old shape (`decision`, `risks`) kept for the stage's result, plus the unified verdict: a `block` stops the task, a `rework` sends the plan back to the PM. */
+export type SpecialistResult = z.infer<typeof specialistResultSchema> & { status: VerdictStatus; verdict: Verdict; demoted?: number };
 
 export function specialistPrompt(input:{task:unknown; plan:string; agent?:string}):string {
   return [
     `You are ${input.agent?.trim() || "the specialist risk-review stage"} for a bounded software task.`,
     `Review the task and plan for concrete security, data-loss, compatibility, and recovery risks. ${NO_TOOLS_LINE}`,
-    "Answer with one JSON object and nothing else: no text before or after it. Keys: decision (\"approve\" or \"block\"), summary (string, at most 2000 characters), risks (at most 30 objects, each with severity \"high\" or \"critical\", path (at most 500 characters), concern (at most 1000) and mitigation (at most 1000)). Any other key, or a lower severity, makes the answer unreadable and the task is blocked. Use approve with an empty risks array when there is no high or critical risk.",
-    "Block only when a concrete high or critical risk has no adequate mitigation in the supplied plan. Do not invent repository facts.",
+    "Answer with one JSON object and nothing else: no text before or after it. Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, severity \"critical\" or \"high\" (a lower risk is not reported), evidence (at most 2000 characters: what in the task or the plan shows the risk), finding (at most 1000: the concern), criterion (at most 500: the mitigation the plan lacks), and line when you can name it), evidence (string, what you examined and how, at most 4000 characters). Any other key makes the answer unreadable and the task is blocked. Use pass with an empty findings array when there is no high or critical risk.",
+    "rework: a high or critical risk that the PM settles by changing the plan or the contract. block: a risk no edit of the plan removes (data loss, security, a compatibility break the owner must decide); the task stops. Block only when a concrete high or critical risk has no adequate mitigation in the supplied plan. Do not invent repository facts.",
     "TASK CONTRACT:", JSON.stringify(input.task),
     "CANONICAL PLAN:", input.plan,
   ].join("\n\n");
 }
 
 export function parseSpecialistResult(output:string):SpecialistResult {
-  return specialistResultSchema.parse(extractModelJson(output));
+  const raw = extractModelJson(output);
+  if (isVerdictShape(raw)) {
+    const { verdict, demoted } = settleVerdict(verdictSchema.parse(withoutDecision(raw)), "specialist");
+    const risks = verdict.findings.filter(isSerious).map((row) => ({
+      severity: row.severity as "high" | "critical",
+      path: row.file || "-",
+      concern: row.finding ?? row.evidence.slice(0, 1000),
+      mitigation: row.criterion ?? "none stated",
+    }));
+    return { decision: verdict.status === "pass" ? "approve" : "block", summary: verdictSummary(verdict), risks, status: verdict.status, verdict, ...(demoted ? { demoted } : {}) };
+  }
+  const legacy = specialistResultSchema.parse(raw);
+  const status = legacyDecisionToStatus(legacy.decision);
+  return { ...legacy, status, verdict: legacyOutputToVerdict({ status, summary: legacy.summary, findings: legacy.risks.map((risk) => ({
+    severity: "blocking" as const, finding: risk.concern, criterion: risk.mitigation, path: risk.path })) }) };
 }
 
 export function shouldRunSpecialist(input:{enabled:unknown; when:unknown; risk:string}):{run:boolean;reason:string|null} {

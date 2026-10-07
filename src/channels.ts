@@ -117,6 +117,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"workspace.provider", channel:"OWN", reason:"Native Lane Pilot writer worktrees: auto gives each attempt a BB environment of its own provider (with automatic fallback), off is the emergency switch to the old worktree path" },
   { key:"usage.skip_percent", channel:"OWN", reason:"Native Lane Pilot provider usage: share of a usage window from which a writer provider/model is skipped until its reset" },
   { key:"tasks.mirror", channel:"OWN", reason:"Native Lane Pilot BB Tasks mirror: copy this project's tasks into the linked BB Tasks project" },
+  { key:"quality_mode", channel:"OWN", reason:"Native Lane Pilot review depth: quick skips the plan critique and the code critic, standard is the default behaviour, full runs both on every task and requires a browser check for tasks with qa_cases" },
   { key:"secrets.allow", channel:"OWN", reason:"Native Lane Pilot least privilege: the Env Catalog names a task's checks may receive" },
   { key:"ops.provider_pool", channel:"OWN", reason:"Native Lane Pilot writer pools: a cap on simultaneous writers per provider, as provider=limit pairs" },
   { key:"council.product.provider", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
