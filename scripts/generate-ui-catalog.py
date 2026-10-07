@@ -15,6 +15,8 @@ SETTINGS = PROJECT / ".agency/jobs/AG-179/settings.json"
 MATRIX = PROJECT / ".agency/jobs/AG-186/adoc-coverage-matrix.md"
 UPSTREAM = ROOT / ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack"
 TASK_SCHEMA = ROOT / "lane-stack/schemas/task-v2.schema.json"
+# What the upstream matrix cannot say: edits to generated rows, rows added by hand (s366 and on), their labels, the section order.
+HAND = ROOT / "scripts/ui-catalog-hand.json"
 
 BINARIES_LANE_PILOT_INVOKES = {
     "run-controller",
@@ -1398,6 +1400,16 @@ def main() -> None:
     })
     counts["editable"] += 1
 
+    # Hand part (scripts/ui-catalog-hand.json): overrides of generated rows, then the rows added by hand, in id order.
+    hand = json.loads(HAND.read_text())
+    by_id = {row["id"]: row for row in catalog}
+    for row_id, changes in hand["row_overrides"].items():
+        by_id[row_id].update({("default" if key == "defaultValue" else key): value for key, value in changes.items()})
+    for row in hand["rows"]:
+        assert row["index"] == len(catalog), f"hand row {row['id']} is not next in line (expected index {len(catalog)})"
+        catalog.append({("default" if key == "defaultValue" else key): value for key, value in row.items()} | {"hand": True})
+        counts[row["uiStatus"]] += 1
+
     # Write TypeScript catalog
     ts_path = ROOT / "src/ui-catalog.ts"
     lines = [
@@ -1439,7 +1451,7 @@ def main() -> None:
             + f"location:{js_str(row['location'])},category:{js_str(row['category'])},"
             + f"invType:{js_str(row['invType'])},values:{js_str(row['values'])},"
             + f"defaultValue:{js_str(row['default'])},scope:{js_str(row['scope'])},"
-            + f"control:{js_str(row['control'])},options:{json.dumps(row['options'])},"
+            + f"control:{js_str(row['control'])},options:{json.dumps(row['options'], separators=(',', ':')) if row.get('options_compact') else json.dumps(row['options'])},"
             + f"min:{'null' if row['min'] is None else row['min']},max:{'null' if row['max'] is None else row['max']},"
             + f"section:{js_str(row['section'])},channel:{js_str(row['channel'])},"
             + f"uiStatus:{js_str(row['uiStatus'])},rationale:{js_str(row['rationale'])},"
@@ -1460,7 +1472,7 @@ def main() -> None:
     lines.append("export const DISABLED_IDS = VISIBLE_CATALOG.filter((row) => row.uiStatus !== \"editable\").map((row) => row.id);")
     lines.append(
         "export const SECTION_ORDER = ["
-        + ", ".join(js_str(s) for s in SECTIONS_EN)
+        + ", ".join(js_str(s) for s in hand["section_order"])
         + "] as const;"
     )
     ts_path.write_text("\n".join(lines) + "\n")
@@ -1469,6 +1481,8 @@ def main() -> None:
     field_en = {}
     field_ru = {}
     for row in catalog:
+        if row.get("hand"):
+            continue
         field_en[f"field_{row['id']}"] = row["setting"]
         field_ru[f"field_{row['id']}"] = row["setting"]
         field_en[f"reason_{row['id']}"] = row["rationale"]
@@ -1570,9 +1584,17 @@ def main() -> None:
             }
             field_en[f"field_{row['id']}"], field_ru[f"field_{row['id']}"] = names[row["storageKey"]]
             field_ru[f"reason_{row['id']}"] = "Настройка Lane Pilot для исполняемой стадии чтения PM; значения хранятся отдельно для проекта"
+    def hand_fields(entries):
+        for key, en_text, ru_text in entries:
+            field_en[key], field_ru[key] = en_text, ru_text
+    hand_fields(hand["fields"]["before_sections"])
     for sid, title in SECTIONS_EN.items():
         field_en[f"section_{sid}"] = title
         field_ru[f"section_{sid}"] = SECTIONS_RU[sid]
+    hand_fields(hand["fields"]["after_sections"])
+    for key, (en_text, ru_text) in hand["fields"]["overrides"].items():
+        assert key in field_en, key
+        field_en[key], field_ru[key] = en_text, ru_text
 
     fields_path = ROOT / "src/i18n-fields.ts"
     fields_path.write_text(

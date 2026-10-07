@@ -841,6 +841,8 @@ export const fieldEn = {
   reason_s416: "When the gate runs: once the task queue is drained, or after every N merged tasks",
   field_s417: "Merged tasks between gate runs",
   reason_s417: "Used when the gate runs after every N merged tasks. Empty means 5",
+  field_s418: "Tests the sandbox cannot run",
+  reason_s418: "Test files and folders (comma- or line-separated) that must be excluded from a whole-suite check; a task contract that runs the whole suite without excluding them is sent back before any writer starts",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1686,4 +1688,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s416: "Когда идут ворота: один раз, когда очередь задач опустела, или после каждых N слитых задач",
   field_s417: "Слитых задач между воротами",
   reason_s417: "Работает, когда ворота идут после каждых N слитых задач. Пусто означает 5",
+  field_s418: "Тесты, которые песочница не запускает",
+  reason_s418: "Тестовые файлы и папки (через запятую или с новой строки), которые нужно исключать из проверки всего набора; контракт задачи, который запускает весь набор без этих исключений, возвращается до старта исполнителя",
 };

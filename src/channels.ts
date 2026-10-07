@@ -113,6 +113,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"integration.gate_command", channel:"OWN", reason:"Native Lane Pilot integration gate: the whole-suite command run after a batch of tasks merged" },
   { key:"integration.gate_when", channel:"OWN", reason:"Native Lane Pilot integration gate: run when the queue is drained or after every N merged tasks" },
   { key:"integration.gate_every", channel:"OWN", reason:"Native Lane Pilot integration gate: merged tasks between two runs when the gate is every_n" },
+  { key:"verification.sandbox_unsafe", channel:"OWN", reason:"Native Lane Pilot contract lint: tests the verification sandbox cannot run, which a whole-suite check must exclude" },
   { key:"council.product.provider", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.product.model", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.product.reasoning_effort", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
