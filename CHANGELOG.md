@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.181
 
 - **G9: a check's timeout comes from its own history.** Each green run of a verification command is stored (table `lane_pilot_check_duration`, per project and command, last 100 kept); the check's timeout becomes max(the configured one, p95 of the last 20 green runs x 2), the history part capped at 30 minutes and used only after 3 runs. A command with fewer runs, or a configured timeout already higher, is unchanged.
 - **G9: a cap on simultaneous writers per provider.** The project setting `ops.provider_pool` (Operations section; `codex=2, claude-code=3` or a JSON object, limit 1-15, empty means no cap) bounds the writers of one provider across all runs of the project. A task over the cap waits in the queue, not failed, and starts when a slot frees. A provider that is not listed keeps today's behaviour; a fallback model of another provider is not counted.
