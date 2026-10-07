@@ -219,7 +219,7 @@ describe("Agent access tab", () => {
       const cell = (role: string, column: string) => slot.getByTestId(`access-matrix-${role}-${column}`).textContent;
       expect([cell("browser_qa", "skills"), cell("browser_qa", "bbPlugins"), cell("browser_qa", "mcpServers"), cell("browser_qa", "projectInstructions")]).toEqual(["1", "1", "—", "✓"]);
       expect([cell("plan_critic", "skills"), cell("plan_critic", "userInstructions")]).toEqual(["—", "—"]);
-      expect([cell("docs_maintainer", "skills"), cell("specialist_seo_specialist", "skills")]).toEqual(["2", "17"]);
+      expect([cell("docs_maintainer", "skills"), cell("specialist_seo_specialist", "skills")]).toEqual(["2", "18"]);
       // A change at this level: «all» for everything BB has, the changed count, the personal switch on.
       expect([cell("writer", "bbPlugins"), cell("writer", "skills"), cell("writer", "userInstructions")]).toEqual([en.accessAllShort, "1", "✓"]);
       expect(slot.getByTestId("access-matrix-origin-writer").textContent).toBe(en.accessOrigin_project);
