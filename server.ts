@@ -32,6 +32,7 @@ import { createWriterVerify } from "./src/server/writer/verify";
 import { createWriterFinish } from "./src/server/writer/finish";
 import { createWriterStart } from "./src/server/writer/start";
 import { createWriterDispatch } from "./src/server/writer/dispatch";
+import { relayFor } from "./src/server/relay";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
 import { mountLifecycleEvents } from "./src/server/lifecycle-events";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -71,7 +72,10 @@ export default async function plugin(bb: BbPluginApi) {
     { ruleScan: createRuleScan(ctx, services) },
     createStability(ctx, services),
   );
-  mountLifecycleEvents(ctx);
+  mountLifecycleEvents(ctx, { onQueued: (name, entry) => {
+    const id = entry && typeof entry === "object" ? Reflect.get(entry, "id") : undefined;
+    if (typeof id === "string") return relayFor(ctx).queueEvent(name, id).then(() => undefined);
+  } });
   registerRpc(ctx, services);
   registerTools(ctx, services);
   registerCli(ctx, services);

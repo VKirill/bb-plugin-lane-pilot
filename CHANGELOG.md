@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.180
+
+H5: reminders live in BB's own message queue.
+- **`lane_pilot_remind` queues the reminder in BB** with `bb.sdk.threads.send({ mode:"queue-if-active", sendAt:dueAt })`. It shows as a queued card in the PM chat with its time, BB's clock sends it, and it survives a reload of the plugin (the old list in plugin KV and a 30 s sweep did the same, invisibly). The reminder keeps the id of its row (`queuedMessageId`).
+- **The early wake stays.** A watched thread that finishes its turn (`watchThreadId`) or tasks that all finish (`taskIds`) delete the row first (`bb.sdk.threads.queuedMessages.delete`) and then send the reminder at once. If the row is already gone (BB sent it a moment ago) no second one is sent. A cancelled reminder (`lane_pilot_relay_list` with `cancelReminderId`), a reminder closed because the thread it waited on answered, and a reminder left with no tasks delete their row too. A failed delete still sends the early reminder (a repeat is better than a lost one).
+- **The sweep only looks at a queued reminder.** Past its time, a row that BB no longer has counts as sent (`firedBy: time`); a row still waiting (the PM chat is busy) is left to BB. The events `message.dispatched` and `message.cancelled` close the reminder at once (`time`, or `canceled` when the owner deleted the card).
+- **Fallback.** A reminder that cannot be queued (BB refused, an older host) has no `queuedMessageId` and the sweep sends it when due, as before; `LANE_PILOT_NATIVE_REMINDERS=0` switches the queue off. Asks and watched-thread settling are unchanged.
+
 ## 0.1.179
 
 H2: Lane Pilot reacts to BB's lifecycle events when they happen (`src/server/lifecycle-events.ts`); the sweeps stay as the net for a lost event. Same switch as H1 (`LANE_PILOT_THREAD_SIGNALS=0` turns the handlers off); each listener is registered on its own, so a BB that does not know an event only loses that listener.
