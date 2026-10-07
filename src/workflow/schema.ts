@@ -228,8 +228,14 @@ export const workflowSchema = z.object({
   requires: z.object({
     plugins: z.array(z.string()).default([]), skills: z.array(z.string()).default([]), secrets: z.array(z.string()).default([]),
     machines: z.array(z.string()).default([]), env: z.array(z.string()).default([]), browserSession: z.boolean().default(false),
+    /** MCP servers by name (checked on the machine the run works on). */
+    mcp: z.array(z.string().min(1).max(80)).default([]),
+    /** Commands that must exist on that machine: `ffmpeg`, `a|b` for any of, a path such as `~/toolkit/telegram/tg`. A `secrets` entry is an Env Catalog name; `NAME?` is optional. */
+    tools: z.array(z.string().min(1).max(120)).default([]),
+    /** Social networks the chain uses signed in through social-browser: x, threads, instagram, facebook, vk. */
+    platforms: z.array(z.string().min(1).max(40)).default([]),
     project: z.record(z.string(), z.unknown()).optional(),
-  }).strict().default({ plugins: [], skills: [], secrets: [], machines: [], env: [], browserSession: false }),
+  }).strict().default({ plugins: [], skills: [], secrets: [], machines: [], env: [], browserSession: false, mcp: [], tools: [], platforms: [] }),
   status: z.enum(["draft", "tested", "published", "deprecated"]).default("draft"),
   version: z.number().int().min(1).default(1),
   budget: z.object({

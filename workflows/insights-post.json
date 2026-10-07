@@ -92,6 +92,14 @@
     "machines": [
       "browser machine with Threads/Instagram/VK login (cookies from MacBook Pro host_p7jhrgsapq via bb_browser_session_import)",
       "machine with python3 for the skill scripts"
+    ],
+    "tools": [
+      "python3"
+    ],
+    "platforms": [
+      "threads",
+      "instagram",
+      "vk"
     ]
   },
   "budget": {

@@ -7,6 +7,7 @@ import { createStatusResolver } from "../workflow/ops-store";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 import type { createWorkflowLibrary } from "./workflow-library";
+import type { WorkflowPreflight } from "./workflow-preflight";
 
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
 type TrialCase = z.infer<typeof workflowTrialCaseSchema>;
@@ -21,7 +22,8 @@ const trialCase = (result: DraftTestResult): TrialCase => ({
  * What the Workflows tab does with a workflow beyond reading it (W7): the run history, re-running one node of a finished run, a
  * dry run with every external action stubbed, and the tests of a workflow file with their receipt.
  */
-export function createWorkflowOps(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog">>, library: Pick<ReturnType<typeof createWorkflowLibrary>, "loadStore">, options: { timeoutMs?: number } = {}) {
+export function createWorkflowOps(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog">>, library: Pick<ReturnType<typeof createWorkflowLibrary>, "loadStore">,
+  options: { timeoutMs?: number; preflight?: Pick<WorkflowPreflight, "check"> } = {}) {
   const { db } = ctx;
   const statuses = createStatusResolver(db);
 
@@ -47,6 +49,14 @@ export function createWorkflowOps(ctx: ServerCore, services: Pick<Services, "wor
       if (run?.workflow_id === "lp-task-pipeline" || run?.idem_key?.startsWith("lp-task:")) return { ok: false, reason: "pipeline_run" };
       const result = await services.workflowEngine.rerunNode(input.runId, input.nodeId);
       return result.ok ? { ok: true, stepKey: result.stepKey, removed: result.removed } : { ok: false, reason: result.reason };
+    },
+
+    async preflight(input: { id: string; projectId?: string | undefined }): Promise<Output<"workflow_preflight">> {
+      const { store } = await library.loadStore(input.projectId);
+      const item = store.get(input.id);
+      if (!item) return { found: false, ok: false, issues: [], envRequests: [], checked: [] };
+      if (!options.preflight || !input.projectId) return { found: true, ok: true, issues: [], envRequests: [], checked: [] };
+      return { found: true, ...(await options.preflight.check(item.workflow, { projectId: input.projectId })) };
     },
 
     async dryRun(input: { id: string; projectId?: string | undefined; input: Record<string, unknown> }): Promise<Output<"workflow_dry_run">> {

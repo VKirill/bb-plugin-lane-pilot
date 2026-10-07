@@ -212,6 +212,8 @@ const workflowDetailSchema = workflowSummarySchema.extend({
   triggers: z.array(z.string()), requires: z.array(z.string()),
   budget: z.object({ maxSteps: z.number().nullable(), maxTokens: z.number().nullable(), maxCostUsd: z.number().nullable(), maxWallSeconds: z.number().nullable() }).strict(),
   qualityMode: z.string().nullable(), source: z.string(), sha256: z.string(),
+  /** The live run that proved this version (a `tested` workflow whose run succeeded counts as published); null until one did. */
+  proven: z.object({ runId: z.string(), at: z.number().int() }).strict().nullable(),
   warningMessages: z.array(z.string()),
   graph: workflowViewSchema,
   runs: z.array(workflowRunRowSchema),
@@ -1579,6 +1581,14 @@ export const rpcContract = defineRpcContract({
   workflow_rerun_node: {
     input: z.object({ runId: z.string().min(1), nodeId: z.string().min(1).max(80) }).strict(),
     output: z.object({ ok: z.boolean(), reason: z.string().optional(), stepKey: z.string().optional(), removed: z.number().int().optional() }).strict(),
+  },
+  /** Whether what the workflow `requires` exists where it would run (skills, plugins, MCP servers, secrets by name, commands, logins). */
+  workflow_preflight: {
+    input: z.object({ id: z.string().min(1), projectId: z.string().min(1).optional() }).strict(),
+    output: z.object({ found: z.boolean(), ok: z.boolean(),
+      issues: z.array(z.object({ kind: z.string(), name: z.string(), level: z.enum(["missing", "unverified"]), message: z.string() }).strict()),
+      envRequests: z.array(z.object({ name: z.string(), kind: z.literal("secret"), purpose: z.string() }).strict()),
+      checked: z.array(z.object({ kind: z.string(), name: z.string() }).strict()) }).strict(),
   },
   /** A trial run of a workflow with every external action stubbed (agents, code tasks, sends): nothing leaves the machine. */
   workflow_dry_run: {

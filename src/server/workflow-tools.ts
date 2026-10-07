@@ -6,11 +6,16 @@ import { redactKnown } from "../redact";
 import type { WorkflowEngine } from "../workflow/engine";
 import { isOffered, isPipeline, routeIntent } from "../workflow/router";
 import type { RouteDecision, RouterModel, RouterState } from "../workflow/router";
+import { preflightRefusal } from "../workflow/preflight";
+import type { PreflightResult } from "../workflow/preflight";
+import type { Workflow } from "../workflow/schema";
 import type { WorkflowStore } from "../workflow/store";
 import { fenceOutside, registerObservedTool } from "./tool-result";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 import { createRouterModel } from "./workflow-router-model";
+import { realDeps } from "./workflow-architect";
+import { createWorkflowPreflight } from "./workflow-preflight";
 import type { ChainRuntime } from "./workflow-runtime";
 
 /**
@@ -26,6 +31,8 @@ export type WorkflowToolDeps = {
   state?(input: { projectId: string; runId: string | null }): RouterState;
   /** The model step of the router for this PM chat (a helper thread); without it the deterministic scorer decides. */
   model?(input: { pmThreadId: string; projectId: string; runId: string }): RouterModel;
+  /** The check of what the workflow needs (skills, plugins, MCP servers, secrets, commands, logins) before a live run; without it nothing is checked. */
+  preflight?(workflow: Workflow, input: { projectId: string; threadId: string }): Promise<PreflightResult>;
   warn(message: string): void;
 };
 
@@ -76,7 +83,7 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
   }, null, 2);
 }
 
-export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflowId: string; inputs: Record<string, unknown> }, context: ToolContext): Promise<string> {
+export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflowId: string; inputs: Record<string, unknown>; liveTrial?: boolean | undefined }, context: ToolContext): Promise<string> {
   if (!context.threadId || !context.projectId) throw new Error("workflow_needs_pm_thread: call this from a Lane Pilot PM chat");
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   if (!runId) throw new Error("workflow_needs_pm_chat: call this from a Lane Pilot PM chat");
@@ -87,13 +94,26 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   const { workflow } = stored;
   if (isPipeline(workflow)) return refused(`not_runnable: "${workflow.id}" is how Lane Pilot runs every writer task; it starts with lane_pilot_dispatch_writer`, { workflow: workflow.id });
   if (workflow.internal) return refused(`not_runnable: "${workflow.id}" is a fragment of other workflows, not a workflow to start`, { workflow: workflow.id });
-  if (workflow.status !== "published") return refused(`not_runnable: "${workflow.id}" is ${workflow.status}, only published workflows start. Published: ${runnable.join(", ") || "(none)"}`, { workflow: workflow.id });
+  // A tested workflow has passed its stub tests but never run for real: it starts only on the owner's word (liveTrial), and its first successful run makes it published.
+  if (workflow.status !== "published" && !(workflow.status === "tested" && params.liveTrial === true)) {
+    return refused(`not_runnable: "${workflow.id}" is ${workflow.status}, only published workflows start.${workflow.status === "tested" ? " It has passed its tests on stubs but has never run for real: when the owner agrees to a first real run (it will really send, post and spend), call again with liveTrial: true; one successful run makes it published." : ""} Published: ${runnable.join(", ") || "(none)"}`, { workflow: workflow.id });
+  }
   const inputs = params.inputs;
   const missing = workflow.inputs.filter((field) => field.required && field.default === undefined && (inputs[field.name] === undefined || inputs[field.name] === null || inputs[field.name] === ""));
   if (missing.length) {
     return refused(`missing_inputs: ${missing.map((field) => field.name).join(", ")}. Ask the owner for them and call again`, {
       workflow: workflow.id, required: missing.map((field) => ({ name: field.name, type: field.type, ...(field.description ?? field.note ? { detail: field.description ?? field.note } : {}) })),
     });
+  }
+  // What the workflow needs must exist before anything starts: a missing secret is asked for with env_request, a missing tool or login named.
+  let unverified: string[] = [];
+  if (deps.preflight) {
+    const check = await deps.preflight(workflow, { projectId: context.projectId, threadId: context.threadId });
+    if (!check.ok) {
+      return refused(preflightRefusal(check), { workflow: workflow.id, missing: check.issues.filter((issue) => issue.level === "missing").map((issue) => ({ kind: issue.kind, name: issue.name, message: issue.message })),
+        ...(check.envRequests.length ? { envRequests: check.envRequests } : {}) });
+    }
+    unverified = check.issues.map((issue) => issue.message);
   }
   // The same run, workflow and inputs is the same workflow run: a repeated call (a retry after a lost answer) never starts it twice.
   const key = `wf:${runId}:${workflow.id}:${sha16(canonical(inputs))}`;
@@ -105,7 +125,7 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
     started.done.catch((cause: unknown) => deps.warn(`Lane Pilot workflow run ${started.runId} (${workflow.id}) stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
     const status = deps.engine().get(started.runId)?.status ?? "running";
     return JSON.stringify({
-      workflowRunId: started.runId, status, workflow: workflow.id,
+      workflowRunId: started.runId, status, workflow: workflow.id, ...(unverified.length ? { notChecked: unverified } : {}),
       note: started.created
         ? "Started. It runs in the background: poll lane_pilot_workflow_status with this id; show the owner what it is doing."
         : `A run with this workflow and these inputs already exists (status ${status}); nothing new was started. To run it again, change an input.`,
@@ -137,6 +157,7 @@ export async function workflowStatusTool(deps: WorkflowToolDeps, params: { runId
 
 export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
   const { bb, db } = ctx;
+  const preflight = createWorkflowPreflight(ctx, realDeps(ctx, services));
   const deps: WorkflowToolDeps = {
     db,
     store: () => services.workflowCatalog.store(),
@@ -146,6 +167,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
       // Only what is read from the database here; skills, plugins and secrets stay unknown (available) until a probe is plugged in.
       openTasks: () => (runId ? listTaskTerminalStates(db, runId).filter((state) => OPEN_ATTEMPT_STATES.has(state)).length : undefined),
     }),
+    preflight: (workflow, input) => preflight.check(workflow, input),
     model: ({ pmThreadId, projectId, runId }) => createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowAgents),
     warn: (message) => bb.log.warn(message),
   };
@@ -161,8 +183,8 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_run_workflow",
     description: "Start a published Lane Pilot workflow with its inputs and return the workflow run id at once.",
-    instructions: "Use from a Lane Pilot PM chat after lane_pilot_route chose a workflow and the owner agreed. `workflowId` is the id it returned; `inputs` are the workflow's inputs by name (give every entry of `missingInputs`: a call without a required input is refused and lists them). Refused with a reason when the id is unknown, the workflow is not published or is a fragment, an input is missing, or the engine cannot run it yet (the message says which executor is missing). Returns `workflowRunId` and `status` at once; the run goes on in the background, so poll lane_pilot_workflow_status and show the owner what it does. The same workflow with the same inputs in this run is the same workflow run: calling again does not start it twice.",
-    parameters: z.object({ workflowId: z.string().min(1).max(60), inputs: z.record(z.string(), z.unknown()).default({}) }).strict(),
+    instructions: "Use from a Lane Pilot PM chat after lane_pilot_route chose a workflow and the owner agreed. `workflowId` is the id it returned; `inputs` are the workflow's inputs by name (give every entry of `missingInputs`: a call without a required input is refused and lists them). Refused with a reason when the id is unknown, the workflow is not published (a tested one starts only with liveTrial: true, after the owner agreed to a first real run) or is a fragment, an input is missing, something it requires is missing (a secret: call env_request; a tool or login: tell the owner), or the engine cannot run it yet (the message says which executor is missing). Returns `workflowRunId` and `status` at once; the run goes on in the background, so poll lane_pilot_workflow_status and show the owner what it does. The same workflow with the same inputs in this run is the same workflow run: calling again does not start it twice.",
+    parameters: z.object({ workflowId: z.string().min(1).max(60), inputs: z.record(z.string(), z.unknown()).default({}), liveTrial: z.boolean().optional() }).strict(),
     execute: async (params, context) => runWorkflowTool(deps, params, context),
   });
 

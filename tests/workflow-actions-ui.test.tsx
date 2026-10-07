@@ -51,6 +51,7 @@ async function world() {
     workflow_rerun_node: (input: { runId: string; nodeId: string }) => ops.rerunNode(input),
     workflow_dry_run: (input: { id: string; projectId?: string; input?: Record<string, unknown> }) => ops.dryRun({ input: {}, ...input }),
     workflow_run_tests: (input: { id: string; projectId?: string }) => ops.runTests(input),
+    workflow_preflight: (input: { id: string; projectId?: string }) => ops.preflight(input),
   };
   return { db, engine, rpc, broken };
 }
@@ -146,5 +147,32 @@ describe("dry run and tests", () => {
     fireEvent.click(await slot.findByTestId("wf-run-tests"));
     const result = await slot.findByTestId("wf-tests-result");
     await waitFor(() => expect(result.textContent).toContain("Tests: Green. The workflow now counts as Published."));
+  });
+});
+
+describe("requirements", () => {
+  it("shows what is missing and what could not be checked, and where a secret is asked for", async () => {
+    const { rpc } = await world();
+    const slot = await mount({ ...rpc, workflow_preflight: async () => ({ found: true, ok: false,
+      issues: [{ kind: "tool", name: "yt-dlp", level: "missing", message: "yt-dlp is not installed on the machine the run works on." },
+        { kind: "secret", name: "TAVILY_API_KEY", level: "missing", message: "TAVILY_API_KEY is not in Env Catalog." },
+        { kind: "platform", name: "x", level: "unverified", message: "x: no known way to check a login for it." }],
+      envRequests: [{ name: "TAVILY_API_KEY", kind: "secret", purpose: "needed" }], checked: [] }) });
+    fireEvent.click(await slot.findByTestId("wf-row-demo"));
+    fireEvent.click(await slot.findByTestId("wf-check-requires"));
+    const result = await slot.findByTestId("wf-requires-missing-yt-dlp");
+    expect(result.textContent).toContain("not installed");
+    expect(slot.getByTestId("wf-requires-missing-TAVILY_API_KEY")).toBeTruthy();
+    expect(slot.getByTestId("wf-requires-unverified-x")).toBeTruthy();
+    expect(slot.getByTestId("wf-requires-result").textContent).toContain("masked form");
+  });
+
+  it("says everything is there when nothing is missing, and that a tested workflow is not proven yet", async () => {
+    const { rpc } = await world();
+    const slot = await mount(rpc);
+    fireEvent.click(await slot.findByTestId("wf-row-demo"));
+    fireEvent.click(await slot.findByTestId("wf-check-requires"));
+    await waitFor(() => expect(slot.getByTestId("wf-requires-result").textContent).toContain("Everything it needs is there."));
+    expect(slot.getByTestId("wf-proven").textContent).toBe("Published");
   });
 });

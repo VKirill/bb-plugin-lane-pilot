@@ -42,7 +42,7 @@ export type ArchitectDeps = {
   hasExecutor: (key: string) => boolean;
 };
 
-function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
+export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
   const { bb, db, host } = ctx;
   const hostsList = async () => mapListedQaHosts(await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.() ?? []);
   const place = async (threadId: string): Promise<Place | null> => {

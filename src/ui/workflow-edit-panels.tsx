@@ -383,6 +383,9 @@ export function WorkflowForm({ definition, catalog, edit, onClose, narrow }: { d
         <ChipsField label={t("wfEditReqSkills")} values={list("skills")} catalog={catalog.skills.length ? catalog.skills : undefined} onChange={(next) => setRequires("skills", next)} />
         <ChipsField label={t("wfEditReqPlugins")} values={list("plugins")} catalog={catalog.plugins.length ? catalog.plugins : undefined} onChange={(next) => setRequires("plugins", next)} />
         <ChipsField label={t("wfEditReqSecrets")} values={list("secrets")} catalog={catalog.secrets.length ? catalog.secrets : undefined} testId="wf-edit-secrets" hint={t("wfEditReqSecretsHint")} onChange={(next) => setRequires("secrets", next)} />
+        <ChipsField label={t("wfEditReqMcp")} values={list("mcp")} catalog={catalog.mcpServers.length ? catalog.mcpServers.map((value) => ({ value })) : undefined} testId="wf-edit-mcp-servers" onChange={(next) => setRequires("mcp", next)} />
+        <ChipsField label={t("wfEditReqTools")} values={list("tools")} testId="wf-edit-tools" onChange={(next) => setRequires("tools", next)} />
+        <ChipsField label={t("wfEditReqPlatforms")} values={list("platforms")} catalog={["threads", "instagram", "facebook", "vk", "x"].map((value) => ({ value }))} testId="wf-edit-platforms" onChange={(next) => setRequires("platforms", next)} />
         {catalog.mcpServers.length ? <p className="break-words text-xs text-muted-foreground" data-testid="wf-edit-mcp">{t("wfEditMcpAvailable")}: {catalog.mcpServers.join(", ")}</p> : null}
         <SwitchField label={t("wfEditBrowserSession")} checked={requires.browserSession === true} onChange={(next) => setRequires("browserSession", next)} />
       </Section>

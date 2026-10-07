@@ -97,7 +97,7 @@ export function TrialResult({ result, stubbed, onOpenRun }: { result: TrialCase;
   );
 }
 
-type Panel = { kind: "dry" } | { kind: "tests" } | null;
+type Panel = { kind: "dry" } | { kind: "tests" } | { kind: "requires" } | null;
 
 /**
  * «Try it»: a dry run (the owner fills the workflow's inputs, every outside action is stubbed) and the tests of the workflow
@@ -112,6 +112,7 @@ export function WorkflowTrials({ detail, projectId, onOpenRun, onChanged, extra 
   const [error, setError] = useState<string | null>(null);
   const [dry, setDry] = useState<Output<"workflow_dry_run"> | null>(null);
   const [tests, setTests] = useState<Output<"workflow_run_tests"> | null>(null);
+  const [needs, setNeeds] = useState<Output<"workflow_preflight"> | null>(null);
   const scope = projectId ? { projectId } : {};
 
   const runDry = async (input: Record<string, unknown>) => {
@@ -129,6 +130,11 @@ export function WorkflowTrials({ detail, projectId, onOpenRun, onChanged, extra 
     } catch (cause) { setError(errorText(cause)); } finally { setBusy(false); }
   };
 
+  const checkRequires = async () => {
+    setPanel({ kind: "requires" }); setBusy(true); setError(null); setNeeds(null);
+    try { setNeeds(await rpc.call("workflow_preflight", { id: detail.id, ...scope })); } catch (cause) { setError(errorText(cause)); } finally { setBusy(false); }
+  };
+
   return (
     <Surface testId="wf-trials">
       <SurfaceHeader className="flex-wrap justify-between">
@@ -137,6 +143,9 @@ export function WorkflowTrials({ detail, projectId, onOpenRun, onChanged, extra 
           {extra}
           <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2.5 text-xs" disabled={busy} data-testid="wf-dry-run"
             onClick={() => { setPanel({ kind: "dry" }); setDry(null); setError(null); }}>{t("wfDryRun")}</Button>
+          <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2.5 text-xs" disabled={busy} data-testid="wf-check-requires" onClick={() => void checkRequires()}>
+            {busy && panel?.kind === "requires" ? t("wfCheckingRequires") : t("wfCheckRequires")}
+          </Button>
           <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2.5 text-xs" disabled={busy} data-testid="wf-run-tests" onClick={() => void runTests()}>
             {busy && panel?.kind === "tests" ? t("wfRunningTests") : t("wfRunTests")}
           </Button>
@@ -156,6 +165,24 @@ export function WorkflowTrials({ detail, projectId, onOpenRun, onChanged, extra 
                   : <InputsForm fields={detail.inputs} busy={busy} submitLabel={t("wfTrialStart")} onSubmit={(input) => void runDry(input)} onCancel={() => setPanel(null)} />}
               {dry?.result ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setPanel(null)}>{t("wfTrialCancel")}</Button> : null}
             </>
+          ) : null}
+          {panel?.kind === "requires" ? (
+            <div className="space-y-2 text-xs" data-testid="wf-requires-result">
+              <p className="font-medium">{t("wfRequiresHeading")}</p>
+              {busy ? <p className="text-muted-foreground" role="status">{t("wfCheckingRequires")}</p> : null}
+              {needs && !needs.issues.length ? <p>{t("wfRequiresOk")}</p> : null}
+              {(["missing", "unverified"] as const).map((level) => {
+                const rows = needs?.issues.filter((issue) => issue.level === level) ?? [];
+                return rows.length ? (
+                  <div key={level}>
+                    <p className={level === "missing" ? "font-medium text-destructive-text" : "font-medium"}>{level === "missing" ? t("wfRequiresMissing") : t("wfRequiresUnverified")}</p>
+                    <ul className="list-disc space-y-0.5 pl-4">{rows.map((issue) => <li key={`${issue.kind}:${issue.name}`} className="break-words" data-testid={`wf-requires-${level}-${issue.name}`}>{issue.message}</li>)}</ul>
+                  </div>
+                ) : null;
+              })}
+              {needs?.envRequests.length ? <p className="text-muted-foreground">{t("wfRequiresEnvHint")}</p> : null}
+              <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setPanel(null)}>{t("wfTrialCancel")}</Button>
+            </div>
           ) : null}
           {panel?.kind === "tests" ? (
             <div className="space-y-2" data-testid="wf-tests-result">
