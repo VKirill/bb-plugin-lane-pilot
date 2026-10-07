@@ -1,5 +1,5 @@
 import { getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadProjectSettings, openDatabase } from "./src/database";
-import { closeOrphanWriterStages } from "./src/server/stage-records";
+import { createTaskReconcile } from "./src/server/task-reconcile";
 import { createActivation } from "./src/server/activation";
 import { registerCli } from "./src/server/cli";
 import { createCore } from "./src/server/core";
@@ -85,9 +85,14 @@ export default async function plugin(bb: BbPluginApi) {
     cleanupStickyLaneWorktrees(db, removeLaneWorktree, releasedLaneWorktrees, Date.now(), signal).then((removed) => {
       if (removed.length) bb.log.info(`Lane Pilot released ${removed.length} area worktree(s) after their sticky window`);
     }, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot area worktree sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`))]).then(() => undefined), { timeoutMs: 20 * 60_000 });
-  const sweepParked = (signal?: AbortSignal) => services.stability.sweep(Date.now(), signal).then(() => undefined,
-    (cause) => bb.log.warn(`Lane Pilot parked-task sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
-  scheduleIsolated(bb, "parked-task-sweep", "*/5 * * * *", sweepParked, { timeoutMs: 10 * 60_000 });
+  const taskReconcile = createTaskReconcile(ctx, services);
+  // The same ordered pass as at start-up, minus the resume of attempts in flight: a lost retry or a landed merge is found
+  // within five minutes, not at the next reload.
+  scheduleIsolated(bb, "task-reconcile", "*/5 * * * *", (signal) => taskReconcile.reconcileTasks({ phase: "periodic",
+    step: async (name, work) => {
+      if (signal?.aborted || ctx.isDisposed()) return;
+      try { await work(); } catch (cause) { bb.log.warn(`Lane Pilot ${name} skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    } }), { timeoutMs: 10 * 60_000 });
   const sweepSilentWriters = (signal?: AbortSignal) => sweepWriterSilence({
     bb, signal, getThread:(threadId) => ctx.getThreadBounded(threadId), isDisposed:ctx.isDisposed, log:(line) => bb.log.info(line),
     openAttempts:() => listOpenAttempts(db),
@@ -141,18 +146,14 @@ export default async function plugin(bb: BbPluginApi) {
             else services.maintainProjectLifeAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
           }
         });
-        await step("resume on start", () => services.resumeOrphans());
-        if (!skipScans) await step("run sweep", sweepRuns);
-        if (!skipScans) await step("worktree sweep", sweepEnvironments);
-        await step("parking of blocked tasks", () => services.stability.adoptBlockedByFaults());
-        if (!skipScans) await step("parked-task sweep", sweepParked);
+        await step("restore of the breakers", () => services.stability.restoreBreakers());
+        await taskReconcile.reconcileTasks({ phase: "startup", step, afterResume: async () => {
+          if (!skipScans) await step("run sweep", sweepRuns);
+          if (!skipScans) await step("worktree sweep", sweepEnvironments);
+        } });
         await step("adoption of waiting rules", () => {
           const adopted = adoptWaitingRules(db);
           if (adopted) bb.log.info(`Lane Pilot put ${adopted} waiting rule(s) on trial`);
-        });
-        await step("stage cleanup", () => {
-          const closed = closeOrphanWriterStages(db, services.activeWriterTasks);
-          if (closed) bb.log.info(`Lane Pilot closed ${closed} writer stage(s) left open after their task ended`);
         });
         await step("browser check recovery", () => {
           const adopted = services.resumeBrowserQaThreads();

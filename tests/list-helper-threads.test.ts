@@ -69,6 +69,7 @@ describe("list_helper_threads RPC", () => {
     setRunThread(db, "run_1", "thr_pm");
     createTask(db, { id: "task_1", runId: "run_1", kind: "bb", contract: { id: "task_1" } });
     createAttempt(db, { id: "att_1", runId: "run_1", taskId: "task_1" });
+    transitionAttempt(db, "att_1", "spawn_requested");
     transitionAttempt(db, "att_1", "running", { threadId: "thr_writer_1" });
     saveStageReceipt(db, {
       runId: "run_1",

@@ -6,7 +6,7 @@ import { aggregateRun } from "../aggregation";
 import { TARGET_SHA } from "../constants";
 import { hostContract } from "../contracts";
 import type { PrototypeConfig, TaskV2 } from "../contracts";
-import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setRunSettingsScopes, setRunState, transitionAttempt } from "../database";
+import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../database";
 import { writerServiceTier } from "../jev-reasoning";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "../lp-defaults";
 import { createNativeInstaller } from "../native-install-lifecycle";
@@ -26,6 +26,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   // Set before the database closes on reload (dispose hooks run LIFO); detached writer tasks check it.
   const state = { disposed: false };
   bb.onDispose(() => { state.disposed = true; });
+  setIllegalTransitionLog((message) => bb.log.warn(message));
 
   const rawHost = bb.hosts.experimental_client({ contract:hostContract });
 

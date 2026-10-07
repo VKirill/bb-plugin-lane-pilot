@@ -244,7 +244,8 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
       const before=(await git(input.basePath,["rev-parse","HEAD"])).stdout.trim();
       // Main moved while the writer worked: replay the attempt on the current main first. Clean, it merges without
       // another writer turn; a real conflict is left as it was and the merge below reports it for the free redo.
-      const rebased=branch.startsWith("lane/")&&before?await rebaseOntoBase(input.worktreePath,before):null;
+      // The attempt's own branch only: Lane Pilot's lane/<attempt> and the BB-managed bb/<attempt> worktree (one per attempt too).
+      const rebased=(branch.startsWith("lane/")||branch.startsWith("bb/"))&&before?await rebaseOntoBase(input.worktreePath,before):null;
       // main moved and the attempt was replayed on it: the replayed result has not been run anywhere yet, and two tasks
       // that merge cleanly can still break each other. Red, nothing merges: the writer gets the output as a free redo.
       if(rebased&&input.replayCheck) {

@@ -20,6 +20,7 @@ describe("attempt workspace for a native run's own worktree", () => {
     createTask(db, { id: "bot-fix", runId: "run", kind: "bb", contract: task });
     createAttempt(db, { id: "lpattempt_a", runId: "run", taskId: "bot-fix" });
     expect(setAttemptWorkspace(db, "lpattempt_a", { path: worktree, environmentId: null, decision: {} })).toBe(true);
+    transitionAttempt(db, "lpattempt_a", "spawn_requested");
     transitionAttempt(db, "lpattempt_a", "running", { threadId: "thr_writer" });
     // Resumed after a reload: the writer is still at work in its own worktree.
     expect(core.acceptedTaskWorkspace("run", "bot-fix", base, task, "lpattempt_a").path).toBe(worktree);
@@ -51,6 +52,7 @@ describe("stages after acceptance", () => {
     createTask(db, { id: "bot-fix", runId: "run", kind: "bb", contract: task });
     createAttempt(db, { id: "lpattempt_b", runId: "run", taskId: "bot-fix" });
     setAttemptWorkspace(db, "lpattempt_b", { path: "/bb/env_b/selfystudio", environmentId: "env_b", decision: {} });
+    transitionAttempt(db, "lpattempt_b", "spawn_requested");
     transitionAttempt(db, "lpattempt_b", "running", { threadId: "thr_writer" });
     expect(core.acceptedTaskWorkspace("run", "bot-fix", base, task, "lpattempt_b")).toMatchObject({ path: "/bb/env_b/selfystudio", environmentId: "env_b" });
     transitionAttempt(db, "lpattempt_b", "accepted");

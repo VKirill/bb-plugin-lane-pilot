@@ -1,5 +1,6 @@
 import { isTaskSatisfied, loadBlockedBy } from "../blocked-by";
 import { setRunHalted } from "../runs-halt";
+import { isLiveDecision } from "../../live-folder";
 import { pmReadBrief } from "../../writer-brief";
 import { buildCliInvocation } from "../../argv-builder";
 import { requiredCliFlags } from "../../cli-flags";
@@ -7,9 +8,9 @@ import { classifyCliOutcome } from "../../cli-outcome";
 import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../constants";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
+import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
 import { sha256 } from "../../stages/contract";
-import { nextStep, taskFamily } from "../../failure-class";
+import { liveFolderLockNote, nextStep, taskFamily } from "../../failure-class";
 import { isMainfixTask } from "../../validate-output";
 import { validateTaskV2 } from "../../task-v2";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
@@ -312,6 +313,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return { tasks, ids:new Set(tasks.map((row) => row.taskId)) };
   }
 
+  /** A writer's unanswered question in a folder without git keeps the folder locked: the wait receipt says so. */
+  const folderLockNote = (attempt:{ id:string; state:string; reason:string | null }):string =>
+    liveFolderLockNote(attempt.state, attempt.reason, isLiveDecision(getAttempt(db, attempt.id)?.workspace_decision));
+
   async function waitWriter(args:{threadId:string; projectId:string; runId:string; timeoutSec:number}): Promise<Record<string, unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm" || stringAt(metadata, "lanePilotRunId") !== args.runId) {
@@ -403,7 +408,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           .filter((row) => row !== null);
         const nudged = await countRunNudges(bb.storage.kv, (listedRun?.attempts ?? []).map((row) => row.id));
         const next = [...latestByTask.values()].filter((attempt) => attempt.state !== "accepted")
-          .map((attempt) => ({ taskId:attempt.task_id, state:attempt.state, next:nextStep(attempt.state, attempt.reason) }));
+          .map((attempt) => ({ taskId:attempt.task_id, state:attempt.state, next:`${nextStep(attempt.state, attempt.reason)}${folderLockNote(attempt)}` }));
         return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), nudged, ...(reasons.length ? { reason:reasons.join("; ") } : {}),
           ...(next.length ? { next } : {}),
           ...(blockedBy.length ? { blockedBy } : {}) };
@@ -523,7 +528,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       }
       attemptId = id("lpattempt");
       createAttempt(db, { id: attemptId, runId, taskId });
-      transitionAttempt(db, attemptId, outcome.status, { reason: outcome.reason });
+      recordFinishedAttempt(db, attemptId, outcome.status, outcome.reason);
     }
     saveProjectSetting(db, args.projectId, cliReceiptRunKey(runId), JSON.stringify(receipt));
     if (attemptId) {

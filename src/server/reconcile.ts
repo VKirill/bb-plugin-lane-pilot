@@ -93,7 +93,8 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     };
     const result = await reconcile(threadReconcilePort(projectId), key);
     if (result.kind === "found") {
-      transitionAttempt(db, attempt.id, "running", { threadId:result.threadId });
+      // A stop requested before the reload stays requested: the attempt goes on to «canceled», not back to «running».
+      if (attempt.state !== "cancel_requested") transitionAttempt(db, attempt.id, "running", { threadId:result.threadId });
       return result.threadId;
     }
     if (result.kind === "not_found") {

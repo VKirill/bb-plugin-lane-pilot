@@ -69,17 +69,19 @@ export function closeWriterStages(db:ReturnType<typeof openDatabase>, input:{run
 
 /**
  * Writer stages left pending or running although the task's latest attempt has finished and nothing works on it:
- * closed from that attempt's state. Runs after start-up recovery, which resumes the attempts still in flight.
+ * closed from that attempt's state. Runs after start-up recovery, which resumes the attempts still in flight, and
+ * before the parking of faulted tasks (task-reconcile.ts), so a lost retry is parked in the same pass. `idleMs` keeps
+ * an attempt that moved more recently than that alone: the periodic pass must not meet a loop between two attempts.
  */
-export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, active:ReadonlySet<string>): number {
+export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, active:ReadonlySet<string>, idleMs = 0, now = Date.now()): number {
   const rows = db.prepare(`SELECT DISTINCT s.run_id, s.task_id FROM lane_pilot_stage_receipt s
     WHERE s.stage_id IN ('writer-agent','verification','acceptance-receipt') AND s.state IN ('pending','running')`).all() as Array<{ run_id:string; task_id:string }>;
   let closed = 0;
   for (const row of rows) {
     if (active.has(`${row.run_id}:${row.task_id}`)) continue;
-    const latest = db.prepare(`SELECT id, state, reason, thread_id FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1`)
-      .get(row.run_id, row.task_id) as { id:string; state:string; reason:string|null; thread_id:string|null } | undefined;
-    if (!latest) continue;
+    const latest = db.prepare(`SELECT id, state, reason, thread_id, updated_at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1`)
+      .get(row.run_id, row.task_id) as { id:string; state:string; reason:string|null; thread_id:string|null; updated_at:number } | undefined;
+    if (!latest || now - latest.updated_at < idleMs) continue;
     // A failed attempt waiting for its retry: the loop that would retry it died with a reload, and start-up recovery
     // resumes only attempts in flight. Nobody retries it, so it ends here and the PM decides.
     if (RETRY_ELIGIBLE.includes(latest.state as AttemptState)) {

@@ -68,6 +68,7 @@ function services(env: ReturnType<typeof setup>, script: Step[], live: boolean) 
       spawned.push(input.attemptId);
       setAttemptWorkspace(env.db, input.attemptId, { path: WORKSPACE, environmentId: null,
         decision: live ? { strategy: "inherit_run", reason: LIVE_FOLDER_REASON } : { strategy: "inherit_run", reason: "below_threshold" } });
+      transitionAttempt(env.db, input.attemptId, "spawn_requested");
       transitionAttempt(env.db, input.attemptId, "running", { threadId: "thr_w" });
       // Every spawn snapshots the folder again, and the folder differs from the first snapshot (a stray file stayed).
       return { ok: true, threadId: "thr_w", providerId: "p", model: "wm", dirtBefore: [{ path: "stray.txt", sha256: `snapshot-${spawned.length}` }], workspacePath: WORKSPACE };
@@ -112,6 +113,7 @@ afterEach(() => { vi.useRealTimers(); });
 function busyFolder(env: ReturnType<typeof setup>) {
   createTask(env.db, { id: "B1", runId: "run1", kind: "bb", contract: contract("B1") });
   createAttempt(env.db, { id: "b1-a", runId: "run1", taskId: "B1" });
+  transitionAttempt(env.db, "b1-a", "spawn_requested");
   transitionAttempt(env.db, "b1-a", "running", { threadId: "thr_b" });
 }
 
@@ -222,4 +224,50 @@ it("measures every attempt of a task against the folder as the first one found i
   await vi.waitFor(() => expect(writerStage(git.db).state).toBe("passed"));
   expect(gitRun.dirtSeen).toEqual(["snapshot-1", "snapshot-2"]);
   await git.harness.lifecycle.dispose();
+});
+
+it("keeps the folder without git locked while a writer's question is unanswered: other tasks queue, the PM is told", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  const env = setup();
+  // T1's writer asked a question and its attempt ended blocked, as it does when the writer answers with NEEDS_HUMAN.
+  const t1 = services(env, [{ needsHuman: true }], true);
+  start(env, t1.all);
+  await vi.advanceTimersByTimeAsync(50);
+  vi.useRealTimers();
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("failed"));
+  await vi.waitFor(() => expect(t1.all.activeWriterTasks.size).toBe(0));
+  expect(env.sends.map((send) => send.input[0]!.text).join("\n")).toContain("the folder stays locked: other tasks for it queue until this question is answered");
+
+  // T2's files are disjoint from T1's, yet it may not start in the folder T1's writer left half-edited.
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  const t2 = services(env, [{ accept: true }], true);
+  start(env, t2.all, "T2");
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(t2.spawned).toEqual([]);
+  expect(writerStage(env.db, "T2")).toMatchObject({ state: "pending", reason: expect.stringContaining("waiting for T1") });
+  expect(writerStage(env.db, "T2").reason).toContain("its writer's question is unanswered and the folder has no git");
+
+  // The PM answers: T1's attempt goes on (here it is accepted), the lock is gone and T2 starts.
+  transitionAttempt(env.db, "T1-a1", "running", { threadId: "thr_w" });
+  transitionAttempt(env.db, "T1-a1", "accepted");
+  await vi.advanceTimersByTimeAsync(10_000);
+  vi.useRealTimers();
+  await vi.waitFor(() => expect(t2.spawned).toEqual(["T2-a1"]));
+  await env.harness.lifecycle.dispose();
+});
+
+it("a git folder is not held by a writer's question", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  const env = setup();
+  const t1 = services(env, [{ needsHuman: true }], false);
+  start(env, t1.all);
+  await vi.advanceTimersByTimeAsync(50);
+  vi.useRealTimers();
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("failed"));
+  await vi.waitFor(() => expect(t1.all.activeWriterTasks.size).toBe(0));
+  expect(env.sends.map((send) => send.input[0]!.text).join("\n")).not.toContain("folder stays locked");
+  const t2 = services(env, [{ accept: true }], false);
+  start(env, t2.all, "T2");
+  await vi.waitFor(() => expect(t2.spawned).toEqual(["T2-a1"]));
+  await env.harness.lifecycle.dispose();
 });

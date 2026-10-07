@@ -9,9 +9,14 @@ import type { StageId, StageState } from "./stages/contract";
 import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
 import { validateSettingValue, validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "./lp-defaults";
+import packageJson from "../package.json";
+import { IllegalTransitionError, isLegalMove } from "./state-machine";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
+
+/** The Lane Pilot version that creates attempts; stored on each attempt (harness_version) to tell which build ran it. */
+export const HARNESS_VERSION: string = packageJson.version;
 
 export const migrations = [
   `CREATE TABLE lane_pilot_project_settings (
@@ -254,6 +259,9 @@ export const migrations = [
   `ALTER TABLE lane_pilot_token_daily ADD COLUMN uncached_tokens INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE lane_pilot_token_daily ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE lane_pilot_token_daily ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0`,
+  // 0.1.177: the Lane Pilot build that created the attempt; null on attempts made before. A parked task restarts when the
+  // running build differs from the one its failed attempt ran under, not from the build that happened to park it.
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN harness_version TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -627,8 +635,15 @@ export function findOpenNativeRun(db: LanePilotDatabase, projectId: string, thre
 export function createAttempt(db: LanePilotDatabase, ids: { id:string; runId:string; taskId:string }): void {
   const now = Date.now();
   const used = countAttempts(db, ids.runId, ids.taskId);
-  db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,attempt_no,created_at,updated_at) VALUES (?,?,?,\'queued\',?,?,?)")
-    .run(ids.id, ids.runId, ids.taskId, used + 1, now, now);
+  db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,attempt_no,created_at,updated_at,harness_version) VALUES (?,?,?,\'queued\',?,?,?,?)")
+    .run(ids.id, ids.runId, ids.taskId, used + 1, now, now, HARNESS_VERSION);
+}
+
+/** The Lane Pilot build the task's latest attempt was created by; null when it predates the column or the task has none. */
+export function latestAttemptHarnessVersion(db: LanePilotDatabase, runId: string, taskId: string): string | null {
+  const row = db.prepare("SELECT harness_version FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1")
+    .get(runId, taskId) as { harness_version: string | null } | undefined;
+  return row?.harness_version ?? null;
 }
 
 /** Bind a task attempt to one immutable writer workspace exactly once. */
@@ -715,6 +730,20 @@ export function listOpenAttempts(db: LanePilotDatabase): Array<{
     ORDER BY a.created_at`).all() as Array<{
     id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string;
   }>;
+}
+
+/**
+ * Tasks whose latest attempt ended with the writer's question (`needs_human:`) and nobody has answered it yet. The writer's
+ * edits are still in the files where the folder has no git, so such a task still holds its folder.
+ */
+export function listUnansweredWriterQuestions(db: LanePilotDatabase): Array<{
+  id:string; run_id:string; task_id:string; thread_id:string|null; project_id:string; reason:string|null;
+}> {
+  return db.prepare(`SELECT a.id,a.run_id,a.task_id,a.thread_id,a.reason,r.project_id
+    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE a.state='blocked' AND a.reason LIKE 'needs_human:%' AND r.closed_at IS NULL
+      AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
+    ORDER BY a.created_at`).all() as Array<{ id:string; run_id:string; task_id:string; thread_id:string|null; project_id:string; reason:string|null }>;
 }
 
 /** A section's settings live under binding_id "section:<id>"; the project's own under "". */
@@ -804,10 +833,18 @@ export function releaseActivation(db: LanePilotDatabase, projectId: string, runI
 /** States an attempt never leaves: its work is merged, or the owner stopped it. */
 const FINAL_ATTEMPT_STATES = ["accepted", "canceled"] as const;
 
+let illegalTransitionLog:(message:string) => void = (message) => console.warn(message);
+/** Where a refused move is reported (the plugin log); until set, the console. */
+export function setIllegalTransitionLog(log:(message:string) => void):void { illegalTransitionLog = log; }
+
 /**
  * Moves an attempt to a new state and journals it. An accepted or canceled attempt keeps its state: before,
  * a cancel during verification could be overwritten with «accepted» after the merge (fleet invariants audit,
- * 2026-10-03). Returns false when the move was refused.
+ * 2026-10-03). Returns false when the move was refused that way.
+ *
+ * Every other move must be a row of the state machine's table (src/state-machine.ts) or one of its documented operational
+ * moves. An illegal one is logged, journaled as refused and thrown as `IllegalTransitionError`: a caller that did it is
+ * wrong, and the writer loop's catch ends the attempt as `internal_error` (a Lane Pilot fault, parked and restarted).
  */
 export function transitionAttempt(
   db: LanePilotDatabase,
@@ -818,12 +855,32 @@ export function transitionAttempt(
   const now = Date.now();
   const before = db.prepare("SELECT state FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { state: string } | undefined;
   if (!before) return false;
+  const settled = (FINAL_ATTEMPT_STATES as readonly string[]).includes(before.state);
+  if (!settled && before.state !== state && !isLegalMove(before.state, state)) {
+    db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,1,?)`)
+      .run(attemptId, before.state, state, `illegal move: ${fields.reason ?? ""}`.trim(), now);
+    const error = new IllegalTransitionError(attemptId, before.state, state);
+    illegalTransitionLog(`Lane Pilot refused ${error.message}${fields.reason ? `: ${fields.reason.slice(0, 200)}` : ""}`);
+    throw error;
+  }
   const changed = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, updated_at=?
     WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=?)`)
     .run(state, fields.threadId ?? null, fields.reason ?? null, now, attemptId, ...FINAL_ATTEMPT_STATES, state).changes === 1;
   db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
     .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
   return changed;
+}
+
+/**
+ * An attempt whose work ran before it was recorded (a native CLI run: the command has finished when the attempt is
+ * written): journals the steps it went through, then its outcome. A blocked outcome needs no steps.
+ */
+export function recordFinishedAttempt(db: LanePilotDatabase, attemptId: string, status: "accepted" | "blocked" | "running", reason?: string): void {
+  if (status !== "blocked") {
+    transitionAttempt(db, attemptId, "spawn_requested");
+    transitionAttempt(db, attemptId, "running");
+  }
+  if (status !== "running") transitionAttempt(db, attemptId, status, { reason });
 }
 
 export function inspectState(db: LanePilotDatabase, projectId: string): Record<string,unknown> {
@@ -837,16 +894,16 @@ export function inspectState(db: LanePilotDatabase, projectId: string): Record<s
 
 export function getAttempt(db: LanePilotDatabase, attemptId: string): {
   id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; attempt_no:number; dirt_before:DirtSnapshot[];
-  workspace_path:string|null;environment_id:string|null;workspace_decision:unknown|null;
+  workspace_path:string|null;environment_id:string|null;workspace_decision:unknown|null;harness_version:string|null;
 }|undefined {
-  const row = db.prepare("SELECT id,run_id,task_id,thread_id,holder_thread_id,state,reason,attempt_no,dirt_before_json,workspace_path,environment_id,workspace_decision_json FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
-    {id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; attempt_no:number; dirt_before_json?:string;workspace_path:string|null;environment_id:string|null;workspace_decision_json:string|null}|undefined;
+  const row = db.prepare("SELECT id,run_id,task_id,thread_id,holder_thread_id,state,reason,attempt_no,dirt_before_json,workspace_path,environment_id,workspace_decision_json,harness_version FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
+    {id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; attempt_no:number; dirt_before_json?:string;workspace_path:string|null;environment_id:string|null;workspace_decision_json:string|null;harness_version:string|null}|undefined;
   if (!row) return undefined;
   const dirt_before = parseDirtSnapshots(row.dirt_before_json ?? "[]");
   let workspace_decision:unknown|null=null;
   if(row.workspace_decision_json){try{workspace_decision=JSON.parse(row.workspace_decision_json);}catch{workspace_decision={invalidStoredDecision:true};}}
   return { id:row.id, run_id:row.run_id, task_id:row.task_id, thread_id:row.thread_id, holder_thread_id:row.holder_thread_id, state:row.state, reason:row.reason ?? null, attempt_no:row.attempt_no, dirt_before,
-    workspace_path:row.workspace_path,environment_id:row.environment_id,workspace_decision };
+    workspace_path:row.workspace_path,environment_id:row.environment_id,workspace_decision,harness_version:row.harness_version ?? null };
 }
 
 export type ReasoningTrace = {

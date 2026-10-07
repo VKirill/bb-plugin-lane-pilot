@@ -46,6 +46,7 @@ async function acceptedInArea(env: ReturnType<typeof setup>, acceptedAgo = 0) {
   createTask(env.db, { id: "gc-hub", runId: "run", kind: "bb", contract: task("gc-hub", "page:/cards") });
   createAttempt(env.db, { id: "a1", runId: "run", taskId: "gc-hub" });
   setAttemptWorkspace(env.db, "a1", { path: worktree, environmentId: "env_a", decision: { strategy: "provision_attempt_worktree" } });
+  transitionAttempt(env.db, "a1", "spawn_requested");
   transitionAttempt(env.db, "a1", "running", { threadId: "thr_w" });
   saveReasoningTrace(env.db, { attemptId: "a1", runId: "run", threadId: "thr_w", providerId: "claude-code", model: "opus", effectiveReasoningLevel: "high", serviceTier: null } as never);
   transitionAttempt(env.db, "a1", "accepted");
@@ -176,6 +177,7 @@ describe("continuing a writer thread", () => {
     createTask(env.db, { id: "t", runId: "run", kind: "bb", contract: task("t") });
     createAttempt(env.db, { id: "f1", runId: "run", taskId: "t" });
     setAttemptWorkspace(env.db, "f1", { path: base, environmentId: null, decision: {} });
+    transitionAttempt(env.db, "f1", "spawn_requested");
     transitionAttempt(env.db, "f1", "running", { threadId: "thr_r" });
     transitionAttempt(env.db, "f1", "validation_failed", { reason: "verification failed (npm test): exit 1" });
     const redo = (await env.sticky.retryWriter("f1", "run"))!;
@@ -199,6 +201,8 @@ describe("continuing a writer thread", () => {
     const failed = (id: string, reason: string) => {
       createAttempt(env.db, { id, runId: "run", taskId: "t" });
       setAttemptWorkspace(env.db, id, { path: base, environmentId: null, decision: {} });
+      transitionAttempt(env.db, id, "spawn_requested");
+      transitionAttempt(env.db, id, "running");
       transitionAttempt(env.db, id, "validation_failed", { threadId: `thr_${id}`, reason });
     };
     failed("m1", "merge_conflict: main changed since this attempt started: page.vue");

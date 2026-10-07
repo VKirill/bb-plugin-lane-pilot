@@ -266,6 +266,7 @@ describe("section 9 storage.database DDL", () => {
     expect(getAttempt(db,"attempt-workspace-1")).toMatchObject({workspace_path:"/worktrees/task-1",environment_id:"env-task-1",workspace_decision:decision});
     expect(setAttemptWorkspace(db,"attempt-workspace-1",{path:"/worktrees/stale",environmentId:"env-stale",decision})).toBe(false);
     expect(()=>setAttemptWorkspace(db,"attempt-workspace-1",{path:"relative/path",environmentId:null,decision})).toThrow("must be absolute");
+    transitionAttempt(db, "attempt-workspace-1", "spawn_requested");
     transitionAttempt(db,"attempt-workspace-1","running");
     expect(setAttemptWorkspace(db,"attempt-workspace-1",{path:"/worktrees/late",environmentId:null,decision})).toBe(false);
     await harness.lifecycle.dispose();

@@ -1102,6 +1102,7 @@ describe("BB writer validation on the server path", () => {
     setRunThread(db, "run-resume", pmThreadId);
     createTask(db, { id:"resume-task", runId:"run-resume", kind:"bb", contract:resumeTask });
     createAttempt(db, { id:"attempt-resume", runId:"run-resume", taskId:"resume-task" });
+    transitionAttempt(db, "attempt-resume", "spawn_requested");
     transitionAttempt(db, "attempt-resume", "running", { threadId:"writer-orphan" });
     setAttemptDirtBefore(db, "attempt-resume", ["hello.txt"]);
     await plugin(bb);
@@ -1243,6 +1244,7 @@ describe("BB writer validation on the server path", () => {
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-cancel", projectId);
     createAttempt(db, { id:"attempt-cancel", runId:"run-cancel", taskId:"t" });
+    transitionAttempt(db, "attempt-cancel", "spawn_requested");
     transitionAttempt(db, "attempt-cancel", "running", { threadId:"writer-cancel" });
     await plugin(bb);
     const result = await harness.behavior.runCli(["cancel", "attempt-cancel"]);
@@ -1292,6 +1294,7 @@ describe("BB writer validation on the server path", () => {
     saveLegacyWriterConfig(db);
     createRun(db, "run-active-cancel", projectId);
     createAttempt(db, { id:"attempt-active-cancel", runId:"run-active-cancel", taskId:"t" });
+    transitionAttempt(db, "attempt-active-cancel", "spawn_requested");
     transitionAttempt(db, "attempt-active-cancel", "running", { threadId:"writer-active" });
     await plugin(bb);
     expect(await harness.behavior.callRpc("cancel_attempt", { attemptId:"attempt-active-cancel" }))
