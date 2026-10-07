@@ -115,6 +115,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"integration.gate_every", channel:"OWN", reason:"Native Lane Pilot integration gate: merged tasks between two runs when the gate is every_n" },
   { key:"verification.sandbox_unsafe", channel:"OWN", reason:"Native Lane Pilot contract lint: tests the verification sandbox cannot run, which a whole-suite check must exclude" },
   { key:"usage.skip_percent", channel:"OWN", reason:"Native Lane Pilot provider usage: share of a usage window from which a writer provider/model is skipped until its reset" },
+  { key:"tasks.mirror", channel:"OWN", reason:"Native Lane Pilot BB Tasks mirror: copy this project's tasks into the linked BB Tasks project" },
   { key:"council.product.provider", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.product.model", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.product.reasoning_effort", channel:"OWN", reason:"Native Lane Pilot council seat setting" },

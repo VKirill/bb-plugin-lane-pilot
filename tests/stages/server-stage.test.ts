@@ -58,7 +58,10 @@ const usageCalls:string[]=[];
 /** Rows BB's provider-retry left queued in threads, and the order of the deletes and the spawns that followed. */
 let queuedRetries:Array<Record<string,unknown>>=[];
 const queueLog:string[]=[];
-afterEach(()=>{usageReadings=null;usageCalls.length=0;queuedRetries=[];queueLog.length=0;});
+/** The BB Tasks plugin: null is a hub where it is absent or disabled; calls are what Lane Pilot sent it. */
+let tasksPlugin:{linkedProjectId:string|null}|null=null;
+const tasksCalls:Array<{method:string;input:Record<string,unknown>}>=[];
+afterEach(()=>{usageReadings=null;usageCalls.length=0;queuedRetries=[];queueLog.length=0;tasksPlugin=null;tasksCalls.length=0;});
 function holdEvents(threadId:string):()=>void {
   let release=()=>{};
   heldEvents.set(threadId,new Promise<void>((resolve)=>{release=()=>{heldEvents.delete(threadId);resolve();};}));
@@ -254,7 +257,15 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           if(!usageReadings) throw new Error("no plugin publishes "+method);
           return [{pluginId:"provider-codex"}];
         },
-        callRpc:async ({method,input}:{pluginId:string;method:string;input?:unknown})=>{
+        callRpc:async ({pluginId,method,input}:{pluginId:string;method:string;input?:unknown})=>{
+          if(pluginId==="tasks"){
+            if(!tasksPlugin) throw new Error("plugin tasks is not enabled");
+            const args=(input??{}) as Record<string,unknown>;
+            tasksCalls.push({method,input:args});
+            if(method==="listProjects") return {projects:tasksPlugin.linkedProjectId?[{id:"01HZZZZZZZZZZZZZZZZZZZZZZZ",linkedBbProjectId:tasksPlugin.linkedProjectId}]:[]};
+            if(method==="createTask") return {ok:true,task:{id:"01HYYYYYYYYYYYYYYYYYYYYYYY",key:"LP-1"}};
+            return {ok:true,task:{id:"01HYYYYYYYYYYYYYYYYYYYYYYY",key:"LP-1"},threadId:args.threadId};
+          }
           usageCalls.push(method);
           if(method==="provider-usage.v1.listResources") return {resources:Object.keys(usageReadings??{}).map((providerId)=>({
             id:providerId,accountKey:null,providerId,label:providerId,scope:{kind:"host",hostId:config.hostId,hostName:"stage"}}))};
@@ -1425,6 +1436,36 @@ describe("stage → native writer → receipt", () => {
     expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="emergency-writer")).toHaveLength(1);
     expect(queueLog.filter((line)=>line.startsWith("delete:"))).toEqual([]);
     await harness.lifecycle.dispose();
+  });
+
+  // BB Tasks mirror (I3): off by default; when on, the task is copied with its status, writer thread and milestone comments.
+  it("mirrors a task into the linked BB Tasks project when the project turns it on: status, thread, comments that wake nobody",async()=>{
+    tasksPlugin={linkedProjectId:projectId};
+    const {harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"tasks.mirror":true});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    await until("the mirror's last call",()=>tasksCalls.some((call)=>call.method==="updateTask"&&call.input.status==="done"));
+    const methods=tasksCalls.map((call)=>call.method);
+    expect(methods.filter((method)=>method==="createTask")).toHaveLength(1);
+    expect(tasksCalls.find((call)=>call.method==="createTask")?.input).toMatchObject({projectId:"01HZZZZZZZZZZZZZZZZZZZZZZZ",title:task.title,status:"todo"});
+    expect(tasksCalls.filter((call)=>call.method==="updateTask").map((call)=>call.input.status)).toEqual(["in_progress","done"]);
+    expect(tasksCalls.find((call)=>call.method==="taskThreadsAttach")?.input).toMatchObject({taskId:"01HYYYYYYYYYYYYYYYYYYYYYYY",threadId:expect.stringMatching(/^writer-thread-/)});
+    const comments=tasksCalls.filter((call)=>call.method==="createComment");
+    expect(comments.length).toBeGreaterThanOrEqual(2);
+    expect(comments.every((call)=>call.input.notify===false)).toBe(true);
+    await harness.lifecycle.dispose();
+  });
+
+  it("mirrors nothing by default, when the Tasks plugin is absent, or when no tracker project is linked — and the writer is unaffected",async()=>{
+    for(const [plugin,extra] of [[{linkedProjectId:projectId},{}],[null,{"tasks.mirror":true}],[{linkedProjectId:null},{"tasks.mirror":true}]] as const){
+      tasksPlugin=plugin;tasksCalls.length=0;
+      const {harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,...extra});
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+      const done=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
+      expect(done.state,JSON.stringify([plugin,extra])).toBe("accepted");
+      expect(tasksCalls.filter((call)=>call.method!=="listProjects"),JSON.stringify([plugin,extra])).toEqual([]);
+      await harness.lifecycle.dispose();
+    }
   });
 
   it("runs one emergency provider after primary provider failures and records provenance in the accepted receipt",async()=>{

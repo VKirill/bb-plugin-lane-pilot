@@ -21,6 +21,7 @@ describe("settings that code reads and the catalog now lists", () => {
 
   it("has a row for each, with the default the code uses", () => {
     expect(row("writer.silence_nudge_min")).toMatchObject({ uiStatus: "editable", control: "number", min: 1, defaultValue: String(DEFAULT_SILENCE_NUDGE_MIN), section: "writer" });
+    expect(row("tasks.mirror")).toMatchObject({ uiStatus: "editable", control: "switch", defaultValue: "false" });
     expect(row("bookkeeping.paths")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "" });
     expect(row("integration.gate_command")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "" });
     const gate = parseIntegrationGateSettings({});
@@ -32,7 +33,7 @@ describe("settings that code reads and the catalog now lists", () => {
   });
 
   it("have a label and a reason in English and in Russian", () => {
-    for (const key of ["writer.silence_nudge_min", "bookkeeping.paths", "integration.gate_command", "integration.gate_when", "integration.gate_every", "verification.sandbox_unsafe", "usage.skip_percent"]) {
+    for (const key of ["writer.silence_nudge_min", "bookkeeping.paths", "integration.gate_command", "integration.gate_when", "integration.gate_every", "verification.sandbox_unsafe", "usage.skip_percent", "tasks.mirror"]) {
       const id = row(key)!.id;
       for (const locale of [en, ru] as Array<Record<string, string>>) {
         expect(locale[`field_${id}`], `${key} field`).toBeTruthy();
@@ -56,7 +57,7 @@ describe("settings that code reads and the catalog now lists", () => {
     }
 
     const versions: Record<string, number> = {};
-    for (const [key, good] of [["writer.silence_nudge_min", 30], ["bookkeeping.paths", "docs/generated/**, notes/*.tmp"], ["integration.gate_command", "npm test"], ["integration.gate_when", "every_n"], ["integration.gate_every", 3], ["verification.sandbox_unsafe", "tests/pipeline.test.ts, tests/verification/**"], ["usage.skip_percent", 85]] as const) {
+    for (const [key, good] of [["writer.silence_nudge_min", 30], ["bookkeeping.paths", "docs/generated/**, notes/*.tmp"], ["integration.gate_command", "npm test"], ["integration.gate_when", "every_n"], ["integration.gate_every", 3], ["verification.sandbox_unsafe", "tests/pipeline.test.ts, tests/verification/**"], ["usage.skip_percent", 85], ["tasks.mirror", true]] as const) {
       const saved = await save(key, good);
       expect(saved.ok, key).toBe(true);
       versions[key] = saved.version!;

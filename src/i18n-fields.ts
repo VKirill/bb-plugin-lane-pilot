@@ -845,6 +845,8 @@ export const fieldEn = {
   reason_s418: "Test files and folders (comma- or line-separated) that must be excluded from a whole-suite check; a task contract that runs the whole suite without excluding them is sent back before any writer starts",
   field_s419: "Skip a provider at usage",
   reason_s419: "When a usage window of the writer's provider (read from BB's usage sources) is at or above this percentage, the task goes to the next model of the writer chain until the window resets. 0 turns it off. Empty means 90; without usage data nothing is skipped",
+  field_s420: "Mirror tasks into BB Tasks",
+  reason_s420: "Each Lane Pilot task also appears in the BB Tasks project linked to this BB project, with its status, writer thread and a comment at each milestone. Needs the Tasks plugin and a linked tracker project; Lane Pilot never reads it back. Off by default",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1694,4 +1696,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s418: "Тестовые файлы и папки (через запятую или с новой строки), которые нужно исключать из проверки всего набора; контракт задачи, который запускает весь набор без этих исключений, возвращается до старта исполнителя",
   field_s419: "Пропускать провайдера при расходе",
   reason_s419: "Когда окно расхода провайдера писателя (из источников расхода BB) достигло этого процента, задачу берёт следующая модель цепочки писателей до сброса окна. 0 выключает. Пусто означает 90; без данных о расходе ничего не пропускается",
+  field_s420: "Зеркалить задачи в BB Tasks",
+  reason_s420: "Каждая задача Lane Pilot появляется и в проекте BB Tasks, привязанном к этому проекту BB: статус, тред писателя и комментарий на каждой вехе. Нужны плагин Tasks и привязанный проект трекера; Lane Pilot ничего не читает обратно. По умолчанию выключено",
 };
