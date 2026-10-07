@@ -2,7 +2,7 @@ import { mountErrands } from "./errands";
 import { cancelAttemptById } from "./cancel";
 import { LANE_PILOT_READ_NAME } from "../bounded-read";
 import { taskV2Schema } from "../contracts";
-import { getRun, getRunSettingsScopes, listOpenAttempts, loadProjectSettings, loadPrototypeConfig } from "../database";
+import { getRun, getRunSettingsScopes, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../database";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../native-run";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../native-session-hooks";
 import { readGateReport } from "../stages/gate-report";
@@ -18,6 +18,7 @@ import { mountSelfRepair } from "./self-repair";
 import { mountHookTimeoutWatch } from "./hook-timeouts";
 import { mountWorkflowArchitect } from "./workflow-architect";
 import { registerObservedTool, ToolError } from "./tool-result";
+import { compactDispatchReply, compactReceipt, stageDetail } from "./stage-brief";
 import { createWriterAnswer } from "./writer/answer";
 import { createWriterUpdateTask } from "./writer/update-task";
 import { z } from "zod";
@@ -44,6 +45,7 @@ export function compactWaitResult(result: unknown): unknown {
   const stages = Array.isArray(row.stages) ? (row.stages as Array<Record<string, unknown>>) : null;
   return clip({
     ...row,
+    ...("receipt" in row ? { receipt: compactReceipt(row.receipt) } : {}),
     ...(stages ? { stages: stages.map((stage) => ({ taskId: stage.taskId, stageId: stage.stageId, state: stage.state,
       ...(typeof stage.reason === "string" && stage.reason ? { reason: stage.reason.slice(0, 400) } : {}) })) } : {}),
   });
@@ -69,13 +71,11 @@ export function registerTools(ctx: ServerCore, services: Services) {
   registerObservedTool(bb.agents, {
     name:"lane_pilot_dispatch_writer",
     description:"Start a task-v2 contract with the configured native BB writer and return run/attempt identity immediately.",
-    instructions:"Use only from a Lane Pilot PM thread. Send every task of the plan now, each in its own call: one task per page or feature, with its area field; tasks whose owns_paths do not overlap run in parallel, a task whose owns_paths or area overlap an open task's waits for it (the area's writer then continues it in its own thread), and a task with depends_on (task ids that must be accepted first) starts by itself once they are — do not hold tasks back in waves. Returns before writer completion: poll lane_pilot_wait_writer with the returned runId, or end your turn with lane_pilot_remind on the task ids. A task's own failure goes back to its writer as feedback turns in the same thread (up to 5 turns or 120 minutes); sending a task again while one of its family runs or is parked returns task_in_progress. A provider, limit or catalog failure moves it down the writer chain (writer model, fallback 1, fallback 2, then the PM's model) without a redispatch. The optional quality_mode field (quick, standard, full) sets how many review stages this task goes through and wins over the project's setting: leave it out unless the owner asked for it; qa_cases lists the browser checks a task owes in full mode (run them with lane_pilot_browser_qa). A critic's block verdict stops the task with a reason that starts verdict_block: do not send it again unchanged.",
+    instructions:"Use only from a Lane Pilot PM thread. One call per task (one page or feature, with its area field); send every task of the plan now. Tasks whose owns_paths do not overlap run in parallel; one whose owns_paths or area overlap an open task waits for it (the area's writer then continues it in its own thread); one with depends_on (task ids that must be accepted first) starts by itself once they are. Returns before the writer finishes: poll lane_pilot_wait_writer with the runId, or end your turn with lane_pilot_remind on the task ids. A task's own failure goes back to its writer as feedback turns in the same thread (up to 5 turns or 120 minutes); sending a task again while one of its family runs or is parked returns task_in_progress. A provider, limit or catalog failure moves it down the writer chain without a redispatch. quality_mode (quick, standard, full) wins over the project's setting: leave it out unless the owner asked; qa_cases are the browser checks a task owes in full mode (lane_pilot_browser_qa). A reason that starts verdict_block is a critic's block: do not send the task again unchanged.",
     parameters:z.object({ confirm:z.literal(true), plan:z.string().min(1), task:taskV2Schema.optional(), baseRef:z.string().trim().min(1).max(240).optional(),
       objective:z.string().trim().min(1).max(2000).describe("What this whole run is for, in one or two sentences; send it with the first dispatch. Lane Pilot keeps the first one in the run's record.").optional() }).strict(),
     execute: async (params, context) => JSON.stringify(
-      await services.dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task, plan:params.plan, baseRef:params.baseRef, objective:params.objective }),
-      null,
-      2,
+      compactDispatchReply(await services.dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task, plan:params.plan, baseRef:params.baseRef, objective:params.objective })),
     ),
   });
 
@@ -137,11 +137,22 @@ export function registerTools(ctx: ServerCore, services: Services) {
   registerObservedTool(bb.agents, {
     name:"lane_pilot_wait_writer",
     description:"Wait up to 240 seconds for a Lane Pilot writer run and return its persisted receipt or running state.",
-    instructions:"Use only from the same Lane Pilot PM thread that dispatched the run. If state is running, call again with the same runId.",
-    parameters:z.object({ runId:z.string().min(1), timeoutSec:z.number().int().min(1).max(240).default(60) }).strict(),
-    execute: async (params, context) => JSON.stringify(
-      compactWaitResult(await services.waitWriter({ threadId:context.threadId, projectId:context.projectId, runId:params.runId, timeoutSec:params.timeoutSec })),
-    ),
+    instructions:"Use only from the same Lane Pilot PM thread that dispatched the run. If state is running, call again with the same runId. The reply is a receipt: one line per stage; pass stage (and taskId) to read one stage's full stored result.",
+    parameters:z.object({ runId:z.string().min(1), timeoutSec:z.number().int().min(1).max(240).default(60),
+      stage:z.string().min(1).max(40).optional().describe("A stage id (plan-critique, pm-read, specialist-review, acceptance-receipt...): returns that stage's stored result at once, without waiting. Replies carry one line per stage only."),
+      taskId:z.string().min(1).optional().describe("With stage: only this task's receipt.") }).strict(),
+    execute: async (params, context) => {
+      if (params.stage) {
+        const run = getRun(db, params.runId);
+        if (!run || run.project_id !== context.projectId || run.pm_thread_id !== context.threadId) {
+          throw new ToolError("run does not belong to this PM thread and project", { code: "not_pm_run", retryable: false, sideEffects: "none" });
+        }
+        return JSON.stringify(stageDetail(params.runId, params.stage, listStageReceipts(db, params.runId, params.taskId)));
+      }
+      return JSON.stringify(
+        compactWaitResult(await services.waitWriter({ threadId:context.threadId, projectId:context.projectId, runId:params.runId, timeoutSec:params.timeoutSec })),
+      );
+    },
   });
 
   // The answer service reads the shared bag at call time, so it is mounted here instead of the composition root.
@@ -229,7 +240,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   registerObservedTool(bb.agents, {
     name:"lane_pilot_browser_qa",
     description:"Check an accepted task in a browser: a child thread drives the BB browser on the project's Browser QA machine (the Mac mini) and returns a verdict per case and viewport.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. The check runs in a child thread that opens the BB browser on the Browser QA machine (the Mac mini), even when this chat runs elsewhere; a localhost target on another machine is opened at that machine's private VPN address. When the target is a dev server that is not running, pass its start command in devServer (e.g. npm -w @app/web run dev -- --port 5173): the check starts it in a BB terminal of its thread and closes it afterwards. Supply concrete browser-ui cases and the exact target URL; viewports are CSS widths (default 375,768,1280). Production, unknown, or stateful side-effect cases require authorized=true. Authorization follows the owner's goal: every reversible step needed for the approved outcome inside the owner's accounts is authorized without asking step by step; ask the owner once up front only for destructive, paid, outgoing, permission or irreversible steps. A case that needs a sign-in starts with `login: NAME` (an Env Catalog entry of kind login that the owner allowed in the setting secrets.allow): the check thread then reads only that login. If the login is missing or not allowed, nothing starts and the answer says what to do (env_request for a missing one); call again afterwards. Show the owner the returned @thread link. A verdict is passed only when every case passed on every viewport.",
+    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. The check runs in a child thread that opens the BB browser on the Browser QA machine (the Mac mini), even when this chat runs elsewhere; a localhost target on another machine is opened at that machine's private VPN address. When the target is a dev server that is not running, pass its start command in devServer (e.g. npm -w @app/web run dev -- --port 5173): the check starts it in a BB terminal of its thread and closes it afterwards. Supply concrete browser-ui cases and the exact target URL; viewports are CSS widths (default 375,768,1280). Production, unknown, or stateful side-effect cases require authorized=true. Authorization follows the owner's goal, as in your instructions. A case that needs a sign-in starts with `login: NAME` (an Env Catalog entry of kind login that the owner allowed in the setting secrets.allow): the check thread then reads only that login. If the login is missing or not allowed, nothing starts and the answer says what to do (env_request for a missing one); call again afterwards. Show the owner the returned @thread link. A verdict is passed only when every case passed on every viewport.",
     parameters:z.object({
       runId:z.string().min(1), taskId:z.string().min(1), url:z.string().url(),
       cases:z.array(z.string().min(1).max(2000)).min(1).max(30),

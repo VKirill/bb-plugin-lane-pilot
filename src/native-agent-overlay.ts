@@ -37,6 +37,12 @@ const PLUGIN_IGNORED_SET = new Set<string>(PLUGIN_IGNORED_FIELDS);
 const BB_SESSION_OWNED_SET = new Set<string>(BB_SESSION_OWNED_FIELDS);
 const DROPPED_IDENTITY_FIELDS = new Set(["name", "color", "experimental"]);
 const CLI_SESSION_TOOLS = new Set(["SendMessage", "ListAgents", "TaskStop"]);
+/**
+ * Claude Code defers MCP tool schemas (names only at start, the schema when the model asks) only when the session has
+ * the ToolSearch tool. An agent whose `tools` list names tools one by one lacks it, so every MCP schema was sent up front
+ * (Opus PMs: 36.6k tokens at the start, 15k of them MCP). The PM list adds it.
+ */
+export const DEFERRED_MCP_LOADER = "ToolSearch";
 
 export function splitClaudeToolList(raw: string): string[] {
   const out: string[] = [];
@@ -414,7 +420,8 @@ export function overlaySessionTools(agentId: string, tools: string[]): string[] 
   const base = withoutLpBridgeTools(dropCliSessionTools(withoutCodeWritingSubagents(agentId, tools)));
   if (nativeAgentName(agentId) === WORKFLOW_ARCHITECT_ID) return unionLpBridgeTools(base, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS);
   if (!isLanePmAgent(agentId)) return base;
-  return unionLpBridgeTools(base, NATIVE_LP_BRIDGE_PM_TOOLS);
+  const withBridge = unionLpBridgeTools(base, NATIVE_LP_BRIDGE_PM_TOOLS);
+  return withBridge.includes(DEFERRED_MCP_LOADER) ? withBridge : [...withBridge, DEFERRED_MCP_LOADER];
 }
 
 type BundledRow = { displayName?: string; tools?: string[]; skills?: string[] };

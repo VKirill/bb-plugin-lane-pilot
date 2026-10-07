@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **PM dispatch and wait replies are receipts (review 2, L2).** `lane_pilot_dispatch_writer` answers with state, ids, warnings, pm-read open questions and `stages` as `{stageId, state, reason?, verdict?}` (verdict: a critic's decision with its finding count and summary line, pm-read's fact count); the stored stage results, the critique's raw output and the pending writer placeholders no longer ride in the chat (95 % of a reply, median 6.8k chars). `lane_pilot_wait_writer` keeps its stage rows and `next`/`blockedBy` hints, and its `receipt` loses the acceptance record, `runV2`, `readFirst`, `ownsPaths` and check logs (a failed check keeps the last 400 chars; the output is cut at 600 chars). The full result of one stage is one call away: `lane_pilot_wait_writer` with `stage` (and `taskId`), answered at once. New `src/server/stage-brief.ts`.
+- **PM MCP schemas load on demand (review 2, L3).** Claude Code defers MCP tool schemas only when the session has the `ToolSearch` tool; the PM agent's `tools` list names tools one by one and lacked it, so all MCP schemas (Lane Pilot, gitnexus, metamcp, agentmemory: 15k tokens) were sent at the start on every Opus PM. `overlaySessionTools` now adds `ToolSearch` to the PM list (`ENABLE_TOOL_SEARCH` is not needed). Specialists and the architect are unchanged.
+- Shorter `lane_pilot_dispatch_writer`, `lane_pilot_browser_qa`, `lane_pilot_browser` and `lane_pilot_errand` instructions: the authorization paragraph repeated in each is the PM prompt's.
+
 ## 0.1.190
 
 - The architect's chat opens beside the library or graph inside the Workflows tab (ThreadChat, right column; stacked under on narrow screens), and a draft it creates or patches opens on the left by itself. Before, the chat replaced the Lane Pilot page.
