@@ -244,7 +244,10 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         if (bound?.workspace_path && bound.environment_id) {
           workspacePath=bound.workspace_path;
           environment={type:"reuse",environmentId:bound.environment_id};
-        } else if (nativeRun && !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path)) {
+        } else if ((nativeRun && !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path))
+          // BB's managed worktree starts the writer at the repo root; a folder nested in a larger repo needs the same
+          // subfolder inside the worktree, which only Lane Pilot's own worktree gives (OVH live check 2026-10-07).
+          || await nestedInRepo(input.config.hostId, run.writer_workspace_path)) {
           // BB's managed worktree always forks the project root; a Lane chat in a section with its own
           // repository gets a git worktree of that repository from Lane Pilot instead (~/.lane-pilot/worktrees).
           // A chat in a subfolder of a larger repo gets a worktree of that repo and works in the same subfolder there.
@@ -436,6 +439,13 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       return { ok:true, threadId: await services.reconcileAttemptThread(input.projectId, attempt), providerId:selectedProviderId, model:selectedModel, dirtBefore:attempt.dirt_before,
         workspacePath:attempt.workspace_path ?? input.task.project_cwd };
     }
+  }
+
+  /** Whether the folder is a subfolder of a larger git repo, asked on its own host (the hub may not see the folder). */
+  async function nestedInRepo(hostId:string, folder:string):Promise<boolean> {
+    const ran = await host.call("runCommand", { requestedHostId:hostId, command:"git rev-parse --show-prefix", cwd:folder, timeoutSec:15 },
+      { hostId, timeoutMs:20_000 }).catch(() => null);
+    return Boolean(ran && ran.exitCode === 0 && /^[^\n]+\/\s*$/.test(ran.stdout));
   }
 
   async function workspaceDirt(config: PrototypeConfig, workspacePath = config.writerWorkspacePath): Promise<{ ok:true; paths:string[]; snapshots:DirtSnapshot[] } | { ok:false; reason:string }> {

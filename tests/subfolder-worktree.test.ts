@@ -23,10 +23,10 @@ const task: TaskV2 = {
   objective: "edit the bot", acceptance: ["files exist"], verify: "none", verification: [],
 };
 
-function spawnEnv(options: { bound?: boolean; createReason?: string } = {}) {
+function spawnEnv(options: { bound?: boolean; createReason?: string; kind?: "bb" | "cli"; projectRoot?: boolean } = {}) {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
-  createRun(db, "run", "P", "cli", folder);
+  createRun(db, "run", "P", options.kind ?? "cli", folder);
   setRunThread(db, "run", "pm");
   createTask(db, { id: "t1", runId: "run", kind: "bb", contract: task });
   createAttempt(db, { id: "a1", runId: "run", taskId: "t1" });
@@ -40,7 +40,7 @@ function spawnEnv(options: { bound?: boolean; createReason?: string } = {}) {
       storage: bb.storage,
       log: { info() {}, warn() {} },
       sdk: {
-        projects: { get: async () => ({ sources: [] }) },
+        projects: { get: async () => ({ sources: options.projectRoot ? [{ hostId: "h", path: folder }] : [] }) },
         providers: {
           list: async () => [{ id: "codex", available: true, serviceTiers: [{ id: "default" }] }],
           models: async () => ({
@@ -58,7 +58,10 @@ function spawnEnv(options: { bound?: boolean; createReason?: string } = {}) {
     host: {
       call: async (method: string, input: { cwd?: string }) => {
         hostCalls.push(method);
-        if (method === "runCommand") return { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" };
+        if (method === "runCommand") {
+          const command = (input as { command?: string }).command ?? "";
+          return { hostId: "h", exitCode: 0, stdout: command === "git rev-parse --show-prefix" ? "apps/bot/\n" : "[]", stderr: "" };
+        }
         if (method === "gitCreateWorktree") {
           return options.createReason
             ? { status: "failed", path: null, branch: null, reason: options.createReason }
@@ -85,6 +88,16 @@ it("gives a nested chat folder a worktree of its repo and runs the writer in the
   expect(getAttempt(db, "a1")).toMatchObject({ workspace_path: worktreeFolder, environment_id: null, state: "running" });
   expect((spawned[0] as { environment: unknown }).environment)
     .toEqual({ type: "host", hostId: "h", workspace: { type: "unmanaged", path: worktreeFolder } });
+});
+
+it("gives a project-root folder nested in a repo Lane Pilot's own worktree, not BB's managed one that starts at the repo root", async () => {
+  // Live OVH 2026-10-07: a managed worktree put the writer at the repo root and it created a new index.md there.
+  const { hostCalls, writer } = spawnEnv({ kind: "bb", projectRoot: true });
+  const result = await writer.spawnWriterAttempt({
+    projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "edit the bot", pmThreadId: "pm",
+  });
+  expect(result).toMatchObject({ ok: true, workspacePath: worktreeFolder });
+  expect(hostCalls).toContain("gitCreateWorktree");
 });
 
 it("resumes a bound attempt in its recorded worktree without making another", async () => {

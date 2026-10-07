@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.174
+
+- **A project whose folder is a subfolder of a larger repo: the writer now works in that subfolder.** When the chat folder was the project's own root but sat inside a bigger git repo (a section, GitHub one level up), BB's managed worktree started the writer at the repo root. The writer then created new files at the root, the post-merge check in the subfolder failed, and a pointless `-mainfix` followed. Such a folder (`git rev-parse --show-prefix` on its own machine) now gets Lane Pilot's own worktree of the repo, with the writer in the same subfolder. Found in a live check on OVH, 2026-10-07.
+
 ## 0.1.173
 
 - **Activation on a slow machine no longer times out.** `coexistenceInventory` (the scan of a machine's Claude/Lane setup at activation) now runs as a host background job, like `detect` and `importConfig`. Activating a project on OVH failed with «host plugin call … exceeded its deadline», and a host worker died. Found in a live check of a nested-folder project on OVH, 2026-10-07.
