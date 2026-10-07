@@ -1,3 +1,4 @@
+import { memoryUsefulness } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "./contracts";
 
 /**
@@ -6,7 +7,7 @@ import type { TaskV2 } from "./contracts";
  * the same writer did the task as well from 1110 tokens as from 4130. Live run notes: `.bb/chats/thr_tev4nistgf/artifacts/tz-diet/REPORT.md`.
  */
 
-type MemoryNote = { content:string; concepts:string[]; kind?:string };
+type MemoryNote = { content:string; concepts:string[]; kind?:string; id?:string; useCount?:number; acceptedCount?:number };
 
 const MEMORY_LIMIT = 3;
 /** Folders that say nothing about a task: tool caches a contract sometimes lists. */
@@ -33,12 +34,18 @@ export function pathAnchors(task:Pick<TaskV2, "owns_paths" | "read_first">):stri
  * carries the rule instead.
  */
 export function writerMemory(notes:readonly MemoryNote[], task:Pick<TaskV2, "owns_paths" | "read_first">):string {
+  // One line per note: a note with line breaks could forge the next heading of the brief.
+  return writerMemoryPicks(notes, task).map((note) => `- ${note.content.replace(/\s+/g, " ").trim()}`).join("\n");
+}
+
+/** The notes `writerMemory` writes out; within each group the one that served accepted attempts goes first. */
+export function writerMemoryPicks<T extends MemoryNote>(notes:readonly T[], task:Pick<TaskV2, "owns_paths" | "read_first">):T[] {
   const anchors = pathAnchors(task);
   const usable = notes.filter((note) => !note.concepts.includes("lesson"));
-  const aboutPaths = usable.filter((note) => anchors.some((anchor) => note.content.includes(anchor)));
-  const core = usable.filter((note) => note.kind === "core" && !aboutPaths.includes(note));
-  // One line per note: a note with line breaks could forge the next heading of the brief.
-  return [...aboutPaths, ...core].slice(0, MEMORY_LIMIT).map((note) => `- ${note.content.replace(/\s+/g, " ").trim()}`).join("\n");
+  const byUse = (a:T, b:T) => memoryUsefulness(b) - memoryUsefulness(a);
+  const aboutPaths = usable.filter((note) => anchors.some((anchor) => note.content.includes(anchor))).sort(byUse);
+  const core = usable.filter((note) => note.kind === "core" && !aboutPaths.includes(note)).sort(byUse);
+  return [...aboutPaths, ...core].slice(0, MEMORY_LIMIT);
 }
 
 /** The PM read stage's key facts for the writer; its overview repeats the task and its open questions are the PM's. */

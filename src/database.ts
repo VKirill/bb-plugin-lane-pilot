@@ -11,6 +11,7 @@ import { validateSettingValue, validateSettingsObject, validationErrorText, type
 import { GLOBAL_SETTINGS_PROJECT_ID } from "./lp-defaults";
 import packageJson from "../package.json";
 import { IllegalTransitionError, isLegalMove } from "./state-machine";
+import { recordMemoryAccepted } from "@lane-pilot/memory-core";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -899,7 +900,18 @@ export function transitionAttempt(
   db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
     .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
   if (changed && before.state !== state) attemptChanged(attemptId);
+  if (changed && state === "accepted" && before.state !== state) creditMemoryOfAttempt(db, attemptId);
   return changed;
+}
+
+/** An accepted attempt credits the memory notes its brief carried, so the notes that serve briefs well rank higher. Never fails the transition. */
+function creditMemoryOfAttempt(db: LanePilotDatabase, attemptId: string): void {
+  try {
+    const row = db.prepare(`SELECT r.project_id AS projectId, t.trace_json AS trace FROM lane_pilot_attempt a
+      JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id WHERE a.id=?`).get(attemptId) as { projectId: string; trace: string } | undefined;
+    const picked = row ? (JSON.parse(row.trace) as ReasoningTrace).dispatchContext?.memoryPicked : undefined;
+    if (row && Array.isArray(picked) && picked.length) recordMemoryAccepted(db, row.projectId, picked.filter((id): id is string => typeof id === "string"));
+  } catch { /* the counters are a ranking hint, not a gate */ }
 }
 
 /**
@@ -958,6 +970,8 @@ export type ReasoningTrace = {
   effortMode?:"automatic"|"manual";
   dispatchContext?:{
     memoryText:string;
+    /** Ids of the memory notes mixed into this brief; an accepted attempt credits each (`accepted_count`). Absent before K8. */
+    memoryPicked?:string[];
     /** Owner-confirmed project rules; absent in traces written before 0.1.37. */
     rulesText?:string;
     /** Which accepted rules System One picked for this task (ids), out of how many. */

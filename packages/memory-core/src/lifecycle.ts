@@ -1,4 +1,5 @@
 import type { MemoryDatabase } from "./store";
+import type { MemoryRecord } from "./settings";
 
 /** A session or an import is one voice: its notes wait this long for a second source before a writer reads them. */
 export const OBSERVED_QUARANTINE_MS = 24 * 3_600_000;
@@ -57,4 +58,24 @@ export function sameSubject(a: { content: string; concepts: string[] }, b: { con
   for (const item of ca) if (cb.has(item)) shared++;
   if (shared < 2 || shared / (ca.size + cb.size - shared) < 0.5) return false;
   return Math.max(jaccard(words(a.content), words(b.content)), dice(trigrams(a.content), trigrams(b.content))) >= 0.3;
+}
+
+/**
+ * How well a record served the briefs it went into: accepted attempts over attempts, smoothed so one lucky or unlucky
+ * use does not decide. A record never used is neutral (0.5).
+ */
+export function memoryUsefulness(record: Pick<MemoryRecord, "useCount" | "acceptedCount">): number {
+  return ((record.acceptedCount ?? 0) + 1) / ((record.useCount ?? 0) + 2);
+}
+
+/** Records mixed into a brief: counts the use and when it happened. */
+export function recordMemoryMixed(db: MemoryDatabase, projectId: string, ids: readonly string[], now = Date.now()): void {
+  const update = db.prepare("UPDATE lane_pilot_memory SET use_count=use_count+1, last_used_at=? WHERE project_id=? AND id=?");
+  for (const id of new Set(ids)) update.run(now, projectId, id);
+}
+
+/** The attempt a record was mixed into was accepted. */
+export function recordMemoryAccepted(db: MemoryDatabase, projectId: string, ids: readonly string[]): void {
+  const update = db.prepare("UPDATE lane_pilot_memory SET accepted_count=accepted_count+1 WHERE project_id=? AND id=?");
+  for (const id of new Set(ids)) update.run(projectId, id);
 }

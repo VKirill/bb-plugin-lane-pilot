@@ -16,5 +16,5 @@ export {
 export { estimateTokens, memoryRecordId, parseMemoryCandidates } from "./candidates";
 export { memoryContext, memoryMaintenancePrompt } from "./context";
 export { MEMORY_SCHEMA, dropMemoryIndexes, hideRecordsOfFile, searchMemoryRecords, storeMemoryRecords, type MemoryDatabase, type SearchOptions, type StoreMemoryInput, type StoreMemoryResult } from "./store";
-export { OBSERVED_QUARANTINE_MS } from "./lifecycle";
+export { NOTE_IDLE_MS, OBSERVED_QUARANTINE_MS, memoryUsefulness, recordMemoryAccepted, recordMemoryMixed } from "./lifecycle";
 export { audienceForSensitivity, exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile, sensitivityForAudience, type LaneMemoryFile } from "./files";

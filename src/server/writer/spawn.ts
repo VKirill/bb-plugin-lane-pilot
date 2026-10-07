@@ -1,10 +1,11 @@
 import { breakerKey, RunBudgetExceeded } from "@lane-pilot/resilience";
-import { writerMemory } from "../../writer-brief";
+import { recordMemoryMixed } from "@lane-pilot/memory-core";
+import { mixWriterMemory } from "../memory-mix";
 import { parseDirtSnapshots } from "../../cli-outcome";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
-import { HARNESS_VERSION, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, searchMemoryRecords, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../database";
+import { HARNESS_VERSION, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../database";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../../jev-reasoning";
 import { spawnWithSeam } from "../../spawn-seam";
 import { buildExecutionPacket, renderExecutionPacket } from "../../stages/execution-packet";
@@ -164,9 +165,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // A fresh writer of an area hears what its earlier tasks decided, in place of the thread that remembered it.
       const areaHistory=input.task.area?areaHistoryText(await loadArea(bb.storage.kv,input.projectId,input.task.area)):"";
       // The writer gets at most three notes that name a path of this task; other helpers keep the budgeted context.
-      const relevantMemory={text:[areaHistory,memoryOn
-        ? writerMemory(searchMemoryRecords(db,input.projectId,taskMemoryQuery,100,memorySettings.searchEngine,"subagent",memorySettings.personalBot).filter((record)=>!ruleMemoryIds.has(record.id)),input.task)
-        : ""].filter(Boolean).join("\n\n")};
+      const mixed=memoryOn?mixWriterMemory(db,{projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:memorySettings.searchEngine,personalBot:memorySettings.personalBot,ruleMemoryIds}):{text:"",ids:[] as string[]};
+      const relevantMemory={text:[areaHistory,mixed.text].filter(Boolean).join("\n\n")};
       const writerProviderId = input.emergency?.providerId ?? (typeof settings["writer.provider"] === "string"
         ? settings["writer.provider"] as string : input.config.writerProviderId);
       const writerModel = input.emergency?.model ?? (typeof settings["writer.model"] === "string" && settings["writer.model"]
@@ -426,10 +426,13 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const writerBrief = briefSegments.map(segment=>segment.text).join("\n\n");
       const existingTrace = getReasoningTrace(db, input.attemptId);
       if (existingTrace) {
+        // The brief is final: each note in it counts one use; the attempt's acceptance later credits the same ids.
+        recordMemoryMixed(db, input.projectId, mixed.ids);
         saveReasoningTrace(db, {
           ...existingTrace,
           dispatchContext:{
             memoryText:relevantMemory.text,
+            memoryPicked:mixed.ids,
             rulesText,
             rulesPicked:{total:allRules.length,picked:rules.map((rule)=>rule.id)},
             executionPacket,

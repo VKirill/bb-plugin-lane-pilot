@@ -1,4 +1,5 @@
 import { estimateTokens } from "./candidates";
+import { memoryUsefulness } from "./lifecycle";
 import type { MemoryRecord, MemorySettings } from "./settings";
 
 export function memoryMaintenancePrompt(input:{task:unknown;acceptedResult:unknown;settings:MemorySettings;agent?:string;/** Active notes close to this task, so a changed fact replaces its old note instead of piling up next to it. */existing?:Array<{id:string;content:string}>}):string {
@@ -13,7 +14,8 @@ export function memoryMaintenancePrompt(input:{task:unknown;acceptedResult:unkno
 
 export function memoryContext(records:MemoryRecord[],taskText:string,budget:number):{text:string;records:MemoryRecord[];estimatedTokens:number} {
   const terms=new Set(tokens(taskText));
-  const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)}))
+  // Relevance first; a note that served accepted attempts counts for more than one that did not (neutral 1.0, range 0.5 to 1.5).
+  const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record))}))
     .filter((item)=>item.score>0).sort((a,b)=>b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
   const selected:MemoryRecord[]=[];let used=0;
   for(const item of ranked){const size=estimateTokens(item.record.content);if(used+size>budget)continue;selected.push(item.record);used+=size;}
