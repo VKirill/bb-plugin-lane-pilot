@@ -1,0 +1,566 @@
+{
+  "id": "x-to-telegram-digest",
+  "name": {
+    "en": "X (Twitter) digest to Telegram",
+    "ru": "Сводка из X (Twitter) в Telegram"
+  },
+  "description": {
+    "en": "Collects recent public posts from X on a topic in the owner's signed-in browser (read-only), dedupes, scores relevance in parallel, writes a digest with verbatim quotes and links, checks quotes in code and sends it to a Telegram chat as the owner.",
+    "ru": "Собирает свежие публичные посты из X по теме в браузере владельца (только чтение), убирает дубли, параллельно оценивает релевантность, пишет сводку с дословными цитатами и ссылками, проверяет цитаты кодом и отправляет в Telegram от имени владельца."
+  },
+  "examples": {
+    "ru": [
+      "Найди в твиттере что пишут про дизайн-системы и пришли сводку в Телеграм",
+      "Собери посты из X про ИИ-агентов за неделю и отправь дайджест в канал",
+      "Сводка из твиттера по теме no-code в телеграм",
+      "Что обсуждают в X про Figma, скинь топ постов в телегу",
+      "Сделай дайджест твитов по хештегу #buildinpublic и отправь мне",
+      "Раз в неделю присылай мне в телеграм сводку из X по теме UX-исследований"
+    ],
+    "en": [
+      "Find what people say on Twitter about design systems and send a summary to Telegram",
+      "Collect X posts about AI agents for the week and send the digest to the channel",
+      "Twitter digest on no-code, to Telegram",
+      "What's being discussed on X about Figma, send the top posts to Telegram",
+      "Make a digest of tweets with #buildinpublic and send it to me",
+      "Every week send me a Telegram digest from X on UX research"
+    ]
+  },
+  "not_for": [
+    "web-research",
+    "insights-post"
+  ],
+  "status": "draft",
+  "tags": [
+    "social",
+    "digest",
+    "telegram"
+  ],
+  "triggers": [
+    "chat",
+    "schedule",
+    "manual"
+  ],
+  "inputs": {
+    "query": {
+      "type": "string",
+      "required": true
+    },
+    "period": {
+      "type": "string",
+      "default": "7d"
+    },
+    "limit": {
+      "type": "int",
+      "default": 30
+    },
+    "min_items": {
+      "type": "int",
+      "default": 10
+    },
+    "chat": {
+      "type": "string",
+      "required": true,
+      "note": "me | @username | numeric id | ссылка на чат; для тем проекта - через telegram-projects"
+    },
+    "language": {
+      "type": "ru|en",
+      "default": "ru"
+    },
+    "confirm_before_send": {
+      "type": "bool",
+      "default": false
+    }
+  },
+  "outputs": {
+    "status": "sent|thin_sent|aborted|blocked",
+    "items_count": "int",
+    "kept_count": "int",
+    "summary_md": "string",
+    "message_id": "string",
+    "archive_path": "string",
+    "thin": "bool"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "не применяется (нет кодовых задач); full - дополнительный критик тона/фактов вторым агентом"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "browser-automation"
+    ],
+    "skills": [
+      "social-browser",
+      "telegram-user",
+      "telegram-rich-messages",
+      "ru-text"
+    ],
+    "secrets": [],
+    "machines": [
+      "browser machine with a signed-in X session (Mac mini browser / MacBook Pro Chrome cookies)",
+      "Telegram sender host with /Users/vechkasov/toolkit/telegram/tg and a logged-in user session (Mac mini host_7sea4qaad8)"
+    ]
+  },
+  "budget": {
+    "max_steps": 30,
+    "max_minutes": 60,
+    "max_fan_out": 4,
+    "max_usd": 3
+  },
+  "entry": "collect",
+  "nodes": [
+    {
+      "id": "collect",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "Collect posts from X",
+        "ru": "Собрать посты из X"
+      },
+      "authorized": false,
+      "src": "workflow-studio-design.md §4",
+      "prompt": "In the owner's signed-in Chrome on the browser machine (browser-automation + social-browser), search X for `query` within `period` (live and top tabs), scroll until `limit` posts or no new posts. READ-ONLY: do not like, repost, follow, reply, post or change anything.\nFor each post keep verbatim text, post URL, author handle, date and visible metrics (likes, reposts, replies). A login wall, rate limit or captcha is `blocked` with the reason; never retry in a loop and never solve a captcha.\n",
+      "out": {
+        "items": "Item[]",
+        "count": "int",
+        "status": "done|blocked",
+        "reason": "string"
+      },
+      "guards": {
+        "maxVisits": 4,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "widen",
+      "type": "agent",
+      "role": "analyst",
+      "model_preset": "cheap-fast",
+      "title": {
+        "en": "Widen the query",
+        "ru": "Расширить запрос"
+      },
+      "prompt": "The first search found fewer than min_items. Propose a broader query (synonyms, related hashtags, English/Russian variants) and optionally a longer period (max 30d). Do not change the topic.",
+      "out": {
+        "query": "string",
+        "period": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 5
+      }
+    },
+    {
+      "id": "ask_thin",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Only a few posts found",
+        "ru": "Постов мало"
+      },
+      "prompt": "After widening there are only N posts. Offer - send a short digest marked as thin, widen the period further, abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "send_thin|widen|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "ask_blocked",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "X is not reachable",
+        "ru": "X недоступен"
+      },
+      "prompt": "Say why (login wall, rate limit, captcha) and offer - retry later, abort. The agent never works around a block.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "retry|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 480
+      }
+    },
+    {
+      "id": "dedupe",
+      "type": "action",
+      "action": "items.dedupe",
+      "rule": "same url or same normalized text; keep the one with more engagement; drop pure reposts without own text",
+      "reads": [
+        "collect.items"
+      ],
+      "out": {
+        "items": "Item[]",
+        "count": "int"
+      }
+    },
+    {
+      "id": "score",
+      "type": "parallel",
+      "for_each": "dedupe.items",
+      "batch_size": 10,
+      "max_fan_out": 4,
+      "title": {
+        "en": "Score relevance",
+        "ru": "Оценить релевантность"
+      },
+      "child": {
+        "type": "agent",
+        "role": "analyst",
+        "model_preset": "cheap-fast",
+        "prompt": "For each post: relevance 0-1 to the query, one-word topic, keep=true when relevance >= 0.5 and the post says something (not a bare link or ad). Do not rewrite the text.",
+        "out": {
+          "scores": "Score[]"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "kept": "Item[]",
+          "topics": "string[]",
+          "kept_count": "int"
+        },
+        "uses": "x.score-reduce"
+      }
+    },
+    {
+      "id": "summarize",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "ru-text",
+          "telegram-rich-messages"
+        ]
+      },
+      "title": {
+        "en": "Write the digest",
+        "ru": "Написать сводку"
+      },
+      "prompt": "Digest for Telegram in `language`: top 10 posts by relevance and engagement, 3-5 themes with a one-line takeaway each, and per post a verbatim quote (a contiguous substring of the saved text), author handle and link. State the sample honestly (\"from N posts for <period>\"); do not invent counts, trends or posts; thin samples are marked.\nFormat as a Telegram Rich Message (rich Markdown): heading, short intro, themes, a list or table of posts, expandable details for the long tail. Typography per ru-text.\n",
+      "out": {
+        "summary_md": "string",
+        "top": "Item[]",
+        "themes": "string[]",
+        "quote_count": "int"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "check",
+      "type": "action",
+      "action": "digest.check",
+      "reads": [
+        "summarize.summary_md",
+        "score.kept"
+      ],
+      "rule": "every quote is a substring of an item text; every cited URL is in items; rich message validates locally (tg rich-send without --execute); no token-like strings (api keys, session cookies); length within the message limit or split into parts",
+      "out": {
+        "ok": "bool",
+        "violations": "string[]",
+        "parts": "int"
+      }
+    },
+    {
+      "id": "approve_send",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve sending",
+        "ru": "Подтвердить отправку"
+      },
+      "skip_when": "!$inputs.confirm_before_send",
+      "skip_out": {
+        "answer_kind": "send"
+      },
+      "prompt": "Show the digest preview and the target chat; options - send, edit (say what), abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "send|edit|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 120
+      }
+    },
+    {
+      "id": "send",
+      "type": "action",
+      "action": "telegram.send_rich",
+      "target": "{{$inputs.chat}}",
+      "markdown": "{{summarize.summary_md}}",
+      "via": "tg rich-send --execute",
+      "test_mode": "tg rich-send (no --execute) + write to tmp/telegram-stub.md",
+      "out": {
+        "message_id": "string",
+        "message_url": "string",
+        "status": "string"
+      },
+      "guards": {
+        "maxAttempts": 1
+      }
+    },
+    {
+      "id": "archive",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".lane-pilot/digests/{{date}}-{{$inputs.query}}/",
+      "files": [
+        "items.json",
+        "summary.md"
+      ],
+      "out": {
+        "archive_path": "string"
+      }
+    },
+    {
+      "id": "sent",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "sent",
+        "items_count": "dedupe.count",
+        "kept_count": "score.kept_count",
+        "summary_md": "summarize.summary_md",
+        "message_id": "send.message_id",
+        "archive_path": "archive.archive_path",
+        "thin": false
+      }
+    },
+    {
+      "id": "thin_sent",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "thin_sent",
+        "items_count": "dedupe.count",
+        "kept_count": "score.kept_count",
+        "summary_md": "summarize.summary_md",
+        "message_id": "send.message_id",
+        "archive_path": "archive.archive_path",
+        "thin": true
+      }
+    },
+    {
+      "id": "aborted",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "aborted",
+        "items_count": "dedupe.count"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "collect",
+      "to": "ask_blocked",
+      "pass": "artifact",
+      "when": "collect.status == 'blocked'"
+    },
+    {
+      "from": "collect",
+      "to": "widen",
+      "pass": "artifact",
+      "when": "collect.count < $inputs.min_items && visits('widen') < 2",
+      "label": "too few"
+    },
+    {
+      "from": "collect",
+      "to": "ask_thin",
+      "pass": "artifact",
+      "when": "collect.count < $inputs.min_items"
+    },
+    {
+      "from": "collect",
+      "to": "dedupe",
+      "pass": "artifact"
+    },
+    {
+      "from": "widen",
+      "to": "collect",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_blocked",
+      "to": "collect",
+      "pass": "artifact",
+      "when": "ask_blocked.answer_kind == 'retry'"
+    },
+    {
+      "from": "ask_blocked",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_thin",
+      "to": "dedupe",
+      "pass": "artifact",
+      "when": "ask_thin.answer_kind == 'send_thin'"
+    },
+    {
+      "from": "ask_thin",
+      "to": "widen",
+      "pass": "artifact",
+      "when": "ask_thin.answer_kind == 'widen' && visits('widen') < 3"
+    },
+    {
+      "from": "ask_thin",
+      "to": "aborted",
+      "pass": "artifact"
+    },
+    {
+      "from": "dedupe",
+      "to": "score",
+      "pass": "artifact"
+    },
+    {
+      "from": "score",
+      "to": "summarize",
+      "pass": "artifact",
+      "when": "score.kept_count >= 3"
+    },
+    {
+      "from": "score",
+      "to": "aborted",
+      "pass": "artifact"
+    },
+    {
+      "from": "summarize",
+      "to": "check",
+      "pass": "artifact"
+    },
+    {
+      "from": "check",
+      "to": "summarize",
+      "pass": "same-session",
+      "when": "!check.ok && visits('summarize') < 3",
+      "label": "fix violations"
+    },
+    {
+      "from": "check",
+      "to": "aborted",
+      "pass": "artifact",
+      "when": "!check.ok"
+    },
+    {
+      "from": "check",
+      "to": "approve_send",
+      "pass": "artifact"
+    },
+    {
+      "from": "approve_send",
+      "to": "summarize",
+      "pass": "same-session",
+      "when": "approve_send.answer_kind == 'edit' && visits('summarize') < 3"
+    },
+    {
+      "from": "approve_send",
+      "to": "send",
+      "pass": "artifact",
+      "when": "approve_send.answer_kind == 'send'"
+    },
+    {
+      "from": "approve_send",
+      "to": "aborted",
+      "pass": "artifact"
+    },
+    {
+      "from": "send",
+      "to": "archive",
+      "pass": "artifact"
+    },
+    {
+      "from": "archive",
+      "to": "thin_sent",
+      "pass": "artifact",
+      "when": "dedupe.count < $inputs.min_items"
+    },
+    {
+      "from": "archive",
+      "to": "sent",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "xtg-1",
+    "sim": {
+      "input": {
+        "query": "дизайн-системы",
+        "period": "7d",
+        "limit": 30,
+        "chat": "me",
+        "language": "ru"
+      },
+      "stubs": {
+        "collect": "fixtures/x-design-systems-34.json (34 постов, 3 дубля)",
+        "send": "tg rich-send без --execute, message_id=stub-1"
+      },
+      "expect_path": [
+        "collect",
+        "dedupe",
+        "score",
+        "summarize",
+        "check",
+        "approve_send",
+        "send",
+        "archive",
+        "sent"
+      ],
+      "expect_outputs": [
+        "status == 'sent'",
+        "kept_count >= 5",
+        "items_count >= 5",
+        "message_id != ''",
+        "check.ok == true",
+        "summary has >= 5 links and every quote is a substring of an item",
+        "no secrets in outputs"
+      ],
+      "variant_thin": {
+        "stubs": {
+          "collect": "fixtures/x-thin-4.json"
+        },
+        "human_answers": {
+          "ask_thin": "send_thin"
+        },
+        "expect_path": [
+          "collect",
+          "widen",
+          "collect",
+          "widen",
+          "collect",
+          "ask_thin",
+          "dedupe",
+          "score",
+          "summarize",
+          "check",
+          "approve_send",
+          "send",
+          "archive",
+          "thin_sent"
+        ],
+        "expect_outputs": [
+          "thin == true"
+        ]
+      }
+    },
+    "live": "реальный сбор в X с ограничением limit=15 на личном аккаунте; отправка в «Избранное» (me); проверка в Telegram, что Rich Message отрисовался (status=verified в квитанции tg)"
+  }
+}

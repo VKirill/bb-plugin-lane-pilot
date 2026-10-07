@@ -1,0 +1,387 @@
+{
+  "id": "review-fix",
+  "name": {
+    "en": "Review and fix findings",
+    "ru": "Починить находки ревью"
+  },
+  "description": {
+    "en": "Takes existing review findings (or runs a review first), turns them into fix tasks grouped by root cause, builds them and re-reviews until nothing actionable remains or two rounds are spent.",
+    "ru": "Берёт готовые находки ревью (или сначала проводит ревью), превращает их в задачи на починку по корню причины, исполняет и перепроверяет, пока не останется ничего исправимого или не закончатся два круга."
+  },
+  "examples": {
+    "ru": [
+      "Исправь замечания ревью по ветке feature/search",
+      "Критик заблокировал задачу, почини найденное и перепроверь",
+      "Устрани все замечания из отчёта ревью и проверь снова",
+      "Закрой находки code-critic в последнем запуске",
+      "Есть блокирующие замечания, отремонтируй и проведи повторное ревью",
+      "Разбери комментарии ревьюера к PR и исправь их"
+    ],
+    "en": [
+      "Fix the review findings on the feature/search branch",
+      "The critic blocked the task, fix what it found and recheck",
+      "Resolve every finding from the review report and review again",
+      "Close the code-critic findings from the last run",
+      "There are blocking comments, repair them and run the review again",
+      "Take the reviewer's comments on the PR and fix them"
+    ]
+  },
+  "not_for": [
+    "code-review",
+    "quality-loop",
+    "debug"
+  ],
+  "status": "draft",
+  "tags": [
+    "code",
+    "review"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "Finding[]",
+      "note": "если пусто - сначала ревью по range/pr"
+    },
+    "range": {
+      "type": "string"
+    },
+    "pr": {
+      "type": "string"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "review_status": "pass|rework|block",
+    "fix_rounds": "int",
+    "remaining": "Finding[]",
+    "merged_commits": "string[]"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "число измерений повторного ревью по §0.7"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 50,
+    "max_minutes": 300,
+    "max_fan_out": 5
+  },
+  "entry": "first_review",
+  "nodes": [
+    {
+      "id": "first_review",
+      "type": "subworkflow",
+      "workflow": "lp.review",
+      "skip_when": "$inputs.findings.length > 0",
+      "skip_out": {
+        "status": "rework",
+        "findings": "$inputs.findings",
+        "critical_count": 0,
+        "high_count": 0,
+        "remaining_actionable": 0
+      },
+      "with": {
+        "range": "{{$inputs.range}}",
+        "pr": "{{$inputs.pr}}",
+        "dimensions": {
+          "by_mode": {
+            "quick": [
+              "correctness",
+              "security"
+            ],
+            "standard": [
+              "correctness",
+              "security",
+              "maintainability",
+              "performance"
+            ],
+            "full": [
+              "correctness",
+              "security",
+              "performance",
+              "architecture",
+              "maintainability",
+              "best_practices"
+            ]
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "plan_fix",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "mode": "gaps",
+        "gaps": "{{first_review.findings}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build_fix",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan_fix.tasks}}",
+        "waves": "{{plan_fix.waves}}"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "re_review",
+      "type": "subworkflow",
+      "workflow": "lp.review",
+      "with": {
+        "range": "{{ctx.merged_commits}}",
+        "dimensions": {
+          "by_mode": {
+            "quick": [
+              "correctness",
+              "security"
+            ],
+            "standard": [
+              "correctness",
+              "security",
+              "maintainability"
+            ],
+            "full": [
+              "correctness",
+              "security",
+              "performance",
+              "architecture",
+              "maintainability",
+              "best_practices"
+            ]
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "plan_fix2",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.goal}}",
+        "mode": "gaps",
+        "gaps": "{{re_review.findings}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "classify",
+      "type": "agent",
+      "role": "triager",
+      "title": {
+        "en": "Classify the remainder",
+        "ru": "Разобрать остаток"
+      },
+      "src": "maestro-flow:odyssey-review.md",
+      "prompt": "After two rounds, classify each remaining finding one by one - fix later, accept as risk, reclassify as not-a-defect (needs counter-evidence). A bulk 'pre-existing' is forbidden.",
+      "out": {
+        "remaining": "Finding[]",
+        "fix_later": "Finding[]",
+        "accepted": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "ask",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Remainder after two rounds",
+        "ru": "Остаток после двух кругов"
+      },
+      "prompt": "Show classify.remaining with the proposed class of each; owner confirms or changes.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "accept|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 480
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "review_status": "re_review.status",
+        "fix_rounds": 1,
+        "remaining": "[]",
+        "merged_commits": "ctx.merged_commits"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "review_status": "re_review.status",
+        "remaining": "classify.remaining",
+        "merged_commits": "ctx.merged_commits"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "remaining": "first_review.findings"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "first_review",
+      "to": "done",
+      "pass": "artifact",
+      "when": "first_review.status == 'pass'"
+    },
+    {
+      "from": "first_review",
+      "to": "plan_fix",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan_fix",
+      "to": "build_fix",
+      "pass": "artifact",
+      "when": "plan_fix.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan_fix",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "build_fix",
+      "to": "re_review",
+      "pass": "artifact",
+      "when": "build_fix.merged_commits.length > 0"
+    },
+    {
+      "from": "build_fix",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "re_review",
+      "to": "done",
+      "pass": "artifact",
+      "when": "re_review.status == 'pass' && re_review.remaining_actionable == 0"
+    },
+    {
+      "from": "re_review",
+      "to": "plan_fix2",
+      "pass": "artifact",
+      "when": "re_review.status == 'rework' && visits('plan_fix2') == 0",
+      "label": "round 2"
+    },
+    {
+      "from": "re_review",
+      "to": "classify",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan_fix2",
+      "to": "build_fix",
+      "pass": "artifact",
+      "when": "plan_fix2.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan_fix2",
+      "to": "classify",
+      "pass": "artifact"
+    },
+    {
+      "from": "classify",
+      "to": "ask",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "rfx-1",
+    "sim": {
+      "input": {
+        "goal": "Fix review findings",
+        "findings": [
+          {
+            "file": "src/a.ts",
+            "line": 12,
+            "severity": "high",
+            "evidence": "return value of save() ignored"
+          }
+        ]
+      },
+      "stubs": {
+        "lp.plan": {
+          "status": "ok",
+          "task_count": 1
+        },
+        "lp.build": {
+          "status": "done",
+          "merged_commits": [
+            "f1"
+          ]
+        },
+        "lp.review#re": {
+          "status": "pass",
+          "remaining_actionable": 0
+        }
+      },
+      "expect_path": [
+        "first_review",
+        "plan_fix",
+        "build_fix",
+        "re_review",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "review_status == 'pass'"
+      ]
+    },
+    "live": "песочница: ветка с известной находкой high (проглоченная ошибка); после цепочки находка снята, повторное ревью её не репортит"
+  }
+}

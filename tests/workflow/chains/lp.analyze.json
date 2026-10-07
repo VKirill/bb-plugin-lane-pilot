@@ -1,0 +1,168 @@
+{
+  "id": "lp.analyze",
+  "internal": true,
+  "name": {
+    "en": "Analyze",
+    "ru": "Анализ"
+  },
+  "description": {
+    "en": "Read-only analysis of the area with locked/free/deferred decisions, risks, scope verdict and confidence.",
+    "ru": "Анализ области только на чтение - решения locked/free/deferred, риски, вердикт по объёму и уверенность."
+  },
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "scope": {
+      "type": "string"
+    },
+    "depth": {
+      "type": "quick|standard|deep",
+      "default": "standard"
+    },
+    "upstream": {
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "decisions": "Decision[]",
+    "risks": "Risk[]",
+    "scope_verdict": "small|medium|large|unknown",
+    "recommendation": "go|go_with_conditions|no_go",
+    "confidence": "int",
+    "open_questions": "string[]",
+    "residual_risks": "string[]",
+    "anchors": "Anchor[]"
+  },
+  "entry": "gather",
+  "budget": {
+    "max_steps": 12,
+    "max_minutes": 40
+  },
+  "nodes": [
+    {
+      "id": "gather",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Map the area",
+        "ru": "Карта области"
+      },
+      "src": "maestro-flow:workflows/analyze.md",
+      "prompt": "Read-only. Map the area the goal touches in three layers: L1 modules, L2 call chains of 3-5 key files, L3 code anchors (20-50 lines each).\nRead project conventions (AGENTS.md, DESIGN.md for UI) and any upstream report in `upstream`. Write nothing into the repository.\nEvery statement carries file:line; a claim about code you did not open is not a finding.\n",
+      "out": {
+        "anchors": "Anchor[]",
+        "modules": "string[]",
+        "conventions": "string[]",
+        "summary": "string"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "assess",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Assess and decide",
+        "ru": "Оценка и решения"
+      },
+      "src": "maestro-flow:workflows/analyze.md",
+      "prompt": "Score feasibility, impact, risk, complexity, dependencies 1-5, each citing evidence from `gather` (a manual guess does not count).\nClassify every decision as locked (binding for the plan), free (planner's choice) or deferred (excluded). Do a pressure pass: state the strongest argument against the goal, then answer it.\nscope_verdict large = 3+ independent subsystems or hard sequential dependencies. confidence 0-100 from depth of findings, strength of evidence, breadth of coverage.\nIf confidence rose by less than 5 points over two rounds set stalled=true and stop; put what is still unknown into residual_risks.\n",
+      "out": {
+        "decisions": "Decision[]",
+        "risks": "Risk[]",
+        "scores_min": "int",
+        "scope_verdict": "small|medium|large|unknown",
+        "recommendation": "go|go_with_conditions|no_go",
+        "confidence": "int",
+        "stalled": "bool",
+        "pressure_pass": "bool",
+        "open_questions": "string[]",
+        "residual_risks": "string[]"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "second_opinion",
+      "type": "agent",
+      "role": "council",
+      "title": {
+        "en": "Independent second opinion",
+        "ru": "Независимое второе мнение"
+      },
+      "applicable_modes": [
+        "full"
+      ],
+      "skip_out": {
+        "consensus": "[]",
+        "conflicts": "[]",
+        "consensus_level": 100
+      },
+      "src": "maestro-flow:workflows/collab.md",
+      "prompt": "Three seats answer the same question independently (technical, architectural, product). Do not show seats each other's output.\nClassify results: CONSENSUS (2+ agree), CONFLICT, UNIQUE. consensus_level = consensus/total*100; below 40 report a warning.\n",
+      "out": {
+        "consensus": "string[]",
+        "conflicts": "string[]",
+        "unique": "string[]",
+        "consensus_level": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "decisions": "assess.decisions",
+        "risks": "assess.risks",
+        "scope_verdict": "assess.scope_verdict",
+        "recommendation": "assess.recommendation",
+        "confidence": "assess.confidence",
+        "open_questions": "assess.open_questions",
+        "residual_risks": "assess.residual_risks",
+        "anchors": "gather.anchors"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "gather",
+      "to": "assess",
+      "pass": "same-session"
+    },
+    {
+      "from": "assess",
+      "to": "gather",
+      "pass": "same-session",
+      "when": "assess.confidence < 60 && !assess.stalled && $inputs.depth != 'quick' && visits('assess') < 3",
+      "label": "deeper"
+    },
+    {
+      "from": "assess",
+      "to": "second_opinion",
+      "pass": "artifact",
+      "when": "$mode == 'full' && visits('second_opinion') == 0",
+      "label": "second opinion"
+    },
+    {
+      "from": "assess",
+      "to": "done",
+      "pass": "artifact"
+    },
+    {
+      "from": "second_opinion",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ]
+}

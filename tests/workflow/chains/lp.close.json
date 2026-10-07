@@ -1,0 +1,210 @@
+{
+  "id": "lp.close",
+  "internal": true,
+  "name": {
+    "en": "Goal audit and closeout",
+    "ru": "Аудит целей и закрытие"
+  },
+  "description": {
+    "en": "Checks every goal's done_when against evidence, detects intent drift, stages knowledge candidates and updates project life.",
+    "ru": "Сверяет каждую цель done_when с доказательствами, ловит дрейф намерения, кладёт кандидатов знаний на стейджинг и обновляет жизнь проекта."
+  },
+  "inputs": {
+    "goals": {
+      "type": "Goal[]"
+    },
+    "boundary": {
+      "type": "Boundary"
+    },
+    "goal": {
+      "type": "string"
+    },
+    "merged_commits": {
+      "type": "string[]"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "insights": {
+      "type": "any",
+      "note": "кандидаты из ретроспективы, если есть"
+    }
+  },
+  "outputs": {
+    "status": "closed|unmet|halted",
+    "unmet_ids": "string[]",
+    "intent_aligned": "bool",
+    "staged": "int",
+    "candidate_ids": "string[]",
+    "report_path": "string"
+  },
+  "entry": "goal_audit",
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 30
+  },
+  "nodes": [
+    {
+      "id": "goal_audit",
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Goal audit",
+        "ru": "Аудит целей"
+      },
+      "skip_when": "$mode == 'quick' && $inputs.goals.length <= 1",
+      "skip_out": {
+        "goals": "[]",
+        "all_met": true,
+        "unmet_ids": "[]",
+        "intent_aligned": true,
+        "drift_items": "[]"
+      },
+      "src": "maestro-flow:prepare/ralph.md (post-goal-audit, post-reground)",
+      "prompt": "For each goal check `done_when` against evidence (command output, file:line, test result); met only with evidence you re-checked now.\nintent_aligned=false when the result drifts from the original goal: two or more in_scope items missing or one out_of_scope item violated (confident drift at 80%+).\nDifferent model from the writer. Never ask the owner for what the repository can answer.\n",
+      "out": {
+        "goals": "GoalResult[]",
+        "all_met": "bool",
+        "unmet_ids": "string[]",
+        "intent_aligned": "bool",
+        "drift_items": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "reground_ask",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Result drifts from the intent",
+        "ru": "Результат ушёл от замысла"
+      },
+      "prompt": "List drift_items; choices - proceed (accept the drift), halt (stop and fix), amend goal.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "proceed|halt|amend|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "memory",
+      "type": "agent",
+      "role": "memory",
+      "title": {
+        "en": "Stage knowledge",
+        "ru": "Кандидаты знаний"
+      },
+      "src": "maestro-flow:ref/finish-work.md, ref/knowledge-closeout.md",
+      "prompt": "Stage candidates only, never publish. Keep decisions, locked constraints and lessons; drop process narration and what the code already says.\nconfidence = +0.3 locked or explicit decision, +0.2 three or more keywords, +0.2 rationale, +0.2 length 50-2000, +0.1 reference; threshold 0.5.\nPublication needs the owner's explicit approval; no answer means deferred. An auto mode is not approval.\n",
+      "out": {
+        "staged": "int",
+        "candidate_ids": "string[]",
+        "deferred": "bool"
+      },
+      "guards": {
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "life",
+      "type": "agent",
+      "role": "project-life",
+      "out": {
+        "status": "updated|no_change",
+        "commit": "string"
+      }
+    },
+    {
+      "id": "report",
+      "type": "action",
+      "action": "fs.write",
+      "path": "reports/{{run_id}}.md",
+      "out": {
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "closed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "closed",
+        "unmet_ids": "[]",
+        "intent_aligned": true,
+        "staged": "memory.staged",
+        "candidate_ids": "memory.candidate_ids",
+        "report_path": "report.report_path"
+      }
+    },
+    {
+      "id": "unmet",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "unmet",
+        "unmet_ids": "goal_audit.unmet_ids",
+        "intent_aligned": "goal_audit.intent_aligned"
+      }
+    },
+    {
+      "id": "halted",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "halted",
+        "intent_aligned": false
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "goal_audit",
+      "to": "reground_ask",
+      "pass": "artifact",
+      "when": "!goal_audit.intent_aligned"
+    },
+    {
+      "from": "goal_audit",
+      "to": "unmet",
+      "pass": "artifact",
+      "when": "!goal_audit.all_met"
+    },
+    {
+      "from": "goal_audit",
+      "to": "memory",
+      "pass": "artifact"
+    },
+    {
+      "from": "reground_ask",
+      "to": "memory",
+      "pass": "artifact",
+      "when": "reground_ask.answer_kind == 'proceed'"
+    },
+    {
+      "from": "reground_ask",
+      "to": "halted",
+      "pass": "artifact"
+    },
+    {
+      "from": "memory",
+      "to": "life",
+      "pass": "artifact"
+    },
+    {
+      "from": "life",
+      "to": "report",
+      "pass": "artifact"
+    },
+    {
+      "from": "report",
+      "to": "closed",
+      "pass": "artifact"
+    }
+  ]
+}

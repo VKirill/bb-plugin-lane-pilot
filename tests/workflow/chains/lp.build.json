@@ -1,0 +1,153 @@
+{
+  "id": "lp.build",
+  "internal": true,
+  "name": {
+    "en": "Build in worktrees",
+    "ru": "Исполнение в worktree"
+  },
+  "description": {
+    "en": "Runs task-v2 contracts through the Lane Pilot pipeline (writer, sandbox verification, code critic, merge queue) and the batch gate.",
+    "ru": "Прогоняет контракты task-v2 через конвейер LP (исполнитель, песочная проверка, критик кода, очередь слияния) и гейт партии."
+  },
+  "inputs": {
+    "tasks": {
+      "type": "Task[]",
+      "required": true
+    },
+    "waves": {
+      "type": "string[][]"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "accepted_ids": "string[]",
+    "failed_ids": "string[]",
+    "blocked_ids": "string[]",
+    "failed_findings": "Finding[]",
+    "merged_commits": "string[]",
+    "gate_ok": "bool"
+  },
+  "entry": "run_tasks",
+  "budget": {
+    "max_steps": 40,
+    "max_minutes": 240,
+    "max_fan_out": 5
+  },
+  "nodes": [
+    {
+      "id": "run_tasks",
+      "type": "parallel",
+      "for_each": "$inputs.tasks",
+      "order": "depends_on",
+      "max_fan_out": 5,
+      "title": {
+        "en": "Run tasks",
+        "ru": "Выполнить задачи"
+      },
+      "child": {
+        "type": "lp-task",
+        "contract": "{{item}}",
+        "quality_mode": "{{$mode}}",
+        "out": {
+          "state": "accepted|failed|blocked|needs_human|cancelled",
+          "attempts": "int",
+          "merge_commit": "string",
+          "files": "string[]",
+          "verdict": "Verdict"
+        },
+        "guards": {
+          "maxAttempts": 3
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "accepted_ids": "string[]",
+          "failed_ids": "string[]",
+          "blocked_ids": "string[]",
+          "failed_findings": "Finding[]",
+          "accepted_count": "int",
+          "failed_count": "int",
+          "blocked_count": "int",
+          "merged_commits": "string[]"
+        }
+      }
+    },
+    {
+      "id": "gate",
+      "type": "action",
+      "action": "lp.integration_gate_status",
+      "out": {
+        "ok": "bool",
+        "failing": "string[]",
+        "skipped": "bool"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "accepted_ids": "run_tasks.accepted_ids",
+        "failed_ids": "[]",
+        "blocked_ids": "[]",
+        "failed_findings": "[]",
+        "merged_commits": "run_tasks.merged_commits",
+        "gate_ok": "gate.ok"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "accepted_ids": "run_tasks.accepted_ids",
+        "failed_ids": "run_tasks.failed_ids",
+        "blocked_ids": "run_tasks.blocked_ids",
+        "failed_findings": "run_tasks.failed_findings",
+        "merged_commits": "run_tasks.merged_commits",
+        "gate_ok": "gate.ok"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "accepted_ids": "[]",
+        "failed_ids": "run_tasks.failed_ids",
+        "blocked_ids": "run_tasks.blocked_ids",
+        "failed_findings": "run_tasks.failed_findings",
+        "merged_commits": "[]",
+        "gate_ok": false
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "run_tasks",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "run_tasks.accepted_count == 0"
+    },
+    {
+      "from": "run_tasks",
+      "to": "gate",
+      "pass": "artifact"
+    },
+    {
+      "from": "gate",
+      "to": "done",
+      "pass": "artifact",
+      "when": "gate.ok && run_tasks.failed_count == 0 && run_tasks.blocked_count == 0"
+    },
+    {
+      "from": "gate",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ]
+}

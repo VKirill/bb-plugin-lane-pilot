@@ -20,7 +20,7 @@ export class WorkflowError extends Error {
   }
 }
 
-const RESERVED = new Set([START, END, "input", "item", "index", "ctx"]);
+const RESERVED = new Set(["input", "item", "index", "ctx"]);
 
 function tarjan(ids: string[], next: (id: string) => string[]): string[][] {
   const index = new Map<string, number>(), low = new Map<string, number>(), onStack = new Set<string>(), stack: string[] = [], out: string[][] = [];
@@ -81,7 +81,8 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
   for (const node of workflow.nodes) if (node.type !== "note") dupField(node.out, node.id, node.id);
   for (const node of workflow.nodes) {
     if (node.type !== "action" || node.action !== EMIT) continue;
-    const map = node.map ?? {};
+    if (!isRecord(node.map)) { error("emit_map", `emit "${node.id}" needs a map of the fields it ends with`, { node: node.id }); continue; }
+    const map = node.map;
     for (const field of workflow.outputs.filter((candidate) => candidate.required)) {
       if (!(field.name in map)) error("output_missing", `emit "${node.id}" does not give the workflow output "${field.name}"`, { node: node.id });
     }
@@ -209,8 +210,8 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       }
     }
     if (edge.pass !== "artifact") {
-      const ends = [byId.get(edge.from), byId.get(edge.to)];
-      if (ends.some((end) => end?.type !== "agent")) error("pass_mode", `${where}: pass "${edge.pass}" needs an agent on both ends`, { edge: index });
+      // The target is the agent that goes on in a session (its own earlier one, or the one the source left behind).
+      if (byId.get(edge.to)?.type !== "agent") error("pass_mode", `${where}: pass "${edge.pass}" needs an agent as its target`, { edge: index });
     }
   });
 
@@ -253,7 +254,7 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     if (node.type === "subworkflow") texts.push(node.inputs);
     texts.push(node.with);
     for (const text of texts) checkTemplate(text, node.id, node.id, extra);
-    if (node.type === "action" && node.action === EMIT) for (const [name, value] of Object.entries(node.map ?? {})) checkSpec(value, node.id, `${node.id} map.${name}`, extra);
+    if (node.type === "action" && node.action === EMIT) for (const [name, value] of Object.entries(isRecord(node.map) ? node.map : {})) checkSpec(value, node.id, `${node.id} map.${name}`, extra);
     for (const ref of node.reads ?? []) checkRefText(ref, node.id, `${node.id} reads`, extra, true);
   }
 
@@ -261,7 +262,12 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
   const ids = [...byId.keys()];
   for (const group of tarjan(ids, (id) => next(id).filter((to) => byId.has(to)))) {
     const loops = group.length > 1 || next(group[0]!).includes(group[0]!);
-    if (loops && !group.some((id) => byId.get(id)!.maxVisits !== undefined)) error("cycle_unbounded", `the loop ${group.join(" -> ")} has no node with maxVisits`, { node: group[0] });
+    // A loop is bounded by a node's maxVisits, or by a condition on one of its own edges that counts visits('node') of the loop.
+    const boundedByVisits = L.edges.some((edge) => {
+      if (!group.includes(edge.from) || !group.includes(edge.to) || edge.when === undefined) return false;
+      try { return exprRefs(toExpr(edge.when, edge.from)).visits.some((id) => group.includes(id)); } catch { return false; }
+    });
+    if (loops && !boundedByVisits && !group.some((id) => byId.get(id)!.maxVisits !== undefined)) error("cycle_unbounded", `the loop ${group.join(" -> ")} has no node with maxVisits`, { node: group[0] });
   }
 
   // A node that can be skipped still has the output others read.
@@ -367,7 +373,8 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
         for (const name of given) if (!child.inputs.some((field) => field.name === name)) error("subworkflow_input", `${node.id}: "${child.id}" has no input "${name}"`, extra);
         for (const field of node.out) {
           const there = child.outputs.find((candidate) => candidate.name === field.name);
-          if (!there || there.type !== field.type) error("subworkflow_output", `${node.id}: "${child.id}" declares no output "${field.name}" of type ${field.type}`, extra);
+          const fits = there && (there.type === field.type || field.type === "json" || there.type === "json" || (field.type === "string" && there.type === "enum"));
+          if (!fits) error("subworkflow_output", `${node.id}: "${child.id}" declares no output "${field.name}" of type ${field.type}`, extra);
         }
       }
     }

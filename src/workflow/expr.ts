@@ -59,7 +59,7 @@ export function refOf(text: string, options: { itemScope?: boolean } = {}): Ref 
   const [head, ...rest] = parts;
   if (head === "$inputs") return { kind: "input", path: rest };
   if (head === "$mode") return { kind: "mode", path: [] };
-  if (head === "input" || head === "start") return { kind: "input", path: rest };
+  if (head === "input") return { kind: "input", path: rest };
   if (head === "ctx") return { kind: "ctx", path: rest };
   if (head === "item") return { kind: "item", path: rest };
   if (head === "index") return { kind: "index", path: [] };
@@ -254,7 +254,7 @@ export function checkExpr(expr: Expr, env: CheckEnv, problems: string[], at: str
       const enumSide = left.kind === "enum" ? { typed: left, other: expr.r } : right.kind === "enum" ? { typed: right, other: expr.l } : null;
       if (enumSide?.typed.values) {
         const literals = enumSide.other.t === "lit" ? [enumSide.other.v] : enumSide.other.t === "list" ? enumSide.other.items.map((item) => (item.t === "lit" ? item.v : undefined)) : [];
-        for (const value of literals) if (value !== undefined && value !== null && !enumSide.typed.values.includes(String(value))) problems.push(`${at}: ${JSON.stringify(value)} is not one of ${enumSide.typed.values.join(", ")}`);
+        for (const value of literals) if (value !== undefined && value !== null && value !== "" && !enumSide.typed.values.includes(String(value))) problems.push(`${at}: ${JSON.stringify(value)} is not one of ${enumSide.typed.values.join(", ")}`);
       }
       if (left.kind !== "any" && right.kind !== "any" && left.kind !== right.kind && expr.op !== "in"
         && !((left.kind === "enum" && right.kind === "string") || (left.kind === "string" && right.kind === "enum"))) {
@@ -274,7 +274,8 @@ export type EvalEnv = {
 };
 
 const truthy = (value: unknown): boolean => (Array.isArray(value) ? true : Boolean(value));
-const same = (a: unknown, b: unknown): boolean => a === b || (a == null && b == null) || (a !== null && b !== null && typeof a === "object" && typeof b === "object" && JSON.stringify(a) === JSON.stringify(b));
+const blank = (v: unknown) => v === undefined || v === null || v === "";
+const same = (a: unknown, b: unknown): boolean => a === b || (blank(a) && blank(b)) || (a !== null && b !== null && typeof a === "object" && typeof b === "object" && JSON.stringify(a) === JSON.stringify(b));
 
 export function evalExpr(expr: Expr, env: EvalEnv, at = "expression"): unknown {
   switch (expr.t) {
@@ -326,6 +327,8 @@ export function valueSpecOf(value: unknown): ValueSpec {
   if (/^(true|false|null)$/.test(text)) return { literal: text === "true" ? true : text === "false" ? false : null };
   if (/^-?\d+(\.\d+)?$/.test(text)) return { literal: Number(text) };
   if (/^[A-Za-z_][A-Za-z0-9_-]*$/.test(text)) return { literal: text };
+  // A path (`docs/specs/x.md`) is text, not a division.
+  if (/^[\w@.~-]*\/[\w@./~-]*$/.test(text)) return { literal: text };
   return { expr: parseExpr(text) };
 }
 

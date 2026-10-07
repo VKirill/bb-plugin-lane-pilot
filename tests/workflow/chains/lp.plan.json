@@ -1,0 +1,245 @@
+{
+  "id": "lp.plan",
+  "internal": true,
+  "name": {
+    "en": "Plan and critique",
+    "ru": "План и критика плана"
+  },
+  "description": {
+    "en": "Turns a goal (or review gaps) into task-v2 contracts in waves, lints them and has the whole plan critiqued.",
+    "ru": "Превращает цель (или находки ревью) в контракты task-v2 по волнам, линтит и отдаёт план целиком на критику."
+  },
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "findings": {
+      "type": "any"
+    },
+    "mode": {
+      "type": "fresh|gaps",
+      "default": "fresh"
+    },
+    "gaps": {
+      "type": "any",
+      "note": "Finding[] | string[] | text"
+    },
+    "boundary": {
+      "type": "Boundary"
+    },
+    "extra_rules": {
+      "type": "string[]",
+      "note": "дополнительные обязательные правила планирования от цепочки"
+    }
+  },
+  "outputs": {
+    "status": "ok|low_confidence|failed",
+    "tasks": "Task[]",
+    "waves": "string[][]",
+    "objective": "string",
+    "has_ui": "bool",
+    "task_count": "int",
+    "plan_verdict": "string"
+  },
+  "entry": "plan",
+  "budget": {
+    "max_steps": 14,
+    "max_minutes": 45
+  },
+  "nodes": [
+    {
+      "id": "plan",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "Write the plan",
+        "ru": "Составить план"
+      },
+      "src": "maestro-flow:workflows/plan.md",
+      "prompt": "Produce task-v2 contracts; planning is never done inline in the PM chat. One feature = one task of about 15-60 minutes even across several files; never split by file; a user-visible feature is one end-to-end task.\nread_first = files the task changes + source-of-truth files + files whose pattern, signature or convention the change must follow.\nacceptance and verification are commands, greps or file reads naming the exact string, value or exit code; no subjective words (properly, clean, robust, works well, корректно, удобно).\nowns_paths must not overlap inside a wave; depends_on only for real output dependencies; at most 8 tasks (more than 3 modules: waves). UI work is a vertical slice with at least one [UI-observable] qa_case per wave.\nLocked decisions bind the plan, deferred ones are excluded. extra_rules from the calling workflow are binding. mode=gaps: cluster the gaps by root cause, one task per root cause, sources in order: open findings, verification gaps, review findings.\n",
+      "out": {
+        "tasks": "Task[]",
+        "waves": "string[][]",
+        "objective": "string",
+        "has_ui": "bool",
+        "task_count": "int",
+        "confidence": "int"
+      },
+      "guards": {
+        "maxVisits": 4,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "lint",
+      "type": "action",
+      "action": "lp.lint_contract",
+      "title": {
+        "en": "Lint contracts",
+        "ru": "Линтер контрактов"
+      },
+      "reads": [
+        "plan.tasks"
+      ],
+      "out": {
+        "ok": "bool",
+        "errors": "string[]"
+      },
+      "guards": {
+        "maxVisits": 4
+      }
+    },
+    {
+      "id": "plan_critic",
+      "type": "agent",
+      "role": "plan-critic",
+      "title": {
+        "en": "Critique the whole plan",
+        "ru": "Критика плана целиком"
+      },
+      "applicable_modes": [
+        "standard",
+        "full"
+      ],
+      "skip_out": {
+        "status": "pass",
+        "summary": "skipped",
+        "findings": "[]",
+        "evidence": "skipped"
+      },
+      "src": "maestro-flow:workflows/plan.md (plan-checker), grill.md",
+      "prompt": "PLAN_CRITIC_METHOD over all tasks together - goals coverage, dependency correctness (no cycle, depends_on names a real task), size, collisions across tasks, boundary violations. A finding without file:line (or PLAN/TASK + field) does not count. Approve the good, not the perfect.",
+      "out": {
+        "status": "pass|rework|block",
+        "summary": "string",
+        "findings": "Finding[]",
+        "evidence": "string"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "ask",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Plan needs the owner",
+        "ru": "Плану нужен владелец"
+      },
+      "prompt": "Show the unresolved findings (max 5) and three choices - revise the plan with my notes, proceed with the plan as is (low confidence), abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "revise|proceed|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 120
+      }
+    },
+    {
+      "id": "ok",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "ok",
+        "tasks": "plan.tasks",
+        "waves": "plan.waves",
+        "objective": "plan.objective",
+        "has_ui": "plan.has_ui",
+        "task_count": "plan.task_count",
+        "plan_verdict": "plan_critic.status"
+      }
+    },
+    {
+      "id": "low",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "low_confidence",
+        "tasks": "plan.tasks",
+        "waves": "plan.waves",
+        "objective": "plan.objective",
+        "has_ui": "plan.has_ui",
+        "task_count": "plan.task_count",
+        "plan_verdict": "plan_critic.status"
+      }
+    },
+    {
+      "id": "failed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "failed"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "plan",
+      "to": "lint",
+      "pass": "artifact"
+    },
+    {
+      "from": "lint",
+      "to": "plan",
+      "pass": "same-session",
+      "when": "!lint.ok && visits('lint') < 3",
+      "label": "contract errors"
+    },
+    {
+      "from": "lint",
+      "to": "ask",
+      "pass": "artifact",
+      "when": "!lint.ok"
+    },
+    {
+      "from": "lint",
+      "to": "plan_critic",
+      "pass": "read-prior-session",
+      "when": "$mode != 'quick' && (plan.task_count >= 3 || $mode == 'full')"
+    },
+    {
+      "from": "lint",
+      "to": "ok",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan_critic",
+      "to": "ok",
+      "pass": "artifact",
+      "when": "plan_critic.status == 'pass'"
+    },
+    {
+      "from": "plan_critic",
+      "to": "plan",
+      "pass": "same-session",
+      "when": "plan_critic.status == 'rework' && visits('plan_critic') < 3",
+      "label": "revise"
+    },
+    {
+      "from": "plan_critic",
+      "to": "ask",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask",
+      "to": "plan",
+      "pass": "same-session",
+      "when": "ask.answer_kind == 'revise'"
+    },
+    {
+      "from": "ask",
+      "to": "low",
+      "pass": "artifact",
+      "when": "ask.answer_kind == 'proceed'"
+    },
+    {
+      "from": "ask",
+      "to": "failed",
+      "pass": "artifact"
+    }
+  ]
+}

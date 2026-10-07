@@ -75,7 +75,7 @@ export function lowerWorkflow(workflow: Workflow, resolve?: ResolveWorkflow): Wo
       continue;
     }
     if (isEmit(node)) {
-      const map = node.map ?? {};
+      const map = typeof node.map === "object" && node.map !== null ? node.map : {};
       const declared = new Map(workflow.outputs.map((field) => [field.name, field]));
       const out: Field[] = Object.keys(map).map((key) => declared.get(key) ?? { name: key, type: "json", required: false });
       nodes.push({ ...node, uses: node.uses ?? "builtin:emit", out });

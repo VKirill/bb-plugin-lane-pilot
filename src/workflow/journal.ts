@@ -30,6 +30,7 @@ export const workflowMigrations: string[] = [
     steps_used INTEGER NOT NULL DEFAULT 0,
     tokens_used INTEGER NOT NULL DEFAULT 0,
     cost_micro_usd INTEGER NOT NULL DEFAULT 0,
+    wait_ms INTEGER NOT NULL DEFAULT 0,
     owner_id TEXT,
     lease_until INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
@@ -123,7 +124,7 @@ export type RunRow = {
   project_id: string | null; link_run_id: string | null; link_task_id: string | null; link_attempt_id: string | null;
   parent_run_id: string | null; parent_step_key: string | null; depth: number; status: RunStatus; reason: string | null; mode: string | null;
   inputs_json: string; output_json: string | null; harness_version: string | null;
-  steps_used: number; tokens_used: number; cost_micro_usd: number; owner_id: string | null; lease_until: number; created_at: number; updated_at: number;
+  steps_used: number; tokens_used: number; cost_micro_usd: number; wait_ms: number; owner_id: string | null; lease_until: number; created_at: number; updated_at: number;
 };
 
 export type StepRow = {

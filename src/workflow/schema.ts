@@ -8,9 +8,12 @@ import { z } from "zod";
  * a file in either spelling loads to the same value. Graph-level checks are in `validate.ts`.
  */
 export const WORKFLOW_SCHEMA_VERSION = 1 as const;
-/** Reserved node ids: the entry (its output is the workflow's inputs) and the exit (edges into it carry the workflow's outputs). */
-export const START = "start";
-export const END = "end";
+/**
+ * The entry (its output is the workflow's inputs) and the exit (edges into it carry the workflow's outputs). Files write them as
+ * `start` and `end`; they become these ids, which no node can have, unless a node of that name exists (a chain may well have a node `start`).
+ */
+export const START = "$start";
+export const END = "$end";
 export const MAX_SUBWORKFLOW_DEPTH = 3;
 
 const nodeId = z.string().regex(/^[a-z][a-z0-9_-]{0,47}$/, "id: lowercase letters, digits, - and _, starting with a letter");
@@ -114,10 +117,11 @@ const actionBody = {
   action: z.string().regex(/^[a-z][a-z0-9_.:-]{0,63}$/).optional(),
   params: z.record(z.string(), z.unknown()).default({}),
   /** `emit` only: the status and fields the workflow ends with (expression-valued). */
-  map: z.record(z.string(), z.unknown()).optional(),
+  map: z.union([z.record(z.string(), z.unknown()), z.string()]).optional(),
   test_mode: z.string().max(300).optional(),
 };
 const humanBody = {
+  role: z.string().max(80).optional(),
   question: z.string().min(1).max(4000),
   options: z.array(z.string().min(1).max(120)).max(10).default([]),
   onTimeout: z.enum(["stop", "default"]).default("stop"),
@@ -315,10 +319,8 @@ function fieldList(value: unknown, defaultRequired: boolean): unknown {
 
 const bilingualOf = (value: unknown): unknown => (typeof value === "string" ? { en: value, ru: value } : value);
 
-const NODE_KEYS = new Set(["id", "type", "title", "label", "src", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
-  "model_preset", "profile", "position", "role", "prompt", "provider", "model", "reasoning", "skills", "environment", "session", "authorized", "votes", "quality_mode", "contract", "contract_template",
-  "owns_paths", "stages", "action", "params", "map", "test_mode", "question", "options", "onTimeout", "defaultOption", "workflow", "version", "inputs", "reads_node", "for_each", "foreach", "order", "max_fan_out",
-  "batch", "batch_size", "on_child_fail", "onOverflow", "child", "join", "parallel", "wait", "text"]);
+const ACTION_KEYS = new Set(["id", "type", "title", "label", "src", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
+  "model_preset", "profile", "position", "action", "params", "map", "test_mode"]);
 
 function normalizeNode(node: unknown, isChild = false): unknown {
   if (!isRaw(node)) return node;
@@ -344,7 +346,7 @@ function normalizeNode(node: unknown, isChild = false): unknown {
   if (next.type === "action") {
     // The parameters of an action sit beside its other keys in the authoring spelling.
     const params: Raw = isRaw(next.params) ? { ...next.params } : {};
-    for (const key of Object.keys(next)) if (!NODE_KEYS.has(key)) { params[key] = next[key]; delete next[key]; }
+    for (const key of Object.keys(next)) if (!ACTION_KEYS.has(key)) { params[key] = next[key]; delete next[key]; }
     if (Object.keys(params).length) next.params = params;
   }
   if (isChild) delete next.id;
@@ -359,7 +361,7 @@ export function normalizeWorkflow(raw: unknown): unknown {
   delete next.common_inputs;
   next.name = bilingualOf(next.name);
   if ("inputs" in next) next.inputs = fieldList(next.inputs, false);
-  if ("outputs" in next) next.outputs = fieldList(next.outputs, true);
+  if ("outputs" in next) next.outputs = fieldList(next.outputs, false);
   if (typeof next.quality_mode === "string") next.quality_mode = { default: next.quality_mode };
   if (Array.isArray(next.triggers)) next.triggers = next.triggers.map((item) => (typeof item === "string" ? { type: item } : item));
   if (isRaw(next.budget)) {
@@ -372,6 +374,10 @@ export function normalizeWorkflow(raw: unknown): unknown {
     if (max_fan_out !== undefined) next.guards = { ...(isRaw(next.guards) ? next.guards : {}), maxFanOut: max_fan_out };
   }
   if (Array.isArray(next.nodes)) next.nodes = next.nodes.map((node) => normalizeNode(node));
+  // `start` and `end` in an edge are the sentinels, unless a node has that id.
+  const ids = new Set(Array.isArray(next.nodes) ? next.nodes.flatMap((node) => (isRaw(node) && typeof node.id === "string" ? [node.id] : [])) : []);
+  const sentinel = (id: unknown) => (id === "start" && !ids.has("start") ? START : id === "end" && !ids.has("end") ? END : id);
+  if (Array.isArray(next.edges)) next.edges = next.edges.map((edge) => (isRaw(edge) ? { ...edge, from: sentinel(edge.from), to: sentinel(edge.to) } : edge));
   return next;
 }
 

@@ -52,13 +52,13 @@ Workflow: `id`, `name`, `description{en,ru}`, `examples{en[],ru[]}`, `inputs[]`,
 
 Nodes (`type`): `agent`, `lp-task`, `action`, `decision`, `human`, `parallel`, `join`, `subworkflow`, `note`. Every node: `id`, `label`, `output[]` (declared fields: the only things a condition or a mapping may read), `uses` (executor key), `maxVisits`, `maxAttempts`, `timeoutSec`.
 
-Edges: `from`, `to`, `when` (condition), `label`, `with` (mapping name to `node.field`), `pass` = `artifact | same-session | read-prior-session | fork`. Sentinels `start` and `end`; edges into `end` carry `with` and form the workflow output.
+Edges: `from`, `to`, `when` (a structured condition or an expression string, section 12), `label`, `with` (mapping name to `node.field`), `pass` = `artifact | same-session | read-prior-session | fork`. Sentinels `start` and `end` (stored as `$start` and `$end`, so a node may be called `start`); edges into `end` carry `with` and form the workflow output.
 
 Conditions: `{field, op, value}`, `{all}`, `{any}`, `{not}`; ops eq, ne, gt, gte, lt, lte, in, notIn, exists. `field` is `name`, `name.sub` or `name.length`. Validation (a save/load error, not a warning): the field root is declared in the output of the edge's source node; the declared type fits the op (numbers for gt/lt); enum literals belong to the enum. At runtime a missing value fails the step closed (`condition_field_missing`), never "false, take the default" (Maestro D2: `x < 60` true for undefined).
 
 Other save/load checks: unique ids; exactly one entry edge from `start`; known endpoints; every node has an outgoing edge; a node has conditional edges plus at most one unconditional fallback; every cycle contains a node with an explicit `maxVisits`; `with` and prompt placeholders `{{node.field}}` reference an ancestor and a declared field; passing modes other than `artifact` need agent nodes on both ends; every `parallel` has a `join` that every branch reaches; `foreach` references a declared array field; subworkflow targets exist and the call chain has depth <= 3 with no recursion (when a resolver is given); agent nodes always carry `handoff` (the compile step adds the field to the declared output; the engine requires a non-empty value).
 
-Guards: node `maxVisits` (per scope, default 1), node `maxAttempts` (per visit, default 1, at most 5), workflow `guards.maxSteps` (steps in a run, default 60), `guards.maxFanOut` (default 12; overflow fails, `onOverflow: truncate` is explicit).
+Guards: node `maxVisits` (per scope; without it a node may be visited any number of times, and every loop must be bounded by a `maxVisits` on one of its nodes or a `visits('node')` condition on one of its edges, checked at save), node `maxAttempts` (per visit, default 1, at most 5), workflow `guards.maxSteps` (steps in a run, default 60), `guards.maxFanOut` (default 12; overflow fails, `onOverflow: truncate` is explicit).
 
 ## 6. Engine (W2)
 
@@ -102,7 +102,7 @@ Maestro defects avoided on purpose: D1/D2 (a verdict is a field the code branche
 
 ## 9. Proof of equivalence
 
-1. Existing suites: `tests/stages/server-stage.test.ts` and the dispatch tests run with the default (engine on); a twin file runs the same suite with the engine off.
+1. Existing suites: `tests/stages/server-stage.test.ts` (117 dispatch-to-accepted scenarios) and the dispatch tests run with the default (engine on); the same file was also run with `LANE_PILOT_WORKFLOW_ENGINE=0`, both green (not kept as a permanent twin: it would add 80 s to every full run).
 2. `tests/workflow/equivalence.test.ts`: the same dispatch scenarios with the engine on and off produce identical stage receipts (normalized for clocks and thread ids), identical attempt and run states and identical dispatch replies.
 3. Engine tests: linear, decision, parallel and join, foreach, guards (visits, attempts, steps, fan-out, budget), reload at every point, subworkflow depth.
 
@@ -120,3 +120,18 @@ Maestro defects avoided on purpose: D1/D2 (a verdict is a field the code branche
 - The `writer` step is settled by polling every 5 minutes; the journal can lag the attempt by that long (behaviour is unaffected).
 - Glue is duplicated between the legacy `runStages` and the executors (on purpose, for the kill switch); the equivalence tests are the guard.
 - Leases rely on one clock; the plugin runs on the hub.
+- A `writer` step settled as `blocked` can be restarted later by the parked-task sweep as a new attempt; the journal keeps the first verdict of the step (the run record says what the dispatch pipeline did, the attempts say the rest).
+
+## 12. The spelling of the chains spec (workflow-chains-spec.md, section 8)
+
+The schema takes the authoring spelling of the chains spec and normalizes it (`normalizeWorkflow`) before the closed schema runs, so a file in either spelling loads to the same value. JSON is the canonical storage.
+
+- Fields: `out` (map of `name: "type hint"` or a field list), `guards: {maxVisits, maxAttempts, timeoutMin}`, `entry`, `internal`, `not_for`, `tags`, `src`, `model_preset`, `profile{skills}`, `session`, `authorized`, `test`, `test_mode`, `requires{skills, secrets, project}`, `quality_mode{default, effect}`, `budget{max_steps, max_minutes, max_usd, max_fan_out}`, triggers as strings. Type hints: `string int bool any`, `X[]`, `Name` (a named shape), `a|b|c` (enum), `T|null` and `T?` (optional). Inputs are optional unless `required: true`; node outputs are required unless `required: false`; workflow outputs are optional (an emit gives what its path produced).
+- Skipping: `applicable_modes` (outside them the node is skipped), `skip_when`, and `skip_out` (the typed output of a skipped node; a skippable node whose fields others read must give them, checked at save). A skipped fan-out skips its join with the same output.
+- Terminals: an `emit` action ends the workflow (`status`, `map`); `emit` nodes become nodes with an edge to the exit, and the workflow `outputs` are checked against each emit.
+- `parallel` with `for_each` + `child` + `join{policy, out, uses}` in one node. `for_each` is a reference, a literal list, `ref where <condition on the item>`, or `{by: "$inputs.tier" | "$mode", <value>: [...]}`; `batch_size` groups the items; `max_fan_out` caps the branches (overflow fails unless `onOverflow: truncate`). Lowering turns it into `<id>:fan`, `<id>:child` and a join that keeps `<id>`, so `<id>.field` reads the joined result. The default reducer concatenates arrays of the same name; any other join field needs `join.uses` (the validator warns).
+- Expressions (`when`, `skip_when`, `where`, value positions): `== != < <= > >= && || ! + - in [...]`, `.length`, `visits('node')`, `$inputs.x`, `$mode`, `ctx.run_id|goal|merged_commits`, `item`, `index`, `node.field`. Checked at save against the declared fields (unknown field, enum literal that can never match, number compared with a string, list compared with `==`); at run time a node that has not run fails the run (`condition_field_missing`), a field it left out compares as nothing. In value positions (`emit.map`, `skip_out`, node `with`) a node that did not run gives nothing instead. A loop is bounded by a `maxVisits` or by a `visits()` condition on one of its edges; a node without `maxVisits` may be visited any number of times (`guards.maxSteps` still caps the run).
+- Node `with`: `{{ref}}` templates (a lone placeholder keeps the value's type), nested lists and objects, `{by_mode: {quick, standard, full}}`. `$mode` is the `quality_mode` input, else the parent's mode, else the workflow default.
+- `pass` other than `artifact` needs an agent as the target (the agent that goes on in its own earlier session or the one the source left behind).
+- Not run yet (the schema accepts them; the engine refuses to start such a workflow with a clear message): `join.policy` other than `all`, `votes` above 1, `order: depends_on`, `on_child_fail`. W3 builds them.
+- Fixtures: `tests/workflow/chains/` holds `lp.analyze`, `lp.plan`, `lp.build`, `lp.review`, `lp.close`, `analyze-plan-execute` (the spec's, not the built-in of this repo), `review-fix` and `x-to-telegram-digest` converted from the spec by script; `x-to-telegram-digest` also runs end to end on stubs. The validator found defects in the spec text itself (listed in the report).

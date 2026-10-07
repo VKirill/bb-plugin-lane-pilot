@@ -1,0 +1,232 @@
+{
+  "id": "lp.review",
+  "internal": true,
+  "name": {
+    "en": "Review (read-only)",
+    "ru": "Ревью (только чтение)"
+  },
+  "description": {
+    "en": "Multi-dimension code review of a diff, PR or file set with a thresholded verdict computed by code.",
+    "ru": "Многомерное ревью диффа, PR или набора файлов; вердикт считается кодом по порогам."
+  },
+  "inputs": {
+    "range": {
+      "type": "string|string[]",
+      "note": "диапазон коммитов или список коммитов"
+    },
+    "pr": {
+      "type": "string"
+    },
+    "files": {
+      "type": "string[]"
+    },
+    "dimensions": {
+      "type": "string[]",
+      "required": true
+    },
+    "criteria": {
+      "type": "any",
+      "note": "строки acceptance или Goal[]"
+    }
+  },
+  "outputs": {
+    "status": "pass|rework|block",
+    "warn": "bool",
+    "critical_count": "int",
+    "high_count": "int",
+    "remaining_actionable": "int",
+    "findings": "Finding[]",
+    "verdict": "Verdict"
+  },
+  "entry": "scope",
+  "budget": {
+    "max_steps": 14,
+    "max_minutes": 50,
+    "max_fan_out": 6
+  },
+  "nodes": [
+    {
+      "id": "scope",
+      "type": "action",
+      "action": "git.diff_files",
+      "out": {
+        "files": "string[]",
+        "count": "int",
+        "level": "quick|standard|deep"
+      }
+    },
+    {
+      "id": "spec_check",
+      "type": "agent",
+      "role": "code-critic",
+      "applicable_modes": [
+        "standard",
+        "full"
+      ],
+      "skip_out": {
+        "unmet_count": 0,
+        "partial_count": 0,
+        "criteria": "[]"
+      },
+      "src": "maestro-flow:workflows/review.md (step 0)",
+      "prompt": "For each acceptance criterion find the function, endpoint or file that satisfies it; MET, PARTIAL (finding high) or UNMET (finding critical, dimension spec-compliance), with file:line.",
+      "out": {
+        "unmet_count": "int",
+        "partial_count": "int",
+        "criteria": "Criterion[]"
+      },
+      "guards": {
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "dims",
+      "type": "parallel",
+      "for_each": "$inputs.dimensions",
+      "max_fan_out": 6,
+      "title": {
+        "en": "Review per dimension",
+        "ru": "Ревью по измерению"
+      },
+      "child": {
+        "type": "agent",
+        "role": "code-critic",
+        "session": "new",
+        "src": "maestro-flow:workflows/review.md, odyssey-security.md, odyssey-defensive.md",
+        "prompt": "CODE_CRITIC_METHOD for exactly one dimension ({{item}}). Every finding has file:line, severity, evidence (quoted code), impact, suggestion; severity is not softened without new evidence.\nsecurity: OWASP A01-A10, dependencies, secrets (report by location, never the value), a false positive is closed only with counter-evidence.\nsilent_failures: swallowed exceptions, defaults that hide an error, log-only handlers - does the caller learn about the failure?\nDo not report what a prior review already closed.\n",
+        "out": {
+          "dimension": "string",
+          "findings": "Finding[]"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "findings": "Finding[]",
+          "critical_count": "int",
+          "high_count": "int",
+          "unchecked": "string[]"
+        }
+      }
+    },
+    {
+      "id": "confirm",
+      "type": "parallel",
+      "for_each": "dims.findings where severity in [critical, high]",
+      "applicable_modes": [
+        "standard",
+        "full"
+      ],
+      "max_fan_out": 6,
+      "title": {
+        "en": "Majority check (2 of 3)",
+        "ru": "Проверка большинством (2 из 3)"
+      },
+      "src": "maestro-flow:workflows/swarm/wf-review (2 of 3)",
+      "child": {
+        "type": "agent",
+        "role": "code-critic",
+        "session": "new",
+        "prompt": "Three independent critics each confirm or reject ONE finding from the code at file:line; mechanical majority decides. A rejection needs counter-evidence.",
+        "votes": 3,
+        "out": {
+          "finding_id": "string",
+          "confirmed": "bool"
+        }
+      },
+      "join": {
+        "policy": "majority",
+        "out": {
+          "confirmed_ids": "string[]",
+          "dropped_ids": "string[]"
+        }
+      },
+      "skip_when": "dims.critical_count + dims.high_count == 0",
+      "skip_out": {
+        "confirmed_ids": "[]",
+        "dropped_ids": "[]"
+      }
+    },
+    {
+      "id": "aggregate",
+      "type": "action",
+      "action": "verdict.aggregate",
+      "rules": "findings = dims.findings minus confirm.dropped_ids; a critical/high finding without file:line or evidence is demoted to medium (settleVerdict).\ncritical_count >= 1 or high_count > 5 or spec_check.unmet_count >= 1 -> status rework (Maestro BLOCK).\n1 <= high_count <= 5 -> status pass, warn true (Maestro WARN). none -> pass.\ndims.unchecked non-empty (a dimension could not run) -> status block with a message for the PM.\n",
+      "out": {
+        "status": "pass|rework|block",
+        "warn": "bool",
+        "critical_count": "int",
+        "high_count": "int",
+        "remaining_actionable": "int",
+        "findings": "Finding[]",
+        "verdict": "Verdict"
+      }
+    },
+    {
+      "id": "result",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "aggregate.status",
+        "warn": "aggregate.warn",
+        "critical_count": "aggregate.critical_count",
+        "high_count": "aggregate.high_count",
+        "remaining_actionable": "aggregate.remaining_actionable",
+        "findings": "aggregate.findings",
+        "verdict": "aggregate.verdict"
+      }
+    },
+    {
+      "id": "nothing",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "pass",
+        "warn": false,
+        "critical_count": 0,
+        "high_count": 0,
+        "remaining_actionable": 0,
+        "findings": "[]"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "scope",
+      "to": "nothing",
+      "pass": "artifact",
+      "when": "scope.count == 0"
+    },
+    {
+      "from": "scope",
+      "to": "spec_check",
+      "pass": "artifact",
+      "when": "$mode != 'quick'"
+    },
+    {
+      "from": "scope",
+      "to": "dims",
+      "pass": "artifact"
+    },
+    {
+      "from": "spec_check",
+      "to": "dims",
+      "pass": "artifact"
+    },
+    {
+      "from": "dims",
+      "to": "confirm",
+      "pass": "artifact"
+    },
+    {
+      "from": "confirm",
+      "to": "aggregate",
+      "pass": "artifact"
+    },
+    {
+      "from": "aggregate",
+      "to": "result",
+      "pass": "artifact"
+    }
+  ]
+}

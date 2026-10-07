@@ -35,6 +35,7 @@ import { createWriterVerify } from "./src/server/writer/verify";
 import { createWriterFinish } from "./src/server/writer/finish";
 import { createWriterStart } from "./src/server/writer/start";
 import { createWriterDispatch } from "./src/server/writer/dispatch";
+import { createWorkflowEngine } from "./src/server/workflow";
 import { relayFor } from "./src/server/relay";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
 import { mountLifecycleEvents } from "./src/server/lifecycle-events";
@@ -57,6 +58,7 @@ export default async function plugin(bb: BbPluginApi) {
     createReconcile(ctx, services),
     createActivation(ctx, services),
     createWriterState(ctx),
+    createWorkflowEngine(ctx),
     createWriterSpawn(ctx, services),
     createWriterVerify(ctx, services),
     createWriterFinish(ctx, services),
