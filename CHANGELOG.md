@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.177
+
+From the 2026-10-07 stabilization review:
+- **Contract lint (bugs 5, 11).** With `verification.sandbox_unsafe` set, `npx vitest run tests/server/` (a folder with a trailing slash) counts as a focused check; any positional filter does. `--pool forks`, `--retry 2`, `--maxWorkers 4` and the like are no longer read as filters. A `read_first` symlink that points at a file (`AGENTS.md` → `CLAUDE.md`) is accepted: `snapshotDryRun` reports `targetKind` for a symlink and the lint treats it as that target; a dangling one is still refused.
+- **Stable spawn keys (D2, bugs 8, 12).** Specialists, council seats, browser checks, errands, repair threads, rules analyzers and nightly docs passes name their spawn (`spawnId` in the thread metadata), so a spawn repeated after a lost answer returns the thread that call made. A thread adopted through reconcile (critic, stage children) clears its key marker: the next critique round gets a fresh thread, never the previous round's. A self-repair spawn that throws keeps its worktree and repeats under the same key on the next pass (30 minutes at most, then the worktree is released); a live repair thread no longer loses its worktree to a lost answer.
+- **vk-requires.json** lists `experimental_vkFindByKey`, `experimental_vkFindByPluginMetadata` and `experimental_vkLifecycle` (the export the drain runs through) as optional; `vkLifecycleDrain` was not a function name.
+- **UI catalog.** `verification.sandbox_unsafe` is back as row s418 (s413 belongs to `writer.silence_nudge_min`). `scripts/generate-ui-catalog.py` reads `scripts/ui-catalog-hand.json` (edits to generated rows, rows s366-s418, their labels, the section order), so a regeneration reproduces `src/ui-catalog.ts` and `src/i18n-fields.ts` byte for byte; `docs/adoc-applicability.md` and the summary are regenerated from it.
+- **Drill (E3).** `scripts/lp-drill.sh` runs more than 3 parallel tasks: same-line conflict, main moved during an attempt, a bad `writer.model` (the next writer takes the task; the setting is restored), `bb plugin reload` mid-attempt (skipped while a non-sandbox project has open attempts) and a project folder without git. Each scenario's verdict is in the receipt; `--quick` is the 3-parallel scenario alone. `bb-plugin-push` runs `--quick` before a deploy (not with `LP_DEPLOY_INCIDENT`) and writes the receipt path into `deploys.log`.
+
 ## 0.1.176
 
 - **A section with its own repo inside a non-git project gets Lane Pilot's own worktree in every run kind.** BB's managed worktree forked the project root, which has no git, and the spawn failed with «HTTP 409: This project checkout has no usable git branch» (live sandbox, 2026-10-07). Native Lane chats already did this.

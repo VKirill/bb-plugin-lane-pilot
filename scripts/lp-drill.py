@@ -110,7 +110,7 @@ def task(task_id: str, title: str, outputs: list[str], objective: str, acceptanc
 def note_task(task_id: str, path: str, text: str, cwd: str, before: str = "") -> dict:
     """A task that writes one two-line note; `before` is an instruction to do first (a sleep that holds the writer in its attempt)."""
     lead = f"{before} Then create" if before else "Create"
-    return task(task_id, f"Drill {task_id}: one note", [path], f"{lead} the file {path} with exactly two lines. Line 1: `# {text}`. Line 2: `ok: {text}`. Nothing else.",
+    return task(task_id, f"{text}: one note", [path], f"{lead} the file {path} with exactly two lines. Line 1: `# {text}`. Line 2: `ok: {text}`. Nothing else.",
                 [f"{path} exists, its first line is `# {text}` and its second line is `ok: {text}`."], cwd)
 
 
@@ -194,10 +194,8 @@ class Context:
 
     def finish(self) -> list[str]:
         problems: list[str] = []
-        if not self.run_id:
-            return problems
-        out = ""
-        for tries in range(30):
+        out = err = ""
+        for tries in range(30 if self.run_id else 0):
             rc, out, err = bb("lane-pilot", "finish", self.project)
             if rc == 0:
                 log("run finished")
@@ -206,8 +204,11 @@ class Context:
                 self.quiet()
             time.sleep(20)
         else:
-            problems.append(f"run could not be finished: {(out + err).strip()[:200]}")
+            if self.run_id:
+                problems.append(f"run could not be finished: {(out + err).strip()[:200]}")
         try:
+            if not self.run_id:
+                raise RuntimeError("no run")
             rows = hubsql(f"select thread_id as t from lane_pilot_attempt where run_id='{self.run_id}' and thread_id is not null union select holder_thread_id from lane_pilot_attempt where run_id='{self.run_id}' and holder_thread_id is not null;")
             writers = [next(iter(r.values())) for r in rows]
         except RuntimeError:
@@ -279,6 +280,33 @@ def tasks_parallel3(cwd: str) -> list[dict]:
             for letter in "abc"]
 
 
+def conflict_path() -> str:
+    return f"notes/drill/{STAMP}-conflict.md"
+
+
+def tasks_conflict(cwd: str) -> list[dict]:
+    rel = conflict_path()
+    return [task(f"drill-{STAMP}-conflict-{side}", f"Drill {STAMP}: line 2 becomes {side}", [rel],
+                 f"In {rel} replace line 2 (`line: base` or whatever it says now) with `line: {side}`. Keep lines 1 and 3 as they are. Nothing else.",
+                 [f"Line 2 of {rel} is `line: {side}`, line 1 is `# Drill {STAMP} conflict` and line 3 is `end`."], cwd, read_first=[rel]) for side in ("X", "Y")]
+
+
+def task_moved(cwd: str) -> dict:
+    return note_task(f"drill-{STAMP}-moved", f"notes/drill/{STAMP}-moved.md", f"Drill {STAMP} moved", cwd, before="First run `sleep 45` with Bash and wait for it.")
+
+
+def task_limit(cwd: str) -> dict:
+    return note_task(f"drill-{STAMP}-limit", f"notes/drill/{STAMP}-limit.md", f"Drill {STAMP} limit", cwd)
+
+
+def task_reload(cwd: str) -> dict:
+    return note_task(f"drill-{STAMP}-reload", f"notes/drill/{STAMP}-reload.md", f"Drill {STAMP} reload", cwd, before="First run `sleep 60` with Bash and wait for it.")
+
+
+def task_nogit(cwd: str) -> dict:
+    return note_task(f"drill-{STAMP}-nogit", f"drill-{STAMP}-nogit.md", f"Drill {STAMP} nogit", cwd) | {"risk": "low"}
+
+
 def scenario_parallel3(ctx: Context) -> dict:
     specs = tasks_parallel3(ctx.cwd)
     with ThreadPoolExecutor(3) as pool:
@@ -302,11 +330,9 @@ def scenario_parallel3(ctx: Context) -> dict:
 
 
 def scenario_conflict(ctx: Context) -> dict:
-    rel = f"notes/drill/{STAMP}-conflict.md"
+    rel = conflict_path()
     commit_file(ctx.cwd, rel, f"# Drill {STAMP} conflict\nline: base\nend\n", f"drill {STAMP}: seed for the same-line conflict")
-    specs = [task(f"drill-{STAMP}-conflict-{side}", f"Drill {STAMP}: line 2 becomes {side}", [rel],
-                  f"In {rel} replace line 2 (`line: base` or whatever it says now) with `line: {side}`. Keep lines 1 and 3 as they are. Nothing else.",
-                  [f"Line 2 of {rel} is `line: {side}`, line 1 is `# Drill {STAMP} conflict` and line 3 is `end`."], ctx.cwd, read_first=[rel]) for side in ("X", "Y")]
+    specs = tasks_conflict(ctx.cwd)
     with ThreadPoolExecutor(2) as pool:
         sent = list(pool.map(ctx.dispatch, specs))
     problems = [] if all(sent) else ["a dispatch-bb call exited with an error"]
@@ -324,8 +350,9 @@ def scenario_conflict(ctx: Context) -> dict:
 
 
 def scenario_main_moved(ctx: Context) -> dict:
-    out, moved_rel = f"notes/drill/{STAMP}-moved.md", f"notes/drill/{STAMP}-main-commit.md"
-    spec = note_task(f"drill-{STAMP}-moved", out, f"Drill {STAMP} moved", ctx.cwd, before="First run `sleep 45` with Bash and wait for it.")
+    moved_rel = f"notes/drill/{STAMP}-main-commit.md"
+    spec = task_moved(ctx.cwd)
+    out = spec["expected_outputs"][0]
     problems = [] if ctx.dispatch(spec) else ["dispatch-bb exited with an error"]
     if not ctx.wait_state(spec["id"], "running"):
         problems.append("the writer never started running")
@@ -374,7 +401,7 @@ def scenario_provider_limit(ctx: Context) -> dict:
         if not changed.get("ok"):
             return verdict("provider_limit", [f"could not set {key}: {json.dumps(changed)[:200]}"])
         version = int(changed["version"])
-        spec = note_task(f"drill-{STAMP}-limit", f"notes/drill/{STAMP}-limit.md", f"Drill {STAMP} limit", ctx.cwd)
+        spec = task_limit(ctx.cwd)
         if not ctx.dispatch(spec):
             problems.append("dispatch-bb exited with an error")
         rows = ctx.wait_ended([spec["id"]])
@@ -394,7 +421,7 @@ def scenario_provider_limit(ctx: Context) -> dict:
         restored = (json.loads(now[0]["value"]) if now else None) == original
         if not (back.get("ok") and restored):
             problems.append(f"{key} was NOT restored to {original!r}: {json.dumps(back)[:200]}")
-    return verdict("provider_limit", problems, tasks=[row], badModel=BAD_MODEL, restored=original)
+    return verdict("provider_limit", problems, tasks=[row] if row else [], badModel=BAD_MODEL, restored=original)
 
 
 def scenario_reload(ctx: Context) -> dict:
@@ -403,8 +430,8 @@ def scenario_reload(ctx: Context) -> dict:
     busy = {row["p"]: row["n"] for row in foreign if row["p"] not in SANDBOX_PROJECTS}
     if busy:
         return {"name": "reload", "result": "skipped", "problems": [], "note": f"projects with open attempts would be hit by a reload: {busy}"}
-    out = f"notes/drill/{STAMP}-reload.md"
-    spec = note_task(f"drill-{STAMP}-reload", out, f"Drill {STAMP} reload", ctx.cwd, before="First run `sleep 60` with Bash and wait for it.")
+    spec = task_reload(ctx.cwd)
+    out = spec["expected_outputs"][0]
     problems = [] if ctx.dispatch(spec) else ["dispatch-bb exited with an error"]
     if not ctx.wait_state(spec["id"], "running"):
         problems.append("the writer never started running")
@@ -422,6 +449,21 @@ def scenario_reload(ctx: Context) -> dict:
     return verdict("reload", problems, tasks=[row])
 
 
+def ensure_prototype_config(spec: dict) -> bool:
+    """`bb lane-pilot activate` needs the project's prototype config (host, folders, PM and writer models). The sandbox project that has no git
+    gets it once, from the same values as the main sandbox project; it stays (the plugin has no way to remove it). True when this call set it."""
+    have = hubsql(f"select count(*) as n from lane_pilot_project_settings where project_id='{spec['project']}' and binding_id='' and key='writerWorkspacePath';")
+    if have and int(have[0]["n"]) > 0:
+        return False
+    config = {"projectId": spec["project"], "hostId": os.environ.get("LP_DRILL_HOST", "host_7sea4qaad8"), "pmWorkspacePath": spec["cwd"], "writerWorkspacePath": spec["cwd"],
+              "pmProviderId": "claude-code", "pmModel": "claude-sonnet-5-5", "writerProviderId": "codex", "writerModel": "gpt-6-luna"}
+    rc, out, err = bb("lane-pilot", "configure", json.dumps(config))
+    if rc != 0:
+        raise RuntimeError(f"could not configure {spec['project']}: {(err or out).strip()[:200]}")
+    log(f"configured {spec['project']} for the drill")
+    return True
+
+
 def scenario_nogit(tmp: Path) -> dict:
     cwd = NOGIT["cwd"]
     if not Path(cwd).is_dir():
@@ -429,13 +471,14 @@ def scenario_nogit(tmp: Path) -> dict:
     if (Path(cwd) / ".git").exists():
         return verdict("nogit", [f"{cwd} is a git repo: this scenario needs a folder without git"])
     ctx = Context(NOGIT, tmp)
-    out = f"drill-{STAMP}-nogit.md"
+    spec = task_nogit(cwd)
+    out = spec["expected_outputs"][0]
     problems: list[str] = []
     row: dict = {}
+    configured = False
     try:
+        configured = ensure_prototype_config(NOGIT)
         ctx.start()
-        spec = note_task(f"drill-{STAMP}-nogit", out, f"Drill {STAMP} nogit", cwd)
-        spec["risk"] = "low"
         if not ctx.dispatch(spec):
             problems.append("dispatch-bb exited with an error")
         rows = ctx.wait_ended([spec["id"]])
@@ -453,7 +496,7 @@ def scenario_nogit(tmp: Path) -> dict:
             ctx.quiet()
         problems += ctx.finish()
         (Path(cwd) / out).unlink(missing_ok=True)
-    return verdict("nogit", problems, tasks=[row], project=NOGIT["project"], runId=ctx.run_id or None)
+    return verdict("nogit", problems, tasks=[row] if row else [], project=NOGIT["project"], runId=ctx.run_id or None, configuredByDrill=configured)
 
 
 # --- main ---------------------------------------------------------------------------------------------------------------
@@ -463,9 +506,11 @@ def dry_run(names: list[str]) -> None:
     if "parallel3" in names:
         for spec in tasks_parallel3(SANDBOX["cwd"]):
             print(json.dumps(spec))
+    cwd = SANDBOX["cwd"]
+    documents = {"conflict": tasks_conflict(cwd), "main_moved": [task_moved(cwd)], "provider_limit": [task_limit(cwd)], "reload": [task_reload(cwd)], "nogit": [task_nogit(NOGIT["cwd"])]}
     for name in names:
-        if name != "parallel3":
-            print(f"scenario {name}: see the docstring of scripts/lp-drill.py")
+        for spec in documents.get(name, []):
+            print(f"scenario {name}: {json.dumps(spec)}")
 
 
 def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context | None, problems: list[str], names: list[str]) -> str:
