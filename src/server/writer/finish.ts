@@ -16,6 +16,7 @@ import { needsHumanQuestion, outputText, providerLimitNotice, writerContextBlock
 import { isLiveDecision } from "../../live-folder";
 import { isMainfixTask } from "../../validate-output";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../integration-gate";
+import { gateResolverFor } from "../gate-detect";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { join, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
@@ -66,6 +67,22 @@ export function postMergeRepair(onMain:TaskV2, red:Array<{ command:string; exitC
 export function createWriterFinish(ctx: ServerCore, services: Services) {
   const { bb, db, getThreadBounded, host } = ctx;
   const integrationGateRunner = new IntegrationGateRunner(ctx, services);
+
+  /** The project's gate (explicit, detected on its host, or none). */
+  const gateFor = (projectId:string, runId:string, hostId:string, basePath:string) =>
+    gateResolverFor(ctx)({ runId, hostId, basePath, gate:parseIntegrationGateSettings(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))) });
+
+  /**
+   * A task landed (merged, or accepted in place in a folder with no repository): the batch gate counts it. The gate runs
+   * once the project has no other open attempt; with `every_n` it also runs every n merges.
+   */
+  function noteMergedForGate(input:{ projectId:string; runId:string; taskId:string; attemptId:string; writerThreadId:string | null; pmThreadId:string; config:{ hostId:string } },
+    basePath:string, commitSha:string, produced:string[], live:boolean) {
+    integrationGateRunner.noteMergedTask({ taskId:input.taskId, commitSha, threadId:input.writerThreadId, attemptId:input.attemptId, produced });
+    const drained = !listOpenAttempts(db).some((row) => row.project_id === input.projectId && row.id !== input.attemptId);
+    return integrationGateRunner.maybeRunGate({ runId:input.runId, projectId:input.projectId, pmThreadId:input.pmThreadId, basePath,
+      configHostId:input.config.hostId, trigger:drained ? "drain" : "merge", ...(live ? { live:true } : {}) });
+  }
 
   /** Who holds the checkout: the open attempt whose task the holder's commit message names. */
   function mergeHolder(runId: string, holder: string | null, since: number): BlockedBy {
@@ -639,29 +656,17 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         }
         integration = { status:merged.status, commit:merged.commit, conflicts:[], ...(merged.rebased ? { rebased:true } : {}) };
         if (merged.status === "merged") {
-          const settings = loadProjectSettings(db, input.projectId);
-          const gateSettings = parseIntegrationGateSettings(settings);
-          if (gateSettings.gateCommand) {
-            integrationGateRunner.noteMergedTask({
-              taskId: input.taskId,
-              commitSha: merged.commit ?? "",
-              threadId: input.writerThreadId,
-              attemptId: input.attemptId,
-              produced: candidate.produced,
-            });
-            void integrationGateRunner.maybeRunGate({
-              runId: input.runId,
-              projectId: input.projectId,
-              pmThreadId: input.pmThreadId,
-              basePath,
-              configHostId: input.config.hostId,
-              trigger: "merge",
-            });
+          const gate = await gateFor(input.projectId, input.runId, input.config.hostId, basePath);
+          if (gate) {
+            void noteMergedForGate(input, basePath, merged.commit ?? "", candidate.produced, false);
           } else {
             void checkMainAfterMerge({ projectId:input.projectId, pmThreadId:input.pmThreadId, config:input.config,
               runId:input.runId, task:input.task, basePath, worktreePath:bound.workspace_path, attemptId:input.attemptId, mergeCommit:merged.commit ?? undefined });
           }
         }
+      } else if (bound && basePath && isLiveDecision(bound.workspace_decision)) {
+        // A folder with no repository has no merge: the accepted task is in place, and the gate runs there once the queue drains.
+        if (await gateFor(input.projectId, input.runId, input.config.hostId, basePath)) void noteMergedForGate(input, basePath, "", candidate.produced, true);
       }
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
         attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration}});
@@ -728,5 +733,5 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     await tell(`Lane Pilot: ${input.task.id} is merged, but ${red.map((check) => check.command).join(", ")} fails on main with it. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
   }
 
-  return { finishWriterAttempt, checkMainAfterMerge };
+  return { finishWriterAttempt, checkMainAfterMerge, noteMergedForGate };
 }

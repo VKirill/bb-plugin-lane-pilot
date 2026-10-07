@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import {
   parseIntegrationGateSettings,
@@ -18,6 +21,7 @@ describe("integration-gate settings parsing", () => {
   it("defaults to null command, queue_drained, every 5", () => {
     const parsed = parseIntegrationGateSettings({});
     expect(parsed.gateCommand).toBeNull();
+    expect(parsed.gateOff).toBe(false);
     expect(parsed.gateWhen).toBe("queue_drained");
     expect(parsed.gateEvery).toBe(5);
   });
@@ -31,6 +35,13 @@ describe("integration-gate settings parsing", () => {
     expect(parsed.gateCommand).toBe("npm test");
     expect(parsed.gateWhen).toBe("every_n");
     expect(parsed.gateEvery).toBe(3);
+  });
+});
+
+describe("integration.gate_command off", () => {
+  it("is no command and a switch", () => {
+    expect(parseIntegrationGateSettings({ "integration.gate_command": "off" })).toMatchObject({ gateCommand: null, gateOff: true });
+    expect(parseIntegrationGateSettings({ "integration.gate_command": " Off " })).toMatchObject({ gateCommand: null, gateOff: true });
   });
 });
 
@@ -177,7 +188,9 @@ describe("IntegrationGateRunner with mock core & services", () => {
     mockServices = {} as unknown as Services;
   });
 
-  it("does nothing when no gate command configured", async () => {
+  it("does nothing when the gate is off", async () => {
+    // process.cwd() holds a package.json with a test script: only «off» keeps the gate from being detected there.
+    saveProjectSetting(db, "proj-1", "integration.gate_command", "off");
     const runner = new IntegrationGateRunner(mockCore, mockServices);
     runner.noteMergedTask({
       taskId: "task-1",
@@ -319,5 +332,96 @@ describe("IntegrationGateRunner with mock core & services", () => {
     // Check no new task ids created in db
     const tasksAfter = db.prepare(`SELECT * FROM lane_pilot_task WHERE run_id='run-1'`).all().length;
     expect(tasksAfter).toBe(tasksBefore);
+  });
+
+  describe("with no gate_command: the command is detected on the project's host", () => {
+    let dir: string;
+    beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "lp-gate-auto-")); });
+    afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+    // A test script that counts its own runs and fails when told to, naming a test file the way vitest does.
+    const writePackage = (failing: string | null) => writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: {
+      test: `node -e "require('fs').appendFileSync('runs.txt','x');${failing ? `console.error('FAIL ${failing}');process.exit(1)` : ""}"`,
+    } }));
+    const runs = () => (existsSync(join(dir, "runs.txt")) ? readFileSync(join(dir, "runs.txt"), "utf8").length : 0);
+    const gate = (runner: IntegrationGateRunner, trigger: "merge" | "drain", extra: { live?: boolean } = {}) =>
+      runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-thread-999", basePath: dir, configHostId: "host-1", trigger, ...extra });
+    const merged = (taskId: string, produced: string[]) => ({ taskId, commitSha: `sha-${taskId}`, threadId: `thr-${taskId}`, attemptId: `att-${taskId}`, produced });
+
+    it("runs the whole suite once after the batch, not per merge, and records the detected command in the receipt", async () => {
+      writePackage(null);
+      db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('t2', 'run-1', 'bb', '{}', 0)`).run();
+      const runner = new IntegrationGateRunner(mockCore, mockServices);
+      runner.noteMergedTask(merged("t1", ["src/a.ts"]));
+      expect(await gate(runner, "merge")).toEqual({ ran: false });
+      runner.noteMergedTask(merged("t2", ["src/b.ts"]));
+      expect(await gate(runner, "merge")).toEqual({ ran: false });
+      expect(runs()).toBe(0);
+
+      const res = await gate(runner, "drain");
+
+      expect(res).toMatchObject({ ran: true, passed: true });
+      expect(runs()).toBe(1);
+      const receipt = db.prepare(`SELECT result_json FROM lane_pilot_stage_receipt WHERE run_id='run-1' AND stage_id='verification'`).get() as { result_json: string };
+      expect(JSON.parse(receipt.result_json)).toMatchObject({ command: "npm test", source: "detected", passed: true, mergesChecked: 2 });
+    });
+
+    it("a red gate goes to the culprit writer's thread and tells the PM which command was detected", async () => {
+      writePackage("tests/b.test.ts");
+      const runner = new IntegrationGateRunner(mockCore, mockServices);
+      runner.noteMergedTask(merged("t1", ["src/a.ts"]));
+      runner.noteMergedTask(merged("t2", ["tests/b.test.ts"]));
+
+      const res = await gate(runner, "drain");
+
+      expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: "t2" });
+      expect(runs()).toBe(1);
+      expect(sentMessages.find((m) => m.threadId === "thr-t2")?.text).toContain("integration gate failed after merging your task t2");
+      const pm = sentMessages.find((m) => m.threadId === "pm-thread-999")?.text ?? "";
+      expect(pm).toContain("`npm test` (detected: package.json script «test»)");
+      expect(pm).toContain("Traced to t2");
+      expect(sentMessages.find((m) => m.threadId === "thr-t1")).toBeUndefined();
+    });
+
+    it("an explicit command overrides the detected one", async () => {
+      writePackage("tests/b.test.ts");
+      saveProjectSetting(db, "proj-1", "integration.gate_command", 'node -e "process.exit(0)"');
+      const runner = new IntegrationGateRunner(mockCore, mockServices);
+      runner.noteMergedTask(merged("t1", ["tests/b.test.ts"]));
+      expect(await gate(runner, "drain")).toMatchObject({ ran: true, passed: true });
+      expect(runs()).toBe(0);
+    });
+
+    it("off runs nothing even where a test script exists", async () => {
+      writePackage(null);
+      saveProjectSetting(db, "proj-1", "integration.gate_command", "off");
+      const runner = new IntegrationGateRunner(mockCore, mockServices);
+      runner.noteMergedTask(merged("t1", ["src/a.ts"]));
+      expect(await gate(runner, "drain")).toEqual({ ran: false });
+      expect(runs()).toBe(0);
+    });
+
+    it("a folder with no test runner has no gate", async () => {
+      const runner = new IntegrationGateRunner(mockCore, mockServices);
+      runner.noteMergedTask(merged("t1", ["src/a.ts"]));
+      expect(await gate(runner, "drain")).toEqual({ ran: false });
+    });
+
+    it("a folder without git runs the gate in place and reports a red one to the PM instead of bisecting", async () => {
+      writePackage("tests/b.test.ts");
+      const hostCalls: string[] = [];
+      const inPlace = { ...mockCore, host: { call: async (method: string, input: unknown) => { hostCalls.push(method); return (hostHandlers as unknown as Record<string, (input: unknown) => Promise<unknown>>)[method]!(input); } } } as unknown as ServerCore;
+      const runner = new IntegrationGateRunner(inPlace, mockServices);
+      runner.noteMergedTask(merged("t1", ["tests/b.test.ts"]));
+      runner.noteMergedTask(merged("t2", ["src/c.ts"]));
+
+      const res = await gate(runner, "drain", { live: true });
+
+      expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
+      expect(hostCalls).not.toContain("gateBisect");
+      expect(sentMessages.some((m) => m.threadId.startsWith("thr-"))).toBe(false);
+      const pm = sentMessages.find((m) => m.threadId === "pm-thread-999")?.text ?? "";
+      expect(pm).toContain("no git");
+      expect(pm).toContain("t1, t2");
+    });
   });
 });

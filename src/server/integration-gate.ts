@@ -1,6 +1,6 @@
 import type { TaskV2, PrototypeConfig } from "../contracts";
 import type { LanePilotDatabase, StageReceiptRow } from "../database";
-import { getRun, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../database";
+import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../database";
 import { recordStage } from "./stage-records";
 import { stringAt } from "./values";
 import type { ServerCore } from "./core";
@@ -8,25 +8,29 @@ import type { Services } from "./services";
 import { saveFollowUp } from "./writer/sticky";
 import { sendServiceMessage } from "./service-message";
 import { isEnvironmentCheckFailure } from "../failure-class";
+import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { join } from "node:path";
 
 export type GateWhen = "queue_drained" | "every_n";
 
 export type IntegrationGateSettings = {
+  /** The explicit command; null when empty (the gate is then detected) or `off`. */
   gateCommand: string | null;
+  /** `integration.gate_command` is `off`: no gate for the project, detected or not. */
+  gateOff: boolean;
   gateWhen: GateWhen;
   gateEvery: number;
 };
 
 export function parseIntegrationGateSettings(settings: Record<string, unknown>): IntegrationGateSettings {
-  const gateCommand = typeof settings["integration.gate_command"] === "string" && settings["integration.gate_command"].trim()
-    ? settings["integration.gate_command"].trim()
-    : null;
+  const rawCommand = typeof settings["integration.gate_command"] === "string" ? settings["integration.gate_command"].trim() : "";
+  const gateOff = rawCommand.toLowerCase() === "off";
+  const gateCommand = rawCommand && !gateOff ? rawCommand : null;
   const gateWhenRaw = settings["integration.gate_when"];
   const gateWhen: GateWhen = gateWhenRaw === "every_n" ? "every_n" : "queue_drained";
   const gateEveryRaw = Number(settings["integration.gate_every"]);
   const gateEvery = Number.isFinite(gateEveryRaw) && gateEveryRaw > 0 ? Math.floor(gateEveryRaw) : 5;
-  return { gateCommand, gateWhen, gateEvery };
+  return { gateCommand, gateOff, gateWhen, gateEvery };
 }
 
 export type FailingGateCheck = {
@@ -218,6 +222,7 @@ export class IntegrationGateRunner {
   private mergesSinceLastGate = 0;
   private lastGreenCommit: string | null = null;
   private mergedTasksSinceLastGate: MergedTaskInfo[] = [];
+  private drainWaiting: Parameters<IntegrationGateRunner["maybeRunGate"]>[0] | null = null;
 
   constructor(
     private readonly ctx: ServerCore,
@@ -240,11 +245,14 @@ export class IntegrationGateRunner {
     basePath: string;
     configHostId: string;
     trigger: "merge" | "drain";
+    /** The folder has no git: the gate runs in place, and a red result is reported, never bisected. */
+    live?: boolean;
   }): Promise<{ ran: boolean; passed?: boolean; culpritTaskId?: string | null }> {
-    const settings = loadProjectSettings(this.ctx.db, input.projectId);
+    const settings = loadProjectSettings(this.ctx.db, input.projectId, getRunSettingsScopes(this.ctx.db, input.runId));
     const gateSettings = parseIntegrationGateSettings(settings);
+    const gate = await gateResolverFor(this.ctx)({ runId: input.runId, hostId: input.configHostId, basePath: input.basePath, gate: gateSettings });
 
-    if (!gateSettings.gateCommand) {
+    if (!gate) {
       return { ran: false };
     }
 
@@ -256,19 +264,22 @@ export class IntegrationGateRunner {
       return { ran: false };
     }
 
-    // Don't run concurrently
+    // Don't run concurrently; a drain that came while one runs is the batch's gate, so it goes once this one is done.
     if (this.inFlight) {
+      if (input.trigger === "drain") this.drainWaiting = input;
       return { ran: false };
     }
 
     this.inFlight = true;
+    let result: { ran: boolean; passed?: boolean; culpritTaskId?: string | null } = { ran: false };
     try {
-      return await this.executeGate({
-        ...input,
-        gateCommand: gateSettings.gateCommand,
-      });
+      result = await this.executeGate({ ...input, gate });
+      return result;
     } finally {
       this.inFlight = false;
+      const waiting = this.drainWaiting;
+      this.drainWaiting = null;
+      if (waiting && result.ran && this.mergesSinceLastGate > 0) void this.maybeRunGate(waiting);
     }
   }
 
@@ -278,9 +289,12 @@ export class IntegrationGateRunner {
     pmThreadId: string;
     basePath: string;
     configHostId: string;
-    gateCommand: string;
+    gate: ResolvedGate;
+    live?: boolean;
   }): Promise<{ ran: boolean; passed?: boolean; culpritTaskId?: string | null }> {
-    const { runId, projectId, pmThreadId, basePath, configHostId, gateCommand } = input;
+    const { runId, projectId, pmThreadId, basePath, configHostId, gate } = input;
+    const gateCommand = gate.command;
+    const label = gateLabel(gate);
     const db = this.ctx.db;
     const bb = this.ctx.bb;
     const host = this.ctx.host;
@@ -318,6 +332,8 @@ export class IntegrationGateRunner {
 
     const receiptResult = {
       command: gateCommand,
+      source: gate.source,
+      detail: gate.detail,
       exitCode,
       passed,
       mergesChecked: this.mergesSinceLastGate,
@@ -348,7 +364,7 @@ export class IntegrationGateRunner {
     if (isEnvironmentCheckFailure({ stdout, stderr })) {
       const evidence = `${stderr}\n${stdout}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr: line }))?.trim().slice(0, 300) ?? "";
       this.ctx.log(`infra: integration gate \`${gateCommand}\` is red from the environment, no culprit searched: ${evidence}`);
-      await this.tellPm(pmThreadId, `Lane Pilot: integration gate \`${gateCommand}\` is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent (a writer cannot fix file permissions). Fix it in ${basePath}, then the gate runs again.`, {
+      await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent (a writer cannot fix file permissions). Fix it in ${basePath}, then the gate runs again.`, {
         question: `The integration gate \`${gateCommand}\` is red because of the machine, not the code. It needs a fix in ${basePath} that only you can make.`,
         detail: evidence,
         options: ["Fixed, run the gate again", "I will look later"],
@@ -360,10 +376,13 @@ export class IntegrationGateRunner {
     const failingFiles = extractFailingFiles(`${stderr}\n${stdout}`);
     const tasksToCheck = [...this.mergedTasksSinceLastGate];
 
-    let culprit = await findCulpritByFiles(failingFiles, tasksToCheck, readProjectFile);
+    // A folder without git has no commits to bisect and no merges to blame: the PM and the owner get the red result.
+    let culprit = input.live ? null : await findCulpritByFiles(failingFiles, tasksToCheck, readProjectFile);
 
     // Fallback: git bisect if ambiguous and we have a lastGreenCommit and merged tasks
-    if (!culprit && this.lastGreenCommit && tasksToCheck.length > 1) {
+    if (input.live) {
+      // reported below
+    } else if (!culprit && this.lastGreenCommit && tasksToCheck.length > 1) {
       const currentHead = ran.head;
       if (currentHead && currentHead !== this.lastGreenCommit) {
         culprit = await bisectCulprit(host, configHostId, gateCommand, this.lastGreenCommit, currentHead, basePath, tasksToCheck);
@@ -410,7 +429,7 @@ export class IntegrationGateRunner {
 
       await sendServiceMessage(bb, {
         threadId: pmThreadId,
-        text: `Lane Pilot: integration gate \`${gateCommand}\` failed. Traced to ${culprit.taskId}; sent fix turn to @thread:${culprit.threadId}. Full log: ${logRelativePath}`,
+        text: `Lane Pilot: integration gate ${label} failed. Traced to ${culprit.taskId}; sent fix turn to @thread:${culprit.threadId}. Full log: ${logRelativePath}`,
         senderThreadId: culprit.threadId,
       }).catch(() => undefined);
 
@@ -418,7 +437,11 @@ export class IntegrationGateRunner {
     }
 
     // Tell PM with log; the owner is asked what to do (a form in the PM chat and a push on the phone).
-    await this.tellPm(pmThreadId, `Lane Pilot: integration gate \`${gateCommand}\` failed (exit ${exitCode}). Could not unambiguously identify culprit. Full log: ${logRelativePath}`, {
+    const tasks = tasksToCheck.map((task) => task.taskId).join(", ");
+    const why = input.live
+      ? `This folder has no git, so no culprit can be searched${tasks ? ` (tasks since the last gate: ${tasks})` : ""}.`
+      : "Could not unambiguously identify culprit.";
+    await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} failed (exit ${exitCode}). ${why} Full log: ${logRelativePath}`, {
       question: `The integration gate \`${gateCommand}\` is red and no single task is to blame. What should the PM do?`,
       detail: `Full log: ${logRelativePath}\n\n${`${stderr}\n${stdout}`.trim().slice(-1200)}`,
       options: ["Investigate and fix it", "Leave it, I will look myself"],
