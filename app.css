@@ -429,14 +429,18 @@
   /* The Models table: a grid row on a wide panel, a stacked card with labelled cells on a narrow one. */
   .lp-model-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
   .lp-model-head { display: grid; grid-template-columns: var(--lp-model-cols); gap: 8px; padding: 0 10px; color: var(--muted-foreground); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
-  .lp-model-row { --lp-model-cols: minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.1fr) minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 0.6fr); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--lp-hairline); border-radius: 10px; background-color: var(--lp-card); }
+  .lp-model-row { --lp-model-cols: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 0.6fr); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--lp-hairline); border-radius: 10px; background-color: var(--lp-card); }
   .lp-model-row[data-issue="1"] { border-color: var(--lp-warning); }
   .lp-model-row > [data-label]::before { display: block; margin-bottom: 1px; color: var(--muted-foreground); content: attr(data-label); font-size: 10px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
   .lp-model-row > [data-label]:first-child { grid-column: 1 / -1; }
   .lp-model-row > [data-label]:first-child::before { display: none; }
   .lp-model-row > .lp-model-extra { grid-column: 1 / -1; font-size: 11px; line-height: 16px; }
+  .lp-model-row:not([data-wide="1"]) > [data-label]:nth-child(3) { grid-column: 1 / -1; }
   .lp-model-row[data-wide="1"] { grid-template-columns: var(--lp-model-cols); }
+  /* The host's own picker (a button with the provider, model and effort) takes the width it is given. */
+  .lp-native-picker { min-width: 0; max-width: 100%; }
+  .lp-native-picker > * { min-width: 0; max-width: 100%; }
   .lp-model-row[data-wide="1"] > [data-label]::before { display: none; }
   .lp-model-row[data-wide="1"] > [data-label]:first-child { grid-column: auto; }
-  .lp-model-head { --lp-model-cols: minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.1fr) minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 0.6fr); }
+  .lp-model-head { --lp-model-cols: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 0.6fr); }
 }

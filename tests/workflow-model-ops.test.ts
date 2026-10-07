@@ -16,7 +16,13 @@ const definition = { nodes: [{ id: "a", type: "agent", role: "analyst" }, { id: 
 describe("model choices become draft patches", () => {
   it("sets provider, model and effort on the step, and clears them to hand the step back to its default", () => {
     expect(choiceOps(definition, catalog, "a", { providerId: "codex", model: "gpt-6-luna", effort: "high" })).toEqual({ ok: true, ops: [{ op: "update_node", id: "a", set: { provider: "codex", model: "gpt-6-luna", reasoning: "high" } }] });
-    expect(clearModelOps(definition, "a")).toEqual([{ op: "update_node", id: "a", set: { provider: null, model: null, reasoning: null } }]);
+    expect(clearModelOps(definition, "a")).toEqual([{ op: "update_node", id: "a", set: { provider: null, model: null, reasoning: null, service_tier: null } }]);
+  });
+
+  it("writes fast mode as `service_tier` only when the choice speaks of it, and refuses it where the provider has none", () => {
+    expect(choiceOps(definition, catalog, "a", { providerId: "codex", model: "gpt-6-luna", effort: "low", serviceTier: "fast" })).toEqual({ ok: true, ops: [{ op: "update_node", id: "a", set: { provider: "codex", model: "gpt-6-luna", reasoning: "low", service_tier: "fast" } }] });
+    expect(choiceOps(definition, catalog, "a", { providerId: "codex", model: "gpt-6-luna", effort: "low", serviceTier: "default" })).toMatchObject({ ok: true, ops: [{ set: { service_tier: null } }] });
+    expect(choiceOps(definition, catalog, "a", { providerId: "acp-opencode", model: "gemini", serviceTier: "fast" })).toMatchObject({ ok: false, code: "tier_unsupported" });
   });
 
   it("writes the body of a parallel into its `child`, keeping the child's other fields", () => {

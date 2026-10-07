@@ -182,7 +182,7 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
       const context: NodePanelContext = { node, nodeKey: node.id, locale, run: null, definitionOnly: false, readOnly: true, onOpenThread: openChat, onClose: () => setSelection(null) };
       return renderNodePanel ? renderNodePanel(context) : <NodePanel {...context} draft />;
     }
-    if (selection?.kind === "node" && selectedNode) return <NodeForm node={selectedNode} definition={definition} catalog={catalog} edit={edit} narrow={panelNarrow} onClose={() => setSelection(null)} onConnect={(to) => void connect(selection.id, to === "end" ? END_KEY : to)} />;
+    if (selection?.kind === "node" && selectedNode) return <NodeForm node={selectedNode} definition={definition} catalog={catalog} edit={edit} narrow={panelNarrow} executor={stepModels.byNode.get(selection.id) ?? null} onClose={() => setSelection(null)} onConnect={(to) => void connect(selection.id, to === "end" ? END_KEY : to)} />;
     if (selection?.kind === "edge" && selectedEdge && selectedEdge.raw >= 0) return <EdgeForm edge={{ from: selection.from, to: selection.to }} rawIndex={selectedEdge.raw} definition={definition} edit={edit} narrow={panelNarrow} onClose={() => setSelection(null)} />;
     if (selection?.kind === "workflow") return <WorkflowForm definition={definition} catalog={catalog} edit={edit} narrow={panelNarrow} onClose={() => setSelection(null)} />;
     return null;
@@ -240,7 +240,7 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
           {view.nodes.length || editing ? (
             <Suspense fallback={<p className="py-10 text-center text-xs text-muted-foreground" role="status">{t("wfGraphLoading")}</p>}>
               <WorkflowGraph graph={view} locale={locale} changedNodes={changes.nodes} changedEdges={changes.edges} selected={selection?.kind === "node" ? selection.id : null}
-                onSelect={onSelect} direction={direction} height={direction === "DOWN" ? 420 : 460} models={{ executors: stepModels.byNode, providers: providerMap(modelCatalog) }}
+                onSelect={onSelect} direction={direction} height={direction === "DOWN" ? 420 : 460} models={{ executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "draft", onChoose: chooseModel }}
                 {...(editing ? { onAddAfter: (key: string) => { setSelection({ kind: "node", id: key }); setAdding({ after: key }); }, onConnect: (from: string, to: string) => void connect(from, to),
                   selectedEdge: selectedEdge?.key ?? null, onSelectEdge, problems: problems.graph, focusKey, refit: "first" as const } : {})} />
             </Suspense>

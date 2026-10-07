@@ -4,16 +4,17 @@ import { isRaw, nodeById, setNodeOps, type Raw } from "./workflow-edit-model";
 
 /**
  * The draft patches the model pickers write. A step names its model with the `provider`, `model` and `reasoning` fields of the
- * node (the body of a parallel keeps them inside `child`); clearing all three hands the step back to its default. A combination the
+ * node, and `service_tier` for fast mode (the body of a parallel keeps them inside `child`); clearing them all hands the step back to its default. A combination the
  * catalog does not support never becomes a patch: it comes back as a reason.
  */
-export type ModelChoice = { providerId: string; model: string; effort?: string | null };
+export type ModelChoice = { providerId: string; model: string; effort?: string | null; serviceTier?: string | null };
 export type ChoiceResult = { ok: true; ops: DraftOp[] } | { ok: false; code: ChoiceError | "no_node" | "no_effort"; detail: string };
 
 const CHILD = /^(.+):child$/;
 
 /** Sets or clears (`null`) the three fields on the node `nodeId`, or on the `child` of the parallel `x` for `x:child`. */
-export function modelFieldsOps(definition: Raw, nodeId: string, fields: { provider: string | null; model: string | null; reasoning: string | null }): DraftOp[] | null {
+export type ModelFields = { provider: string | null; model: string | null; reasoning: string | null; service_tier?: string | null };
+export function modelFieldsOps(definition: Raw, nodeId: string, fields: ModelFields): DraftOp[] | null {
   const body = CHILD.exec(nodeId);
   if (!body) return nodeById(definition, nodeId) ? setNodeOps(nodeId, fields) : null;
   const parent = nodeById(definition, body[1]!);
@@ -23,7 +24,7 @@ export function modelFieldsOps(definition: Raw, nodeId: string, fields: { provid
   return setNodeOps(body[1]!, { child });
 }
 
-export const clearModelOps = (definition: Raw, nodeId: string): DraftOp[] | null => modelFieldsOps(definition, nodeId, { provider: null, model: null, reasoning: null });
+export const clearModelOps = (definition: Raw, nodeId: string): DraftOp[] | null => modelFieldsOps(definition, nodeId, { provider: null, model: null, reasoning: null, service_tier: null });
 
 /** Why a node cannot be given this choice, or null: the catalog must offer the provider, the model and the effort, and the node schema must know the effort. */
 export function choiceRefusal(catalog: ModelCatalog, choice: ModelChoice): Extract<ChoiceResult, { ok: false }> | null {
@@ -39,7 +40,9 @@ export function choiceOps(definition: Raw, catalog: ModelCatalog, nodeId: string
   if (refused) return refused;
   const model = findModel(findProvider(catalog, choice.providerId), choice.model)!;
   const effort = choice.effort ?? null;
-  const ops = modelFieldsOps(definition, nodeId, { provider: choice.providerId, model: model.id, reasoning: effort });
+  // Fast mode is written only when the choice speaks of it (the native picker always does, so switching provider clears an old one).
+  const tier = choice.serviceTier === undefined ? {} : { service_tier: choice.serviceTier === "fast" ? "fast" : null };
+  const ops = modelFieldsOps(definition, nodeId, { provider: choice.providerId, model: model.id, reasoning: effort, ...tier });
   return ops ? { ok: true, ops } : { ok: false, code: "no_node", detail: nodeId };
 }
 

@@ -13,7 +13,7 @@ import { useObservedWidth } from "./panel-layout";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { nodeTitle } from "./workflow-titles";
 import { pickRun, runView, stepStatus, type NodeRun, type RunSnapshot, type RunStep } from "./workflow-run";
-import { ModelsPanel, providerMap, useModelCatalog, useStepExecutors, issueText } from "./workflow-models";
+import { ModelsPanel, providerMap, type ModelsAccess, useModelCatalog, useStepExecutors, issueText } from "./workflow-models";
 import { choiceRefusal, clearModelOps, choiceOps, type ModelChoice } from "./workflow-model-ops";
 import { getDraft } from "./workflow-drafts";
 import type { Expansions } from "./workflow-layout";
@@ -365,6 +365,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
   if (detail === "missing") return <p className="text-sm text-muted-foreground" data-testid="wf-missing">{t("wfRunGone")}</p>;
   if (!detail) return <div ref={rootRef}>{error ? <p role="alert" className="text-sm text-destructive">{t("wfLoadError")}: {error}</p> : <p className="text-sm text-muted-foreground" role="status">{t("wfLoading")}</p>}</div>;
 
+  const modelsAccess: ModelsAccess = detail.scope === "builtin" ? "builtin" : editProjectId && onEditDraft ? "own" : "readonly";
   const runLabel = (row: RunRow) => `${t(RUN_STATUS_KEY[row.status] ?? "wfRunStatus_failed")} · ${when(row.createdAt)}`;
   return (
     <div ref={rootRef} className="min-w-0 space-y-4" data-testid="workflow-detail">
@@ -421,7 +422,8 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
             <Suspense fallback={<p className="py-10 text-center text-xs text-muted-foreground" role="status">{t("wfGraphLoading")}</p>}>
               <WorkflowGraph graph={graph} locale={locale} expansions={expansions} runs={runStates} takenEdges={takenEdges} selected={selected} loadingKeys={loading}
                 onSelect={onSelect} onToggleExpand={toggle} direction={direction} height={direction === "DOWN" ? 420 : 460}
-                {...(runMode ? {} : { models: { executors: stepModels.byNode, providers: providerMap(modelCatalog) } })} />
+                {...(runMode ? {} : { models: { executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: modelsAccess,
+                  onChoose: (nodeId: string, choice: ModelChoice | null) => chooseModel(detail, nodeId, choice), onDuplicate: editProjectId && onEditDraft ? () => void startEdit(detail) : null } })} />
             </Suspense>
           ) : null}
         </SurfaceBody>
@@ -444,7 +446,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
       <RunHistory id={detail.id} projectId={projectId} shownRunId={runId} signature={runs.map((row) => `${row.id}:${row.status}`).join()}
         onPick={(id) => { setRunId(id); setFollow(false); setSelected(null); }} />
       <ModelsPanel graph={detail.graph} locale={locale} executors={stepModels.list} loaded={stepModels.loaded} catalog={modelCatalog} wide={width >= 720} busy={starting.busy}
-        access={detail.scope === "builtin" ? "builtin" : editProjectId && onEditDraft ? "own" : "readonly"} onChoose={(nodeId, choice) => chooseModel(detail, nodeId, choice)}
+        access={modelsAccess} onChoose={(nodeId, choice) => chooseModel(detail, nodeId, choice)}
         onDuplicate={editProjectId && onEditDraft ? () => void startEdit(detail) : null} />
 
       <Surface testId="wf-info">

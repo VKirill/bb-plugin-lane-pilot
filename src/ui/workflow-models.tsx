@@ -4,12 +4,11 @@ import type { z } from "zod";
 import type { rpcContract, stepExecutorSchema } from "../contracts";
 import { t, type I18nKey, type Locale } from "../../i18n";
 import { Button } from "../../components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { cn } from "../../lib/utils";
-import { findModel, findProvider, nodeEffortsFor, type CatalogProvider, type ModelCatalog } from "../workflow/model-catalog";
+import type { CatalogProvider, ModelCatalog } from "../workflow/model-catalog";
 import type { ViewNode, WorkflowView } from "../workflow/view-core";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
-import { effortFor, firstChoice, type ModelChoice } from "./workflow-model-ops";
+import type { ModelChoice } from "./workflow-model-ops";
+import { NativeModelPicker } from "./workflow-native-picker";
 import { nodeTitle } from "./workflow-titles";
 
 /**
@@ -53,7 +52,13 @@ export function useStepExecutors(target: { workflowId?: string; draftId?: string
 }
 
 /** What a card needs: the executor of each node and the catalog's names and logos of the providers. */
-export type GraphModels = { executors: ReadonlyMap<string, StepExecutor>; providers: ReadonlyMap<string, Pick<CatalogProvider, "displayName" | "logoUrl">> };
+export type GraphModels = {
+  executors: ReadonlyMap<string, StepExecutor>; providers: ReadonlyMap<string, Pick<CatalogProvider, "displayName" | "logoUrl">>;
+  /** Choosing on the card: the hub's catalog and what a choice does (patch the draft, open a draft of an own workflow). A built-in offers «Duplicate to edit» instead. */
+  catalog?: ModelCatalog | null; access?: ModelsAccess;
+  onChoose?: (nodeId: string, choice: ModelChoice | null) => Promise<string | null>;
+  onDuplicate?: (() => void) | null;
+};
 export const providerMap = (catalog: ModelCatalog | null): GraphModels["providers"] => new Map((catalog?.providers ?? []).map((row) => [row.id, { displayName: row.displayName, logoUrl: row.logoUrl }]));
 
 /** The executor of a graph card. A draft draws a parallel as one card, so its body's model is shown on it; a lowered graph has the body as a card of its own. */
@@ -92,6 +97,10 @@ export const issueText = (code: string): string => {
 
 // ------------------------------------------------------------------ the badge on a card
 
+/** «codex · gpt-6-luna · high · fast», the badge text and the read-only cell. */
+export const executorLine = (executor: StepExecutor): string =>
+  [providerShort(executor.providerId), modelShort(executor.model), executor.reasoningEffort, executor.serviceTier === "fast" ? t("wfModelFast") : null].filter(Boolean).join(" · ") || t("wfModelSrc_none");
+
 export function ProviderMark({ id, logoUrl }: { id: string | null; logoUrl?: string | null }) {
   // The logo is drawn as a mask in the text colour (as BB does); a provider without one gets its first letter, written by CSS so it is not read as text.
   return logoUrl
@@ -102,7 +111,7 @@ export function ProviderMark({ id, logoUrl }: { id: string | null; logoUrl?: str
 /** «codex · gpt-6-luna · medium», dimmed when the value is inherited; the tooltip says where it comes from. A code task also shows its fallbacks. */
 export function ModelBadge({ executor, providers, id }: { executor: StepExecutor; providers: GraphModels["providers"]; id: string }) {
   if (executor.mode === "none") return null;
-  const text = [providerShort(executor.providerId), modelShort(executor.model), executor.reasoningEffort].filter(Boolean).join(" · ") || t("wfModelSrc_none");
+  const text = executorLine(executor);
   const problems = realIssues(executor);
   const chain = executor.mode === "chain" ? executor.fallbacks.map((row) => (row.pm ? t("wfModelChainPm") : modelShort(row.model))).filter(Boolean) : [];
   const title = [
@@ -121,6 +130,44 @@ export function ModelBadge({ executor, providers, id }: { executor: StepExecutor
   );
 }
 
+/**
+ * The model on a graph card. Where the step holds its own model the badge is BB's native picker (provider tabs, model search, reasoning,
+ * fast mode); on a built-in workflow the badge opens «Duplicate to edit»; elsewhere it is only a badge. A refusal is told under it.
+ */
+export function CardModel({ executor, models, id }: { executor: StepExecutor; models: GraphModels; id: string }) {
+  const [refused, setRefused] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const { catalog, access, onChoose, onDuplicate } = models;
+  if (executor.mode === "none") return null;
+  const editable = executor.overridable && (access === "draft" || access === "own") && Boolean(onChoose) && Boolean(catalog?.providers.length);
+  if (editable && catalog && onChoose) {
+    return (
+      <div className="lp-wf-card-model min-w-0">
+        <NativeModelPicker catalog={catalog} testId={`wf-card-picker-${id}`} label={t("wfModelModelLabel").replace("{step}", id)} className="lp-wf-card-picker"
+          seed={{ providerId: executor.providerId, model: executor.model, effort: executor.reasoningEffort, serviceTier: executor.serviceTier }}
+          onChoose={(choice) => { setRefused(null); void onChoose(executor.nodeId, choice).then((reason) => setRefused(reason)); }} />
+        {refused ? <p className="break-words text-[11px] text-destructive-text" role="alert" data-testid={`wf-card-refused-${id}`}>{t("wfModelRejected").replace("{reason}", refused)}</p> : null}
+      </div>
+    );
+  }
+  if (access === "builtin" && onDuplicate && executor.overridable) {
+    return (
+      <div className="lp-wf-card-model min-w-0 nodrag nopan" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+        <button type="button" className="lp-wf-model-button" aria-expanded={asking} data-testid={`wf-card-model-${id}`} onClick={() => setAsking(!asking)}>
+          <ModelBadge executor={executor} providers={models.providers} id={id} />
+        </button>
+        {asking ? (
+          <div className="lp-wf-dup" data-testid={`wf-card-duplicate-${id}`}>
+            <p className="text-[11px] leading-4 text-muted-foreground">{t("wfModelsBuiltinHint")}</p>
+            <Button type="button" size="sm" variant="outline" className="lp-raised mt-1 h-7 px-2 text-xs" onClick={onDuplicate}>{t("wfDuplicateToEdit")}</Button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+  return <ModelBadge executor={executor} providers={models.providers} id={id} />;
+}
+
 // ------------------------------------------------------------------ the table
 
 /** How a change reaches the workflow: into the draft being edited, into a draft opened for an own workflow, or not at all (built-in). */
@@ -135,70 +182,8 @@ export const offeredOn = (ids: readonly string[], hosts: Hosts): string => {
   return connected.length && connected.every((id) => ids.includes(id)) ? "" : t("wfModelOn").replace("{hosts}", hostNames(ids, hosts));
 };
 
-function PickerRow({ executor, catalog, readOnly, onChoose, label, busy }: {
-  executor: StepExecutor; catalog: ModelCatalog; readOnly: boolean; onChoose: (choice: ModelChoice | null) => void; label: string; busy: boolean;
-}) {
-  const provider = executor.providerId ? findProvider(catalog, executor.providerId) : undefined;
-  const model = findModel(provider, executor.model ?? "");
-  const efforts = nodeEffortsFor(model);
-  const dim = executor.inherited ? "opacity-70" : "";
-  const trigger = cn("h-8 min-w-0 text-xs", dim);
-  const providerLabel = provider?.displayName ?? providerShort(executor.providerId);
-  return (
-    <>
-      <div className="min-w-0" data-label={t("wfModelsColProvider")}>
-        <Select value={executor.providerId ?? ""} disabled={readOnly || busy} onValueChange={(next) => { const picked = firstChoice(catalog, next, executor.reasoningEffort); if (picked) onChoose(picked); }}>
-          <SelectTrigger className={trigger} aria-label={t("wfModelProviderLabel").replace("{step}", label)} data-testid={`wf-model-provider-${executor.nodeId}`}>
-            <SelectValue>{providerLabel}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {catalog.providers.map((row) => (
-              <SelectItem key={row.id} value={row.id} disabled={!row.hostIds.length || !row.models.some((item) => item.hostIds.length)} data-testid={`wf-model-provider-option-${row.id}`}>
-                {row.displayName}{offeredOn(row.hostIds, catalog.hosts) ? ` · ${offeredOn(row.hostIds, catalog.hosts)}` : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="min-w-0" data-label={t("wfModelsColModel")}>
-        <Select value={executor.model ?? ""} disabled={readOnly || busy || !provider} onValueChange={(next) => {
-          const picked = findModel(provider, next);
-          if (provider && picked) onChoose({ providerId: provider.id, model: picked.id, effort: effortFor(picked, executor.reasoningEffort) });
-        }}>
-          <SelectTrigger className={trigger} aria-label={t("wfModelModelLabel").replace("{step}", label)} data-testid={`wf-model-model-${executor.nodeId}`}>
-            <SelectValue>{model?.displayName ?? modelShort(executor.model)}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {(provider?.models ?? []).map((row) => (
-              <SelectItem key={row.id} value={row.id} disabled={!row.hostIds.length} data-testid={`wf-model-option-${row.id}`}>
-                {row.displayName}{offeredOn(row.hostIds, catalog.hosts) ? ` · ${offeredOn(row.hostIds, catalog.hosts)}` : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="min-w-0" data-label={t("wfModelsColEffort")}>
-        <Select value={executor.reasoningEffort && efforts.includes(executor.reasoningEffort) ? executor.reasoningEffort : ""} disabled={readOnly || busy || !efforts.length} onValueChange={(next) => {
-          if (provider && model) onChoose({ providerId: provider.id, model: model.id, effort: next });
-        }}>
-          <SelectTrigger className={trigger} aria-label={t("wfModelEffortLabel").replace("{step}", label)} data-testid={`wf-model-effort-${executor.nodeId}`}>
-            <SelectValue>{executor.reasoningEffort ?? "-"}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>{efforts.map((effort) => <SelectItem key={effort} value={effort} data-testid={`wf-model-effort-option-${effort}`}>{effort}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-    </>
-  );
-}
-
 function ReadOnlyCells({ executor }: { executor: StepExecutor }) {
-  return (
-    <>
-      <div className="min-w-0 truncate text-xs" data-label={t("wfModelsColProvider")}>{providerShort(executor.providerId) || "-"}</div>
-      <div className="min-w-0 truncate text-xs" title={executor.model ?? ""} data-label={t("wfModelsColModel")}>{modelShort(executor.model) || "-"}</div>
-      <div className="min-w-0 truncate text-xs" data-label={t("wfModelsColEffort")}>{executor.reasoningEffort ?? "-"}</div>
-    </>
-  );
+  return <div className="min-w-0 truncate text-xs" title={executor.model ?? ""} data-label={t("wfModelsColModel")} data-testid={`wf-model-line-${executor.nodeId}`}>{executorLine(executor)}</div>;
 }
 
 function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoose }: {
@@ -221,7 +206,12 @@ function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoo
         <div className="truncate font-mono text-[11px] text-muted-foreground">{executor.nodeId}</div>
       </div>
       <div className="min-w-0 truncate text-xs" title={executor.agent.helper ?? ""} data-label={t("wfModelsColAgent")} data-testid={`wf-model-agent-${executor.nodeId}`}>{executor.agent.label}</div>
-      {editable && catalog ? <PickerRow executor={executor} catalog={catalog} readOnly={false} busy={busy} label={title} onChoose={choose} /> : <ReadOnlyCells executor={executor} />}
+      {editable && catalog ? (
+        <div className={`min-w-0 ${executor.inherited ? "opacity-80" : ""}`} data-label={t("wfModelsColModel")}>
+          <NativeModelPicker catalog={catalog} testId={`wf-model-picker-${executor.nodeId}`} disabled={busy} label={t("wfModelModelLabel").replace("{step}", title)}
+            seed={{ providerId: executor.providerId, model: executor.model, effort: executor.reasoningEffort, serviceTier: executor.serviceTier }} onChoose={choose} />
+        </div>
+      ) : <ReadOnlyCells executor={executor} />}
       <div className="min-w-0 text-xs text-muted-foreground" data-label={t("wfModelsColSource")} data-testid={`wf-model-source-${executor.nodeId}`} data-source={executor.source}>
         <span className={executor.inherited ? "italic" : "text-foreground"}>{sourceText(executor)}</span>
         {editable && !executor.inherited ? <Button type="button" size="sm" variant="ghost" className="ml-1 h-6 px-1.5 text-xs" disabled={busy} data-testid={`wf-model-reset-${executor.nodeId}`} onClick={() => choose(null)}>{t("wfModelDefault")}</Button> : null}
@@ -288,7 +278,7 @@ export function ModelsPanel({ graph, locale, executors, loaded, catalog, access,
           <>
             {wide ? (
               <div className="lp-model-head" aria-hidden data-wide="1">
-                {(["wfModelsColStep", "wfModelsColAgent", "wfModelsColProvider", "wfModelsColModel", "wfModelsColEffort", "wfModelsColSource", "wfModelsColCost"] as const).map((key) => <span key={key}>{t(key)}</span>)}
+                {(["wfModelsColStep", "wfModelsColAgent", "wfModelsColModel", "wfModelsColSource", "wfModelsColCost"] as const).map((key) => <span key={key}>{t(key)}</span>)}
               </div>
             ) : null}
             <ul className="lp-model-list" data-testid="wf-models-list">
