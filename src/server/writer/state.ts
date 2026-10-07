@@ -1,5 +1,10 @@
 import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunBudget } from "@lane-pilot/resilience";
 import { RunWriterPool } from "../../stages/run-policy";
+import { createProviderUsage } from "../provider-usage";
+import { createProviderRetryGuard } from "../provider-retry";
+import { createTasksMirror } from "../tasks-mirror";
+import { createConcurrencyLimit } from "../concurrency-limit";
+import { getRunSettingsScopes } from "../../database";
 import type { ServerCore } from "../core";
 
 /** State shared by the writer modules: the live task set, the provider pool, the provider breaker and one budget per run. */
@@ -10,6 +15,18 @@ export function createWriterState(ctx: ServerCore) {
 
   /** Opens for a provider/model after repeated provider failures; poor work never trips it. */
   const providerBreaker = createProviderBreaker();
+
+  /** Provider usage windows read from BB's usage sources; a writer pair whose window is nearly spent is skipped, never failed. */
+  const providerUsage = createProviderUsage(ctx.bb);
+
+  /** Cancels the retry BB's provider-retry queued in a writer thread once the task moved on to another writer. */
+  const providerRetry = createProviderRetryGuard(ctx.bb);
+
+  /** Copies a project's tasks into BB Tasks when the project turns `tasks.mirror` on; writes only, never read back. */
+  const tasksMirror = createTasksMirror(ctx.bb, async (projectId, runId) => (await ctx.effectiveProjectSettings(projectId, getRunSettingsScopes(ctx.db, runId))).values);
+
+  /** BB's concurrency-limit plugin: how many writers a host may run; null without the plugin. */
+  const concurrencyLimit = createConcurrencyLimit(ctx.bb);
 
   const runBudgets = new Map<string, RunBudget>();
 
@@ -25,5 +42,5 @@ export function createWriterState(ctx: ServerCore) {
     return budget;
   }
 
-  return { activeWriterTasks, runWriterPool, providerBreaker, runBudgets, runBudgetFor };
+  return { activeWriterTasks, runWriterPool, providerBreaker, providerUsage, providerRetry, tasksMirror, concurrencyLimit, runBudgets, runBudgetFor };
 }

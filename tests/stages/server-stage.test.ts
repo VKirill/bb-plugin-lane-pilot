@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { THREAD_WATCH_EVENT_TYPES } from "@lane-pilot/thread-observe";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { runBrowserQaOnHost, type BrowserQaInput } from "../../src/stages/browser-qa";
 import { claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../src/database";
@@ -49,6 +49,22 @@ let docsEventsHeld=false;
 /** Primary writer threads still to answer with a provider's plan notice instead of a report. */
 let limitWriters=0;
 const limitThreadIds=new Set<string>();
+/**
+ * What BB's usage sources report, by provider: the percent of its window used. Null is a hub with no usage source at all
+ * (the plugins absent or disabled): discovery finds nothing.
+ */
+let usageReadings:Record<string,number>|null=null;
+const usageCalls:string[]=[];
+/** Rows BB's provider-retry left queued in threads, and the order of the deletes and the spawns that followed. */
+let queuedRetries:Array<Record<string,unknown>>=[];
+const queueLog:string[]=[];
+/** The BB Tasks plugin: null is a hub where it is absent or disabled; calls are what Lane Pilot sent it. */
+let tasksPlugin:{linkedProjectId:string|null}|null=null;
+const tasksCalls:Array<{method:string;input:Record<string,unknown>}>=[];
+/** BB's concurrency-limit plugin: the effective limit of the stage host; null is a hub without it. */
+let concurrencyPlugin:{limit:number}|null=null;
+const concurrencyCalls:string[]=[];
+afterEach(()=>{concurrencyPlugin=null;concurrencyCalls.length=0;usageReadings=null;usageCalls.length=0;queuedRetries=[];queueLog.length=0;tasksPlugin=null;tasksCalls.length=0;});
 function holdEvents(threadId:string):()=>void {
   let release=()=>{};
   heldEvents.set(threadId,new Promise<void>((resolve)=>{release=()=>{heldEvents.delete(threadId);resolve();};}));
@@ -150,6 +166,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
               saveProjectSetting(setupDb, projectId, "code_critique.provider", "codex");
             }
           }
+          queueLog.push(`spawn:${String(role)}`);
           if(role==="writer"&&limitWriters>0){limitWriters-=1;limitThreadIds.add(id);}
           if(role==="writer"&&writerControl.hold)writerControl.states.set(id,"active");
           threadMeta.set(id, (request.pluginMetadata as Record<string,unknown>) ?? { role });
@@ -237,7 +254,36 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
               ? (codeRepairOutput ?? '{"replies":[{"id":"f1","status":"fixed","evidence":"updated note.txt"}]}')
               : "writer created note.txt" },
         list:async () => [...new Set([...threadMeta.keys(), ...seededThreadMeta.keys()])].map((id)=>({id})) as never,
+        queue:{list:async (args?:{threadId?:string})=>queuedRetries.filter((row)=>!args?.threadId||row.threadId===args.threadId)},
+        queuedMessages:{delete:async ({queuedMessageId}:{queuedMessageId:string})=>{queueLog.push(`delete:${queuedMessageId}`);return {ok:true};}},
       },
+      plugins:{
+        experimental_discoverRpc:async ({method}:{method:string})=>{
+          if(!usageReadings) throw new Error("no plugin publishes "+method);
+          return [{pluginId:"provider-codex"}];
+        },
+        callRpc:async ({pluginId,method,input}:{pluginId:string;method:string;input?:unknown})=>{
+          if(pluginId==="concurrency-limit"){
+            if(!concurrencyPlugin) throw new Error("plugin concurrency-limit is not enabled");
+            concurrencyCalls.push(method);
+            return {globalLimit:null,hostOverrides:[],hosts:[{id:config.hostId,name:"stage",status:"connected",availableParallelism:8,automaticLimit:8,effectiveLimit:concurrencyPlugin.limit,override:null}]};
+          }
+          if(pluginId==="tasks"){
+            if(!tasksPlugin) throw new Error("plugin tasks is not enabled");
+            const args=(input??{}) as Record<string,unknown>;
+            tasksCalls.push({method,input:args});
+            if(method==="listProjects") return {projects:tasksPlugin.linkedProjectId?[{id:"01HZZZZZZZZZZZZZZZZZZZZZZZ",linkedBbProjectId:tasksPlugin.linkedProjectId}]:[]};
+            if(method==="createTask") return {ok:true,task:{id:"01HYYYYYYYYYYYYYYYYYYYYYYY",key:"LP-1"}};
+            return {ok:true,task:{id:"01HYYYYYYYYYYYYYYYYYYYYYYY",key:"LP-1"},threadId:args.threadId};
+          }
+          usageCalls.push(method);
+          if(method==="provider-usage.v1.listResources") return {resources:Object.keys(usageReadings??{}).map((providerId)=>({
+            id:providerId,accountKey:null,providerId,label:providerId,scope:{kind:"host",hostId:config.hostId,hostName:"stage"}}))};
+          const providerId=(input as {resourceId:string}).resourceId;
+          return {accountKey:null,observedAt:Date.now(),usage:{status:"ok",accountEmail:null,planLabel:null,plan:null,windows:[
+            {kind:"five-hour",id:"0:5h",label:"5-hour window",usedPercent:usageReadings![providerId],resetsAt:new Date(Date.now()+3600_000).toISOString(),model:null,cost:null}]}};
+        },
+      } as never,
       providers:{
         list:async () => ["codex", "critic"].map((id) => ({ id, available:true, capabilities:{ supportsServiceTier:true }, serviceTiers:[{ id:"default", label:"Default" }] })) as never,
         models:async (args) => {
@@ -1342,6 +1388,107 @@ describe("stage → native writer → receipt", () => {
     const health=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_run_health",{runId:"stage-run"},{threadId:pmThreadId,projectId})));
     expect(JSON.stringify(health)).toContain('"state":"open"');
     await harness.lifecycle.dispose();
+  });
+
+  // provider-usage (I1): the writer's provider window is nearly spent, so the next model of the chain takes the task
+  // at once, with no failed attempt and no open breaker; without usage data nothing changes.
+  it("starts the next writer of the chain when the writer's provider usage window is spent, uncharged and with no breaker",async()=>{
+    usageReadings={codex:96,critic:12};
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"writer.fallback1.provider":"","writer.fallback2.provider":""},undefined,undefined,undefined,undefined,undefined,undefined,false,0,{providerId:"critic",model:"critic-model"});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer")).toHaveLength(0);
+    const fallback=spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="emergency-writer");
+    expect(fallback).toHaveLength(1);
+    expect(fallback[0]).toMatchObject({providerId:"critic",model:"critic-model"});
+    const attempts=db.prepare("SELECT state,reason FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no").all(task.id) as Array<{state:string;reason:string|null}>;
+    expect(attempts[0]).toMatchObject({state:"blocked",reason:expect.stringContaining("writer_provider_unavailable:usage_window:codex/gpt-6-luna")});
+    expect(attempts.at(-1)?.state).toBe("accepted");
+    expect(countChargedAttempts(db,"stage-run",task.id)).toBe(1);
+    const health=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_run_health",{runId:"stage-run"},{threadId:pmThreadId,projectId})));
+    expect(JSON.stringify(health)).not.toContain('"state":"open"');
+    await harness.lifecycle.dispose();
+  });
+
+  it("keeps the writer when every pair of the chain is spent, when the check is off, and when no usage source exists",async()=>{
+    for(const [readings,extra] of [[{codex:96,critic:97},{}],[{codex:96,critic:12},{"usage.skip_percent":0}],[null,{}]] as const){
+      usageReadings=readings;
+      const {harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"writer.fallback1.provider":"","writer.fallback2.provider":"",...extra},undefined,undefined,undefined,undefined,undefined,undefined,false,0,{providerId:"critic",model:"critic-model"});
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+      await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+      expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer"),JSON.stringify([readings,extra])).toHaveLength(1);
+      expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="emergency-writer")).toHaveLength(0);
+      await harness.lifecycle.dispose();
+    }
+  });
+
+  // provider-retry (I2): it queues a retry of the failed turn in the writer's own thread; the task moved to the next writer,
+  // so that retry would redo the work later in an abandoned thread.
+  it("cancels the retry provider-retry queued in the failed writer's thread before the next writer starts, and only that one",async()=>{
+    limitWriters=1;
+    queuedRetries=[{id:"retry-1",threadId:"writer-thread-1",payload:{kind:"retry"},sendAt:Date.now()+3600_000},
+      {id:"inline-1",threadId:"writer-thread-1",payload:{kind:"inline"},sendAt:null},{id:"retry-other",threadId:"unrelated-thread",payload:{kind:"retry"},sendAt:null}];
+    const {harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"writer.fallback1.provider":"","writer.fallback2.provider":""},undefined,undefined,undefined,undefined,undefined,undefined,false,0,{providerId:"critic",model:"critic-model"});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="emergency-writer")).toHaveLength(1);
+    const deletes=queueLog.filter((line)=>line.startsWith("delete:"));
+    expect(deletes).toEqual(["delete:retry-1"]);
+    expect(queueLog.indexOf("delete:retry-1")).toBeLessThan(queueLog.indexOf("spawn:emergency-writer"));
+    await harness.lifecycle.dispose();
+  });
+
+  it("changes nothing without provider-retry: no queued row, no deletes, the chain runs as before",async()=>{
+    limitWriters=1;
+    const {harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"writer.fallback1.provider":"","writer.fallback2.provider":""},undefined,undefined,undefined,undefined,undefined,undefined,false,0,{providerId:"critic",model:"critic-model"});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="emergency-writer")).toHaveLength(1);
+    expect(queueLog.filter((line)=>line.startsWith("delete:"))).toEqual([]);
+    await harness.lifecycle.dispose();
+  });
+
+  // BB Tasks mirror (I3): off by default; when on, the task is copied with its status, writer thread and milestone comments.
+  it("mirrors a task into the linked BB Tasks project when the project turns it on: status, thread, comments that wake nobody",async()=>{
+    tasksPlugin={linkedProjectId:projectId};
+    const {harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"tasks.mirror":true});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    await until("the mirror's last call",()=>tasksCalls.some((call)=>call.method==="updateTask"&&call.input.status==="done"));
+    const methods=tasksCalls.map((call)=>call.method);
+    expect(methods.filter((method)=>method==="createTask")).toHaveLength(1);
+    expect(tasksCalls.find((call)=>call.method==="createTask")?.input).toMatchObject({projectId:"01HZZZZZZZZZZZZZZZZZZZZZZZ",title:task.title,status:"todo"});
+    expect(tasksCalls.filter((call)=>call.method==="updateTask").map((call)=>call.input.status)).toEqual(["in_progress","done"]);
+    expect(tasksCalls.find((call)=>call.method==="taskThreadsAttach")?.input).toMatchObject({taskId:"01HYYYYYYYYYYYYYYYYYYYYYYY",threadId:expect.stringMatching(/^writer-thread-/)});
+    const comments=tasksCalls.filter((call)=>call.method==="createComment");
+    expect(comments.length).toBeGreaterThanOrEqual(2);
+    expect(comments.every((call)=>call.input.notify===false)).toBe(true);
+    await harness.lifecycle.dispose();
+  });
+
+  it("mirrors nothing by default, when the Tasks plugin is absent, or when no tracker project is linked — and the writer is unaffected",async()=>{
+    for(const [plugin,extra] of [[{linkedProjectId:projectId},{}],[null,{"tasks.mirror":true}],[{linkedProjectId:null},{"tasks.mirror":true}]] as const){
+      tasksPlugin=plugin;tasksCalls.length=0;
+      const {harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,...extra});
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+      const done=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
+      expect(done.state,JSON.stringify([plugin,extra])).toBe("accepted");
+      expect(tasksCalls.filter((call)=>call.method!=="listProjects"),JSON.stringify([plugin,extra])).toEqual([]);
+      await harness.lifecycle.dispose();
+    }
+  });
+
+  // concurrency-limit (I4): the host's limit caps the writers Lane Pilot starts there; without the plugin nothing changes.
+  it("starts the writer under a host limit read from concurrency-limit, and under none",async()=>{
+    for(const plugin of [{limit:1},null]){
+      concurrencyPlugin=plugin;concurrencyCalls.length=0;
+      const {harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false});
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+      const done=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
+      expect(done.state,JSON.stringify(plugin)).toBe("accepted");
+      expect(concurrencyCalls).toEqual(plugin?["getConfiguration"]:[]);
+      await harness.lifecycle.dispose();
+    }
   });
 
   it("runs one emergency provider after primary provider failures and records provenance in the accepted receipt",async()=>{

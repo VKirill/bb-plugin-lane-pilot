@@ -28,6 +28,7 @@ It builds on [Lane Stack](https://github.com/VKirill/claude-lane-stack) (MIT): t
 - [Screenshots](#screenshots)
 - [How a task goes through Lane Pilot](#how-a-task-goes-through-lane-pilot)
 - [What the plugin does](#what-the-plugin-does)
+- [Official BB plugins](#official-bb-plugins)
 - [PM tools](#pm-tools)
 - [Settings](#settings)
 - [CLI](#cli)
@@ -165,7 +166,22 @@ Every stage writes a receipt (state, input and output hashes, attempt, provider,
 - Reload recovery: after a plugin reload Lane Pilot finds open attempts, re-attaches to writers still at work and reruns an interrupted acceptance. Writer threads themselves are not affected by a reload.
 - Runs of deleted or archived PM chats, and chatless runs older than a day, are closed automatically.
 - Run budgets (`run.max_*`), provider breaker and stream retry after dropped provider streams (`lane_pilot_run_health`, `bb lane-pilot health`).
+- **Canary and error budget** (G7). The first start of a version is its deploy time; every 10 minutes Lane Pilot counts the first 20 attempts (or 2 hours) that finished under that version and how many failed on its own fault (failure class «harness»). Three or more and above 5% trips the canary: the PMs of those tasks and the log hear it once, with the rollback command. A second figure, the 7-day share of own faults across all versions, says whether a routine deploy is wise (above 5% with at least 20 attempts: incident deploys only). The check only reports; nothing stops a task. `bb plugin rpc call lane-pilot canary_status` returns both; `scripts/lp-canary.sh` prints them from the Mac mini and exits 1 when either is bad (usable from launchd after a deploy); `scripts/lp-canary.sh --rollback <version>` prints the steps that put a version back from `~/.lane-pilot/deploys.log` (`bb-plugin-push` has no `--rollback`; it deploys a clean pushed HEAD, so the steps check out that commit, deploy it as an incident and switch back).
 - **Self-repair.** Every 15 minutes Lane Pilot looks for failures that are its own fault: triage origin «orchestrator», system block reasons (`internal_error`, `merge_failed`, spawn errors, EROFS…) and attempts left «running» after their writer went idle. Failure lines of the plugin log count too. Each new kind of problem, grouped by a normalized reason, gets one repair thread (Claude Code, Opus 5.5, high reasoning, standard speed, full access), filed in the Project Folders section «Исправления», in its own Lane Pilot worktree (`~/.lane-pilot/worktrees`, branch `lane/self-repair-…`) forked from the Lane Pilot checkout, never in the checkout itself. The thread finds the cause, fixes it with a test, commits on its branch and tells the affected PM; it does not deploy. With the verdict `fixed` Lane Pilot merges the branch into the checkout the way it merges a writer's work (a conflict is retried, then the branch is left for the owner); any other verdict releases the worktree. Shipping is the release train: `bb-plugin-push` deploys Lane Pilot from a clean pushed tree, on a green suite, once a day (Europe/Madrid), a second time only with `LP_DEPLOY_INCIDENT="<reason>"`; every deploy is logged in `~/.lane-pilot/deploys.log`. One repair at a time, at most 4 a day. Only failures under the running version count, so what a release already fixed is not repaired again; the thread ends with a verdict (`fixed`, `already-fixed`, `not-lane-pilot`, `needs-owner`) that decides whether the kind may come back. Besides failures it looks for tasks queued for hours while nothing runs, stages left open after their task ended and any reason repeated in 3 tasks a day. `scripts/self-repair-watchdog.sh` (launchd, every 30 min) starts a repair if the watcher itself goes silent. `self_repair_status` gives the last 24 hours: attempts, failures by fault, open incidents, repairs; `self_repair_configure` changes the target project, environment, model and limits; `self_repair_tick` runs a pass now (`dryRun` by default).
+
+## Official BB plugins
+
+Lane Pilot works with none of these. Each integration below feature-tests its plugin: absent, disabled or failing, it does nothing and no writer is affected (several are disabled on the hub).
+
+| Plugin | What Lane Pilot does | Setting |
+|---|---|---|
+| `provider-usage` (and the usage sources it reads: `provider-claude-code`, `provider-codex`, `provider-acp`, `account-pool`) | Before a writer starts, reads the usage windows of its provider/model through the published source contract (`provider-usage.v1.listResources` / `provider-usage.v1.getResource`, found with `plugins.experimental_discoverRpc`; the display plugin itself is not needed, and its `getUsage` aggregate drops the model of a window). A pair whose window is at or above the threshold and has not reset is skipped: the next model of the writer chain takes the task at once (`writer_provider_unavailable:usage_window:…`, class «limit»: uncharged, the breaker stays closed). When every pair is spent the writer starts as before. Fallbacks that are spent are skipped the same way. Uses the writer machine's own accounts, else the shared ones | `usage.skip_percent` (default 90, `0` = off) |
+| `provider-retry` | It queues a retry of a failed turn in the writer's thread (a plan limit, an overload). When Lane Pilot moves the task down the writer chain, or ends it, it deletes those queued retry rows (`threads.queue.list` + `queuedMessages.delete`, what `bb provider-retry cancel` does) and any queued afterwards (`message.queued`), so an abandoned thread is not woken later. A writer's question keeps its thread | none |
+| `tasks` | Mirrors each Lane Pilot task into the BB Tasks project linked to the BB project: `createTask`, status (`todo` queued, `in_progress` writing, `done` accepted, `canceled`, `in_review` blocked), the writer's thread (`taskThreadsAttach`) and a comment at each milestone (`createComment`, never notifying a worker). Writes only; Lane Pilot's database stays the truth. Needs a Tasks project whose «linked BB project» is this one | `tasks.mirror` (default off) |
+| `concurrency-limit` | Reads the host's effective limit (`getConfiguration`) and starts no more writers on that host than it lets run, so they wait in Lane Pilot's line, not in BB's queue; a turn held in the plugin's queue (`waitingOn: plugin`) is waiting its turn, so the 180 s «provider never started» limit and the silence watcher do not fail it | none |
+| `plugin-api-docs`, `plugin-api-tester` | Not used by Lane Pilot. Enable them on a development machine while working on the plugin: the Plugin Guide maps each SDK surface, the tester is a load smoke test. Leave them off on the hub | none |
+| `agent-annotations` | Not integrated. For a manual browser check the owner can annotate elements in a desktop Browser tab and send the numbered mentions to the PM chat; the PM turns them into the QA case by hand (`bb plugin rpc call agent-annotations update` edits a saved comment) | none |
+| `push-notifications` | Nothing of its own: it will deliver the owner questions Lane Pilot asks through BB interactions once those exist | none |
 
 ## PM tools
 
@@ -201,6 +217,7 @@ The settings page lists projects (and Project Folders sections) on the left and 
 | Memory and docs | `memory.*`, `docs.*` |
 | Jev routing | `jev.*` (plan effort, triage, council judge) |
 | Budgets | `run.max_*` |
+| Official plugins | `usage.skip_percent`, `tasks.mirror` |
 
 ## CLI
 

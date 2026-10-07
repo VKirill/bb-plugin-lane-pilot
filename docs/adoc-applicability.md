@@ -15,11 +15,11 @@ language: ru
 
 | Решение | Число |
 |---|---:|
-| editable | 199 |
+| editable | 201 |
 | read-only | 91 |
 | gap | 0 |
 | excluded | 130 |
-| **сумма** | **420** |
+| **сумма** | **422** |
 
 Из бывших 88 read-only: (a) канал найден и поле стало editable — 0; (b) неприменимо в BB — 50; (c) gap без контракта upstream/SDK — 33.
 
@@ -445,3 +445,5 @@ language: ru
 | 417 | Lane Pilot integration gate | integration.gate_every | src/server/integration-gate.ts:27 | user | OWN | editable | Merged tasks between two gate runs when integration.gate_when is every_n (`src/server/integration-gate.ts:27`) |
 | 418 | Lane Pilot verification sandbox | verification.sandbox_unsafe | src/stages/critique-coverage.ts:68 | user | OWN | editable | Tests the verification sandbox cannot run: a whole-suite vitest check must exclude each of them with --exclude, and a task contract that does not is sent back before any writer starts (`src/stages/critique-coverage.ts:68; src/server/lint-task.ts:45`) |
 | 419 | Lane Pilot workspace | workspace.provider | src/server/writer/spawn.ts:1 | user | OWN | editable | Writer worktrees are BB environments of Lane Pilot's own provider; off is the emergency switch back to the old worktree path (`src/server/writer/spawn.ts:1; src/server/environment-provider.ts:1`) |
+| 420 | Lane Pilot provider usage | usage.skip_percent | src/server/provider-usage.ts:25 | user | OWN | editable | A writer provider/model whose usage window (BB Provider usage sources) is at or above this share is skipped until its reset, and the next model of the writer chain takes the task (`src/server/provider-usage.ts:25`) |
+| 421 | Lane Pilot BB Tasks mirror | tasks.mirror | src/server/tasks-mirror.ts:21 | user | OWN | editable | Copies this project's Lane Pilot tasks into the BB Tasks project linked to it: status, the writer's thread and a comment at each milestone; Lane Pilot's database stays the truth. On by default; does nothing without a linked Tasks project (`src/server/tasks-mirror.ts:21`) |

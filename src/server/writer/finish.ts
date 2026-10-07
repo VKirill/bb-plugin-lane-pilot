@@ -16,7 +16,7 @@ import { needsHumanQuestion, outputText, providerLimitNotice, writerContextBlock
 import { isLiveDecision } from "../../live-folder";
 import { isMainfixTask } from "../../validate-output";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../integration-gate";
-import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
+import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { join, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
@@ -152,7 +152,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
         }
         const listed = currentStatus === "idle" ? null : await listThreadEventsRaw(bb, { threadId:input.writerThreadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50" });
-        const failure = currentStatus === "error" ? "writer thread status error" : listed?.ok ? threadFailure(listed.events) : null;
+        const rawFailure = currentStatus === "error" ? "writer thread status error" : listed?.ok ? threadFailure(listed.events) : null;
+        // A turn held in the concurrency-limit queue is waiting its turn: the provider's start limit is not a failure then.
+        const failure = await startLimitWaiting(bb, input.writerThreadId, rawFailure) ? null : rawFailure;
         if (failure) {
           transitionAttempt(db, input.attemptId, "provider_error", { reason:failure });
           if (["active", "starting"].includes(currentStatus ?? "")) await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);

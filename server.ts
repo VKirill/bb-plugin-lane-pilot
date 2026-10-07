@@ -3,6 +3,7 @@ import { createTaskReconcile } from "./src/server/task-reconcile";
 import { createActivation } from "./src/server/activation";
 import { registerCli } from "./src/server/cli";
 import { createCore } from "./src/server/core";
+import { createCanary, mountCanary } from "./src/server/canary";
 import { createCouncil } from "./src/server/council";
 import { createDocsNightly } from "./src/server/docs-nightly";
 import { mountNativeWiring } from "./src/server/native-wiring";
@@ -72,6 +73,7 @@ export default async function plugin(bb: BbPluginApi) {
     createProbes(ctx, services),
     createWriterHost(ctx),
     { council: createCouncil(ctx) },
+    { canary: createCanary(ctx) },
     { ruleScan: createRuleScan(ctx, services) },
     createStability(ctx, services),
   );
@@ -80,6 +82,7 @@ export default async function plugin(bb: BbPluginApi) {
     if (typeof id === "string") return relayFor(ctx).queueEvent(name, id).then(() => undefined);
   } });
   registerRpc(ctx, services);
+  mountCanary(ctx, services.canary);
   registerTools(ctx, services);
   registerCli(ctx, services);
   // Writer attempts get BB environments of this provider unless workspace.provider is off; a BB without the API
@@ -162,6 +165,8 @@ export default async function plugin(bb: BbPluginApi) {
           }
         });
         await step("restore of the breakers", () => services.stability.restoreBreakers());
+        // A version's first start is its deploy time: the canary counts the attempts from here.
+        await step("canary start", () => services.canary.noteStart());
         await taskReconcile.reconcileTasks({ phase: "startup", step, afterResume: async () => {
           if (!skipScans) await step("run sweep", sweepRuns);
           if (!skipScans) await step("worktree sweep", sweepEnvironments);

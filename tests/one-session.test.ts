@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { noOptionalPlugins } from "./optional-plugin-stubs";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, latestTaskAttemptState, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/database";
@@ -51,6 +52,7 @@ function services(db:ReturnType<typeof openDatabase>, script:Step[]) {
   const base = {
     activeWriterTasks:new Set<string>(),
     providerBreaker:{ record:() => undefined },
+    ...noOptionalPlugins,
     runBudgetFor:() => ({ check:() => ({ ok:true }), noteAttempt:() => undefined, noteTokens:() => undefined, snapshot:() => ({ limits:{} }) }),
     runWriterPool:{ acquire:async () => () => undefined },
     stability:{ breakerHolds:() => null, diskHolds:async () => null, onTaskFailed:async () => false, loadParked:async () => [] },

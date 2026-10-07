@@ -41,6 +41,16 @@ H9: a writer attempt's worktree is a BB environment of Lane Pilot's own provider
 - **Drill:** scenario `provider` (one task: accepted, the attempt has an environment and no holder thread) and the same check in `parallel3`, so the pre-deploy `--quick` run fails on a provider that silently falls back. `LP_DRILL_REQUIRE_PROVIDER=0` skips it for the first build that has the provider.
 - Tests: `tests/workspace-provider.test.ts` (provider create/remove, gate, wait, spawn on a subfolder repo, a section repo, a project root, a nested OVH-like path, no-git, resume, every fallback, self-disable).
 
+## 0.1.178
+
+Integration with the official BB plugins (I1-I4, I6, I7) and the canary (G7). Every integration is feature-tested and does nothing when its plugin is absent, disabled or failing; two project settings (`usage.skip_percent`, `tasks.mirror`, default off) are new.
+- **Provider usage (I1).** Before a writer starts, its provider/model's usage windows are read through the usage-source contract (`provider-usage.v1.listResources` / `getResource`, found with `plugins.experimental_discoverRpc`: provider-claude-code, provider-codex, provider-acp, account-pool; the display plugin is not needed). A pair at or above `usage.skip_percent` (default 90, 0 = off) whose window has not reset is skipped: the next model of the chain takes the task at once (`writer_provider_unavailable:usage_window:...`, failure class limit: uncharged, no breaker). Spent fallbacks are skipped too; when every pair is spent the writer starts as before.
+- **provider-retry (I2).** The retry the plugin queues in a failed writer's thread is deleted when the task moves down the chain or ends (and any queued afterwards, via `message.queued`), so the abandoned thread is not woken later and the work is not done twice. A writer's question keeps its thread.
+- **BB Tasks mirror (I3), setting `tasks.mirror`, default off.** Each task is copied into the Tasks project linked to the BB project: status, the writer's thread (`taskThreadsAttach`) and milestone comments that notify nobody. Writes only.
+- **concurrency-limit (I4).** A host's effective limit caps the writers started there (a second pool slot per host); a turn held in a plugin's queue is no longer failed by the 180 s «provider never started» limit (writer finish, `waitThreadIdle`, `observeStageChild`).
+- **Canary and error budget (G7).** `canary_status` RPC, a 10-minute check that tells the PMs once per version when 3+ of the first 20 attempts (above 5%) failed on Lane Pilot's own fault, a 7-day budget, `scripts/lp-canary.sh` (exit 1 when tripped or spent) and `--rollback <version>` that prints the steps from the deploy log.
+- README: the «Official BB plugins» table with notes for plugin-api-docs, plugin-api-tester (enable on a development machine only), agent-annotations and push-notifications (I6, I7).
+
 ## 0.1.177
 
 From the review of 2026-10-07 (bugs 1 and 7, D3/D4). Needs the core drain-fixes build (`bb.vk.instanceId`) for bug 1 in full; on an older core the oldest bound instance is drained, which is the one being replaced.

@@ -32,6 +32,13 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
     }
     return null;
   }
+  if (key === "usage.skip_percent" && value !== undefined && value !== null && value !== "") {
+    const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
+    if (typeof parsed !== "number" || !Number.isSafeInteger(parsed) || parsed < 0 || parsed > 100) {
+      return { code:"invalid_choice", key, params:[key, "integer 0-100"] };
+    }
+    return null;
+  }
   if (minimum !== null && value !== undefined && value !== null && value !== "") {
     const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
     if (typeof parsed !== "number" || !Number.isSafeInteger(parsed) || parsed < minimum) {

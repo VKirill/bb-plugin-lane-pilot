@@ -19,6 +19,8 @@ export {
   eventsListQueryLabel,
   listThreadEventsRaw,
   waitThreadIdle,
+  turnHeldByPlugin,
+  startLimitWaiting,
   observeStageChild,
   type StageChildObservation,
   type ThreadEventsQuery,

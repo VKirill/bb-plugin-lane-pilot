@@ -13,6 +13,7 @@ rejected turn, failed provisioning, a provider that never opened a session).
 | `listThreadEventsRaw(bb, query)` | A bounded `events.list` call whose errors are sanitized strings, never thrown |
 | `waitThreadIdle(bb, threadId, label, probeMs?, requestedAfter?)` | Waits until the turn is done; throws with the failure detail otherwise |
 | `observeStageChild(bb, threadId, timeoutMs)` | One bounded observation: `completed`, `product_failure`, or `observing` |
+| `turnHeldByPlugin(bb, threadId)`, `startLimitWaiting(bb, threadId, failure)` | Whether a turn waits in a plugin's queue (BB's concurrency-limit); then the provider start limit is not a failure, and `waitThreadIdle` / `observeStageChild` keep waiting |
 | `THREAD_WATCH_EVENT_TYPES`, `PROVIDER_START_LIMIT_MS` | The event types worth watching and the start limit for a silent provider |
 
 ## Who may use it
