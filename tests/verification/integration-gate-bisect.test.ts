@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { bisectCulprit, type MergedTaskInfo } from "../../src/server/integration-gate";
+import * as hostHandlers from "../../src/host-handlers";
 import { spawnAsync } from "../../src/spawn-async";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -66,8 +67,15 @@ describe("git bisect fallback on real git repository", () => {
     // test $(cat status.txt) = "good"
     const gateCommand = 'test "$(cat status.txt)" = "good"';
 
-    const culprit = await bisectCulprit(gateCommand, goodSha, task3Sha, tempDir, mergedTasks, 60_000);
+    const host = { call: async (method: string, input: unknown) => (hostHandlers as unknown as Record<string, (input: unknown) => Promise<unknown>>)[method]!(input) } as never;
+    const culprit = await bisectCulprit(host, "h", gateCommand, goodSha, task3Sha, tempDir, mergedTasks, 60_000);
     expect(culprit).toBeDefined();
     expect(culprit?.taskId).toBe("task-2");
+
+    // The project's own checkout was not moved: the bisect ran in a scratch worktree that is gone again.
+    expect((await spawnAsync("git", ["rev-parse", "HEAD"], { cwd: tempDir })).stdout.trim()).toBe(task3Sha);
+    expect((await spawnAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: tempDir })).stdout.trim()).toBe("main");
+    expect((await spawnAsync("git", ["worktree", "list"], { cwd: tempDir })).stdout.trim().split("\n")).toHaveLength(1);
+    expect((await spawnAsync("git", ["status", "--porcelain"], { cwd: tempDir })).stdout.trim()).toBe("");
   });
 });

@@ -94,7 +94,7 @@ export type TaskV2 = z.infer<typeof taskV2Schema>;
  * Host calls that run as background jobs: a separate process the host daemon's deadline cannot cut off (B4). A kind is
  * the name of the ordinary host method whose handler the job runs; its input is that method's own input.
  */
-export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "coexistenceInventory", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa"] as const;
+export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "coexistenceInventory", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa", "gateRun", "gateBisect"] as const;
 export type HostJobKind = (typeof HOST_JOB_KINDS)[number];
 const hostJobId = z.string().regex(/^job_[a-z0-9]{10,40}$/);
 const hostJobRef = z.object({ requestedHostId:z.string().min(1), jobId:hostJobId }).strict();
@@ -420,6 +420,16 @@ export const hostContract = defineRpcContract({
       stdout: z.string(),
       stderr: z.string(),
     }).strict(),
+  },
+  // The integration gate runs on the project's host (a project on another machine has no path on the hub): both are job kinds.
+  gateRun: {
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), command:z.string().min(1).max(32_000), timeoutSec:z.number().int().min(1).max(7200) }).strict(),
+    output: z.object({ hostId:z.string(), exitCode:z.number().int(), stdout:z.string(), stderr:z.string(), head:z.string().nullable() }).strict(),
+  },
+  gateBisect: {
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), command:z.string().min(1).max(32_000),
+      goodSha:z.string().regex(/^[a-f0-9]{7,64}$/), badSha:z.string().regex(/^[a-f0-9]{7,64}$/), timeoutSec:z.number().int().min(1).max(7200) }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["found", "none", "failed"]), commit:z.string().nullable(), reason:z.string().nullable() }).strict(),
   },
   runCommand: {
     input: z.object({

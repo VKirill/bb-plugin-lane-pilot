@@ -10,6 +10,7 @@ import {
   IntegrationGateRunner,
 } from "../src/server/integration-gate";
 import { openDatabase, createTask, saveStageReceipt, saveProjectSetting } from "../src/database";
+import * as hostHandlers from "../src/host-handlers";
 import type { ServerCore } from "../src/server/core";
 import type { Services } from "../src/server/services";
 
@@ -91,7 +92,7 @@ describe("culprit mapping by files", () => {
       },
     ];
 
-    const culprit = await findCulpritByFiles(["src/feature-b.ts"], mergedTasks, "/tmp");
+    const culprit = await findCulpritByFiles(["src/feature-b.ts"], mergedTasks, async () => null);
     expect(culprit).toBe(mergedTasks[1]);
   });
 
@@ -113,7 +114,7 @@ describe("culprit mapping by files", () => {
       },
     ];
 
-    const culprit = await findCulpritByFiles(["src/shared.ts"], mergedTasks, "/tmp");
+    const culprit = await findCulpritByFiles(["src/shared.ts"], mergedTasks, async () => null);
     expect(culprit).toBeNull();
   });
 });
@@ -169,6 +170,8 @@ describe("IntegrationGateRunner with mock core & services", () => {
         },
       },
       log: () => {},
+      // The project's host: here it is this machine, so its handlers run in-process.
+      host: { call: async (method: string, input: unknown) => (hostHandlers as unknown as Record<string, (input: unknown) => Promise<unknown>>)[method]!(input) },
     } as unknown as ServerCore;
 
     mockServices = {} as unknown as Services;

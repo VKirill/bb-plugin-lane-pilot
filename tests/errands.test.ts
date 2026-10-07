@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
+import { runCommand } from "../src/host-handlers";
 import { createRun, openDatabase, setRunThread } from "../src/database";
 import { errandPrompt } from "../src/server/errands";
 
@@ -22,9 +23,16 @@ describe("errandPrompt", () => {
     const pmThreadId = "errand-pm-thread";
     const runId = "errand-run-id";
     const spawned: Array<Record<string, unknown>> = [];
+    const hostCalls: Array<{ method: string; hostId: unknown; cwd: unknown }> = [];
 
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
+      // The PM's checkout is on host "local-host": its status is read there (here that is this machine), never by the hub.
+      experimental_callHostRpc: (async (call: { method: string; input: { requestedHostId: string; cwd: string } }) => {
+        hostCalls.push({ method: call.method, hostId: call.input.requestedHostId, cwd: call.input.cwd });
+        if (call.method === "runCommand") return runCommand(call.input as never, undefined as never);
+        throw new Error(`unexpected ${call.method}`);
+      }) as never,
       sdk: {
         threads: {
           getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : {},
@@ -63,6 +71,8 @@ describe("errandPrompt", () => {
         reason: "repo_edited",
         files: expect.arrayContaining([testFile]),
       });
+      expect(hostCalls.length).toBeGreaterThanOrEqual(2);
+      expect(hostCalls.every((call) => call.method === "runCommand" && call.hostId === "local-host" && call.cwd === process.cwd())).toBe(true);
     } finally {
       await fs.unlink(testFile).catch(() => undefined);
     }

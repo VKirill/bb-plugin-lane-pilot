@@ -1,4 +1,3 @@
-import { spawnAsync } from "../spawn-async";
 import type { TaskV2, PrototypeConfig } from "../contracts";
 import type { LanePilotDatabase, StageReceiptRow } from "../database";
 import { getRun, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../database";
@@ -7,8 +6,8 @@ import { stringAt } from "./values";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 import { saveFollowUp } from "./writer/sticky";
+import { isEnvironmentCheckFailure } from "../failure-class";
 import { join } from "node:path";
-import { readdir, readFile } from "node:fs/promises";
 
 export type GateWhen = "queue_drained" | "every_n";
 
@@ -90,6 +89,12 @@ export function extractStaticImports(source: string): string[] {
 }
 
 /**
+ * Reads a file of the project checkout, relative to its root, on the machine that holds it; null when it cannot be read.
+ * The project may live on another host: the hub never opens its path.
+ */
+export type ProjectFileReader = (relativePath: string) => Promise<string | null>;
+
+/**
  * Checks if a failing file is related to a merged task by checking:
  * 1. Did the task touch/produce this file directly?
  * 2. Did the task touch/produce a file imported by this failing file?
@@ -97,7 +102,7 @@ export function extractStaticImports(source: string): string[] {
 export async function isFileRelatedToTask(
   failingFile: string,
   taskProduced: string[],
-  workspacePath: string
+  readProjectFile: ProjectFileReader
 ): Promise<boolean> {
   const norm = (p: string) => p.replace(/^\.\//, "").trim();
   const failingNorm = norm(failingFile);
@@ -105,10 +110,10 @@ export async function isFileRelatedToTask(
 
   if (taskProducedSet.has(failingNorm)) return true;
 
-  // Check imports in failingFile if it exists on disk
+  // Check imports in failingFile if it can be read
   try {
-    const fullPath = join(workspacePath, failingNorm);
-    const content = await readFile(fullPath, "utf8");
+    const content = await readProjectFile(failingNorm);
+    if (content === null) throw new Error("unreadable");
     const rawImports = extractStaticImports(content);
     for (const imp of rawImports) {
       if (imp.startsWith(".")) {
@@ -140,7 +145,7 @@ export async function isFileRelatedToTask(
 export async function findCulpritByFiles(
   failingFiles: string[],
   mergedTasks: MergedTaskInfo[],
-  workspacePath: string
+  readProjectFile: ProjectFileReader
 ): Promise<MergedTaskInfo | null> {
   if (mergedTasks.length === 0) return null;
   if (failingFiles.length === 0) return null;
@@ -149,7 +154,7 @@ export async function findCulpritByFiles(
 
   for (const task of mergedTasks) {
     for (const file of failingFiles) {
-      if (await isFileRelatedToTask(file, task.produced, workspacePath)) {
+      if (await isFileRelatedToTask(file, task.produced, readProjectFile)) {
         matchingTasks.add(task);
         break;
       }
@@ -163,9 +168,12 @@ export async function findCulpritByFiles(
 }
 
 /**
- * Fallback: bisect over the commits of mergedTasks using git bisect run <gate_command>.
+ * Fallback: bisect over the commits of mergedTasks with the gate command, as one host job on the project's machine (a
+ * scratch worktree there; the checkout itself is not moved). Null when the host cannot name a first bad commit.
  */
 export async function bisectCulprit(
+  host: ServerCore["host"],
+  hostId: string,
   gateCommand: string,
   goodSha: string,
   badSha: string,
@@ -173,39 +181,16 @@ export async function bisectCulprit(
   mergedTasks: MergedTaskInfo[],
   timeoutMs = 30 * 60_000
 ): Promise<MergedTaskInfo | null> {
-  // Run git bisect in a scratch worktree or directly in basePath if clean
-  // We can run git bisect start <badSha> <goodSha>
   try {
-    const startRes = await spawnAsync("git", ["bisect", "start", badSha, goodSha], { cwd: basePath, timeout: 30_000 });
-    if (startRes.status !== 0) {
-      await spawnAsync("git", ["bisect", "reset"], { cwd: basePath }).catch(() => undefined);
-      return null;
-    }
-
-    const runScript = `#!/bin/bash\n${gateCommand}\n`;
-    // We execute git bisect run /bin/bash -c "gateCommand"
-    const bisectRes = await spawnAsync("git", ["bisect", "run", "/bin/bash", "-lc", gateCommand], {
-      cwd: basePath,
-      timeout: timeoutMs,
-      maxBuffer: 16 * 1024 * 1024,
-    });
-
-    // Inspect bisect output to find first bad commit
-    // "xxxx is the first bad commit"
-    const combinedOutput = `${bisectRes.stdout}\n${bisectRes.stderr}`;
-    const match = combinedOutput.match(/([0-9a-f]{7,40}) is the first bad commit/);
-    const badCommit = match ? match[1]! : null;
-
-    await spawnAsync("git", ["bisect", "reset"], { cwd: basePath }).catch(() => undefined);
-
-    if (badCommit) {
-      const found = mergedTasks.find((t) => t.commitSha.startsWith(badCommit) || badCommit.startsWith(t.commitSha));
-      return found ?? null;
-    }
+    const found = await host.call("gateBisect", {
+      requestedHostId: hostId, basePath, command: gateCommand, goodSha, badSha, timeoutSec: Math.ceil(timeoutMs / 1000),
+    }, { hostId, timeoutMs: timeoutMs + 60_000 });
+    if (found.status !== "found" || !found.commit) return null;
+    const badCommit = found.commit;
+    return mergedTasks.find((t) => t.commitSha.startsWith(badCommit) || badCommit.startsWith(t.commitSha)) ?? null;
   } catch {
-    await spawnAsync("git", ["bisect", "reset"], { cwd: basePath }).catch(() => undefined);
+    return null;
   }
-  return null;
 }
 
 export function formatFixTurnPrompt(input: {
@@ -293,10 +278,18 @@ export class IntegrationGateRunner {
     basePath: string;
     configHostId: string;
     gateCommand: string;
-  }): Promise<{ ran: true; passed: boolean; culpritTaskId?: string | null }> {
+  }): Promise<{ ran: boolean; passed?: boolean; culpritTaskId?: string | null }> {
     const { runId, projectId, pmThreadId, basePath, configHostId, gateCommand } = input;
     const db = this.ctx.db;
     const bb = this.ctx.bb;
+    const host = this.ctx.host;
+    // The gate, git and file reads run on the project's own host, never at the project's path on the hub.
+    const GATE_TIMEOUT_SEC = 30 * 60;
+    const readProjectFile: ProjectFileReader = async (relativePath) => {
+      const read = await host.call("readBoundedFile", { requestedHostId: configHostId, projectCwd: basePath, relativePath, offset: 0, maxLines: 2000 }, { hostId: configHostId, timeoutMs: 30_000 })
+        .catch(() => null);
+      return read ? read.content : null;
+    };
 
     // Record stage on the merged task if one exists in the database
     const lastMerged = this.mergedTasksSinceLastGate[this.mergedTasksSinceLastGate.length - 1];
@@ -309,16 +302,17 @@ export class IntegrationGateRunner {
 
     this.ctx.log(`integration-gate: running \`${gateCommand}\` on ${basePath}`);
 
-    // Execute async spawn
-    const ran = await spawnAsync("/bin/bash", ["-lc", gateCommand], {
-      cwd: basePath,
-      timeout: 30 * 60_000,
-      maxBuffer: 64 * 1024 * 1024,
+    const ran = await host.call("gateRun", { requestedHostId: configHostId, basePath, command: gateCommand, timeoutSec: GATE_TIMEOUT_SEC },
+      { hostId: configHostId, timeoutMs: (GATE_TIMEOUT_SEC + 60) * 1000 }).catch((cause: unknown) => {
+      this.ctx.log(`integration-gate: could not run \`${gateCommand}\` on host ${configHostId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      return null;
     });
+    // A gate that could not run says nothing about main: no receipt, no culprit; the merges stay counted for the next run.
+    if (!ran) return { ran: false };
 
-    const exitCode = ran.status ?? 1;
-    const stdout = ran.stdout ?? "";
-    const stderr = ran.stderr ?? (ran.error ? ran.error.message : "");
+    const exitCode = ran.exitCode;
+    const stdout = ran.stdout;
+    const stderr = ran.stderr;
     const passed = exitCode === 0;
 
     const receiptResult = {
@@ -343,26 +337,39 @@ export class IntegrationGateRunner {
     if (passed) {
       this.mergesSinceLastGate = 0;
       this.mergedTasksSinceLastGate = [];
-      // Save current HEAD as last green commit
-      const headRes = await spawnAsync("git", ["rev-parse", "HEAD"], { cwd: basePath }).catch(() => null);
-      if (headRes && headRes.status === 0) {
-        this.lastGreenCommit = headRes.stdout.trim();
-      }
+      // Save the commit the gate ran on as the last green one
+      if (ran.head) this.lastGreenCommit = ran.head;
       return { ran: true, passed: true };
+    }
+
+    // The machine broke the gate (root-owned files, a permission error before any test ran): no commit is to blame and no
+    // writer can fix it in owns_paths, so no culprit, no bisect, no fix turn. The merges stay counted for the next run.
+    if (isEnvironmentCheckFailure({ stdout, stderr })) {
+      const evidence = `${stderr}\n${stdout}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr: line }))?.trim().slice(0, 300) ?? "";
+      this.ctx.log(`infra: integration gate \`${gateCommand}\` is red from the environment, no culprit searched: ${evidence}`);
+      await bb.sdk.threads.send({
+        threadId: pmThreadId,
+        mode: "queue-if-active",
+        input: [{
+          type: "text",
+          text: `Lane Pilot: integration gate \`${gateCommand}\` is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent (a writer cannot fix file permissions). Fix it in ${basePath}, then the gate runs again.`,
+          mentions: [],
+        }],
+      } as never).catch(() => undefined);
+      return { ran: true, passed: false, culpritTaskId: null };
     }
 
     // Gate failed. Find culprit.
     const failingFiles = extractFailingFiles(`${stderr}\n${stdout}`);
     const tasksToCheck = [...this.mergedTasksSinceLastGate];
 
-    let culprit = await findCulpritByFiles(failingFiles, tasksToCheck, basePath);
+    let culprit = await findCulpritByFiles(failingFiles, tasksToCheck, readProjectFile);
 
     // Fallback: git bisect if ambiguous and we have a lastGreenCommit and merged tasks
     if (!culprit && this.lastGreenCommit && tasksToCheck.length > 1) {
-      const headRes = await spawnAsync("git", ["rev-parse", "HEAD"], { cwd: basePath }).catch(() => null);
-      const currentHead = headRes && headRes.status === 0 ? headRes.stdout.trim() : null;
+      const currentHead = ran.head;
       if (currentHead && currentHead !== this.lastGreenCommit) {
-        culprit = await bisectCulprit(gateCommand, this.lastGreenCommit, currentHead, basePath, tasksToCheck);
+        culprit = await bisectCulprit(host, configHostId, gateCommand, this.lastGreenCommit, currentHead, basePath, tasksToCheck);
       }
     } else if (!culprit && tasksToCheck.length === 1) {
       culprit = tasksToCheck[0]!;
