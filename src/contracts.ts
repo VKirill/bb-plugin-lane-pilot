@@ -841,6 +841,23 @@ export const rpcContract = defineRpcContract({
       queued: z.array(z.string()).default([]),
     }).strict(),
   },
+  // The run card a PM message shows for its `::lane-run{id="…"}` directive: the run's tasks with their latest state.
+  get_run_card: {
+    input: z.object({ runId: z.string().min(1) }).strict(),
+    output: z.object({
+      runId: z.string(),
+      state: z.string(),
+      closed: z.boolean(),
+      tasks: z.array(z.object({
+        id: z.string(),
+        title: z.string(),
+        state: z.string().nullable(),
+        threadId: z.string().nullable(),
+        /** The failed check's log on the writer's machine, when the task left one. */
+        checkLog: z.object({ hostId: z.string(), path: z.string() }).strict().nullable(),
+      }).strict()),
+    }).strict().nullable(),
+  },
   native_thread: {
     input: z.object({ threadId: z.string().min(1) }).strict(),
     output: z.object({

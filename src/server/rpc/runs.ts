@@ -164,6 +164,37 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         queued: queuedTaskIds,
       };
     },
+    get_run_card: ({ runId }) => {
+      const run = db.prepare("SELECT id, state, closed_at, writer_host_id FROM lane_pilot_run WHERE id=?")
+        .get(runId) as { id: string; state: string; closed_at: number | null; writer_host_id: string | null } | undefined;
+      if (!run) return null;
+      const rows = db.prepare(`
+        SELECT t.id, t.contract_json, a.state, a.thread_id, a.workspace_path
+        FROM lane_pilot_task t
+        LEFT JOIN lane_pilot_attempt a ON a.run_id=t.run_id AND a.task_id=t.id
+          AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
+        WHERE t.run_id=? ORDER BY t.created_at LIMIT 200
+      `).all(runId) as Array<{ id: string; contract_json: string; state: string | null; thread_id: string | null; workspace_path: string | null }>;
+      const logs = new Map<string, string>();
+      for (const row of db.prepare("SELECT task_id, result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND result_json LIKE '%checkLogPath%'")
+        .all(runId) as Array<{ task_id: string; result_json: string | null }>) {
+        const found = /"checkLogPath"\s*:\s*"([^"]+)"/.exec(row.result_json ?? "");
+        if (found) logs.set(row.task_id, found[1]!);
+      }
+      const titleOf = (json: string, fallback: string) => {
+        try { const title = (JSON.parse(json) as { title?: unknown }).title; return typeof title === "string" && title ? title : fallback; } catch { return fallback; }
+      };
+      const tasks = new Map<string, { id: string; title: string; state: string | null; threadId: string | null; checkLog: { hostId: string; path: string } | null }>();
+      for (const row of rows) {
+        const rel = logs.get(row.id);
+        const safe = rel && !rel.startsWith("/") && !rel.split("/").includes("..") ? rel : null;
+        tasks.set(row.id, {
+          id: row.id, title: titleOf(row.contract_json, row.id), state: row.state, threadId: row.thread_id,
+          checkLog: safe && run.writer_host_id && row.workspace_path ? { hostId: run.writer_host_id, path: `${row.workspace_path.replace(/\/+$/, "")}/${safe}` } : null,
+        });
+      }
+      return { runId: run.id, state: run.state, closed: run.closed_at !== null, tasks: [...tasks.values()] };
+    },
     native_thread: async ({ threadId }) => {
       const selected = await bb.storage.kv.get(`native-thread:${threadId}`);
       if (!selected) return null;
@@ -264,6 +295,6 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "native_thread" | "activation_context" | "cancel_attempt" | "halt_run" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "halt_run" | "retry_attempt" | "resume_runs">;
   return handlers;
 }

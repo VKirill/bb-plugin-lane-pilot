@@ -6,6 +6,7 @@ import { CouncilPage } from "./src/ui/council-page";
 import { ComposerAgentBadge } from "./src/ui/composer-agent-badge";
 import { EnableLanePilotAction } from "./src/ui/composer-enable";
 import { HELPER_PANEL_ACTION, HelperThreadPanel } from "./src/ui/helper-threads";
+import { RUN_CARD_DIRECTIVE, RunCardDirective } from "./src/ui/run-card";
 
 export default definePluginApp((app) => {
   app.slots.navPanel({
@@ -30,6 +31,8 @@ export default definePluginApp((app) => {
     layout: "flush",
     component: ({ threadId, params }) => <HelperThreadPanel threadId={threadId} params={params} />,
   });
+  // The PM's `::lane-run{id="…"}` line becomes a live card of the run's tasks.
+  app.slots.messageDirective({ id: RUN_CARD_DIRECTIVE, component: RunCardDirective });
   app.composer.customize({
     id: "lane-pilot-activation",
     scopes: ["new-thread"],
