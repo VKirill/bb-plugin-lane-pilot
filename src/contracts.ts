@@ -94,7 +94,7 @@ export type TaskV2 = z.infer<typeof taskV2Schema>;
  * Host calls that run as background jobs: a separate process the host daemon's deadline cannot cut off (B4). A kind is
  * the name of the ordinary host method whose handler the job runs; its input is that method's own input.
  */
-export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa"] as const;
+export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "coexistenceInventory", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa"] as const;
 export type HostJobKind = (typeof HOST_JOB_KINDS)[number];
 const hostJobId = z.string().regex(/^job_[a-z0-9]{10,40}$/);
 const hostJobRef = z.object({ requestedHostId:z.string().min(1), jobId:hostJobId }).strict();

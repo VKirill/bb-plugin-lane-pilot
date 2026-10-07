@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.173
+
+- **Activation on a slow machine no longer times out.** `coexistenceInventory` (the scan of a machine's Claude/Lane setup at activation) now runs as a host background job, like `detect` and `importConfig`. Activating a project on OVH failed with «host plugin call … exceeded its deadline», and a host worker died. Found in a live check of a nested-folder project on OVH, 2026-10-07.
+
 ## 0.1.172
 
 Lane Pilot uses the four new core functions of runtime `0.45.0-vk.1` (stabilization plan, phase D). Each is feature-tested and the previous behaviour stays as the fallback, so the plugin still loads on a core without them.
