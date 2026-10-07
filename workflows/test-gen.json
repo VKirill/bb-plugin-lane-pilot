@@ -5,26 +5,31 @@
     "ru": "Дописать тесты"
   },
   "description": {
-    "en": "Writes missing tests for named gaps in the test paths only, runs them layer by layer, classifies failures (test/code/env defect) and iterates up to three times. Never edits source code or existing tests.",
-    "ru": "Пишет недостающие тесты по названным пробелам только в тестовых путях, прогоняет по слоям, классифицирует провалы (дефект теста / кода / окружения) и итерирует до трёх раз. Исходники и существующие тесты не трогает."
+    "en": "Writes missing tests for named gaps in the test paths only, runs them layer by layer, classifies failures (test/code/env defect) and iterates up to three times. Never edits source code or existing tests. The tests are the whole task, for code that already exists; tests that come with a new feature belong to that feature's workflow.",
+    "ru": "Пишет недостающие тесты по названным пробелам только в тестовых путях, прогоняет по слоям, классифицирует провалы (дефект теста / кода / окружения) и итерирует до трёх раз. Исходники и существующие тесты не трогает. Тесты - вся задача, для уже существующего кода; тесты к новой функции идут в её цепочке."
   },
   "examples": {
     "ru": [
       "Допиши тесты на модуль расчёта скидок",
       "Покрой тестами обработчики вебхуков",
       "Добавь недостающие юнит-тесты для сервиса пользователей",
-      "Закрой пробелы в покрытии, которые нашёл ревью"
+      "Закрой пробелы в покрытии, которые нашёл ревью",
+      "Напиши юнит-тесты для парсера дат, сам код не трогай",
+      "Нужны интеграционные тесты на сервис заказов, остальное оставь как есть"
     ],
     "en": [
       "Write the missing tests for the discount calculation module",
       "Cover the webhook handlers with tests",
       "Add the missing unit tests for the users service",
-      "Close the coverage gaps the review found"
+      "Close the coverage gaps the review found",
+      "Write unit tests for the date parser, leave the code alone",
+      "I need integration tests for the orders service, nothing else"
     ]
   },
   "not_for": [
     "quality-loop",
-    "refactor"
+    "refactor",
+    "analyze-plan-execute"
   ],
   "status": "draft",
   "inputs": {

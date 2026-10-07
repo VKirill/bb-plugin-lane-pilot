@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { createFakeWorktreeHost } from "../own-worktree-host";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import type { TaskV2 } from "../../src/contracts";
@@ -41,7 +41,8 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
   const spawned: Array<Record<string, unknown>> = [];
   const meta = new Map<string, Record<string, unknown>>();
   let nextWriter = 0, porcelain = 0;
-  const { bb, harness } = createFakePluginHost({
+  // Every writer attempt of a git project works in its own worktree: the fake host makes, checks and merges them.
+  const { bb, harness } = createFakeWorktreeHost({
     pluginId: "lane-pilot",
     sdk: {
       threads: {
@@ -86,7 +87,6 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
         status: async () => ({ outcome: "available", workspace: { branch: { currentBranch: "eq", defaultBranch: "main" } } }) as never,
         diff: async () => ({ outcome: "available", diff: { diff: "diff --git a/note.txt b/note.txt", files: "note.txt", shortstat: "1 file changed", truncated: false } }) as never,
       },
-      projects: { get: async ({ projectId: id }) => ({ id, name: id, sources: [] }), list: async () => [{ id: projectId, name: projectId, sources: [] }] },
       files: {
         listPaths: async () => ({ truncated: false, paths: [{ kind: "file", name: "README.md", path: "README.md", positions: [], score: 1 }] }) as never,
         read: async ({ path }) => path.endsWith("README.md") ? { content: readme } : path.endsWith(".txt") ? { content: "reviewed output\n", sha256: noteSha } : { content: null },
@@ -110,7 +110,7 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
       if (command.includes("porcelain")) { porcelain += 1; return { hostId: config.hostId, exitCode: 0, stdout: JSON.stringify(porcelain === 1 ? [] : [{ path: "note.txt", sha256: noteSha }]), stderr: "" }; }
       return { hostId: config.hostId, exitCode: 0, stdout: "", stderr: "" };
     },
-  });
+  }, config.hostId);
   const db = openDatabase(bb);
   savePrototypeConfig(db, config);
   const settings = { "plan_critique.min_score": 0, "plan_critique.min_write_tasks": 1, "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "project_life.enabled": false, "docs.enabled": false, ...scenario.settings };

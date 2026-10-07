@@ -194,6 +194,7 @@ Lane Pilot works with none of these. Each integration below feature-tests its pl
 | `lane_pilot_browser_qa` | browser check of an accepted task |
 | `lane_pilot_specialist` / `lane_pilot_wait_specialist` | specialist child threads |
 | `lane_pilot_ask` / `lane_pilot_reply` / `lane_pilot_remind` / `lane_pilot_relay_list` | questions, answers and reminders between threads |
+| `lane_pilot_route` / `lane_pilot_run_workflow` / `lane_pilot_workflow_status` | match a request to a published workflow (confidence, boundary contract, goals or up to three questions), start it, read its progress |
 | `lane_pilot_ask_owner` | a question to the owner as a form in the PM chat (a push on the phone); the answer comes back as a message |
 | `lane_pilot_handoff_create` / `_receipt` / `_list` | task cards between agents |
 | `lane_pilot_council_start` / `_status` / `_say` / `_stop` | council of directors |

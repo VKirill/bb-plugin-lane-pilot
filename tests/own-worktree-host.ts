@@ -12,6 +12,8 @@ type HostOptions = NonNullable<Parameters<typeof createFakePluginHost>[0]>;
 export function withOwnWorktrees(options: HostOptions, hostId: string, projectRoot = "/srv/project-root"): HostOptions {
   const inner = options.experimental_callHostRpc as ((call: { method: string; hostId: string; input: unknown }) => unknown) | undefined;
   const fresh = new Set<string>();
+  // Numbered, not named by the attempt id: two runs of one scenario (a path in a task contract is hashed) see the same path.
+  let made = 0;
   return {
     ...options,
     sdk: {
@@ -25,7 +27,7 @@ export function withOwnWorktrees(options: HostOptions, hostId: string, projectRo
     experimental_callHostRpc: async (call: { method: string; hostId: string; input: unknown }) => {
       const input = (call.input ?? {}) as { name?: string; cwd?: string; command?: string };
       if (call.method === "gitCreateWorktree") {
-        const path = `/tmp/lane-pilot-test-worktrees/${input.name}`;
+        const path = `/tmp/lane-pilot-test-worktrees/wt-${++made}`;
         fresh.add(path);
         return { hostId, status: "ready", path, branch: `lane/${input.name}`, reason: null };
       }
