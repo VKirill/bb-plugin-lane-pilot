@@ -18,6 +18,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "docs.enabled": { auto: "docsModeAuto", true: "docsModeOn", false: "docsModeOff" },
   "run.gate": { none: "enumGateNone", "pre-merge": "enumGatePreMerge" },
   "integration.gate_when": { queue_drained: "enumIntegrationGateDrained", every_n: "enumIntegrationGateEveryN" },
+  "workspace.provider": { auto: "enumWorkspaceProviderAuto", off: "enumWorkspaceProviderOff" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",
     "macos-seatbelt": "enumSandboxSeatbelt",

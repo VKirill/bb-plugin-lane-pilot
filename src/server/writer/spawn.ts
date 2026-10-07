@@ -4,7 +4,7 @@ import { parseDirtSnapshots } from "../../cli-outcome";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
-import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, searchMemoryRecords, setAttemptDirtBefore, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../database";
+import { HARNESS_VERSION, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, searchMemoryRecords, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../database";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../../jev-reasoning";
 import { spawnWithSeam } from "../../spawn-seam";
 import { buildExecutionPacket, renderExecutionPacket } from "../../stages/execution-packet";
@@ -15,6 +15,8 @@ import { WORKSPACE_DIRT_COMMAND } from "../../workspace-dirt";
 import { LIVE_FOLDER_REASON, liveOwnedFiles } from "../../live-folder";
 import { createLiveFolder } from "./live-folder";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, waitManagedWorktreeReady } from "../../workspace/routing";
+import { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../../workspace/provider-gate";
+import { LANE_WORKTREE_PROVIDER_ID } from "../environment-provider";
 import { fullAccessSpawn } from "../pm-spawn";
 import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
 import { holderSpawnKey, stringAt } from "../values";
@@ -48,6 +50,14 @@ export function shouldMergeAttemptWorktree(workspacePath:string|null|undefined, 
   return Boolean(workspacePath && basePath && resolve(workspacePath) !== resolve(basePath));
 }
 
+/** A writer's environment from Lane Pilot's own provider (H9), over a worktree Lane Pilot already made. */
+type ProviderEnvironment = { type:"provider"; environmentProviderId:string; inputs:{basePath:string;name:string;path:string}; machine:{type:"existing";hostId:string} };
+
+type WriterEnvironment = ProviderEnvironment | {type:"reuse";environmentId:string} | {type:"host";hostId:string;workspace:{type:"unmanaged";path:string}};
+
+/** BB refused or lost the provider itself (not a budget, a network or a bad request): the attempt may go on the old path. */
+const providerRefusal = (cause:unknown) => /environment[ _-]?provider/i.test(cause instanceof Error ? cause.message : String(cause));
+
 function inPlaceEnvironment(hostId:string, workspacePath:string, environmentId:string|null):
   {type:"reuse";environmentId:string}|{type:"host";hostId:string;workspace:{type:"unmanaged";path:string}} {
   return environmentId
@@ -78,6 +88,17 @@ async function listTaskFolder(bb:{sdk:{files:{read(args:{hostId:string;rootPath:
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
   const liveFolder = createLiveFolder(ctx);
+  const providerGate = createProviderGate({ kv:bb.storage.kv, serialized:(work) => ctx.serializedKv(work), version:HARNESS_VERSION, warn:(message) => bb.log.warn(message) });
+
+  /** Why this attempt does not use the provider (null: it does). Anything but the owner's own switch is one log line. */
+  async function providerSkipReason(projectId:string, hostId:string, attemptId:string, settings:Record<string,unknown>):Promise<string|null> {
+    if (!providerSwitchOn(settings["workspace.provider"])) return "switched off by workspace.provider";
+    const reason = !await providerGate.usable(hostId) ? "switched off on this machine after three provider errors"
+      : !await providerListed((args) => bb.sdk.environments.listProviders(args), LANE_WORKTREE_PROVIDER_ID, projectId, hostId) ? "this BB does not offer it"
+      : null;
+    if (reason) bb.log.info(`Lane Pilot writer ${attemptId}: worktree provider not used (${reason}); the old worktree path`);
+    return reason;
+  }
 
   /**
    * System One picks the accepted rules this task needs, so a writer's prompt does not carry every rule of the
@@ -253,11 +274,22 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       let environment:{type:"reuse";environmentId:string}|{type:"host";hostId:string;workspace:{type:"unmanaged";path:string}} = run.writer_environment_id
         ? { type:"reuse" as const, environmentId:run.writer_environment_id }
         : { type:"host" as const, hostId:input.config.hostId, workspace:{ type:"unmanaged" as const, path:input.task.project_cwd } };
+      // Set when the attempt's worktree is a BB environment of Lane Pilot's own provider; `environment` is then the old
+      // path's answer for the same worktree, which the attempt falls back to.
+      let providerEnvironment:ProviderEnvironment|null=null;
       if (workspaceDecision.strategy === "provision_attempt_worktree") {
         const bound=getAttempt(db,input.attemptId);
+        const onProvider=bound?.workspace_path&&bound.environment_id ? null
+          : await prepareProviderWorktree(input,settings,bound,run.writer_workspace_path,workspaceDecision);
         if (bound?.workspace_path && bound.environment_id) {
           workspacePath=bound.workspace_path;
           environment={type:"reuse",environmentId:bound.environment_id};
+        } else if (onProvider) {
+          workspacePath=onProvider.path;
+          if(onProvider.dirtBefore) dirtBefore=onProvider.dirtBefore;
+          providerEnvironment={type:"provider",environmentProviderId:LANE_WORKTREE_PROVIDER_ID,machine:{type:"existing",hostId:input.config.hostId},
+            inputs:{basePath:run.writer_workspace_path,name:input.attemptId,path:workspacePath}};
+          environment=inPlaceEnvironment(input.config.hostId,workspacePath,null);
         // BB's managed worktree forks the project's root source; a run folder that is not it (a section with its own
         // repo inside a non-git project, live sandbox 2026-10-07: «no usable git branch») needs Lane Pilot's own.
         } else if ((nativeRun ? !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path)
@@ -415,12 +447,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         role:input.emergency ? "emergency-writer" : "writer",
         taskTitle:input.task.title,
       });
-      const spawned = await spawnWithSeam(() => fullAccessSpawn(bb, {
+      const launchArgs = {
         ...placement,
         ...requiredPolicyField(bb, helperSnapshot, writerProviderId, "writer"),
         ...execution,
         input: writerBriefInput(attemptTask, briefSegments, writerProviderId),
-        environment,
         pluginMetadata:{
           role:input.emergency ? "emergency-writer" : "writer",
           lanePilotRunId:input.runId,
@@ -428,7 +459,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           attemptId:input.attemptId,
           parentPmThreadId:input.pmThreadId,
         },
-      }));
+      };
+      const launch = (target:WriterEnvironment) => spawnWithSeam(() => fullAccessSpawn(bb, { ...launchArgs, environment:target }));
+      const spawned = providerEnvironment ? await launchOnProvider({ input, providerEnvironment, fallback:environment, launch }) : await launch(environment);
       const writerThreadId = stringAt(spawned, "id") ?? "";
       if (!writerThreadId) throw new Error("threads.spawn returned no writer thread id");
       // Canceled while its thread was being made: stop the thread it got and end here.
@@ -467,6 +500,65 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       return { ok:true, threadId: await services.reconcileAttemptThread(input.projectId, attempt), providerId:selectedProviderId, model:selectedModel, dirtBefore:attempt.dirt_before,
         workspacePath:attempt.workspace_path ?? input.task.project_cwd };
     }
+  }
+
+  /**
+   * The attempt's worktree as a BB environment of Lane Pilot's own provider. Lane Pilot makes the worktree first (the
+   * packet, the task folder and the dirt baseline are read from it before the thread exists) and the provider adopts it,
+   * so no holder thread and no model turn is spent on it. Null, with one log line, whenever the old path should serve
+   * the attempt: the owner's switch, a core without the API, a machine whose provider was switched off, a worktree that
+   * could not be made (the old path makes it again, or the managed one).
+   */
+  async function prepareProviderWorktree(input:{projectId:string;runId:string;attemptId:string;config:PrototypeConfig}, settings:Record<string,unknown>,
+    bound:{workspace_path:string|null}|null|undefined, basePath:string, decision:unknown):Promise<{path:string;dirtBefore:DirtSnapshot[]|null}|null> {
+    const hostId=input.config.hostId;
+    if (await providerSkipReason(input.projectId,hostId,input.attemptId,settings)) return null;
+    if (bound?.workspace_path) return {path:bound.workspace_path,dirtBefore:null};
+    const created=await host.call("gitCreateWorktree",{requestedHostId:hostId,basePath,name:input.attemptId},{hostId,timeoutMs:60_000}).catch(()=>null);
+    if(!created||created.status!=="ready"||!created.path) {
+      bb.log.info(`Lane Pilot writer ${input.attemptId}: no worktree for the provider (${created?.reason ?? "no answer"}); the old worktree path`);
+      return null;
+    }
+    await host.call("gitPrepareWorktree",{requestedHostId:hostId,basePath,worktreePath:created.path},{hostId,timeoutMs:600_000}).catch(()=>undefined);
+    const prepared=await workspaceDirt(input.config,created.path,input.runId);
+    if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
+    if(!setAttemptWorkspace(db,input.attemptId,{path:created.path,environmentId:null,decision})) throw new WriterSelectionError("attempt_workspace_cas_conflict");
+    return {path:created.path,dirtBefore:prepared.snapshots};
+  }
+
+  /**
+   * Starts the writer on the provider's environment and waits for it to be ready. When BB refuses the provider, its
+   * create errors or it does not come up in time, the attempt starts again on the old path over the same worktree: it
+   * is not failed and not charged. The machine's error count moves on each; the third in a row switches the provider off there.
+   */
+  async function launchOnProvider(args:{input:{attemptId:string;config:PrototypeConfig};providerEnvironment:ProviderEnvironment;fallback:WriterEnvironment;
+    launch:(target:WriterEnvironment)=>Promise<unknown>}):Promise<unknown> {
+    const { input, providerEnvironment, launch } = args;
+    const hostId=input.config.hostId;
+    const fallBack=async (reason:string) => {
+      bb.log.info(`Lane Pilot writer ${input.attemptId}: worktree provider error (${reason.replace(/\bfailed\b/gi,"error").slice(0,200)}); the old worktree path`);
+      await providerGate.failed(hostId,reason);
+      return await launch(args.fallback);
+    };
+    let spawned:unknown;
+    try { spawned=await launch(providerEnvironment); }
+    catch (cause) {
+      if (!providerRefusal(cause)) throw cause;
+      return await fallBack(cause instanceof Error ? cause.message : String(cause));
+    }
+    const threadId=stringAt(spawned,"id");
+    if (!threadId) return spawned;
+    const ready=await waitProviderEnvironment({threadId,spawnEnvironmentId:stringAt(spawned,"environmentId"),expectedPath:providerEnvironment.inputs.path,
+      getThread:async (id)=>bb.sdk.threads.get({threadId:id}),getEnvironment:async (id)=>bb.sdk.environments.get({environmentId:id})});
+    if (!ready.ok) {
+      // The thread never started a turn (its first message waits for the environment): it goes, the worktree stays.
+      await bb.sdk.threads.stop({threadId}).catch(()=>undefined);
+      await bb.sdk.threads.archive({threadId}).catch(()=>undefined);
+      return await fallBack(ready.reason);
+    }
+    setAttemptEnvironment(db,input.attemptId,ready.environmentId);
+    await providerGate.succeeded(hostId);
+    return spawned;
   }
 
   /** Whether the folder is a subfolder of a larger git repo, asked on its own host (the hub may not see the folder). */

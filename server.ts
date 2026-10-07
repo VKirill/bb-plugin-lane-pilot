@@ -13,6 +13,7 @@ import { adoptWaitingRules } from "./src/server/insights";
 import { createRuleScan } from "./src/server/rule-scan";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/server/run-finish";
 import { registerRpc } from "./src/server/rpc";
+import { registerLaneWorktreeProvider } from "./src/server/environment-provider";
 import { scheduleIsolated } from "./src/server/schedules";
 import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "./src/server/deploy-drain";
 import { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./src/server/writer-silence";
@@ -81,6 +82,9 @@ export default async function plugin(bb: BbPluginApi) {
   registerRpc(ctx, services);
   registerTools(ctx, services);
   registerCli(ctx, services);
+  // Writer attempts get BB environments of this provider unless workspace.provider is off; a BB without the API
+  // registers nothing and every attempt keeps the old worktree path.
+  registerLaneWorktreeProvider(ctx);
   const sweepRuns = (signal?: AbortSignal) => closeAbandonedRuns(bb, db, Date.now(), signal).then((closed) => {
     if (closed.length) bb.log.info(`Lane Pilot closed ${closed.length} runs whose PM chat is gone: ${closed.join(", ")}`);
   }, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot run sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));

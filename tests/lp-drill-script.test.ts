@@ -27,7 +27,7 @@ describe("scripts/lp-drill.sh (E3)", () => {
       const [, name, json] = /^scenario (\w+): (\{.*\})$/.exec(line)!;
       byScenario.set(name!, [...(byScenario.get(name!) ?? []), taskV2Schema.parse(JSON.parse(json!))]);
     }
-    expect([...byScenario.keys()]).toEqual(["conflict", "main_moved", "provider_limit", "reload", "nogit"]);
+    expect([...byScenario.keys()]).toEqual(["conflict", "main_moved", "provider", "provider_limit", "reload", "nogit"]);
     expect(byScenario.get("conflict")).toHaveLength(2);
     const [x, y] = byScenario.get("conflict")!;
     expect(x!.owns_paths).toEqual(y!.owns_paths);
