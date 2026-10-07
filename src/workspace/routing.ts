@@ -10,7 +10,7 @@ export type AttemptWorkspaceDecision = {
   multiWrite:boolean;
   multiWriteEnabled:boolean;
   strategy:AttemptWorkspaceStrategy;
-  reason:"explicit_worktree"|"risk_threshold"|"multi_write"|"below_threshold";
+  reason:"explicit_worktree"|"risk_threshold"|"multi_write"|"below_threshold"|"live_folder";
 };
 
 /** «In the project folder» (in_place) is gone (decision 2026-10-06-worktree-only-writers): a saved one reads as auto. */

@@ -200,10 +200,13 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         setRunState(db,runId,"blocked");
         return {runId,taskId,attemptId,state:"blocked",reason:specialist.reason,stages:listStageReceipts(db,runId,taskId)};
       }
-      const gitBase=await host.call("gitOwnershipBase",{
+      // A folder without git has no base commit to measure ownership against: the writer's work is the difference of
+      // two content snapshots of the folder.
+      const live=await services.isLiveFolder(runId,config.hostId,workspacePath);
+      const gitBase=live?null:await host.call("gitOwnershipBase",{
         requestedHostId:config.hostId,projectCwd:workspacePath,...(args.baseRef===undefined?{}:{baseRef:args.baseRef}),
       },{hostId:config.hostId,timeoutMs:30_000});
-      if(gitBase.status!=="ready"&&(args.baseRef!==undefined||gitBase.status!=="not-git")) {
+      if(gitBase&&gitBase.status!=="ready"&&(args.baseRef!==undefined||gitBase.status!=="not-git")) {
         const reason=`git ownership base unavailable: ${gitBase.reason??gitBase.status}`;
         recordStage(db,{runId,taskId,stageId:"run-gate",state:"blocked",input:canonicalPlan,
           result:{decision:"ownership_base_unavailable",baseRef:args.baseRef??null},reason});
@@ -215,7 +218,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         refreshRun(runId);
         return {runId,taskId,attemptId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
       }
-      if(gitBase.status==="ready"&&!saveTaskGitBase(db,taskId,{
+      if(gitBase?.status==="ready"&&!saveTaskGitBase(db,taskId,{
         baseRef:gitBase.baseRef,baseSha:gitBase.baseSha,initialHeadSha:gitBase.headSha!,branch:gitBase.branch!,compareCommitted:gitBase.compareCommitted,
       })) {
         const reason="could not persist immutable git ownership base snapshot";
@@ -230,7 +233,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           taskId, plan:canonicalPlan,
           // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
           // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
-          exclude: async (line) => {
+          exclude: live ? undefined : async (line) => {
             const ran=await host.call("runCommand",{
               requestedHostId:config.hostId,cwd:workspacePath,command:appendExcludeCommand(line),timeoutSec:30,
             },{hostId:config.hostId,timeoutMs:30_000});
@@ -259,6 +262,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       const settings = loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId));
       const gateSettings = parseIntegrationGateSettings(settings);
       const warnings: string[] = lint.warnings.map((warning) => warning.message);
+      if (live) warnings.push("mode live-folder: this folder has no git. The writer edits the live files in place; nothing is committed or merged, so there is no ship step. One writer at a time works in the folder, later tasks queue. A task that is not accepted is rolled back from a backup of its owns_paths (~/.lane-pilot/live-backups, kept 7 days); files outside owns_paths are not rolled back.");
       if (gateSettings.gateCommand) {
         for (const [idx, v] of (valid.task.verification ?? []).entries()) {
           const cmd = v.command.trim();

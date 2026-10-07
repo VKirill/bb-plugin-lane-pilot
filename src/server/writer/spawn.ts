@@ -12,6 +12,8 @@ import { parseMemorySettings } from "../../stages/memory";
 import { resolveRetryEffort } from "../../stages/retry-effort";
 import { boundedAgentName } from "../../stages/role";
 import { WORKSPACE_DIRT_COMMAND } from "../../workspace-dirt";
+import { LIVE_FOLDER_REASON, liveOwnedFiles } from "../../live-folder";
+import { createLiveFolder } from "./live-folder";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, waitManagedWorktreeReady } from "../../workspace/routing";
 import { fullAccessSpawn } from "../pm-spawn";
 import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
@@ -67,6 +69,7 @@ async function listTaskFolder(bb:{sdk:{files:{read(args:{hostId:string;rootPath:
 
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
+  const liveFolder = createLiveFolder(ctx);
 
   /**
    * System One picks the accepted rules this task needs, so a writer's prompt does not carry every rule of the
@@ -112,9 +115,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // A native Lane chat gives every writer attempt its own worktree (in_place is gone, decision 2026-10-06):
       // parallel writers never share a checkout, and acceptance merges each one into main.
       const nativeRun = getRun(db, input.runId)?.kind === "cli";
-      const workspaceDecision = resolveAttemptWorkspace({mode:workspaceMode,risk:input.task.risk,
+      const routed = resolveAttemptWorkspace({mode:workspaceMode,risk:input.task.risk,
         expectedOutputCount:input.task.expected_outputs.length,minScore:nativeRun&&workspaceMode==="auto"?0:minScore,multiWriteEnabled});
-      const sourcePreflight=await workspaceDirt(input.config,input.task.project_cwd);
+      // A folder without git has no worktree to give: the writer edits the live files in the run's folder.
+      const live = await liveFolder.isLiveFolder(input.runId,input.config.hostId,getRun(db,input.runId)?.writer_workspace_path ?? input.task.project_cwd);
+      const workspaceDecision = live ? {...routed,strategy:"inherit_run" as const,reason:LIVE_FOLDER_REASON as typeof routed.reason} : routed;
+      const sourcePreflight=await workspaceDirt(input.config,input.task.project_cwd,input.runId);
       if(!sourcePreflight.ok) throw new WriterSelectionError(`attempt_workspace_snapshot_failed:${sourcePreflight.reason}`);
       let dirtBefore=sourcePreflight.snapshots;
       const memorySettings=parseMemorySettings(settings);
@@ -261,7 +267,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
               workspacePath=created.path;
               await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,worktreePath:workspacePath},
                 {hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
-              const prepared=await workspaceDirt(input.config,workspacePath);
+              const prepared=await workspaceDirt(input.config,workspacePath,input.runId);
               if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
               dirtBefore=prepared.snapshots;
               if(!setAttemptWorkspace(db,input.attemptId,{path:workspacePath,environmentId:null,decision:workspaceDecision})) {
@@ -334,7 +340,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         const basePath=getRun(db,input.runId)?.writer_workspace_path;
         // Linking dependencies helps the writer's checks; a host without it still gets a clean worktree.
         if(basePath) await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath,worktreePath:workspacePath},{hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
-        const prepared=await workspaceDirt(input.config,workspacePath);
+        const prepared=await workspaceDirt(input.config,workspacePath,input.runId);
         if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
         if(prepared.snapshots.length) throw new WriterSelectionError(`attempt_worktree_not_clean:${prepared.snapshots.map(row=>row.path).join(",")}`);
         dirtBefore=prepared.snapshots;
@@ -349,6 +355,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       setAttemptDirtBefore(db,input.attemptId,dirtBefore);
       const attemptTask={...input.task,project_cwd:workspacePath,
         verification:input.task.verification.map(command=>({...command,cwd:workspacePath}))};
+      if(live) {
+        // The owned files are copied aside before the writer touches them; a rejected attempt is rolled back from them.
+        const saved=await liveFolder.backupLiveFolder({hostId:input.config.hostId,folder:workspacePath,backupId:input.attemptId,
+          files:liveOwnedFiles(dirtBefore.map(row=>row.path),input.task)});
+        if(!saved.ok) throw new WriterSelectionError(`attempt_workspace_backup_failed:${saved.reason}`);
+      }
       let executionPacket:string;
       let executionPacketSha256:string;
       try {
@@ -367,7 +379,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const taskFolder = await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
       const writerBrief = writerPrompt(attemptTask,relevantMemory.text,executionPacket,input.emergency
         ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
-        : undefined,writerAgent,input.pmReadContext ?? "",rulesText,input.previousAttempt ?? "",taskFolder);
+        : undefined,writerAgent,input.pmReadContext ?? "",rulesText,input.previousAttempt ?? "",taskFolder,live);
       const existingTrace = getReasoningTrace(db, input.attemptId);
       if (existingTrace) {
         saveReasoningTrace(db, {
@@ -448,7 +460,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     return Boolean(ran && ran.exitCode === 0 && /^[^\n]+\/\s*$/.test(ran.stdout));
   }
 
-  async function workspaceDirt(config: PrototypeConfig, workspacePath = config.writerWorkspacePath): Promise<{ ok:true; paths:string[]; snapshots:DirtSnapshot[] } | { ok:false; reason:string }> {
+  async function workspaceDirt(config: PrototypeConfig, workspacePath = config.writerWorkspacePath, runId?: string): Promise<{ ok:true; paths:string[]; snapshots:DirtSnapshot[] } | { ok:false; reason:string }> {
+    // A folder without git has no dirt to list: its whole content is the snapshot, and an attempt's work is the difference.
+    if (await liveFolder.isLiveFolder(runId, config.hostId, workspacePath)) return liveFolder.liveSnapshot(config.hostId, workspacePath);
     // The command runs in the workspace on its own host and answers workspace-relative paths, also for a subfolder
     // of a larger repo; the server may not see that folder at all.
     const ran = await host.call("runCommand", {
@@ -479,5 +493,5 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     }
   }
 
-  return { spawnWriterAttempt, workspaceDirt };
+  return { spawnWriterAttempt, workspaceDirt, isLiveFolder:liveFolder.isLiveFolder, backupLiveFolder:liveFolder.backupLiveFolder, restoreLiveFolder:liveFolder.restoreLiveFolder };
 }

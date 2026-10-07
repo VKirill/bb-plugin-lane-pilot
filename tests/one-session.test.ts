@@ -57,6 +57,7 @@ function services(db:ReturnType<typeof openDatabase>, script:Step[]) {
     maintainMemoryAfterAcceptance:() => undefined,
     maintainProjectLifeAfterAcceptance:() => undefined,
     workspaceDirt:async () => ({ ok:true, paths:[], snapshots:[] }),
+    isLiveFolder:async () => false,
     spawnWriterAttempt:async (input:{ attemptId:string }) => {
       spawned.push(input.attemptId);
       setAttemptWorkspace(db, input.attemptId, { path:WORKTREE, environmentId:null, decision:{} });

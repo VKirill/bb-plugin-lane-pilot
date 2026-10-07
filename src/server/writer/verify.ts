@@ -11,6 +11,7 @@ import { classifyWriterOutput, isOutputPath } from "../../validate-output";
 import { cleanCheckOutput } from "../../output-excerpt";
 import type { VerifyResult } from "../../validate-output";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../../owns-paths";
+import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../../live-folder";
 import { taskFamily } from "../../failure-class";
 import { bookkeepingSetting, filterOwnershipNoise } from "../../bookkeeping-paths";
 import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../verification/ownership";
@@ -165,6 +166,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const internalReceipt = {
       schemaVersion:1, status:"accepted", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
       attemptId:input.attemptId, pmThreadId:input.pmThreadId, writerThreadId:input.writerThreadId,
+      ...(isLiveDecision(getAttempt(db, input.attemptId)?.workspace_decision) ? { workspace:LIVE_FOLDER_RECEIPT } : {}),
       ownsPaths:input.task.owns_paths, readFirst:parseReadFirstHints(input.task.read_first),
       output:input.output, verification:input.verification,
       runV2:buildRunExecutionProfile(input.task.risk,runPolicyFor(input.runId)),
@@ -203,7 +205,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     diffKey?:string }> {
     const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
     const bookkeeping = bookkeepingSetting(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
-    const dirt = await services.workspaceDirt(input.config, input.task.project_cwd);
+    const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
     if (!dirt.ok) {
       recordGateEvaluation(db,{...input,gate:"owns-paths",status:"failed",input:JSON.stringify(input.task),summary:{reason:"workspace_snapshot_unavailable"}});
       return { status:"validation_failed", reason:dirt.reason, output:outputText(output), produced:[], verification:[] };
@@ -212,7 +214,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // files those attempts produced count as this family's produced work; dirt from other tasks or the owner keeps
     // its baseline, so it is never counted as produced.
     const familyProduced = new Set<string>();
-    for (const row of db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND id<>?")
+    // A folder without git rolls a failed attempt back, so no leftover of an earlier attempt exists to count; a file
+    // that sat in the folder before this attempt is no output of it either, however the contract names it.
+    const liveFolder = isLiveDecision(getAttempt(db, input.attemptId)?.workspace_decision);
+    if (!liveFolder) for (const row of db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND id<>?")
       .all(input.runId, input.attemptId) as Array<{ id:string; task_id:string }>) {
       if (taskFamily(row.task_id) !== taskFamily(input.taskId)) continue;
       const saved = await bb.storage.kv.get(`writer-produced:${row.id}`).catch(() => null);
@@ -334,7 +339,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const answerText = outputText(output);
     // Owned files that already carried content at the attempt's start: the contract may name them as outputs the
     // attempt inherited (a sibling attempt's edits), so they are met, not missing, once real work was produced.
-    const preexisting = input.dirtBefore
+    const preexisting = liveFolder ? [] : input.dirtBefore
       .filter((row) => row.sha256 && fileAllowedByOwns(row.path, input.task.owns_paths) && !fileBlockedByNeverTouch(row.path, input.task.never_touch))
       .map((row) => row.path);
     const classified = classifyWriterOutput({ task:input.task, produced:attributed, contents, verifies,

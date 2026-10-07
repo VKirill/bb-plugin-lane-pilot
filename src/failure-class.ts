@@ -22,6 +22,9 @@ const MISLABELED_MERGE = /merge_conflict: main changed since this attempt starte
 const INFRA = /ENOSPC|no space left|EACCES|EPERM|permission denied|PermissionError|disk_low|index\.lock|unable to write (new )?index|host is not connected|host offline|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED/i;
 // Same list the self-repair watcher treats as Lane Pilot's own fault, plus the thread lookups that broke on 2026-10-04.
 const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing|reconcile_|attempt_worktree_|attempt_workspace_|writer reconcile|its retry was lost|reconcile completed on a short page|sticky_send_failed|sticky_failed/i;
+// A folder without git is a mode of its own (live-folder.ts): its limits are the folder's, so the owner's to settle — never a
+// fault of Lane Pilot to park, and a leftover «not a git repository» reads the same.
+const NO_GIT = /not a git repository|no-git mode/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const BUDGET = /^run_budget_exceeded:/;
 const LIMIT = /writer_provider_limit:|^writer_provider_unavailable:breaker_open/;
@@ -38,6 +41,7 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   if (BUDGET.test(text)) return "budget";
   if (LIMIT.test(text)) return "limit";
   if (SILENT.test(text)) return "provider";
+  if (NO_GIT.test(text)) return "contract";
   if (MISLABELED_MERGE.test(text)) return "harness";
   if (MERGE.test(text)) return "merge";
   if (INFRA.test(text)) return "infra";
@@ -88,6 +92,7 @@ export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "harness
 /** What the PM does next about a task that did not end accepted, by its failure class; shown in wait receipts. */
 export function nextStep(state:string, reason:string | null | undefined):string {
   if (["queued", "running", "spawn_requested", "validating"].includes(state)) return "wait: the writer is still on it";
+  if (NO_GIT.test(reason ?? "")) return "the folder has no git and does not fit the no-git mode (too many files or owned bytes): put it under git, or narrow owns_paths, then dispatch again";
   switch (failureClass(state, reason)) {
     case "judgment": return "answer_writer: answer its question with lane_pilot_answer_writer (taskId, answer); the writer continues in its thread";
     case "harness": case "infra": return "parked: restarts by itself once the fault clears; do nothing";
