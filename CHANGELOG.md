@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.171
+
+- **A docs pass stopped by a plugin reload no longer logs failures.** During the 0.1.170 deploy, passes still running on treba, treba-sites and my-album.art logged «nightly docs failed … stale API handle» and «The database connection is not open», and the self-repair watcher reads such lines as Lane Pilot faults. Those passes were already set to resume by the catch-up. A closed database now counts as a stop, as a stale handle already did (`pluginStopped`). The unit and pass catch blocks and the docs merge stay quiet on a stop, and a stopped unit keeps its saved progress.
+
+## 0.1.170
+
+From a self-repair of «Lane Pilot docs merge into <path> conflict: CONFLICT (add/add) … Automatic merge failed» (treba-sites, 2026-10-07):
+- **A leftover docs pass that conflicts with main is logged as dropped, not as a failed merge.** On 2026-10-02 an in-place docs pass on treba-sites crashed on a too-large KV record and left its pages uncommitted in the checkout (docs passes have worked in their own worktree since 0.1.101). Because of that dirt, the 2026-10-06 pass could not merge, so its worktree was kept. The owner then committed the dirt. On 2026-10-07 the next pass tried to land the kept worktree first and got an add/add conflict in `docs/gotchas.md` and `docs/overview.md`. Lane Pilot handled it as designed: git left no merge state behind, main stayed clean, the leftover was dropped, and the pass started over from main in a fresh worktree. Only the log line was wrong: git's «Automatic merge failed» in a warn line, which the self-repair watcher reads as a Lane Pilot fault. That case now writes an info line, «earlier docs pass for … dropped: main changed the same pages (…); this pass writes them again from main». A conflict or failure of the pass's own merge is still a warning.
+
 ## 0.1.169
 
 - **Contract lint before any task exists (B5).** One message to the PM lists every problem with its fix, and no attempt is spent. It checks:

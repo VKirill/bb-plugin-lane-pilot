@@ -25,6 +25,18 @@ export function createSerialQueue():<T>(work:()=>Promise<T>)=>Promise<T> {
   };
 }
 
+/**
+ * The log line of a docs merge, or null when it merged. A conflict while landing an earlier pass's leftover worktree is
+ * the expected end of that leftover: main got the same pages meanwhile (treba-sites, 2026-10-07: the owner committed
+ * docs a crashed pass had left in the checkout), the leftover is dropped and this pass writes the pages again from main.
+ */
+export function docsMergeNote(basePath:string,result:{status:string;reason?:string|null;conflicts:string[]},leftover=false):{level:"info"|"warn";message:string}|null {
+  if(result.status!=="conflict"&&result.status!=="failed") return null;
+  const files=result.conflicts.length?` (${result.conflicts.join(", ")})`:"";
+  if(leftover&&result.status==="conflict") return {level:"info",message:`Lane Pilot earlier docs pass for ${basePath} dropped: main changed the same pages${files}; this pass writes them again from main`};
+  return {level:"warn",message:`Lane Pilot docs merge into ${basePath} ${result.status}: ${result.reason ?? ""}${files}`};
+}
+
 export function createDocsNightly(ctx: ServerCore, services: Services) {
   const { bb, db, host, listProjectSections, sectionChain } = ctx;
 
@@ -183,7 +195,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         if(record?.place.path===known.path) return {hostId:place.hostId,path:known.path};
       }
       // Its committed pages reach main before it goes; a busy main waits for the next tick.
-      const merged=await mergeDocs(place.path,{hostId:place.hostId,path:known.path},"docs: earlier pass");
+      const merged=await mergeDocs(place.path,{hostId:place.hostId,path:known.path},"docs: earlier pass",true);
       if(merged==="busy") throw new Error("docs_worktree_merge_busy: main is merging other work; the pass retries");
       await host.call("gitRemoveWorktree",{requestedHostId:place.hostId,basePath:place.path,worktreePath:known.path},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null);
       await bb.storage.kv.delete(key).catch(()=>undefined);
@@ -198,11 +210,12 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   }
 
   /** Merges the docs worktree's commits into the project checkout under the writers' merge lock; null when there is no worktree. */
-  async function mergeDocs(basePath:string,work:{hostId:string;path:string},message:string):Promise<string|null> {
+  async function mergeDocs(basePath:string,work:{hostId:string;path:string},message:string,leftover=false):Promise<string|null> {
     if(resolve(work.path)===resolve(basePath)) return null;
     const result=await host.call("gitIntegrate",{requestedHostId:work.hostId,basePath,worktreePath:work.path,message,committedOnly:true},{hostId:work.hostId,timeoutMs:300_000})
       .catch((cause)=>({status:"failed" as const,reason:cause instanceof Error?cause.message:String(cause),conflicts:[] as string[]}));
-    if(result.status==="conflict"||result.status==="failed") bb.log.warn(`Lane Pilot docs merge into ${basePath} ${result.status}: ${result.reason ?? ""}${result.conflicts.length?` (${result.conflicts.join(", ")})`:""}`);
+    const note=docsMergeNote(basePath,result,leftover);
+    if(note&&!pluginStopped(result.reason??"")) bb.log[note.level](note.message);
     return result.status;
   }
 
@@ -295,7 +308,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
             catch(cause){
               const reason=cause instanceof Error?cause.message:String(cause);
               results.push({projectId:project.id,path:place.path,docsDir:unit.docsDir,state:"failed",reason});
-              bb.log.warn(`Lane Pilot nightly docs failed for ${place.path} ${unit.docsDir}: ${reason}`);
+              if(!pluginStopped(cause)) bb.log.warn(`Lane Pilot nightly docs failed for ${place.path} ${unit.docsDir}: ${reason}`);
             }
             finally{ running.delete(unit); }
           };
@@ -316,7 +329,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         }catch(cause){
           const reason=cause instanceof Error?cause.message:String(cause);
           results.push({projectId:project.id,path:place.path,state:"failed",reason});
-          bb.log.warn(`Lane Pilot nightly docs failed for ${place.path}: ${reason}`);
+          if(!pluginStopped(cause)) bb.log.warn(`Lane Pilot nightly docs failed for ${place.path}: ${reason}`);
         }
       }
     }
@@ -461,7 +474,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   /** How long after the start of its night a unit may still be finished from saved progress. */
   const DOCS_UNIT_RESUME_MS=48*3_600_000;
 
-  const pluginStopped=(cause:unknown)=>/stale API handle|generation .* is retired|plugin .* (reloaded|disabled)/i.test(cause instanceof Error?cause.message:String(cause));
+  // A reload stops a pass in flight: its API handle goes stale and its database closes. The catch-up resumes it.
+  const pluginStopped=(cause:unknown)=>/stale API handle|generation .* is retired|plugin .* (reloaded|disabled)|database connection is not open/i.test(cause instanceof Error?cause.message:String(cause));
 
   /**
    * The second half of a docs unit, from saved progress: wait for the agent's thread, check the pages, send one repair
