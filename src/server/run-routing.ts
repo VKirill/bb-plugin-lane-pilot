@@ -5,6 +5,7 @@ import { helperSpawnFields, resolveHelperPlacement } from "../helper-placement";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseHelperPlacement, parseLanePilotDefaults } from "../lp-defaults";
 import type { HelperPlacementMode } from "../lp-defaults";
 import { stringAt } from "./values";
+import { findThreadsByMetadata } from "./thread-keys";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export class WriterSelectionError extends Error {}
 
@@ -100,6 +101,7 @@ export function criticReconcilePort(bb: BbPluginApi, projectId: string) {
       offset,
     })).map((thread) => ({ id: thread.id })),
     metadata: async (threadId: string) => bb.sdk.threads.getPluginMetadata({ threadId }),
+    find: (match: Record<string, string>) => findThreadsByMetadata(bb, match, projectId),
   };
 }
 

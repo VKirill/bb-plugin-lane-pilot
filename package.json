@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-lane-pilot",
-  "version": "0.1.171",
+  "version": "0.1.172",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || ^24.0.0 || ^26.0.0",
@@ -16,6 +16,21 @@
     "server": "./server.ts",
     "host": "./host.ts",
     "app": "./app.tsx"
+  },
+  "vk": {
+    "lifecycle": {
+      "drain": {
+        "timeoutMs": 300000
+      }
+    },
+    "hookPolicy": {
+      "messageDispatch": {
+        "timeoutMs": 20000
+      },
+      "contributeEnv": {
+        "timeoutMs": 10000
+      }
+    }
   },
   "dependencies": {
     "jsonc-parser": "3.3.1",

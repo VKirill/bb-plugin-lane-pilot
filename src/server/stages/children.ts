@@ -4,6 +4,7 @@ import { reconcile } from "../../reconcile";
 import type { ReconcileResult } from "../../reconcile";
 import type { StageId } from "../../stages/contract";
 import type { ProjectLifeTaskSummary } from "../../stages/project-life";
+import { findThreadsByMetadata } from "../thread-keys";
 import type { ServerCore } from "../core";
 
 export function createStageChildren(ctx: ServerCore) {
@@ -28,7 +29,9 @@ export function createStageChildren(ctx: ServerCore) {
         }
         return meta;
       },
-    }, { lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId:stageId });
+      find: (match) => findThreadsByMetadata(bb, match, projectId),
+    }, { lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId:stageId },
+    { match:{ role, stageId, lanePilotRunId:runId, lanePilotTaskId:taskId } });
   }
 
   async function reconcileDocsChild(projectId:string, runId:string, taskId:string) {

@@ -14,6 +14,7 @@ import { mountCouncilTools } from "./council";
 import { mountSpecialists } from "./specialists";
 import { mountRelay } from "./relay";
 import { mountSelfRepair } from "./self-repair";
+import { mountHookTimeoutWatch } from "./hook-timeouts";
 import { registerObservedTool, ToolError } from "./tool-result";
 import { createWriterAnswer } from "./writer/answer";
 import { createWriterUpdateTask } from "./writer/update-task";
@@ -303,6 +304,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountErrands(ctx);
   mountRelay(ctx);
   mountSelfRepair(ctx);
+  mountHookTimeoutWatch(ctx);
 
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;

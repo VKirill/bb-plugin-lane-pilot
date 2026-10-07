@@ -10,6 +10,7 @@ import type { IdempotencyTriple } from "../reconcile";
 import { shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../stages/run-policy";
 import { WriterSelectionError } from "./run-routing";
 import { holderSpawnKey, stringAt } from "./values";
+import { findThreadsByMetadata } from "./thread-keys";
 import type { ServerCore } from "./core";
 import type { ReconcilePort } from "../reconcile";
 import type { Services } from "./services";
@@ -28,6 +29,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
         offset,
       })).map((thread) => ({ id:thread.id })),
       metadata: async (threadId:string) => bb.sdk.threads.getPluginMetadata({ threadId }),
+      find: (match) => findThreadsByMetadata(bb, match, projectId),
     };
   }
 

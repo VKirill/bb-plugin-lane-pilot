@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { z } from "zod";
 import packageJson from "../../package.json";
 import { fullAccessSpawn } from "./pm-spawn";
+import { scheduleIsolated } from "./schedules";
+import { HOOK_TIMEOUTS_KEY, type HookTimeoutRecord } from "./hook-timeouts";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { stringAt } from "./values";
 import { writerBriefStats } from "../writer-brief";
@@ -49,7 +51,7 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
 
 export type Incident = {
   signature: string;
-  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill";
+  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook";
   projectId: string;
   runId: string;
   taskId: string;
@@ -284,6 +286,16 @@ export function createSelfRepair(ctx: ServerCore) {
           reason: `weekly fire drill on ${hostId}: «${check.name}» failed: ${check.detail ?? ""}`, at: row.at });
       }
     }
+    // A hook of the plugin that did not answer in its time (VK hook policy): the turn went on without Lane Pilot's env or
+    // dispatch decision. A reload's own window is not a fault.
+    const hookRows = await bb.storage.kv.get(HOOK_TIMEOUTS_KEY).catch(() => null);
+    for (const row of (Array.isArray(hookRows) ? hookRows : []) as HookTimeoutRecord[]) {
+      if (row.quiet || row.at <= since) continue;
+      const effect = row.hook === "contributeEnv" ? (row.required ? "env required, turn not started" : "env not applied") : row.hook === "messageDispatch" ? "dispatch hook not applied" : "mention not resolved";
+      out.push({ signature: reasonSignature("hook", `hook ${row.hook} timed out`), kind: "hook", projectId: row.projectId ?? "-", runId: "-", taskId: "-",
+        attemptId: `hook:${row.hook}:${row.at}`, pmThreadId: null, writerThreadId: row.threadId, version: VERSION,
+        reason: `Lane Pilot hook ${row.hook} did not answer in ${row.timeoutMs} ms: ${effect}`, at: row.at });
+    }
     // The same unfamiliar reason in several tasks within a day is a pattern, not one writer's mistake.
     const recent = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a
       JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN (${FAILED_STATES}) AND a.updated_at > ?`).all(now - 86_400_000) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string }>;
@@ -441,10 +453,11 @@ export type SelfRepair = ReturnType<typeof createSelfRepair>;
 
 export function mountSelfRepair(ctx: ServerCore): SelfRepair {
   const repair = createSelfRepair(ctx);
-  ctx.bb.background.schedule("self-repair", "*/15 * * * *", async () => {
+  // Isolated where the core allows: a long schedule of its own or of another plugin must not hold the watcher back.
+  scheduleIsolated(ctx.bb, "self-repair", "*/15 * * * *", async () => {
     if (ctx.isDisposed()) return;
     const result = await repair.tick().catch((cause) => ({ incidents: 0, signatures: [], spawned: null, reason: String(cause) }));
     if (result.incidents) ctx.log(`self-repair tick: ${result.incidents} incident(s), ${result.signatures.length} kind(s): ${result.reason}`);
-  });
+  }, { timeoutMs: 20 * 60_000 });
   return repair;
 }

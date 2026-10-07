@@ -1,6 +1,7 @@
 import type { PrototypeConfig } from "../contracts";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { RunBudgetExceeded, type RunBudget } from "@lane-pilot/resilience";
+import { spawnKeyed } from "./thread-keys";
 
 export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = false, native = false): string {
   if (native) {
@@ -29,8 +30,10 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
 
 export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]) {
   enforceRunChildBudget(bb, args);
-  return bb.sdk.threads.spawn({ ...quietHelper(args), permissionMode:"full",
-    executionInputSources:{ ...args.executionInputSources, permissionMode:"explicit" } });
+  const full = { ...quietHelper(args), permissionMode:"full" as const,
+    executionInputSources:{ ...args.executionInputSources, permissionMode:"explicit" as const } };
+  // With the VK thread keys the spawn is idempotent: a lost answer repeated returns the same thread (thread-keys.ts).
+  return spawnKeyed(bb, full, () => bb.sdk.threads.spawn(full)) as ReturnType<BbPluginApi["sdk"]["threads"]["spawn"]>;
 }
 
 type ChildBudgetLookup = (runId: string) => RunBudget | null;
