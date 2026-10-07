@@ -14,6 +14,7 @@ import packageJson from "../package.json";
 import { IllegalTransitionError, isLegalMove } from "./state-machine";
 import { recordMemoryAccepted } from "@lane-pilot/memory-core";
 import { workflowMigrations } from "./workflow/journal";
+import { draftMigrations } from "./workflow/draft-store";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -285,6 +286,8 @@ export const migrations = [
   `CREATE INDEX lane_pilot_memory_scope_status ON lane_pilot_memory(project_id,personal_bot,audience,status)`,
   // W2: the workflow engine's journal (run, step, join arrival, effect, append-only events).
   ...workflowMigrations,
+  // Workflow architect: drafts of workflows being built, with their version history.
+  ...draftMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
