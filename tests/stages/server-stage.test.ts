@@ -1862,6 +1862,34 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("K2: a plan critique that blocks stops the dispatch with the verdict message, a rework sends the plan back with the old reason", async () => {
+    const block=JSON.stringify({status:"block",summary:"The task deletes the data folder",findings:[{file:"TASK",line:1,severity:"critical",evidence:"objective: rm -rf the data folder before the migration",finding:"destroys data the owner must decide on"}],evidence:"read the contract"});
+    const stopped=await setup(block);
+    const result=JSON.parse(String(await stopped.harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Clean the folder",task},{threadId:pmThreadId,projectId})));
+    expect(result.state).toBe("blocked");
+    expect(String(result.reason)).toMatch(/^verdict_block:plan-critique: The task deletes the data folder \| TASK:1 \[critical\] destroys data the owner must decide on/);
+    expect(stopped.spawned.map((row)=>(row.pluginMetadata as Record<string,unknown>).stageId)).toEqual(["plan-critique"]);
+    expect(stageReceipt(stopped.db,task.id,"plan-critique")).toMatchObject({state:"blocked",result:{status:"block"}});
+    await stopped.harness.lifecycle.dispose();
+    const rework=JSON.stringify({status:"rework",summary:"Criterion is subjective",findings:[{file:"TASK",line:1,severity:"high",evidence:"acceptance: the note looks correct",finding:"not checkable"}],evidence:"read the contract"});
+    const sent=await setup(rework);
+    const back=JSON.parse(String(await sent.harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write the note",task},{threadId:pmThreadId,projectId})));
+    expect(back).toMatchObject({state:"blocked",reason:"plan_critique_blocked"});
+    expect(stageReceipt(sent.db,task.id,"plan-critique")).toMatchObject({state:"blocked",reason:"critique_changes_requested",result:{status:"rework"}});
+    await sent.harness.lifecycle.dispose();
+  });
+
+  it("K2: a specialist's new-format block stops the task with the verdict message, an old-format block keeps its reason", async () => {
+    const block=JSON.stringify({status:"block",summary:"Unsafe write path",findings:[{file:"~/.claude/settings.json",severity:"critical",evidence:"the task writes the user's own settings file",finding:"May overwrite user configuration",criterion:"Isolate the execution home"}],evidence:"read the plan"});
+    const {harness,db}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"specialist.enabled":true,"specialist.when":"high_risk"},block);
+    const highRiskTask={...task,id:"stage-task-critical-k2",risk:"critical" as const};
+    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Install the upstream integration",task:highRiskTask},{threadId:pmThreadId,projectId})));
+    expect(result.state).toBe("blocked");
+    expect(String(result.reason)).toMatch(/^verdict_block:specialist-review: Unsafe write path/);
+    expect(listStageReceipts(db,"stage-run",highRiskTask.id).find((row)=>row.stageId==="specialist-review")).toMatchObject({state:"blocked",result:{status:"block",decision:"block"}});
+    await harness.lifecycle.dispose();
+  });
+
   it("fails closed on malformed critique output and never spawns a writer", async () => {
     const { db, harness, spawned } = await setup("not JSON");
     const result = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
@@ -2155,8 +2183,8 @@ describe("stage → native writer → receipt", () => {
   const codeOn={"code_critique.enabled":true,"code_critique.provider":"critic","code_critique.model":"critic-model"};
   const finding='{"decision":"changes_requested","summary":"Missing invariant coverage","findings":[{"id":"f1","severity":"blocking","finding":"note.txt omits the required invariant","criterion":"invariants"}]}';
   const approved='{"decision":"approve","summary":"Candidate checked","findings":[]}';
-  function setupCode(snapshots:Array<Array<Record<string,string>>>, extra?:{outputs?:string[];repair?:string;idleWait?:string;holdEvents?:string[]}) {
-    return setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,codeOn,undefined,undefined,undefined,undefined,undefined,snapshots,false,0,undefined,undefined,undefined,undefined,undefined,undefined,extra?.idleWait,false,{},extra?.holdEvents??[],extra?.outputs,extra?.repair);
+  function setupCode(snapshots:Array<Array<Record<string,string>>>, extra?:{outputs?:string[];repair?:string;idleWait?:string;holdEvents?:string[];settings?:Record<string,unknown>}) {
+    return setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{...codeOn,...extra?.settings},undefined,undefined,undefined,undefined,undefined,snapshots,false,0,undefined,undefined,undefined,undefined,undefined,undefined,extra?.idleWait,false,{},extra?.holdEvents??[],extra?.outputs,extra?.repair);
   }
 
   it("a queued task waiting for its dependency does not hold an earlier-sent task of its area (no deadlock)",async()=>{
@@ -2243,6 +2271,93 @@ describe("stage → native writer → receipt", () => {
     expect(recritique.length).toBeGreaterThanOrEqual(2);
     expect(spawned.some((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toBe(true);
     expect(recritique.map((row)=>String(row.prompt)).join("\n")).toContain("WRITER DISPUTES");
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  const verdictFinding=(over:Record<string,unknown>={})=>({file:"note.txt",line:1,severity:"high",evidence:"note.txt holds only the word reviewed, no invariant line",finding:"note.txt omits the required invariant",criterion:"invariants",...over});
+  const verdictAnswer=(status:string,findings:unknown[])=>JSON.stringify({status,summary:"Reviewed the candidate",findings,evidence:"read note.txt and the test -f output"});
+
+  const stageIds=(spawned:Array<Record<string,unknown>>)=>spawned.map((row)=>String((row.pluginMetadata as Record<string,unknown>).stageId ?? (row.pluginMetadata as Record<string,unknown>).role)).filter((id)=>!backgroundStages.has(id));
+
+  it("K2 quality_mode quick: no plan critique and no code critique, though the project enabled the code critic",async()=>{
+    const {db,harness,spawned}=await setupCode([[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],{settings:{quality_mode:"quick"}});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    expect(stageIds(spawned)).toEqual(["writer"]);
+    expect(stageReceipt(db,task.id,"plan-critique")).toMatchObject({state:"skipped",reason:"quality_mode_quick"});
+    expect(stageReceipt(db,task.id,"code-critique")).toBeUndefined();
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("K2 quality_mode full: plan critique on a low-risk task below the policy threshold, and the code critic though the project left it off",async()=>{
+    const {db,harness,spawned}=await setupCode([[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],
+      {settings:{quality_mode:"full","plan_critique.min_score":7,"plan_critique.min_write_tasks":3,"code_critique.enabled":false}});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    expect(stageIds(spawned)).toEqual(["plan-critique","writer","code-critique"]);
+    expect(stageReceipt(db,task.id,"plan-critique")).toMatchObject({state:"passed",result:{qualityMode:"full"}});
+    expect(stageReceipt(db,task.id,"code-critique")?.state).toBe("passed");
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("K2 quality_mode standard (the default) keeps today's behaviour: policy decides the plan critique, the code critic stays off",async()=>{
+    const {db,harness,spawned}=await setupCode([[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],
+      {settings:{"plan_critique.min_score":7,"plan_critique.min_write_tasks":3,"code_critique.enabled":false}});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    expect(stageIds(spawned)).toEqual(["writer"]);
+    expect(stageReceipt(db,task.id,"plan-critique")).toMatchObject({state:"skipped",reason:"below_critique_threshold"});
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("K2 the task's own quality_mode wins over the project's",async()=>{
+    const {harness,spawned}=await setupCode([[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],{settings:{quality_mode:"full"}});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task:{...task,quality_mode:"quick"}},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    expect(stageIds(spawned)).toEqual(["writer"]);
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("K2 quality_mode full: an accepted task with qa_cases is not done for the PM until its browser check passed",async()=>{
+    const {harness}=await setupCode([[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],{settings:{quality_mode:"full"}});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task:{...task,qa_cases:["note.txt page opens at 375"]}},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    expect(waited.next).toEqual([{taskId:task.id,state:"accepted",next:expect.stringMatching(/quality_mode=full.*lane_pilot_browser_qa.*note\.txt page opens at 375/)}]);
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("K2: a code critique that blocks stops the task with the verdict message and starts no repair writer",async()=>{
+    const {db,harness,spawned}=await setupCode([
+      [],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+    ],{outputs:[verdictAnswer("block",[verdictFinding({severity:"critical",finding:"note.txt writes the owner's token"})])]});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("blocked");
+    expect(String(waited.reason)).toMatch(/^verdict_block:code-critique: Reviewed the candidate \| note\.txt:1 \[critical\] note\.txt writes the owner's token/);
+    expect(String(waited.reason)).toContain("stopped, not redone");
+    expect(String(JSON.stringify(waited.next))).toContain("stopped by a block verdict");
+    expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound)).toHaveLength(0);
+    expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique")).toHaveLength(1);
+    const receipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique");
+    expect(receipt?.state).toBe("blocked");
+    expect(receipt?.result).toMatchObject({status:"block",decision:"changes_requested",verdict:{status:"block"}});
+    await harness.lifecycle.dispose();
+  },20_000);
+
+  it("K2: a code critique that asks for rework in the new format takes the repair path and then passes",async()=>{
+    const {db,harness,spawned}=await setupCode([
+      [],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
+    ],{outputs:[verdictAnswer("rework",[verdictFinding()]),verdictAnswer("pass",[])]});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
+    expect(waited.state).toBe("accepted");
+    expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
+    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")?.result).toMatchObject({status:"pass"});
     await harness.lifecycle.dispose();
   },20_000);
 

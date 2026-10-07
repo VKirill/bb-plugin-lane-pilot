@@ -263,7 +263,7 @@ const SECTIONED_SETTING_KEYS = new Set([
   "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.search_engine",
   "memory.personal_bot", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget",
   "specialist.enabled", "specialist.when",
-  "onboarding.depth", "ops.max_tasks", "adoc.040", "adoc.041", "adoc.042", "workspace.provider", "sandbox.backend", "verification.sandbox_unsafe", "secrets.allow",
+  "onboarding.depth", "ops.max_tasks", "adoc.040", "adoc.041", "adoc.042", "workspace.provider", "sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "quality_mode",
   "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
   "browser_qa.approve", "browser_qa.reasoning_effort",
 ]);
@@ -1829,6 +1829,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             {!isGlobal && projectId ? <WriterReuse projectId={projectId} /> : null}
             {!isGlobal && projectId ? <CriticValue projectId={projectId} /> : null}
             {!isGlobal && projectId ? <AcceptanceStats projectId={projectId} /> : null}
+            {(() => { const row = catalogRow("quality_mode"); return row ? <SettingField row={row} value={displayedValue("quality_mode")} disabled={false}
+              onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("quality_mode", next)} /> : null; })()}
             <CheckGroup testId="plan-critique-settings" title={t("stagePlanCritique")} help={t("planCritiqueHelp")} toggle={(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               <div className="max-w-xl">{modelPicker(planCritiquePickerValue, (next) => { void savePlanCritiqueSelection(next); })}</div>
               <AdvancedRows show={advanced}>

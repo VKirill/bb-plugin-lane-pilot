@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "./model-json";
 import { CODE_CRITIC_METHOD } from "./role-method";
+import { VERDICT_STATUSES, isVerdictShape, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "./verdict";
+import type { Verdict, VerdictFinding, VerdictStatus } from "./verdict";
 
 export const CODE_CRITIQUE_STAGE = "code-critique" as const;
 export const CODE_CRITIQUE_MAX_ROUNDS = 3;
@@ -32,7 +34,16 @@ export const codeCritiqueResultSchema = z.object({
   : value);
 
 export type CodeCritiqueFinding = z.infer<typeof codeCritiqueFindingSchema>;
-export type CodeCritiqueResult = z.infer<typeof codeCritiqueResultSchema>;
+/**
+ * What the stage keeps of a code critique: the old shape (decision, findings by weight; the repair ledger and stats read it)
+ * and the unified verdict beside it. A `block` is a changes_requested for stats and replays, but it gets no repair round.
+ */
+export type CodeCritiqueResult = z.infer<typeof codeCritiqueResultSchema> & {
+  status?: VerdictStatus;
+  verdict?: Verdict;
+  /** Critical or high findings read as medium because they named no file, no line or no quoted evidence. */
+  demoted?: number;
+};
 
 export type CritiqueFilePacket = {
   path: string;
@@ -332,9 +343,9 @@ export function codeCritiquePrompt(input: {
     "If you have the gitnexus tools and the project has a `.gitnexus/` index, use `query`/`context`/`impact` to check claims about callers and blast radius; grep for literals.",
     "Judge only in-scope owns_paths against the task contract, host-read file bytes/diff, writer reply hash, and verification stdout/stderr. Exit codes alone are not sufficient.",
     ...CODE_CRITIC_METHOD,
-    "Answer with one JSON object and nothing else: no text before or after it. Keys: decision (\"approve\" or \"changes_requested\"), summary (string, at most 2000 characters), findings (at most 30 objects). Finding keys: id (at most 80 characters), severity (\"info\", \"warning\" or \"blocking\"), finding (at most 1000 characters), criterion (at most 500); optional path, line (positive integer), evidence (at most 2000), impact, trigger, verificationExpectation (each at most 500). Any other key makes the answer unreadable and the attempt is blocked.",
-    "Use changes_requested only when at least one finding is blocking: a concrete unmet requirement, an ignored rule, changed behavior that no test or acceptance line covers, or a contradiction between report, tests and diff. Info and warning findings go with decision approve; changes_requested without a blocking finding is read as approve. Build each id from the file and the criterion in kebab case (for example src/a.ts:rate-limit-missing) so the same problem gets the same id when the code is reviewed again.",
-    "Cosmetic preferences are severity info and must not be blocking. Ambiguous issues stay uncertain; do not invent rewrites.",
+    "Answer with one JSON object and nothing else: no text before or after it. Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects), evidence (string, what you examined and how, at most 4000 characters). Finding keys: file, line (positive integer), severity (\"critical\", \"high\", \"medium\", \"low\" or \"info\"), evidence (at most 2000 characters: the quoted code or output line); optional id (at most 80 characters), finding (at most 1000: what is wrong), criterion (at most 500: the acceptance line or rule), dimension (at most 80), impact, trigger, verificationExpectation (each at most 500). Any other key makes the answer unreadable and the attempt is blocked.",
+    "status follows the thresholds above. block: the task stops, with no repair round and no redo (one critical finding, or more than 5 high). rework: the writer fixes the findings in its own thread (1 to 5 high, no critical). pass: no critical and no high; medium, low and info findings go with pass. The host reads a critical or high finding without a file, a line and quoted evidence as medium, a rework with no high finding as a pass, and a block below the threshold as a rework. Build each id from the file and the criterion in kebab case (for example src/a.ts:rate-limit-missing) so the same problem gets the same id when the code is reviewed again.",
+    "Cosmetic preferences are severity info and must not be high. Ambiguous issues stay uncertain; do not invent rewrites.",
     "TASK CONTRACT:", JSON.stringify(input.task),
     "CANDIDATE EVIDENCE:", JSON.stringify({
       artifactRevisionSha256: input.evidence.artifactRevisionSha256,
@@ -352,8 +363,37 @@ export function codeCritiquePrompt(input: {
   ].join("\n\n");
 }
 
+const findingId = (row: VerdictFinding): string => row.id
+  ?? `${row.file || "finding"}:${(row.criterion ?? row.dimension ?? row.finding ?? row.evidence).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "issue"}`;
+
+const fromVerdictFinding = (row: VerdictFinding): CodeCritiqueFinding => ({
+  id: findingId(row),
+  severity: verdictSeverityToLegacy(row.severity),
+  finding: row.finding ?? row.evidence.slice(0, 1000),
+  criterion: row.criterion ?? row.dimension ?? "code review",
+  ...(row.file && row.file !== "TASK" && row.file !== "PLAN" ? { path: row.file } : {}),
+  ...(row.line ? { line: row.line } : {}),
+  evidence: row.evidence,
+  ...(row.impact ? { impact: row.impact } : {}),
+  ...(row.trigger ? { trigger: row.trigger } : {}),
+  ...(row.verificationExpectation ? { verificationExpectation: row.verificationExpectation } : {}),
+});
+
+/** The new answer (`status`) or the old one (`decision`): both give a result with a status; the old one maps approve to pass and changes_requested to rework. */
 export function parseCodeCritique(output: string): CodeCritiqueResult {
-  return codeCritiqueResultSchema.parse(extractModelJson(output));
+  const raw = extractModelJson(output);
+  if (isVerdictShape(raw)) {
+    const { verdict, demoted } = settleVerdict(verdictSchema.parse(withoutDecision(raw)), "code");
+    return {
+      decision: verdict.status === "pass" ? "approve" : "changes_requested",
+      summary: verdictSummary(verdict),
+      findings: verdict.findings.map(fromVerdictFinding),
+      status: verdict.status, verdict, ...(demoted ? { demoted } : {}),
+    };
+  }
+  const legacy = codeCritiqueResultSchema.parse(raw);
+  const status: VerdictStatus = legacy.decision === "approve" ? "pass" : "rework";
+  return { ...legacy, status, verdict: legacyOutputToVerdict({ status, summary: legacy.summary, findings: legacy.findings }) };
 }
 
 export function actionableFindings(result: CodeCritiqueResult): CodeCritiqueFinding[] {
@@ -371,6 +411,8 @@ export function shouldRequestRepair(input: {
 }): boolean {
   if (!input.settings.enabled || input.settings.mode !== "gate" || !input.settings.autoFix) return false;
   if (input.result.decision !== "changes_requested") return false;
+  // A block stops the task: another turn of the same writer would not fix what the critic found.
+  if (input.result.status === "block") return false;
   if (actionableFindings(input.result).length === 0) return false;
   return input.round < input.settings.maxRounds;
 }
@@ -434,7 +476,11 @@ export function critiqueFromStageResult(result: unknown): CodeCritiqueResult | u
     summary: (result as { summary?: unknown }).summary,
     findings: (result as { findings?: unknown }).findings ?? [],
   });
-  return parsed.success ? parsed.data : undefined;
+  if (!parsed.success) return undefined;
+  const stored = (result as { status?: unknown }).status;
+  const status: VerdictStatus = parsed.data.decision === "approve" ? "pass"
+    : (VERDICT_STATUSES as readonly unknown[]).includes(stored) && stored !== "pass" ? stored as VerdictStatus : "rework";
+  return { ...parsed.data, status };
 }
 
 export function findingsHash(findings: readonly CodeCritiqueFinding[]): string {

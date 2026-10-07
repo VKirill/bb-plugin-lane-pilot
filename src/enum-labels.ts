@@ -10,6 +10,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "ui.language": { en: "english", ru: "russian" },
   "plan_critique.mode": { advisory: "enumCritiqueAdvisory", gate: "enumCritiqueGate" },
   "code_critique.mode": { advisory: "enumCritiqueAdvisory", gate: "enumCritiqueGate" },
+  "quality_mode": { quick: "enumQualityQuick", standard: "enumQualityStandard", full: "enumQualityFull" },
   "specialist.when": { high_risk: "enumSpecialistHighRisk", always: "enumSpecialistAlways" },
   "onboarding.depth": { fast: "enumOnboardFast", deep: "enumOnboardDeep" },
   "memory.audience": { owner: "enumMemoryOwner", subagent: "enumMemorySubagent", export: "enumMemoryExport" },

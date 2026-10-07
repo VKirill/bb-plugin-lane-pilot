@@ -7,6 +7,7 @@ import type { HelperPolicySnapshot } from "../../helper-context";
 import { writerExecutionSelection } from "../../jev-reasoning";
 import { actionableFindings, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../stages/code-critique";
 import type { WriterIdentity } from "../../stages/code-critique";
+import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../../stages/quality-mode";
 import { runCodeCritique } from "../critique-runs";
 import { fullAccessSpawn } from "../pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
@@ -237,7 +238,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       let lastArtifact = storedLedger?.artifactRevisionSha256 ?? "";
       let approvedArtifact = "";
       let frozenPolicy = storedLedger?.policy;
-      const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId)));
+      const projectSettings = loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
+      // quality_mode (task, else project, else standard) switches the code critic off (quick) or on (full).
+      const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(applyQualityMode(projectSettings,resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING])));
       const baselineHashes = Object.fromEntries(input.dirtBefore.map((row) => [row.path, row.sha256 || null]));
       const captureEvidence = async () => {
         const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);

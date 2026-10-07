@@ -1,5 +1,13 @@
 import { expect, it } from "vitest";
-import { liveFolderLockNote, nextStep } from "../src/failure-class";
+import { FREE_CLASSES, failureClass, liveFolderLockNote, nextStep } from "../src/failure-class";
+
+it("a critic's block verdict is no free redo: its own class, and a message that says to change the approach", () => {
+  const reason = "verdict_block:code-critique: The handler is a stub | src/a.ts:12 [critical] login only logs | stopped, not redone";
+  expect(failureClass("blocked", reason)).toBe("contract");
+  expect(FREE_CLASSES.has(failureClass("blocked", reason))).toBe(false);
+  expect(nextStep("blocked", reason)).toMatch(/^stopped by a block verdict.*do not send the same task again/);
+  expect(nextStep("blocked", "code_critique_blocked")).toMatch(/fix the contract/);
+});
 
 it("names the PM's next step by failure class", () => {
   expect(nextStep("running", null)).toMatch(/^wait/);

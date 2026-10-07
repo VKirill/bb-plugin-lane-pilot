@@ -7,29 +7,50 @@ import { redactKnownDeep } from "../../redact";
 import { stringAt } from "../values";
 import { outputText } from "../writer-task";
 import { FRONTEND_VERIFY_METHOD } from "../../stages/role-method";
+import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "../../stages/verdict";
+import type { VerdictFinding, VerdictStatus } from "../../stages/verdict";
 import type { ServerCore } from "../core";
 
 export type QaVerdict = {
   verdict: "passed" | "failed" | "blocked";
+  /** The same outcome as the unified verdict: passed is pass, failed is rework, blocked is block. */
+  status: VerdictStatus;
   summary: string;
   cases: Array<{ case: string; viewport: string; result: "passed" | "failed" | "blocked"; note?: string }>;
+  findings?: VerdictFinding[];
+  evidence?: string;
 };
 
-/** The last fenced JSON block with a verdict; anything else is a blocked check, never a pass. */
+/**
+ * The last fenced JSON block with a verdict; anything else is a blocked check, never a pass. The answer is the unified
+ * verdict (`status` pass, rework or block, with findings and evidence) plus the cases; the old `verdict` (passed, failed,
+ * blocked) is still read.
+ */
 export function parseQaVerdict(text: string): QaVerdict {
   const blocks = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)\n```/g)].map((match) => match[1]!).reverse();
   for (const block of blocks) {
     try {
-      const parsed = JSON.parse(block) as Partial<QaVerdict>;
-      if (parsed.verdict !== "passed" && parsed.verdict !== "failed" && parsed.verdict !== "blocked") continue;
-      const cases = Array.isArray(parsed.cases) ? parsed.cases.filter((row) => row && typeof row.case === "string") : [];
+      const parsed = JSON.parse(block) as Partial<QaVerdict> & { status?: unknown };
+      const rawCases = (parsed as { cases?: unknown }).cases;
+      const cases = Array.isArray(rawCases) ? rawCases.filter((row): row is QaVerdict["cases"][number] => Boolean(row) && typeof row.case === "string") : [];
       // A pass needs every case passed on record; a bare «passed» proves nothing.
       const allPassed = cases.length > 0 && cases.every((row) => row.result === "passed");
+      if (parsed.status !== undefined) {
+        const { cases: _cases, ...rest } = parsed as Record<string, unknown>;
+        const unified = verdictSchema.safeParse(rest);
+        if (!unified.success) continue;
+        // A finding about a page names the page, not a line: the file is enough.
+        const { verdict: settled } = settleVerdict(unified.data, "specialist");
+        let verdict: QaVerdict["verdict"] = settled.status === "pass" ? "passed" : settled.status === "rework" ? "failed" : "blocked";
+        if (verdict === "passed" && !allPassed) verdict = "blocked";
+        return { verdict, status: qaStateToStatus(verdict), summary: verdictSummary(settled), cases, findings: settled.findings, evidence: settled.evidence };
+      }
+      if (parsed.verdict !== "passed" && parsed.verdict !== "failed" && parsed.verdict !== "blocked") continue;
       const verdict = parsed.verdict === "passed" && !allPassed ? "blocked" : parsed.verdict;
-      return { verdict, summary: typeof parsed.summary === "string" ? parsed.summary : "", cases };
+      return { verdict, status: qaStateToStatus(verdict), summary: typeof parsed.summary === "string" ? parsed.summary : "", cases };
     } catch { continue; }
   }
-  return { verdict: "blocked", summary: "browser_qa_thread_returned_no_verdict", cases: [] };
+  return { verdict: "blocked", status: "block", summary: "browser_qa_thread_returned_no_verdict", cases: [] };
 }
 
 /**
@@ -78,9 +99,9 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
     "",
     "End with one fenced json block and nothing after it:",
     "```json",
-    '{"verdict":"passed|failed|blocked","summary":"one paragraph","cases":[{"case":"…","viewport":"375","result":"passed|failed|blocked","note":"what you saw"}]}',
+    '{"status":"pass|rework|block","summary":"one paragraph","findings":[{"file":"<the page path, or the source file when you can name it>","severity":"critical|high|medium|low|info","evidence":"what you saw: the element, the request, the text"}],"evidence":"what you examined: viewports, the layers you asserted","cases":[{"case":"…","viewport":"375","result":"passed|failed|blocked","note":"what you saw"}]}',
     "```",
-    "verdict is passed only when every case passed on every viewport.",
+    "status is pass only when every case passed on every viewport; rework when a case failed; block when you could not check (no access, no address for the page, a layer you could not observe). A failed case is a finding with severity high or critical, and a pass carries none.",
   ].join("\n");
 }
 
@@ -136,7 +157,7 @@ export async function awaitQaVerdict(ctx: Pick<ServerCore, "bb" | "isDisposed">,
       const raw = (await bb.sdk.threads.output({ threadId })).output;
       return { ...redactKnownDeep(parseQaVerdict(typeof raw === "string" ? raw : outputText(raw))), threadId, link };
     }
-    if (observed.kind === "product_failure") return { verdict: "blocked", summary: `browser_qa_thread_failed:${observed.via}:${observed.detail}`, cases: [], threadId, link };
+    if (observed.kind === "product_failure") return { verdict: "blocked", status: "block", summary: `browser_qa_thread_failed:${observed.via}:${observed.detail}`, cases: [], threadId, link };
   }
   // Past the deadline (also when adopted after a long outage): a finished thread still has its verdict.
   const last = await observeStageChild(bb, threadId, 1);
@@ -145,5 +166,5 @@ export async function awaitQaVerdict(ctx: Pick<ServerCore, "bb" | "isDisposed">,
     return { ...redactKnownDeep(parseQaVerdict(typeof raw === "string" ? raw : outputText(raw))), threadId, link };
   }
   await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-  return { verdict: "blocked", summary: `browser_qa_thread_timeout_${timeoutSec}s`, cases: [], threadId, link };
+  return { verdict: "blocked", status: "block", summary: `browser_qa_thread_timeout_${timeoutSec}s`, cases: [], threadId, link };
 }

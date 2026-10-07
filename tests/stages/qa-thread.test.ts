@@ -14,6 +14,36 @@ describe("browser check thread", () => {
     expect(parseQaVerdict("no json here")).toMatchObject({ verdict: "blocked", summary: "browser_qa_thread_returned_no_verdict" });
   });
 
+  it("K2: the old verdict maps onto the unified status, and the new answer is read with its findings and evidence", () => {
+    const fenced = (json: unknown) => `Done.\n\`\`\`json\n${JSON.stringify(json)}\n\`\`\``;
+    const cases = (result: string) => [{ case: "wizard", viewport: "375", result }];
+    expect(parseQaVerdict(fenced({ verdict: "passed", summary: "ok", cases: cases("passed") }))).toMatchObject({ verdict: "passed", status: "pass" });
+    expect(parseQaVerdict(fenced({ verdict: "failed", summary: "x", cases: cases("failed") }))).toMatchObject({ verdict: "failed", status: "rework" });
+    expect(parseQaVerdict("no json here")).toMatchObject({ verdict: "blocked", status: "block" });
+    const pass = parseQaVerdict(fenced({ status: "pass", summary: "all green", findings: [], evidence: "375 and 1280 px, three layers per case", cases: cases("passed") }));
+    expect(pass).toMatchObject({ verdict: "passed", status: "pass", evidence: "375 and 1280 px, three layers per case" });
+    const fail = parseQaVerdict(fenced({ status: "rework", summary: "button hidden", cases: cases("failed"), evidence: "snapshot at 375",
+      findings: [{ file: "/wizard", severity: "high", evidence: "the Next button is not in the snapshot at 375 px", finding: "no entry point" }] }));
+    expect(fail).toMatchObject({ verdict: "failed", status: "rework" });
+    expect(fail.findings?.[0]).toMatchObject({ file: "/wizard", severity: "high" });
+    expect(parseQaVerdict(fenced({ status: "block", summary: "no VPN address", evidence: "tried", findings: [], cases: cases("blocked") }))).toMatchObject({ verdict: "blocked", status: "block" });
+  });
+
+  it("K2: a new-format pass is still no pass without every case passed, or with a serious finding", () => {
+    const fenced = (json: unknown) => `\`\`\`json\n${JSON.stringify(json)}\n\`\`\``;
+    expect(parseQaVerdict(fenced({ status: "pass", summary: "s", evidence: "e", findings: [], cases: [] })).verdict).toBe("blocked");
+    expect(parseQaVerdict(fenced({ status: "pass", summary: "s", evidence: "e", findings: [], cases: [{ case: "a", viewport: "375", result: "passed" }, { case: "b", viewport: "375", result: "failed" }] })).verdict).toBe("blocked");
+    const serious = parseQaVerdict(fenced({ status: "pass", summary: "s", evidence: "e", cases: [{ case: "a", viewport: "375", result: "passed" }],
+      findings: [{ file: "/cart", severity: "high", evidence: "the Pay button sends no POST request" }] }));
+    expect(serious).toMatchObject({ verdict: "failed", status: "rework" });
+  });
+
+  it("K2: the prompt asks for the unified answer and says when each status applies", () => {
+    const prompt = qaThreadPrompt({ url: "http://localhost:3000/", cases: ["Loads"], viewports: "375", envClass: "local", authorized: false, qaHostId: "h" });
+    expect(prompt).toContain('"status":"pass|rework|block"');
+    expect(prompt).toMatch(/pass only when every case passed on every viewport; rework when a case failed; block when you could not check/);
+  });
+
   it("tells the agent to drive the BB browser on the QA machine and says a local target is unreachable without a VPN address", () => {
     const prompt = qaThreadPrompt({ url: "http://localhost:3000/wizard", cases: ["Wizard has no captcha"], viewports: "375,1280", envClass: "local", authorized: false, qaHostId: "host_mini" });
     expect(prompt).toContain("bb browser-automation open --backend local --headless --machine host_mini");

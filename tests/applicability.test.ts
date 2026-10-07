@@ -43,7 +43,7 @@ function parseApplicabilityTable(): Array<{
 
 describe("adoc applicability catalog", () => {
   it.skipIf(NO_AGENCY_SETTINGS)("matches settings.json 1:1 on area+setting+location+category", () => {
-    expect(UI_CATALOG).toHaveLength(423);
+    expect(UI_CATALOG).toHaveLength(424);
     expect(SETTINGS!.settings).toHaveLength(355);
     const catalogKeys = UI_CATALOG.slice(0,355).map((row) => `${row.area}\0${row.setting}\0${row.location}\0${row.category}`);
     const settingKeys = SETTINGS!.settings.map((row) => `${row.area}\0${row.setting}\0${row.location}\0${row.category}`);
@@ -60,7 +60,7 @@ describe("adoc applicability catalog", () => {
       gap: summary.gap,
       excluded: summary.excluded,
     });
-    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(423);
+    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(424);
     expect(summary.blank).toBe(0);
     expect(summary.tuple_equal).toBe(true);
   });
@@ -96,7 +96,7 @@ describe("adoc applicability catalog", () => {
 
   it.skipIf(NO_AGENCY_SETTINGS)("documents the 355 source rows and native docs/onboarding additions with location and path:line", () => {
     const rows = parseApplicabilityTable();
-    expect(rows).toHaveLength(423);
+    expect(rows).toHaveLength(424);
     expect(rows.filter((row) => !PATH_LINE.test(row.evidence))).toEqual([]);
     for (const [index, row] of rows.slice(0,355).entries()) {
       expect(row.area).toBe(SETTINGS!.settings[index]!.area);
@@ -105,7 +105,7 @@ describe("adoc applicability catalog", () => {
       expect(row.category).toBe(SETTINGS!.settings[index]!.category);
       expect(row.decision.length).toBeGreaterThan(0);
     }
-    expect(rows.slice(355).map((row)=>row.setting)).toEqual(["docs.provider","docs.model","docs.reasoning_effort","docs.service_tier","onboarding.provider","onboarding.model","onboarding.reasoning_effort","onboarding.service_tier","onboarding.agent","onboarding.depth","sandbox.backend","helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins","helper.placement","code_critique.enabled","code_critique.mode","code_critique.provider","code_critique.model","code_critique.reasoning_effort","code_critique.service_tier","code_critique.agent","code_critique.auto_fix","code_critique.max_rounds","project_life.enabled","project_life.provider","project_life.model","project_life.reasoning_effort","project_life.service_tier","run.max_attempts","run.max_wall_minutes","run.max_tokens","run.max_children","council.product.provider","council.product.model","council.product.reasoning_effort","council.demand.provider","council.demand.model","council.demand.reasoning_effort","council.audience.provider","council.audience.model","council.audience.reasoning_effort","council.skeptic.provider","council.skeptic.model","council.skeptic.reasoning_effort","council.growth.provider","council.growth.model","council.growth.reasoning_effort","council.ux.provider","council.ux.model","council.ux.reasoning_effort","council.chair.provider","council.chair.model","council.chair.reasoning_effort","council.judge","council.max_rounds","writer.silence_nudge_min","bookkeeping.paths","integration.gate_command","integration.gate_when","integration.gate_every","verification.sandbox_unsafe","workspace.provider","usage.skip_percent","tasks.mirror","secrets.allow"]);
+    expect(rows.slice(355).map((row)=>row.setting)).toEqual(["docs.provider","docs.model","docs.reasoning_effort","docs.service_tier","onboarding.provider","onboarding.model","onboarding.reasoning_effort","onboarding.service_tier","onboarding.agent","onboarding.depth","sandbox.backend","helper.context_mode","helper.skills","helper.mcp_servers","helper.bb_plugins","helper.native_plugins","helper.placement","code_critique.enabled","code_critique.mode","code_critique.provider","code_critique.model","code_critique.reasoning_effort","code_critique.service_tier","code_critique.agent","code_critique.auto_fix","code_critique.max_rounds","project_life.enabled","project_life.provider","project_life.model","project_life.reasoning_effort","project_life.service_tier","run.max_attempts","run.max_wall_minutes","run.max_tokens","run.max_children","council.product.provider","council.product.model","council.product.reasoning_effort","council.demand.provider","council.demand.model","council.demand.reasoning_effort","council.audience.provider","council.audience.model","council.audience.reasoning_effort","council.skeptic.provider","council.skeptic.model","council.skeptic.reasoning_effort","council.growth.provider","council.growth.model","council.growth.reasoning_effort","council.ux.provider","council.ux.model","council.ux.reasoning_effort","council.chair.provider","council.chair.model","council.chair.reasoning_effort","council.judge","council.max_rounds","writer.silence_nudge_min","bookkeeping.paths","integration.gate_command","integration.gate_when","integration.gate_every","verification.sandbox_unsafe","workspace.provider","usage.skip_percent","tasks.mirror","secrets.allow","quality_mode"]);
     const sums = { editable: 0, readonly: 0, gap: 0, excluded: 0 };
     for (const row of rows) sums[row.decision as keyof typeof sums] += 1;
     expect(sums).toEqual({
@@ -186,7 +186,7 @@ describe("adoc applicability catalog", () => {
   });
 
   it("keeps all former UI-visible fields on screen", () => {
-    expect(VISIBLE_CATALOG).toHaveLength(293);
+    expect(VISIBLE_CATALOG).toHaveLength(294);
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
     expect(UI_CATALOG.filter((row) => row.id >= "s355" && row.setting.startsWith("docs.")).every((row) => row.uiStatus === "editable" && row.channel === "OWN")).toBe(true);
     expect(UI_CATALOG.filter((row)=>["night_review.enabled","night_review.provider","night_review.model","night_review.agent"].includes(row.storageKey)&&row.id!=="s290").every((row)=>row.uiStatus==="editable"&&row.channel==="OWN")).toBe(true);

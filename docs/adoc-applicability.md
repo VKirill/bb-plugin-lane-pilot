@@ -15,11 +15,11 @@ language: ru
 
 | Решение | Число |
 |---|---:|
-| editable | 202 |
+| editable | 203 |
 | read-only | 91 |
 | gap | 0 |
 | excluded | 130 |
-| **сумма** | **423** |
+| **сумма** | **424** |
 
 Из бывших 88 read-only: (a) канал найден и поле стало editable — 0; (b) неприменимо в BB — 50; (c) gap без контракта upstream/SDK — 33.
 
@@ -448,3 +448,4 @@ language: ru
 | 420 | Lane Pilot provider usage | usage.skip_percent | src/server/provider-usage.ts:25 | user | OWN | editable | A writer provider/model whose usage window (BB Provider usage sources) is at or above this share is skipped until its reset, and the next model of the writer chain takes the task (`src/server/provider-usage.ts:25`) |
 | 421 | Lane Pilot BB Tasks mirror | tasks.mirror | src/server/tasks-mirror.ts:21 | user | OWN | editable | Copies this project's Lane Pilot tasks into the BB Tasks project linked to it: status, the writer's thread and a comment at each milestone; Lane Pilot's database stays the truth. On by default; does nothing without a linked Tasks project (`src/server/tasks-mirror.ts:21`) |
 | 422 | Lane Pilot Env Catalog | secrets.allow | src/server/secrets.ts | user | OWN | editable | Least privilege: only the Env Catalog names listed here may be handed to a task's checks (declared in verification[].secrets), a browser check's login (login: NAME) or a deploy errand (accounts); empty means any Env Catalog name the task itself names, values never reach the writer. Only the owner can change it (`src/server/secrets.ts:9; src/server/lint-task.ts:50`) |
+| 423 | Lane Pilot quality mode | quality_mode | src/stages/quality-mode.ts | user | OWN | editable | Which review stages a task goes through: quick has no plan critique and no code critic; standard is the behaviour before this setting existed (the plan critique by its risk policy, the code critic when it is on); full runs the plan critique and the code critic on every task and requires a browser check for a task that carries qa_cases. A task contract may set its own quality_mode, which wins (`src/stages/quality-mode.ts:1; src/server/critique-runs.ts`) |

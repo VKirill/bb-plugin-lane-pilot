@@ -120,6 +120,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "usage.skip_percent": { label: "field_s420", help: "reason_s420", unit: "fieldUnitPercent" },
   "tasks.mirror": { label: "field_s421", help: "reason_s421" },
   "secrets.allow": { label: "field_s422", help: "reason_s422" },
+  "quality_mode": { label: "field_s423", help: "reason_s423" },
   "run.gate": { label: "settingRunGate", help: "settingRunGateHelp" },
 };
 

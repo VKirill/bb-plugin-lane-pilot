@@ -851,6 +851,8 @@ export const fieldEn = {
   reason_s421: "Each Lane Pilot task also appears in the BB Tasks project linked to this BB project, with its status, writer thread and a comment at each milestone. Needs the Tasks plugin and a linked tracker project; Lane Pilot never reads it back. On by default; nothing happens without a linked Tasks project",
   field_s422: "Secrets checks may use",
   reason_s422: "Empty: a task's checks, a browser check's login and a deploy errand may receive any Env Catalog entry they name; values go only into the check sandbox and are masked everywhere. List names here to restrict it.",
+  field_s423: "Review depth",
+  reason_s423: "quick: no plan critique and no code critic. standard: as before (the plan critique by its risk policy, the code critic only if it is on). full: plan critique and code critic on every task, and a browser check for a task with qa_cases. A task can set its own mode.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1706,4 +1708,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s421: "Каждая задача Lane Pilot появляется и в проекте BB Tasks, привязанном к этому проекту BB: статус, тред писателя и комментарий на каждой вехе. Нужны плагин Tasks и привязанный проект трекера; Lane Pilot ничего не читает обратно. По умолчанию включено; без привязанного проекта Tasks ничего не происходит",
   field_s422: "Секреты, доступные проверкам",
   reason_s422: "Пусто: проверки задачи, логин проверки в браузере и поручение деплоя получают любую запись Env Catalog, которую сами назвали; значения попадают только в песочницу проверки и везде маскируются. Перечислите имена, чтобы ограничить.",
+  field_s423: "Глубина проверки",
+  reason_s423: "quick: без проверки плана и без критика кода. standard: как раньше (проверка плана по политике риска, критик кода только если он включён). full: проверка плана и критик кода на каждой задаче и проверка в браузере для задачи с кейсами QA. Задача может задать свой режим.",
 };

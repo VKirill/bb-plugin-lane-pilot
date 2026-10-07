@@ -8,6 +8,7 @@ import { classifyCliOutcome } from "../../cli-outcome";
 import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../constants";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
+import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode } from "../../stages/quality-mode";
 import { createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
 import { sha256 } from "../../stages/contract";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../failure-class";
@@ -398,6 +399,14 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         const nudged = await countRunNudges(bb.storage.kv, (listedRun?.attempts ?? []).map((row) => row.id));
         const next = [...latestByTask.values()].filter((attempt) => attempt.state !== "accepted")
           .map((attempt) => ({ taskId:attempt.task_id, state:attempt.state, next:`${nextStep(attempt.state, attempt.reason)}${folderLockNote(attempt)}` }));
+        // quality_mode=full: an accepted task that carries qa_cases still owes its browser check.
+        for (const attempt of latestByTask.values()) {
+          if (attempt.state !== "accepted") continue;
+          const contract = taskV2Schema.safeParse(getTask(db, attempt.task_id)?.contract);
+          if (!contract.success || !browserQaRequired(resolveQualityMode(contract.data, settings[QUALITY_MODE_SETTING]), contract.data)) continue;
+          if (listStageReceipts(db, args.runId, attempt.task_id).some((row) => row.stageId === "browser-qa" && row.state === "passed")) continue;
+          next.push({ taskId:attempt.task_id, state:"accepted", next:`quality_mode=full: run lane_pilot_browser_qa for this task with its qa_cases (${contract.data.qa_cases!.join("; ").slice(0, 600)}); the task is not done until the check passes` });
+        }
         return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), nudged, ...(reasons.length ? { reason:reasons.join("; ") } : {}),
           ...(next.length ? { next } : {}),
           ...(blockedBy.length ? { blockedBy } : {}) };
