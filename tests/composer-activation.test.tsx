@@ -4,6 +4,7 @@ import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "../i18n";
 import { setPendingNativeAgent } from "../src/ui/pending-native-agent";
+import { requestArchitectLaunch, takeArchitectLaunch } from "../src/ui/architect-launch";
 
 const hiddenData = vi.hoisted(() => ({ value: null as null | { token: string } }));
 const installStarts = vi.hoisted(() => [] as string[]);
@@ -174,6 +175,34 @@ describe("Enable Lane Pilot composer action", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(prepared).toEqual([]);
     slot.lifecycle.unmount();
+  });
+
+  it("prepares the Workflow architect when the Workflows tab asked for it, over the project's main agent, once", async () => {
+    requestArchitectLaunch("proj_a");
+    const slot = await mountComposer({
+      projectId: "proj_a",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "proj_a" },
+      context: { bindingStatus: "resolved", projects: [{ id: "proj_a", name: "Alpha" }], mainAgent: "copy-lead",
+        mainAgents: [{ id: "dev-orchestrator", description: "Development coordinator" }, { id: "copy-lead", description: "Night desk" }, { id: "workflow-architect", description: "Workflow architect" }] },
+    });
+    await waitFor(() => expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" }));
+    expect(prepared).toEqual(["workflow-architect"]);
+    // The request was taken: another composer of the project starts as it always did.
+    expect(takeArchitectLaunch("proj_a")).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("takes an architect request once, only for its project, and not after it lapsed", () => {
+    requestArchitectLaunch("proj_a", 1_000);
+    expect(takeArchitectLaunch("proj_b", 1_001)).toBeNull();
+    expect(takeArchitectLaunch(null, 1_001)).toBeNull();
+    expect(takeArchitectLaunch("proj_a", 1_002)).toBe("workflow-architect");
+    expect(takeArchitectLaunch("proj_a", 1_003)).toBeNull();
+    requestArchitectLaunch("proj_a", 1_000);
+    expect(takeArchitectLaunch("proj_a", 1_000 + 61_000)).toBeNull();
+    requestArchitectLaunch("proj_a", 1_000);
+    expect(takeArchitectLaunch("proj_a", 1_000 + 30_000)).toBe("workflow-architect");
   });
 
   it("enables a section session even when the parent project has no folder binding", async () => {

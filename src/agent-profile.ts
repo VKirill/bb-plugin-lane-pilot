@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import bundledAgents from "./bundled-agents.json";
 import { isCliLaneAgentPrompt, laneSessionOverlayPrompt, overlaySessionTools } from "./native-agent-overlay";
+import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "./workflow-architect";
 
 export const MAIN_AGENT_ID = /^[a-z][a-z0-9-]{0,63}$/;
 export const MAIN_AGENT_PROFILE_IDS = [
@@ -11,6 +12,7 @@ export const MAIN_AGENT_PROFILE_IDS = [
   "design-lead",
   "project-onboarder",
   "tavily",
+  WORKFLOW_ARCHITECT_ID,
 ] as const;
 
 export const compiledMainAgentSchema = z.object({
@@ -98,6 +100,10 @@ export const LEGACY_STOCK_TEMPLATES: Readonly<Record<string, { description: stri
     description: "Lane Pilot project onboarder",
     prompt: "You are the Lane Pilot project onboarder. Write bounded onboarding and orientation material for this repository.",
   },
+  [WORKFLOW_ARCHITECT_ID]: {
+    description: "Lane Pilot workflow architect",
+    prompt: "You are the Lane Pilot workflow architect. Interview the owner about a repeatable process and build it as a tested workflow with the lane_pilot_workflow tools.",
+  },
   tavily: {
     description: "Lane Pilot Tavily research agent",
     prompt: "You are the Lane Pilot Tavily research agent. Search and summarize only what the task asks. Do not change runtime files unless the task says so.",
@@ -114,7 +120,20 @@ type BundledAgent = {
   provenance: { package: string; version: string; file: string; sha256: string; bytes: number };
 };
 
-const BUNDLED = bundledAgents as Record<string, BundledAgent>;
+/** Lane Pilot's own profiles: they are not in the Claude Lane Stack catalog the JSON is generated from. */
+const OWNED_PROFILES: Record<string, BundledAgent> = {
+  [WORKFLOW_ARCHITECT_ID]: {
+    displayName: WORKFLOW_ARCHITECT_NAME.en,
+    prompt: laneSessionOverlayPrompt(WORKFLOW_ARCHITECT_ID),
+    tools: [...WORKFLOW_ARCHITECT_TOOLS],
+    skills: [],
+    mcpServers: [],
+    omittedNativeFields: ["model", "effort", "permissionMode"],
+    provenance: { package: "bb-plugin-lane-pilot", version: "bb-session-1", file: "src/workflow-architect.ts", sha256: "", bytes: 0 },
+  },
+};
+
+const BUNDLED = { ...(bundledAgents as Record<string, BundledAgent>), ...OWNED_PROFILES };
 
 function bundledTemplate(id: string): { description: string; prompt: string } & ProfileResources | undefined {
   if (!Object.hasOwn(BUNDLED, id)) return undefined;

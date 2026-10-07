@@ -9,9 +9,9 @@ import {
 import bundledAgents from "../src/bundled-agents.json";
 
 describe("bundled BB session profiles", () => {
-  it("loads all six profiles under schema limits with resources and no model fields", () => {
+  it("loads all seven profiles under schema limits with resources and no model fields", () => {
     for (const id of MAIN_AGENT_PROFILE_IDS) {
-      const bundled = bundledAgents[id];
+      const bundled = (bundledAgents as unknown as Record<string, { displayName: string; skills: string[]; mcpServers: string[] } | undefined>)[id] ?? { displayName: "Workflow architect", skills: [], mcpServers: [] };
       const compiled = compileMainAgentProfile(id);
       expect(compiled.sourceVersion).toBe(PROFILE_SOURCE_VERSION);
       expect(compiled.description).toBe(bundled.displayName);
