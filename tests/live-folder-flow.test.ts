@@ -23,7 +23,11 @@ function temp(prefix: string): string {
   return root;
 }
 
+/** Paths the fake writer edited: its thread shows them as file changes, as a real writer thread does. */
+const touched: string[] = [];
+
 function write(root: string, path: string, content: string): void {
+  touched.push(path);
   mkdirSync(dirname(join(root, path)), { recursive: true });
   writeFileSync(join(root, path), content);
 }
@@ -83,7 +87,7 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
         void input;
         return undefined;
       },
-      events: { list: async () => events as never },
+      events: { list: async () => [...events, { type: "item/completed", data: { item: { type: "fileChange", changes: touched.map((path) => ({ path })) } } }] as never },
     }, providers: {
       list: async () => [{ id: "codex", available: true, capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "default", label: "Default" }] }] as never,
       models: async () => ({ models: [{ id: "codex-test", model: "codex-test",
@@ -166,6 +170,20 @@ describe("a plain folder without git, end to end", () => {
     const writerStage = listStageReceipts(env.db, runId, "live-task").find((row) => row.stageId === "writer-agent")!;
     expect(writerStage.result).toMatchObject({ status: "accepted", workspace: { mode: "live-folder" } });
     expect((writerStage.result as { produced?: string[] }).produced?.slice().sort()).toEqual(["hello.txt", "src/new.ts"]);
+    await env.harness.lifecycle.dispose();
+  });
+
+  it("does not blame the writer for a file the PM or the owner changed in the folder meanwhile (live drill 2026-10-07)", async () => {
+    const env = await setup((folder) => {
+      write(folder, "hello.txt", "hello\n");
+      // Someone else edits the shared folder during the attempt: no write() call, so the writer's thread never shows it.
+      writeFileSync(join(folder, "notes-by-pm.md"), "the PM was here\n");
+      return "Changed hello.txt";
+    });
+    await env.dispatch();
+    const attempt = await env.finished();
+    expect(attempt.state).toBe("accepted");
+    expect(readFileSync(join(env.folder, "notes-by-pm.md"), "utf8")).toBe("the PM was here\n");
     await env.harness.lifecycle.dispose();
   });
 

@@ -18,6 +18,7 @@ import { taskFamily } from "../../failure-class";
 import { bookkeepingSetting, filterOwnershipNoise } from "../../bookkeeping-paths";
 import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../verification/ownership";
 import { recordGateEvaluation } from "../stage-records";
+import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { stringAt } from "../values";
 import { outputText, writerPatchFromOutput } from "../writer-task";
 import type { ServerCore } from "../core";
@@ -210,6 +211,16 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     return stored;
   }
 
+  /** What the writer's own thread did (file edits, commands, tool calls), as one text; null when its events cannot be read. */
+  async function writerTrace(threadId:string):Promise<string|null> {
+    const listed = await listThreadEventsRaw(bb, { threadId, order:"desc", limit:"500" } as never).catch(() => null);
+    if (!listed || !listed.ok) return null;
+    return listed.events.map((event) => {
+      const item = (event as { data?: { item?: { type?: string } } })?.data?.item;
+      return item && ["fileChange", "commandExecution", "toolCall"].includes(String(item.type)) ? JSON.stringify(item) : "";
+    }).join("\n");
+  }
+
   async function validateWriterResult(input: {
     config:PrototypeConfig; projectId:string; runId:string; taskId:string; attempt:number; task:TaskV2; writerThreadId:string; attemptId:string; dirtBefore:import("../../cli-outcome").DirtSnapshot[];
   }): Promise<{ status:"accepted"|"empty_output"|"validation_failed"; reason?:string; output:string; produced:string[]; verification:VerifyResult[]; checkLogPath?:string; runV2?:ReturnType<typeof buildRunExecutionProfile>;
@@ -251,6 +262,19 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       };
     }
     let produced = attemptProduced(dirt.snapshots, comparable);
+    // A folder without git is shared with the PM and the owner: a file outside owns_paths that changed meanwhile is the
+    // writer's only when its own thread touched it (a file edit or a command naming it). The drill's PM edited the
+    // folder during a writer's attempt and the writer was blamed for it (live sandbox 2026-10-07, 0.1.178).
+    if (liveFolder) {
+      const trace = await writerTrace(input.writerThreadId);
+      if (trace !== null) {
+        const foreign = produced.filter((path) => !fileAllowedByOwns(path, input.task.owns_paths) && !trace.includes(path) && !trace.includes(path.split("/").pop() ?? path));
+        if (foreign.length) {
+          ctx.log(`Lane Pilot: ${foreign.join(", ")} changed in the live folder during ${input.taskId}, not by its writer; left out of its check`);
+          produced = produced.filter((path) => !foreign.includes(path));
+        }
+      }
+    }
     const diffKey = sha256(produced.map((path) => `${path}:${dirt.snapshots.find((row) => row.path === path)?.sha256 ?? ""}`).join("\n"));
     // The files this attempt's changes produced, for the next attempt of the task family: only these may later
     // leave a redispatch's dirt baseline.

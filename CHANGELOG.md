@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.179
+
+- **One whole-suite run per batch, everywhere, with no setup.** When `integration.gate_command` is empty, Lane Pilot detects it on the project's machine: an `npm test` script, else vitest or jest, else pytest; `off` turns the gate off. The gate runs once when the last task of a batch lands and sends a red result to the writer whose merge broke it. Before, with the default `gate_when=queue_drained` the gate never ran at all: nothing called it on a drained queue.
+- **A task's own check never runs the whole suite where a gate is active.** The contract lint answers with the fix: check only this task's files, the gate runs the rest once per batch. The PM instructions say the same.
+- **A folder without git: a file someone else changed meanwhile is not the writer's.** A change outside owns_paths counts against the writer only when its own thread touched the file (a file edit or a command naming it). The drill's PM edited the folder during a writer's attempt, and the task was blocked for it.
+- The run-card test imports the whole app and gets 30 s per test.
+
 ## 0.1.178
 
 Wave 2 of the stabilization plan: native BB integration (events, lifecycle, native reminders, authorship, hidden writer brief, tool labels, run card, realtime screens, owner questions as forms, Lane Pilot's own worktree provider), official plugins (usage-aware writer choice, provider-retry, Tasks mirror, concurrency-limit), canary and error budget, Env Catalog secrets. New behaviour is on by default with an automatic fallback to the old path.
