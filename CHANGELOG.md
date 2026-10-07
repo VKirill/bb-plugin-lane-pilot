@@ -14,6 +14,11 @@ Stabilization phase E (release train, own worktrees, drills):
 - **Sandbox drills as a script (E3).** `scripts/lp-drill.sh` runs three parallel tasks in the sandbox project and writes a receipt to `.agents/runs/drills/<date>.json`.
 - Deploy side (outside this repository, `infrastructure/plugin-deploy/bb-plugin-push`): the E1 release-train gates.
 
+Tails of phases B and C:
+- **`lane_pilot_update_task` uses the same contract lint as dispatch** (`src/server/lint-task.ts`). The task and plan stay unchanged on a failure.
+- **Activation adds the bookkeeping folders to `.git/info/exclude` on the workspace's machine** (`.agents/runs/`, `.agents/reports/`, `.bb/chats/`, `notes/lock/`, at any depth). It never edits `.gitignore` and never commits.
+- **Settings that existed only in code are now in the settings UI and can be reset:** `writer.silence_nudge_min`, `bookkeeping.paths`, `integration.gate_command`, `integration.gate_when`, `integration.gate_every`.
+
 ## 0.1.171
 
 - **A docs pass stopped by a plugin reload no longer logs failures.** During the 0.1.170 deploy, passes still running on treba, treba-sites and my-album.art logged «nightly docs failed … stale API handle» and «The database connection is not open», and the self-repair watcher reads such lines as Lane Pilot faults. Those passes were already set to resume by the catch-up. A closed database now counts as a stop, as a stale handle already did (`pluginStopped`). The unit and pass catch blocks and the docs merge stay quiet on a stop, and a stopped unit keeps its saved progress.
