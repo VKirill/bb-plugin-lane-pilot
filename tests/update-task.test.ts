@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, createRun, createTask, createAttempt, getTask, getTaskPlan, savePrototypeConfig, listStageReceipts } from "../src/database";
+import { openDatabase, createRun, createTask, createAttempt, getTask, getTaskPlan, savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/database";
 import { createWriterUpdateTask } from "../src/server/writer/update-task";
 import type { TaskV2 } from "../src/contracts";
 import type { ServerCore } from "../src/server/core";
@@ -19,6 +19,7 @@ describe("lane_pilot_update_task", () => {
   };
 
   const fakeBb = {
+    storage: { kv: { get: async () => null, set: async () => {}, delete: async () => {}, list: async () => [] } },
     hosts: {
       experimental_client: () => fakeHost,
     },
@@ -94,6 +95,7 @@ describe("lane_pilot_update_task", () => {
 
     const services = {
       activeWriterTasks: new Set<string>(),
+      stability: { loadParked: async () => [] },
     } as unknown as Services;
 
     const { updateTask } = createWriterUpdateTask(ctx, services);
@@ -162,6 +164,88 @@ describe("lane_pilot_update_task", () => {
       code: "task_started",
       retryable: false,
       sideEffects: "none",
+    });
+  });
+
+  describe("contract lint (the same rules as dispatch)", () => {
+    const setup = (kinds: Record<string, string> = {}) => {
+      createTask(db, { id: taskId, runId, kind: "bb", contract: baseTask });
+      createAttempt(db, { id: "att-1", runId, taskId });
+      const calls: string[] = [];
+      const ctx = {
+        bb: fakeBb as never,
+        db,
+        host: {
+          call: async (method: string, input: { paths?: string[] }) => {
+            calls.push(method);
+            if (method === "snapshotDryRun") {
+              return { entries: (input.paths ?? []).map((path) => ({ path, kind: kinds[path.slice("/ws/".length)] ?? "missing" })) };
+            }
+            return { exitCode: 0, stdout: "", stderr: "" };
+          },
+        },
+        state: { disposed: false },
+        log: () => {},
+      } as unknown as ServerCore;
+      const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+      return { updateTask: createWriterUpdateTask(ctx, services).updateTask, calls };
+    };
+    const update = (updateTask: ReturnType<typeof setup>["updateTask"], task: Partial<TaskV2>) =>
+      updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, depends_on: [], ...task } });
+    const hintOf = (res: Record<string, unknown>) => String((res.error as { hint: string }).hint);
+    const unchanged = () => expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("Original title");
+
+    it("sends every contract error back in one message and leaves the stored task alone", async () => {
+      const { updateTask } = setup({ "src/a.ts": "directory" });
+      const res = await update(updateTask, { title: "New", read_first: ["src/a.ts"], owns_paths: ["../x"], expected_outputs: ["lib/z.ts"] });
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatchObject({ code: "validation_failed", findings: expect.any(Array) });
+      expect(hintOf(res)).toContain("the task was not changed");
+      expect(hintOf(res)).toContain("read_first is a directory, not a file: src/a.ts");
+      expect(hintOf(res)).toContain("unsafe ownership path pattern: ../x");
+      expect(hintOf(res)).toContain("lib/z.ts");
+      unchanged();
+    });
+
+    it("rejects a read_first file that does not exist on the writer's machine", async () => {
+      const { updateTask } = setup({});
+      const res = await update(updateTask, { title: "New", read_first: ["src/gone.ts"] });
+      expect(hintOf(res)).toContain("read_first source is missing: src/gone.ts");
+      unchanged();
+    });
+
+    it("rejects a folder filter without a trailing slash, a rule the old update checks did not have", async () => {
+      const { updateTask } = setup({ tests: "directory" });
+      const res = await update(updateTask, { title: "New", verification: [{ command: "npx vitest run tests", cwd: "/ws" }] });
+      expect(hintOf(res)).toContain("write tests/");
+      unchanged();
+    });
+
+    it("rejects depends_on a task that ended blocked", async () => {
+      createTask(db, { id: "dep-1", runId, kind: "bb", contract: { ...baseTask, id: "dep-1" } });
+      createAttempt(db, { id: "dep-att", runId, taskId: "dep-1" });
+      transitionAttempt(db, "dep-att", "queued");
+      transitionAttempt(db, "dep-att", "blocked", { reason: "stuck" });
+      const { updateTask } = setup({});
+      const res = await update(updateTask, { title: "New", depends_on: ["dep-1"] });
+      expect(res.error).toMatchObject({ code: "validation_failed", replan: true });
+      expect(hintOf(res)).toContain("replan: depends_on dep-1 ended blocked");
+      unchanged();
+    });
+
+    it("rejects a whole-suite run without the sandbox-unsafe excludes, with the flags to add", async () => {
+      saveProjectSetting(db, projectId, "verification.sandbox_unsafe", ["tests/pipeline.test.ts"]);
+      const { updateTask } = setup({});
+      const res = await update(updateTask, { title: "New", verification: [{ command: "npx vitest run", cwd: "/ws" }] });
+      expect(res.error).toMatchObject({ missingExcludes: ["tests/pipeline.test.ts"], suggestedFlags: '--exclude "tests/pipeline.test.ts"' });
+      unchanged();
+    });
+
+    it("does not count the task being updated as an open task to overlap", async () => {
+      const { updateTask } = setup({});
+      const res = await update(updateTask, { title: "New" });
+      expect(res.ok).toBe(true);
+      expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("New");
     });
   });
 });
