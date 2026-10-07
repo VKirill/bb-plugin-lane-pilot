@@ -12,7 +12,9 @@ function setup(options: { vk?: boolean; draining?: boolean } = {}) {
   const spawns: Array<Record<string, unknown>> = [];
   const { bb } = createFakePluginHost({
     pluginId: "lane-pilot",
-    sdk: { threads: { get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle" }) as never,
+    // Self-repair works in its own worktree (E2): the environment and host answer for it.
+    sdk: { environments: { get: async ({ environmentId }: { environmentId: string }) => ({ id: environmentId, hostId: "host_mac", path: "/repo/lane-pilot" }) as never },
+      threads: { get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle" }) as never,
       spawn: async (input: unknown) => { spawns.push(input as Record<string, unknown>); return { id: "thr_repair1" } as never; },
       // A VK build has the thread keys too: the spawn goes through them.
       experimental_vkFindByKey: async () => null,
@@ -22,7 +24,9 @@ function setup(options: { vk?: boolean; draining?: boolean } = {}) {
   if (options.vk !== false) (bb as unknown as { vk: unknown }).vk = { experimental_vkOnHookTimeout: (cb: Callback) => { callback = cb; return { dispose() {} }; } };
   const db = openDatabase(bb);
   let chain: Promise<unknown> = Promise.resolve();
-  const ctx = { bb, db, log: () => undefined, isDisposed: () => false, deployDrain: { status: () => ({ draining: options.draining === true, inFlight: [] }) },
+  const host = { call: async (method: string, input: Record<string, unknown>) => method === "gitCreateWorktree"
+    ? { status: "ready", path: `/wt/${String(input.name)}/lane-pilot`, branch: `lane/${String(input.name)}`, reason: null } : { ok: true } };
+  const ctx = { bb, db, host, log: () => undefined, isDisposed: () => false, deployDrain: { status: () => ({ draining: options.draining === true, inFlight: [] }) },
     serializedKv: <T,>(work: () => Promise<T>) => { const next = chain.then(work, work); chain = next.catch(() => undefined); return next; } } as unknown as ServerCore;
   return { bb, ctx, db, fire: async (event: Record<string, unknown>) => { await callback?.(event); }, subscribed: () => callback !== null, spawns };
 }
