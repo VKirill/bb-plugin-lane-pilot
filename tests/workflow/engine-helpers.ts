@@ -3,6 +3,8 @@ import type { LanePilotDatabase } from "../../src/database";
 import { CrashError, WorkflowEngine } from "../../src/workflow/engine";
 import type { EngineOptions, NodeExecutor, StepContext } from "../../src/workflow/engine";
 import { workflowMigrations } from "../../src/workflow/journal";
+import { createStatusResolver, workflowOpsMigrations } from "../../src/workflow/ops-store";
+import { definitionSha256 } from "../../src/workflow/store";
 import type { Workflow } from "../../src/workflow/schema";
 import { parseWorkflow } from "../../src/workflow/validate";
 import { workflow } from "./fixtures";
@@ -11,7 +13,7 @@ import { workflow } from "./fixtures";
 export function journalDb(): LanePilotDatabase {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = bb.storage.database();
-  bb.storage.migrate(db, workflowMigrations);
+  bb.storage.migrate(db, [...workflowMigrations, ...workflowOpsMigrations]);
   return db;
 }
 
@@ -31,3 +33,9 @@ export const stepStates = (db: LanePilotDatabase, runId: string) =>
   Object.fromEntries(rows<{ step_key: string; state: string }>(db, "SELECT step_key, state FROM lane_pilot_wf_step WHERE run_id=? ORDER BY rowid", runId).map((row) => [row.step_key, row.state]));
 
 export { CrashError };
+
+/** A green test receipt for a workflow file, as the owner's «run tests» (or a publish) leaves it: without one a file that says published counts as a draft. */
+export function trust(db: LanePilotDatabase, definition: Record<string, unknown>): void {
+  const parsed = parseWorkflow(definition);
+  createStatusResolver(db).recordTest(parsed.id, definitionSha256(parsed), true, []);
+}

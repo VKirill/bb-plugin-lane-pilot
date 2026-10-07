@@ -8,7 +8,7 @@ import type { ServerCore } from "../../src/server/core";
 import type { Services } from "../../src/server/services";
 import { parseWorkflow } from "../../src/workflow/validate";
 import { conditionText, roleTone, workflowView } from "../../src/workflow/view";
-import { engineOn, journalDb, ok, wf } from "./engine-helpers";
+import { engineOn, journalDb, ok, trust, wf } from "./engine-helpers";
 import { workflow } from "./fixtures";
 
 const dirs: string[] = [];
@@ -32,8 +32,9 @@ const reviewFix = (id = "review-fix", extra: Record<string, unknown> = {}) => wo
   ...extra,
 });
 
-async function library(options: { files?: Array<{ path: string; content: string }> | Error; globalFiles?: Record<string, string> } = {}) {
+async function library(options: { files?: Array<{ path: string; content: string }> | Error; globalFiles?: Record<string, string>; tested?: Array<Record<string, unknown>> } = {}) {
   const db = journalDb();
+  for (const definition of options.tested ?? []) trust(db, definition);
   const globalDir = await mkdtemp(join(tmpdir(), "lp-wf-global-"));
   dirs.push(globalDir);
   for (const [name, text] of Object.entries(options.globalFiles ?? {})) await writeFile(join(globalDir, name), text);
@@ -93,6 +94,7 @@ describe("workflow library", () => {
     const { lib, db, hostCalls } = await library({
       globalFiles: { "review-fix.json": JSON.stringify(reviewFix()), "broken.json": "{ not json" },
       files: [{ path: "x-digest.json", content: JSON.stringify(workflow({ id: "x-digest", name: "X digest", status: "tested" })) }],
+      tested: [reviewFix(), workflow({ id: "x-digest", name: "X digest", status: "tested" })],
     });
     const result = await lib.list({ projectId: "proj_1" });
     expect(hostCalls).toEqual([{ method: "listWorkflowFiles", input: { requestedHostId: "host_1", projectCwd: "/work/proj" } }]);

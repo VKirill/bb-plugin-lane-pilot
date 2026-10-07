@@ -9,6 +9,7 @@ import { stackRpc } from "./rpc/stack";
 import { insightsRpc } from "./rpc/insights";
 import { tokenUsageRpc } from "./rpc/token-usage";
 import { workflowsRpc } from "./rpc/workflows";
+import { workflowOpsRpc } from "./rpc/workflow-ops";
 import { councilRpc } from "./council";
 import { selfRepairRpc } from "./self-repair";
 import { canaryRpc } from "./canary";
@@ -27,6 +28,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...insightsRpc(ctx, services),
     ...tokenUsageRpc(ctx),
     ...workflowsRpc(ctx, services),
+    ...workflowOpsRpc(ctx, services),
     ...councilRpc(ctx.db, services.council),
     ...selfRepairRpc(ctx),
     ...canaryRpc(services.canary),

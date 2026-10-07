@@ -445,6 +445,53 @@ describe("editing a draft in the Workflows tab", () => {
     expect(slot.getByTestId("wf-edit-mcp").textContent).toContain("tavily");
   });
 
+  it("puts the step's BB plugins and MCP servers beside its skills, from the catalogue, and writes them to the draft", async () => {
+    const { slot, architect, draftId } = await open();
+    fireEvent.click(await slot.findByTestId("wf-node-search"));
+    const plugins = await slot.findByTestId("wf-edit-node-plugins");
+    await waitFor(() => expect(within(plugins).queryByRole("combobox")).toBeTruthy());
+    fireEvent.click(within(plugins).getByRole("combobox"));
+    fireEvent.click(await slot.findByRole("option", { name: /browser/i }));
+    await waitFor(() => expect((architect.drafts.get(draftId)!.definition.nodes as Array<{ id: string; plugins?: string[] }>).find((node) => node.id === "search")!.plugins).toEqual(["browser-automation"]));
+    const mcp = await slot.findByTestId("wf-edit-node-mcp");
+    await waitFor(() => expect(within(mcp).queryByRole("combobox")).toBeTruthy());
+    fireEvent.click(within(mcp).getByRole("combobox"));
+    fireEvent.click(await slot.findByRole("option", { name: "tavily" }));
+    await waitFor(() => expect((architect.drafts.get(draftId)!.definition.nodes as Array<{ id: string; mcp?: string[] }>).find((node) => node.id === "search")!.mcp).toEqual(["tavily"]));
+  });
+
+  it("edits the schedule trigger (cron, zone, inputs) and the requirements lists without losing what was set", async () => {
+    const { slot, calls, architect, draftId } = await open();
+    fireEvent.click(await slot.findByTestId("wf-edit-settings"));
+    const triggers = await slot.findByTestId("wf-edit-triggers");
+    fireEvent.click(within(triggers).getByRole("combobox"));
+    fireEvent.click(await slot.findByRole("option", { name: "schedule" }));
+    const cron = await slot.findByTestId("wf-edit-cron") as HTMLInputElement;
+    fireEvent.change(cron, { target: { value: "0 25 * * *" } });
+    fireEvent.blur(cron);
+    expect((await slot.findByRole("alert")).textContent).toContain("between 0 and 23");
+    const before = patches(calls).length;
+    fireEvent.change(cron, { target: { value: "0 9 * * 1-5" } });
+    fireEvent.blur(cron);
+    await waitFor(() => expect(patches(calls).length).toBeGreaterThan(before));
+    fireEvent.change(slot.getByTestId("wf-edit-timezone"), { target: { value: "Europe/Moscow" } });
+    fireEvent.blur(slot.getByTestId("wf-edit-timezone"));
+    await waitFor(() => expect((architect.drafts.get(draftId)!.definition.triggers as Array<{ timezone?: string }>).at(-1)!.timezone).toBe("Europe/Moscow"));
+    await new Promise((done) => setTimeout(done, 50));
+    fireEvent.change(slot.getByTestId("wf-edit-schedule-inputs"), { target: { value: '{"query":"cats"}' } });
+    fireEvent.blur(slot.getByTestId("wf-edit-schedule-inputs"));
+    await waitFor(() => expect((architect.drafts.get(draftId)!.definition.triggers as unknown[]).at(-1)).toEqual({ type: "schedule", cron: "0 9 * * 1-5", timezone: "Europe/Moscow", inputs: { query: "cats" } }));
+    // Adding another kind of trigger keeps the schedule's fields.
+    fireEvent.click(within(slot.getByTestId("wf-edit-triggers")).getByRole("combobox"));
+    fireEvent.click(await slot.findByRole("option", { name: "telegram" }));
+    await waitFor(() => expect((architect.drafts.get(draftId)!.definition.triggers as Array<{ type: string }>).map((item) => item.type)).toContain("telegram"));
+    expect((architect.drafts.get(draftId)!.definition.triggers as Array<{ type: string; cron?: string }>).find((item) => item.type === "schedule")!.cron).toBe("0 9 * * 1-5");
+    // The new requirement lists are there to fill.
+    expect(slot.getByTestId("wf-edit-tools")).toBeTruthy();
+    expect(slot.getByTestId("wf-edit-platforms")).toBeTruthy();
+    expect(slot.getByTestId("wf-edit-mcp-servers")).toBeTruthy();
+  });
+
   it("works in Russian and shows the panel as a bottom sheet on a narrow screen", async () => {
     setLocaleOverride("ru");
     const measure = vi.spyOn(window.HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 375, height: 800, top: 0, left: 0, right: 375, bottom: 800, x: 0, y: 0, toJSON: () => ({}) });

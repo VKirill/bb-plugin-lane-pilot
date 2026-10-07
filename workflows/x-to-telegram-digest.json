@@ -100,6 +100,12 @@
     "machines": [
       "browser machine with a signed-in X session (Mac mini browser / MacBook Pro Chrome cookies)",
       "Telegram sender host with /Users/vechkasov/toolkit/telegram/tg and a logged-in user session (Mac mini host_7sea4qaad8)"
+    ],
+    "tools": [
+      "~/toolkit/telegram/tg"
+    ],
+    "platforms": [
+      "x"
     ]
   },
   "budget": {

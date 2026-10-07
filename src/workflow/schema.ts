@@ -99,6 +99,10 @@ const agentBody = {
   model: z.string().max(120).optional(),
   reasoning: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
   skills: z.array(z.string().min(1).max(120)).max(8).default([]),
+  /** BB plugins this step's session may load, on top of its role's (by plugin id; the helper's session policy narrows to the role's list plus these). */
+  plugins: z.array(z.string().min(1).max(120)).max(8).default([]),
+  /** MCP servers this step's session may load, on top of its role's (by server name). */
+  mcp: z.array(z.string().min(1).max(120)).max(8).default([]),
   environment: z.enum(["worktree", "project", "personal", "none"]).default("none"),
   session: z.enum(["new", "same"]).optional(),
   authorized: z.boolean().optional(),
@@ -207,9 +211,18 @@ export const edgeSchema = z.object({
 }).strict();
 export type WorkflowEdge = z.infer<typeof edgeSchema>;
 
+/**
+ * How a workflow is started besides the router. `schedule` becomes a BB automation while the workflow is published (own files
+ * only): `cron` (5 fields), `timezone` (IANA; the hub's own when absent), `inputs` (the values every scheduled run gets) and the
+ * `projectId` whose PM chat runs it (the project of a project workflow when absent). `manual` is the Run button of the tab.
+ * `telegram` has no API behind it yet; see docs/workflow-triggers.md.
+ */
 const trigger = z.object({
   type: z.enum(["chat", "schedule", "telegram", "manual"]),
   cron: z.string().max(120).optional(),
+  timezone: z.string().max(100).optional(),
+  inputs: z.record(z.string(), z.unknown()).optional(),
+  projectId: z.string().max(80).optional(),
 }).strict();
 
 export const workflowSchema = z.object({
@@ -228,8 +241,14 @@ export const workflowSchema = z.object({
   requires: z.object({
     plugins: z.array(z.string()).default([]), skills: z.array(z.string()).default([]), secrets: z.array(z.string()).default([]),
     machines: z.array(z.string()).default([]), env: z.array(z.string()).default([]), browserSession: z.boolean().default(false),
+    /** MCP servers by name (checked on the machine the run works on). */
+    mcp: z.array(z.string().min(1).max(80)).default([]),
+    /** Commands that must exist on that machine: `ffmpeg`, `a|b` for any of, a path such as `~/toolkit/telegram/tg`. A `secrets` entry is an Env Catalog name; `NAME?` is optional. */
+    tools: z.array(z.string().min(1).max(120)).default([]),
+    /** Social networks the chain uses signed in through social-browser: x, threads, instagram, facebook, vk. */
+    platforms: z.array(z.string().min(1).max(40)).default([]),
     project: z.record(z.string(), z.unknown()).optional(),
-  }).strict().default({ plugins: [], skills: [], secrets: [], machines: [], env: [], browserSession: false }),
+  }).strict().default({ plugins: [], skills: [], secrets: [], machines: [], env: [], browserSession: false, mcp: [], tools: [], platforms: [] }),
   status: z.enum(["draft", "tested", "published", "deprecated"]).default("draft"),
   version: z.number().int().min(1).default(1),
   budget: z.object({

@@ -2,6 +2,7 @@ import { parse as parseJsonc, printParseErrorCode } from "jsonc-parser/lib/esm/m
 import type { ParseError } from "jsonc-parser/lib/esm/main.js";
 import { ExprSyntaxError, checkExpr, checkRef, exprRefs, parseExpr, placeholdersIn, refOf, toExpr, valueSpecOf } from "./expr";
 import type { CheckEnv, Ref, Typed } from "./expr";
+import { cronProblem, timezoneProblem } from "./cron";
 import { EMIT, executorKey, lowerWorkflow, outputFields } from "./lower";
 import { END, MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES, START, parseWorkflowObject } from "./schema";
 import type { Field, GraphNode, Workflow, WorkflowNode } from "./schema";
@@ -78,6 +79,12 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     for (const field of fields) { if (seen.has(field.name)) error("duplicate_field", `${where}: field "${field.name}" is declared twice`, { node }); seen.add(field.name); }
   };
   dupField(workflow.inputs, "inputs"); dupField(workflow.outputs, "outputs");
+  // A schedule with a time that cannot become an automation is a warning: saved, never scheduled. One without a time (the shipped chains list `schedule` as «can be scheduled») is not.
+  workflow.triggers.forEach((trigger, index) => {
+    if (trigger.type !== "schedule" || trigger.cron === undefined) return;
+    const problem = cronProblem(trigger.cron) ?? (trigger.timezone ? timezoneProblem(trigger.timezone) : null);
+    if (problem) warn("trigger_schedule", `trigger ${index + 1} (schedule): ${problem}`);
+  });
   for (const node of workflow.nodes) if (node.type !== "note") dupField(node.out, node.id, node.id);
   for (const node of workflow.nodes) {
     if (node.type !== "action" || node.action !== EMIT) continue;

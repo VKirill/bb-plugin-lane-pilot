@@ -14,7 +14,9 @@ import { builtinWorkflow } from "../workflow/builtin";
 import { casWriteWorkflowFile, sha256Text } from "../workflow/files";
 import { executorKey, lowerWorkflow } from "../workflow/lower";
 import type { Workflow } from "../workflow/schema";
-import { globalWorkflowDir } from "../workflow/store";
+import { createStatusResolver } from "../workflow/ops-store";
+import { checkRequires, effectiveRequires } from "../workflow/preflight";
+import { definitionSha256, globalWorkflowDir } from "../workflow/store";
 import { loadWorkflow } from "../workflow/validate";
 import { configuredSetting } from "./context";
 import { SPECIALIST_ROLES } from "./specialists";
@@ -41,7 +43,7 @@ export type ArchitectDeps = {
   hasExecutor: (key: string) => boolean;
 };
 
-function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
+export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
   const { bb, db, host } = ctx;
   const hostsList = async () => mapListedQaHosts(await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.() ?? []);
   const place = async (threadId: string): Promise<Place | null> => {
@@ -98,7 +100,7 @@ const bothLanguages = (value: unknown): { en: string; ru: string } => {
   return { en, ru: typeof row.ru === "string" ? row.ru : en };
 };
 
-export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services, "workflowEngine">, deps: ArchitectDeps = realDeps(ctx, services as Services)) {
+export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog" | "workflowTriggers">>, deps: ArchitectDeps = realDeps(ctx, services as Services)) {
   const { db } = ctx;
   const drafts: DraftStore = createDraftStore(db);
   const resolve = (id: string, version?: number) => builtinWorkflow(id, version);
@@ -185,6 +187,17 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     return [...keys].sort();
   }
 
+  /** The skills, BB plugins and MCP servers the chain names (in `requires` and on its agent steps) that the machine does not list. */
+  async function unavailableCapabilities(workflow: Workflow, projectId: string, threadId: string): Promise<string[]> {
+    const ports = deps.capabilityPorts({ projectId, threadId });
+    const check = await checkRequires(effectiveRequires(workflow), {
+      ...(ports.skills ? { skills: async () => (await ports.skills!()).map((row) => row.name) } : {}),
+      ...(ports.plugins ? { plugins: async () => (await ports.plugins!()).map((row) => row.id) } : {}),
+      ...(ports.mcpServers ? { mcpServers: async () => (await ports.mcpServers!()).map((row) => row.name) } : {}),
+    });
+    return check.issues.filter((issue) => issue.level === "missing").map((issue) => issue.message);
+  }
+
   async function test(input: { projectId: string; threadId?: string; draftId: string; testCaseId?: string }) {
     const draft = own(input.draftId, input.projectId);
     const load = loaded(draft);
@@ -241,11 +254,19 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     }
     if (written.status === "conflict") return refuse("file_conflict", `${written.reason}; choose another id with set_meta {id} or ask the owner`, { path: written.path });
     const sha256 = written.afterSha256 ?? sha256Text(content);
+    // The file is only as good as its tests: the receipt says this exact definition passed them, which the library asks for before it counts the file as published.
+    createStatusResolver(db).recordTest(id, definitionSha256(reloaded.workflow), true, draft.tests.results.map((row) => ({ caseId: row.caseId, green: row.green, path: row.path })));
     const published = drafts.markPublished(draft.id, { version: draft.version, path: written.path, sha256, workflowVersion: version }) ?? draft;
     changed(published, input.threadId);
+    services.workflowCatalog?.invalidate();
+    // A published workflow with a schedule trigger gets its automation (and a changed one its update).
+    services.workflowTriggers?.syncSoon(draft.projectId);
     const missing = unregisteredExecutors(final);
+    // Names the chain asks for that this machine does not have: said at publish, not refused (the project's machine may differ from the one that runs it).
+    const capabilityWarnings = await unavailableCapabilities(final, draft.projectId, input.threadId ?? "").catch(() => []);
     return {
       draftId: draft.id, published: true, workflowId: id, workflowVersion: version, scope: draft.scope, path: written.path,
+      ...(capabilityWarnings.length ? { capabilityWarnings } : {}),
       liveReady: missing.length === 0, ...(missing.length ? { unregisteredExecutors: missing, warning: "these actions have no executor registered in this Lane Pilot yet: they ran on stubs in the test and a live run stops at them" } : {}),
       next: "tell the owner where the chain is (Workflows tab, library) and how to start it; changes to this draft start a new version",
     };

@@ -102,7 +102,7 @@ describe("workflow architect tools", () => {
     expect(read.history).toHaveLength(1 + BROWSER_DIGEST_STEPS.length);
     expect((await rpc("workflow_draft_get", { draftId: "wfd_nope" })).draft).toBeNull();
     expect(harness.registrations.agentTools.filter((tool) => tool.name.startsWith("lane_pilot_workflow_")).map((tool) => tool.name).sort()).toEqual([
-      "lane_pilot_workflow_capabilities", "lane_pilot_workflow_draft_create", "lane_pilot_workflow_draft_get", "lane_pilot_workflow_draft_patch", "lane_pilot_workflow_draft_publish", "lane_pilot_workflow_draft_test", "lane_pilot_workflow_status",
+      "lane_pilot_workflow_amend", "lane_pilot_workflow_capabilities", "lane_pilot_workflow_draft_create", "lane_pilot_workflow_draft_get", "lane_pilot_workflow_draft_patch", "lane_pilot_workflow_draft_publish", "lane_pilot_workflow_draft_test", "lane_pilot_workflow_status",
     ]);
   });
 

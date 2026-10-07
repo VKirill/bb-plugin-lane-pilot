@@ -95,6 +95,11 @@
     "secrets": [],
     "machines": [
       "media machine with ffmpeg, yt-dlp, a Whisper implementation (and diarization if multiple speakers are needed); check on the host before the job"
+    ],
+    "tools": [
+      "ffmpeg",
+      "yt-dlp",
+      "whisper|whisper-cli|whisper-cpp|faster-whisper|mlx_whisper|whisperx"
     ]
   },
   "budget": {

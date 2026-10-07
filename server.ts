@@ -36,6 +36,7 @@ import { createWriterFinish } from "./src/server/writer/finish";
 import { createWriterStart } from "./src/server/writer/start";
 import { createWriterDispatch } from "./src/server/writer/dispatch";
 import { createWorkflowEngine } from "./src/server/workflow";
+import { createWorkflowTriggersService } from "./src/server/workflow-triggers-live";
 import { relayFor } from "./src/server/relay";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
 import { mountLifecycleEvents } from "./src/server/lifecycle-events";
@@ -59,6 +60,7 @@ export default async function plugin(bb: BbPluginApi) {
     createActivation(ctx, services),
     createWriterState(ctx),
     createWorkflowEngine(ctx, services),
+    createWorkflowTriggersService(ctx, services),
     createWriterSpawn(ctx, services),
     createWriterVerify(ctx, services),
     createWriterFinish(ctx, services),
@@ -185,6 +187,8 @@ export default async function plugin(bb: BbPluginApi) {
       await new Promise<void>((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
     },
   });
+  // Schedules of workflows follow their files: a workflow unpublished or edited outside the tab loses or changes its automation within the hour.
+  scheduleIsolated(bb, "workflow-schedules", "23 * * * *", () => { for (const projectId of services.workflowTriggers.scheduledProjects()) services.workflowTriggers.syncSoon(projectId); }, { timeoutMs: 60_000 });
   scheduleIsolated(bb, "runs-sweep", "2,17,32,47 * * * *", sweepRuns, { timeoutMs: 10 * 60_000 });
   bb.log.info("Lane Pilot PM-to-writer pipeline loaded");
 }

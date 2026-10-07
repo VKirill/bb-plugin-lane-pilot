@@ -21,6 +21,7 @@ import type { createWriterFinish } from "./writer/finish";
 import type { createWriterStart } from "./writer/start";
 import type { createWriterDispatch } from "./writer/dispatch";
 import type { createWorkflowEngine } from "./workflow";
+import type { createWorkflowTriggersService } from "./workflow-triggers-live";
 
 type ActivationApi = ReturnType<typeof createActivation>;
 type DocsNightlyApi = ReturnType<typeof createDocsNightly>;
@@ -41,6 +42,7 @@ type WriterFinishApi = ReturnType<typeof createWriterFinish>;
 type WriterStartApi = ReturnType<typeof createWriterStart>;
 type WriterDispatchApi = ReturnType<typeof createWriterDispatch>;
 type WorkflowEngineApi = ReturnType<typeof createWorkflowEngine>;
+type WorkflowTriggersApi = ReturnType<typeof createWorkflowTriggersService>;
 
 /** Every function one server module offers another; filled once all modules exist, read at call time. */
 export interface Services {
@@ -132,4 +134,5 @@ export interface Services {
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowAgents: WorkflowEngineApi["workflowAgents"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
 }

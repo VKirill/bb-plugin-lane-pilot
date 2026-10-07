@@ -4,6 +4,7 @@ import { t, type I18nKey, type Locale } from "../../i18n";
 import { Button } from "../../components/ui/button";
 import { Icon, type IconName } from "../../components/ui/icon";
 import { Input } from "../../components/ui/input";
+import { cronProblem, timezoneProblem } from "../workflow/cron";
 import { conditionText } from "../workflow/view-core";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { ChipsField, Field, FieldListEditor, NumberField, Section, SelectField, SwitchField, TextArea, TextField, say, typeLabel } from "./workflow-edit-fields";
@@ -25,6 +26,7 @@ const biOps = (current: unknown, lang: "en" | "ru", next: string): { en: string;
   return !both.en && !both.ru ? null : { en: both.en || both.ru, ru: both.ru || both.en };
 };
 const json = (value: unknown) => JSON.stringify(value, null, 2);
+const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
 const jsonObject = (value: string): ModelError | null => {
   if (!value.trim()) return null;
   try { return isRaw(JSON.parse(value)) ? null : { key: "wfEditErr_jsonObject" }; } catch { return { key: "wfEditErr_json" }; }
@@ -156,6 +158,8 @@ export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onC
           <TextArea label={t("wfEditPrompt")} value={text(node.prompt)} rows={6} suggestions={refs} testId="wf-edit-prompt" hint={t("wfEditPromptHint")} onCommit={(next) => set({ prompt: next })} />
           <ModelFields node={node} edit={edit} catalog={catalog} />
           <ChipsField label={t("wfEditSkills")} values={Array.isArray(node.skills) ? node.skills.filter((item): item is string => typeof item === "string") : []} catalog={catalog.skills.length ? catalog.skills : undefined} testId="wf-edit-skills" hint={t("wfEditSkillsHint")} onChange={(next) => set({ skills: next.slice(0, 8) })} />
+          <ChipsField label={t("wfEditNodePlugins")} values={strings(node.plugins)} catalog={catalog.plugins.length ? catalog.plugins : undefined} testId="wf-edit-node-plugins" hint={t("wfEditNodePluginsHint")} onChange={(next) => set({ plugins: next.slice(0, 8) })} />
+          <ChipsField label={t("wfEditNodeMcp")} values={strings(node.mcp)} catalog={catalog.mcpServers.length ? catalog.mcpServers.map((value) => ({ value })) : undefined} testId="wf-edit-node-mcp" hint={t("wfEditNodeMcpHint")} onChange={(next) => set({ mcp: next.slice(0, 8) })} />
           <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             <SelectField label={t("wfEditEnvironment")} value={(text(node.environment) as "worktree") || ""} none={t("wfEditDefault")} testId="wf-edit-environment"
               options={(["worktree", "project", "personal", "none"] as const).map((value) => ({ value, label: t(`wfEditEnv_${value}` as I18nKey) }))} onChange={(next) => set({ environment: next })} />
@@ -365,7 +369,11 @@ export function WorkflowForm({ definition, catalog, edit, onClose, narrow }: { d
   const guards = (isRaw(definition.guards) ? definition.guards : {}) as Raw;
   const budget = (isRaw(definition.budget) ? definition.budget : {}) as Raw;
   const num = (source: Raw, key: string) => (typeof source[key] === "number" ? source[key] as number : null);
-  const triggers = Array.isArray(definition.triggers) ? definition.triggers.map((item) => (typeof item === "string" ? item : isRaw(item) ? text(item.type) : "")).filter(Boolean) : [];
+  const triggerRows: Raw[] = Array.isArray(definition.triggers) ? definition.triggers.map((item) => (typeof item === "string" ? { type: item } : isRaw(item) ? item : null)).filter((item): item is Raw => item !== null) : [];
+  const triggers = triggerRows.map((item) => text(item.type)).filter(Boolean);
+  const schedule = triggerRows.find((item) => item.type === "schedule");
+  // A change of one field of the schedule keeps the others; an empty one is dropped.
+  const setSchedule = (patch: Raw) => meta({ triggers: triggerRows.map((item) => (item.type === "schedule" ? Object.fromEntries(Object.entries({ ...item, ...patch }).filter(([, value]) => value !== undefined && value !== "")) : item)) });
   return (
     <PanelFrame testId="wf-workflow-panel" title={t("wfEditWorkflowSettings")} subtitle={text(definition.id)} onClose={onClose} narrow={narrow}>
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">
@@ -383,6 +391,9 @@ export function WorkflowForm({ definition, catalog, edit, onClose, narrow }: { d
         <ChipsField label={t("wfEditReqSkills")} values={list("skills")} catalog={catalog.skills.length ? catalog.skills : undefined} onChange={(next) => setRequires("skills", next)} />
         <ChipsField label={t("wfEditReqPlugins")} values={list("plugins")} catalog={catalog.plugins.length ? catalog.plugins : undefined} onChange={(next) => setRequires("plugins", next)} />
         <ChipsField label={t("wfEditReqSecrets")} values={list("secrets")} catalog={catalog.secrets.length ? catalog.secrets : undefined} testId="wf-edit-secrets" hint={t("wfEditReqSecretsHint")} onChange={(next) => setRequires("secrets", next)} />
+        <ChipsField label={t("wfEditReqMcp")} values={list("mcp")} catalog={catalog.mcpServers.length ? catalog.mcpServers.map((value) => ({ value })) : undefined} testId="wf-edit-mcp-servers" onChange={(next) => setRequires("mcp", next)} />
+        <ChipsField label={t("wfEditReqTools")} values={list("tools")} testId="wf-edit-tools" onChange={(next) => setRequires("tools", next)} />
+        <ChipsField label={t("wfEditReqPlatforms")} values={list("platforms")} catalog={["threads", "instagram", "facebook", "vk", "x"].map((value) => ({ value }))} testId="wf-edit-platforms" onChange={(next) => setRequires("platforms", next)} />
         {catalog.mcpServers.length ? <p className="break-words text-xs text-muted-foreground" data-testid="wf-edit-mcp">{t("wfEditMcpAvailable")}: {catalog.mcpServers.join(", ")}</p> : null}
         <SwitchField label={t("wfEditBrowserSession")} checked={requires.browserSession === true} onChange={(next) => setRequires("browserSession", next)} />
       </Section>
@@ -395,7 +406,19 @@ export function WorkflowForm({ definition, catalog, edit, onClose, narrow }: { d
         </div>
         <SelectField label={t("wfEditQualityDefault")} value={(isRaw(definition.quality_mode) ? text(definition.quality_mode.default) : text(definition.quality_mode)) as "standard" | ""} none={t("wfEditDefault")}
           options={(["quick", "standard", "full"] as const).map((value) => ({ value, label: value }))} onChange={(next) => meta({ quality_mode: next ? { default: next } : null })} />
-        <ChipsField label={t("wfTriggers")} values={triggers} catalog={["chat", "manual", "telegram"].map((value) => ({ value }))} onChange={(next) => meta({ triggers: next.map((type) => ({ type })) })} />
+        <ChipsField label={t("wfTriggers")} values={triggers} catalog={["chat", "manual", "schedule", "telegram"].map((value) => ({ value }))} testId="wf-edit-triggers"
+          onChange={(next) => meta({ triggers: next.map((type) => triggerRows.find((item) => item.type === type) ?? { type }) })} />
+        {schedule ? (
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2" data-testid="wf-edit-schedule">
+            <TextField label={t("wfEditCron")} value={text(schedule.cron)} mono placeholder="0 9 * * *" hint={t("wfEditCronHint")} testId="wf-edit-cron"
+              check={(next) => (next.trim() ? cronProblem(next) : null)} onCommit={(next) => setSchedule({ cron: next.trim() })} />
+            <TextField label={t("wfEditTimezone")} value={text(schedule.timezone)} placeholder="Europe/Moscow" testId="wf-edit-timezone"
+              check={(next) => (next.trim() ? timezoneProblem(next.trim()) : null)} onCommit={(next) => setSchedule({ timezone: next.trim() })} />
+            <TextField label={t("wfEditScheduleProject")} value={text(schedule.projectId)} mono hint={t("wfEditScheduleProjectHint")} testId="wf-edit-schedule-project" onCommit={(next) => setSchedule({ projectId: next.trim() })} />
+            <TextArea label={t("wfEditScheduleInputs")} value={isRaw(schedule.inputs) ? json(schedule.inputs) : ""} rows={3} mono check={jsonObject} testId="wf-edit-schedule-inputs"
+              onCommit={(next) => setSchedule({ inputs: next.trim() ? JSON.parse(next) : undefined })} />
+          </div>
+        ) : null}
       </Section>
       <Section title={t("wfEditTestCase")} testId="wf-edit-test-case">
         <TextArea label={t("wfEditTestCaseJson")} value={isRaw(definition.test) ? json(definition.test) : ""} rows={8} mono check={jsonObject} hint={t("wfEditTestCaseHint")} testId="wf-edit-test-json"

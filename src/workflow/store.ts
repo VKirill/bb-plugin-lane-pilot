@@ -49,6 +49,8 @@ export async function loadWorkflowStore(input: {
   files?: WorkflowFileSource;
   globalDir?: string;
   projectDir?: string;
+  /** The status a workflow has here when it is not the one its file says (untested files, a live run that lifted a tested chain). */
+  resolveStatus?: (item: StoredWorkflow) => { status: Workflow["status"]; notes: WorkflowProblem[] };
 }): Promise<WorkflowStore> {
   const raw: Array<{ origin: WorkflowOrigin; source: string; text: unknown }> = input.builtin.map((item) => ({ origin: "builtin" as const, source: item.name, text: item.value }));
   const files = input.files ?? nodeFileSource;
@@ -82,7 +84,10 @@ export async function loadWorkflowStore(input: {
   for (const [id, item] of first) {
     const issues = validateWorkflow(item.workflow, { resolve });
     if (issues.some((issue) => issue.level === "error")) { problems.push({ origin: item.origin, source: item.source, problems: issues }); continue; }
-    final.set(id, { ...item, warnings: issues });
+    const verdict = input.resolveStatus?.(item);
+    final.set(id, verdict && verdict.status !== item.workflow.status
+      ? { ...item, workflow: { ...item.workflow, status: verdict.status }, warnings: [...issues, ...verdict.notes] }
+      : { ...item, warnings: issues });
   }
   return {
     list: () => [...final.values()],

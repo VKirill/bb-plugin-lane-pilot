@@ -125,6 +125,8 @@ export type RunRow = {
   parent_run_id: string | null; parent_step_key: string | null; depth: number; status: RunStatus; reason: string | null; mode: string | null;
   inputs_json: string; output_json: string | null; harness_version: string | null;
   steps_used: number; tokens_used: number; cost_micro_usd: number; wait_ms: number; owner_id: string | null; lease_until: number; created_at: number; updated_at: number;
+  /** K7: the goals of the run as JSON (see goals.ts); null for a run started without. */
+  goals_json?: string | null;
 };
 
 export type StepRow = {

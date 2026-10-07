@@ -14,6 +14,7 @@ import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { nodeTitle } from "./workflow-titles";
 import { pickRun, runView, stepStatus, type NodeRun, type RunSnapshot, type RunStep } from "./workflow-run";
 import type { Expansions } from "./workflow-layout";
+import { GoalsPanel, RunHistory, WorkflowTrials } from "./workflow-actions";
 
 /** Loaded when a graph is first shown: xyflow and elkjs are most of a megabyte. */
 export const WorkflowGraph = lazy(() => import("./workflow-graph"));
@@ -84,10 +85,12 @@ function StepCard({ step, index, onOpenThread }: { step: RunStep; index: number;
  * What a node panel is given. The default panel is read-only; the editor (W6) passes `renderNodePanel` to put its property
  * form in the same place, with the same selection.
  */
-export type NodePanelContext = { node: ViewNode; nodeKey: string; locale: Locale; run: NodeRun | null; definitionOnly: boolean; readOnly: true | false; onOpenThread: (threadId: string) => void; onClose: () => void };
+export type NodePanelContext = { node: ViewNode; nodeKey: string; locale: Locale; run: NodeRun | null; definitionOnly: boolean; readOnly: true | false; onOpenThread: (threadId: string) => void; onClose: () => void;
+  /** Re-running this node of a finished run: absent when the run on screen cannot be re-run from here. */
+  rerun?: { busy: boolean; error: string | null; onRerun: () => void } };
 export type NodePanelRenderer = (context: NodePanelContext) => ReactNode;
 
-export function NodePanel({ node, locale, run, definitionOnly, onOpenThread, onClose, draft = false }: Pick<NodePanelContext, "node" | "locale" | "run" | "definitionOnly" | "onOpenThread" | "onClose"> & { draft?: boolean }) {
+export function NodePanel({ node, locale, run, definitionOnly, onOpenThread, onClose, draft = false, rerun }: Pick<NodePanelContext, "node" | "locale" | "run" | "definitionOnly" | "onOpenThread" | "onClose" | "rerun"> & { draft?: boolean }) {
   return (
     <Surface testId="wf-node-panel" aria-label={t("wfNodeDetail")}>
       <SurfaceHeader className="justify-between">
@@ -103,6 +106,15 @@ export function NodePanel({ node, locale, run, definitionOnly, onOpenThread, onC
         {run && run.steps.length ? (
           <ul className="space-y-2">{run.steps.map((step, index) => <StepCard key={step.key} step={step} index={index} onOpenThread={onOpenThread} />)}</ul>
         ) : draft ? null : <p className="text-xs text-muted-foreground">{definitionOnly ? t("wfNodeNoRunDefinition") : t("wfNodeNoRun")}</p>}
+        {rerun && run && run.steps.length ? (
+          <div className="space-y-1">
+            <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2.5 text-xs" disabled={rerun.busy} data-testid="wf-rerun-node" onClick={rerun.onRerun}>
+              {rerun.busy ? t("wfRerunning") : t("wfRerunNode")}
+            </Button>
+            <p className="text-xs text-muted-foreground">{t("wfRerunHint")}</p>
+            {rerun.error ? <p className="break-words text-xs text-destructive-text" role="alert" data-testid="wf-rerun-error">{t("wfRerunError").replace("{reason}", rerun.error)}</p> : null}
+          </div>
+        ) : null}
       </SurfaceBody>
     </Surface>
   );
@@ -130,6 +142,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
   const [snapshotGone, setSnapshotGone] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [starting, setStarting] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  const [rerunning, setRerunning] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const [expanded, setExpanded] = useState<ReadonlyMap<string, { graph: WorkflowView; snapshot: RunSnapshot | null }>>(new Map());
   const [loading, setLoading] = useState<ReadonlySet<string>>(new Set());
   const generation = useRef(0);
@@ -299,6 +312,22 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
     } catch (cause) { setStarting({ busy: false, error: cause instanceof Error ? cause.message : String(cause) }); }
   };
 
+  const rerunNode = async (nodeId: string) => {
+    if (!current) return;
+    setRerunning({ busy: true, error: null });
+    try {
+      const result = await rpc.call("workflow_rerun_node", { runId: current.run.id, nodeId });
+      if (!result.ok) {
+        const key = `wfRerunReason_${result.reason ?? ""}` as I18nKey;
+        setRerunning({ busy: false, error: t(key) === key ? (result.reason ?? "") : t(key) });
+        return;
+      }
+      setRerunning({ busy: false, error: null });
+      setFollow(true);
+      scheduleRef.current(current.run.id);
+    } catch (cause) { setRerunning({ busy: false, error: cause instanceof Error ? cause.message : String(cause) }); }
+  };
+
   const selectedNode = selected ? lookup(selected) : null;
   const direction = width > 0 && width < 560 ? "DOWN" : "RIGHT";
 
@@ -366,11 +395,22 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
         </SurfaceBody>
       </Surface>
 
+      {current ? <GoalsPanel snapshot={current} /> : null}
+
       {selectedNode ? (() => {
         const context: NodePanelContext = { node: selectedNode, nodeKey: selected!, locale, run: runStates?.get(selected!) ?? null, definitionOnly: !runMode, readOnly: true,
-          onOpenThread: (threadId) => openThread(threadId, nodeTitle(selectedNode, locale)), onClose: () => setSelected(null) };
+          onOpenThread: (threadId) => openThread(threadId, nodeTitle(selectedNode, locale)), onClose: () => setSelected(null),
+          // A finished top-level run can start again from one of its own nodes; a child run is re-run from its parent.
+          ...(current && !isActive(current.run.status) && !current.run.parentRunId && !selected!.includes("/") && !current.run.workflowId.startsWith("draft-test.")
+            ? { rerun: { ...rerunning, onRerun: () => void rerunNode(selectedNode.id) } } : {}) };
         return renderNodePanel ? renderNodePanel(context) : <NodePanel {...context} />;
       })() : null}
+
+      <WorkflowTrials detail={detail} projectId={projectId} runProjectId={editProjectId} onChanged={() => void loadDetail()}
+        onOpenRun={(id) => { setRunId(id); setFollow(false); setSelected(null); }} />
+
+      <RunHistory id={detail.id} projectId={projectId} shownRunId={runId} signature={runs.map((row) => `${row.id}:${row.status}`).join()}
+        onPick={(id) => { setRunId(id); setFollow(false); setSelected(null); }} />
 
       <Surface testId="wf-info">
         <SurfaceHeader><h3 className="text-sm font-medium">{t("wfDefinition")}</h3></SurfaceHeader>
@@ -380,6 +420,8 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
             <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfOutputs")}</dt><dd><FieldList fields={detail.outputs} /></dd></div>
             {detail.triggers.length ? <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfTriggers")}</dt><dd className="break-words text-xs">{detail.triggers.join(", ")}</dd></div> : null}
             {detail.requires.length ? <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfRequires")}</dt><dd className="break-words text-xs">{detail.requires.join(", ")}</dd></div> : null}
+            <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfFilterStatus")}</dt><dd className="break-words text-xs" data-testid="wf-proven">{detail.proven ? t("wfProven").replace("{time}", when(detail.proven.at)) : detail.status === "tested" ? t("wfNotProven") : t(`wfStatus_${detail.status}` as I18nKey)}</dd></div>
+            {detail.triggers.some((trigger) => trigger.startsWith("schedule")) ? <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfScheduleHeading")}</dt><dd className="break-words text-xs" data-testid="wf-schedule">{detail.schedules.length ? t("wfScheduleAutomations").replace("{n}", String(detail.schedules.length)) : t("wfScheduleNone")}</dd></div> : null}
             <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfBudget")}</dt><dd className="break-words text-xs">{budgetText(detail.budget) || t("wfNoFields")}</dd></div>
             <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfSource")}</dt><dd className="break-all font-mono text-[11px] text-muted-foreground">{detail.source}</dd></div>
           </dl>
