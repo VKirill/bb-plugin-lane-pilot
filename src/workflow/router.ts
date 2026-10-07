@@ -330,7 +330,7 @@ export function stateProblem(workflow: Workflow, state: RouterState | undefined)
 /** Confidence from the top candidate's strength and its margin over the second. Rule hits make the top candidate more certain. */
 export function scoreConfidence(top: number, second: number, ruleHits: number): number {
   const strength = Math.min(1, top / 0.55);
-  const margin = second <= 0 ? 1 : Math.min(1, (top - second) / (0.3 * top));
+  const margin = second <= 0 ? 1 : Math.max(0, Math.min(1, (top - second) / (0.3 * top)));
   return Math.round(100 * Math.min(1, 0.4 * strength + 0.5 * margin + 0.1 * Math.min(1, ruleHits)));
 }
 
@@ -365,7 +365,7 @@ export type RouteDecision = {
     /** True when a plugged model failed or named an id outside the candidates and the scorer decided instead. */
     modelFallback?: string;
   };
-  candidates: Array<{ id: string; name: string; score: number; base: number; boost: number; penalty: number; rules: string[] }>;
+  candidates: Array<{ id: string; name: string; score: number; base: number; boost: number; penalty: number; rules: string[]; stat?: number }>;
   questions: string[];
   boundary_contract: BoundaryContract | null;
   goals: RouteGoal[];
@@ -460,7 +460,22 @@ function goalsFor(workflow: Workflow, intent: string): RouteGoal[] {
   return goals;
 }
 
-export type RouteInput = { intent: string; context?: string; workflows: ReadonlyArray<Workflow>; state?: RouterState; model?: RouterModel | null };
+/** How a workflow has run so far (real runs only): the router's tiebreaker. */
+export type RunRecord = { succeeded: number; failed: number; lastRunAt: number | null };
+export type RouteInput = { intent: string; context?: string; workflows: ReadonlyArray<Workflow>; state?: RouterState; model?: RouterModel | null;
+  /** Run statistics by workflow id: between candidates the text search scores (nearly) alike, the one that has run well and lately comes first. Never lets a worse text match win. */
+  stats?: ReadonlyMap<string, RunRecord>; now?: number };
+
+/** How much the run record can move a score: less than the gap between two different text matches, enough to order two that are alike. */
+export const STAT_WEIGHT = 0.02;
+const RECENT_MS = 30 * 24 * 3_600_000;
+/** 0 to 1: the share of finished runs that succeeded (smoothed, so one lucky run is not a record), and how recent the last run is; a workflow that never ran sits in the middle. */
+export function trackRecord(record: RunRecord | undefined, now: number): number {
+  const finished = (record?.succeeded ?? 0) + (record?.failed ?? 0);
+  const reliability = (((record?.succeeded ?? 0) + 1) / (finished + 2));
+  const recency = record?.lastRunAt ? Math.exp(-Math.max(0, now - record.lastRunAt) / RECENT_MS) : 0;
+  return 0.7 * reliability + 0.3 * recency;
+}
 
 export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   const intent = input.intent.trim();
@@ -502,7 +517,9 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
       else if (entry.includes(" ") && dice(grams(stems(entry).join(" ")), grams(query.join(" "))) > 0.5) penalty = Math.max(penalty, 0.3);
     }
     const score = Math.max(0, own - penalty);
-    return { workflow: doc.workflow, score, base: base.get(doc.workflow.id) ?? 0, boost: boost.get(doc.workflow.id) ?? 0, penalty, rules: hits.filter((hit) => (hit.boosts[doc.workflow.id] ?? 0) > 0).map((hit) => hit.id) };
+    // The run record only orders alike matches; a candidate with no text match at all keeps score 0 whatever its record.
+    const rank = score + (input.stats && score > 0 ? STAT_WEIGHT * trackRecord(input.stats.get(doc.workflow.id), input.now ?? Date.now()) : 0);
+    return { workflow: doc.workflow, score, rank, base: base.get(doc.workflow.id) ?? 0, boost: boost.get(doc.workflow.id) ?? 0, penalty, rules: hits.filter((hit) => (hit.boosts[doc.workflow.id] ?? 0) > 0).map((hit) => hit.id) };
   });
 
   const excluded: Array<{ id: string; reason: string }> = [];
@@ -510,7 +527,7 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
     const problem = stateProblem(item.workflow, input.state);
     if (problem) { excluded.push({ id: item.workflow.id, reason: problem }); return false; }
     return true;
-  }).sort((a, b) => b.score - a.score || a.workflow.id.localeCompare(b.workflow.id));
+  }).sort((a, b) => b.rank - a.rank || a.workflow.id.localeCompare(b.workflow.id));
   const top = available.slice(0, TOP_N);
   const cards = top.map((item) => cardOf(item.workflow, item.score, item.rules));
   const warnings: string[] = [];
@@ -534,7 +551,8 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
     pattern, rejected: [...rejected, ...excluded.filter((e) => !rejected.some((r) => r.id === e.id))],
     rules: hits.map((hit) => ({ id: hit.id, note: hit.note })), model: usedModel ? "external" : "deterministic", ...(modelFallback ? { modelFallback } : {}),
   });
-  const candidates = top.map((item, i) => ({ id: item.workflow.id, name: item.workflow.name[lang], score: cards[i]!.score, base: round3(item.base), boost: round3(item.boost), penalty: round3(item.penalty), rules: item.rules }));
+  const candidates = top.map((item, i) => ({ id: item.workflow.id, name: item.workflow.name[lang], score: cards[i]!.score, base: round3(item.base), boost: round3(item.boost), penalty: round3(item.penalty), rules: item.rules,
+    ...(input.stats ? { stat: round3(trackRecord(input.stats.get(item.workflow.id), input.now ?? Date.now())) } : {}) }));
   const chosen = output.choice ? top.find((item) => item.workflow.id === output!.choice)?.workflow ?? null : null;
 
   // Too weak, too broad, or no choice: questions, no workflow.

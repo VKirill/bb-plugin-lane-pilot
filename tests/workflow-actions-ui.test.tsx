@@ -56,10 +56,10 @@ async function world() {
   return { db, engine, rpc, broken };
 }
 
-async function mount(rpc: Record<string, unknown>) {
+async function mount(rpc: Record<string, unknown>, architectProjectId: string | null = null) {
   await loadPluginApp(() => import("../app"));
   const { WorkflowsScreen } = await import("../src/ui/workflows");
-  return renderSlot({ component: () => <WorkflowsScreen locale="en" projectId={null} /> }, {}, { context: { projectId: null, threadId: null }, rpc: rpc as never });
+  return renderSlot({ component: () => <WorkflowsScreen locale="en" projectId={null} architectProjectId={architectProjectId} /> }, {}, { context: { projectId: null, threadId: null }, rpc: rpc as never });
 }
 
 describe("run history", () => {
@@ -174,5 +174,69 @@ describe("requirements", () => {
     fireEvent.click(await slot.findByTestId("wf-check-requires"));
     await waitFor(() => expect(slot.getByTestId("wf-requires-result").textContent).toContain("Everything it needs is there."));
     expect(slot.getByTestId("wf-proven").textContent).toBe("Published");
+  });
+});
+
+describe("Run", () => {
+  it("asks for the inputs, starts the workflow in the project and opens the run in the graph", async () => {
+    const { rpc, engine, broken } = await world();
+    broken.write = false;
+    const calls: Array<Record<string, unknown>> = [];
+    const slot = await mount({ ...rpc, workflow_list: rpc.workflow_list, workflow_draft_list: async () => ({ drafts: [] }),
+      workflow_run: async (input: Record<string, unknown>) => {
+        calls.push(input);
+        const started = engine.start({ workflow: wf({ id: "demo" }), inputs: input.inputs as Record<string, unknown>, link: { projectId: "proj_ui" } });
+        await started.done;
+        return { ok: true, runId: started.runId, created: true, status: "succeeded", notChecked: [] };
+      } }, "proj_ui");
+    fireEvent.click(await slot.findByTestId("wf-row-demo"));
+    expect((await slot.findByTestId("wf-run")).textContent).toBe("Run");
+    fireEvent.click(slot.getByTestId("wf-run"));
+    fireEvent.click(await slot.findByTestId("wf-inputs-submit"));
+    expect((await slot.findByRole("alert")).textContent).toContain("query is required");
+    fireEvent.change(slot.getByTestId("wf-input-query"), { target: { value: "cats" } });
+    fireEvent.click(slot.getByTestId("wf-inputs-submit"));
+    await waitFor(() => expect(calls).toEqual([{ id: "demo", projectId: "proj_ui", inputs: { query: "cats" }, source: "manual" }]));
+    await waitFor(() => expect(slot.getByTestId("wf-run-summary").textContent).toContain("Succeeded"));
+    expect(slot.queryByTestId("wf-run-panel")).toBeNull();
+  });
+
+  it("is a first real run for a tested workflow, says why a start was refused, and is not offered for a draft or without a project", async () => {
+    const { rpc, db } = await world();
+    db.prepare("UPDATE lane_pilot_wf_test SET green=1").run();
+    const calls: Array<Record<string, unknown>> = [];
+    const refuse = async (input: Record<string, unknown>) => { calls.push(input); return { ok: false, reason: "requirements_missing", message: "x", issues: [{ kind: "tool", name: "ffmpeg", level: "missing" as const, message: "ffmpeg is not installed on the machine the run works on." }] }; };
+    const tested = { ...rpc, workflow_run: refuse, workflow_get: async (input: { id: string }) => { const result = await rpc.workflow_get(input as never); return { workflow: { ...result.workflow!, status: "tested" as const } }; } };
+    const slot = await mount(tested, "proj_ui");
+    fireEvent.click(await slot.findByTestId("wf-row-demo"));
+    expect((await slot.findByTestId("wf-run")).textContent).toBe("Run for real");
+    fireEvent.click(slot.getByTestId("wf-run"));
+    expect((await slot.findByTestId("wf-run-panel")).textContent).toContain("really send, post and spend");
+    fireEvent.change(slot.getByTestId("wf-input-query"), { target: { value: "cats" } });
+    fireEvent.click(slot.getByTestId("wf-inputs-submit"));
+    const refused = await slot.findByTestId("wf-run-refused");
+    expect(refused.textContent).toContain("something it needs is missing");
+    expect(refused.textContent).toContain("ffmpeg is not installed");
+    expect(calls[0]).toMatchObject({ liveTrial: true });
+    cleanup();
+
+    const noProject = await mount(rpc, null);
+    fireEvent.click(await noProject.findByTestId("wf-row-demo"));
+    await noProject.findByTestId("wf-dry-run");
+    expect(noProject.queryByTestId("wf-run")).toBeNull();
+    cleanup();
+
+    const draft = await mount({ ...rpc, workflow_get: async (input: { id: string }) => ({ workflow: { ...(await rpc.workflow_get(input as never)).workflow!, status: "draft" as const } }) }, "proj_ui");
+    fireEvent.click(await draft.findByTestId("wf-row-demo"));
+    await draft.findByTestId("wf-dry-run");
+    expect(draft.queryByTestId("wf-run")).toBeNull();
+  });
+
+  it("tells the owner when a schedule has its automation", async () => {
+    const { rpc } = await world();
+    const withSchedule = async (input: { id: string }) => ({ workflow: { ...(await rpc.workflow_get(input as never)).workflow!, triggers: ["schedule 0 9 * * *"], schedules: [{ projectId: "p", slot: 0, automationId: "auto_1" }] } });
+    const slot = await mount({ ...rpc, workflow_get: withSchedule });
+    fireEvent.click(await slot.findByTestId("wf-row-demo"));
+    expect((await slot.findByTestId("wf-schedule")).textContent).toContain("1 BB automation(s)");
   });
 });

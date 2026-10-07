@@ -22,7 +22,7 @@ const trialCase = (result: DraftTestResult): TrialCase => ({
  * What the Workflows tab does with a workflow beyond reading it (W7): the run history, re-running one node of a finished run, a
  * dry run with every external action stubbed, and the tests of a workflow file with their receipt.
  */
-export function createWorkflowOps(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog">>, library: Pick<ReturnType<typeof createWorkflowLibrary>, "loadStore">,
+export function createWorkflowOps(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog" | "workflowTriggers">>, library: Pick<ReturnType<typeof createWorkflowLibrary>, "loadStore">,
   options: { timeoutMs?: number; preflight?: Pick<WorkflowPreflight, "check"> } = {}) {
   const { db } = ctx;
   const statuses = createStatusResolver(db);
@@ -81,6 +81,8 @@ export function createWorkflowOps(ctx: ServerCore, services: Pick<Services, "wor
       const green = cases.length > 0 && cases.every((row) => row.green);
       statuses.recordTest(item.workflow.id, item.sha256, green, cases.map((row) => ({ caseId: row.caseId, green: row.green, path: row.path, failures: row.failures })));
       services.workflowCatalog?.invalidate();
+      // Green tests can make a file published, and a published file with a schedule needs its automation.
+      if (input.projectId) services.workflowTriggers?.syncSoon(input.projectId);
       // The status the library gives it now that the receipt is in.
       const status = (await library.loadStore(input.projectId)).store.get(input.id)?.workflow.status ?? null;
       return { found: true, green, cases: cases.map(trialCase), status };

@@ -214,6 +214,8 @@ const workflowDetailSchema = workflowSummarySchema.extend({
   qualityMode: z.string().nullable(), source: z.string(), sha256: z.string(),
   /** The live run that proved this version (a `tested` workflow whose run succeeded counts as published); null until one did. */
   proven: z.object({ runId: z.string(), at: z.number().int() }).strict().nullable(),
+  /** The BB automations that run this workflow's schedule triggers (own, published workflows only). */
+  schedules: z.array(z.object({ projectId: z.string(), slot: z.number().int(), automationId: z.string() }).strict()),
   warningMessages: z.array(z.string()),
   graph: workflowViewSchema,
   runs: z.array(workflowRunRowSchema),
@@ -1581,6 +1583,18 @@ export const rpcContract = defineRpcContract({
   workflow_rerun_node: {
     input: z.object({ runId: z.string().min(1), nodeId: z.string().min(1).max(80) }).strict(),
     output: z.object({ ok: z.boolean(), reason: z.string().optional(), stepKey: z.string().optional(), removed: z.number().int().optional() }).strict(),
+  },
+  /**
+   * Starts a workflow now, from the tab (`manual`) or from another plugin (`telegram`: the workflow must list a telegram trigger). The project's PM chat runs it.
+   * `liveTrial` is the owner's word for the first real run of a `tested` workflow. `reason` says why not (unknown_workflow, not_runnable, missing_inputs,
+   * no_pm_chat, requirements_missing, no_trigger, cannot_start).
+   */
+  workflow_run: {
+    input: z.object({ id: z.string().min(1), projectId: z.string().min(1), inputs: z.record(z.string(), z.unknown()).default({}), source: z.enum(["manual", "telegram"]).default("manual"), liveTrial: z.boolean().optional() }).strict(),
+    output: z.object({ ok: z.boolean(), runId: z.string().optional(), created: z.boolean().optional(), status: z.string().optional(), notChecked: z.array(z.string()).optional(),
+      reason: z.string().optional(), message: z.string().optional(), missing: z.array(z.string()).optional(),
+      issues: z.array(z.object({ kind: z.string(), name: z.string(), level: z.enum(["missing", "unverified"]), message: z.string() }).strict()).optional(),
+      envRequests: z.array(z.object({ name: z.string(), kind: z.literal("secret"), purpose: z.string() }).strict()).optional() }).strict(),
   },
   /** Whether what the workflow `requires` exists where it would run (skills, plugins, MCP servers, secrets by name, commands, logins). */
   workflow_preflight: {

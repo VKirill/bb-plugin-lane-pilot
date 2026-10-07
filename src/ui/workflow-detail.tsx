@@ -404,7 +404,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
         return renderNodePanel ? renderNodePanel(context) : <NodePanel {...context} />;
       })() : null}
 
-      <WorkflowTrials detail={detail} projectId={projectId} onChanged={() => void loadDetail()}
+      <WorkflowTrials detail={detail} projectId={projectId} runProjectId={editProjectId} onChanged={() => void loadDetail()}
         onOpenRun={(id) => { setRunId(id); setFollow(false); setSelected(null); }} />
 
       <RunHistory id={detail.id} projectId={projectId} shownRunId={runId} signature={runs.map((row) => `${row.id}:${row.status}`).join()}
@@ -419,6 +419,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
             {detail.triggers.length ? <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfTriggers")}</dt><dd className="break-words text-xs">{detail.triggers.join(", ")}</dd></div> : null}
             {detail.requires.length ? <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfRequires")}</dt><dd className="break-words text-xs">{detail.requires.join(", ")}</dd></div> : null}
             <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfFilterStatus")}</dt><dd className="break-words text-xs" data-testid="wf-proven">{detail.proven ? t("wfProven").replace("{time}", when(detail.proven.at)) : detail.status === "tested" ? t("wfNotProven") : t(`wfStatus_${detail.status}` as I18nKey)}</dd></div>
+            {detail.triggers.some((trigger) => trigger.startsWith("schedule")) ? <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfScheduleHeading")}</dt><dd className="break-words text-xs" data-testid="wf-schedule">{detail.schedules.length ? t("wfScheduleAutomations").replace("{n}", String(detail.schedules.length)) : t("wfScheduleNone")}</dd></div> : null}
             <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfBudget")}</dt><dd className="break-words text-xs">{budgetText(detail.budget) || t("wfNoFields")}</dd></div>
             <div className="min-w-0"><dt className="mb-1 text-xs font-medium">{t("wfSource")}</dt><dd className="break-all font-mono text-[11px] text-muted-foreground">{detail.source}</dd></div>
           </dl>

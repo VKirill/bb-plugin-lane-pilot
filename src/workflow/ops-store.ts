@@ -17,6 +17,17 @@ export const workflowOpsMigrations: string[] = [
     at INTEGER NOT NULL,
     PRIMARY KEY(workflow_id, definition_sha256)
   )`,
+  // The BB automation that runs a workflow's schedule trigger (W9): one per workflow, project and schedule trigger; the signature says what it was made from.
+  `CREATE TABLE lane_pilot_wf_trigger (
+    workflow_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    slot INTEGER NOT NULL,
+    automation_id TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(workflow_id, project_id, slot)
+  )`,
 ];
 
 export type StatusVerdict = { status: Workflow["status"]; notes: WorkflowProblem[] };

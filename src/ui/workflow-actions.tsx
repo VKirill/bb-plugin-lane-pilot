@@ -97,14 +97,17 @@ export function TrialResult({ result, stubbed, onOpenRun }: { result: TrialCase;
   );
 }
 
-type Panel = { kind: "dry" } | { kind: "tests" } | { kind: "requires" } | null;
+type Panel = { kind: "dry" } | { kind: "tests" } | { kind: "requires" } | { kind: "run" } | null;
 
 /**
  * «Try it»: a dry run (the owner fills the workflow's inputs, every outside action is stubbed) and the tests of the workflow
  * with their receipt. A run on stubs is journaled under its own id; «Open this run» shows it in the graph.
  */
-export function WorkflowTrials({ detail, projectId, onOpenRun, onChanged, extra }: {
-  detail: Detail; projectId: string | null; onOpenRun: (runId: string) => void; onChanged: () => void; extra?: ReactNode;
+export function WorkflowTrials({ detail, projectId, runProjectId = projectId, onOpenRun, onChanged, extra }: {
+  detail: Detail; projectId: string | null;
+  /** The project whose Lane Pilot chat runs the workflow when the Run button is pressed; without one there is no Run button. */
+  runProjectId?: string | null;
+  onOpenRun: (runId: string) => void; onChanged: () => void; extra?: ReactNode;
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [panel, setPanel] = useState<Panel>(null);
@@ -113,6 +116,7 @@ export function WorkflowTrials({ detail, projectId, onOpenRun, onChanged, extra 
   const [dry, setDry] = useState<Output<"workflow_dry_run"> | null>(null);
   const [tests, setTests] = useState<Output<"workflow_run_tests"> | null>(null);
   const [needs, setNeeds] = useState<Output<"workflow_preflight"> | null>(null);
+  const [refused, setRefused] = useState<Output<"workflow_run"> | null>(null);
   const scope = projectId ? { projectId } : {};
 
   const runDry = async (input: Record<string, unknown>) => {
@@ -130,6 +134,17 @@ export function WorkflowTrials({ detail, projectId, onOpenRun, onChanged, extra 
     } catch (cause) { setError(errorText(cause)); } finally { setBusy(false); }
   };
 
+  // A published workflow runs on the owner's word; a tested one only as a first real run, which the button says.
+  const runnable = Boolean(runProjectId) && !detail.internal && detail.id !== "lp-task-pipeline" && (detail.status === "published" || detail.status === "tested");
+  const live = detail.status === "tested";
+  const runNow = async (inputs: Record<string, unknown>) => {
+    if (!runProjectId) return;
+    setBusy(true); setError(null); setRefused(null);
+    try {
+      const result = await rpc.call("workflow_run", { id: detail.id, projectId: runProjectId, inputs, source: "manual", ...(live ? { liveTrial: true } : {}) });
+      if (result.ok && result.runId) { setPanel(null); onChanged(); onOpenRun(result.runId); } else setRefused(result);
+    } catch (cause) { setError(errorText(cause)); } finally { setBusy(false); }
+  };
   const checkRequires = async () => {
     setPanel({ kind: "requires" }); setBusy(true); setError(null); setNeeds(null);
     try { setNeeds(await rpc.call("workflow_preflight", { id: detail.id, ...scope })); } catch (cause) { setError(errorText(cause)); } finally { setBusy(false); }
@@ -141,6 +156,11 @@ export function WorkflowTrials({ detail, projectId, onOpenRun, onChanged, extra 
         <h3 className="text-sm font-medium">{t("wfActionsHeading")}</h3>
         <div className="flex flex-wrap gap-2">
           {extra}
+          {runnable ? (
+            <Button type="button" size="sm" className="lp-accent h-7 px-2.5 text-xs" disabled={busy} data-testid="wf-run" onClick={() => { setPanel({ kind: "run" }); setRefused(null); setError(null); }}>
+              {live ? t("wfRunLive") : t("wfRun")}
+            </Button>
+          ) : null}
           <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2.5 text-xs" disabled={busy} data-testid="wf-dry-run"
             onClick={() => { setPanel({ kind: "dry" }); setDry(null); setError(null); }}>{t("wfDryRun")}</Button>
           <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2.5 text-xs" disabled={busy} data-testid="wf-check-requires" onClick={() => void checkRequires()}>
@@ -165,6 +185,21 @@ export function WorkflowTrials({ detail, projectId, onOpenRun, onChanged, extra 
                   : <InputsForm fields={detail.inputs} busy={busy} submitLabel={t("wfTrialStart")} onSubmit={(input) => void runDry(input)} onCancel={() => setPanel(null)} />}
               {dry?.result ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setPanel(null)}>{t("wfTrialCancel")}</Button> : null}
             </>
+          ) : null}
+          {panel?.kind === "run" ? (
+            <div className="space-y-2" data-testid="wf-run-panel">
+              <p className="text-xs text-muted-foreground">{live ? t("wfRunLiveHint") : t("wfRunHint")}</p>
+              {busy ? <p className="text-xs text-muted-foreground" role="status">{t("wfRunStarting")}</p> : null}
+              <InputsForm fields={detail.inputs} busy={busy} submitLabel={live ? t("wfRunLive") : t("wfRunStart")} onSubmit={(input) => void runNow(input)} onCancel={() => setPanel(null)} />
+              {refused && !refused.ok ? (
+                <div className="space-y-1 text-xs" role="alert" data-testid="wf-run-refused">
+                  <p className="break-words text-destructive-text">{t("wfRunRefused").replace("{reason}", (() => { const key = `wfRunReason_${refused.reason ?? ""}` as I18nKey; return t(key) === key ? (refused.message ?? refused.reason ?? "") : t(key); })())}</p>
+                  {refused.missing?.length ? <p className="break-words">{refused.missing.join(", ")}</p> : null}
+                  {refused.issues?.filter((issue) => issue.level === "missing").length ? <ul className="list-disc space-y-0.5 pl-4">{refused.issues.filter((issue) => issue.level === "missing").map((issue) => <li key={`${issue.kind}:${issue.name}`} className="break-words">{issue.message}</li>)}</ul> : null}
+                  {refused.envRequests?.length ? <p className="text-muted-foreground">{t("wfRequiresEnvHint")}</p> : null}
+                </div>
+              ) : null}
+            </div>
           ) : null}
           {panel?.kind === "requires" ? (
             <div className="space-y-2 text-xs" data-testid="wf-requires-result">

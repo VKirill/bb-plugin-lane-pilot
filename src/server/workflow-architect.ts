@@ -99,7 +99,7 @@ const bothLanguages = (value: unknown): { en: string; ru: string } => {
   return { en, ru: typeof row.ru === "string" ? row.ru : en };
 };
 
-export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog">>, deps: ArchitectDeps = realDeps(ctx, services as Services)) {
+export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog" | "workflowTriggers">>, deps: ArchitectDeps = realDeps(ctx, services as Services)) {
   const { db } = ctx;
   const drafts: DraftStore = createDraftStore(db);
   const resolve = (id: string, version?: number) => builtinWorkflow(id, version);
@@ -247,6 +247,8 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     const published = drafts.markPublished(draft.id, { version: draft.version, path: written.path, sha256, workflowVersion: version }) ?? draft;
     changed(published, input.threadId);
     services.workflowCatalog?.invalidate();
+    // A published workflow with a schedule trigger gets its automation (and a changed one its update).
+    services.workflowTriggers?.syncSoon(draft.projectId);
     const missing = unregisteredExecutors(final);
     return {
       draftId: draft.id, published: true, workflowId: id, workflowVersion: version, scope: draft.scope, path: written.path,

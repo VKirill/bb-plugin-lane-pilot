@@ -124,6 +124,8 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
           requires: [...requires.plugins, ...requires.skills, ...requires.mcp, ...requires.tools, ...requires.platforms, ...requires.machines, ...requires.env, ...requires.secrets, ...(requires.browserSession ? ["browser session"] : [])],
           budget: { maxSteps: workflow.budget.maxSteps ?? null, maxTokens: workflow.budget.maxTokens ?? null, maxCostUsd: workflow.budget.maxCostUsd ?? null, maxWallSeconds: workflow.budget.maxWallSeconds ?? null },
           qualityMode: workflow.quality_mode?.default ?? null, source: item.source, sha256: item.sha256,
+          schedules: (db.prepare("SELECT project_id, slot, automation_id FROM lane_pilot_wf_trigger WHERE workflow_id=? ORDER BY project_id, slot").all(workflow.id) as Array<{ project_id: string; slot: number; automation_id: string }>)
+            .map((row) => ({ projectId: row.project_id, slot: row.slot, automationId: row.automation_id })),
           proven: (() => { const live = statuses.liveSuccess(workflow.id, workflow.version); return live ? { runId: live.id, at: live.updated_at } : null; })(),
           warningMessages: item.warnings.map((warning) => warning.message),
           graph: workflowView(workflow, store.resolve),

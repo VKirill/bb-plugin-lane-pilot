@@ -14,7 +14,12 @@ export function workflowOpsRpc(ctx: ServerCore, services: Services) {
     workflow_runs: (input) => ops.runs(input),
     workflow_rerun_node: (input) => ops.rerunNode(input),
     workflow_preflight: (input) => ops.preflight(input),
+    workflow_run: async (input) => {
+      const result = await services.workflowTriggers.start({ projectId: input.projectId, workflowId: input.id, inputs: input.inputs, source: input.source, liveTrial: input.liveTrial });
+      return result.ok ? { ok: true, runId: result.runId, created: result.created, status: result.status, notChecked: result.notChecked }
+        : { ok: false, reason: result.reason, message: result.message, ...(result.missing ? { missing: result.missing } : {}), ...(result.issues ? { issues: result.issues } : {}), ...(result.envRequests ? { envRequests: result.envRequests } : {}) };
+    },
     workflow_dry_run: (input) => ops.dryRun(input),
     workflow_run_tests: (input) => ops.runTests(input),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_runs" | "workflow_rerun_node" | "workflow_preflight" | "workflow_dry_run" | "workflow_run_tests">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_runs" | "workflow_rerun_node" | "workflow_preflight" | "workflow_run" | "workflow_dry_run" | "workflow_run_tests">;
 }

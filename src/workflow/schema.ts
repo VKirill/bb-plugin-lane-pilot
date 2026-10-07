@@ -207,9 +207,18 @@ export const edgeSchema = z.object({
 }).strict();
 export type WorkflowEdge = z.infer<typeof edgeSchema>;
 
+/**
+ * How a workflow is started besides the router. `schedule` becomes a BB automation while the workflow is published (own files
+ * only): `cron` (5 fields), `timezone` (IANA; the hub's own when absent), `inputs` (the values every scheduled run gets) and the
+ * `projectId` whose PM chat runs it (the project of a project workflow when absent). `manual` is the Run button of the tab.
+ * `telegram` has no API behind it yet; see docs/workflow-triggers.md.
+ */
 const trigger = z.object({
   type: z.enum(["chat", "schedule", "telegram", "manual"]),
   cron: z.string().max(120).optional(),
+  timezone: z.string().max(100).optional(),
+  inputs: z.record(z.string(), z.unknown()).optional(),
+  projectId: z.string().max(80).optional(),
 }).strict();
 
 export const workflowSchema = z.object({

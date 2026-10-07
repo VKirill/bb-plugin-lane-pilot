@@ -5,7 +5,8 @@ import type { LanePilotDatabase } from "../database";
 import { redactKnown } from "../redact";
 import type { WorkflowEngine } from "../workflow/engine";
 import { isOffered, isPipeline, routeIntent } from "../workflow/router";
-import type { RouteDecision, RouterModel, RouterState } from "../workflow/router";
+import type { RouteDecision, RouterModel, RouterState, RunRecord } from "../workflow/router";
+import { runRecords } from "../workflow/run-stats";
 import { preflightRefusal } from "../workflow/preflight";
 import type { PreflightResult } from "../workflow/preflight";
 import type { Workflow } from "../workflow/schema";
@@ -29,6 +30,8 @@ export type WorkflowToolDeps = {
   runtime(input: { pmThreadId: string; projectId: string; runId: string }): ChainRuntime;
   /** What the router may know about the environment; undefined facts count as available. */
   state?(input: { projectId: string; runId: string | null }): RouterState;
+  /** How each workflow has run so far: the router's tiebreaker between alike matches. */
+  stats?(): ReadonlyMap<string, RunRecord>;
   /** The model step of the router for this PM chat (a helper thread); without it the deterministic scorer decides. */
   model?(input: { pmThreadId: string; projectId: string; runId: string }): RouterModel;
   /** The check of what the workflow needs (skills, plugins, MCP servers, secrets, commands, logins) before a live run; without it nothing is checked. */
@@ -67,7 +70,7 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   const state = deps.state?.({ projectId: context.projectId, runId });
   const model = runId ? deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId }) : undefined;
-  const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(params.context ? { context: params.context } : {}), workflows: store.list().map((item) => item.workflow), ...(state ? { state } : {}), ...(model ? { model } : {}) });
+  const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(params.context ? { context: params.context } : {}), workflows: store.list().map((item) => item.workflow), ...(state ? { state } : {}), ...(model ? { model } : {}), ...(deps.stats ? { stats: deps.stats() } : {}) });
   const noWorkflow = decision.candidates.length === 0;
   return JSON.stringify({
     decision: decision.decision, workflowId: decision.workflowId, confidence: decision.confidence,
@@ -76,7 +79,7 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
     ...(decision.boundary_contract ? { boundary_contract: decision.boundary_contract, goals: decision.goals, inputs: decision.inputs, missingInputs: decision.missingInputs, guessedInputs: decision.guessedInputs } : {}),
     ...(decision.questions.length ? { questions: decision.questions } : {}),
     ...(decision.warnings.length ? { warnings: decision.warnings } : {}),
-    candidates: decision.candidates.map((candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score, rules: candidate.rules })),
+    candidates: decision.candidates.map((candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score, rules: candidate.rules, ...(candidate.stat !== undefined ? { runRecord: candidate.stat } : {}) })),
     next: noWorkflow ? "No published workflow fits or exists here: work the usual way (lane_pilot_dispatch_writer, specialists, errands)."
       : decision.stateContinue ? "«Continue» is no workflow: read the run state (lane_pilot_run_health) and propose the next step from it; never guess."
       : decision.decision === "route" ? ROUTE_NEXT_ROUTE : ROUTE_NEXT_CLARIFY,
@@ -168,6 +171,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
       openTasks: () => (runId ? listTaskTerminalStates(db, runId).filter((state) => OPEN_ATTEMPT_STATES.has(state)).length : undefined),
     }),
     preflight: (workflow, input) => preflight.check(workflow, input),
+    stats: () => runRecords(db),
     model: ({ pmThreadId, projectId, runId }) => createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowAgents),
     warn: (message) => bb.log.warn(message),
   };
@@ -175,7 +179,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_route",
     description: "Match a request to a ready Lane Pilot workflow: the workflow, how sure the match is, a boundary contract and goals, or up to three questions.",
-    instructions: "Use from a Lane Pilot PM chat when the owner asks for multi-step work (a feature end to end, a review and fix, a release, research, a post) before you plan it yourself. Pass `intent` (the owner's request, in their words) and `context` (what you know that the request does not say: the project, files, the state of the run). Returns `decision`: `route` with `workflowId`, `confidence` (0-100), `evidence` (pattern, rejected workflows and why, rules that fired), `boundary_contract` (in scope, out of scope, constraints; `guesses` lists what is inferred), `goals`, `inputs` and `missingInputs`; or `clarify` with at most three `questions` and no workflow. Only published workflows are offered. Nothing is started by this call. Show the owner the choice and the contract before lane_pilot_run_workflow. When no workflow fits, work the usual way.",
+    instructions: "Use from a Lane Pilot PM chat when the owner asks for multi-step work (a feature end to end, a review and fix, a release, research, a post) before you plan it yourself. Pass `intent` (the owner's request, in their words) and `context` (what you know that the request does not say: the project, files, the state of the run). Returns `decision`: `route` with `workflowId`, `confidence` (0-100), `evidence` (pattern, rejected workflows and why, rules that fired), `boundary_contract` (in scope, out of scope, constraints; `guesses` lists what is inferred), `goals`, `inputs` and `missingInputs`; or `clarify` with at most three `questions` and no workflow. Only published workflows are offered; of candidates that match alike the one that has run well and lately comes first (`runRecord` 0 to 1 shows it). Nothing is started by this call. Show the owner the choice and the contract before lane_pilot_run_workflow. When no workflow fits, work the usual way.",
     parameters: z.object({ intent: z.string().min(3).max(4000), context: z.string().max(8000).optional() }).strict(),
     execute: async (params, context) => routeTool(deps, params, context),
   });
