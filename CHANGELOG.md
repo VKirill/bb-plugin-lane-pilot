@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.184
+
+- The server bundle takes jsonc-parser's ESM build: its UMD build kept a runtime `require("./impl/format")` the bundle cannot resolve, and the 0.1.183 reload failed on the hub (0.1.182 kept running).
+
 ## 0.1.183
 
 - **Workflows live inside Lane Pilot (W1, W2).** The fixed per-task pipeline (PM read, plan critique by quality mode, specialist review, ownership base, task folder, then the code task) is now the built-in workflow `analyze-plan-execute` (`workflows/analyze-plan-execute.json`), and a workflow engine runs every dispatch. Behaviour is unchanged: the nodes call the same stage functions, and `tests/workflow/equivalence.test.ts` compares the dispatch reply, the stage receipts and the attempt and run states of 12 scenarios with the engine on and off. `LANE_PILOT_WORKFLOW_ENGINE=0` (read at each dispatch, default on, no setting) keeps the old direct path; an engine that cannot start a run falls back to it for that dispatch. A reload still ends a dispatch that was between its stages (the attempt is blocked and the PM sends the task again).

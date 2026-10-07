@@ -1,5 +1,5 @@
-import { parse as parseJsonc, printParseErrorCode } from "jsonc-parser";
-import type { ParseError } from "jsonc-parser";
+import { parse as parseJsonc, printParseErrorCode } from "jsonc-parser/lib/esm/main.js";
+import type { ParseError } from "jsonc-parser/lib/esm/main.js";
 import { ExprSyntaxError, checkExpr, checkRef, exprRefs, parseExpr, placeholdersIn, refOf, toExpr, valueSpecOf } from "./expr";
 import type { CheckEnv, Ref, Typed } from "./expr";
 import { EMIT, executorKey, lowerWorkflow, outputFields } from "./lower";
