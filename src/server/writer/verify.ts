@@ -216,8 +216,14 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const listed = await listThreadEventsRaw(bb, { threadId, order:"desc", limit:"500" } as never).catch(() => null);
     if (!listed || !listed.ok) return null;
     return listed.events.map((event) => {
-      const item = (event as { data?: { item?: { type?: string } } })?.data?.item;
-      return item && ["fileChange", "commandExecution", "toolCall"].includes(String(item.type)) ? JSON.stringify(item) : "";
+      // Only what the writer did: edited paths, command text and tool arguments. A command's output is no touch —
+      // a plain `ls` listed index.md and the writer was blamed for the PM's edit (drill 2026-10-07, 0.1.179).
+      const item = (event as { data?: { item?: Record<string, unknown> } })?.data?.item;
+      if (!item) return "";
+      if (item.type === "fileChange") return JSON.stringify(item.changes ?? item.path ?? item);
+      if (item.type === "commandExecution") return String(item.command ?? "");
+      if (item.type === "toolCall") return JSON.stringify(item.arguments ?? item.input ?? "");
+      return "";
     }).join("\n");
   }
 

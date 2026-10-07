@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.180
+
+- **A folder without git: only what the writer did counts as its touch.** Edited paths, command text and tool arguments; a command's output does not. A plain `ls` listed the PM's `index.md` and the writer was blamed for it, so the 0.1.179 fix never applied (drill 2026-10-07).
+
 ## 0.1.179
 
 - **One whole-suite run per batch, everywhere, with no setup.** When `integration.gate_command` is empty, Lane Pilot detects it on the project's machine: an `npm test` script, else vitest or jest, else pytest; `off` turns the gate off. The gate runs once when the last task of a batch lands and sends a red result to the writer whose merge broke it. Before, with the default `gate_when=queue_drained` the gate never ran at all: nothing called it on a drained queue.

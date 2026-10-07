@@ -58,6 +58,7 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
   const threadSpawns: Array<{ role?: unknown }> = [];
   let answer = "";
   const events: unknown[] = [];
+  const extraItems: unknown[] = [];
   const feedbackSeen: string[] = [];
   let seq = 0;
   const { bb, harness } = createFakePluginHost({
@@ -87,7 +88,8 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
         void input;
         return undefined;
       },
-      events: { list: async () => [...events, { type: "item/completed", data: { item: { type: "fileChange", changes: touched.map((path) => ({ path })) } } }] as never },
+      events: { list: async () => [...events, ...extraItems.map((item) => ({ type: "item/completed", data: { item } })),
+        { type: "item/completed", data: { item: { type: "fileChange", changes: touched.map((path) => ({ path })) } } }] as never },
     }, providers: {
       list: async () => [{ id: "codex", available: true, capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "default", label: "Default" }] }] as never,
       models: async () => ({ models: [{ id: "codex-test", model: "codex-test",
@@ -130,7 +132,7 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
     }
     throw new Error("the task never finished");
   };
-  return { db, harness, folder, home, dispatch, finished, hostCalls, commands, writes, threadSpawns, feedbackSeen };
+  return { db, harness, folder, home, dispatch, finished, hostCalls, commands, writes, threadSpawns, feedbackSeen, extraItems };
 }
 
 beforeEach(() => { process.env.LANE_PILOT_DISPATCH_ANSWER_MS = "5000"; });
@@ -184,6 +186,19 @@ describe("a plain folder without git, end to end", () => {
     const attempt = await env.finished();
     expect(attempt.state).toBe("accepted");
     expect(readFileSync(join(env.folder, "notes-by-pm.md"), "utf8")).toBe("the PM was here\n");
+    await env.harness.lifecycle.dispose();
+  });
+
+  it("does not count a file that only shows up in a command's output as the writer's (live drill 2026-10-07, 0.1.179)", async () => {
+    const env = await setup((folder) => {
+      write(folder, "hello.txt", "hello\n");
+      writeFileSync(join(folder, "notes-by-pm.md"), "the PM was here\n");
+      return "Changed hello.txt";
+    });
+    env.extraItems.push({ type: "commandExecution", command: "ls -la", aggregatedOutput: "hello.txt\nnotes-by-pm.md\n" });
+    await env.dispatch();
+    const attempt = await env.finished();
+    expect(attempt.state).toBe("accepted");
     await env.harness.lifecycle.dispose();
   });
 
