@@ -20,6 +20,7 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_update_task: row("Updating a task", "Updated a task", "Обновляю задачу", "Задача обновлена"),
   lane_pilot_wait_writer: row("Waiting for a writer", "Waited for a writer", "Жду писателя", "Дождался писателя", true),
   lane_pilot_answer_writer: row("Answering a writer", "Answered a writer", "Отвечаю писателю", "Ответ писателю отправлен"),
+  lane_pilot_ask_owner: row("Asking the owner", "Asked the owner", "Спрашиваю владельца", "Вопрос владельцу задан"),
   lane_pilot_dispatch_cli: row("Sending a task to a CLI agent", "Sent a task to a CLI agent", "Отправляю задачу CLI-агенту", "Задача отправлена CLI-агенту"),
   lane_pilot_browser_qa: row("Checking the page in a browser", "Checked the page in a browser", "Проверяю страницу в браузере", "Страница проверена в браузере"),
   lane_pilot_ingest_opencode_telemetry: row("Reading OpenCode telemetry", "Read OpenCode telemetry", "Читаю телеметрию OpenCode", "Телеметрия OpenCode прочитана"),
