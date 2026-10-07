@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { experimental_ProviderModelPicker as ProviderModelPicker, type ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { t, type I18nKey, type Locale } from "../../i18n";
 import { Button } from "../../components/ui/button";
 import { Icon, type IconName } from "../../components/ui/icon";
@@ -14,6 +13,8 @@ import {
   type Clause, type ConditionOp, type ModelError, type NodeType, type Raw, type WhenModel,
 } from "./workflow-edit-model";
 import type { Catalog, DraftEditing } from "./workflow-edit-state";
+import { CatalogModelFields } from "./workflow-model-fields";
+import { useModelCatalog } from "./workflow-models";
 import type { DraftCaseResult, DraftDoc } from "./workflow-drafts";
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
@@ -108,17 +109,16 @@ function RefMap({ label, rows, suggestions, onChange, hint, testId, check }: { l
 
 // ------------------------------------------------------------------ the model of an agent
 
-function ModelFields({ node, edit, catalog }: { node: Raw; edit: DraftEditing; catalog: Catalog }) {
+function ModelFields({ node, edit }: { node: Raw; edit: DraftEditing }) {
   const id = text(node.id);
-  const host = catalog.hosts.find((item) => item.connected)?.value ?? null;
+  const models = useModelCatalog();
   const reasoning = ["low", "medium", "high", "xhigh", "max"] as const;
-  if (host) {
-    const value: ExperimentalProviderModelPickerValue = { providerId: text(node.provider) || "none", model: text(node.model), reasoningLevel: (text(node.reasoning) || "medium") as ExperimentalProviderModelPickerValue["reasoningLevel"] };
+  // The hub's catalog (the Models table's own list); when no machine reported one, the names are typed.
+  if (models?.providers.length) {
     return (
       <Field label={t("wfEditModel")} hint={t("wfEditModelHint")}>
-        <ProviderModelPicker value={value} routing={{ kind: "host", hostId: host }} onChange={(next: ExperimentalProviderModelPickerValue) => {
-          void edit.apply(setNodeOps(id, { provider: next.providerId === "none" ? null : next.providerId, model: next.model || null, reasoning: (reasoning as readonly string[]).includes(next.reasoningLevel) ? next.reasoningLevel : null }));
-        }} />
+        <CatalogModelFields provider={text(node.provider)} model={text(node.model)} reasoning={text(node.reasoning)} catalog={models}
+          onChange={(fields) => void edit.apply(setNodeOps(id, fields))} />
       </Field>
     );
   }
@@ -156,7 +156,7 @@ export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onC
         <>
           <TextField label={t("wfEditRole")} value={text(node.role)} list={[...new Set(["worker", "plan-analyst", "builder", "reviewer", "qa-browser", ...catalog.specialists])]} testId="wf-edit-role" hint={t("wfEditRoleHint")} onCommit={(next) => set({ role: next })} />
           <TextArea label={t("wfEditPrompt")} value={text(node.prompt)} rows={6} suggestions={refs} testId="wf-edit-prompt" hint={t("wfEditPromptHint")} onCommit={(next) => set({ prompt: next })} />
-          <ModelFields node={node} edit={edit} catalog={catalog} />
+          <ModelFields node={node} edit={edit} />
           <ChipsField label={t("wfEditSkills")} values={Array.isArray(node.skills) ? node.skills.filter((item): item is string => typeof item === "string") : []} catalog={catalog.skills.length ? catalog.skills : undefined} testId="wf-edit-skills" hint={t("wfEditSkillsHint")} onChange={(next) => set({ skills: next.slice(0, 8) })} />
           <ChipsField label={t("wfEditNodePlugins")} values={strings(node.plugins)} catalog={catalog.plugins.length ? catalog.plugins : undefined} testId="wf-edit-node-plugins" hint={t("wfEditNodePluginsHint")} onChange={(next) => set({ plugins: next.slice(0, 8) })} />
           <ChipsField label={t("wfEditNodeMcp")} values={strings(node.mcp)} catalog={catalog.mcpServers.length ? catalog.mcpServers.map((value) => ({ value })) : undefined} testId="wf-edit-node-mcp" hint={t("wfEditNodeMcpHint")} onChange={(next) => set({ mcp: next.slice(0, 8) })} />
