@@ -25,7 +25,7 @@ import { loadFollowUp } from "./sticky";
 import { askGuestsToCommit } from "../checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "../writer-silence";
-import { WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../failure-class";
+import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../failure-class";
 import { bookkeepingSetting } from "../../bookkeeping-paths";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
@@ -535,6 +535,13 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const basePath = getRun(db, input.runId)?.writer_workspace_path;
       let integration: { status:string; commit:string|null; conflicts:string[]; rebased?:boolean } | null = null;
       if (bound?.workspace_path && basePath && shouldMergeAttemptWorktree(bound.workspace_path, basePath)) {
+        const checkSettings = loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId));
+        const replayChecks = input.task.verification.length ? {
+          workspacePath:input.task.project_cwd,
+          backend:(checkSettings["sandbox.backend"] as "auto" | "macos-seatbelt" | "linux-bubblewrap" | undefined) ?? "auto",
+          commands:input.task.verification.slice(0, 20).map((command) => ({ command:command.command, cwd:command.cwd, timeoutSec:command.timeout_sec ?? 120 })),
+        } : null;
+        const replayMs = (replayChecks?.commands ?? []).reduce((sum, command) => sum + 2 * command.timeoutSec * 1000, 0);
         const integrate = () => host.call("gitIntegrate", {
           requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path!,
           message:`${input.task.id}: ${input.task.title}`.slice(0, 500),
@@ -542,7 +549,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           // keeps it for the area's next task (the attempt-worktree sweep removes it after the sticky window).
           removeWorktree:bound.environment_id === null && !input.task.area,
           bookkeeping:bookkeepingSetting(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))),
-        }, { hostId:input.config.hostId, timeoutMs:180_000 });
+          ownsPaths:input.task.owns_paths.slice(0, 200),
+          // When main moved and the attempt is replayed on it, the host runs these checks in the worktree before the merge.
+          ...(replayChecks ? { replayChecks } : {}),
+        }, { hostId:input.config.hostId, timeoutMs:180_000 + replayMs });
         // Another task merging into the same checkout is a queue, not a failure: wait for it and try again.
         let merged = await integrate();
         const queuedSince = Date.now();
@@ -592,13 +602,15 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           }
         }
         if (merged.status === "conflict" || merged.status === "failed") {
+          // The task's checks went red on the attempt replayed on the new main: a free redo by the same writer, with their output.
+          const replayRed = merged.status === "conflict" && Boolean(merged.reason?.startsWith(REPLAY_CHECK_FAILED));
           const reason = merged.status === "conflict"
-            ? `merge_conflict: ${merged.reason?.startsWith("base checkout") ? merged.reason : "main changed since this attempt started"}: ${merged.conflicts.join(", ")}`
+            ? `merge_conflict: ${merged.reason?.startsWith("base checkout") ? merged.reason : "main changed since this attempt started"}: ${replayRed ? merged.reason : merged.conflicts.join(", ")}`
             : `merge_failed: ${merged.reason ?? "unknown"}`;
           recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged}});
           transitionAttempt(db, input.attemptId, "validation_failed", { reason });
-          return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification,
+          return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:replayRed && merged.checks?.length ? merged.checks : candidate.verification,
             attemptId:input.attemptId, writerThreadId };
         }
         integration = { status:merged.status, commit:merged.commit, conflicts:[], ...(merged.rebased ? { rebased:true } : {}) };

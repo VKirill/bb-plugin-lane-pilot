@@ -1,5 +1,5 @@
 import { networkInterfaces } from "node:os";
-import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, syncWorktree, snapshotWorktree } from "./verification/git-integrate";
+import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, syncWorktree, snapshotWorktree, type ReplayCheckOutcome } from "./verification/git-integrate";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "./verification/docs-jev";
 import { buildDocsFlows } from "./verification/docs-flows";
 import { runStabilityDrill } from "./verification/stability-drill";
@@ -12,6 +12,7 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contracts";
+import { isEnvironmentCheckFailure } from "./failure-class";
 import { readBoundedWorkspaceFile } from "./bounded-read";
 import { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
 import { runBrowserQaOnHost } from "./stages/browser-qa";
@@ -67,8 +68,32 @@ export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract
 
 export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message,removeWorktree:input.removeWorktree,committedOnly:input.committedOnly,bookkeeping:input.bookkeeping}),
+  ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message,removeWorktree:input.removeWorktree,committedOnly:input.committedOnly,bookkeeping:input.bookkeeping,
+    ownsPaths:input.ownsPaths,
+    replayCheck:input.replayChecks?()=>runReplayChecks(input.requestedHostId,input.replayChecks!):undefined}),
 });
+
+/**
+ * The task's checks in the sandbox, in the attempt's worktree, while the integration holds the base checkout. The first red
+ * one (twice red: a flaky one passes the second time) ends it. A check that cannot run (no sandbox backend, a folder gone)
+ * says nothing about the code, so it blocks nothing; the post-merge check on main still runs.
+ */
+async function runReplayChecks(requestedHostId:string,checks:NonNullable<Parameters<ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"]>[0]["replayChecks"]>):Promise<ReplayCheckOutcome> {
+  for(const check of checks.commands) {
+    const run=()=>runSandboxedCommandOnHost({requestedHostId,workspacePath:checks.workspacePath,cwd:check.cwd,backend:checks.backend,command:check.command,timeoutSec:check.timeoutSec});
+    try {
+      let result=await run();
+      if(result.exitCode!==0) result=await run();
+      // The machine broke the check (root-owned files): no writer can fix that, so it does not hold the merge back.
+      if(result.exitCode!==0&&isEnvironmentCheckFailure(result)) return {ok:true};
+      if(result.exitCode!==0) return {ok:false,failed:[{command:check.command,exitCode:result.exitCode,stdout:result.stdout,stderr:result.stderr}]};
+    } catch(cause) {
+      console.warn(`lane-pilot: replay check could not run, the merge goes on: ${check.command}: ${cause instanceof Error?cause.message:String(cause)}`);
+      return {ok:true};
+    }
+  }
+  return {ok:true};
+}
 
 /** Background jobs (B4): ordinary short calls; the long work runs in a process of its own, see src/jobs.ts. */
 export const jobStart: ExperimentalHostRpcHandlers<typeof hostContract>["jobStart"] = async (input) => ({

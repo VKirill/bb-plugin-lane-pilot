@@ -8,7 +8,7 @@ import { reconcile } from "../../reconcile";
 import { emergencyFallbackDecision } from "../../stages/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, SESSION_MAX_MS, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../failure-class";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../failure-class";
 import { isTaskSatisfied } from "../blocked-by";
 import { previousAttemptBrief, stickyTurnPrompt } from "../writer-task";
 import { isMainfixTask } from "../../validate-output";
@@ -311,7 +311,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const continueWith = async (writer:NonNullable<Awaited<ReturnType<typeof sticky.hotWriter>>>, kind:"next-task"|"retry"|"merge", previousAttempt:string, keepDirt?:DirtSnapshot[]):Promise<boolean> => {
         const bound = {...freshTask,project_cwd:writer.workspacePath,verification:freshTask.verification.map(command=>({...command,cwd:writer.workspacePath}))};
         const turn = await sticky.continueInThread({ runId:input.runId, taskId:input.taskId, attemptId, config:freshConfig, writer, kind, dirtBefore:keepDirt,
-          prompt:(conflicts) => stickyTurnPrompt({ kind, task:bound, previousAttempt:kind === "merge" ? "" : previousAttempt, conflicts, liveFolder }) });
+          prompt:(conflicts) => stickyTurnPrompt({ kind, task:bound, previousAttempt:kind === "merge" && !previousAttempt.includes(REPLAY_CHECK_FAILED) ? "" : previousAttempt, conflicts, liveFolder }) });
         if (!turn.ok) {
           ctx.log(`writer ${input.taskId}: ${kind} in thread ${writer.threadId} not possible (${turn.reason}); a fresh writer starts`);
           // A half-bound attempt cannot take a fresh spawn: it ends as Lane Pilot's fault and the retry spawns.
