@@ -8,6 +8,7 @@ import type { PrototypeConfig } from "./contracts";
 import type { StageId, StageState } from "./stages/contract";
 import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
 import { validateSettingValue, validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
+import { sha256Buffer } from "./hash";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "./lp-defaults";
 import packageJson from "../package.json";
 import { IllegalTransitionError, isLegalMove } from "./state-machine";
@@ -262,6 +263,10 @@ export const migrations = [
   // 0.1.177: the Lane Pilot build that created the attempt; null on attempts made before. A parked task restarts when the
   // running build differs from the one its failed attempt ran under, not from the build that happened to park it.
   `ALTER TABLE lane_pilot_attempt ADD COLUMN harness_version TEXT`,
+  // G9: how long each verification command ran, per project and command, so a slow check gets a timeout from its own history.
+  `CREATE TABLE lane_pilot_check_duration (
+    project_id TEXT NOT NULL, command_key TEXT NOT NULL, duration_ms INTEGER NOT NULL, exit_code INTEGER NOT NULL, at INTEGER NOT NULL)`,
+  `CREATE INDEX lane_pilot_check_duration_key ON lane_pilot_check_duration(project_id, command_key, at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -1211,4 +1216,22 @@ export function casResetSettings(
     }
     return { ok: true, conflict: false, values: Object.fromEntries(args.keys.map((key) => [key, null])), versions: Object.fromEntries(args.keys.map((key) => [key, versions[key]])) };
   })();
+}
+
+const CHECK_DURATION_KEPT = 100;
+
+/** One finished verification command run. The command is keyed by its hash: it can be long and may carry a secret name. */
+export function recordCheckDuration(db: LanePilotDatabase, input: { projectId: string; command: string; durationMs: number; exitCode: number; now?: number }): void {
+  const key = sha256Buffer(input.command.trim());
+  db.prepare("INSERT INTO lane_pilot_check_duration(project_id,command_key,duration_ms,exit_code,at) VALUES (?,?,?,?,?)")
+    .run(input.projectId, key, Math.max(0, Math.round(input.durationMs)), input.exitCode, input.now ?? Date.now());
+  db.prepare(`DELETE FROM lane_pilot_check_duration WHERE project_id=? AND command_key=? AND rowid NOT IN
+    (SELECT rowid FROM lane_pilot_check_duration WHERE project_id=? AND command_key=? ORDER BY at DESC, rowid DESC LIMIT ?)`)
+    .run(input.projectId, key, input.projectId, key, CHECK_DURATION_KEPT);
+}
+
+/** Durations (ms) of the last green runs of one command in one project, newest first. */
+export function listCheckDurations(db: LanePilotDatabase, projectId: string, command: string, limit = 20): number[] {
+  return (db.prepare("SELECT duration_ms FROM lane_pilot_check_duration WHERE project_id=? AND command_key=? AND exit_code=0 ORDER BY at DESC, rowid DESC LIMIT ?")
+    .all(projectId, sha256Buffer(command.trim()), limit) as Array<{ duration_ms: number }>).map((row) => row.duration_ms);
 }

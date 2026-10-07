@@ -3,7 +3,8 @@ import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, valid
 import { attemptProduced } from "../../cli-outcome";
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting } from "../../database";
+import { recordCheckDuration, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting } from "../../database";
+import { checkTimeoutSec } from "../../check-timing";
 import { sha256 } from "../../stages/contract";
 import { parseReadFirstHints } from "../../stages/read-first";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../stages/run-policy";
@@ -115,7 +116,14 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       return await runWithFlakyRerun(command.command,async()=>{
       const backend=(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto";
       // The sandbox gives a command 120 s when the task names no limit; waiting only 30 s cut longer checks short.
-      const timeoutSec=command.timeout_sec ?? 120;
+      // History widens it for a check that is slow in this project: max(that, p95 of its last 20 green runs x 2), capped.
+      const timeoutSec=checkTimeoutSec(db,config.projectId,command.command,command.timeout_sec ?? 120);
+      const startedAt=Date.now();
+      // A timeout (124) and a host that failed say nothing about how long the check takes: not kept.
+      const recorded=<T extends {exitCode:number;hostError?:true}>(result:T):T=>{
+        if(result.exitCode!==124&&!result.hostError) try { recordCheckDuration(db,{projectId:config.projectId,command:command.command,durationMs:Date.now()-startedAt,exitCode:result.exitCode}); } catch { /* history is a hint only */ }
+        return result;
+      };
       // A check with secrets runs through the host call, not a BB terminal: a terminal's command line and screen would carry the values.
       const env=Object.assign({},...(command.secrets??[]).map((name)=>secrets?.byName[name]??{})) as Record<string,string>;
       const hasSecrets=Object.keys(env).length>0;
@@ -124,8 +132,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
           bb.log.warn(`verification terminal failed, running on the host: ${cause instanceof Error?cause.message:String(cause)}`);
           return null;
         }) : null;
-      if (inTerminal) return {command:command.command,exitCode:inTerminal.exitCode,stdout:redactKnown(inTerminal.stdout),stderr:redactKnown(inTerminal.stderr),
-        sandboxBackend:inTerminal.backend,policySha256:inTerminal.policySha256,workspacePath:inTerminal.workspacePath};
+      if (inTerminal) return recorded({command:command.command,exitCode:inTerminal.exitCode,stdout:redactKnown(inTerminal.stdout),stderr:redactKnown(inTerminal.stderr),
+        sandboxBackend:inTerminal.backend,policySha256:inTerminal.policySha256,workspacePath:inTerminal.workspacePath});
       const ran = await host.call("runSandboxedCommand", {
         requestedHostId: config.hostId,
         workspacePath:task.project_cwd,
@@ -152,8 +160,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       // The host masks them already; a second pass here costs nothing and covers an older host.
       // Any check also loses the values this process handed to another run (redactKnown).
       const mask=(text:string)=>redactKnown(hasSecrets?redactSecrets(text,Object.values(env)):text);
-      return {command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?mask(ran.stdout):"",stderr:typeof ran.stderr==="string"?mask(ran.stderr):"",
-        sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,...("hostError" in ran?{hostError:true as const}:{})};
+      return recorded({command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?mask(ran.stdout):"",stderr:typeof ran.stderr==="string"?mask(ran.stderr):"",
+        sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,...("hostError" in ran?{hostError:true as const}:{})});
       },(line)=>bb.log.info(line));
       } finally { release(); }
     });

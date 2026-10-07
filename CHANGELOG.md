@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **G9: a check's timeout comes from its own history.** Each green run of a verification command is stored (table `lane_pilot_check_duration`, per project and command, last 100 kept); the check's timeout becomes max(the configured one, p95 of the last 20 green runs x 2), the history part capped at 30 minutes and used only after 3 runs. A command with fewer runs, or a configured timeout already higher, is unchanged.
+
 ## 0.1.180
 
 - **A folder without git: only what the writer did counts as its touch.** Edited paths, command text and tool arguments; a command's output does not. A plain `ls` listed the PM's `index.md` and the writer was blamed for it, so the 0.1.179 fix never applied (drill 2026-10-07).
