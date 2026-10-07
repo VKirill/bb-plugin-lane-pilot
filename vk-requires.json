@@ -10,7 +10,9 @@
     "experimental_vkCompiledMainAgent",
     "experimental_vkQuietChild",
     "experimental_vkSpawnKeyed",
-    "vkLifecycleDrain",
+    "experimental_vkFindByKey",
+    "experimental_vkFindByPluginMetadata",
+    "experimental_vkLifecycle",
     "experimental_vkSchedule",
     "experimental_vkOnHookTimeout"
   ]

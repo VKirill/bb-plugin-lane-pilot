@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { reconcile, reconcileHolder } from "../../src/reconcile";
 import { fullAccessSpawn } from "../../src/server/pm-spawn";
-import { findThreadsByMetadata, spawnIdentity, spawnKey } from "../../src/server/thread-keys";
+import { clearSpawnMarker, findThreadsByMetadata, spawnIdentity, spawnKey, spawnTextId } from "../../src/server/thread-keys";
 
 type Row = { id: string; key: string | null; metadata: Record<string, unknown>; archived: boolean };
 
@@ -81,6 +81,46 @@ describe("keyed spawn of Lane Pilot threads", () => {
     await fullAccessSpawn(core.bb, helper);
     expect(core.rows).toHaveLength(2);
     expect(core.rows.every((row) => row.key?.startsWith("lp:") && row.key.endsWith(":specialist:1"))).toBe(true);
+  });
+
+  it("a helper that names its spawn with spawnId gets a stable key: a lost answer repeated is the same thread", async () => {
+    const core = keyedBb({ loseAnswers: 1, noFind: true });
+    const specialist = { projectId: "p", prompt: "x", pluginMetadata: { role: "specialist", lanePilotRunId: "run", spawnId: `run:seo:${spawnTextId("audit the page")}` } } as never;
+    expect(spawnIdentity((specialist as { pluginMetadata: Record<string, unknown> }).pluginMetadata)).toEqual({ stable: `run:seo:${spawnTextId("audit the page")}`, role: "specialist" });
+    await expect(fullAccessSpawn(core.bb, specialist)).rejects.toThrow("answer lost");
+    await expect(fullAccessSpawn(core.bb, specialist)).resolves.toMatchObject({ id: "thr_1" });
+    expect(core.rows).toHaveLength(1);
+    expect(core.rows[0]!.key).toMatch(/^lp:run:seo:[0-9a-f]{16}:specialist:1$/);
+    // The same task asked for again after that one finished is a new specialist.
+    await fullAccessSpawn(core.bb, specialist);
+    expect(core.rows).toHaveLength(2);
+    expect(core.rows[1]!.key).toMatch(/:specialist:2$/);
+  });
+
+  it("a council seat of another round is another thread", async () => {
+    const core = keyedBb({ noFind: true });
+    const seat = (round: number) => ({ projectId: "p", prompt: "x", pluginMetadata: { role: "council-seat", lanePilotRunId: "run", spawnId: `council1:seatA:r${round}` } }) as never;
+    await fullAccessSpawn(core.bb, seat(1));
+    await fullAccessSpawn(core.bb, seat(2));
+    expect(core.rows.map((row) => row.key)).toEqual(["lp:council1:seatA:r1:council-seat:1", "lp:council1:seatA:r2:council-seat:1"]);
+  });
+
+  it("a thread adopted through reconcile is not handed to the next round of the same identity", async () => {
+    const core = keyedBb({ loseAnswers: 1, noFind: true });
+    const critic = { role: "code-critic", lanePilotRunId: "run", lanePilotTaskId: "task", stageId: "code-critique" };
+    await expect(fullAccessSpawn(core.bb, { projectId: "p", prompt: "round 1", pluginMetadata: critic } as never)).rejects.toThrow("answer lost");
+    // Round 1 is settled by reconcile (the thread was found), not by the spawn answer.
+    await clearSpawnMarker(core.bb, critic);
+    expect(core.kv.size).toBe(0);
+    await expect(fullAccessSpawn(core.bb, { projectId: "p", prompt: "round 2", pluginMetadata: critic } as never)).resolves.toMatchObject({ id: "thr_2" });
+    expect(core.rows.map((row) => row.key)).toEqual(["lp:run:task:code-critique:code-critic:1", "lp:run:task:code-critique:code-critic:2"]);
+  });
+
+  it("without the marker cleared, the next round would have read the lost round's thread (what clearSpawnMarker prevents)", async () => {
+    const core = keyedBb({ loseAnswers: 1, noFind: true });
+    const critic = { role: "code-critic", lanePilotRunId: "run", lanePilotTaskId: "task", stageId: "code-critique" };
+    await expect(fullAccessSpawn(core.bb, { projectId: "p", prompt: "round 1", pluginMetadata: critic } as never)).rejects.toThrow();
+    await expect(fullAccessSpawn(core.bb, { projectId: "p", prompt: "round 2", pluginMetadata: critic } as never)).resolves.toMatchObject({ id: "thr_1" });
   });
 
   it("a test host that answers every sdk path is not a VK build", async () => {

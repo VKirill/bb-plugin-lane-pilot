@@ -266,6 +266,69 @@ describe("self-repair", () => {
       expect(env.hostCalls.map((call) => call.method)).toEqual(["gitCreateWorktree", "gitPrepareWorktree", "gitWorktreeSnapshot", "gitRemoveWorktree"]);
     });
 
+    /** The core has thread keys: a keyed spawn holds its key, and `lose` answers are lost after the thread is made. */
+    const keyedCore = (env: ReturnType<typeof setup>, lose: number) => {
+      const base = env.ctx.bb as unknown as { sdk: { threads: Record<string, (...args: unknown[]) => Promise<unknown>> } };
+      const held = new Map<string, unknown>();
+      const core = { down: false };
+      const keyedSpawn = async ({ key, ...args }: { key: string } & Record<string, unknown>) => {
+        if (core.down) throw new Error("core down");
+        if (held.has(key)) return { thread: held.get(key), reused: true };
+        const thread = await base.sdk.threads.spawn!(args);
+        held.set(key, thread);
+        if (lose > 0) { lose -= 1; throw new Error("answer lost"); }
+        return { thread, reused: false };
+      };
+      (env.ctx as unknown as { bb: unknown }).bb = new Proxy(env.ctx.bb as object, { get: (target, name) => name === "vk" ? {}
+        : name === "sdk"
+          ? new Proxy(base.sdk, { get: (sdk, part) => part === "threads" ? new Proxy(base.sdk.threads, { get: (threads, method) => method === "experimental_vkSpawnKeyed" ? keyedSpawn : method === "experimental_vkFindByKey" ? async () => null : Reflect.get(threads, method) }) : Reflect.get(sdk, part) })
+          : Reflect.get(target, name, target) });
+      return core;
+    };
+
+    it("a spawn whose answer was lost keeps its worktree, and the next pass gets the same repair thread back", async () => {
+      const env = setup();
+      keyedCore(env, 1);
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const repair = createSelfRepair(env.ctx);
+      const first = await repair.tick({ since: 0 });
+      expect(first.spawned).toBeNull();
+      expect(first.reason).toBe("spawn failed: answer lost");
+      expect(env.hostCalls.map((call) => call.method)).toEqual(["gitCreateWorktree", "gitPrepareWorktree"]);
+      const pending = Object.values((await repair.state()).signatures)[0]!.pending!;
+      expect(pending.worktree.path).toContain("/wt/self-repair-");
+      const second = await repair.tick();
+      expect(second.spawned).toBe("thr_repair1");
+      expect(env.spawns).toHaveLength(1);
+      expect(env.hostCalls.filter((call) => call.method === "gitCreateWorktree")).toHaveLength(1);
+      const record = Object.values((await repair.state()).signatures)[0]!;
+      expect(record.worktree).toEqual(pending.worktree);
+      expect(record.pending).toBeNull();
+      expect(env.hostCalls.map((call) => call.method)).not.toContain("gitRemoveWorktree");
+    });
+
+    it("a spawn that stays unsettled for too long releases the worktree", async () => {
+      const env = setup();
+      const core = keyedCore(env, 1);
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      const repair = createSelfRepair(env.ctx);
+      await repair.tick({ since: 0 });
+      core.down = true;
+      const state = await repair.state();
+      Object.values(state.signatures)[0]!.pending!.at -= 31 * 60_000;
+      await env.ctx.bb.storage.kv.set("self-repair:state", state as never);
+      await repair.tick();
+      expect(env.hostCalls.map((call) => call.method)).toEqual(["gitCreateWorktree", "gitPrepareWorktree", "gitWorktreeSnapshot", "gitRemoveWorktree"]);
+      expect(Object.values((await repair.state()).signatures)[0]!.pending).toBeNull();
+    });
+
+    it("gives the repair spawn a stable id", async () => {
+      const env = setup();
+      env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+      await createSelfRepair(env.ctx).tick({ since: 0 });
+      expect(env.spawns[0]!.pluginMetadata).toMatchObject({ role: "self-repair", spawnId: expect.stringMatching(/^blocked:.*:0$/) });
+    });
+
     it("a fixed repair is merged like a writer's work, its worktree is removed, and nothing deploys", async () => {
       const env = setup({}, { thr_repair1: fixed });
       env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");

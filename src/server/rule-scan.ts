@@ -9,6 +9,7 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../owns-paths";
 import { bbServiceTier, writerExecutionSelection } from "../jev-reasoning";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
 import { fullAccessSpawn } from "./pm-spawn";
+import { spawnTextId } from "./thread-keys";
 import { scheduleIsolated } from "./schedules";
 import { stringAt } from "./values";
 import { outputText } from "./writer-task";
@@ -257,7 +258,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
       ...writerExecutionSelection(analyzer.providerId, analyzer.model, analyzer.reasoningLevel, analyzer.serviceTier ? bbServiceTier(analyzer.serviceTier === "fast" ? "fast" : "standard") : null),
       prompt,
       environment: { type: "host", hostId: place.hostId, workspace: { type: "unmanaged", path: place.path } },
-      pluginMetadata: { role: "rules-analyzer", stageId: "rules-analyzer", ...metadata },
+      pluginMetadata: { role: "rules-analyzer", stageId: "rules-analyzer", spawnId: `${projectId}:${spawnTextId(title)}`, ...metadata },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("rules_analyzer_thread_id_missing");

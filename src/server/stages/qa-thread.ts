@@ -1,6 +1,7 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { writerExecutionSelection } from "../../jev-reasoning";
 import { fullAccessSpawn } from "../pm-spawn";
+import { spawnTextId } from "../thread-keys";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
 import { stringAt } from "../values";
 import { outputText } from "../writer-task";
@@ -87,7 +88,7 @@ export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDispose
     ...writerExecutionSelection(input.agent.providerId, input.agent.model, input.agent.effort, null),
     prompt: qaThreadPrompt(input),
     environment: { type: "reuse", environmentId },
-    pluginMetadata: { role: "browser-qa", lanePilotRunId: input.runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },
+    pluginMetadata: { role: "browser-qa", spawnId: `${input.runId}:${spawnTextId([input.taskTitle, input.url, ...input.cases].join("\n"))}`, lanePilotRunId: input.runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },
   } as Parameters<typeof fullAccessSpawn>[1]);
   const threadId = stringAt(spawned, "id");
   if (!threadId) throw new Error("browser_qa_thread_id_missing");

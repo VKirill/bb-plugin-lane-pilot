@@ -199,7 +199,7 @@ export function createCouncil(ctx: ServerCore) {
       ...writerExecutionSelection(providerId, model, effort, null),
       prompt: input.prompt,
       environment: workspaceExecutionEnvironment(input.place.hostId, { path: input.place.workspace, environmentId: null }),
-      pluginMetadata: { role: "council-seat", lanePilotRunId: input.session.runId, councilId: input.session.id, seatId: input.seat?.id ?? "chair", round: input.round, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },
+      pluginMetadata: { role: "council-seat", spawnId: `${input.session.id}:${input.seat?.id ?? "chair"}:r${input.round}`, lanePilotRunId: input.session.runId, councilId: input.session.id, seatId: input.seat?.id ?? "chair", round: input.round, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("council_seat_thread_id_missing");
