@@ -196,7 +196,9 @@ export class WorkflowEngine {
     const depth = input.depth ?? 0;
     if (depth > Math.min(workflow.guards.maxSubworkflowDepth, MAX_SUBWORKFLOW_DEPTH)) throw new MissingValueError("subworkflow_depth", `subworkflows go ${depth} deep; the limit is ${MAX_SUBWORKFLOW_DEPTH}`);
     const given = inputs.quality_mode;
-    const mode: QualityMode = (QUALITY_MODES as readonly unknown[]).includes(given) ? given as QualityMode : input.mode ?? workflow.quality_mode?.default ?? "standard";
+    const asked: QualityMode = (QUALITY_MODES as readonly unknown[]).includes(given) ? given as QualityMode : input.mode ?? workflow.quality_mode?.default ?? "standard";
+    const floor = workflow.quality_mode?.min;
+    const mode: QualityMode = workflow.quality_mode?.fixed ?? (floor && QUALITY_MODES.indexOf(asked) < QUALITY_MODES.indexOf(floor) ? floor : asked);
     const runId = `wfrun_${randomUUID().replaceAll("-", "")}`;
     const j = this.journal, at = this.now();
     const lowered = lowerWorkflow(workflow, this.options.resolveWorkflow);
@@ -362,7 +364,28 @@ export class WorkflowEngine {
       this.arrive(run, c, branch, step.step_key, { $failed: `upstream_blocked:${label}`, $blocked: true });
       changed = true;
     }
-    return { ready, changed };
+    return { ready: this.withinConcurrency(run, c, ready), changed };
+  }
+
+  /** `concurrency` on a fan-out: only that many branches run at once, in branch order; the first step of the others waits for a free place. */
+  private withinConcurrency(run: RunRow, c: Compiled, ready: StepRow[]): StepRow[] {
+    const starts = new Map<string, Array<{ step: StepRow; branch: number; limit: number }>>();
+    const keep = new Set(ready.map((step) => step.step_key));
+    for (const step of ready) {
+      const branch = this.branchOf(run, c, step);
+      if (!branch || branch.parallel.concurrency === undefined || step.parent_key !== branch.group) continue;
+      const list = starts.get(branch.group) ?? [];
+      list.push({ step, branch: branch.branch, limit: branch.parallel.concurrency });
+      starts.set(branch.group, list);
+    }
+    for (const [group, list] of starts) {
+      const active = new Set<number>();
+      const open = this.journal.db.prepare("SELECT scope FROM lane_pilot_wf_step WHERE run_id=? AND state IN ('running','waiting')").all(run.id) as Array<{ scope: string }>;
+      for (const row of open) { const segment = row.scope.split("/").find((part) => part.startsWith(`${group}~`)); if (segment) active.add(Number(segment.slice(group.length + 1))); }
+      const room = Math.max(0, list[0]!.limit - active.size);
+      for (const item of list.sort((a, b) => a.branch - b.branch).slice(room)) keep.delete(item.step.step_key);
+    }
+    return ready.filter((step) => keep.has(step.step_key));
   }
 
   private failRun(runId: string, reason: string): void {

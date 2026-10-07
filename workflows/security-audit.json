@@ -61,8 +61,7 @@
   },
   "budget": {
     "max_steps": 16,
-    "max_minutes": 90,
-    "max_fan_out": 5
+    "max_minutes": 90
   },
   "entry": "recon",
   "nodes": [
@@ -107,7 +106,6 @@
           "git_history"
         ]
       },
-      "max_fan_out": 5,
       "child": {
         "type": "agent",
         "role": "code-critic",
@@ -129,7 +127,8 @@
           "high_count": "int"
         },
         "uses": "reduce.security-audit.scan"
-      }
+      },
+      "concurrency": 5
     },
     {
       "id": "report",

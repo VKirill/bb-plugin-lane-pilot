@@ -1,4 +1,5 @@
 import { PURE_ACTION_KEYS, pureActionExecutor } from "../../src/workflow/actions";
+import { writeFileSync } from "node:fs";
 import { BUILTIN_SOURCES } from "../../src/workflow/builtin";
 import type { NodeExecutor, RunSummary, StepContext } from "../../src/workflow/engine";
 import { executorKey, lowerWorkflow, outputFields } from "../../src/workflow/lower";
@@ -19,7 +20,7 @@ export type Stub = Row | Row[] | ((ctx: StepContext) => Row);
 export type Sim = {
   input: Row;
   mode?: QualityMode;
-  /** By node id (`score:child` for the child of a fan-out) or by the id of a workflow a subworkflow node calls. */
+  /** By node id (`score:child` for the child of a fan-out), by the id of a workflow a subworkflow node calls, by the action key (`bb.tasks.get`) or by node type (`lp-task`). */
   stubs?: Record<string, Stub>;
   /** Answers of `human` nodes by node id: the output fields, or a list of them, one per visit. */
   humans?: Record<string, Row | Row[]>;
@@ -68,7 +69,7 @@ export async function runSim(workflowId: string, sim: Sim) {
     return { ...base, ...(ctx.node.type === "agent" ? { handoff: `${key} done` } : {}), ...given };
   };
   const stubOf = (ctx: StepContext): Stub | undefined => sim.stubs?.[ctx.nodeId] ?? (ctx.node.type === "subworkflow" ? sim.stubs?.[ctx.node.workflow] : undefined)
-    ?? (ctx.nodeId.endsWith(":child") ? sim.stubs?.[ctx.nodeId.slice(0, -":child".length)] : undefined) ?? sim.stubs?.[ctx.node.type];
+    ?? (ctx.nodeId.endsWith(":child") ? sim.stubs?.[ctx.nodeId.slice(0, -":child".length)] : undefined) ?? (ctx.node.type === "action" ? sim.stubs?.[ctx.node.action ?? ""] : undefined) ?? sim.stubs?.[ctx.node.type];
 
   const model: NodeExecutor = { reentrant: true, run: async (ctx) => ({ output: answer(ctx, stubOf(ctx), outputFields(ctx.workflow, ctx.node)) }) };
 
@@ -115,6 +116,8 @@ export async function runSim(workflowId: string, sim: Sim) {
   const steps = rows<{ node_id: string; state: string; step_key: string }>(db, "SELECT node_id, state, step_key FROM lane_pilot_wf_step WHERE run_id=? ORDER BY rowid", summary.runId);
   const path = steps.filter((step) => step.state === "succeeded" || step.state === "skipped").map((step) => step.node_id).filter((id) => !id.endsWith(":fan") && !id.endsWith(":child"));
   const skipped = steps.filter((step) => step.state === "skipped").map((step) => step.node_id);
+  // SIM_DEBUG=1: every run leaves its summary, path and steps in /tmp/w3/dbg-<workflow>.json (the last one wins).
+  if (process.env.SIM_DEBUG) writeFileSync(`/tmp/w3/dbg-${workflowId}.json`, JSON.stringify({ summary, path, steps: steps.map((step) => `${step.step_key}:${step.state}`) }, null, 1));
   return { summary, path, skipped, calls, db, engine, workflow, steps, called: (node: string) => calls.filter((call) => call.node === node) };
 }
 

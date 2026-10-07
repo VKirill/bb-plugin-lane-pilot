@@ -61,7 +61,8 @@
   },
   "quality_mode": {
     "default": "standard",
-    "effect": "quick не допускается (минимум standard); full - слои тестов L0-L3 и браузер-проверка при UI"
+    "effect": "quick не допускается (минимум standard); full - слои тестов L0-L3 и браузер-проверка при UI",
+    "min": "standard"
   },
   "requires": {
     "plugins": [
@@ -90,8 +91,9 @@
       "type": "subworkflow",
       "workflow": "lp.review",
       "with": {
-        "range": "{{$inputs.scope}}",
-        "files": "{{$inputs.scope}}",
+        "files": [
+          "{{$inputs.scope}}"
+        ],
         "dimensions": {
           "by_mode": {
             "quick": [

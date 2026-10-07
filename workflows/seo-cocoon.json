@@ -112,8 +112,8 @@
   "budget": {
     "max_steps": 50,
     "max_minutes": 360,
-    "max_fan_out": 5,
-    "max_usd": 15
+    "max_usd": 15,
+    "max_fan_out": 30
   },
   "entry": "ask_brief",
   "nodes": [
@@ -173,7 +173,6 @@
         "external",
         "frequency"
       ],
-      "max_fan_out": 3,
       "title": {
         "en": "Collect evidence",
         "ru": "Собрать доказательства"
@@ -197,7 +196,8 @@
           "skipped_branches": "string[]"
         },
         "uses": "reduce.seo-cocoon.evidence"
-      }
+      },
+      "concurrency": 3
     },
     {
       "id": "architecture",
@@ -231,7 +231,6 @@
       "id": "briefs",
       "type": "parallel",
       "for_each": "architecture.pages",
-      "max_fan_out": 5,
       "title": {
         "en": "GIST brief per page",
         "ru": "GIST-бриф на страницу"
@@ -257,7 +256,8 @@
           "ok_count": "int"
         },
         "uses": "reduce.seo-cocoon.briefs"
-      }
+      },
+      "concurrency": 5
     },
     {
       "id": "audit",

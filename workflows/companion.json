@@ -54,7 +54,8 @@
   },
   "quality_mode": {
     "default": "quick",
-    "effect": "всегда quick"
+    "effect": "всегда quick",
+    "fixed": "quick"
   },
   "requires": {
     "plugins": [

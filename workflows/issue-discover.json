@@ -75,8 +75,7 @@
   },
   "budget": {
     "max_steps": 14,
-    "max_minutes": 90,
-    "max_fan_out": 4
+    "max_minutes": 90
   },
   "entry": "scan",
   "nodes": [
@@ -84,7 +83,6 @@
       "id": "scan",
       "type": "parallel",
       "for_each": "$inputs.perspectives",
-      "max_fan_out": 4,
       "batch": 4,
       "child": {
         "type": "agent",
@@ -103,7 +101,8 @@
           "count": "int"
         },
         "uses": "reduce.issue-discover.scan"
-      }
+      },
+      "concurrency": 4
     },
     {
       "id": "dedupe",

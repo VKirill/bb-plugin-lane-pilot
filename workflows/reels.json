@@ -97,7 +97,6 @@
   "budget": {
     "max_steps": 40,
     "max_minutes": 240,
-    "max_fan_out": 3,
     "max_usd": 8
   },
   "entry": "ingest",
@@ -222,7 +221,6 @@
       "id": "render",
       "type": "parallel",
       "for_each": "select.clips",
-      "max_fan_out": 3,
       "child": {
         "type": "agent",
         "role": "errand",
@@ -242,13 +240,13 @@
           "failed_ids": "string[]"
         },
         "uses": "reduce.reels.render"
-      }
+      },
+      "concurrency": 3
     },
     {
       "id": "verify",
       "type": "parallel",
       "for_each": "render.files",
-      "max_fan_out": 3,
       "child": {
         "type": "agent",
         "role": "auditor",
@@ -267,7 +265,8 @@
           "issues": "string[]"
         },
         "uses": "reduce.reels.verify"
-      }
+      },
+      "concurrency": 3
     },
     {
       "id": "publish_text",

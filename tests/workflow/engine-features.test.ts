@@ -183,6 +183,33 @@ describe("order depends_on and on_child_fail", () => {
   });
 });
 
+describe("concurrency", () => {
+  it("only that many branches run at once; the others wait for a free place, in branch order", async () => {
+    let running = 0, peak = 0;
+    const order: string[] = [];
+    const work = ok(async (ctx: StepContext) => {
+      running += 1; peak = Math.max(peak, running);
+      order.push(String((ctx.input.item as Row).id));
+      await new Promise((resolve) => setTimeout(resolve, 8));
+      running -= 1;
+      return { ok: true, label: String((ctx.input.item as Row).id) };
+    });
+    const items = ["a", "b", "c", "d", "e"].map((id) => ({ id }));
+    const { started } = run(fan({ concurrency: 2 }), { work }, items);
+    const summary = await started.done;
+    expect(summary.status).toBe("succeeded");
+    expect(peak).toBe(2);
+    expect(output(summary)).toEqual({ summary: ["a", "b", "c", "d", "e"] });
+    expect(order).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("the list may be longer than concurrency, but not than the workflow's fan-out cap", async () => {
+    const many = Array.from({ length: 13 }, (_unused, id) => ({ id: String(id) }));
+    const { started } = run(fan({ concurrency: 3 }), { work: ok((ctx: StepContext) => ({ ok: true, label: String((ctx.input.item as Row).id) })) }, many);
+    expect(await started.done).toMatchObject({ status: "failed" });
+  });
+});
+
 describe("a reload while ordered branches wait", () => {
   it("the dependents start after the reload once their dependency has arrived", async () => {
     const db = journalDb();

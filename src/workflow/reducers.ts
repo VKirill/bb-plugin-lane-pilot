@@ -55,7 +55,10 @@ export const REDUCERS: Record<string, Reducer> = {
     return { accepted_ids: accepted, failed_ids: failedIds, blocked_ids: blocked, failed_findings: findings, accepted_count: accepted.length, failed_count: failedIds.length, blocked_count: blocked.length, merged_commits: unique(commits) };
   },
   "reduce.lp.review.dims": (input) => {
-    const findings = flat(input.results, "findings").map((finding) => { const row = rec(finding); return { ...row, id: findingId(row) }; });
+    // Most severe first: the majority check takes the first findings when there are more than it can check.
+    const rank = (finding: Row) => ["critical", "high", "medium", "low", "info"].indexOf(str(finding.severity));
+    const findings = flat(input.results, "findings").map((finding) => { const row = rec(finding); return { ...row, id: findingId(row) }; })
+      .map((finding, at) => ({ finding, at })).sort((a, b) => (rank(a.finding) === -1 ? 9 : rank(a.finding)) - (rank(b.finding) === -1 ? 9 : rank(b.finding)) || a.at - b.at).map((entry) => entry.finding);
     return { findings, critical_count: sev(findings, "critical"), high_count: sev(findings, "high"), unchecked: lost(input).map((row) => str(row.item)).filter(Boolean) };
   },
   "reduce.lp.review.confirm": (input) => {

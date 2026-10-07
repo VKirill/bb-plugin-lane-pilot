@@ -87,7 +87,6 @@
   "budget": {
     "max_steps": 20,
     "max_minutes": 60,
-    "max_fan_out": 3,
     "max_usd": 2
   },
   "entry": "frame",
@@ -135,7 +134,6 @@
       "id": "search",
       "type": "parallel",
       "for_each": "frame.subquestions",
-      "max_fan_out": 3,
       "child": {
         "type": "agent",
         "role": "specialist:tavily",
@@ -153,7 +151,8 @@
           "unavailable": "string[]"
         },
         "uses": "reduce.web-research.search"
-      }
+      },
+      "concurrency": 3
     },
     {
       "id": "claims",

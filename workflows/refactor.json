@@ -69,7 +69,8 @@
   },
   "quality_mode": {
     "default": "standard",
-    "effect": "минимум standard: критика плана и критик кода обязательны (quick повышается до standard)"
+    "effect": "минимум standard: критика плана и критик кода обязательны (quick повышается до standard)",
+    "min": "standard"
   },
   "requires": {
     "plugins": [
@@ -226,7 +227,10 @@
       "with": {
         "goal": "{{$inputs.goal}}",
         "mode": "gaps",
-        "gaps": "{{review.findings}}"
+        "gaps": [
+          "{{equivalence}}",
+          "{{review.findings}}"
+        ]
       },
       "guards": {
         "maxVisits": 1
@@ -252,8 +256,8 @@
         "status": "done",
         "merged_commits": "ctx.merged_commits",
         "equivalent": true,
-        "metrics_before": "baseline",
-        "metrics_after": "equivalence",
+        "metrics_before": "{{baseline}}",
+        "metrics_after": "{{equivalence}}",
         "recommendations": "analyze.open_questions"
       }
     },
@@ -265,8 +269,8 @@
         "status": "partial",
         "merged_commits": "ctx.merged_commits",
         "equivalent": false,
-        "metrics_before": "baseline",
-        "metrics_after": "equivalence"
+        "metrics_before": "{{baseline}}",
+        "metrics_after": "{{equivalence}}"
       }
     },
     {

@@ -90,8 +90,7 @@
   },
   "budget": {
     "max_steps": 120,
-    "max_minutes": 1440,
-    "max_fan_out": 2
+    "max_minutes": 1440
   },
   "entry": "probe",
   "nodes": [
@@ -177,7 +176,6 @@
       "type": "parallel",
       "for_each": "roadmap.sessions",
       "order": "depends_on",
-      "max_fan_out": 2,
       "on_child_fail": "block_dependents",
       "title": {
         "en": "Run sessions",
@@ -206,7 +204,8 @@
           "blocked_count": "int"
         },
         "uses": "reduce.roadmap-driven.sessions"
-      }
+      },
+      "concurrency": 2
     },
     {
       "id": "close",
@@ -216,7 +215,7 @@
         "goals": "{{$inputs.goals}}",
         "boundary": "{{$inputs.boundary}}",
         "goal": "{{$inputs.requirements}}",
-        "merged_commits": "{{sessions.done_ids}}"
+        "merged_commits": "{{ctx.merged_commits}}"
       },
       "guards": {
         "maxVisits": 1

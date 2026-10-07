@@ -30,8 +30,7 @@
   "entry": "run_tasks",
   "budget": {
     "max_steps": 40,
-    "max_minutes": 240,
-    "max_fan_out": 5
+    "max_minutes": 240
   },
   "nodes": [
     {
@@ -39,7 +38,6 @@
       "type": "parallel",
       "for_each": "$inputs.tasks",
       "order": "depends_on",
-      "max_fan_out": 5,
       "title": {
         "en": "Run tasks",
         "ru": "Выполнить задачи"
@@ -72,7 +70,8 @@
           "merged_commits": "string[]"
         },
         "uses": "reduce.lp.build.run_tasks"
-      }
+      },
+      "concurrency": 5
     },
     {
       "id": "gate",
