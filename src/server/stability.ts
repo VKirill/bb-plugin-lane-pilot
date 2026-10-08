@@ -160,7 +160,8 @@ export function createStability(ctx:ServerCore, services:Services) {
 
   /** A task parked for a secret is due once Env Catalog has every name in its reason and the owner allows it. */
   async function secretsReady(row:ParkedTask):Promise<boolean> {
-    const names = row.reason.slice(WAITING_SECRET_PREFIX.length).split(/[:\s]/)[0]!.split(",").filter(Boolean);
+    // The names run up to the first space (`A,B,net:host`); after 12 hours the reason continues with «: not provided…».
+    const names = row.reason.slice(WAITING_SECRET_PREFIX.length).split(/\s/)[0]!.replace(/:$/, "").split(",").filter(Boolean);
     const settings = loadProjectSettings(db, row.projectId, getRunSettingsScopes(db, row.runId));
     const gate = await ctx.secrets.check({ declared:names, allowed:allowedSecretNames(settings) }, { fresh:true });
     return !gate.unavailable && secretProblem(gate).length === 0;

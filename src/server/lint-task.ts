@@ -5,7 +5,7 @@ import { taskFamily } from "../failure-class";
 import { parseSandboxUnsafePatterns } from "../stages/critique-coverage";
 import { isTaskSatisfied } from "./blocked-by";
 import { lintContract, lintProbePaths } from "./contract-lint";
-import { allowedSecretNames } from "./secrets";
+import { allowedSecretNames, declaredAccess } from "./secrets";
 import { gateResolverFor } from "./gate-detect";
 import { parseIntegrationGateSettings } from "./integration-gate";
 import type { LintOpenTask, PathKind } from "./contract-lint";
@@ -47,7 +47,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
     }
     const settings = loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId));
     const sandboxUnsafe = parseSandboxUnsafePatterns(settings["verification.sandbox_unsafe"]);
-    const declared = [...new Set(task.verification.flatMap((check) => check.secrets ?? []))];
+    const declared = declaredAccess(task.verification);
     // Names only: the lint never reads a value.
     const secrets = declared.length ? await ctx.secrets.check({ declared, allowed:allowedSecretNames(settings) }, { fresh:true }) : undefined;
     // The gate runs in the run's base checkout; its explicit or detected command makes a whole-suite check a contract error.

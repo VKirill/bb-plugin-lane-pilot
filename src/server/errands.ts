@@ -1,6 +1,6 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
-import { findOpenNativeRun, getRun, getRunSettingsScopes, loadProjectSettings } from "../database";
+import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, loadProjectSettings } from "../database";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { QA_HOST_KEY } from "../qa-host";
 import { configuredSetting } from "./context";
@@ -140,7 +140,7 @@ export function mountErrands(ctx: ServerCore): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_errand",
     description: "Hand a non-code task to a helper thread: a cloud console in the owner's browser, a mailbox, a screen recording, an account in Env Catalog.",
-    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the owner must have allowed each name in the setting secrets.allow, and if one is missing or not allowed nothing starts and the answer says what to do (env_request for a missing one), then call again. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the thread; call lane_pilot_wait_errand with its threadId, again while it is running, and show the owner the @thread link.",
+    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the owner allows each name once for the project (a form in this chat; the setting secrets.allow), and if one is missing or not allowed yet nothing starts and the answer says what to do (env_request for a missing one, wait for the owner\'s answer), then call again. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the thread; call lane_pilot_wait_errand with its threadId, again while it is running, and show the owner the @thread link.",
     parameters: z.object({
       task: z.string().min(10).max(20_000),
       title: z.string().min(1).max(120).optional(),
@@ -155,12 +155,16 @@ export function mountErrands(ctx: ServerCore): void {
       if (params.accounts?.length) {
         const gate = await ctx.secrets.check({ declared: params.accounts, allowed: allowedSecretNames(loadProjectSettings(db, context.projectId, getRunSettingsScopes(db, runId))), kinds: ["secret", "login", "ssh", "ftp"] }, { fresh: true });
         const problem = secretProblem(gate);
+        if (gate.denied.length) await ctx.secretApproval.request({ projectId: context.projectId, pmThreadId: context.threadId, entries: gate.denied, use: "an errand helper" });
         if (problem.length || gate.unavailable) {
           return JSON.stringify({ state: "blocked", reason: waitingSecretReason(problem.length ? problem : params.accounts), next: "No helper was started. Fix the access below, then call lane_pilot_errand again with the same arguments:", fix: secretFixLines(gate) }, null, 2);
         }
         accounts = params.accounts.map((name) => gate.catalog!.find((entry) => entry.name === name)!);
         // Fetched only to be masked: whatever the helper prints of them never reaches the PM's view of its report.
-        for (const account of accounts) await ctx.secrets.record(account.name);
+        for (const account of accounts) {
+          await ctx.secrets.record(account.name);
+          try { recordSecretIssuance(db, { projectId: context.projectId, runId, consumer: "errand", threadId: context.threadId, secretName: account.name }); } catch (cause) { bb.log.warn(`secret issuance journal: ${cause instanceof Error ? cause.message : String(cause)}`); }
+        }
       }
       const pm = await bb.sdk.threads.get({ threadId: context.threadId });
       const environmentId = stringAt(pm, "environmentId");

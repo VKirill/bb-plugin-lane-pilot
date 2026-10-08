@@ -63,6 +63,8 @@ const rulesAnalyzerSchema = z.object({
 
 /** An environment variable name, as the sandbox passes it; Env Catalog names follow the same rule. */
 export const secretNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/);
+/** A host a check with secrets may reach: a name (`api.stripe.com`) or a subdomain wildcard (`*.stripe.com`), ports 80 and 443 only. */
+export const networkHostSchema = z.string().regex(/^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$/).max(253);
 
 export const taskV2Schema = z.object({
   schema_version: z.literal(2),
@@ -88,6 +90,8 @@ export const taskV2Schema = z.object({
     timeout_sec: z.number().int().min(1).max(7200).optional(),
     /** Env Catalog names this check needs (kind secret or login): the server passes their values to the check as environment variables, by name; the writer never sees them. */
     secrets: z.array(secretNameSchema).max(16).optional(),
+    /** Hosts a check that carries `secrets` may reach (owner-approved once per project, like a secret name). Such a check has no network beyond localhost otherwise. */
+    network: z.array(networkHostSchema).max(8).optional(),
   }).strict()),
   /** The page or feature the task belongs to («page:/tools/cards»): one writer at a time per area, and the area's writer continues its next task. */
   area: z.string().trim().min(1).max(120).optional(),
@@ -585,6 +589,8 @@ export const hostContract = defineRpcContract({
       command:z.string().min(1).max(32_000),timeoutSec:z.number().int().min(1).max(7200).optional(),
       /** Secret values for this one command (Env Catalog, J2): they go into the sandbox's environment only, and the host masks them in the output. */
       env:z.record(secretNameSchema,z.string().max(65_536)).optional(),
+      /** With `env` the command has no network beyond localhost; these hosts are the exception (macOS only, through a filtering proxy). */
+      networkHosts:z.array(networkHostSchema).max(8).optional(),
     }).strict(),
     output:z.object({
       hostId:z.string(),backend:z.enum(["macos-seatbelt","linux-bubblewrap"]),workspacePath:z.string(),cwd:z.string(),
@@ -1589,6 +1595,16 @@ export const rpcContract = defineRpcContract({
   token_usage_sync: {
     input: z.object({}).strict(),
     output: z.object({ started: z.boolean() }).strict(),
+  },
+  // The journal of Env Catalog names handed to checks, browser checks and errands (never a value), newest first.
+  secret_issuance: {
+    input: z.object({ projectId: z.string().min(1), limit: z.number().int().min(1).max(500).optional() }).strict(),
+    output: z.object({
+      entries: z.array(z.object({
+        id: z.number().int(), at: z.number(), runId: z.string().nullable(), taskId: z.string().nullable(), consumer: z.string(), threadId: z.string().nullable(),
+        checkCommand: z.string().nullable(), secretName: z.string(), hostId: z.string().nullable(), network: z.string().nullable(),
+      }).strict()),
+    }).strict(),
   },
   workflow_list: {
     input: z.object({ projectId: z.string().min(1).optional() }).strict(),

@@ -19,10 +19,27 @@ const recordSchema = z.object({
   value:z.string().nullable(), access:z.record(z.string(), z.unknown()).nullable().optional(),
 }).passthrough();
 
-/** The names the project's owner allows checks to receive; the settings a run sees are passed in. */
-/** The names the owner restricted checks to; empty means any Env Catalog entry the task names itself (owner: no switches to flip). */
+/**
+ * The names the owner has allowed checks to receive; the settings a run sees are passed in. Empty means none: a name is
+ * allowed only after the owner approved it once for the project (the question in the PM chat, secret-approval.ts), and the
+ * approval is stored here. `*` allows any name (an explicit choice of the owner). A host a check with secrets may reach is
+ * listed as `net:host`.
+ */
 export const allowedSecretNames = (settings:Record<string, unknown>):string[] => parseSandboxUnsafePatterns(settings[SECRETS_ALLOW_KEY]);
-const isAllowed = (allowed:readonly string[], name:string):boolean => allowed.length === 0 || allowed.includes("*") || allowed.includes(name);
+const isAllowed = (allowed:readonly string[], name:string):boolean => allowed.includes("*") || allowed.includes(name);
+
+/** A host a check with secrets declares (`network`) is approved like a secret name, as the entry `net:host`. */
+export const NET_PREFIX = "net:";
+export const isNetEntry = (name:string):boolean => name.startsWith(NET_PREFIX);
+/** What a task's checks need the owner's approval for: the secret names, and the hosts of those checks that carry secrets. */
+export function declaredAccess(verification:ReadonlyArray<{ secrets?:readonly string[]; network?:readonly string[] }>):string[] {
+  const out:string[] = [];
+  for (const check of verification) {
+    if (!check.secrets?.length) continue;
+    out.push(...check.secrets, ...(check.network ?? []).map((host) => `${NET_PREFIX}${host.toLowerCase()}`));
+  }
+  return [...new Set(out)];
+}
 
 /** Env variables a check gets for one catalog record: a secret under its own name, a login as NAME_USERNAME / NAME_PASSWORD / NAME_URL. */
 export function envForRecord(record:CatalogRecord):Record<string, string> | null {
@@ -64,7 +81,7 @@ export const waitingSecretReason = (names:readonly string[]):string => `${WAITIN
 export function secretFixLines(check:SecretCheck):string[] {
   const lines:string[] = [];
   if (check.unavailable) lines.push("Env Catalog is not answering (not installed, disabled or restarting); the task starts by itself once it answers.");
-  if (check.denied.length) lines.push(`${check.denied.join(", ")}: the owner restricted the secrets checks may use (project setting «Secrets checks may use», secrets.allow) and this name is not on that list; ask the owner, you cannot change that setting.`);
+  if (check.denied.length) lines.push(`${check.denied.join(", ")}: the owner has not allowed this for the project yet (project setting «Secrets checks may use», secrets.allow; net:HOST is a host a check with secrets may reach). The owner is asked once in this chat; nothing starts until the answer is yes, and you cannot change that setting.`);
   if (check.missing.length && !check.unavailable) lines.push(`${check.missing.join(", ")}: not in Env Catalog. Call env_request for it now (name, the kind, a purpose) so the owner gets a form on the phone; do not ask for the value in chat.`);
   if (check.wrongKind.length) lines.push(`${check.wrongKind.join(", ")}: not of a kind this step can take (a check takes a secret or a login, a browser case a login; SSH and FTP access is for lane_pilot_errand).`);
   return lines;
@@ -126,10 +143,11 @@ export function createSecrets(deps:{ bb:BbPluginApi; now?:() => number }) {
     const result:SecretCheck & { catalog:CatalogEntry[] | null } = { missing:[], denied:[], wrongKind:[], unavailable:false, catalog:null };
     if (!declared.length) return result;
     const catalog = await list(options);
-    if (!catalog) return { ...result, unavailable:true, missing:declared.filter((name) => isAllowed(input.allowed, name)), denied:declared.filter((name) => !isAllowed(input.allowed, name)) };
+    if (!catalog) return { ...result, unavailable:true, missing:declared.filter((name) => !isNetEntry(name) && isAllowed(input.allowed, name)), denied:declared.filter((name) => !isAllowed(input.allowed, name)) };
     result.catalog = catalog;
     for (const name of declared) {
       if (!isAllowed(input.allowed, name)) { result.denied.push(name); continue; }
+      if (isNetEntry(name)) continue;
       const entry = catalog.find((row) => row.name === name);
       if (!entry) result.missing.push(name);
       else if (!(input.kinds ?? ["secret", "login"]).includes(entry.kind)) result.wrongKind.push(name);
@@ -142,7 +160,7 @@ export function createSecrets(deps:{ bb:BbPluginApi; now?:() => number }) {
     const checked = await check(input, { fresh:true });
     const result:SecretResolution = { env:{}, byName:{}, missing:checked.missing, denied:checked.denied, wrongKind:checked.wrongKind, unavailable:checked.unavailable };
     for (const name of [...new Set(input.declared)]) {
-      if (result.denied.includes(name) || result.missing.includes(name) || result.wrongKind.includes(name)) continue;
+      if (isNetEntry(name) || result.denied.includes(name) || result.missing.includes(name) || result.wrongKind.includes(name)) continue;
       const found = await record(name);
       const env = found ? envForRecord(found) : null;
       if (!env) { result.missing.push(name); continue; }
