@@ -33,12 +33,10 @@ it("states the docs rule once, with its reason, in every session that must not w
 it("keeps the bundled copy byte-identical to the overlay", () => {
   for (const [id, agent] of Object.entries(bundledAgents as Record<string, { prompt: string }>)) {
     const overlay = laneSessionOverlayPrompt(id);
-    if (id === "dev-orchestrator") {
-      expect(overlay).toContain("retry only when retryable is true and sideEffects is \"none\"");
-      expect(agent.prompt).toContain("This chat is a Lane Pilot PM session");
-      continue;
-    }
-    expect(agent.prompt).toBe(overlay);
+    // The PM too: an older 11.5 KB copy used to sit in the JSON next to the live prompt (instructions audit 2, 2026-10-08).
+    // Fix a failure with `node_modules/.bin/tsx scripts/sync-bundled-prompts.ts`.
+    expect(overlay, id).not.toBe("");
+    expect(agent.prompt, id).toBe(overlay);
   }
 });
 
