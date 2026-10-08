@@ -40,6 +40,20 @@ describe("join policy", () => {
     expect(await started.done).toMatchObject({ status: "failed", error: "boom b" });
   });
 
+  it("`all`: a failed branch stops the sibling branches that are still running (their abort signal fires) instead of letting them finish", async () => {
+    const aborted: string[] = [];
+    const work = ok((ctx: StepContext) => {
+      const id = String((ctx.input.item as Row).id);
+      if (id === "a") throw new Error("boom a");
+      return new Promise<Row>((_resolve, reject) => ctx.signal.addEventListener("abort", () => { aborted.push(id); reject(new Error("aborted")); }, { once: true }));
+    });
+    const { db, started } = run(fan({}), { work }, items);
+    const summary = await started.done;
+    expect(summary).toMatchObject({ status: "failed", error: "boom a" });
+    expect(aborted.sort()).toEqual(["b", "c"]);
+    expect(Object.values(stepStates(db, summary.runId)).filter((state) => state === "running")).toEqual([]);
+  });
+
   it("`majority` lets a minority fail and tells the reducer which branches and why", async () => {
     const { db, started } = run(fan({}, { policy: "majority" }), flaky(["b"]), items);
     const summary = await started.done;

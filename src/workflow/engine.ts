@@ -501,6 +501,7 @@ export class WorkflowEngine {
     const j = this.journal;
     if (!j.setRunStatus(runId, ["running", "waiting"], "failed", reason)) return;
     this.cancelOpenSteps(runId);
+    this.aborts.get(runId)?.abort(); // the sibling branches still running stop (their threads are stopped) instead of finishing work nobody will read
   }
 
   private cancelOpenSteps(runId: string): void {
@@ -690,7 +691,7 @@ export class WorkflowEngine {
     if (step.state !== "pending") return "skip";
     const node = c.nodes.get(step.node_id)!;
     const limit = this.checkLimits(run, c);
-    if (limit) { if (j.setRunStatus(runId, ["running", "waiting"], "blocked", limit)) this.cancelOpenSteps(runId); return "skip"; }
+    if (limit) { if (j.setRunStatus(runId, ["running", "waiting"], "blocked", limit)) { this.cancelOpenSteps(runId); this.aborts.get(runId)?.abort(); } return "skip"; }
 
     // Skipped before it starts: the quality mode or skip_when says so; the node keeps a typed output.
     try {
