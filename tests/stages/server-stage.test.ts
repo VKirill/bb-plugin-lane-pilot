@@ -2242,8 +2242,8 @@ describe("stage → native writer → receipt", () => {
   const codeOn={"code_critique.enabled":true,"code_critique.provider":"critic","code_critique.model":"critic-model"};
   const finding='{"decision":"changes_requested","summary":"Missing invariant coverage","findings":[{"id":"f1","severity":"blocking","finding":"note.txt omits the required invariant","criterion":"invariants"}]}';
   const approved='{"decision":"approve","summary":"Candidate checked","findings":[]}';
-  function setupCode(snapshots:Array<Array<Record<string,string>>>, extra?:{outputs?:string[];repair?:string;idleWait?:string;holdEvents?:string[];settings?:Record<string,unknown>}) {
-    return setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{...codeOn,...extra?.settings},undefined,undefined,undefined,undefined,undefined,snapshots,false,0,undefined,undefined,undefined,undefined,undefined,undefined,extra?.idleWait,false,{},extra?.holdEvents??[],extra?.outputs,extra?.repair);
+  function setupCode(snapshots:Array<Array<Record<string,string>>>, extra?:{outputs?:string[];repair?:string;idleWait?:string;holdEvents?:string[];settings?:Record<string,unknown>;control?:{hold:boolean;states:Map<string,"active"|"idle">}}) {
+    return setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{...codeOn,...extra?.settings},undefined,undefined,undefined,undefined,undefined,snapshots,false,0,undefined,undefined,undefined,extra?.control,undefined,undefined,extra?.idleWait,false,{},extra?.holdEvents??[],extra?.outputs,extra?.repair);
   }
 
   const noteSnaps=[[],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]];
@@ -2511,6 +2511,34 @@ describe("stage → native writer → receipt", () => {
     expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
     await restarted.harness.lifecycle.dispose();
   },20_000);
+
+  // Audit 2026-10-08 r2, item 4: a stop that lands while the repair writer works ends the attempt canceled whatever the repair's check finds.
+  for (const [label,repaired,failure] of [["an unowned file",[{path:"note.txt",sha256:noteBSha},{path:"other.txt",sha256:noteBSha}],"validation_failed"],["no change at all",[],"empty_output"]] as const) {
+    for (const stop of [true,false]) {
+      it(`${stop?"a stop requested during the code repair ends the attempt canceled":"without a stop the attempt ends failed"} when the repaired revision has ${label}`,async()=>{
+        const snaps:Array<Array<Record<string,string>>>=[
+          [],[],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],[{path:"note.txt",sha256:noteASha}],
+          [{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],[{path:"note.txt",sha256:noteBSha}],
+        ];
+        // The stop lands exactly while the repaired revision is checked: the check reads the dirt of the folder once, and this read requests it.
+        let attemptId="";
+        Object.defineProperty(snaps,4,{get(){
+          if (stop && attemptId) transitionAttempt(setupDbRef.db!,attemptId,"cancel_requested");
+          return repaired;
+        }});
+        const setupDbRef:{db:ReturnType<typeof openDatabase>|null}={db:null};
+        const {db,harness}=await setupCode(snaps,{outputs:[finding,approved]});
+        setupDbRef.db=db;
+        await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+        await until("the attempt",()=>{ const row=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=?").get(task.id) as {id:string}|undefined; if (row) attemptId=row.id; return row; });
+        await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId});
+        const final=db.prepare("SELECT state FROM lane_pilot_attempt WHERE id=?").get(attemptId) as {state:string};
+        expect(final.state).toBe(stop?"canceled":failure);
+        expect(db.prepare("SELECT 1 FROM lane_pilot_attempt_transition WHERE attempt_id=? AND refused=1").all(attemptId)).toEqual([]);
+        await harness.lifecycle.dispose();
+      },20_000);
+    }
+  }
 
   it("does not send a second repair after crash mid-repair with a claimed round and no thread id",async()=>{
     throwOnRepairSpawn=true;

@@ -100,13 +100,16 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     dirtBefore:import("../../cli-outcome").DirtSnapshot[];
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
   }): Promise<Record<string,unknown>> {
-    // The PM's stop and the provider's error can land together: a writer whose stop was requested ends canceled
-    // (cancel_requested has no provider_error move, and the owner asked for the stop), any other ends as provider_error.
+    // The PM's stop and a failure can land together: an attempt whose stop was requested ends canceled whatever failed
+    // (cancel_requested has only canceled, blocked and accepted to go to, and the owner asked for the stop).
+    const endedByStop = (reason:string, threadId = input.writerThreadId):Record<string,unknown>|null => {
+      if (getAttempt(db, input.attemptId)?.state !== "cancel_requested") return null;
+      transitionAttempt(db, input.attemptId, "canceled", { threadId, reason:`writer stop observed after: ${reason}`.slice(0, 500) });
+      return { status:"canceled", attemptId:input.attemptId, writerThreadId:threadId };
+    };
     const providerFailed = (reason:string) => {
-      if (getAttempt(db, input.attemptId)?.state === "cancel_requested") {
-        transitionAttempt(db, input.attemptId, "canceled", { threadId:input.writerThreadId, reason:`writer stop observed after: ${reason}`.slice(0, 500) });
-        return { status:"canceled", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
-      }
+      const stopped = endedByStop(reason);
+      if (stopped) return stopped;
       transitionAttempt(db, input.attemptId, "provider_error", { reason });
       return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
     };
@@ -231,6 +234,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       if (checked.status !== "accepted") {
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:checked.status}});
+        const stopped = endedByStop(checked.reason ?? checked.status);
+        if (stopped) return stopped;
         transitionAttempt(db, input.attemptId, checked.status, { reason:checked.reason });
         return { ...checked, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
@@ -320,6 +325,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           if (candidate.status !== "accepted") {
             recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
               attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:candidate.status}});
+            const stopped = endedByStop(candidate.reason ?? candidate.status, writerThreadId);
+            if (stopped) return stopped;
             transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason });
             return { ...candidate, attemptId:input.attemptId, writerThreadId };
           }
@@ -542,6 +549,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         if (candidate.status !== "accepted") {
           recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:candidate.status}});
+          const stopped = endedByStop(candidate.reason ?? candidate.status, writerThreadId);
+          if (stopped) return stopped;
           transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason });
           return { ...candidate, attemptId:input.attemptId, writerThreadId };
         }
@@ -660,8 +669,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             : `merge_failed: ${merged.reason ?? "unknown"}`;
           recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged}});
-          transitionAttempt(db, input.attemptId, "validation_failed", { reason });
+          const stopped = endedByStop(reason, writerThreadId);
+          if (!stopped) transitionAttempt(db, input.attemptId, "validation_failed", { reason });
           await settleIntent();
+          if (stopped) return stopped;
           return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:replayRed && merged.checks?.length ? merged.checks : candidate.verification,
             attemptId:input.attemptId, writerThreadId };
         }
