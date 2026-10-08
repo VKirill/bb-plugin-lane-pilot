@@ -1,6 +1,7 @@
 // Import graph of the plugin, built with the TypeScript API. Used by the codemod (scripts/refactor/move.ts)
 // and by the boundary test (tests/architecture/boundaries.test.ts). No other dependency than typescript.
 import ts from "typescript";
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,7 +46,13 @@ export function listSourceFiles(root = ROOT): string[] {
     if (existsSync(join(root, top))) walk(join(root, top));
   }
   for (const f of ["server.ts", "host.ts", "app.tsx", "i18n.ts"]) if (existsSync(join(root, f))) out.push(f);
-  return out.sort();
+  // Files git ignores (local scratch such as scripts/live-*.ts) are not part of the plugin: leave them out of the graph.
+  let ignored = new Set<string>();
+  try {
+    const listed = execFileSync("git", ["-C", root, "check-ignore", "--stdin"], { input: out.join("\n"), stdio: ["pipe", "pipe", "ignore"] }).toString();
+    ignored = new Set(listed.split("\n").filter(Boolean));
+  } catch { /* exit 1 = nothing ignored, or not a git checkout */ }
+  return out.filter((f) => !ignored.has(f)).sort();
 }
 
 function isFile(p: string): boolean {
