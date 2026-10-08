@@ -3,8 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterAll, describe, expect, it } from "vitest";
-import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
-import { TARGET_SHA } from "../src/constants";
+import { NO_UPSTREAM, upstreamPath, offlineUpstream } from "./upstream-fixture";
 import { importSettingsOnce, openDatabase } from "../src/database";
 import { sha256FileOrNull } from "../src/hash";
 import {
@@ -16,6 +15,7 @@ import {
 import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
 
 const FALLBACK = upstreamPath();
+offlineUpstream();
 const home = mkdtempSync(join(tmpdir(), "lane-pilot-s18-"));
 const receiptDir = join(home, "receipts");
 const workspace = join(home, "ws");

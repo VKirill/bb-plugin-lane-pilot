@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.198
+
+- **Install tests no longer need GitHub.** Clones of the upstream URL in the install and scenario tests go to the local claude-lane-stack repository (git `insteadOf` via GIT_CONFIG_* env); on 2026-10-08 anonymous clones from github.com stalled for minutes and turned these tests red on main too.
 
 - **Settings page regrouped into six tabs on every level (system defaults, project, section): Обзор / Команда / Работа / Знания / Автоматизация / Прогоны.** The ten (twelve, with Anamnesis and the schedule) tabs became one structure, and `src/ui/page.tsx` (2 447 lines) is split along it: `page.tsx` is the shell, `use-lp-page.tsx` the state, `tab-overview|team|work|knowledge|automation|runs.tsx` the tabs, `project-nav.tsx` / `project-header.tsx` the chrome, `page-model.ts` / `setting-controls.tsx` / `picker-selections.ts` the shared parts. The nine copies of «save the model of a role» are one generic path (RPC names and CAS tuples unchanged).
   - **Команда:** one table of every role (all 25 access roles, grouped as in the agent profile) with the on/off switch, the native `ProviderModelPicker`, where the value comes from (project / inherited / default) and what its session loads; a row opens a drawer with the role's own settings (the writer's fallbacks and effort mode, the council's seven seats, the browser check's machine) and its access editor. The main agent (PM) is the first block; the access mode and the providers note close the tab. The summary matrix of the access tab is gone (the table's «Loads» column replaces it). The rules analyzer's model moved here from the rules list.

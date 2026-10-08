@@ -55,7 +55,7 @@ async function mountPage(rpc: Record<string, (input: unknown) => unknown> = {}) 
 }
 
 describe("acceptance stats card", { timeout: 20_000 }, () => {
-  it("shows first-try %, eventual %, redispatch % and top causes on the Checks tab", async () => {
+  it("shows first-try %, eventual %, redispatch % and top causes on Runs → Analytics", async () => {
     const week = "2026-W40";
     const slot = await mountPage({
       acceptance_stats: () => ({
@@ -68,7 +68,7 @@ describe("acceptance stats card", { timeout: 20_000 }, () => {
         }],
       }),
     });
-    openTab(slot, "checks");
+    openTab(slot, "runs", "analytics");
     await waitFor(() => expect(slot.getByTestId("acceptance-stats")).toBeTruthy());
     expect(slot.getByTestId("acceptance-stats").textContent).toContain("Принятие с первой попытки");
     const row = slot.getByTestId(`acceptance-stats-week-${week}`);

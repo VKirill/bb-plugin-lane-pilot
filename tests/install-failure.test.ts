@@ -2,12 +2,13 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
+import { NO_UPSTREAM, upstreamPath, offlineUpstream } from "./upstream-fixture";
 import { installStack } from "../src/stack-ops";
 import { SnapshotReadError, rollbackSnapshot, takeSnapshot } from "../src/snapshot";
 import { isolatedTestPath, linkSafeTools } from "./npm-isolation";
 
 const FALLBACK = upstreamPath();
+offlineUpstream();
 const GUARD = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 
 describe.skipIf(NO_UPSTREAM)("install failure rollback and snapshot integrity", () => {

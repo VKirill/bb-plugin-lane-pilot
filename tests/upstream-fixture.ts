@@ -40,3 +40,19 @@ export const UPSTREAM_ROOT = resolveUpstream();
 /** For describe.skipIf: tests that compare with upstream skip with a reason instead of crashing at import. */
 export const NO_UPSTREAM = UPSTREAM_ROOT === null;
 export const upstreamPath = (...parts: string[]) => join(UPSTREAM_ROOT ?? LEGACY, ...parts);
+
+/**
+ * Points git's clones of the upstream URL at the local claude-lane-stack repository for this test process, so a managed install
+ * clones locally instead of GitHub (2026-10-08: anonymous clones from github.com stalled for minutes while ls-remote answered).
+ * Uses git's GIT_CONFIG_COUNT/KEY/VALUE environment, which child git processes inherit. No-op without a local repository.
+ */
+export function offlineUpstream(url = "https://github.com/VKirill/claude-lane-stack"): void {
+  for (const repo of [process.env.LANE_STACK_REPO, resolve(root, "../claude-lane-stack")]) {
+    if (!repo || !existsSync(join(repo, ".git"))) continue;
+    const n = Number(process.env.GIT_CONFIG_COUNT ?? "0") || 0;
+    process.env[`GIT_CONFIG_KEY_${n}`] = `url.${repo}.insteadOf`;
+    process.env[`GIT_CONFIG_VALUE_${n}`] = url;
+    process.env.GIT_CONFIG_COUNT = String(n + 1);
+    return;
+  }
+}
