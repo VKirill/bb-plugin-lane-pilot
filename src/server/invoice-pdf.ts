@@ -1,4 +1,5 @@
 import type { ServerCore } from "./core";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 /**
  * The PDF of an invoice, opened by code (audit 2026-10-08 round 4, item 20): the path comes from the report of the agent that made the
@@ -33,7 +34,7 @@ export async function checkInvoicePdf(host: Pick<ServerCore["host"], "call">, ho
   if (!hostId) return { ok: false, unreachable: true, problems: ["the PDF could not be checked: no machine is named for the file"] };
   let stdout: string;
   try {
-    const ran = await host.call("runCommand", { requestedHostId: hostId, command: PROBE(path), cwd: "/", timeoutSec: 20 }, { hostId, timeoutMs: 25_000 }) as { exitCode?: number; stdout?: string };
+    const ran = await runOnHost(host, { hostId, cwd: "/", command: PROBE(path), timeoutSec: 20 }) as { exitCode?: number; stdout?: string };
     if (ran.exitCode !== 0) throw new Error(`exit code ${String(ran.exitCode)}`);
     stdout = String(ran.stdout ?? "");
   } catch (cause) {

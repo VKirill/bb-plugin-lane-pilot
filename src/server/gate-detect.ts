@@ -1,6 +1,7 @@
 import { getRun } from "../database";
 import type { ServerCore } from "./core";
 import type { IntegrationGateSettings } from "./integration-gate";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 /**
  * The integration gate with no setup: when `integration.gate_command` is empty, the command is found on the project's own
@@ -56,7 +57,7 @@ export function createGateResolver(ctx:Pick<ServerCore, "host" | "db" | "log">) 
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
     let value:{ command:string; detail:string } | null;
     try {
-      const ran = await ctx.host.call("runCommand", { requestedHostId:hostId, cwd:basePath, command:GATE_PROBE, timeoutSec:30 }, { hostId, timeoutMs:35_000 });
+      const ran = await runOnHost(ctx.host, { hostId, cwd: basePath, command: GATE_PROBE, timeoutSec: 30 });
       // An answer we could not get is not «no tests»: the next call asks again.
       if (ran.exitCode !== 0) return null;
       value = detectGateCommand(ran.stdout);

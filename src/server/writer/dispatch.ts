@@ -26,6 +26,7 @@ import { countRunNudges } from "../writer-silence";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 /** How long a dispatch waits for its stages before it answers «queued» and lets them go on in the background. */
 const dispatchAnswerMs = () => {
@@ -237,9 +238,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
           // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
           exclude: live ? undefined : async (line) => {
-            const ran=await host.call("runCommand",{
-              requestedHostId:config.hostId,cwd:workspacePath,command:appendExcludeCommand(line),timeoutSec:30,
-            },{hostId:config.hostId,timeoutMs:30_000});
+            const ran=await runOnHost(host, { hostId: config.hostId, cwd: workspacePath, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
             if(ran.exitCode!==0) throw new Error(ran.stderr.trim()||`git exited ${ran.exitCode}`);
           },
           writeFile: async (rel, content) => {

@@ -31,6 +31,7 @@ import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnviro
 import { bookkeepingSetting } from "../../bookkeeping-paths";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../merge-intent";
 import { sendServiceMessage } from "../service-message";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this writer";
 
@@ -607,7 +608,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         }, { hostId:input.config.hostId, timeoutMs:180_000 + replayMs });
         // Written before the merge: a reply lost to a reload leaves main updated and this attempt «running»; the recovery
         // asks the machine's repository whether the work landed (merge-intent.ts). Dropped once the attempt's state caught up.
-        await recordMergeIntent(bb.storage.kv as never, (hostId, cwd, command) => host.call("runCommand", { requestedHostId:hostId, command, cwd, timeoutSec:30 }, { hostId, timeoutMs:35_000 }),
+        await recordMergeIntent(bb.storage.kv as never, (hostId, cwd, command) => runOnHost(host, { hostId, cwd, command, timeoutSec: 30 }),
           { attemptId:input.attemptId, runId:input.runId, taskId:input.taskId, projectId:input.projectId, hostId:input.config.hostId,
             basePath, worktreePath:bound.workspace_path, message:attemptMergeMessage(input.task, input.attemptId) });
         const settleIntent = () => clearMergeIntent(bb.storage.kv as never, input.attemptId);

@@ -1,4 +1,5 @@
 import type { ServerCore } from "./core";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 /**
  * The files `git status` lists in a checkout, read on the machine that holds it (the PM's environment may sit on another
@@ -6,7 +7,7 @@ import type { ServerCore } from "./core";
  * false «helper edited files» from a half-read one.
  */
 export async function gitRepoStatus(host: ServerCore["host"], hostId: string, cwd: string): Promise<Set<string> | null> {
-  const ran = await host.call("runCommand", { requestedHostId: hostId, command: "git status --porcelain -uall", cwd, timeoutSec: 30 }, { hostId, timeoutMs: 45_000 })
+  const ran = await runOnHost(host, { hostId, cwd, command: "git status --porcelain -uall", timeoutSec: 30, timeoutMs: 45_000 })
     .catch(() => null);
   if (!ran || ran.exitCode !== 0) return null;
   const files = new Set<string>();

@@ -3,6 +3,7 @@ import type { PreflightResult, RequirePorts } from "../workflow/preflight";
 import type { Workflow } from "../workflow/schema";
 import type { ArchitectDeps } from "./workflow-architect";
 import type { ServerCore } from "./core";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 type Place = { hostId: string; path: string };
 const quote = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
@@ -37,7 +38,7 @@ export function createWorkflowPreflight(ctx: ServerCore, deps: Pick<ArchitectDep
 
   async function ask(place: Place, command: string): Promise<string | null> {
     try {
-      const ran = await host.call("runCommand", { requestedHostId: place.hostId, cwd: place.path, command, timeoutSec: 30 }, { hostId: place.hostId, timeoutMs: 45_000 });
+      const ran = await runOnHost(host, { hostId: place.hostId, cwd: place.path, command, timeoutSec: 30, timeoutMs: 45_000 });
       return ran.stdout;
     } catch { return null; }
   }

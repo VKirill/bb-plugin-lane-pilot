@@ -6,6 +6,7 @@ import {
 } from "../../live-folder";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 type Ran = { exitCode: number; stdout: string; stderr: string };
 
@@ -14,7 +15,7 @@ export function createLiveFolder(ctx: ServerCore) {
   const { bb, db, host } = ctx;
 
   const run = (hostId: string, folder: string, command: string, timeoutSec: number): Promise<Ran> =>
-    host.call("runCommand", { requestedHostId: hostId, command, cwd: folder, timeoutSec }, { hostId, timeoutMs: (timeoutSec + 5) * 1000 })
+    runOnHost(host, { hostId, cwd: folder, command, timeoutSec, timeoutMs: (timeoutSec + 5) * 1000 })
       .then((ran) => ({ exitCode: ran.exitCode, stdout: ran.stdout, stderr: ran.stderr }))
       .catch((cause: unknown): Ran => ({ exitCode: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause) }));
 
@@ -32,7 +33,7 @@ export function createLiveFolder(ctx: ServerCore) {
       if (saved === "no-git") return true;
       if (saved === "git") return false;
     }
-    const ran = await host.call("runCommand", { requestedHostId: hostId, command: LIVE_FOLDER_PROBE_COMMAND, cwd: folder, timeoutSec: 15 }, { hostId, timeoutMs: 20_000 }).catch(() => null);
+    const ran = await runOnHost(host, { hostId, cwd: folder, command: LIVE_FOLDER_PROBE_COMMAND, timeoutSec: 15 }).catch(() => null);
     const kind = classifyFolderProbe(ran);
     if (key && kv && kind !== "unknown") await kv.set(key, kind as never).catch(() => undefined);
     return kind === "no-git";

@@ -27,6 +27,7 @@ import { taskFolderRel } from "../../verification/git-integrate";
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 /** True when the run works in the project's own checkout on that machine, which BB's managed worktree can fork. */
 export async function isProjectRootCheckout(bb: { sdk: { projects: { get(args: { projectId: string }): Promise<unknown> } } }, projectId: string, hostId: string, path: string): Promise<boolean> {
@@ -576,8 +577,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
 
   /** Whether the folder is a subfolder of a larger git repo, asked on its own host (the hub may not see the folder). */
   async function nestedInRepo(hostId:string, folder:string):Promise<boolean> {
-    const ran = await host.call("runCommand", { requestedHostId:hostId, command:"git rev-parse --show-prefix", cwd:folder, timeoutSec:15 },
-      { hostId, timeoutMs:20_000 }).catch(() => null);
+    const ran = await runOnHost(host, { hostId, cwd: folder, command: "git rev-parse --show-prefix", timeoutSec: 15 }).catch(() => null);
     return Boolean(ran && ran.exitCode === 0 && /^[^\n]+\/\s*$/.test(ran.stdout));
   }
 
@@ -586,12 +586,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     if (await liveFolder.isLiveFolder(runId, config.hostId, workspacePath)) return liveFolder.liveSnapshot(config.hostId, workspacePath);
     // The command runs in the workspace on its own host and answers workspace-relative paths, also for a subfolder
     // of a larger repo; the server may not see that folder at all.
-    const ran = await host.call("runCommand", {
-      requestedHostId: config.hostId,
-      command: WORKSPACE_DIRT_COMMAND,
-      cwd: workspacePath,
-      timeoutSec: 30,
-    }, { hostId:config.hostId, timeoutMs:30_000 }).catch((cause: unknown) => ({
+    const ran = await runOnHost(host, { hostId: config.hostId, cwd: workspacePath, command: WORKSPACE_DIRT_COMMAND, timeoutSec: 30, timeoutMs: 30_000 }).catch((cause: unknown) => ({
       hostId: config.hostId,
       exitCode: 1,
       stdout: "",

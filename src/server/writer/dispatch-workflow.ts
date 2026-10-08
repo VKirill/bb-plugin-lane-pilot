@@ -9,6 +9,7 @@ import { runPlanCritique, runPmRead, runSpecialistReview } from "../critique-run
 import { recordStage } from "../stage-records";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 /**
  * The built-in workflow `lp-task-pipeline` (workflows/lp-task-pipeline.json) executed by the workflow engine.
@@ -150,7 +151,7 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
         // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
         // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
         exclude: live ? undefined : async (line) => {
-          const ran = await host.call("runCommand", { requestedHostId: r.config.hostId, cwd: r.workspacePath, command: appendExcludeCommand(line), timeoutSec: 30 }, { hostId: r.config.hostId, timeoutMs: 30_000 });
+          const ran = await runOnHost(host, { hostId: r.config.hostId, cwd: r.workspacePath, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
           if (ran.exitCode !== 0) throw new Error(ran.stderr.trim() || `git exited ${ran.exitCode}`);
         },
         writeFile: async (rel, content) => {

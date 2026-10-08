@@ -23,6 +23,7 @@ import type { ServerCore } from "../core";
 import type { Services } from "../services";
 import { validateTaskV2 } from "../../task-v2";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;
@@ -156,12 +157,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
         taskId: input.taskId,
         plan: canonicalPlan,
         exclude: async (line) => {
-          const ran = await host.call("runCommand", {
-            requestedHostId: config.hostId,
-            cwd: workspacePath,
-            command: appendExcludeCommand(line),
-            timeoutSec: 30,
-          }, { hostId: config.hostId, timeoutMs: 30_000 });
+          const ran = await runOnHost(host, { hostId: config.hostId, cwd: workspacePath, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
           if (ran.exitCode !== 0) throw new Error(ran.stderr.trim() || `git exited ${ran.exitCode}`);
         },
         writeFile: async (rel, content) => {

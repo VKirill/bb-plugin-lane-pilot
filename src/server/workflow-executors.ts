@@ -18,6 +18,7 @@ import { stringAt } from "./values";
 import { SCHEDULE_RUN_KEY_PREFIX, type ChainRuntime } from "./workflow-runtime";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 /**
  * The executors that run a chain on the host: the generic agent step, the owner's question, the code task of a chain, the actions
@@ -287,8 +288,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const run = getRun(db, rt.runId);
     const hostId = getRunWriterHost(db, rt.runId);
     if (!run?.writer_workspace_path || !hostId) return { commit: "", files: [] };
-    const ran = await host.call("runCommand", { requestedHostId: hostId, cwd: run.writer_workspace_path, timeoutSec: 30,
-      command: `c=$(git log --all -1 --format=%H --grep=${quote(`Lane-Pilot-Attempt: ${attemptId}`)}) && echo "$c" && git show --name-only --format= "$c"` }, { hostId, timeoutMs: 45_000 }).catch(() => null);
+    const ran = await runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `c=$(git log --all -1 --format=%H --grep=${quote(`Lane-Pilot-Attempt: ${attemptId}`)}) && echo "$c" && git show --name-only --format= "$c"`, timeoutSec: 30, timeoutMs: 45_000 }).catch(() => null);
     if (!ran || ran.exitCode !== 0) return { commit: "", files: [] };
     const [commit = "", ...files] = ran.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
     return { commit, files };
@@ -350,7 +350,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const command = Array.isArray(range) && range.length ? `git show --name-only --format= ${range.map((commit) => quote(String(commit))).join(" ")}`
         : typeof range === "string" && range ? `git diff --name-only ${quote(range)}` : pr ? `gh pr diff ${quote(pr)} --name-only` : "";
       if (command) {
-        const ran = await ctx.host.call("runCommand", { requestedHostId: checkout.hostId, cwd: checkout.path, command, timeoutSec: 60 }, { hostId: checkout.hostId, timeoutMs: 75_000 });
+        const ran = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command, timeoutSec: 60, timeoutMs: 75_000 });
         if (ran.exitCode !== 0) throw new Error(`git.diff_files: ${ran.stderr.trim().slice(0, 300) || `exit ${ran.exitCode}`}`);
         names = [...new Set(ran.stdout.split("\n").map((line) => line.trim()).filter(Boolean))];
       }
@@ -363,8 +363,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const checkout = await pmCheckout(rt).catch(() => null);
     let hasPassport = false, hasUi = false;
     if (checkout) {
-      const ran = await ctx.host.call("runCommand", { requestedHostId: checkout.hostId, cwd: checkout.path, timeoutSec: 20,
-        command: "ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3" }, { hostId: checkout.hostId, timeoutMs: 30_000 }).catch(() => null);
+      const ran = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3", timeoutSec: 20, timeoutMs: 30_000 }).catch(() => null);
       const [passport = "", ui = ""] = (ran?.stdout ?? "").split("---");
       hasPassport = passport.trim().length > 0; hasUi = /app|components|ui/.test(ui);
     }

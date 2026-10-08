@@ -3,6 +3,7 @@ import { closeWriterStages, recordGateEvaluation } from "./stage-records";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 import { sendServiceMessage } from "./service-message";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 /**
  * The delivery record of a merge (Firstmate's delivery registry, the write-ahead log of a database). The merge, the
@@ -105,7 +106,7 @@ export async function mergeLanded(intent:MergeIntent, run:RunOnHost):Promise<Mer
 export function createMergeIntentRecovery(ctx:ServerCore, services:Services) {
   const { bb, db, host, refreshRun } = ctx;
   const kv = bb.storage.kv as unknown as Kv;
-  const run:RunOnHost = (hostId, cwd, command) => host.call("runCommand", { requestedHostId:hostId, command, cwd, timeoutSec:30 }, { hostId, timeoutMs:35_000 })
+  const run:RunOnHost = (hostId, cwd, command) => runOnHost(host, { hostId, cwd, command, timeoutSec: 30 })
     .then((ran) => ({ exitCode:ran.exitCode, stdout:ran.stdout, stderr:ran.stderr }));
 
   async function recoverMergeIntents(options:{ now?:number; graceMs?:number } = {}):Promise<string[]> {
