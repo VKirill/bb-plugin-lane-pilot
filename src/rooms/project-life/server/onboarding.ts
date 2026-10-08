@@ -1,19 +1,19 @@
-import { taskV2Schema } from "../../../contracts";
+import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage/database";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { resolveStageWriterSelection } from "../../../stage-writer-selection";
+import { resolveStageWriterSelection } from "../../writer/stage-writer-selection";
 import { sha256 } from "../../tasks/contract";
 import { acceptedOnboardingEvidence, onboardingPreviewSchema, onboardingPreviewSha256, onboardingPrompt, parseOnboardingPreview } from "../onboarding";
 import type { OnboardingInputPage } from "../onboarding";
 import { boundedAgentName } from "../../critique/role";
-import { OnboardingChildSnapshot, childResultObject, onboardingChildSnapshot } from "../../../server/child-snapshots";
-import { fullAccessSpawn } from "../../../server/pm-spawn";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../server/run-routing";
-import { recordStage } from "../../../server/stage-records";
-import { stringAt, valueAt } from "../../../server/values";
+import { OnboardingChildSnapshot, childResultObject, onboardingChildSnapshot } from "../../runs/server/child-snapshots";
+import { fullAccessSpawn } from "../../core/server/pm-spawn";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
+import { recordStage } from "../../runs/server/stage-records";
+import { stringAt, valueAt } from "../../core/server/values";
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 export function createOnboardingStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host, workspaceExecutionEnvironment } = ctx;

@@ -1,10 +1,10 @@
 import { mountErrands } from "../../qa/server/errands";
-import { cancelAttemptById } from "../../../server/cancel";
+import { cancelAttemptById } from "../../runs/server/cancel";
 import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
-import { taskV2Schema } from "../../../contracts";
+import { taskV2Schema } from "../../contracts";
 import { getRun, getRunSettingsScopes, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../../storage/database";
-import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../../../native-run";
-import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../../native-session-hooks";
+import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../../native-agent/native-run";
+import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../native-agent/native-session-hooks";
 import { readGateReport } from "../../tasks/gate-report";
 import { mountHandoff } from "../../relay/server/handoff";
 import { mountInsights } from "../../self-repair/server/insights";
@@ -19,13 +19,13 @@ import { mountHookTimeoutWatch } from "../../stability/server/hook-timeouts";
 import { mountWorkflowArchitect } from "../../workflow/server/workflow-architect";
 import { mountScheduleTools } from "../../schedule/server/schedule-tools";
 import { mountToolFamilies } from "./tool-families";
-import { registerObservedTool, ToolError } from "../../../server/tool-result";
-import { compactDispatchReply, compactReceipt, stageDetail } from "../../../server/stage-brief";
-import { createWriterAnswer } from "../../../server/writer/answer";
-import { createWriterUpdateTask } from "../../../server/writer/update-task";
+import { registerObservedTool, ToolError } from "../../core/server/tool-result";
+import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server/stage-brief";
+import { createWriterAnswer } from "../../writer/server/answer";
+import { createWriterUpdateTask } from "../../writer/server/update-task";
 import { z } from "zod";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 /**
  * What the PM gets back from lane_pilot_wait_writer: per stage only task, stage, state and reason, and strings cut

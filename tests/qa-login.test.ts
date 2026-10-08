@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lane-pilot/thread-observe", () => ({ observeStageChild: async () => ({ kind: "completed" }) }));
-import { coreRequiredSessionAdvertisement, requiredSessionPolicySpawnBinding } from "../src/helper-context";
-import type { HelperPolicySnapshot } from "../src/helper-context";
+import { coreRequiredSessionAdvertisement, requiredSessionPolicySpawnBinding } from "../src/rooms/native-agent/helper-context";
+import type { HelperPolicySnapshot } from "../src/rooms/native-agent/helper-context";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import { awaitQaVerdict, parseQaCases, qaThreadPrompt } from "../src/rooms/qa/server/qa-thread";
 

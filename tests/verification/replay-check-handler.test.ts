@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { hostContract } from "../../src/contracts";
+import { hostContract } from "../../src/rooms/contracts";
 
 const sandbox = vi.hoisted(() => ({ run: vi.fn() }));
 vi.mock("../../src/rooms/verification/sandbox", async (importOriginal) => ({

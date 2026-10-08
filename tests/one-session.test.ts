@@ -1,16 +1,16 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { noOptionalPlugins } from "./optional-plugin-stubs";
 import { afterEach, expect, it, vi } from "vitest";
-import type { PrototypeConfig, TaskV2 } from "../src/contracts";
+import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, latestTaskAttemptState, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
-import { SESSION_MAX_MS, SESSION_MAX_TURNS, failureClass } from "../src/failure-class";
-import { createCore } from "../src/server/core";
-import type { Services } from "../src/server/services";
-import { recordStage } from "../src/server/stage-records";
-import { createWriterDispatch } from "../src/server/writer/dispatch";
-import { retryInSameThread } from "../src/server/writer/sticky";
-import { createWriterStart } from "../src/server/writer/start";
-import { createWriterUpdateTask } from "../src/server/writer/update-task";
+import { SESSION_MAX_MS, SESSION_MAX_TURNS, failureClass } from "../src/rooms/runs/failure-class";
+import { createCore } from "../src/rooms/core/server/core";
+import type { Services } from "../src/rooms/core/server/services";
+import { recordStage } from "../src/rooms/runs/server/stage-records";
+import { createWriterDispatch } from "../src/rooms/writer/server/dispatch";
+import { retryInSameThread } from "../src/rooms/writer/server/sticky";
+import { createWriterStart } from "../src/rooms/writer/server/start";
+import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
 import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
 
 const WORKSPACE = "/ws";

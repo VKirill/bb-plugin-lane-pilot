@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createFakeWorktreeHost } from "../own-worktree-host";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import type { TaskV2 } from "../../src/contracts";
+import type { TaskV2 } from "../../src/rooms/contracts";
 import { createRun, getAttempt, getRun, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/storage/database";
 
 /**

@@ -4,10 +4,10 @@ import { redactKnown } from "@lane-pilot/kit";
 import { finalRuleOf, workflowFinish } from "../outcome";
 import type { Executor, ExecutorInput, PollResult } from "../scheduler";
 import type { ScheduleKind, ScheduleTask } from "../model";
-import type { ServerCore } from "../../../server/core";
+import type { ServerCore } from "../../core/server/core";
 import { errandModelForRun } from "./schedule-default";
 import { allowedSecretNames, secretFixLines, secretProblem } from "../../secrets/server/secrets";
-import type { Services } from "../../../server/services";
+import type { Services } from "../../core/server/services";
 
 /**
  * The three kinds of scheduled work, each behind the scheduler's `start / poll / cancel`. `start` is idempotent on the run key, so

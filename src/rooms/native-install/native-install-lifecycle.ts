@@ -1,5 +1,5 @@
 import type { PluginKvStorage, PluginRpcContract } from "@get-bb/plugin-sdk";
-import { hostContract } from "../../contracts";
+import { hostContract } from "../contracts";
 import { drainForLifecycle } from "../stability/server/deploy-drain";
 
 const PREFIX = "native-install:host:";

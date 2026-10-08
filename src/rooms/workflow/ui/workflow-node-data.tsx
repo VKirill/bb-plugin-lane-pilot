@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../../contracts";
+import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import type { ViewEdge, ViewNode } from "../view";

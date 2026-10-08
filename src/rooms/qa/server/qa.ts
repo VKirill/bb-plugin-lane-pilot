@@ -1,17 +1,17 @@
-import { taskV2Schema } from "../../../contracts";
+import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, countAttempts, recordSecretIssuance, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage/database";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY, qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../qa-host";
 import { sha256 } from "../../tasks/contract";
 import { parseOpenCodeToolTelemetry } from "../../stability/opencode-telemetry";
-import { MAIN_ATTEMPT_LIMIT } from "../../../state-machine";
-import { configuredSetting } from "../../../server/context";
-import { freezeRunRouting, inheritedProjectSettings } from "../../../server/run-routing";
-import { recordStage } from "../../../server/stage-records";
+import { MAIN_ATTEMPT_LIMIT } from "../../runs/state-machine";
+import { configuredSetting } from "../../core/server/context";
+import { freezeRunRouting, inheritedProjectSettings } from "../../runs/server/run-routing";
+import { recordStage } from "../../runs/server/stage-records";
 import { qaStateToStatus } from "../../critique/verdict";
 import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server/secrets";
 import { awaitQaVerdict, parseQaCases, runQaThread } from "./qa-thread";
-import { stringAt, valueAt } from "../../../server/values";
-import type { ServerCore } from "../../../server/core";
+import { stringAt, valueAt } from "../../core/server/values";
+import type { ServerCore } from "../../core/server/core";
 
 export function createQaStages(ctx: ServerCore) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host } = ctx;

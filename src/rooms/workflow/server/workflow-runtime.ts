@@ -1,5 +1,5 @@
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 /**
  * What the node executors of a chain run (agent, action, human, lp-task) need from the PM chat that started it. It is the

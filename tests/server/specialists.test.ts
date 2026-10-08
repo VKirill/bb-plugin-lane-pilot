@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
-import { tokensFrom } from "../../src/native-session";
+import { tokensFrom } from "../../src/rooms/native-agent/native-session";
 
 const projectId = "spec-project";
 const pmThreadId = "spec-pm";

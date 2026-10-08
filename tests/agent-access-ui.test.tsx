@@ -4,7 +4,7 @@ import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot, type RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import { openDatabase, savePrototypeConfig } from "../src/rooms/storage/database";
-import { ACCESS_GROUPS, ACCESS_SWITCHES, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, CORE_PROVIDER_GROUPS, effectiveGroup, effectiveSwitch, parseRoleAccess, roleAccessKey } from "../src/helper-context";
+import { ACCESS_GROUPS, ACCESS_SWITCHES, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, CORE_PROVIDER_GROUPS, effectiveGroup, effectiveSwitch, parseRoleAccess, roleAccessKey } from "../src/rooms/native-agent/helper-context";
 import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
 import plugin from "../server";
 

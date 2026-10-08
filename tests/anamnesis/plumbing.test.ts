@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hostContract, rpcContract } from "../../src/contracts";
+import { hostContract, rpcContract } from "../../src/rooms/contracts";
 import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
 import { createHub, type HostInfo } from "../../src/rooms/anamnesis/hub";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";

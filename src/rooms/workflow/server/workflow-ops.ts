@@ -1,11 +1,11 @@
 import type { z } from "zod";
-import type { rpcContract, workflowTrialCaseSchema } from "../../../contracts";
+import type { rpcContract, workflowTrialCaseSchema } from "../../contracts";
 import { HARNESS_VERSION } from "../../storage/database";
 import { runDraftTest, testCasesOf } from "../draft-test";
 import type { DraftTestResult } from "../draft-test";
 import { createStatusResolver } from "../../storage/ops-store";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 import type { createWorkflowLibrary } from "./workflow-library";
 import type { WorkflowPreflight } from "./workflow-preflight";
 

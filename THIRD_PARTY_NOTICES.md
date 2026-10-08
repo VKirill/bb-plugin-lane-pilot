@@ -37,7 +37,7 @@ files of the same repository. The texts are rewritten for Lane Pilot's roles (`s
 | A small task without a plan (self-check, then one quick task) | `.claude/commands/maestro-companion.md` | `workflows/companion.json` |
 | Closing a session and its knowledge | `.claude/commands/maestro-session-manage.md` | `workflows/milestone-close.json` |
 | Goal audit, confidence, re-grounding, the two-round ceiling of a fix loop, then the owner | `.claude/commands/maestro-ralph.md`, `prepare/ralph.md` | `workflows/lp.close.json`, `AUDITOR_METHOD`, the loop limits of the chains |
-| `convergence.criteria` (checkable, no subjective words) and `files[]` with the concrete change | `templates/task.json`, `prepare/plan.md` | `taskV2Schema` (`src/contracts.ts`), `src/rooms/tasks/server/contract-lint.ts` |
+| `convergence.criteria` (checkable, no subjective words) and `files[]` with the concrete change | `templates/task.json`, `prepare/plan.md` | `taskV2Schema` (`src/rooms/contracts/index.ts`), `src/rooms/tasks/server/contract-lint.ts` |
 | The step contract (`consumes` / `produces` / `gates`) and the typed artifact kinds (`plan`, `findings`, `verdict`, ...) | the `contract:` heads of `prepare/*.md` | `src/rooms/workflow/artifacts.ts`, `src/rooms/workflow/contract.ts`, the `consumes` / `produces` / `gates` of `workflows/*.json` |
 | Verification in three layers (exists, substantive, wired) with the unified gap object | `templates/verification.json`, `prepare/verify.md` | the `verification/1` kind in `src/rooms/workflow/artifacts.ts` |
 

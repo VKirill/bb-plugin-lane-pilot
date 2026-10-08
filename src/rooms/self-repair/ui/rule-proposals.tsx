@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRpc, type ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import type { rpcContract } from "../../../contracts";
+import type { rpcContract } from "../../contracts";
 import { detectLocale, t, type I18nKey } from "@lane-pilot/i18n";
 import { Badge } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
 import { Disclosure } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "../../../ui/use-lp-realtime";
+import { useLpRealtime } from "../../ui-shell/ui/use-lp-realtime";
 
 type Proposal = {
   id: string; rule: string; author: "sweep" | "pm" | "owner" | "model"; state: "proposed" | "accepted" | "rejected" | "revoked";

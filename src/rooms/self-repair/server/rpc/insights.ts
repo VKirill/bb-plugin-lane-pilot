@@ -1,13 +1,13 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStatsMany, routingHint, setRuleAudience, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
-import { acceptanceStats } from "../../../../acceptance-stats";
-import { rpcContract } from "../../../../contracts";
+import { acceptanceStats } from "../../../runs/acceptance-stats";
+import { rpcContract } from "../../../contracts";
 import { loadProjectSettings } from "../../../storage/database";
 import { parseDocsSettings } from "../../../docs/docs";
-import { configuredSetting } from "../../../../server/context";
+import { configuredSetting } from "../../../core/server/context";
 import { acceptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, revokeRule } from "../insights";
-import type { ServerCore } from "../../../../server/core";
-import type { Services } from "../../../../server/services";
+import type { ServerCore } from "../../../core/server/core";
+import type { Services } from "../../../core/server/services";
 
 type DocsStatus = Awaited<ReturnType<Services["docsPlaceStatus"]>>;
 /** How long the verdict of a folder is reused by the tab, and how long one open waits for a slow machine. */

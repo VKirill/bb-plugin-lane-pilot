@@ -13,9 +13,9 @@ import {
   type MemorySettings,
 } from "@lane-pilot/memory-core";
 import { getRun, type LanePilotDatabase } from "../../storage/database";
-import { requirePmRun } from "../../../server/context";
-import { registerObservedTool } from "../../../server/tool-result";
-import type { ServerCore } from "../../../server/core";
+import { requirePmRun } from "../../core/server/context";
+import { registerObservedTool } from "../../core/server/tool-result";
+import type { ServerCore } from "../../core/server/core";
 import { memorySettingsFor } from "../../self-repair/server/insights";
 import { sha256Hex } from "@lane-pilot/kit";
 

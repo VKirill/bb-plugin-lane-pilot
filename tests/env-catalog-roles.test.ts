@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { HELPER_ROLES, ROLE_PROFILES } from "../src/helper-context";
-import { WRITER_SETUP_LINES } from "../src/server/writer-task";
+import { HELPER_ROLES, ROLE_PROFILES } from "../src/rooms/native-agent/helper-context";
+import { WRITER_SETUP_LINES } from "../src/rooms/writer/server/writer-task";
 import { qaThreadPrompt } from "../src/rooms/qa/server/qa-thread";
 import { specialistPrompt } from "../src/rooms/critique/server/specialists";
 

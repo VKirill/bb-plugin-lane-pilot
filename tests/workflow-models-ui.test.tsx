@@ -13,8 +13,8 @@ import { createWorkflowArchitect } from "../src/rooms/workflow/server/workflow-a
 import type { ArchitectDeps } from "../src/rooms/workflow/server/workflow-architect";
 import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";
 import { createWorkflowModels } from "../src/rooms/workflow/server/workflow-models";
-import type { ServerCore } from "../src/server/core";
-import type { Services } from "../src/server/services";
+import type { ServerCore } from "../src/rooms/core/server/core";
+import type { Services } from "../src/rooms/core/server/services";
 import { BROWSER_DIGEST_STEPS } from "./workflow/architect-fixture";
 import { engineOn } from "./workflow/engine-helpers";
 import { workflow } from "./workflow/fixtures";

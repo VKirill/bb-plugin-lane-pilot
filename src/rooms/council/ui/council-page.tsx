@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Markdown, useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../../contracts";
+import type { rpcContract } from "../../contracts";
 import { t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
 import { Disclosure } from "@lane-pilot/ui-kit";
 import { useObservedWidth } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "../../../ui/use-lp-realtime";
+import { useLpRealtime } from "../../ui-shell/ui/use-lp-realtime";
 
 type CouncilRow = { id: string; runId: string; question: string; state: string; round: number; maxRounds: number; decisionPath: string | null; updatedAt: number };
 type CouncilDetail = {

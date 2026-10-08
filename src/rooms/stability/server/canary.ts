@@ -1,10 +1,10 @@
 import packageJson from "../../../../package.json";
-import { failureClass } from "../../../failure-class";
+import { failureClass } from "../../runs/failure-class";
 import type { LanePilotDatabase } from "../../storage/database";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import type { rpcContract } from "../../../contracts";
-import { scheduleIsolated } from "../../../server/schedules";
-import type { ServerCore } from "../../../server/core";
+import type { rpcContract } from "../../contracts";
+import { scheduleIsolated } from "../../core/server/schedules";
+import type { ServerCore } from "../../core/server/core";
 
 /**
  * Canary and error budget for Lane Pilot's own releases (G7). A new version is watched while its first attempts finish:

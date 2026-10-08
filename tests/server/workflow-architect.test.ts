@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
 import { writeWorkflowFile } from "../../src/rooms/host-worker/host-handlers";
-import { REALTIME_WINDOW_MS } from "../../src/server/realtime";
+import { REALTIME_WINDOW_MS } from "../../src/rooms/core/server/realtime";
 import { globalWorkflowDir, loadWorkflowStore, projectWorkflowDir } from "../../src/rooms/storage/store";
 import { BROWSER_DIGEST_STEPS } from "../workflow/architect-fixture";
 

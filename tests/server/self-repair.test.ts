@@ -5,7 +5,7 @@ import { createSelfRepair, firstSeenOnRunningVersion, isDue, logIncidents, parse
 import { createJev } from "@lane-pilot/jev";
 import { setJevForTests } from "@lane-pilot/jev";
 import type { JevClient } from "@lane-pilot/jev";
-import type { ServerCore } from "../../src/server/core";
+import type { ServerCore } from "../../src/rooms/core/server/core";
 
 type HostCall = { method: string; input: Record<string, unknown> };
 

@@ -8,8 +8,8 @@ import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";
 import { createWorkflowOps } from "../src/rooms/workflow/server/workflow-ops";
-import type { ServerCore } from "../src/server/core";
-import type { Services } from "../src/server/services";
+import type { ServerCore } from "../src/rooms/core/server/core";
+import type { Services } from "../src/rooms/core/server/services";
 import { engineOn, journalDb, ok, trust, wf } from "./workflow/engine-helpers";
 import { workflow } from "./workflow/fixtures";
 

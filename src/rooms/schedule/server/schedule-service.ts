@@ -7,14 +7,14 @@ import { scheduleFailureNotice } from "../outcome";
 import { createScheduler } from "../scheduler";
 import { taskOf, whenOf, type ScheduleRow } from "../store";
 import type { ScheduleConflict, ScheduleView } from "../views";
-import { configuredSetting } from "../../../server/context";
-import type { ServerCore } from "../../../server/core";
+import { configuredSetting } from "../../core/server/context";
+import type { ServerCore } from "../../core/server/core";
 import { allowedSecretNames } from "../../secrets/server/secrets";
 import { errandModelView, readErrandDefault } from "./schedule-default";
 import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./schedule-place";
 import { NO_USAGE, scheduleCost, threadUsage } from "./schedule-usage";
 import { createScheduleExecutors } from "./schedule-executors";
-import type { Services } from "../../../server/services";
+import type { Services } from "../../core/server/services";
 import { createWorkflowLibrary } from "../../workflow/server/workflow-library";
 
 /**

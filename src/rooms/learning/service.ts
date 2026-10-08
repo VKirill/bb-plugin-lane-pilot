@@ -4,11 +4,11 @@ import { TURN_REQUESTED, type EventLike, type OwnerMessage } from "../anamnesis/
 import { getRunSettingsScopes } from "../storage/database";
 import { jev } from "@lane-pilot/jev";
 import { relayFor } from "../relay/server/relay";
-import { scheduleIsolated } from "../../server/schedules";
+import { scheduleIsolated } from "../core/server/schedules";
 import { memorySettingsFor } from "../self-repair/server/insights";
-import { registerObservedTool } from "../../server/tool-result";
-import type { ServerCore } from "../../server/core";
-import type { Services } from "../../server/services";
+import { registerObservedTool } from "../core/server/tool-result";
+import type { ServerCore } from "../core/server/core";
+import type { Services } from "../core/server/services";
 import { DEFAULT_CONFIG, loadConfig, type LearningConfig } from "./config";
 import { createDecisions } from "./decide";
 import { createDigest } from "./digest";

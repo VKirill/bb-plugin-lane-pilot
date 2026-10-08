@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { taskV2Schema } from "../../src/contracts";
+import { taskV2Schema } from "../../src/rooms/contracts";
 import { ARTIFACTS, artifactDef, artifactExample, artifactId, checkProduces, parseArtifactId, summarizeValue, validateArtifact } from "../../src/rooms/workflow/artifacts";
 
 /** The registry of artifact kinds (W0): a schema and an example per kind, and the check of a step's output against them. */

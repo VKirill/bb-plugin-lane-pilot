@@ -1,17 +1,17 @@
 import { acceptanceArtifactDir } from "../../tasks/acceptance-v2";
-import { taskV2Schema } from "../../../contracts";
+import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listOpenAttempts, listStageReceipts, loadProjectSettings } from "../../storage/database";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { PROJECT_LIFE_DEFAULT_WRITER, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeWriterSelection, shouldTriggerProjectLife } from "../project-life";
-import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../../server/child-snapshots";
-import { configuredSetting } from "../../../server/context";
-import { fullAccessSpawn } from "../../../server/pm-spawn";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../server/run-routing";
-import { recordStage } from "../../../server/stage-records";
-import { stringAt, valueAt } from "../../../server/values";
+import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../runs/server/child-snapshots";
+import { configuredSetting } from "../../core/server/context";
+import { fullAccessSpawn } from "../../core/server/pm-spawn";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
+import { recordStage } from "../../runs/server/stage-records";
+import { stringAt, valueAt } from "../../core/server/values";
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 export function createProjectLifeStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host, workspaceExecutionEnvironment } = ctx;

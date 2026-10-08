@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { LANE_PILOT_TOOL_SEARCH_NAME, PM_CORE_TOOLS, PM_TOOL_FAMILIES, rewriteFoldedToolNames, type ToolFamily } from "../pm-tool-families";
-import type { ServerCore } from "../../../server/core";
-import { registerObservedTool, registeredTools, type ObservedTool } from "../../../server/tool-result";
+import type { ServerCore } from "../../core/server/core";
+import { registerObservedTool, registeredTools, type ObservedTool } from "../../core/server/tool-result";
 
 /** The shared lead of every "Use from the active Lane Pilot PM thread." that the family says once. */
 const PM_ONLY_LEAD = /Use (?:only )?from the (?:active|matching) Lane Pilot PM thread\.\s*/g;

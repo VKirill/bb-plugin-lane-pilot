@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
-import type { rpcContract, workflowDraftCheckSchema, workflowDraftSummarySchema } from "../../../contracts";
-import { useLpRealtime } from "../../../ui/use-lp-realtime";
+import type { rpcContract, workflowDraftCheckSchema, workflowDraftSummarySchema } from "../../contracts";
+import { useLpRealtime } from "../../ui-shell/ui/use-lp-realtime";
 
 /**
  * CONTRACT for the Workflows tab (W5) and the editor (W6).

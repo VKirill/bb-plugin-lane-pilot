@@ -1,16 +1,16 @@
-import { taskV2Schema } from "../../../contracts";
-import type { TaskV2 } from "../../../contracts";
+import { taskV2Schema } from "../../contracts";
+import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, loadProjectSettings } from "../../storage/database";
-import { taskFamily } from "../../../failure-class";
+import { taskFamily } from "../../runs/failure-class";
 import { parseSandboxUnsafePatterns } from "../../critique/critique-coverage";
-import { isTaskSatisfied } from "../../../server/blocked-by";
+import { isTaskSatisfied } from "../../runs/server/blocked-by";
 import { lintContract, lintProbePaths } from "./contract-lint";
 import { allowedSecretNames } from "../../secrets/server/secrets";
 import { gateResolverFor } from "../../verification/server/gate-detect";
 import { parseIntegrationGateSettings } from "../../verification/server/integration-gate";
 import type { LintOpenTask, PathKind } from "./contract-lint";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 /** Gathers the contract lint's inputs for a task; dispatch and lane_pilot_update_task lint a contract with the same rules. */
 export function createTaskLinter(ctx: ServerCore, services: Services) {

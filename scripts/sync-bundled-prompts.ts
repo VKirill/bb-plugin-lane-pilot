@@ -1,12 +1,12 @@
 /**
- * Writes the BB session prompt of every bundled agent (src/native-agent-overlay.ts) into src/bundled-agents.json, so the copy the
+ * Writes the BB session prompt of every bundled agent (src/rooms/native-agent/native-agent-overlay.ts) into src/rooms/native-agent/bundled-agents.json, so the copy the
  * handoff registry and the stock-stub check read cannot drift from the live overlay. `tests/pm-instructions.test.ts` fails when it does.
  * Run after changing a session prompt or after `bundle-lane-agents.py`: node_modules/.bin/tsx scripts/sync-bundled-prompts.ts
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { laneSessionOverlayPrompt } from "../src/native-agent-overlay";
+import { laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";
 
-const file = new URL("../src/bundled-agents.json", import.meta.url);
+const file = new URL("../src/rooms/native-agent/bundled-agents.json", import.meta.url);
 const bundled = JSON.parse(readFileSync(file, "utf8")) as Record<string, { prompt: string }>;
 let changed = 0;
 for (const [id, agent] of Object.entries(bundled)) {

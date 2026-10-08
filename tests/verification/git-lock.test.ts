@@ -139,7 +139,7 @@ describe("a git failure while index.lock stands", () => {
   });
 
   it("classes a Linux-worded lock failure as infra", async () => {
-    const { failureClass } = await import("../../src/failure-class");
+    const { failureClass } = await import("../../src/rooms/runs/failure-class");
     expect(failureClass("validation_failed", "git merge failed: error: Unable to write index.")).toBe("infra");
     expect(failureClass("validation_failed", "git merge failed: error: Unable to write index. (index.lock present)")).toBe("infra");
   });

@@ -1,19 +1,19 @@
-import { DISPATCH_STAGES_PENDING } from "../../../constants";
-import { taskV2Schema } from "../../../contracts";
+import { DISPATCH_STAGES_PENDING } from "../../runs/constants";
+import { taskV2Schema } from "../../contracts";
 import { countAttempts, countChargedAttempts, createAttempt, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../../storage/database";
-import { closeWriterStages } from "../../../server/stage-records";
-import { FREE_RETRY_LIMIT } from "../../../failure-class";
-import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "../../../state-machine";
+import { closeWriterStages } from "../../runs/server/stage-records";
+import { FREE_RETRY_LIMIT } from "../../runs/failure-class";
+import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "../../runs/state-machine";
 import { randomUUID } from "node:crypto";
 import { reconcile, reconcileHolder } from "../reconcile";
 import type { IdempotencyTriple } from "../reconcile";
 import { shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../../tasks/run-policy";
-import { WriterSelectionError } from "../../../server/run-routing";
-import { holderSpawnKey, stringAt } from "../../../server/values";
-import { findThreadsByMetadata } from "../../../server/thread-keys";
-import type { ServerCore } from "../../../server/core";
+import { WriterSelectionError } from "../../runs/server/run-routing";
+import { holderSpawnKey, stringAt } from "../../core/server/values";
+import { findThreadsByMetadata } from "../../core/server/thread-keys";
+import type { ServerCore } from "../../core/server/core";
 import type { ReconcilePort } from "../reconcile";
-import type { Services } from "../../../server/services";
+import type { Services } from "../../core/server/services";
 
 export function createReconcile(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, refreshRun } = ctx;

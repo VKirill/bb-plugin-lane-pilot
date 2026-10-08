@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { taskV2Schema } from "../../src/contracts";
+import { taskV2Schema } from "../../src/rooms/contracts";
 import { shouldRunPlanCritique } from "../../src/rooms/critique/critique";
 import { parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
 import { applyQualityMode, browserQaRequired, resolveQualityMode } from "../../src/rooms/critique/quality-mode";

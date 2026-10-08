@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 describe("layout geometry harness", () => {
   it("loads the full bundled prompt, not a stub", () => {
-    const bundled = JSON.parse(readFileSync(join(import.meta.dirname, "../src/bundled-agents.json"), "utf8"));
+    const bundled = JSON.parse(readFileSync(join(import.meta.dirname, "../src/rooms/native-agent/bundled-agents.json"), "utf8"));
     expect(bundled["dev-orchestrator"].prompt).toContain("Lane Pilot PM");
     expect(bundled["dev-orchestrator"].prompt).not.toContain("Boot solo");
     expect(bundled["dev-orchestrator"].prompt.length).toBeGreaterThan(400);
@@ -24,9 +24,9 @@ describe("layout geometry harness", () => {
   });
 
   it("uses one Disclosure and matching control height on project settings", () => {
-    const source = readFileSync(join(import.meta.dirname, "../src/ui/page.tsx"), "utf8");
-    const header = readFileSync(join(import.meta.dirname, "../src/ui/project-header.tsx"), "utf8");
-    const service = readFileSync(join(import.meta.dirname, "../src/ui/runs-service.tsx"), "utf8");
+    const source = readFileSync(join(import.meta.dirname, "../src/rooms/ui-shell/ui/page.tsx"), "utf8");
+    const header = readFileSync(join(import.meta.dirname, "../src/rooms/ui-shell/ui/project-header.tsx"), "utf8");
+    const service = readFileSync(join(import.meta.dirname, "../src/rooms/runs/ui/runs-service.tsx"), "utf8");
     expect(service).toContain("<Disclosure");
     expect(source).toContain("CONTROL_H");
     expect(header).toContain("settings-depth");

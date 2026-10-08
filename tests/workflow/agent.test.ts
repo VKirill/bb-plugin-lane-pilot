@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ROLE_PROFILES, HELPER_ROLES } from "../../src/helper-context";
+import { ROLE_PROFILES, HELPER_ROLES } from "../../src/rooms/native-agent/helper-context";
 import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
 import { slugOf } from "../../src/rooms/workflow/values";
 import { AgentOutputError, agentPrompt, dataBlock, extractJsonObject, outputContract, parseAgentOutput } from "../../src/rooms/workflow/agent-output";

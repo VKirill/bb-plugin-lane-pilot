@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { rpcContract } from "../../../contracts";
+import type { rpcContract } from "../../contracts";
 
 export type RunSnapshot = NonNullable<z.infer<(typeof rpcContract)["workflow_run_snapshot"]["output"]>["snapshot"]>;
 export type RunStep = RunSnapshot["steps"][number];

@@ -21,11 +21,11 @@ import {
   type AgentDefinition,
   type StoredHandoff,
 } from "@lane-pilot/handoff";
-import bundledAgents from "../../../bundled-agents.json";
-import { BB_AGENT_SUMMARIES } from "../../../native-agent-overlay";
-import { requirePmRun, type ServerContext } from "../../../server/context";
-import { registerObservedTool } from "../../../server/tool-result";
-import { scheduleIsolated } from "../../../server/schedules";
+import bundledAgents from "../../native-agent/bundled-agents.json";
+import { BB_AGENT_SUMMARIES } from "../../native-agent/native-agent-overlay";
+import { requirePmRun, type ServerContext } from "../../core/server/context";
+import { registerObservedTool } from "../../core/server/tool-result";
+import { scheduleIsolated } from "../../core/server/schedules";
 import { sendServiceMessage } from "./service-message";
 
 export const HANDOFF_TOOLS = ["lane_pilot_handoff_create", "lane_pilot_handoff_receipt", "lane_pilot_handoff_list"] as const;

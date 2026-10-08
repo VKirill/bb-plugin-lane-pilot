@@ -7,7 +7,7 @@ import { analyzerPrompt } from "../../src/rooms/self-repair/server/rule-scan";
 import { repairPrompt } from "../../src/rooms/self-repair/server/self-repair";
 import { specialistPrompt } from "../../src/rooms/critique/server/specialists";
 import { qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
-import { WRITER_SETUP_LINES, buildTask, writerContextBlocks, writerPrompt } from "../../src/server/writer-task";
+import { WRITER_SETUP_LINES, buildTask, writerContextBlocks, writerPrompt } from "../../src/rooms/writer/server/writer-task";
 import { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, codeRepairPrompt, parseCodeCritique, parseWriterRepairReply, sameUnresolvedFindings, shouldRequestRepair, parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
 import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
 import { STAGE_IDS } from "../../src/rooms/tasks/contract";
@@ -351,7 +351,7 @@ describe("other helper prompts", () => {
 
 describe("retry brief", () => {
   it("tells the next writer why the last attempt failed, as data", async () => {
-    const { previousAttemptBrief, writerPrompt } = await import("../../src/server/writer-task");
+    const { previousAttemptBrief, writerPrompt } = await import("../../src/rooms/writer/server/writer-task");
     const task = buildTask({ writerWorkspacePath: "/tmp/w" } as never, "T-1");
     const brief = previousAttemptBrief({ status:"validation_failed", reason:"verification failed", produced:["src/a.ts"],
       verification:[{ command:"npm test", exitCode:0 }, { command:"npx vitest run a", exitCode:1, stderr:"Expected 3, got 4" }] });

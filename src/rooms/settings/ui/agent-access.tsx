@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import type { rpcContract } from "../../../contracts";
+import type { rpcContract } from "../../contracts";
 import { detectLocale, t, type I18nKey } from "@lane-pilot/i18n";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import {
@@ -11,7 +11,7 @@ import {
   type AccessGroup,
   type AccessSwitch,
   type RoleAccess,
-} from "../../../helper-context";
+} from "../../native-agent/helper-context";
 import { Button } from "@lane-pilot/ui-kit";
 import { Icon } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";

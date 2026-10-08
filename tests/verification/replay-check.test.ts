@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { REPLAY_CHECK_FAILED, failureClass } from "../../src/failure-class";
-import { previousAttemptBrief, stickyTurnPrompt } from "../../src/server/writer-task";
-import { resolveInSameThread } from "../../src/server/writer/sticky";
+import { REPLAY_CHECK_FAILED, failureClass } from "../../src/rooms/runs/failure-class";
+import { previousAttemptBrief, stickyTurnPrompt } from "../../src/rooms/writer/server/writer-task";
+import { resolveInSameThread } from "../../src/rooms/writer/server/sticky";
 import { integrateWorktree, type ReplayCheckOutcome } from "../../src/rooms/verification/git-integrate";
 
 // B6: an attempt replayed on a moved main is checked there before it merges; two tasks that merge cleanly can still

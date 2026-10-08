@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { timeRpcHandlers } from "../src/server/rpc-timing";
+import { timeRpcHandlers } from "../src/rooms/core/server/rpc-timing";
 import { logIncidents } from "../src/rooms/self-repair/server/self-repair";
 import type { LanePilotDatabase } from "../src/rooms/storage/database";
 

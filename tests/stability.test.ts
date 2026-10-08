@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { failureClass, failureFingerprint } from "../src/failure-class";
+import { failureClass, failureFingerprint } from "../src/rooms/runs/failure-class";
 import { countAttempts, countChargedAttempts, createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
 import { createStability } from "../src/rooms/stability/server/stability";
 
@@ -176,7 +176,7 @@ describe("adoption at start-up", () => {
 describe("restart reopens the writer stages", () => {
   // Live 2026-10-04: three restarted SelfyStudio tasks died on «illegal stage transition writer-agent: failed -> running».
   it("sets failed writer stages back to pending so the writer can run again", async () => {
-    const { recordStage } = await import("../src/server/stage-records");
+    const { recordStage } = await import("../src/rooms/runs/server/stage-records");
     const { listStageReceipts } = await import("../src/rooms/storage/database");
     const { bb, db, stability } = setup();
     for (const state of ["pending", "running", "failed"] as const) recordStage(db, { runId:"run", taskId:"T1", stageId:"writer-agent", state, input:"plan" });
@@ -211,7 +211,7 @@ describe("superseded work is never restarted", () => {
 
 describe("an owner's stop of a run", () => {
   it("keeps a halted run out of parking and restarts", async () => {
-    const { setRunHalted } = await import("../src/server/runs-halt");
+    const { setRunHalted } = await import("../src/rooms/runs/server/runs-halt");
     const { bb, stability, resumed } = setup();
     await setRunHalted(bb.storage.kv as never, "run", true);
     expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:"internal_error: x" }, 1000)).toBe(false);
@@ -226,7 +226,7 @@ describe("an owner's stop of a run", () => {
 });
 
 it("never redoes a task whose finished work only waits for uncommitted edits in main", async () => {
-  const { failureClass } = await import("../src/failure-class");
+  const { failureClass } = await import("../src/rooms/runs/failure-class");
   expect(failureClass("blocked", "merge_blocked: base checkout has uncommitted changes in files this task changes: host/rpc.ts")).toBe("contract");
 });
 

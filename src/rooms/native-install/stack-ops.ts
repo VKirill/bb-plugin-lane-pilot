@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { EXTERNAL_OPS, TARGET_SHA } from "../../constants";
+import { EXTERNAL_OPS, TARGET_SHA } from "../runs/constants";
 import { observeExternalOps, type ExternalOpsSnapshot } from "./external-ops";
 import { applyInstalledGuard, isOwnedPmGuardApplied, ownedPmGuardPath } from "./guard-apply";
 import { readImportConfig } from "../settings/import-config";

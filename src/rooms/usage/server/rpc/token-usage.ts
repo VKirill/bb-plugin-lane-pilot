@@ -1,6 +1,6 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import { rpcContract } from "../../../../contracts";
-import type { ServerCore } from "../../../../server/core";
+import { rpcContract } from "../../../contracts";
+import type { ServerCore } from "../../../core/server/core";
 import { attachTokenUsage, queryTokenUsage } from "../token-usage";
 
 export function tokenUsageRpc(ctx: ServerCore) {

@@ -7,7 +7,7 @@ import { fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { en, ru } from "@lane-pilot/i18n";
-import { EXTERNAL_OPS } from "../src/constants";
+import { EXTERNAL_OPS } from "../src/rooms/runs/constants";
 
 const root = process.cwd();
 const outDir = resolve(root, "../../.agency/jobs/AG-235/tmp/ui-html");

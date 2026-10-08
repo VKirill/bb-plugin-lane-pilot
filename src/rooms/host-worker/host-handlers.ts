@@ -12,8 +12,8 @@ import { chmod, lstat, mkdir, open, stat, statfs, readFile, readlink, readdir, r
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
-import { hostContract } from "../../contracts";
-import { isEnvironmentCheckFailure } from "../../failure-class";
+import { hostContract } from "../contracts";
+import { isEnvironmentCheckFailure } from "../runs/failure-class";
 import { readBoundedWorkspaceFile, sha256Hex } from "@lane-pilot/kit";
 import { casWriteWorkflowFile } from "../storage/files";
 import { inventoryCoexistence, runCoexistenceOperation } from "../native-install/coexistence";
@@ -22,12 +22,12 @@ import { cancelHostJob, hostJobStatus, startHostJob } from "./jobs";
 import { scanCritiqueCoverage } from "../critique/critique-coverage";
 import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "../verification/sandbox";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../verification/git-ownership";
-import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "../../cli-run";
+import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "../writer/cli-run";
 import { runScriptOnHost } from "./script-run";
 import { execFile } from "node:child_process";
-import { discoverClaudeAgents, prepareNativeClaude } from "../../native-claude-host";
+import { discoverClaudeAgents, prepareNativeClaude } from "../native-agent/native-claude-host";
 import { prepareOpencodeMinimal } from "../native-install/opencode-min-config";
-import { prepareBbShim } from "../../bb-shim";
+import { prepareBbShim } from "../native-agent/bb-shim";
 import {
   connectOpencodeStack,
   detectStack,

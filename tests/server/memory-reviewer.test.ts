@@ -4,7 +4,7 @@ import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/databa
 import { storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryCandidate } from "../../packages/memory-core/src";
 import { mixReviewerMemory, reviewerMemoryFor } from "../../src/rooms/memory/server/memory-mix";
-import { writerMemory } from "../../src/writer-brief";
+import { writerMemory } from "../../src/rooms/writer/writer-brief";
 import { codeCritiquePrompt } from "../../src/rooms/critique/code-critique";
 import { nightReviewPrompt } from "../../src/rooms/night/night";
 

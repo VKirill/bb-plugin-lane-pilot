@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { taskV2Schema } from "../../contracts";
+import { taskV2Schema } from "../contracts";
 
 /**
  * The registry of artifact kinds (W0). A step of a chain declares what it `produces` as `kind/version`; the engine and the

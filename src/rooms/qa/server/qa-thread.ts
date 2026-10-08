@@ -1,15 +1,15 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { fullAccessSpawn } from "../../../server/pm-spawn";
-import { spawnTextId } from "../../../server/thread-keys";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../server/run-routing";
+import { fullAccessSpawn } from "../../core/server/pm-spawn";
+import { spawnTextId } from "../../core/server/thread-keys";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
 import { redactKnownDeep } from "@lane-pilot/kit";
-import { stringAt } from "../../../server/values";
-import { outputText } from "../../../server/writer-task";
+import { stringAt } from "../../core/server/values";
+import { outputText } from "../../writer/server/writer-task";
 import { FRONTEND_VERIFY_METHOD } from "../../critique/role-method";
 import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "../../critique/verdict";
 import type { VerdictFinding, VerdictStatus } from "../../critique/verdict";
-import type { ServerCore } from "../../../server/core";
+import type { ServerCore } from "../../core/server/core";
 
 export type QaVerdict = {
   verdict: "passed" | "failed" | "blocked";

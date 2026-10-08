@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/rooms/storage/database";
-import { createCore } from "../../src/server/core";
+import { createCore } from "../../src/rooms/core/server/core";
 
 describe("Jev key from Env Catalog", () => {
   it("attaches the catalog's TYPESAFE_API_KEY to Jev host calls only, reading the catalog once", async () => {

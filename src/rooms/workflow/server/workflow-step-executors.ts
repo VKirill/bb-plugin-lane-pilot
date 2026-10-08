@@ -1,8 +1,8 @@
 import type { z } from "zod";
-import type { stepExecutorSchema } from "../../../contracts";
+import type { stepExecutorSchema } from "../../contracts";
 import { automaticEffortRoutingEnabled, writerServiceTier } from "@lane-pilot/models";
-import { resolveStageWriterSelection } from "../../../stage-writer-selection";
-import { writerFallbackChain, writerFallbacks } from "../../../writer-fallbacks";
+import { resolveStageWriterSelection } from "../../writer/stage-writer-selection";
+import { writerFallbackChain, writerFallbacks } from "../../writer/writer-fallbacks";
 import { costTier, offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { roleSpec } from "./workflow-agent";
 import { modelOverrideAt, modelOverrideKey, resolveAgentModel } from "./workflow-agent-model";

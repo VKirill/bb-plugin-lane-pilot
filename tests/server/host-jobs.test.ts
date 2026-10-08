@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openDatabase } from "../../src/rooms/storage/database";
-import { createCore } from "../../src/server/core";
-import { createHostJobs } from "../../src/server/host-jobs";
+import { createCore } from "../../src/rooms/core/server/core";
+import { createHostJobs } from "../../src/rooms/core/server/host-jobs";
 
 type Reply = { state:"running" | "succeeded" | "failed" | "cancelled" | "lost"; result?:unknown; error:string | null; progress:{ updatedAt:number } };
 

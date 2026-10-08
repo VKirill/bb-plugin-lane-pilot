@@ -1,20 +1,20 @@
-import { taskV2Schema } from "../../../contracts";
+import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, searchMemoryRecords, storeMemoryRecords } from "../../storage/database";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { resolveStageWriterSelection } from "../../../stage-writer-selection";
+import { resolveStageWriterSelection } from "../../writer/stage-writer-selection";
 import { sha256 } from "../../tasks/contract";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
 import { boundedAgentName } from "../../critique/role";
-import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../../server/child-snapshots";
+import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server/child-snapshots";
 import { compactAcceptedResult } from "../../tasks/server/accepted-compact";
-import { configuredSetting } from "../../../server/context";
-import { fullAccessSpawn } from "../../../server/pm-spawn";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../server/run-routing";
-import { recordStage } from "../../../server/stage-records";
-import { stringAt, valueAt } from "../../../server/values";
+import { configuredSetting } from "../../core/server/context";
+import { fullAccessSpawn } from "../../core/server/pm-spawn";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
+import { recordStage } from "../../runs/server/stage-records";
+import { stringAt, valueAt } from "../../core/server/values";
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 export function createMemoryStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, workspaceExecutionEnvironment } = ctx;

@@ -4,7 +4,7 @@ import { closeSync, openSync } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { HOST_JOB_KINDS, hostContract, type HostJobKind } from "../../contracts";
+import { HOST_JOB_KINDS, hostContract, type HostJobKind } from "../contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 
 /**

@@ -1,6 +1,6 @@
 import type { ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { DOCS_DEFAULT_SELECTION } from "../../docs/docs-defaults";
-import { WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER } from "../../../ui/page-model";
+import { WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER } from "../../ui-shell/ui/page-model";
 
 /** The roles whose model is one native picker saved by one RPC (the writer and the council seats have their own flow). */
 export type SelectionId = "memory" | "night" | "docs" | "projectLife" | "pmRead" | "onboarding" | "planCritique" | "codeCritique" | "specialist";

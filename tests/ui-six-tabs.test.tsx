@@ -1,15 +1,16 @@
 /** @vitest-environment jsdom */
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/ui/tabs-model";
+import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/rooms/ui-shell/ui/tabs-model";
 import { setLocaleOverride, en, ru } from "@lane-pilot/i18n";
-import { HELPER_ROLES } from "../src/helper-context";
-import { ROLE_GROUPS } from "../src/ui/team-model";
+import { HELPER_ROLES } from "../src/rooms/native-agent/helper-context";
+import { ROLE_GROUPS } from "../src/rooms/native-agent/ui/team-model";
 import { screenFixture, mountPage } from "./ui-harness";
 import { openTab } from "./ui-tabs";
+import { roomFaceRelative } from "./support/room-files";
 
 vi.setConfig({ testTimeout: 60_000 });
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
@@ -104,9 +105,8 @@ describe("six tabs", () => {
   });
 
   it("picks no string by `ru ? … : …` in the UI: every text comes from the dictionaries", () => {
-    const dir = join(process.cwd(), "src/ui");
-    const offenders = readdirSync(dir).filter((name) => /\.tsx?$/.test(name))
-      .filter((name) => /\bru\s*\?\s*["'`(]/.test(readFileSync(join(dir, name), "utf8")));
+    const offenders = roomFaceRelative("ui")
+      .filter((file) => /\bru\s*\?\s*["'`(]/.test(readFileSync(join(process.cwd(), file), "utf8")));
     expect(offenders).toEqual([]);
   });
 });

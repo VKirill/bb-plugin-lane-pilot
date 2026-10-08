@@ -1,4 +1,4 @@
-import { projectRoleField } from "../../../server/run-routing";
+import { projectRoleField } from "../../runs/server/run-routing";
 import {
   codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
@@ -8,13 +8,13 @@ import { getRun, getRunSettingsScopes } from "../../storage/database";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
-import { fullAccessSpawn } from "../../../server/pm-spawn";
-import { spawnTextId } from "../../../server/thread-keys";
-import { scheduleIsolated } from "../../../server/schedules";
-import { stringAt } from "../../../server/values";
-import { outputText } from "../../../server/writer-task";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import { fullAccessSpawn } from "../../core/server/pm-spawn";
+import { spawnTextId } from "../../core/server/thread-keys";
+import { scheduleIsolated } from "../../core/server/schedules";
+import { stringAt } from "../../core/server/values";
+import { outputText } from "../../writer/server/writer-task";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 /** How far back a rescan looks. */
 export const RULE_SCAN_WINDOW_MS = 30 * 24 * 3_600_000;

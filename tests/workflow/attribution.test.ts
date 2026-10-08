@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { migrations } from "../../src/rooms/storage/database";
-import type { ServerCore } from "../../src/server/core";
-import type { Services } from "../../src/server/services";
+import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { Services } from "../../src/rooms/core/server/services";
 import { createWorkflowLibrary } from "../../src/rooms/workflow/server/workflow-library";
 import { PIPELINE_RUNS_ATTRIBUTION } from "../../src/rooms/storage/ops-store";
 import { runRecords } from "../../src/rooms/workflow/run-stats";

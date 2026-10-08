@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { TaskV2 } from "../../../contracts";
+import type { TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../critique/critique-coverage";
 import { parseReadFirstHints } from "../read-first";

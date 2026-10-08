@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { expect, it } from "vitest";
-import { hostContract } from "../../src/contracts";
+import { hostContract } from "../../src/rooms/contracts";
 import { diskFree } from "../../src/rooms/host-worker/host-handlers";
 
 it("diskFree reports free and total bytes of the filesystem under a path", async () => {

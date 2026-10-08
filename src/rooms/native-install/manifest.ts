@@ -1,4 +1,4 @@
-import { EXTERNAL_OPS } from "../../constants";
+import { EXTERNAL_OPS } from "../runs/constants";
 
 export type ManifestKind = "file" | "tree" | "symlink" | "external";
 

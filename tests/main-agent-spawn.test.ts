@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { compileMainAgentProfile } from "../src/agent-profile";
-import { TARGET_SHA } from "../src/constants";
+import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
+import { TARGET_SHA } from "../src/rooms/runs/constants";
 import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/rooms/storage/database";
 import { LP_AGENT_OVERRIDES_KEY } from "@lane-pilot/settings-catalog";
 

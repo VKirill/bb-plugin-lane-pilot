@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../../contracts";
+import type { rpcContract } from "../../contracts";
 import type { ViewNode, WorkflowView } from "../view";
 import type { RunSnapshot } from "./workflow-run";
 

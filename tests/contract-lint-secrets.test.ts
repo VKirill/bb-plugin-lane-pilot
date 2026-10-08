@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { taskV2Schema } from "../src/contracts";
-import type { TaskV2 } from "../src/contracts";
-import { compactContract } from "../src/writer-brief";
+import { taskV2Schema } from "../src/rooms/contracts";
+import type { TaskV2 } from "../src/rooms/contracts";
+import { compactContract } from "../src/rooms/writer/writer-brief";
 import { lintContract, nearSecretName, type LintInput } from "../src/rooms/tasks/server/contract-lint";
 import type { SecretCheck } from "../src/rooms/secrets/server/secrets";
 

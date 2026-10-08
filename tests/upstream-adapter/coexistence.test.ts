@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { TARGET_SHA } from "../../src/constants";
+import { TARGET_SHA } from "../../src/rooms/runs/constants";
 import { hashPath, sha256Buffer } from "@lane-pilot/kit";
 import { inventoryCoexistenceAtHome, runCoexistenceOperation, runCoexistenceOperationAtHome } from "../../src/rooms/native-install/coexistence";
 import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readSnapshot, saveSnapshot } from "../../src/rooms/native-install/ownership";

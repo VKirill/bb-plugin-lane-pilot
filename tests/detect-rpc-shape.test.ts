@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { hostContract } from "../src/contracts";
+import { hostContract } from "../src/rooms/contracts";
 import { detect } from "../src/rooms/host-worker/host-handlers";
 
 describe("detect RPC output", () => {

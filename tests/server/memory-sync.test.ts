@@ -4,7 +4,7 @@ import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/databa
 import { storeMemoryRecords } from "../../packages/memory-core/src/store";
 import { exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile } from "../../packages/memory-core/src/files";
 import { exportFileMemory, importFileMemory } from "../../src/rooms/memory/server/memory-sync";
-import type { ServerCore } from "../../src/server/core";
+import type { ServerCore } from "../../src/rooms/core/server/core";
 
 const dir = "/w/.agents/memory";
 

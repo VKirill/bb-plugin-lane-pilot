@@ -6,7 +6,7 @@ import {
   RunBudgetExceeded,
   runningWriterBudgetStop,
 } from "@lane-pilot/resilience";
-import { FREE_CLASSES, PARKED_CLASSES, failureClass } from "../src/failure-class";
+import { FREE_CLASSES, PARKED_CLASSES, failureClass } from "../src/rooms/runs/failure-class";
 import {
   countChargedAttempts,
   createAttempt,
@@ -18,11 +18,11 @@ import {
   transitionAttempt,
 } from "../src/rooms/storage/database";
 import { runHealth } from "../src/rooms/stability/server/health";
-import { bindRunChildBudget, fullAccessSpawn } from "../src/server/pm-spawn";
+import { bindRunChildBudget, fullAccessSpawn } from "../src/rooms/core/server/pm-spawn";
 import { createStability } from "../src/rooms/stability/server/stability";
-import { createWriterFinish } from "../src/server/writer/finish";
-import { createWriterSpawn } from "../src/server/writer/spawn";
-import type { PrototypeConfig, TaskV2 } from "../src/contracts";
+import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import { createWriterSpawn } from "../src/rooms/writer/server/spawn";
+import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 
 const config: PrototypeConfig = {
   projectId: "P", hostId: "h", pmWorkspacePath: "/repo", writerWorkspacePath: "/repo",

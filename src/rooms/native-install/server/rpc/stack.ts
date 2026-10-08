@@ -1,7 +1,7 @@
 import { loadProjectSettings, loadPrototypeConfig, saveProjectSetting } from "../../../storage/database";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import { rpcContract } from "../../../../contracts";
-import type { ServerCore } from "../../../../server/core";
+import { rpcContract } from "../../../contracts";
+import type { ServerCore } from "../../../core/server/core";
 
 export function stackRpc(ctx: ServerCore) {
   const { coexistenceInventory, coexistenceOperation, db, host, nativeInstaller } = ctx;

@@ -1,10 +1,10 @@
-import { writerFallbackKeys } from "../../../../writer-fallbacks";
+import { writerFallbackKeys } from "../../../writer/writer-fallbacks";
 import { casUpsertSettings, sectionBindingId } from "../../../storage/database";
 import { compatibleReasoningLevel, compatibleServiceTier, findModelIn } from "@lane-pilot/models";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import { rpcContract } from "../../../../contracts";
-import type { ServerCore } from "../../../../server/core";
-import type { Services } from "../../../../server/services";
+import { rpcContract } from "../../../contracts";
+import type { ServerCore } from "../../../core/server/core";
+import type { Services } from "../../../core/server/services";
 
 export function selectionsRpc(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;

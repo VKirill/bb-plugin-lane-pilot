@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coreRequiredSessionAdvertisement, requiredSessionPolicySpawnBinding, roleProfilePolicy } from "../../src/helper-context";
+import { coreRequiredSessionAdvertisement, requiredSessionPolicySpawnBinding, roleProfilePolicy } from "../../src/rooms/native-agent/helper-context";
 import { agentRequest, extraAccessOf } from "../../src/rooms/workflow/server/workflow-agent";
 import type { StepContext } from "../../src/rooms/workflow/engine";
 import { checkRequires, effectiveRequires } from "../../src/rooms/workflow/preflight";

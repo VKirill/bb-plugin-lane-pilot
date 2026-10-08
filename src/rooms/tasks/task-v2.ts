@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pluginRootFromModule } from "@lane-pilot/kit";
-import { taskV2Schema, type TaskV2 } from "../../contracts";
+import { taskV2Schema, type TaskV2 } from "../contracts";
 
 export const TASK_V2_REQUIRED = [
   "schema_version",

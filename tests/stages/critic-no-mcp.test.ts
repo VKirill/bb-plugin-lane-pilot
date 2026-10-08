@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   HELPER_ROLES, MANDATORY_MCP_SERVERS, ROLE_PROFILES, coreRequiredSessionAdvertisement, parseHelperContextSettings, requiredSessionPolicySpawnBinding, roleProfilePolicy,
-} from "../../src/helper-context";
-import type { HelperRole } from "../../src/helper-context";
+} from "../../src/rooms/native-agent/helper-context";
+import type { HelperRole } from "../../src/rooms/native-agent/helper-context";
 import { codeCritiquePrompt, buildCandidateEvidence } from "../../src/rooms/critique/code-critique";
 import { critiquePrompt } from "../../src/rooms/critique/critique";
 import { pmReadPrompt } from "../../src/rooms/critique/pm-read";

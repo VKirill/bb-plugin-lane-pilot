@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
 import { NATIVE_HOOK_SOURCES } from "../src/rooms/native-install/native-hook-sources";
-import { lpBridgeCatalogNames, materializeNativeHookSession, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS, unionLpBridgeTools } from "../src/native-session-hooks";
+import { lpBridgeCatalogNames, materializeNativeHookSession, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS, unionLpBridgeTools } from "../src/rooms/native-agent/native-session-hooks";
 
 it("names only bb-bridge LP tools and does not invent a full allowlist", () => {
   const names = lpBridgeCatalogNames();
@@ -27,7 +27,7 @@ it("materializes only bundled hooks when cwd is not known yet", async () => {
   const dest = join(await mkdtemp(join(tmpdir(), "lp-native-hooks-host-")), "session");
   const result = await materializeNativeHookSession({
     destDir: dest,
-    moduleUrl: new URL("../src/native-session-hooks.ts", import.meta.url).href,
+    moduleUrl: new URL("../src/rooms/native-agent/native-session-hooks.ts", import.meta.url).href,
   });
   expect(await readFile(join(dest, "hooks", "inject_agent_type.py"), "utf8")).toBe(
     NATIVE_HOOK_SOURCES["inject_agent_type.py"],
@@ -56,7 +56,7 @@ it("copies original hook modules into the session dir and does not write home Cl
   const result = await materializeNativeHookSession({
     cwd,
     destDir: dest,
-    moduleUrl: new URL("../src/native-session-hooks.ts", import.meta.url).href,
+    moduleUrl: new URL("../src/rooms/native-agent/native-session-hooks.ts", import.meta.url).href,
   });
   const settings = JSON.parse(await readFile(result.settingsPath, "utf8")) as {
     hooks: { PreToolUse: Array<{ hooks: Array<{ command: string }> }> };

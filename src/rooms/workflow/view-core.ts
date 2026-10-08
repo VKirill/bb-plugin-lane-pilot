@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { workflowViewSchema } from "../../contracts";
+import type { workflowViewSchema } from "../contracts";
 import type { Condition } from "./schema";
 
 /**

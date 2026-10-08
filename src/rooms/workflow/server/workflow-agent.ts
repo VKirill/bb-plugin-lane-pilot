@@ -1,8 +1,8 @@
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRunSettingsScopes } from "../../storage/database";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
-import { ROLE_PROFILES } from "../../../helper-context";
-import type { ExtraAccess, HelperRole } from "../../../helper-context";
+import { ROLE_PROFILES } from "../../native-agent/helper-context";
+import type { ExtraAccess, HelperRole } from "../../native-agent/helper-context";
 import { redactKnown } from "@lane-pilot/kit";
 import { agentPrompt, outputContract, parseAgentOutput } from "../agent-output";
 import { contractProblems, contractRepairPrompt, describeProblems, hasContractProblems } from "../contract";
@@ -15,18 +15,18 @@ import type { PacketInput, PacketPlan } from "../handoff";
 import { outputFields } from "../lower";
 import type { Field, GraphNode } from "../schema";
 import { roleMethod } from "../../critique/role-method";
-import { fullAccessSpawn } from "../../../server/pm-spawn";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../server/run-routing";
+import { fullAccessSpawn } from "../../core/server/pm-spawn";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server/repo-edits";
 import { SPECIALIST_ROLES } from "../../critique/server/specialists";
-import { findThreadsByMetadata, keyedSpawnSupported } from "../../../server/thread-keys";
-import { modelCatalogOf, pmHostOf } from "../../../server/model-catalog-reader";
+import { findThreadsByMetadata, keyedSpawnSupported } from "../../core/server/thread-keys";
+import { modelCatalogOf, pmHostOf } from "../../core/server/model-catalog-reader";
 import { offeredOnHost } from "@lane-pilot/models";
 import { threadUsage } from "../../usage/server/token-usage";
-import { stringAt } from "../../../server/values";
+import { stringAt } from "../../core/server/values";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "./workflow-agent-model";
-import { outputText } from "../../../server/writer-task";
-import type { ServerCore } from "../../../server/core";
+import { outputText } from "../../writer/server/writer-task";
+import type { ServerCore } from "../../core/server/core";
 import type { ChainRuntime } from "./workflow-runtime";
 
 /**

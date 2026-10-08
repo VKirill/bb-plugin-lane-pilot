@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { failureClass } from "../../src/failure-class";
+import { failureClass } from "../../src/rooms/runs/failure-class";
 import { USAGE_FETCH_METHOD, USAGE_LIST_METHOD, createProviderUsage, usageHold, usageHoldReason, usageSkipPercent, type UsageMeasurement, type UsageResource } from "../../src/rooms/usage/server/provider-usage";
 
 const NOW = Date.parse("2026-10-07T12:00:00Z");

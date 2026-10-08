@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { closeRun, createRun, getActivation, openDatabase, setRunThread } from "../src/rooms/storage/database";
-import { claimNativeLaneRun, ownedNativePmRun, projectCheckoutIntentPath, resolveNativeDispatchWorkspace, writerWorkspaceForPmInstructions } from "../src/native-run";
+import { claimNativeLaneRun, ownedNativePmRun, projectCheckoutIntentPath, resolveNativeDispatchWorkspace, writerWorkspaceForPmInstructions } from "../src/rooms/native-agent/native-run";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {

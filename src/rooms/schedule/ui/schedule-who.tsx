@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../../contracts";
+import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { ERRAND_BUILTIN } from "../errand-model";
 import type { CostView, ErrandDefaultView, ModelView } from "../views";
 import { PRESET_SLUGS, presetSelection } from "@lane-pilot/models";
-import { Pill } from "../../../ui/pill";
+import { Pill } from "../../ui-shell/ui/pill";
 import { fill } from "./schedule-parts";
 import type { ModelFields } from "./schedule-model";
 import { executorLine, modelShort, providerShort, sourceText, useModelCatalog, type StepExecutor } from "../../workflow/ui/workflow-models";

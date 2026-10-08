@@ -2,7 +2,7 @@ import { PROVIDER_POOL_KEY, providerPoolProblem } from "@lane-pilot/settings-cat
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule/errand-model";
 import "../workflow/route-workflow";
 import "@lane-pilot/jev/judgments/repair-group";
-import "../../jev/judgments/failure-class";
+import "../runs/failure-class-judgment";
 import "@lane-pilot/jev/judgments/output-guard";
 import { listJudgments } from "@lane-pilot/jev";
 import { jevSettingProblem } from "@lane-pilot/jev";

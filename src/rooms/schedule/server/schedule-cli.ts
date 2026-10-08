@@ -1,4 +1,4 @@
-import type { Services } from "../../../server/services";
+import type { Services } from "../../core/server/services";
 
 /**
  * `bb lane-pilot schedule <list|show|create|update|pause|resume|run-now|delete|history|preview>`: the schedule board from a terminal.

@@ -7,7 +7,7 @@ import plugin from "../../server";
 import { runBrowserQaOnHost, type BrowserQaInput } from "../../src/rooms/qa/browser-qa";
 import { claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../src/rooms/storage/database";
 import { memoryRecordId } from "../../src/rooms/memory/memory";
-import type { TaskV2 } from "../../src/contracts";
+import type { TaskV2 } from "../../src/rooms/contracts";
 import { buildRunPolicy } from "../../src/rooms/tasks/run-policy";
 import { docsInputHash } from "../../src/rooms/docs/docs";
 

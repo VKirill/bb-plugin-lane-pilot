@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { acceptanceStats, failureCause } from "../src/acceptance-stats";
+import { acceptanceStats, failureCause } from "../src/rooms/runs/acceptance-stats";
 import { createRun, openDatabase } from "../src/rooms/storage/database";
 
 it("maps a failed attempt to the plan's coarse cause buckets", () => {

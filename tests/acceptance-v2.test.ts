@@ -10,7 +10,7 @@ import {
   loadAcceptanceV2Schema,
   validateAcceptanceV2,
 } from "../src/rooms/tasks/acceptance-v2";
-import type { TaskV2 } from "../src/contracts";
+import type { TaskV2 } from "../src/rooms/contracts";
 
 const task = {
   schema_version:2,

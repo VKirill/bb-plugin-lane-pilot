@@ -13,7 +13,7 @@ import {
   setRunThread,
   transitionAttempt,
 } from "../src/rooms/storage/database";
-import { TARGET_SHA } from "../src/constants";
+import { TARGET_SHA } from "../src/rooms/runs/constants";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";

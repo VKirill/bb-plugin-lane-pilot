@@ -3,9 +3,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
-import type { hostContract } from "../../contracts";
+import type { hostContract } from "../contracts";
 import { claudeLaneEnv, detectClaudeLane, installClaudeLane, upgradeClaudeLane } from "./native-install-bootstrap";
-import { reconcileClaudeLane } from "../../native-lane-reconcile";
+import { reconcileClaudeLane } from "../native-agent/native-lane-reconcile";
 import { transitionOwned } from "./native-install-owned";
 
 const manifestSchema = z.object({

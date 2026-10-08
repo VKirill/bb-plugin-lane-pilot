@@ -1,7 +1,7 @@
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
-import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "../../failure-class";
+import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "../runs/failure-class";
 import { cleanCheckOutput } from "@lane-pilot/kit";
-import type { TaskV2 } from "../../contracts";
+import type { TaskV2 } from "../contracts";
 
 export function isTaskFolderFile(path:string):boolean {
   const normalized = path.replace(/^\.\//, "").replaceAll("\\", "/");

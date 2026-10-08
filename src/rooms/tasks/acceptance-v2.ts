@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pluginRootFromModule, sha256Buffer } from "@lane-pilot/kit";
-import type { TaskV2 } from "../../contracts";
+import type { TaskV2 } from "../contracts";
 
 export const ACCEPTANCE_V2_REQUIRED = [
   "schema_version",

@@ -1,5 +1,5 @@
 import type { NodeExecutor, WorkflowEngine } from "../workflow/engine";
-import type { ServerCore } from "../../server/core";
+import type { ServerCore } from "../core/server/core";
 import type { ChainRuntime } from "../workflow/server/workflow-runtime";
 import type { Hub } from "./hub";
 import type { Section } from "./whoami";

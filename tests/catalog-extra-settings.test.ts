@@ -4,7 +4,7 @@ import plugin from "../server";
 import { en, ru } from "@lane-pilot/i18n";
 import { readFileSync } from "node:fs";
 import { UI_CATALOG, VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { DEFAULT_SILENCE_NUDGE_MIN } from "../src/server/writer-silence";
+import { DEFAULT_SILENCE_NUDGE_MIN } from "../src/rooms/writer/server/writer-silence";
 import { parseIntegrationGateSettings } from "../src/rooms/verification/server/integration-gate";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { DEFAULT_USAGE_SKIP_PERCENT } from "../src/rooms/usage/server/provider-usage";

@@ -9,12 +9,12 @@ import { registerReducers } from "../reducers";
 import { createWorkflowAgents } from "./workflow-agent";
 import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
-import { registerDispatchExecutors } from "../../../server/writer/dispatch-workflow";
+import { registerDispatchExecutors } from "../../writer/server/dispatch-workflow";
 import { registerInvoiceActions } from "./workflow-invoice";
 import { registerAnamnesisActions } from "../../anamnesis/chain-actions";
 import { anamnesisFor } from "../../anamnesis/wiring";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 /**
  * The one workflow engine of this plugin instance, with the executors of the built-in workflows. It stops at a step

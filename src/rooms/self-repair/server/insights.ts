@@ -6,9 +6,9 @@ import {
   upsertLessonProposal, ruleTrialStats,
 } from "@lane-pilot/run-insights";
 import { loadProjectSettings, type LanePilotDatabase } from "../../storage/database";
-import { configuredSetting, requirePmRun, type ServerContext } from "../../../server/context";
-import { registerObservedTool } from "../../../server/tool-result";
-import { scheduleIsolated } from "../../../server/schedules";
+import { configuredSetting, requirePmRun, type ServerContext } from "../../core/server/context";
+import { registerObservedTool } from "../../core/server/tool-result";
+import { scheduleIsolated } from "../../core/server/schedules";
 import { poolHasRoom, poolTokens, ruleBudget } from "../../learning/rule-budget";
 import { sha256Hex } from "@lane-pilot/kit";
 

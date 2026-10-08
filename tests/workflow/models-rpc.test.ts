@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createModelCatalog, createWorkflowModels } from "../../src/rooms/workflow/server/workflow-models";
-import type { ServerCore } from "../../src/server/core";
+import type { ServerCore } from "../../src/rooms/core/server/core";
 import { journalDb } from "./engine-helpers";
 
 type Info = { id: string; displayName: string; available: boolean; logoUrl: string | null; capabilities: { supportsServiceTier: boolean }; serviceTiers?: Array<{ id: string }> };

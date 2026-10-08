@@ -1,13 +1,13 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { noOptionalPlugins } from "./optional-plugin-stubs";
 import { afterEach, expect, it, vi } from "vitest";
-import type { PrototypeConfig, TaskV2 } from "../src/contracts";
+import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
-import { createCore } from "../src/server/core";
-import type { Services } from "../src/server/services";
-import { recordStage, reopenWriterStages } from "../src/server/stage-records";
-import { createWriterStart } from "../src/server/writer/start";
-import { LIVE_FOLDER_REASON } from "../src/live-folder";
+import { createCore } from "../src/rooms/core/server/core";
+import type { Services } from "../src/rooms/core/server/services";
+import { recordStage, reopenWriterStages } from "../src/rooms/runs/server/stage-records";
+import { createWriterStart } from "../src/rooms/writer/server/start";
+import { LIVE_FOLDER_REASON } from "../src/rooms/writer/live-folder";
 import { RunWriterPool } from "../src/rooms/tasks/run-policy";
 
 const WORKSPACE = "/ws";

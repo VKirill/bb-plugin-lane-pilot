@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createOpencodeMinimalEnv, mountOpencodeMinimal } from "../../src/server/opencode-minimal";
+import { createOpencodeMinimalEnv, mountOpencodeMinimal } from "../../src/rooms/core/server/opencode-minimal";
 
 // B8 (audit 2026-10-08 round 2): helpers of a fan-out call the contributor together; a failed preparation used to be cached as
 // «nothing to do» for 60 s and the helpers went on with the machine's full config, silently.

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { listSettingRows, migrations } from "../../src/rooms/storage/database";
 import { OVERRIDE_JOURNAL_KEY, createWorkflowModels } from "../../src/rooms/workflow/server/workflow-models";
-import type { ServerCore } from "../../src/server/core";
+import type { ServerCore } from "../../src/rooms/core/server/core";
 
 // Audit 2026-10-08 round 3, item 18: the override of a step's model is checked against the machines' catalog and every change is journaled.
 const info = (id: string) => ({ id, displayName: id, available: true, logoUrl: null, capabilities: { supportsServiceTier: false } });

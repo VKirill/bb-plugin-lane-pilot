@@ -2,8 +2,8 @@ import { getSettingVersions, loadProjectSettings, type LanePilotDatabase } from 
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, parseErrandDefault, resolveErrandModel, type ErrandModelTask } from "../errand-model";
 import type { ErrandDefaultView, ModelView } from "../views";
-import type { ServerCore } from "../../../server/core";
-import { stringAt } from "../../../server/values";
+import type { ServerCore } from "../../core/server/core";
+import { stringAt } from "../../core/server/values";
 
 /**
  * The Automation default model (`schedule.errand_default`) as the board shows and edits it, and the errand model of a schedule as it

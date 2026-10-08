@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 import { collectPanelGeometry } from "./geometry.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const bundled = JSON.parse(readFileSync(join(root, "src/bundled-agents.json"), "utf8"));
+const bundled = JSON.parse(readFileSync(join(root, "src/rooms/native-agent/bundled-agents.json"), "utf8"));
 const profile = bundled["dev-orchestrator"];
 if (!profile?.prompt || !Array.isArray(profile.tools) || profile.prompt.length < 1000) {
   throw new Error("bundled-agents.json must contain the full dev-orchestrator profile");

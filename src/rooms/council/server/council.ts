@@ -26,15 +26,15 @@ import {
 } from "@lane-pilot/council";
 import { getRun, loadPrototypeConfig, type LanePilotDatabase } from "../../storage/database";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
-import { configuredSetting, requirePmRun } from "../../../server/context";
-import type { ServerCore } from "../../../server/core";
+import { configuredSetting, requirePmRun } from "../../core/server/context";
+import type { ServerCore } from "../../core/server/core";
 import { memorySettingsFor } from "../../self-repair/server/insights";
 import type { OwnerAsk } from "../../relay/server/owner-ask";
-import { fullAccessSpawn } from "../../../server/pm-spawn";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../server/run-routing";
-import { outputText } from "../../../server/writer-task";
-import { stringAt } from "../../../server/values";
-import { fenceOutside, registerObservedTool } from "../../../server/tool-result";
+import { fullAccessSpawn } from "../../core/server/pm-spawn";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
+import { outputText } from "../../writer/server/writer-task";
+import { stringAt } from "../../core/server/values";
+import { fenceOutside, registerObservedTool } from "../../core/server/tool-result";
 
 export const COUNCIL_TOOLS = ["lane_pilot_council_start", "lane_pilot_council_status", "lane_pilot_council_stop"] as const;
 

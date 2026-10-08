@@ -1,11 +1,11 @@
-import { taskV2Schema } from "../../../contracts";
+import { taskV2Schema } from "../../contracts";
 import { getTask, listStageReceipts } from "../../storage/database";
 import { reconcile } from "../../stability/reconcile";
 import type { ReconcileResult } from "../../stability/reconcile";
 import type { StageId } from "../../tasks/contract";
 import type { ProjectLifeTaskSummary } from "../../project-life/project-life";
-import { clearSpawnMarker, findThreadsByMetadata } from "../../../server/thread-keys";
-import type { ServerCore } from "../../../server/core";
+import { clearSpawnMarker, findThreadsByMetadata } from "../../core/server/thread-keys";
+import type { ServerCore } from "../../core/server/core";
 
 export function createStageChildren(ctx: ServerCore) {
   const { bb, db } = ctx;

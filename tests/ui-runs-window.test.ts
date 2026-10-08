@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { RUNS_MAX_LIMIT, readRunsWindow } from "../src/ui/runs-window";
-import { rpcContract } from "../src/contracts";
+import { RUNS_MAX_LIMIT, readRunsWindow } from "../src/rooms/runs/ui/runs-window";
+import { rpcContract } from "../src/rooms/contracts";
 
 // Audit 2026-10-08 round 4, item 22: the runs panel re-read its loaded window with one `list_runs` of `limit = window`; after ten
 // "show more" (10 + 20 x 10 = 210) the contract's 200 refused every call, the error was swallowed and the panel stopped refreshing.

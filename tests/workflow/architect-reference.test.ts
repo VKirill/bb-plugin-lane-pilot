@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ROLE_PROFILES } from "../../src/helper-context";
+import { ROLE_PROFILES } from "../../src/rooms/native-agent/helper-context";
 import { WORKFLOW_ARCHITECT_SESSION } from "../../src/rooms/workflow/workflow-architect";
 import { PURE_ACTION_KEYS } from "../../src/rooms/workflow/actions";
 import { WORKFLOW_REFERENCE } from "../../src/rooms/workflow/capabilities";

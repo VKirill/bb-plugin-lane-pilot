@@ -13,7 +13,7 @@ import { HelpSup } from "@lane-pilot/ui-kit";
 import { presentEnumLabel } from "../enum-labels";
 import { usePanelLayout } from "@lane-pilot/ui-kit";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { HELP_BY_KEY, JEV_KEYS, ScreenPayload, asBoolean, numericUnit, reasonKey } from "../../../ui/page-model";
+import { HELP_BY_KEY, JEV_KEYS, ScreenPayload, asBoolean, numericUnit, reasonKey } from "../../ui-shell/ui/page-model";
 
 export function SettingsGroup({ title, testId, help, children }: { title?: string; testId: string; help?: ReactNode; children: ReactNode }) {
   return (

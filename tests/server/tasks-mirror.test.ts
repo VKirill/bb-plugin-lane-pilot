@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTasksMirror, tasksMirrorEnabled, type MirrorTask } from "../../src/server/tasks-mirror";
+import { createTasksMirror, tasksMirrorEnabled, type MirrorTask } from "../../src/rooms/runs/server/tasks-mirror";
 
 const task: MirrorTask = { projectId: "proj_1", runId: "run-1", taskId: "T1", title: "Write a page", objective: "Make it", acceptance: ["It exists"] };
 

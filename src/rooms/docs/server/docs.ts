@@ -1,4 +1,4 @@
-import { taskV2Schema } from "../../../contracts";
+import { taskV2Schema } from "../../contracts";
 import { claimDocsSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage/database";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks/contract";
@@ -6,15 +6,15 @@ import { extractModelJson } from "../../critique/model-json";
 import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../docs";
 import type { DocsPage } from "../docs";
 import { boundedAgentName } from "../../critique/role";
-import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../../../server/child-snapshots";
-import { configuredSetting } from "../../../server/context";
-import { fullAccessSpawn } from "../../../server/pm-spawn";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../server/run-routing";
-import { recordStage } from "../../../server/stage-records";
-import { stringAt, valueAt } from "../../../server/values";
+import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../../runs/server/child-snapshots";
+import { configuredSetting } from "../../core/server/context";
+import { fullAccessSpawn } from "../../core/server/pm-spawn";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
+import { recordStage } from "../../runs/server/stage-records";
+import { stringAt, valueAt } from "../../core/server/values";
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 export function createDocsStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host, workspaceExecutionEnvironment } = ctx;

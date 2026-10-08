@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { TARGET_SHA, UPSTREAM_REPO } from "../../constants";
+import { TARGET_SHA, UPSTREAM_REPO } from "../runs/constants";
 import { defaultLocalFallback, managedEngineDir, resolveHome } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
 import { assessEngineCapabilities, inspectEngineCapabilities } from "./capabilities";

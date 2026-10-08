@@ -1,12 +1,13 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import plugin from "../server";
 import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/storage/database";
 import { IntegrationGateRunner } from "../src/rooms/verification/server/integration-gate";
-import type { ServerCore } from "../src/server/core";
-import type { Services } from "../src/server/services";
+import type { ServerCore } from "../src/rooms/core/server/core";
+import type { Services } from "../src/rooms/core/server/services";
+import { roomFaceFiles } from "./support/room-files";
 
 // B2 / bug 2 (review 2026-10-07): the integration gate ran its command, `git bisect` and file reads on the HUB at the
 // project's path, and errands/specialists ran `git status` there. A project on another host has no such path on the hub.
@@ -219,13 +220,11 @@ describe("the spy that proves it", () => {
 // reads the hub's own log file; every other module reaches a project only through a host call.
 describe("the plugin server never touches a project path itself", () => {
   const ALLOWED_FS = new Set(["self-repair.ts"]);
-  const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
-    entry.isDirectory() ? files(join(dir, entry.name)) : /\.tsx?$/.test(entry.name) ? [join(dir, entry.name)] : []);
   const strip = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-  it("has no child_process, spawn-async or node:fs import under src/server", () => {
-    const root = resolve(__dirname, "../src/server");
-    const offenders = files(root).flatMap((file) => {
+  it("has no child_process, spawn-async or node:fs import under the server folder of any room", () => {
+    const root = resolve(__dirname, "..");
+    const offenders = roomFaceFiles("server").flatMap((file) => {
       const source = strip(readFileSync(file, "utf8"));
       const name = file.slice(root.length + 1);
       const bad = [/from\s+["']node:child_process["']/, /from\s+["'](?:\.\.?\/)+spawn-async["']/, ...(ALLOWED_FS.has(name.split("/").pop()!) ? [] : [/from\s+["'](?:node:)?fs(?:\/promises)?["']/])]

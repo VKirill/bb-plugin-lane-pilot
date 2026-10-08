@@ -1,5 +1,5 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
-import { hostContract } from "./src/contracts";
+import { hostContract } from "./src/rooms/contracts";
 import {
   connectOpencode,
   classifyPlan,
@@ -61,7 +61,7 @@ import {
   prepareOpencodeMinimalHost,
   prepareBbShimHost,
 } from "./src/rooms/host-worker/host-handlers";
-import { sessionInventory } from "./src/session-inventory";
+import { sessionInventory } from "./src/rooms/native-agent/session-inventory";
 import { nativeInstallHost } from "./src/rooms/native-install/native-install-host";
 import { provideJevKey } from "./src/rooms/verification/docs-jev";
 import { anamnesisHandler } from "./src/rooms/anamnesis/host";

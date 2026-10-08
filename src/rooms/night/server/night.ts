@@ -1,8 +1,8 @@
-import { attemptProduced } from "../../../cli-outcome";
-import { taskV2Schema } from "../../../contracts";
+import { attemptProduced } from "../../writer/cli-outcome";
+import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listAttemptsForTask, listStageReceipts, loadProjectSettings } from "../../storage/database";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { resolveStageWriterSelection } from "../../../stage-writer-selection";
+import { resolveStageWriterSelection } from "../../writer/stage-writer-selection";
 import { readGateReport } from "../../tasks/gate-report";
 import { gateTriagePrompt, parseGateTriageResult } from "../../verification/gate-triage";
 import { nightReviewPrompt, parseNightReviewResult, shouldRunNightReview } from "../night";
@@ -10,15 +10,15 @@ import { buildNightFixPlan, decideNightMerge, nightFixBlockedReason, nightFixPro
 import { findUnownedChanges } from "../../verification/ownership";
 import { resolveManagedWorkspace } from "../../verification/routing";
 import { compactAcceptedResult } from "../../tasks/server/accepted-compact";
-import { NightChildSnapshot, childResultObject, nightChildSnapshot } from "../../../server/child-snapshots";
-import { fullAccessSpawn } from "../../../server/pm-spawn";
+import { NightChildSnapshot, childResultObject, nightChildSnapshot } from "../../runs/server/child-snapshots";
+import { fullAccessSpawn } from "../../core/server/pm-spawn";
 import { reviewerMemoryFor } from "../../memory/server/memory-mix";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../server/run-routing";
-import { recordStage } from "../../../server/stage-records";
-import { stringAt, valueAt } from "../../../server/values";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
+import { recordStage } from "../../runs/server/stage-records";
+import { stringAt, valueAt } from "../../core/server/values";
 import { observeStageChild, waitThreadIdle } from "@lane-pilot/thread-observe";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 export function createNightStages(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, workspaceExecutionEnvironment } = ctx;

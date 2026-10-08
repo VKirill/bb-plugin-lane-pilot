@@ -8,8 +8,8 @@ import type { PreflightResult } from "../preflight";
 import { isPipeline } from "../router";
 import type { Workflow } from "../schema";
 import type { StoredWorkflow, WorkflowStore } from "../../storage/store";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 import { SCHEDULE_RUN_KEY_PREFIX, type ChainRuntime } from "./workflow-runtime";
 
 /**

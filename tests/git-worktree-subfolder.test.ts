@@ -7,8 +7,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { openDatabase } from "../src/rooms/storage/database";
 import { createSelfRepair } from "../src/rooms/self-repair/server/self-repair";
-import type { ServerCore } from "../src/server/core";
-import { worktreeCreateError } from "../src/server/writer/spawn";
+import type { ServerCore } from "../src/rooms/core/server/core";
+import { worktreeCreateError } from "../src/rooms/writer/server/spawn";
 import { createWorktree, integrateWorktree, workspaceGitLayout } from "../src/rooms/verification/git-integrate";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../src/rooms/verification/git-ownership";
 

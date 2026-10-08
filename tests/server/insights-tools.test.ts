@@ -5,7 +5,7 @@ import plugin from "../../server";
 import { acceptedRules } from "@lane-pilot/run-insights";
 import { createRun, createTask, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, searchMemoryRecords, setRunThread } from "../../src/rooms/storage/database";
 import { adoptRuleProposal, sweepLessons } from "../../src/rooms/self-repair/server/insights";
-import { createCore } from "../../src/server/core";
+import { createCore } from "../../src/rooms/core/server/core";
 
 const projectId = "insights-project";
 const pmThreadId = "insights-pm";

@@ -1,10 +1,10 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../../storage/database";
-import { pluginStopped } from "../../../server/run-finish";
-import { stringAt, valueAt } from "../../../server/values";
+import { pluginStopped } from "../../runs/server/run-finish";
+import { stringAt, valueAt } from "../../core/server/values";
 import { MODEL_PRICES, costUsd } from "@lane-pilot/models";
-import type { ServerCore } from "../../../server/core";
-import { scheduleIsolated } from "../../../server/schedules";
+import type { ServerCore } from "../../core/server/core";
+import { scheduleIsolated } from "../../core/server/schedules";
 
 export const TOKEN_USAGE_SCHEDULE = "token-usage-sync";
 export const TOKEN_USAGE_LAST_SYNC_KEY = "token-usage:last-sync-at";

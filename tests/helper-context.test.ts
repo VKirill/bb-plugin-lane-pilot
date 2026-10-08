@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { HelperRole } from "../src/helper-context";
-import { requiredSessionPolicySpawnBinding as bindRole } from "../src/helper-context";
+import type { HelperRole } from "../src/rooms/native-agent/helper-context";
+import { requiredSessionPolicySpawnBinding as bindRole } from "../src/rooms/native-agent/helper-context";
 import {
   CORE_PROVIDER_GROUPS,
   MANDATORY_BB_PLUGINS,
@@ -13,7 +13,7 @@ import {
   intersectPolicy,
   parseHelperContextSettings,
   requiredSessionPolicySpawnBinding,
-} from "../src/helper-context";
+} from "../src/rooms/native-agent/helper-context";
 
 describe("helper session filter", () => {
   it("treats a missing mode as by role: no project-wide policy, each helper gets its role's profile", () => {
@@ -185,7 +185,7 @@ describe("helper session filter", () => {
 });
 
 it("accepts the VK core's metadata markers and the archived protocol-216 core, and nothing in between", async () => {
-  const { coreRequiredSessionAdvertisement: advertised, parseRequiredSessionPolicyCapability: parse } = await import("../src/helper-context");
+  const { coreRequiredSessionAdvertisement: advertised, parseRequiredSessionPolicyCapability: parse } = await import("../src/rooms/native-agent/helper-context");
   const vk = advertised();
   expect(parse({ experimental_vkRequiredSessionPolicy: () => vk })).not.toBeNull();
   const { markerStorage: _drop, ...archived } = vk;
@@ -236,7 +236,7 @@ describe("role profiles", () => {
 
 describe("owner changes per role", () => {
   it("reads helper.access.<role>, merges it over the role profile and keeps the mandatory resources", async () => {
-    const { parseHelperContextSettings: parse, roleProfilePolicy, effectiveGroup, effectiveSwitch } = await import("../src/helper-context");
+    const { parseHelperContextSettings: parse, roleProfilePolicy, effectiveGroup, effectiveSwitch } = await import("../src/rooms/native-agent/helper-context");
     const parsed = parse({
       "helper.access.writer": { skills: { mode: "allow", names: ["ru-text", " ", "ru-text"] }, bbPlugins: { mode: "all" }, userInstructions: "include" },
       "helper.access.docs-maintainer": { mcpServers: { mode: "allow", names: ["context7"] }, bogus: 1 },

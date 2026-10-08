@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
-import { aggregateRun } from "../src/aggregation";
+import { aggregateRun } from "../src/rooms/runs/aggregation";
 import { spawnSync } from "node:child_process";
-import { buildCliInvocation } from "../src/argv-builder";
-import { requiredCliFlags } from "../src/cli-flags";
-import { attemptProduced, classifyCliOutcome } from "../src/cli-outcome";
+import { buildCliInvocation } from "../src/rooms/writer/argv-builder";
+import { requiredCliFlags } from "../src/rooms/writer/cli-flags";
+import { attemptProduced, classifyCliOutcome } from "../src/rooms/writer/cli-outcome";
 import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks/validate-output";
 import {
   claimActivation,
@@ -25,14 +25,14 @@ import {
   transitionAttempt,
 } from "../src/rooms/storage/database";
 import { fileAllowedByOwns, fnmatch, matchOwnsPath } from "@lane-pilot/kit";
-import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/native-session-hooks";
+import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import plugin from "../server";
 import {
   MAIN_ATTEMPT_LIMIT,
   nextAttemptState,
   retryAction,
   TRANSITION_TABLE,
-} from "../src/state-machine";
+} from "../src/rooms/runs/state-machine";
 import { loadTaskV2Schema, TASK_V2_REQUIRED, validateTaskV2 } from "../src/rooms/tasks/task-v2";
 
 const config = {

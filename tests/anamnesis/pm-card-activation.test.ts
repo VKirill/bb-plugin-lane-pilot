@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
-import { TARGET_SHA } from "../../src/constants";
+import { TARGET_SHA } from "../../src/rooms/runs/constants";
 import { openDatabase, savePrototypeConfig } from "../../src/rooms/storage/database";
 
 // Audit 2026-10-08 round 4, item 19 (F-12 / A5): the card of confirmed facts reaches the PM's starting prompt, and only then.

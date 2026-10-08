@@ -1,6 +1,6 @@
 import { cp, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { S8_RELATIVE_PATHS } from "../../constants";
+import { S8_RELATIVE_PATHS } from "../runs/constants";
 import { sha256FileOrNull } from "@lane-pilot/kit";
 import { resolveHome } from "@lane-pilot/kit";
 

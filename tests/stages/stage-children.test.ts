@@ -2,8 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { claimStageSpawn, createRun, createTask, openDatabase } from "../../src/rooms/storage/database";
 import { createStageChildren } from "../../src/rooms/qa/server/children";
-import { recordStage } from "../../src/server/stage-records";
-import type { ServerCore } from "../../src/server/core";
+import { recordStage } from "../../src/rooms/runs/server/stage-records";
+import type { ServerCore } from "../../src/rooms/core/server/core";
 
 // A project with more Lane Pilot threads than the scan reads (SelfyStudio passed 1000 on 2026-10-04).
 async function setup() {

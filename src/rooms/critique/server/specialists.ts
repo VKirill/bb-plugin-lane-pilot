@@ -1,18 +1,18 @@
-import type { HelperRole } from "../../../helper-context";
+import type { HelperRole } from "../../native-agent/helper-context";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
 import { findOpenNativeRun, getRun } from "../../storage/database";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { mentionContext } from "../../../native-dispatch";
-import { fullAccessSpawn } from "../../../server/pm-spawn";
-import { spawnTextId } from "../../../server/thread-keys";
-import { storeNativeSelection } from "../../../server/native-profile";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../server/run-routing";
-import { stringAt } from "../../../server/values";
-import { outputText } from "../../../server/writer-task";
-import { fenceOutside, registerObservedTool } from "../../../server/tool-result";
+import { mentionContext } from "../../native-agent/native-dispatch";
+import { fullAccessSpawn } from "../../core/server/pm-spawn";
+import { spawnTextId } from "../../core/server/thread-keys";
+import { storeNativeSelection } from "../../native-agent/server/native-profile";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
+import { stringAt } from "../../core/server/values";
+import { outputText } from "../../writer/server/writer-task";
+import { fenceOutside, registerObservedTool } from "../../core/server/tool-result";
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server/repo-edits";
-import type { ServerCore } from "../../../server/core";
+import type { ServerCore } from "../../core/server/core";
 
 /** The specialists a PM may hand work to; Explore and Plan stay Claude Code subagents inside the PM session. */
 export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "tavily"] as const;

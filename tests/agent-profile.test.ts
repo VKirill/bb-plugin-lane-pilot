@@ -9,7 +9,7 @@ import {
   parseOwnedAgents,
   resolveSelectedMainAgentProfile,
   validateCompiledMainAgent,
-} from "../src/agent-profile";
+} from "../src/rooms/native-agent/agent-profile";
 
 describe("Lane Pilot owned main-agent profiles", () => {
   it("compiles the first three profiles with a stable source hash and no model/permissionMode", () => {

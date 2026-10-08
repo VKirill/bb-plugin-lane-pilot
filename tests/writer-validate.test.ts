@@ -20,9 +20,9 @@ import {
   setRunThread,
   transitionAttempt,
 } from "../src/rooms/storage/database";
-import type { TaskV2 } from "../src/contracts";
+import type { TaskV2 } from "../src/rooms/contracts";
 import { validateAcceptanceV2 } from "../src/rooms/tasks/acceptance-v2";
-import { familyDirtBaseline } from "../src/server/writer/verify";
+import { familyDirtBaseline } from "../src/rooms/writer/server/verify";
 import { createFakeWorktreeHost } from "./own-worktree-host";
 
 // An in-place redispatch counts only the edits an earlier attempt of the same task family produced; owner or

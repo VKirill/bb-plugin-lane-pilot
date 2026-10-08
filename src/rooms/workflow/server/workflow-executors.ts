@@ -1,4 +1,4 @@
-import type { TaskV2 } from "../../../contracts";
+import type { TaskV2 } from "../../contracts";
 import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts } from "../../storage/database";
 import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../../tasks/task-v2";
@@ -10,14 +10,14 @@ import type { Field, GraphNode } from "../schema";
 import { createTaskLinter } from "../../tasks/server/lint-task";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
 import type { WorkflowAgents } from "./workflow-agent";
-import { lpTaskPipelineExecutor } from "../../../server/writer/dispatch-workflow";
-import type { DispatchRuntime } from "../../../server/writer/dispatch-workflow";
-import { keyedSpawnSupported } from "../../../server/thread-keys";
+import { lpTaskPipelineExecutor } from "../../writer/server/dispatch-workflow";
+import type { DispatchRuntime } from "../../writer/server/dispatch-workflow";
+import { keyedSpawnSupported } from "../../core/server/thread-keys";
 import { threadUsage } from "../../usage/server/token-usage";
-import { stringAt } from "../../../server/values";
+import { stringAt } from "../../core/server/values";
 import { SCHEDULE_RUN_KEY_PREFIX, type ChainRuntime } from "./workflow-runtime";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import type { rpcContract } from "../../../contracts";
+import type { rpcContract } from "../../contracts";
 import { HARNESS_VERSION, findOpenNativeRun, getRunSettingsScopes, loadProjectSettings } from "../../storage/database";
 import { QA_HOST_KEY, mapListedQaHosts } from "../../qa/qa-host";
 import { collectCapabilities, CAPABILITY_SECTIONS } from "../capabilities";
@@ -19,13 +19,13 @@ import { checkRequires, effectiveRequires } from "../preflight";
 import { definitionSha256, globalWorkflowDir } from "../../storage/store";
 import { loadWorkflow } from "../validate";
 import { findModel, findProvider } from "@lane-pilot/models";
-import { configuredSetting } from "../../../server/context";
+import { configuredSetting } from "../../core/server/context";
 import { SPECIALIST_ROLES } from "../../critique/server/specialists";
-import { modelCatalogOf } from "../../../server/model-catalog-reader";
-import { registerObservedTool, ToolError } from "../../../server/tool-result";
-import { stringAt } from "../../../server/values";
-import type { ServerCore } from "../../../server/core";
-import type { Services } from "../../../server/services";
+import { modelCatalogOf } from "../../core/server/model-catalog-reader";
+import { registerObservedTool, ToolError } from "../../core/server/tool-result";
+import { stringAt } from "../../core/server/values";
+import type { ServerCore } from "../../core/server/core";
+import type { Services } from "../../core/server/services";
 
 const bilingual = z.union([z.string().trim().min(1).max(2000), z.object({ en: z.string().trim().min(1).max(2000), ru: z.string().trim().min(1).max(2000) }).strict()]);
 const MAX_SHOWN_PROBLEMS = 30;

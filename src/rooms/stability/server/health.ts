@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { requirePmRun, type ServerContext } from "../../../server/context";
-import { registerObservedTool } from "../../../server/tool-result";
-import type { Services } from "../../../server/services";
-import { bindRunChildBudget } from "../../../server/pm-spawn";
+import { requirePmRun, type ServerContext } from "../../core/server/context";
+import { registerObservedTool } from "../../core/server/tool-result";
+import type { Services } from "../../core/server/services";
+import { bindRunChildBudget } from "../../core/server/pm-spawn";
 import { getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage/database";
 
 export const HEALTH_TOOLS = ["lane_pilot_run_health"] as const;

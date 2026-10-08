@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import type { rpcContract } from "../../../contracts";
+import type { rpcContract } from "../../contracts";
 import type { AnamnesisConfig } from "../hub";
 import type { AnamnesisRecord, AnamnesisRecordFull, HistoryEntry, Kind, Sensitivity, Source, Status } from "../model";
 import type { AnamnesisRequest, OpName, ResponseOf } from "../ops";
