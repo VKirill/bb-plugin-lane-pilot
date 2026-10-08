@@ -25,6 +25,7 @@ const ALLOW_CYCLES = new Set<string>([]);
 /** Which package may import which (everything else is a violation). A package never imports src/. */
 const PACKAGE_DEPENDENCIES: Record<string, string[]> = {
   "@contracts": ["@kit"],
+  "@host-calls": ["@contracts", "@kit"],
   "@workflow-engine": ["@contracts", "@kit", "@models"],
   "@i18n": ["@settings-catalog"],
   "@jev": ["@kit"],

@@ -22,7 +22,7 @@ bb-plugin-lane-pilot/
 │   ├── ui-kit/                   shadcn-style components, cn(), disclosure, surface, realtime channel names (no node:)
 │   ├── models/                   provider/model catalog lookup (findModel, findModelIn), presets, prices, reasoning map
 │   ├── jev/                      Jev client, registry, thresholds, run wrapper, receipts, three generic judgments
-│   ├── host-calls/               runOnHost: runCommand on a BB host with the timeout rules in one place
+│   ├── host-calls/               runOnHost (runCommand with the timeout rules in one place) and the host-job client
 │   ├── settings-catalog/         ui-catalog (generated), channels, defaults, provider pool, bookkeeping paths
 │   ├── contracts/                the zod schemas several rooms share (task-v2, stage receipt, workflow view, install receipt ...)
 │   ├── workflow-engine/          schema, validator, expressions, engine, router, journal and stores, catalog, view; no built-in workflows
@@ -98,7 +98,7 @@ server.ts  host.ts  app.tsx
 
 ## Open
 
-- `rpcContract` and `hostContract` stay in the `contracts` room, not in `@lane-pilot/contracts`: they assemble the schedule and anamnesis fragments that live in their rooms. `host-jobs` (core) needs `HOST_JOB_KINDS` and could move to `host-calls` once the fragments are in the package.
+- `rpcContract` and `hostContract` stay in the `contracts` room, not in `@lane-pilot/contracts`: they assemble the schedule and anamnesis fragments that live in their rooms. The schedule and anamnesis schemas would have to move into `@lane-pilot/contracts` first.
 - The built-in workflows (`workflows/*.json`) are listed in `src/rooms/workflow/builtin.ts` and handed to `createWorkflowCatalog`; the engine package has no repository-root data.
 - The tests are still in `tests/` (vitest also looks in `src/rooms/**/tests`); only the tests of the packages moved with them.
 - `src/rooms/storage/database.ts` (1 300 lines, 78 functions) is not split into per-room stores yet; `core/server/services.ts` still names every module's type (51-file type cycle).

@@ -1,4 +1,4 @@
-import { HOST_JOB_KINDS, type HostJobKind } from "../../contracts";
+import { HOST_JOB_KINDS, type HostJobKind } from "@lane-pilot/contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 
 type RawCall = (method: string, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }) => Promise<unknown>;

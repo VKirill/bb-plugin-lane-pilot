@@ -3,7 +3,7 @@ import { redactKnown } from "@lane-pilot/kit";
 import { createSecrets } from "../../secrets/server";
 import { bindDrainTarget, createDeployDrain } from "../../stability/server";
 import { currentScheduleSignal } from "./schedules";
-import { createHostJobs, isHostJobKind } from "./host-jobs";
+import { createHostJobs, isHostJobKind } from "@lane-pilot/host-calls";
 import { createOwnerAsk } from "../../relay/server";
 import { createRealtime, mountHelperSignals } from "./realtime";
 import { aggregateRun } from "../../runs";

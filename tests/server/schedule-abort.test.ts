@@ -5,7 +5,7 @@ import { openDatabase } from "../../src/rooms/storage/database";
 import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns } from "../../src/rooms/runs/server/run-finish";
 import { createCore } from "../../src/rooms/core/server/core";
 import { createDeployDrain } from "../../src/rooms/stability/server/deploy-drain";
-import { createHostJobs } from "../../src/rooms/core/server/host-jobs";
+import { createHostJobs } from "@lane-pilot/host-calls";
 import { currentScheduleSignal, scheduleIsolated } from "../../src/rooms/core/server/schedules";
 import { sweepWriterSilence } from "../../src/rooms/writer/server/writer-silence";
 
