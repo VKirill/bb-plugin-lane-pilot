@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.196
+
+Audit 2026-10-08 round 3, P0 item 1 (BB's HTTP API answers plugin RPC without authentication; the shell guard cannot see `curl`, `python` or `node`). Needs the VK core function `rpc-caller` (core `vk/rpc-caller`); on a core without it every call passes as before.
+
+- **The methods that change configuration or runs answer to the owner only.** The plugin declares `vk.rpcCallerPolicy`, and a VK core then marks each RPC call: `owner-ui` (the Lane Pilot page), `owner-cli` (the owner's `bb`), `plugin` (another plugin) pass; `unknown` (no marks: `curl`, `python`, `node fetch`) is refused; `agent-thread` (the `bb` CLI inside an agent session, which carries a per-thread token) gets the owner's form in the PM chat, a yes is for that exact call and lasts ten minutes. Covered: every `save_*`, `reset_*` and `set_*` method (settings, helper access and `browser_qa.approve` through `save_setting`, agent profiles, stage selections, globals), `self_repair_configure`, `self_repair_tick`, `deploy_drain`, `halt_run`, `cancel_attempt`, `retry_attempt`, `resume_runs`, `finish_run`, `activate_pm`, `native_install_start`, `stack_install|connect|rollback`, `workspace_provider_reset`, `workflow_model_override`, `workflow_draft_publish`, `decide_rule_proposal`, `rule_set_audience`, `memory_record_delete`, `council_say`, `council_stop`. Read-only methods and the agents' own memory (`session_memory_*`, `session_lesson`) are untouched. A protected setting keeps its own form per value (one form, not two).
+- **`owner-ui` and `owner-cli` are client-asserted marks.** They stop scripts that carry none and the bb CLI inside an agent session, not a client that forges them on purpose: the form and the shell guard stay.
+- **The deploy drill writes the sandbox project's `writer.model` as the owner's CLI** (`scripts/lp-drill.py` drops `BB_VK_THREAD_TOKEN` and `BB_THREAD_ID` for that call), so a push started from an agent session does not ask the owner for each drill step. `deploy_drain` in `bb-plugin-push` from an agent session now meets the form; the script falls back to its older wait when the call is refused.
+- Not covered here: the CLI commands `bb lane-pilot configure|budget|host-*` (shell guard only).
+
 ## 0.1.195
 
 - **OpenCode helpers start again.** The host contract of `prepareOpencodeMinimal` refused the `requestedHostId` every host call carries, so on the live hub (0.1.194) each OpenCode helper's minimal-config preparation failed and the helper was refused (fail-closed). A new test checks every server `host.call` against its host contract.

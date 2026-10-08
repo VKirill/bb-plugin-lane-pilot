@@ -22,6 +22,13 @@ export const APPROVAL_TTL_MS = 10 * 60_000;
 const ASK_TIMEOUT_MS = 60 * 60_000;
 const REASK_AFTER_MS = 60 * 60_000;
 
+/** The chat a form to the owner opens in: the project's PM chat, or for the global page the most recent one. */
+export function pmThreadFor(db: LanePilotDatabase, projectId: string): string | undefined {
+  const own = getActivation(db, projectId)?.pm_thread_id;
+  if (own) return own;
+  return (db.prepare("SELECT pm_thread_id FROM lane_pilot_activation ORDER BY rowid DESC LIMIT 1").get() as { pm_thread_id: string } | undefined)?.pm_thread_id;
+}
+
 export type ProtectedChange = { key: string; /** undefined: the key is reset (its row dropped). */ value?: unknown; reset?: boolean };
 export type ProtectedVerdict = { ok: true } | { ok: false; key: string; message: string };
 
@@ -32,12 +39,7 @@ export function createProtectedSettings(deps: { db: LanePilotDatabase; ownerAsk:
   const open = new Map<string, number>();
   const quietUntil = new Map<string, number>();
 
-  /** The chat the form opens in: the project's PM chat, or for the global page the most recent one. */
-  function threadFor(projectId: string): string | undefined {
-    const own = getActivation(deps.db, projectId)?.pm_thread_id;
-    if (own) return own;
-    return (deps.db.prepare("SELECT pm_thread_id FROM lane_pilot_activation ORDER BY rowid DESC LIMIT 1").get() as { pm_thread_id: string } | undefined)?.pm_thread_id;
-  }
+  const threadFor = (projectId: string) => pmThreadFor(deps.db, projectId);
 
   const idOf = (projectId: string, bindingId: string, change: ProtectedChange) =>
     `${projectId}|${bindingId}|${change.key}|${change.reset ? "<reset>" : JSON.stringify(change.value ?? null)}`;
