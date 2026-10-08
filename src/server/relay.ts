@@ -121,7 +121,7 @@ export function createRelay(deps:RelayDeps) {
         "",
         input.question,
         "",
-        `Answer briefly with the lane_pilot_reply tool using askId "${item.id}": what you are doing, what you are holding and when it frees. Keep working on your task.`,
+        `Answer briefly with the lane_pilot_relay tool, action \`reply\`, using askId "${item.id}": what you are doing, what you are holding and when it frees. Keep working on your task.`,
         "If you cannot call that tool, end your turn with the answer; it is passed back.",
       ].join("\n"), input.fromThreadId);
       items.push(item);
@@ -178,7 +178,7 @@ export function createRelay(deps:RelayDeps) {
     const why = by === "watch" ? `thread @thread:${item.watchThreadId} finished its turn`
       : by === "tasks" ? `tasks completed: ${Object.entries(states ?? {}).map(([task, state]) => `${task} — ${state}`).join(", ")}`
       : "time reached";
-    return `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_remind with a larger interval.`;
+    return `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_relay (action \`remind\`) with a larger interval.`;
   };
 
   async function fire(item:RelayReminder, by:"time"|"watch"|"tasks", states?:Record<string, string|null>) {

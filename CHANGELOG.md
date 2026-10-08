@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The PM's Lane Pilot tools fold from 39 to 22 (audit 2026-10-08 round 4, P2-24).** The PM's Claude Code profile sat at the 64-tool cap (39 bridge tools, 23 stock, `ToolSearch`). The 15 tools used in nearly every turn keep their names; council, relay (ask, reply, remind, list), helpers (specialist, wait_specialist, browser, browser_qa), memory and lessons, and workflow drafts are now five family tools with an `action` (`src/pm-tool-families.ts`, `src/server/tool-families.ts`), next to `lane_pilot_schedule`. Each action runs the old handler with its old argument schema, so behaviour is the same; the old tools stay registered for the Workflow architect. New `lane_pilot_tool_search` finds a capability by words or by an old tool name and returns its tool, action and argument schema. The PM prompt, the bundled PM agent, the tool labels (EN/RU), the hints in dispatch, QA and reminder texts now name the new calls. The profile drops to about 46 tools of 64. Not folded: the guard hook's messages (`lane-stack/hooks/guard_shell.py`) still name old tools; `lane_pilot_tool_search` resolves them.
+
 ## 0.1.196
 
 Audit 2026-10-08 round 3.

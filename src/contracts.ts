@@ -102,7 +102,7 @@ export const taskV2Schema = z.object({
   area: z.string().trim().min(1).max(120).optional(),
   /** Which review stages this task goes through (quick, standard, full); the project setting `quality_mode` when absent, and standard when that is absent too. */
   quality_mode: z.enum(["quick", "standard", "full"]).optional(),
-  /** Browser checks for a task of a project in full mode: the PM runs them with lane_pilot_browser_qa, and the task is not done until they pass. */
+  /** Browser checks for a task of a project in full mode: the PM runs them with lane_pilot_helpers (action browser_qa), and the task is not done until they pass. */
   qa_cases: z.array(z.string().min(1).max(2000)).max(30).optional(),
 }).strict();
 
