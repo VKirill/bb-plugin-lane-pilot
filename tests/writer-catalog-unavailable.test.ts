@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { openDatabase, savePrototypeConfig } from "../src/database";
+import { openDatabase, savePrototypeConfig } from "../src/rooms/storage/database";
 
 describe("project source catalog", () => {
   it("does not save writer selection when projects.get fails", async () => {

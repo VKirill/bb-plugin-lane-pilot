@@ -1,5 +1,5 @@
 import { writerFallbackKeys } from "../../../../writer-fallbacks";
-import { casUpsertSettings, sectionBindingId } from "../../../../database";
+import { casUpsertSettings, sectionBindingId } from "../../../storage/database";
 import { compatibleReasoningLevel, compatibleServiceTier, findModelIn } from "@lane-pilot/models";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../../contracts";

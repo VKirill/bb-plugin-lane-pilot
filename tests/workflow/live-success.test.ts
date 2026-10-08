@@ -1,9 +1,9 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { definitionSha256, type StoredWorkflow } from "../../src/workflow/store";
-import { createStatusResolver } from "../../src/workflow/ops-store";
-import { parseWorkflowObject } from "../../src/workflow/schema";
+import { definitionSha256, type StoredWorkflow } from "../../src/rooms/storage/store";
+import { createStatusResolver } from "../../src/rooms/storage/ops-store";
+import { parseWorkflowObject } from "../../src/rooms/workflow/schema";
 import { journalDb } from "./engine-helpers";
 
 // Audit 2026-10-08 round 4, item 15: a run ends `succeeded` also on the branches that did not do the job (the owner said abort,

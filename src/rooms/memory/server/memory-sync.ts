@@ -12,7 +12,7 @@ import {
   type MemoryRecord,
   type MemorySettings,
 } from "@lane-pilot/memory-core";
-import { getRun, type LanePilotDatabase } from "../../../database";
+import { getRun, type LanePilotDatabase } from "../../storage/database";
 import { requirePmRun } from "../../../server/context";
 import { registerObservedTool } from "../../../server/tool-result";
 import type { ServerCore } from "../../../server/core";

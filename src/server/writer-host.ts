@@ -1,5 +1,5 @@
 import { MAIN_AGENT_PROFILE_IDS, compileEffectiveMainAgent, compileMainAgentProfile } from "../agent-profile";
-import { loadPrototypeConfig } from "../database";
+import { loadPrototypeConfig } from "../rooms/storage/database";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { resolveWriterBinding } from "../project-binding";
 import type { ProjectSourceBinding } from "../project-binding";

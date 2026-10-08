@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { openDatabase } from "../../src/database";
+import { openDatabase } from "../../src/rooms/storage/database";
 import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns } from "../../src/server/run-finish";
 import { createCore } from "../../src/server/core";
 import { createDeployDrain } from "../../src/rooms/stability/server/deploy-drain";

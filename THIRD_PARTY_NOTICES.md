@@ -24,7 +24,7 @@ files of the same repository. The texts are rewritten for Lane Pilot's roles (`s
 
 | Idea | Source file of maestro-flow | Where in Lane Pilot |
 |---|---|---|
-| The chain map, the selection priorities, `detectNextAction` (state-based «continue») | `workflows/maestro.md` | `workflows/analyze-plan-execute.json` and the chain family, `src/workflow/router.ts` |
+| The chain map, the selection priorities, `detectNextAction` (state-based «continue») | `workflows/maestro.md` | `workflows/analyze-plan-execute.json` and the chain family, `src/rooms/workflow/router.ts` |
 | Analysis with locked / free / deferred decisions, confidence, pressure pass | `workflows/analyze.md` | `workflows/lp.analyze.json`, `ANALYST_METHOD` |
 | Roadmap sessions, the complete-cycle rule, progressive and direct layers | `workflows/roadmap.md`, `workflows/roadmap-common.md` | `workflows/roadmap-driven.json` |
 | Multi-role brainstorm with a cross-role reviewer | `workflows/brainstorm.md` | `workflows/lp.brainstorm.json`, `workflows/brainstorm-driven.json` |
@@ -38,8 +38,8 @@ files of the same repository. The texts are rewritten for Lane Pilot's roles (`s
 | Closing a session and its knowledge | `.claude/commands/maestro-session-manage.md` | `workflows/milestone-close.json` |
 | Goal audit, confidence, re-grounding, the two-round ceiling of a fix loop, then the owner | `.claude/commands/maestro-ralph.md`, `prepare/ralph.md` | `workflows/lp.close.json`, `AUDITOR_METHOD`, the loop limits of the chains |
 | `convergence.criteria` (checkable, no subjective words) and `files[]` with the concrete change | `templates/task.json`, `prepare/plan.md` | `taskV2Schema` (`src/contracts.ts`), `src/rooms/tasks/server/contract-lint.ts` |
-| The step contract (`consumes` / `produces` / `gates`) and the typed artifact kinds (`plan`, `findings`, `verdict`, ...) | the `contract:` heads of `prepare/*.md` | `src/workflow/artifacts.ts`, `src/workflow/contract.ts`, the `consumes` / `produces` / `gates` of `workflows/*.json` |
-| Verification in three layers (exists, substantive, wired) with the unified gap object | `templates/verification.json`, `prepare/verify.md` | the `verification/1` kind in `src/workflow/artifacts.ts` |
+| The step contract (`consumes` / `produces` / `gates`) and the typed artifact kinds (`plan`, `findings`, `verdict`, ...) | the `contract:` heads of `prepare/*.md` | `src/rooms/workflow/artifacts.ts`, `src/rooms/workflow/contract.ts`, the `consumes` / `produces` / `gates` of `workflows/*.json` |
+| Verification in three layers (exists, substantive, wired) with the unified gap object | `templates/verification.json`, `prepare/verify.md` | the `verification/1` kind in `src/rooms/workflow/artifacts.ts` |
 
 The upstream repository states the MIT license in `package.json` and its README but ships no `LICENSE` file, so the
 copyright line below names the repository's owner as given there.

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/database";
+import { openDatabase } from "../../src/rooms/storage/database";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import { choice, defineJudgment, noul, noulOf } from "@lane-pilot/jev";
 import { summarizeReceipts } from "@lane-pilot/jev";

@@ -13,7 +13,7 @@ import {
   loadPrototypeConfig,
   saveTaskPlan,
   updateTaskContract,
-} from "../../database";
+} from "../../rooms/storage/database";
 import { lintReply } from "../../rooms/tasks/server/contract-lint";
 import { createTaskLinter } from "../../rooms/tasks/server/lint-task";
 import { runPlanCritique, runPmRead } from "../../rooms/critique/server/critique-runs";

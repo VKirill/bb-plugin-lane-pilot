@@ -1,4 +1,4 @@
-import { createAttempt, createRun, getAttempt, loadPrototypeConfig, setRunThread, transitionAttempt } from "../../../database";
+import { createAttempt, createRun, getAttempt, loadPrototypeConfig, setRunThread, transitionAttempt } from "../../storage/database";
 import { fullAccessSpawn } from "../../../server/pm-spawn";
 import { id, stringAt, valueAt } from "../../../server/values";
 import { createHelperProbe } from "../../../server/helper-probe";

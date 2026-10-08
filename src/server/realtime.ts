@@ -1,6 +1,6 @@
-import { onAttemptChanged } from "../database";
+import { onAttemptChanged } from "../rooms/storage/database";
 import { lpChannel, type LpRealtimeKind } from "@lane-pilot/ui-kit/realtime-channel";
-import type { LanePilotDatabase } from "../database";
+import type { LanePilotDatabase } from "../rooms/storage/database";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
 /** Bursts of changes (a council turn writes several rows) reach the screens as one signal per this window. */

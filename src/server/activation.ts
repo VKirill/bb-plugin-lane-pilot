@@ -3,7 +3,7 @@ import type { CompiledMainAgent } from "../agent-profile";
 import { readyComposerSnapshot, spawnEnvironmentFromSelection } from "../composer-selection";
 import type { ComposerSelectionSnapshot } from "../composer-selection";
 import { TARGET_SHA } from "../constants";
-import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../database";
+import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../rooms/storage/database";
 import { ownerCardBlock } from "../rooms/anamnesis/card";
 import { anamnesisFor } from "../rooms/anamnesis/wiring";
 import { pmRulesPromptBlock } from "../rooms/learning/pm-rules";

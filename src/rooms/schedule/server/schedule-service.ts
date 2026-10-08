@@ -1,4 +1,4 @@
-import { loadProjectSettings } from "../../../database";
+import { loadProjectSettings } from "../../storage/database";
 import { QA_HOST_KEY, mapListedQaHosts } from "../../qa/qa-host";
 import { fireList, findConflicts, runView, scheduleView } from "../board";
 import { PRESET_SLUGS, presetSlug } from "@lane-pilot/models";
@@ -15,7 +15,7 @@ import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./
 import { NO_USAGE, scheduleCost, threadUsage } from "./schedule-usage";
 import { createScheduleExecutors } from "./schedule-executors";
 import type { Services } from "../../../server/services";
-import { createWorkflowLibrary } from "../../../server/workflow-library";
+import { createWorkflowLibrary } from "../../workflow/server/workflow-library";
 
 /**
  * The schedule board's server side: the scheduler with its three executors, and what the screens, the CLI and the PM tools ask of it

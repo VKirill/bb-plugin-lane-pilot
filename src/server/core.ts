@@ -10,7 +10,7 @@ import { aggregateRun } from "../aggregation";
 import { TARGET_SHA } from "../constants";
 import { hostContract } from "../contracts";
 import type { PrototypeConfig, TaskV2 } from "../contracts";
-import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../database";
+import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../rooms/storage/database";
 import { writerServiceTier } from "@lane-pilot/models";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../rooms/native-install/native-install-lifecycle";
@@ -25,7 +25,7 @@ import { z } from "zod";
 import { installJev, jev } from "@lane-pilot/jev";
 import { createOutputGuard } from "@lane-pilot/jev";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { LanePilotDatabase } from "../database";
+import type { LanePilotDatabase } from "../rooms/storage/database";
 
 /** Everything every server module shares: the SDK, storage, the host client and the small helpers used across modules. */
 export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {

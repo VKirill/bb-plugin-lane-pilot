@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, expect, it } from "vitest";
 import { getRuleProposal, listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { openDatabase } from "../src/database";
+import { openDatabase } from "../src/rooms/storage/database";
 import { adoptRuleProposal, adoptWaitingRules } from "../src/rooms/self-repair/server/insights";
 import { DEFAULT_RULE_TOKENS, ruleTokens, setRuleBudgets } from "../src/rooms/learning/rule-budget";
 

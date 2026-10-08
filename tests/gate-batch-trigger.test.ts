@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../src/database";
+import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import * as hostHandlers from "../src/rooms/host-worker/host-handlers";
 import { createWriterFinish } from "../src/server/writer/finish";
 

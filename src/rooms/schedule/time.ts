@@ -1,4 +1,4 @@
-import { cronProblem, timezoneProblem } from "../../workflow/cron";
+import { cronProblem, timezoneProblem } from "../workflow/cron";
 
 /**
  * The time of a scheduled task: the next moments a five-field cron fires in an IANA zone, with the clock changes of that zone

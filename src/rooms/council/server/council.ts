@@ -24,7 +24,7 @@ import {
   type CouncilSeat,
   type CouncilSession,
 } from "@lane-pilot/council";
-import { getRun, loadPrototypeConfig, type LanePilotDatabase } from "../../../database";
+import { getRun, loadPrototypeConfig, type LanePilotDatabase } from "../../storage/database";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { configuredSetting, requirePmRun } from "../../../server/context";
 import type { ServerCore } from "../../../server/core";

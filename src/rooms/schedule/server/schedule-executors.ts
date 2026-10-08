@@ -1,5 +1,5 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import { loadProjectSettings, recordSecretIssuance } from "../../../database";
+import { loadProjectSettings, recordSecretIssuance } from "../../storage/database";
 import { redactKnown } from "@lane-pilot/kit";
 import { finalRuleOf, workflowFinish } from "../outcome";
 import type { Executor, ExecutorInput, PollResult } from "../scheduler";

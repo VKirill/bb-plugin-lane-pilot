@@ -6,7 +6,7 @@ import type { TaskV2 } from "../src/contracts";
 import {
   createAttempt, createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase,
   saveProjectSetting, savePrototypeConfig, setRunThread,
-} from "../src/database";
+} from "../src/rooms/storage/database";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";

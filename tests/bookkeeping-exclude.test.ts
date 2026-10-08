@@ -7,7 +7,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { BOOKKEEPING_EXCLUDE_LINES, isBookkeepingPath } from "@lane-pilot/settings-catalog";
 import { TARGET_SHA } from "../src/constants";
-import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/database";
+import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/rooms/storage/database";
 import { excludeBookkeeping } from "../src/rooms/verification/server/bookkeeping-exclude";
 import { ensureExcludeLinesCommand } from "../src/rooms/verification/git-integrate";
 

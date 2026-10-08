@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { openDatabase } from "../src/database";
+import { openDatabase } from "../src/rooms/storage/database";
 import { createSelfRepair } from "../src/rooms/self-repair/server/self-repair";
 import type { ServerCore } from "../src/server/core";
 import { worktreeCreateError } from "../src/server/writer/spawn";

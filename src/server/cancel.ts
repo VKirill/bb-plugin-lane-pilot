@@ -1,4 +1,4 @@
-import { getAttempt, getTask, getTaskPlan, listStageReceipts, transitionAttempt } from "../database";
+import { getAttempt, getTask, getTaskPlan, listStageReceipts, transitionAttempt } from "../rooms/storage/database";
 import { cancelRejection } from "./run-finish";
 import { recordStage } from "./stage-records";
 import { stringAt, valueAt } from "./values";

@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { createFakePluginHost, makeTurnFailedEvent } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { createAttempt, createRun, openDatabase, transitionAttempt } from "../src/database";
+import { createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
 import { MAX_STREAM_RETRY_ATTEMPTS, streamRetryDecision } from "../src/stream-retry";
 import { nativeSelectionSchema } from "../src/native-session";
 

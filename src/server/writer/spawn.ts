@@ -5,7 +5,7 @@ import { parseDirtSnapshots } from "../../cli-outcome";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
-import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../database";
+import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../rooms/storage/database";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { spawnWithSeam } from "../../spawn-seam";
 import { buildExecutionPacket, renderExecutionPacket } from "../../rooms/tasks/execution-packet";

@@ -3,7 +3,7 @@ import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop,
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
-import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../rooms/storage/database";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
 import { reconcile } from "../../rooms/stability/reconcile";
@@ -15,7 +15,7 @@ import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, 
 import { isTaskSatisfied } from "../blocked-by";
 import { previousAttemptBrief, stickyTurnPrompt } from "../writer-task";
 import { isMainfixTask } from "../../rooms/tasks/validate-output";
-import { openDatabase } from "../../database";
+import { openDatabase } from "../../rooms/storage/database";
 import { createWriterSticky } from "./sticky";
 import { failureClass, type FailureClass } from "../../failure-class";
 import { jev } from "@lane-pilot/jev";

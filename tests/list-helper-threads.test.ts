@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createCore } from "../src/server/core";
-import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setRunThread, transitionAttempt } from "../src/database";
+import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import { runsRpc } from "../src/server/rpc/runs";
 import type { Services } from "../src/server/services";
 

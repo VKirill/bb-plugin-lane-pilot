@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { compileMainAgentProfile } from "../src/agent-profile";
-import { createRun, getRun, loadProjectSettings, openDatabase, savePrototypeConfig } from "../src/database";
+import { createRun, getRun, loadProjectSettings, openDatabase, savePrototypeConfig } from "../src/rooms/storage/database";
 import { inheritProjectValues, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { buildRunPolicy, parseRunPolicy } from "../src/rooms/tasks/run-policy";
 

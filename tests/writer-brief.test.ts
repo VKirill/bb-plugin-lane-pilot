@@ -232,7 +232,7 @@ describe("writer brief", () => {
 
   it("no write path stores a credential or an instruction override", async () => {
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
-    const { openDatabase } = await import("../src/database");
+    const { openDatabase } = await import("../src/rooms/storage/database");
     const { storeMemoryRecords } = await import("../packages/memory-core/src/store");
     const db = openDatabase(createFakePluginHost({ pluginId:"lane-pilot" }).bb);
     const store = (content:string) => storeMemoryRecords(db, { projectId:"P", audience:"subagent", sourceSha256:"a".repeat(64), coreBudget:9_999, noteBudget:9_999, indexBudget:99_999,

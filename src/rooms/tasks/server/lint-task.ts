@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../../contracts";
 import type { TaskV2 } from "../../../contracts";
-import { getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, loadProjectSettings } from "../../../database";
+import { getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, loadProjectSettings } from "../../storage/database";
 import { taskFamily } from "../../../failure-class";
 import { parseSandboxUnsafePatterns } from "../../critique/critique-coverage";
 import { isTaskSatisfied } from "../../../server/blocked-by";

@@ -16,7 +16,7 @@ import {
   openDatabase,
   setRunThread,
   transitionAttempt,
-} from "../src/database";
+} from "../src/rooms/storage/database";
 import { runHealth } from "../src/rooms/stability/server/health";
 import { bindRunChildBudget, fullAccessSpawn } from "../src/server/pm-spawn";
 import { createStability } from "../src/rooms/stability/server/stability";

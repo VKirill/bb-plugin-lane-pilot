@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { getReasoningTrace, listAttemptsForTask, type LanePilotDatabase } from "../../database";
+import { getReasoningTrace, listAttemptsForTask, type LanePilotDatabase } from "../storage/database";
 import { bbServiceTier, findModelIn } from "@lane-pilot/models";
 
 /**

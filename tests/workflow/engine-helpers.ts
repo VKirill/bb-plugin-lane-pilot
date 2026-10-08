@@ -1,12 +1,12 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import type { LanePilotDatabase } from "../../src/database";
-import { CrashError, WorkflowEngine } from "../../src/workflow/engine";
-import type { EngineOptions, NodeExecutor, StepContext } from "../../src/workflow/engine";
-import { workflowMigrations } from "../../src/workflow/journal";
-import { createStatusResolver, workflowOpsMigrations } from "../../src/workflow/ops-store";
-import { definitionSha256 } from "../../src/workflow/store";
-import type { Workflow } from "../../src/workflow/schema";
-import { parseWorkflow } from "../../src/workflow/validate";
+import type { LanePilotDatabase } from "../../src/rooms/storage/database";
+import { CrashError, WorkflowEngine } from "../../src/rooms/workflow/engine";
+import type { EngineOptions, NodeExecutor, StepContext } from "../../src/rooms/workflow/engine";
+import { workflowMigrations } from "../../src/rooms/storage/journal";
+import { createStatusResolver, workflowOpsMigrations } from "../../src/rooms/storage/ops-store";
+import { definitionSha256 } from "../../src/rooms/storage/store";
+import type { Workflow } from "../../src/rooms/workflow/schema";
+import { parseWorkflow } from "../../src/rooms/workflow/validate";
 import { workflow } from "./fixtures";
 
 /** A database with only the journal tables: the engine needs nothing else. */

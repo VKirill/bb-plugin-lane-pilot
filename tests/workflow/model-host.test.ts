@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { modelCatalogOf } from "../../src/server/model-catalog-reader";
-import { withResolvedModel, type HelperRequest } from "../../src/server/workflow-agent";
-import { resolveAgentModel } from "../../src/server/workflow-agent-model";
-import { createWorkflowModels } from "../../src/server/workflow-models";
-import { resolveStepExecutors } from "../../src/server/workflow-step-executors";
+import { withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/workflow-agent";
+import { resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
+import { createWorkflowModels } from "../../src/rooms/workflow/server/workflow-models";
+import { resolveStepExecutors } from "../../src/rooms/workflow/server/workflow-step-executors";
 import { offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
-import { modelsSection } from "../../src/workflow/capabilities";
+import { modelsSection } from "../../src/rooms/workflow/capabilities";
 import { presetKey } from "@lane-pilot/models";
 import type { ServerCore } from "../../src/server/core";
 import { journalDb } from "./engine-helpers";

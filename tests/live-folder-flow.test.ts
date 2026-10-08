@@ -9,7 +9,7 @@ import { snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
 import type { TaskV2 } from "../src/contracts";
 import {
   createRun, getAttempt, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread,
-} from "../src/database";
+} from "../src/rooms/storage/database";
 
 const projectId = "project-live";
 const pmThreadId = "pm-live";

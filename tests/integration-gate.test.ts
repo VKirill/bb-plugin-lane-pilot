@@ -12,7 +12,7 @@ import {
   formatFixTurnPrompt,
   IntegrationGateRunner,
 } from "../src/rooms/verification/server/integration-gate";
-import { openDatabase, createTask, saveStageReceipt, saveProjectSetting } from "../src/database";
+import { openDatabase, createTask, saveStageReceipt, saveProjectSetting } from "../src/rooms/storage/database";
 import * as hostHandlers from "../src/rooms/host-worker/host-handlers";
 import type { ServerCore } from "../src/server/core";
 import type { Services } from "../src/server/services";

@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { noOptionalPlugins } from "../optional-plugin-stubs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../../src/contracts";
-import { createAttempt, createRun, createTask, getAttempt, listOpenAttempts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/database";
+import { createAttempt, createRun, createTask, getAttempt, listOpenAttempts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
 import { createCore } from "../../src/server/core";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent, type RunOnHost } from "../../src/rooms/verification/server/merge-intent";
 import type { Services } from "../../src/server/services";

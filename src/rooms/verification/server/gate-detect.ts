@@ -1,4 +1,4 @@
-import { getRun } from "../../../database";
+import { getRun } from "../../storage/database";
 import type { ServerCore } from "../../../server/core";
 import type { IntegrationGateSettings } from "./integration-gate";
 import { runOnHost } from "@lane-pilot/host-calls";

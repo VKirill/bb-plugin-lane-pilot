@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { compileMainAgentProfile } from "../src/agent-profile";
 import { TARGET_SHA } from "../src/constants";
-import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/database";
+import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/rooms/storage/database";
 import { LP_AGENT_OVERRIDES_KEY } from "@lane-pilot/settings-catalog";
 
 const projectId = "proj_main_spawn";

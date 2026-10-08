@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../../src/database";
+import { openDatabase } from "../../src/rooms/storage/database";
 import { LESSON_PROPOSALS_MAX, listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
 import { sessionMemoryRpc } from "../../src/rooms/memory/server/session-memory";
 import type { ServerCore } from "../../src/server/core";

@@ -1,6 +1,6 @@
 import bundledAgents from "./bundled-agents.json";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
-import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY } from "./workflow-architect";
+import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY } from "./rooms/workflow/workflow-architect";
 
 /** Official `--agents` JSON fields from https://code.claude.com/docs/en/sub-agents */
 export const AGENTS_JSON_FIELDS = [

@@ -9,7 +9,7 @@
     "types": ["node", "vitest/globals"],
     "paths": {
       "@/*": ["./*"],
-      "elkjs/lib/elk.bundled.js": ["./src/ui/elk-shim.d.ts"]
+      "elkjs/lib/elk.bundled.js": ["./src/rooms/workflow/ui/elk-shim.d.ts"]
     },
     "noEmit": true,
     "resolveJsonModule": true,

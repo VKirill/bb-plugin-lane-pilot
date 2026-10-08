@@ -7,13 +7,13 @@ import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
-import { migrations } from "../src/database";
-import { createWorkflowArchitect } from "../src/server/workflow-architect";
-import type { ArchitectDeps } from "../src/server/workflow-architect";
+import { migrations } from "../src/rooms/storage/database";
+import { createWorkflowArchitect } from "../src/rooms/workflow/server/workflow-architect";
+import type { ArchitectDeps } from "../src/rooms/workflow/server/workflow-architect";
 import type { ServerCore } from "../src/server/core";
 import type { Services } from "../src/server/services";
-import { connectOps, insertAfterOps, newNode, problemMaps, readWhen, viewEdgeIndexes, writeWhen, whenError, expressionError, uniqueId } from "../src/ui/workflow-edit-model";
-import { draftView } from "../src/workflow/draft-view";
+import { connectOps, insertAfterOps, newNode, problemMaps, readWhen, viewEdgeIndexes, writeWhen, whenError, expressionError, uniqueId } from "../src/rooms/workflow/ui/workflow-edit-model";
+import { draftView } from "../src/rooms/workflow/draft-view";
 import { BROWSER_DIGEST_STEPS } from "./workflow/architect-fixture";
 
 // The graph pulls in xyflow and elkjs on first use; a cold import under load can pass the 5 s default.
@@ -70,7 +70,7 @@ async function world() {
 async function open(extra: Record<string, unknown> = {}, options: { editing?: boolean } = {}) {
   const w = await world();
   await loadPluginApp(() => import("../app"));
-  const { WorkflowDraftDetail } = await import("../src/ui/workflow-draft-detail");
+  const { WorkflowDraftDetail } = await import("../src/rooms/workflow/ui/workflow-draft-detail");
   const slot = await renderSlot({ component: () => <WorkflowDraftDetail draftId={w.draftId} projectId={projectId} locale="en" onBack={() => undefined} startEditing={options.editing ?? true} /> }, {},
     { context: { projectId, threadId: null }, rpc: { ...w.rpc, ...extra } as never });
   w.emit.current = (payload) => slot.behavior.emitRealtime(`lp:${projectId}`, payload);
@@ -88,7 +88,7 @@ describe("canvas editing: places, arranging and the empty canvas", () => {
     const w = await world();
     const empty = w.architect.drafts.create({ projectId, threadId: null, scope: "global", name: "Empty", description: "Nothing yet" });
     await loadPluginApp(() => import("../app"));
-    const { WorkflowDraftDetail } = await import("../src/ui/workflow-draft-detail");
+    const { WorkflowDraftDetail } = await import("../src/rooms/workflow/ui/workflow-draft-detail");
     const slot = await renderSlot({ component: () => <WorkflowDraftDetail draftId={empty.id} projectId={projectId} locale="en" onBack={() => undefined} startEditing /> }, {},
       { context: { projectId, threadId: null }, rpc: w.rpc as never });
     fireEvent.click(await slot.findByTestId("wf-empty-add"));
@@ -99,7 +99,7 @@ describe("canvas editing: places, arranging and the empty canvas", () => {
     const w = await world();
     w.architect.drafts.patch(w.draftId, [{ op: "set_meta", set: { ui: { positions: { start: { x: 0, y: 0 }, search: { x: 300, y: 40 }, analyze: { x: 700, y: 40 } } } } }]);
     await loadPluginApp(() => import("../app"));
-    const { WorkflowDraftDetail } = await import("../src/ui/workflow-draft-detail");
+    const { WorkflowDraftDetail } = await import("../src/rooms/workflow/ui/workflow-draft-detail");
     const slot = await renderSlot({ component: () => <WorkflowDraftDetail draftId={w.draftId} projectId={projectId} locale="en" onBack={() => undefined} startEditing /> }, {},
       { context: { projectId, threadId: null }, rpc: w.rpc as never });
     w.emit.current = (payload) => slot.behavior.emitRealtime(`lp:${projectId}`, payload);
@@ -202,7 +202,7 @@ describe("the editor model", () => {
 describe("the graph view", () => {
   it("stays at a readable zoom on the start of a long chain, and fits a short one whole", async () => {
     await loadPluginApp(() => import("../app"));
-    const { readableViewport, READABLE_ZOOM } = await import("../src/ui/workflow-graph");
+    const { readableViewport, READABLE_ZOOM } = await import("../src/rooms/workflow/ui/workflow-graph");
     const anchor = { x: 16, y: 300, width: 76, height: 34 };
     const long = readableViewport({ width: 3200, height: 700 }, anchor, { width: 680, height: 460 }, "RIGHT");
     expect(long.zoom).toBe(READABLE_ZOOM);
@@ -225,7 +225,7 @@ describe("the graph view", () => {
     const w = await world();
     w.architect.drafts.patch(w.draftId, [{ op: "add_node", node: { id: "why", type: "note", text: "Why the digest waits for approval." } }]);
     await loadPluginApp(() => import("../app"));
-    const { WorkflowDraftDetail } = await import("../src/ui/workflow-draft-detail");
+    const { WorkflowDraftDetail } = await import("../src/rooms/workflow/ui/workflow-draft-detail");
     const slot = await renderSlot({ component: () => <WorkflowDraftDetail draftId={w.draftId} projectId={projectId} locale="en" onBack={() => undefined} /> }, {}, { context: { projectId, threadId: null }, rpc: w.rpc as never });
     const notes = await slot.findByTestId("wf-notes");
     expect(notes.textContent).toContain("Why the digest waits for approval.");
@@ -545,7 +545,7 @@ describe("editing a draft in the Workflows tab", () => {
     const measure = vi.spyOn(window.HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 375, height: 800, top: 0, left: 0, right: 375, bottom: 800, x: 0, y: 0, toJSON: () => ({}) });
     const w = await world();
     await loadPluginApp(() => import("../app"));
-    const { WorkflowDraftDetail } = await import("../src/ui/workflow-draft-detail");
+    const { WorkflowDraftDetail } = await import("../src/rooms/workflow/ui/workflow-draft-detail");
     const slot = await renderSlot({ component: () => <div style={{ width: 375 }}><WorkflowDraftDetail draftId={w.draftId} projectId={projectId} locale="ru" onBack={() => undefined} startEditing /></div> }, {},
       { context: { projectId, threadId: null }, rpc: w.rpc as never });
     expect((await slot.findByTestId("wf-edit-toolbar")).textContent).toContain("Добавить шаг");
@@ -568,7 +568,7 @@ describe("starting an edit from a workflow of the library", () => {
 
   async function show(scope: "builtin" | "global", seen: unknown[]) {
     await loadPluginApp(() => import("../app"));
-    const { WorkflowsScreen } = await import("../src/ui/workflows");
+    const { WorkflowsScreen } = await import("../src/rooms/workflow/ui/workflows");
     const w = await world();
     const rpc = { ...w.rpc, workflow_list: () => ({ workflows: [{ ...detail(scope) }], problems: [], project: "ok" }), workflow_get: () => ({ workflow: detail(scope) }),
       workflow_draft_create: (input: unknown) => { seen.push(input); return { draftId: w.draftId, workflowId: detail(scope).id, reused: false }; } };

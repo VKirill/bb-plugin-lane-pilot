@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { noteCheckoutGuest } from "./server/checkout-guests";
 import type { BbPluginApi, ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import type { LanePilotDatabase } from "./database";
+import type { LanePilotDatabase } from "./rooms/storage/database";
 import {
   CLI_AGENTS_PLUGIN_ID,
   classifyCliAgentsCollision,

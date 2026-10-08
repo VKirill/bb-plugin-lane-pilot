@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { builtinWorkflows } from "../../src/workflow/builtin";
-import { MAX_QUESTIONS, MIN_CONFIDENCE, TOP_N, normalizeText, routeIntent, setRouterModel, stateProblem, stems } from "../../src/workflow/router";
-import type { RouterModel, RouterState } from "../../src/workflow/router";
+import { builtinWorkflows } from "../../src/rooms/workflow/builtin";
+import { MAX_QUESTIONS, MIN_CONFIDENCE, TOP_N, normalizeText, routeIntent, setRouterModel, stateProblem, stems } from "../../src/rooms/workflow/router";
+import type { RouterModel, RouterState } from "../../src/rooms/workflow/router";
 import { publishedCatalog } from "./router-catalog";
 
 const catalog = publishedCatalog();

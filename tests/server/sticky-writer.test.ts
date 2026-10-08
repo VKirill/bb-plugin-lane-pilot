@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
-import { createAttempt, createRun, createTask, getAttempt, getReasoningTrace, openDatabase, saveReasoningTrace, setAttemptWorkspace, transitionAttempt } from "../../src/database";
+import { createAttempt, createRun, createTask, getAttempt, getReasoningTrace, openDatabase, saveReasoningTrace, setAttemptWorkspace, transitionAttempt } from "../../src/rooms/storage/database";
 import { validateTaskV2 } from "../../src/rooms/tasks/task-v2";
 import { sameArea } from "../../src/server/writer/start";
 import { STICKY_MAX_TURNS, STICKY_WINDOW_MS, areaHistoryText, createWriterSticky, loadArea, loadFollowUp, nextAreaRecord, retryInSameThread } from "../../src/server/writer/sticky";

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/database";
+import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/storage/database";
 import { fenceOutside, ToolError, toolFailure } from "../src/server/tool-result";
 import { QA_HOST_KEY } from "../src/rooms/qa/qa-host";
 

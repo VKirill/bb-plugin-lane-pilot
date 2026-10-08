@@ -1,6 +1,6 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../contracts";
-import { HARNESS_VERSION } from "../../database";
+import { HARNESS_VERSION } from "../../rooms/storage/database";
 import { createProviderGate } from "../../rooms/verification/provider-gate";
 import type { ServerCore } from "../core";
 

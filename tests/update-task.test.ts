@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, createRun, createTask, createAttempt, getTask, getTaskPlan, savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/database";
+import { openDatabase, createRun, createTask, createAttempt, getTask, getTaskPlan, savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterUpdateTask } from "../src/server/writer/update-task";
 import type { TaskV2 } from "../src/contracts";
 import type { ServerCore } from "../src/server/core";

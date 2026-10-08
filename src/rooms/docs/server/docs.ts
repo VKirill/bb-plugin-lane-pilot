@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../../contracts";
-import { claimDocsSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../../database";
+import { claimDocsSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage/database";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks/contract";
 import { extractModelJson } from "../../critique/model-json";

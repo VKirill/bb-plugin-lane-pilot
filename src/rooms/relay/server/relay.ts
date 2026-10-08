@@ -1,4 +1,4 @@
-import { latestTaskAttemptState } from "../../../database";
+import { latestTaskAttemptState } from "../../storage/database";
 import { taskFamily } from "../../../failure-class";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";

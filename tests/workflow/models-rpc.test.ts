@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createModelCatalog, createWorkflowModels } from "../../src/server/workflow-models";
+import { createModelCatalog, createWorkflowModels } from "../../src/rooms/workflow/server/workflow-models";
 import type { ServerCore } from "../../src/server/core";
 import { journalDb } from "./engine-helpers";
 

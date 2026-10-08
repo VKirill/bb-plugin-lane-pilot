@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/database";
+import { openDatabase } from "../../src/rooms/storage/database";
 import { createCore } from "../../src/server/core";
 
 describe("Jev key from Env Catalog", () => {

@@ -1,4 +1,4 @@
-import type { StageReceiptRow } from "../database";
+import type { StageReceiptRow } from "../rooms/storage/database";
 
 /**
  * What the PM reads in the chat after lane_pilot_dispatch_writer and lane_pilot_wait_writer: a receipt (state, ids, one

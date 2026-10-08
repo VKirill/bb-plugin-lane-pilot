@@ -6,7 +6,7 @@ import type { HelperRole } from "../../src/helper-context";
 import { codeCritiquePrompt, buildCandidateEvidence } from "../../src/rooms/critique/code-critique";
 import { critiquePrompt } from "../../src/rooms/critique/critique";
 import { pmReadPrompt } from "../../src/rooms/critique/pm-read";
-import { roleSpec } from "../../src/server/workflow-agent";
+import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
 
 // Batch C of review 2: the one-shot readers answer from the message and carry no MCP schema (the code-graph tools cost ~8k tokens a turn).
 const ONE_SHOT: HelperRole[] = ["plan-critic", "pm-reader"];

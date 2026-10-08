@@ -1,4 +1,4 @@
-import { appendGateEvaluation, getTaskPlan, listStageReceipts, openDatabase, saveStageReceipt, transitionAttempt } from "../database";
+import { appendGateEvaluation, getTaskPlan, listStageReceipts, openDatabase, saveStageReceipt, transitionAttempt } from "../rooms/storage/database";
 import { RETRY_ELIGIBLE } from "../state-machine";
 import type { AttemptState } from "../state-machine";
 import { sha256, stageTransition, validateStageReceipt } from "../rooms/tasks/contract";

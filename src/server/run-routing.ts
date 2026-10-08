@@ -1,4 +1,4 @@
-import { getRun, getRunSettingsScopes, loadProjectSettings, loadRunHelperPolicyJson, openDatabase, persistRunHelperPolicyJson } from "../database";
+import { getRun, getRunSettingsScopes, loadProjectSettings, loadRunHelperPolicyJson, openDatabase, persistRunHelperPolicyJson } from "../rooms/storage/database";
 import type { ExtraAccess } from "../helper-context";
 import { decideHelperDispatch, detectVkCapability, parseHelperContextSettings, parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding } from "../helper-context";
 import type { HelperPolicySnapshot, HelperRole } from "../helper-context";

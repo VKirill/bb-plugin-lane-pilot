@@ -3,12 +3,12 @@ import { createFakePluginHost, makePluginAgentConfigurationContext } from "@get-
 import plugin from "../server";
 import { agentPickerLabel } from "../src/agent-display";
 import { compileMainAgentProfile, MAIN_AGENT_PROFILE_IDS } from "../src/agent-profile";
-import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../src/database";
+import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../src/rooms/storage/database";
 import { BB_AGENT_SUMMARIES, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt, overlaySessionTools } from "../src/native-agent-overlay";
 import { finalizeNativeLaneBinding } from "../src/native-run";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/native-session-hooks";
 import { foldedToolHome } from "../src/rooms/tools/pm-tool-families";
-import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION } from "../src/workflow-architect";
+import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION } from "../src/rooms/workflow/workflow-architect";
 import { setLocaleOverride, t } from "@lane-pilot/i18n";
 
 const cleanup: Array<() => Promise<void>> = [];

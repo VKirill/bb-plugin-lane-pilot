@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
-import { createWorkflowLibrary, clipJson } from "../../src/server/workflow-library";
+import { createWorkflowLibrary, clipJson } from "../../src/rooms/workflow/server/workflow-library";
 import type { ServerCore } from "../../src/server/core";
 import type { Services } from "../../src/server/services";
-import { parseWorkflow } from "../../src/workflow/validate";
-import { draftView } from "../../src/workflow/draft-view";
-import { conditionText, roleTone, workflowView } from "../../src/workflow/view";
+import { parseWorkflow } from "../../src/rooms/workflow/validate";
+import { draftView } from "../../src/rooms/workflow/draft-view";
+import { conditionText, roleTone, workflowView } from "../../src/rooms/workflow/view";
 import { engineOn, journalDb, ok, trust, wf } from "./engine-helpers";
 import { workflow } from "./fixtures";
 

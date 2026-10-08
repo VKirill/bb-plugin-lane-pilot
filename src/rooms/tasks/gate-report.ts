@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { StageEventRow, GateEventRow, LanePilotDatabase } from "../../database";
-import { GATE_CATEGORIES, listGateEvents, listStageEvents } from "../../database";
+import type { StageEventRow, GateEventRow, LanePilotDatabase } from "../storage/database";
+import { GATE_CATEGORIES, listGateEvents, listStageEvents } from "../storage/database";
 import { STAGE_IDS, type StageId, type StageState } from "./contract";
 
 export const gateReportInputSchema = z.object({

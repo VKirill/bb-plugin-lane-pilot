@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { noOptionalPlugins } from "./optional-plugin-stubs";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/database";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import { createCore } from "../src/server/core";
 import type { Services } from "../src/server/services";
 import { recordStage, reopenWriterStages } from "../src/server/stage-records";

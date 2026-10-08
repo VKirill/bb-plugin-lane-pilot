@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { listCheckDurations, openDatabase, recordCheckDuration } from "../src/database";
+import { listCheckDurations, openDatabase, recordCheckDuration } from "../src/rooms/storage/database";
 import { CHECK_TIMEOUT_CAP_SEC, checkTimeoutSec, historyTimeoutSec, p95 } from "../src/check-timing";
 
 describe("check timeout from history", () => {

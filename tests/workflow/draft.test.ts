@@ -1,11 +1,11 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { migrations } from "../../src/database";
-import { applyDraftOps, checkDraft, draftOpSchema, slugWorkflowId } from "../../src/workflow/draft";
-import type { DraftOp } from "../../src/workflow/draft";
-import { createDraftStore } from "../../src/workflow/draft-store";
-import { runDraftTest, testCasesOf } from "../../src/workflow/draft-test";
-import { parseWorkflow } from "../../src/workflow/validate";
+import { migrations } from "../../src/rooms/storage/database";
+import { applyDraftOps, checkDraft, draftOpSchema, slugWorkflowId } from "../../src/rooms/workflow/draft";
+import type { DraftOp } from "../../src/rooms/workflow/draft";
+import { createDraftStore } from "../../src/rooms/storage/draft-store";
+import { runDraftTest, testCasesOf } from "../../src/rooms/workflow/draft-test";
+import { parseWorkflow } from "../../src/rooms/workflow/validate";
 import { BROWSER_DIGEST_STEPS } from "./architect-fixture";
 
 function store() {
@@ -287,8 +287,8 @@ describe("where the steps lie is not what the workflow does (audit r2, B10)", ()
   });
 
   it("the hash of a definition ignores `ui`, and a receipt written with the old hash still counts", async () => {
-    const { definitionSha256, legacyDefinitionSha256 } = await import("../../src/workflow/store");
-    const { createStatusResolver } = await import("../../src/workflow/ops-store");
+    const { definitionSha256, legacyDefinitionSha256 } = await import("../../src/rooms/storage/store");
+    const { createStatusResolver } = await import("../../src/rooms/storage/ops-store");
     const { db } = store();
     const plain = parseWorkflow({ id: "pos", name: "Pos", description: { en: "d", ru: "д" }, inputs: [], outputs: [], status: "published", nodes: [{ id: "a", type: "action", action: "emit", map: {} }], edges: [{ from: "start", to: "a" }] });
     const placed = parseWorkflow({ ...plain, ui: { positions: { a: { x: 5, y: 6 } } } } as never);

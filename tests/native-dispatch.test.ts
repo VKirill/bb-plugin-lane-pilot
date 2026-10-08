@@ -2,7 +2,7 @@ import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { compileMainAgentProfile } from "../src/agent-profile";
-import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/database";
+import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/rooms/storage/database";
 import { sessionOverrideAgentsJson } from "../src/native-agent-definition";
 import { nativeSelectionMarker } from "../src/native-session";
 import { prepareNativeSessionRecord, traceNativeDispatch } from "../src/native-dispatch";

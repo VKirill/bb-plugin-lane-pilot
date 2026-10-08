@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { localTimezone } from "../../workflow/cron";
+import { localTimezone } from "../workflow/cron";
 import { parseDelay, scheduleTimeProblem } from "./time";
 
 /**

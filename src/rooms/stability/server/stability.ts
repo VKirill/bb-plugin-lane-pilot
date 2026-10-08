@@ -1,7 +1,7 @@
 import packageJson from "../../../../package.json";
 import { PARKED_CLASSES, failureClass, failureFingerprint, isWaitingSecret, type FailureClass } from "../../../failure-class";
 import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server/secrets";
-import { createAttempt, getAttempt, getRun, getRunSettingsScopes, loadProjectSettings } from "../../../database";
+import { createAttempt, getAttempt, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage/database";
 import { id } from "../../../server/values";
 import { reopenWriterStages } from "../../../server/stage-records";
 import { isRunHalted } from "../../../server/runs-halt";

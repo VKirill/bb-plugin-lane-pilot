@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";
-import { createAttempt, createRun, createTask, getAttempt, openDatabase, saveProjectSetting, saveStageReceipt, transitionAttempt } from "../src/database";
+import { createAttempt, createRun, createTask, getAttempt, openDatabase, saveProjectSetting, saveStageReceipt, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterFinish } from "../src/server/writer/finish";
 
 const config: PrototypeConfig = {

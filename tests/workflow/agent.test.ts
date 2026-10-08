@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ROLE_PROFILES, HELPER_ROLES } from "../../src/helper-context";
-import { roleSpec } from "../../src/server/workflow-agent";
-import { slugOf } from "../../src/workflow/values";
-import { AgentOutputError, agentPrompt, dataBlock, extractJsonObject, outputContract, parseAgentOutput } from "../../src/workflow/agent-output";
-import type { Field } from "../../src/workflow/schema";
+import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
+import { slugOf } from "../../src/rooms/workflow/values";
+import { AgentOutputError, agentPrompt, dataBlock, extractJsonObject, outputContract, parseAgentOutput } from "../../src/rooms/workflow/agent-output";
+import type { Field } from "../../src/rooms/workflow/schema";
 import { roleMethod } from "../../src/rooms/critique/role-method";
-import { loadWorkflow } from "../../src/workflow/validate";
+import { loadWorkflow } from "../../src/rooms/workflow/validate";
 import { workflow } from "./fixtures";
 
 const fields: Field[] = [

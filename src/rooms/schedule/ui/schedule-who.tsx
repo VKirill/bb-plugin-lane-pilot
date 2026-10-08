@@ -10,8 +10,8 @@ import { PRESET_SLUGS, presetSelection } from "@lane-pilot/models";
 import { Pill } from "../../../ui/pill";
 import { fill } from "./schedule-parts";
 import type { ModelFields } from "./schedule-model";
-import { executorLine, modelShort, providerShort, sourceText, useModelCatalog, type StepExecutor } from "../../../ui/workflow-models";
-import { NativeModelPicker, type PickerSeed } from "../../../ui/workflow-native-picker";
+import { executorLine, modelShort, providerShort, sourceText, useModelCatalog, type StepExecutor } from "../../workflow/ui/workflow-models";
+import { NativeModelPicker, type PickerSeed } from "../../workflow/ui/workflow-native-picker";
 
 /** «Who runs it» of the schedule screens: the resolved model with where it comes from, the cost, the native model picker, the steps of a chain. */
 

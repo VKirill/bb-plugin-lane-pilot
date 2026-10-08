@@ -1,5 +1,5 @@
 import { prototypeConfigSchema, taskV2Schema } from "../../../contracts";
-import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt } from "../../../database";
+import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt } from "../../storage/database";
 import { cancelRejection, finishRunSafely } from "../../../server/run-finish";
 import { stringAt, valueAt } from "../../../server/values";
 import { outputText } from "../../../server/writer-task";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../../src/database";
+import { openDatabase } from "../../src/rooms/storage/database";
 import { createSelfRepair, firstSeenOnRunningVersion, isDue, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/rooms/self-repair/server/self-repair";
 import { createJev } from "@lane-pilot/jev";
 import { setJevForTests } from "@lane-pilot/jev";

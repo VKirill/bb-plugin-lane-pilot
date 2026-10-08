@@ -1,6 +1,6 @@
 import packageJson from "../../../../package.json";
 import { failureClass } from "../../../failure-class";
-import type { LanePilotDatabase } from "../../../database";
+import type { LanePilotDatabase } from "../../storage/database";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../../contracts";
 import { scheduleIsolated } from "../../../server/schedules";

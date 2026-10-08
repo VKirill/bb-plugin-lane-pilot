@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../../src/database";
+import { openDatabase } from "../../src/rooms/storage/database";
 import type { OwnerMessage } from "../../src/rooms/anamnesis/owner-messages";
 import type { JevClient } from "@lane-pilot/jev";
 import { createJev } from "@lane-pilot/jev";

@@ -4,18 +4,18 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRun, createTask, createAttempt, openDatabase, setRunThread, transitionAttempt } from "../../src/database";
+import { createRun, createTask, createAttempt, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
 import { runCommand } from "../../src/rooms/host-worker/host-handlers";
 import { createCore } from "../../src/server/core";
 import type { Services } from "../../src/server/services";
-import { createWorkflowAgents } from "../../src/server/workflow-agent";
-import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/server/workflow-executors";
-import type { ChainRuntime } from "../../src/server/workflow-runtime";
-import { registerPureActions } from "../../src/workflow/actions";
-import { WorkflowEngine } from "../../src/workflow/engine";
-import { registerReducers } from "../../src/workflow/reducers";
-import { parseWorkflow } from "../../src/workflow/validate";
-import type { Workflow } from "../../src/workflow/schema";
+import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
+import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
+import type { ChainRuntime } from "../../src/rooms/workflow/server/workflow-runtime";
+import { registerPureActions } from "../../src/rooms/workflow/actions";
+import { WorkflowEngine } from "../../src/rooms/workflow/engine";
+import { registerReducers } from "../../src/rooms/workflow/reducers";
+import { parseWorkflow } from "../../src/rooms/workflow/validate";
+import type { Workflow } from "../../src/rooms/workflow/schema";
 
 /**
  * The executors of a chain on the host, against a fake BB: a helper thread is a scripted answer, the PM's checkout is a real git

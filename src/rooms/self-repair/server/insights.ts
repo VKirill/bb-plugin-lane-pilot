@@ -5,7 +5,7 @@ import {
   reviseAdoptedRule, reviseRuleProposal, routingHint, runGoldenEval, setRuleTrial, upsertRuleProposals, writerAcceptanceStats, type RuleProposal,
   upsertLessonProposal, ruleTrialStats,
 } from "@lane-pilot/run-insights";
-import { loadProjectSettings, type LanePilotDatabase } from "../../../database";
+import { loadProjectSettings, type LanePilotDatabase } from "../../storage/database";
 import { configuredSetting, requirePmRun, type ServerContext } from "../../../server/context";
 import { registerObservedTool } from "../../../server/tool-result";
 import { scheduleIsolated } from "../../../server/schedules";

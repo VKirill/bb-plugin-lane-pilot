@@ -2,7 +2,7 @@ import { createFakePluginHost, makeQueueEntry, makeThreadResponse } from "@get-b
 import { threadSignalHub, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import plugin from "../server";
-import { createAttempt, createRun, createTask, getRun, openDatabase, setRunThread, transitionAttempt } from "../src/database";
+import { createAttempt, createRun, createTask, getRun, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import { loadBlockedBy } from "../src/server/blocked-by";
 import { mountLifecycleEvents } from "../src/server/lifecycle-events";
 import { followUpCancelled, saveFollowUp } from "../src/server/writer/sticky";

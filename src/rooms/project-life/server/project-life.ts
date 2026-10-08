@@ -1,6 +1,6 @@
 import { acceptanceArtifactDir } from "../../tasks/acceptance-v2";
 import { taskV2Schema } from "../../../contracts";
-import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listOpenAttempts, listStageReceipts, loadProjectSettings } from "../../../database";
+import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listOpenAttempts, listStageReceipts, loadProjectSettings } from "../../storage/database";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { PROJECT_LIFE_DEFAULT_WRITER, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeWriterSelection, shouldTriggerProjectLife } from "../project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../../server/child-snapshots";

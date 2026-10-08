@@ -4,7 +4,7 @@ import { createProviderUsage } from "../../rooms/usage/server/provider-usage";
 import { createProviderRetryGuard } from "../../rooms/stability/server/provider-retry";
 import { createTasksMirror } from "../tasks-mirror";
 import { createConcurrencyLimit } from "../concurrency-limit";
-import { getRunSettingsScopes } from "../../database";
+import { getRunSettingsScopes } from "../../rooms/storage/database";
 import type { ServerCore } from "../core";
 
 /** State shared by the writer modules: the live task set, the provider pool, the provider breaker and one budget per run. */

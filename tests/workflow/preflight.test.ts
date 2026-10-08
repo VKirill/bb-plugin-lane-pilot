@@ -1,14 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createRun, openDatabase, setRunThread } from "../../src/database";
-import { commandsScript, createWorkflowPreflight, parseCommandAnswers } from "../../src/server/workflow-preflight";
-import { runWorkflowTool } from "../../src/server/workflow-tools";
-import type { WorkflowToolDeps } from "../../src/server/workflow-tools";
-import { checkRequires, effectiveRequires, preflightRefusal, secretName, toolGroup } from "../../src/workflow/preflight";
-import type { RequirePorts } from "../../src/workflow/preflight";
-import type { Workflow } from "../../src/workflow/schema";
-import { builtinWorkflow, builtinWorkflows } from "../../src/workflow/builtin";
+import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
+import { commandsScript, createWorkflowPreflight, parseCommandAnswers } from "../../src/rooms/workflow/server/workflow-preflight";
+import { runWorkflowTool } from "../../src/rooms/workflow/server/workflow-tools";
+import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-tools";
+import { checkRequires, effectiveRequires, preflightRefusal, secretName, toolGroup } from "../../src/rooms/workflow/preflight";
+import type { RequirePorts } from "../../src/rooms/workflow/preflight";
+import type { Workflow } from "../../src/rooms/workflow/schema";
+import { builtinWorkflow, builtinWorkflows } from "../../src/rooms/workflow/builtin";
 import { wf } from "./engine-helpers";
 
 const requires = (extra: Partial<Workflow["requires"]>): Workflow["requires"] =>

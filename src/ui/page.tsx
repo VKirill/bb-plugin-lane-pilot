@@ -9,7 +9,7 @@ import { OwnedSettings } from "../rooms/settings/ui/owned-settings";
 import { PanelLayoutContext } from "@lane-pilot/ui-kit";
 import { InheritanceContext } from "../rooms/settings/ui/setting-controls";
 import { TokenUsage } from "../rooms/usage/ui/token-usage";
-import { WorkflowsScreen } from "./workflows";
+import { WorkflowsScreen } from "../rooms/workflow/ui/workflows";
 import { ScheduleBoard } from "../rooms/schedule/ui/schedule-board";
 import { MobileScopeSelect, ScopeRail } from "./project-nav";
 import { ProjectHeader } from "./project-header";

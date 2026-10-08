@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../contracts";
-import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, listAttemptsForTask, transitionAttempt } from "../../database";
+import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, listAttemptsForTask, transitionAttempt } from "../../rooms/storage/database";
 import { taskFolderRel } from "../../rooms/verification/git-integrate";
 import { closeWriterStages, reopenWriterStages } from "../stage-records";
 import { stringAt } from "../values";

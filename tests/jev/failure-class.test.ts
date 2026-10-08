@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/database";
+import { openDatabase } from "../../src/rooms/storage/database";
 import { classifyFailure } from "../../src/failure-class";
 import { judgedFailureClass } from "../../src/jev/failure-class-model";
 import { failureClassJudgment } from "../../src/jev/judgments/failure-class";

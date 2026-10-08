@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/database";
+import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/rooms/storage/database";
 import { createWriterVerify } from "../../src/server/writer/verify";
 import { classifyWriterOutput } from "../../src/rooms/tasks/validate-output";
 import type { TaskV2 } from "../../src/contracts";

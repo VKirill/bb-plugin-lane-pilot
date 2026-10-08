@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";
-import { HARNESS_VERSION, createAttempt, createRun, createTask, getAttempt, openDatabase, setRunThread } from "../src/database";
+import { HARNESS_VERSION, createAttempt, createRun, createTask, getAttempt, openDatabase, setRunThread } from "../src/rooms/storage/database";
 import { LANE_WORKTREE_PROVIDER_ID, LANE_WORKTREE_RETIRE_GRACE_MS, laneWorktreeInputs, registerLaneWorktreeProvider } from "../src/server/environment-provider";
 import { createWriterSpawn } from "../src/server/writer/spawn";
 import { PROVIDER_FAILURES_BEFORE_DISABLE, PROVIDER_PROBE_AFTER_MS, createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../src/rooms/verification/provider-gate";

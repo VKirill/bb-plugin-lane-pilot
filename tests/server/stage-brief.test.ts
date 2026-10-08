@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StageReceiptRow } from "../../src/database";
+import type { StageReceiptRow } from "../../src/rooms/storage/database";
 import { compactWaitResult } from "../../src/rooms/tools/server/tools";
 import { compactDispatchReply, compactReceipt, compactStages, stageDetail, stageVerdict } from "../../src/server/stage-brief";
 

@@ -1,6 +1,6 @@
 import { runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../rooms/storage/database";
 import { saveBlockedBy, type BlockedBy } from "../blocked-by";
 import { relayFor } from "../../rooms/relay/server/relay";
 import type { HelperPolicySnapshot } from "../../helper-context";

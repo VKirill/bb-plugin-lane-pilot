@@ -3,7 +3,7 @@ import { setRunHalted } from "../runs-halt";
 import { PARKED_KEY } from "../../rooms/stability/server/stability";
 import { agentPickerLabel } from "../../agent-display";
 import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../agent-profile";
-import { countAttempts, createAttempt, getActivation, getAttempt, transitionAttempt } from "../../database";
+import { countAttempts, createAttempt, getActivation, getAttempt, transitionAttempt } from "../../rooms/storage/database";
 import { detectRequiredSessionPolicyCapability } from "../../helper-context";
 import { storeNativeSelection } from "../native-profile";
 import { DEFAULT_NATIVE_AGENT, nativeAgentCliId, nativeSelectionSchema } from "../../native-session";

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createRun, openDatabase } from "../src/database";
+import { createRun, openDatabase } from "../src/rooms/storage/database";
 import { failureClass, nextStep } from "../src/failure-class";
 import { TASK_ATTEMPT_BUDGET, loadRetryBudget, retryBudgetKey, retryBudgetReason, spendRetryBudget } from "../src/retry-budget";
 import { createStability } from "../src/rooms/stability/server/stability";

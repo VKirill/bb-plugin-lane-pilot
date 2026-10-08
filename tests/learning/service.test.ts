@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
-import { createRun, openDatabase, setRunThread } from "../../src/database";
+import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
 import { setJevForTests } from "@lane-pilot/jev";
 import { listSignals } from "../../src/rooms/learning/store";
 import { jevWith } from "./helpers";

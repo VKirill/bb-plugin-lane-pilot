@@ -1,4 +1,4 @@
-import { getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadProjectSettings, openDatabase } from "./src/database";
+import { getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadProjectSettings, openDatabase } from "./src/rooms/storage/database";
 import { createTaskReconcile } from "./src/server/task-reconcile";
 import { createActivation } from "./src/server/activation";
 import { registerCli } from "./src/rooms/tools/server/cli";
@@ -37,8 +37,8 @@ import { createWriterVerify } from "./src/server/writer/verify";
 import { createWriterFinish } from "./src/server/writer/finish";
 import { createWriterStart } from "./src/server/writer/start";
 import { createWriterDispatch } from "./src/server/writer/dispatch";
-import { createWorkflowEngine } from "./src/server/workflow";
-import { createWorkflowTriggersService } from "./src/server/workflow-triggers-live";
+import { createWorkflowEngine } from "./src/rooms/workflow/server/workflow";
+import { createWorkflowTriggersService } from "./src/rooms/workflow/server/workflow-triggers-live";
 import { createScheduleService } from "./src/rooms/schedule/server/schedule-service";
 import { relayFor } from "./src/rooms/relay/server/relay";
 import { mountLearning } from "./src/rooms/learning/service";

@@ -1,5 +1,5 @@
 import type { DirtSnapshot } from "../../cli-outcome";
-import { getRun } from "../../database";
+import { getRun } from "../../rooms/storage/database";
 import {
   chunkPaths, classifyFolderProbe, liveBackupCommand, liveOwnedFiles, liveRestoreCommand, liveSnapshotCommand, liveTrashCommand,
   LIVE_FOLDER_PROBE_COMMAND, parseBackupFailure, parseLiveSnapshot,

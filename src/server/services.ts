@@ -22,8 +22,8 @@ import type { createWriterVerify } from "./writer/verify";
 import type { createWriterFinish } from "./writer/finish";
 import type { createWriterStart } from "./writer/start";
 import type { createWriterDispatch } from "./writer/dispatch";
-import type { createWorkflowEngine } from "./workflow";
-import type { createWorkflowTriggersService } from "./workflow-triggers-live";
+import type { createWorkflowEngine } from "../rooms/workflow/server/workflow";
+import type { createWorkflowTriggersService } from "../rooms/workflow/server/workflow-triggers-live";
 
 type ActivationApi = ReturnType<typeof createActivation>;
 type DocsNightlyApi = ReturnType<typeof createDocsNightly>;

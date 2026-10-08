@@ -1,4 +1,4 @@
-import { loadProjectSettings, loadPrototypeConfig, saveProjectSetting } from "../../../../database";
+import { loadProjectSettings, loadPrototypeConfig, saveProjectSetting } from "../../../storage/database";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../../contracts";
 import type { ServerCore } from "../../../../server/core";

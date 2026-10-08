@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { createAttempt, createRun, createTask, openDatabase } from "../src/database";
+import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/storage/database";
 import { writerReuseStats } from "../src/writer-reuse-stats";
 
 it("counts cold writer threads per accepted task, continued turns, areas and time to acceptance", () => {

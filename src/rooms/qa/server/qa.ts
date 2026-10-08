@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../../contracts";
-import { claimStageSpawn, countAttempts, recordSecretIssuance, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../../database";
+import { claimStageSpawn, countAttempts, recordSecretIssuance, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage/database";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY, qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../qa-host";
 import { sha256 } from "../../tasks/contract";
 import { parseOpenCodeToolTelemetry } from "../../stability/opencode-telemetry";

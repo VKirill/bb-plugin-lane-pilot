@@ -1,7 +1,7 @@
 import type { HelperRole } from "../../../helper-context";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
-import { findOpenNativeRun, getRun } from "../../../database";
+import { findOpenNativeRun, getRun } from "../../storage/database";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { mentionContext } from "../../../native-dispatch";
 import { fullAccessSpawn } from "../../../server/pm-spawn";

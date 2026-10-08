@@ -1,6 +1,6 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
-import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, loadProjectSettings } from "../../../database";
+import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage/database";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { QA_HOST_KEY } from "../qa-host";
 import { ERRAND_BUILTIN } from "../../schedule/errand-model";

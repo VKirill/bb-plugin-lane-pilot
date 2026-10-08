@@ -1,13 +1,13 @@
-import { PURE_ACTION_KEYS, pureActionExecutor } from "../../src/workflow/actions";
+import { PURE_ACTION_KEYS, pureActionExecutor } from "../../src/rooms/workflow/actions";
 import { writeFileSync } from "node:fs";
-import { BUILTIN_SOURCES } from "../../src/workflow/builtin";
-import type { RunGoal } from "../../src/workflow/goals";
-import type { NodeExecutor, RunSummary, StepContext } from "../../src/workflow/engine";
-import { executorKey, lowerWorkflow, outputFields } from "../../src/workflow/lower";
-import { registerReducers } from "../../src/workflow/reducers";
-import type { Field, QualityMode, Workflow } from "../../src/workflow/schema";
-import { loadWorkflowStore } from "../../src/workflow/store";
-import type { WorkflowStore } from "../../src/workflow/store";
+import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
+import type { RunGoal } from "../../src/rooms/workflow/goals";
+import type { NodeExecutor, RunSummary, StepContext } from "../../src/rooms/workflow/engine";
+import { executorKey, lowerWorkflow, outputFields } from "../../src/rooms/workflow/lower";
+import { registerReducers } from "../../src/rooms/workflow/reducers";
+import type { Field, QualityMode, Workflow } from "../../src/rooms/workflow/schema";
+import { loadWorkflowStore } from "../../src/rooms/storage/store";
+import type { WorkflowStore } from "../../src/rooms/storage/store";
 import { engineOn, journalDb, rows } from "./engine-helpers";
 
 /**

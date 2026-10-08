@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { noOptionalPlugins } from "./optional-plugin-stubs";
 import type { TaskV2 } from "../src/contracts";
-import { countAttempts, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setRunThread, transitionAttempt } from "../src/database";
+import { countAttempts, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import { LANE_PILOT_PM_SESSION } from "../src/native-agent-overlay";
 import { NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/native-session-hooks";
 import { createCore } from "../src/server/core";

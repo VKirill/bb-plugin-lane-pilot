@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createRun, createTask, listStageReceipts, openDatabase } from "../../src/database";
+import { createRun, createTask, listStageReceipts, openDatabase } from "../../src/rooms/storage/database";
 import { recordStage } from "../../src/server/stage-records";
 
 describe("stage restart", () => {

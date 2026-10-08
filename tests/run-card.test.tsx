@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setAttemptWorkspace, transitionAttempt } from "../src/database";
+import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setAttemptWorkspace, transitionAttempt } from "../src/rooms/storage/database";
 import { createCore } from "../src/server/core";
 import { runsRpc } from "../src/server/rpc/runs";
 import type { Services } from "../src/server/services";

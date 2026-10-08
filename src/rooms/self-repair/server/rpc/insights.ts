@@ -2,7 +2,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStatsMany, routingHint, setRuleAudience, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
 import { acceptanceStats } from "../../../../acceptance-stats";
 import { rpcContract } from "../../../../contracts";
-import { loadProjectSettings } from "../../../../database";
+import { loadProjectSettings } from "../../../storage/database";
 import { parseDocsSettings } from "../../../docs/docs";
 import { configuredSetting } from "../../../../server/context";
 import { acceptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, revokeRule } from "../insights";

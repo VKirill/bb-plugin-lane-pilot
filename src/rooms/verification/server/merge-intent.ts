@@ -1,4 +1,4 @@
-import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, transitionAttempt } from "../../../database";
+import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, transitionAttempt } from "../../storage/database";
 import { closeWriterStages, recordGateEvaluation } from "../../../server/stage-records";
 import type { ServerCore } from "../../../server/core";
 import type { Services } from "../../../server/services";

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
-import { createAttempt, createRun, getAttempt, openDatabase, recordFinishedAttempt, setIllegalTransitionLog, transitionAttempt } from "../src/database";
+import { createAttempt, createRun, getAttempt, openDatabase, recordFinishedAttempt, setIllegalTransitionLog, transitionAttempt } from "../src/rooms/storage/database";
 import { ATTEMPT_STATES, IllegalTransitionError, OPERATIONAL_MOVES, TRANSITION_TABLE, isLegalMove } from "../src/state-machine";
 import { failureClass } from "../src/failure-class";
 

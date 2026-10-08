@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INLINE_CHARS, PACKET_BYTES, planPacket, refPath, startPacket } from "../../src/workflow/handoff";
+import { INLINE_CHARS, PACKET_BYTES, planPacket, refPath, startPacket } from "../../src/rooms/workflow/handoff";
 
 /** The start packet and the references that stand for big inputs (W0, L10). */
 const step = { id: "audit", role: "analyst", mode: "standard" };

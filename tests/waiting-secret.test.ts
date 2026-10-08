@@ -5,7 +5,7 @@ import plugin from "../server";
 import type { TaskV2 } from "../src/contracts";
 import {
   countChargedAttempts, createAttempt, createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
-} from "../src/database";
+} from "../src/rooms/storage/database";
 import { failureClass, isWaitingSecret, nextStep } from "../src/failure-class";
 import { forgetSecrets } from "@lane-pilot/kit";
 import { createSecrets } from "../src/rooms/secrets/server/secrets";

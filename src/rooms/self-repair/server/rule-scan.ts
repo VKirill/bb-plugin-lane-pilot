@@ -4,7 +4,7 @@ import {
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import { getRun, getRunSettingsScopes } from "../../../database";
+import { getRun, getRunSettingsScopes } from "../../storage/database";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";

@@ -1,5 +1,5 @@
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
-import { getRun, loadPrototypeConfig } from "../database";
+import { getRun, loadPrototypeConfig } from "../rooms/storage/database";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { fullAccessSpawn } from "./pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";

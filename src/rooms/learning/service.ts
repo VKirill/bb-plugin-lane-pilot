@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { anamnesisFor } from "../anamnesis/wiring";
 import { TURN_REQUESTED, type EventLike, type OwnerMessage } from "../anamnesis/owner-messages";
-import { getRunSettingsScopes } from "../../database";
+import { getRunSettingsScopes } from "../storage/database";
 import { jev } from "@lane-pilot/jev";
 import { relayFor } from "../relay/server/relay";
 import { scheduleIsolated } from "../../server/schedules";

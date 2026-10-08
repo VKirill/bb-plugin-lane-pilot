@@ -1,6 +1,6 @@
 import type { TaskV2, PrototypeConfig } from "../../../contracts";
-import type { LanePilotDatabase, StageReceiptRow } from "../../../database";
-import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../../database";
+import type { LanePilotDatabase, StageReceiptRow } from "../../storage/database";
+import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage/database";
 import { recordStage } from "../../../server/stage-records";
 import { stringAt } from "../../../server/values";
 import type { ServerCore } from "../../../server/core";

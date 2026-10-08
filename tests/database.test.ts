@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { inspectState, setRunObjective, appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/database";
+import { inspectState, setRunObjective, appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {

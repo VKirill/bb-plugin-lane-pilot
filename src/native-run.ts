@@ -7,7 +7,7 @@ import {
   setRunState,
   setRunThread,
   type LanePilotDatabase,
-} from "./database";
+} from "./rooms/storage/database";
 import { buildRunPolicy } from "./rooms/tasks/run-policy";
 
 export type NativeDispatchWorkspace =

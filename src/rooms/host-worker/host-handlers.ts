@@ -15,7 +15,7 @@ import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../../contracts";
 import { isEnvironmentCheckFailure } from "../../failure-class";
 import { readBoundedWorkspaceFile, sha256Hex } from "@lane-pilot/kit";
-import { casWriteWorkflowFile } from "../../workflow/files";
+import { casWriteWorkflowFile } from "../storage/files";
 import { inventoryCoexistence, runCoexistenceOperation } from "../native-install/coexistence";
 import { runBrowserQaOnHost } from "../qa/browser-qa";
 import { cancelHostJob, hostJobStatus, startHostJob } from "./jobs";

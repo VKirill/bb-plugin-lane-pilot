@@ -1,4 +1,4 @@
-import { getAttempt } from "../database";
+import { getAttempt } from "../rooms/storage/database";
 import { handleNativeDispatch, mentionContext, nativeContributedEnv } from "../native-dispatch";
 import { NATIVE_MENTION_PROVIDER, nativeSelectionSchema } from "../native-session";
 import { attachStreamRetry, droppedStreamDetail } from "../stream-retry";

@@ -3,7 +3,7 @@ import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, valid
 import { attemptProduced } from "../../cli-outcome";
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { recordCheckDuration, recordSecretIssuance, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting } from "../../database";
+import { recordCheckDuration, recordSecretIssuance, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting } from "../../rooms/storage/database";
 import { checkTimeoutSec } from "../../check-timing";
 import { sha256 } from "../../rooms/tasks/contract";
 import { parseReadFirstHints } from "../../rooms/tasks/read-first";

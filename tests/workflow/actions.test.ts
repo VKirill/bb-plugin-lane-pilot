@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { pureActionExecutor } from "../../src/workflow/actions";
-import type { StepContext } from "../../src/workflow/engine";
-import { REDUCERS } from "../../src/workflow/reducers";
-import type { JoinInput } from "../../src/workflow/reducers";
+import { pureActionExecutor } from "../../src/rooms/workflow/actions";
+import type { StepContext } from "../../src/rooms/workflow/engine";
+import { REDUCERS } from "../../src/rooms/workflow/reducers";
+import type { JoinInput } from "../../src/rooms/workflow/reducers";
 
 type Row = Record<string, unknown>;
 /** Runs a code action the way the engine does: the node lists what it reads, `resolve` answers by reference. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRelay, type RelayItem } from "../src/rooms/relay/server/relay";
-import { createAttempt, createRun, openDatabase } from "../src/database";
+import { createAttempt, createRun, openDatabase } from "../src/rooms/storage/database";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { relayFor } from "../src/rooms/relay/server/relay";
 

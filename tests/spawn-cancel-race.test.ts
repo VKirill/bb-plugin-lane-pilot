@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import plugin from "../server";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";
-import { createAttempt, createRun, createTask, getAttempt, openDatabase, savePrototypeConfig, setRunThread, transitionAttempt } from "../src/database";
+import { createAttempt, createRun, createTask, getAttempt, openDatabase, savePrototypeConfig, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterSpawn } from "../src/server/writer/spawn";
 
 const config: PrototypeConfig = {

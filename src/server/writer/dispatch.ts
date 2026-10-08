@@ -9,7 +9,7 @@ import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, 
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode } from "../../rooms/critique/quality-mode";
-import { setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../database";
+import { setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../rooms/storage/database";
 import { sha256 } from "../../rooms/tasks/contract";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../failure-class";
 import { isMainfixTask } from "../../rooms/tasks/validate-output";

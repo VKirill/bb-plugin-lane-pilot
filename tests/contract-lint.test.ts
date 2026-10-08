@@ -4,7 +4,7 @@ import plugin from "../server";
 import type { TaskV2 } from "../src/contracts";
 import {
   createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
-} from "../src/database";
+} from "../src/rooms/storage/database";
 import { lintContract, lintProbePaths, lintReply, runnerFilterArgs, type LintInput, type PathKind } from "../src/rooms/tasks/server/contract-lint";
 
 const root = "/tmp/writer";

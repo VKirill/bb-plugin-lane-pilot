@@ -1,7 +1,7 @@
 import { z } from "zod";
 import bundledAgents from "./bundled-agents.json";
 import { isCliLaneAgentPrompt, laneSessionOverlayPrompt, overlaySessionTools } from "./native-agent-overlay";
-import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "./workflow-architect";
+import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "./rooms/workflow/workflow-architect";
 import { sha256Hex } from "@lane-pilot/kit";
 
 export const MAIN_AGENT_ID = /^[a-z][a-z0-9-]{0,63}$/;

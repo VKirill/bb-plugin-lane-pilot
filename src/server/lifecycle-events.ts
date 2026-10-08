@@ -1,4 +1,4 @@
-import { getRun, getRunWriterHost, listOpenAttempts } from "../database";
+import { getRun, getRunWriterHost, listOpenAttempts } from "../rooms/storage/database";
 import { threadSignalHub } from "@lane-pilot/thread-observe";
 import { loadBlockedBy, saveBlockedBy, type BlockedBy } from "./blocked-by";
 import { closeAbandonedRuns, pluginStopped } from "./run-finish";

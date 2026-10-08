@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TaskV2 } from "../../src/contracts";
 import { hostContract } from "../../src/contracts";
-import { listSecretIssuance, openDatabase, saveProjectSetting } from "../../src/database";
+import { listSecretIssuance, openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
 import { forgetSecrets } from "@lane-pilot/kit";
 import { createSecrets, envForRecord, SecretsNotReadyError, secretProblem } from "../../src/rooms/secrets/server/secrets";
 import { createWriterVerify } from "../../src/server/writer/verify";

@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../../contracts";
-import { getTask, listStageReceipts } from "../../../database";
+import { getTask, listStageReceipts } from "../../storage/database";
 import { reconcile } from "../../stability/reconcile";
 import type { ReconcileResult } from "../../stability/reconcile";
 import type { StageId } from "../../tasks/contract";

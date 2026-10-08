@@ -5,7 +5,7 @@ import { ScheduleBoard } from "../rooms/schedule/ui/schedule-board";
 import { Segments } from "./segments";
 import { SEGMENT_LABELS, segmentsFor } from "./tabs-model";
 import { SettingsGroup } from "../rooms/settings/ui/setting-controls";
-import { WorkflowsScreen } from "./workflows";
+import { WorkflowsScreen } from "../rooms/workflow/ui/workflows";
 import type { LpPage } from "./use-lp-page";
 
 /** Workflows (the library of chains the project manager picks from) and the schedule board with its calendar. */

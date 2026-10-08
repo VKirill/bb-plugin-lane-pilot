@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createAttempt, createRun, createTask, openDatabase, saveReasoningTrace, transitionAttempt } from "../../src/database";
+import { createAttempt, createRun, createTask, openDatabase, saveReasoningTrace, transitionAttempt } from "../../src/rooms/storage/database";
 import { memoryContext, memoryUsefulness, recordMemoryMixed, searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryRecord } from "../../packages/memory-core/src";
 import { writerMemory } from "../../src/writer-brief";

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { coreRequiredSessionAdvertisement, requiredSessionPolicySpawnBinding, roleProfilePolicy } from "../../src/helper-context";
-import { agentRequest, extraAccessOf } from "../../src/server/workflow-agent";
-import type { StepContext } from "../../src/workflow/engine";
-import { checkRequires, effectiveRequires } from "../../src/workflow/preflight";
-import type { GraphNode } from "../../src/workflow/schema";
-import { loadWorkflow, parseWorkflow } from "../../src/workflow/validate";
+import { agentRequest, extraAccessOf } from "../../src/rooms/workflow/server/workflow-agent";
+import type { StepContext } from "../../src/rooms/workflow/engine";
+import { checkRequires, effectiveRequires } from "../../src/rooms/workflow/preflight";
+import type { GraphNode } from "../../src/rooms/workflow/schema";
+import { loadWorkflow, parseWorkflow } from "../../src/rooms/workflow/validate";
 import { wf } from "./engine-helpers";
 import { workflow } from "./fixtures";
 

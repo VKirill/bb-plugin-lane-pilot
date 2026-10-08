@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace, transitionAttempt } from "../../src/database";
+import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace, transitionAttempt } from "../../src/rooms/storage/database";
 import { createCore } from "../../src/server/core";
 import { freshAttemptStart } from "../../src/server/writer/start";
 

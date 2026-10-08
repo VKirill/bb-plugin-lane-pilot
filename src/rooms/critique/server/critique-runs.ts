@@ -1,7 +1,7 @@
 import { unownedExpectedOutputs } from "../../tasks/validate-output";
 import { hostContract, taskV2Schema } from "../../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../../contracts";
-import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, loadProjectSettings, openDatabase } from "../../../database";
+import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, loadProjectSettings, openDatabase } from "../../storage/database";
 import { criticPairCandidates, latestWriterPair, pairApartFromWriter, sdkCriticCatalog } from "../critic-pair";
 import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa/qa-host";

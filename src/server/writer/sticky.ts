@@ -1,6 +1,6 @@
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { getAttempt, getReasoningTrace, getRun, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt } from "../../database";
+import { getAttempt, getReasoningTrace, getRun, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt } from "../../rooms/storage/database";
 import { SESSION_MAX_TURNS, failureClass } from "../../failure-class";
 import { stringAt } from "../values";
 import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";

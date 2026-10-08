@@ -8,7 +8,7 @@ import { HELPER_PANEL_ACTION } from "../../../ui/helper-threads";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { RunPill, errorText, fill, fmtTime } from "./schedule-parts";
 import { usdText } from "./schedule-who";
-import { modelShort, providerShort } from "../../../ui/workflow-models";
+import { modelShort, providerShort } from "../../workflow/ui/workflow-models";
 
 const PAGE = 20;
 const LIVE = new Set<RunView["status"]>(["queued", "running", "waiting"]);

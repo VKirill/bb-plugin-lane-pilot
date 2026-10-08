@@ -23,7 +23,7 @@ import {
   saveStageReceipt,
   setRunThread,
   transitionAttempt,
-} from "../src/database";
+} from "../src/rooms/storage/database";
 import { fileAllowedByOwns, fnmatch, matchOwnsPath } from "@lane-pilot/kit";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/native-session-hooks";
 import plugin from "../server";

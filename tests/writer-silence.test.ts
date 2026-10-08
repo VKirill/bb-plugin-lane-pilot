@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";
-import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../src/database";
+import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterFinish } from "../src/server/writer/finish";
 import { failureClass, isWriterSilent } from "../src/failure-class";
 import { countRunNudges, loadWriterNudge, sweepWriterSilence, type SilenceDeps } from "../src/server/writer-silence";

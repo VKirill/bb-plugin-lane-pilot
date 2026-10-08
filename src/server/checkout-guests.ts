@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { LanePilotDatabase } from "../database";
+import type { LanePilotDatabase } from "../rooms/storage/database";
 import { resolve } from "node:path";
 import { sendServiceMessage } from "../rooms/relay/server/service-message";
 

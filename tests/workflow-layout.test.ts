@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { draftView } from "../src/workflow/draft-view";
-import { branchEdges, CARD, isBranching, layoutGraph, PORT_STEP } from "../src/ui/workflow-layout";
+import { draftView } from "../src/rooms/workflow/draft-view";
+import { branchEdges, CARD, isBranching, layoutGraph, PORT_STEP } from "../src/rooms/workflow/ui/workflow-layout";
 
 const draft = (extra: Record<string, unknown> = {}) => ({
   nodes: [

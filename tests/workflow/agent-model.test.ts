@@ -1,14 +1,14 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { agentRequest, withResolvedModel, type HelperRequest } from "../../src/server/workflow-agent";
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, modelOverrideKey, resolveAgentModel } from "../../src/server/workflow-agent-model";
-import { resolveStepExecutors, DELEGATED_ACTIONS } from "../../src/server/workflow-step-executors";
+import { agentRequest, withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/workflow-agent";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, modelOverrideKey, resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
+import { resolveStepExecutors, DELEGATED_ACTIONS } from "../../src/rooms/workflow/server/workflow-step-executors";
 import { validateSettingValue, validateSettingsObject } from "../../src/rooms/settings/setting-validation";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { BUILTIN_PRESETS, PRESET_FIELDS, PRESET_SLUGS, presetKey, presetSelection, presetSlug } from "@lane-pilot/models";
-import type { StepContext } from "../../src/workflow/engine";
-import type { GraphNode } from "../../src/workflow/schema";
-import { loadWorkflow, parseWorkflow } from "../../src/workflow/validate";
+import type { StepContext } from "../../src/rooms/workflow/engine";
+import type { GraphNode } from "../../src/rooms/workflow/schema";
+import { loadWorkflow, parseWorkflow } from "../../src/rooms/workflow/validate";
 import { workflow } from "./fixtures";
 
 const pm = { providerId: "codex", model: "gpt-6-luna" };

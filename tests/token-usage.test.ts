@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { openDatabase } from "../src/database";
+import { openDatabase } from "../src/rooms/storage/database";
 import plugin from "../server";
 import { costUsd } from "@lane-pilot/models";
 import {

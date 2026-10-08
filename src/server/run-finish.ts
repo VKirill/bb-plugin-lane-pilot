@@ -1,4 +1,4 @@
-import { closeRun, getAttempt, getRun, listOpenAttempts, openDatabase, releaseActivation } from "../database";
+import { closeRun, getAttempt, getRun, listOpenAttempts, openDatabase, releaseActivation } from "../rooms/storage/database";
 import { stringAt, valueAt } from "./values";
 import { RETRY_ELIGIBLE } from "../state-machine";
 import { STICKY_WINDOW_MS } from "./writer/sticky";

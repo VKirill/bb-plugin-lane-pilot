@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { LanePilotDatabase } from "../../../database";
+import type { LanePilotDatabase } from "../../storage/database";
 import { pluginStopped } from "../../../server/run-finish";
 import { stringAt, valueAt } from "../../../server/values";
 import { MODEL_PRICES, costUsd } from "@lane-pilot/models";

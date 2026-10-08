@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { criticStats } from "../src/rooms/critique/critic-stats";
-import { createRun, openDatabase } from "../src/database";
+import { createRun, openDatabase } from "../src/rooms/storage/database";
 
 it("counts blocks, what became of them, misses and first-try acceptance from recorded tasks", () => {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
