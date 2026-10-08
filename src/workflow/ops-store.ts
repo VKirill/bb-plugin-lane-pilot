@@ -49,9 +49,20 @@ export type StatusVerdict = { status: Workflow["status"]; notes: WorkflowProblem
 export function createStatusResolver(db: LanePilotDatabase) {
   const receipt = (workflowId: string, sha256: string) =>
     db.prepare("SELECT green, results_json, at FROM lane_pilot_wf_test WHERE workflow_id=? AND definition_sha256=?").get(workflowId, sha256) as { green: number; results_json: string; at: number } | undefined;
-  const liveSuccess = (workflowId: string, version: number) =>
-    db.prepare("SELECT id, updated_at FROM lane_pilot_wf_run WHERE workflow_id=? AND workflow_version=? AND status='succeeded' AND parent_run_id IS NULL ORDER BY updated_at DESC LIMIT 1")
-      .get(workflowId, version) as { id: string; updated_at: number } | undefined;
+  /**
+   * The newest live run of this version that proves the chain: a succeeded top-level run, and, when the chain says which final
+   * statuses count (`live_success`), one that ended with one of them (a run also succeeds on the branches that did not do the job).
+   */
+  const liveSuccess = (workflowId: string, version: number, rule?: Workflow["live_success"]) => {
+    const rows = db.prepare("SELECT id, updated_at, output_json FROM lane_pilot_wf_run WHERE workflow_id=? AND workflow_version=? AND status='succeeded' AND parent_run_id IS NULL ORDER BY updated_at DESC LIMIT 200")
+      .all(workflowId, version) as Array<{ id: string; updated_at: number; output_json: string | null }>;
+    const proves = (row: { output_json: string | null }) => {
+      if (!rule) return true;
+      try { return rule.in.includes(String((JSON.parse(row.output_json ?? "null") as Record<string, unknown> | null)?.[rule.output])); } catch { return false; }
+    };
+    const hit = rows.find(proves);
+    return hit ? { id: hit.id, updated_at: hit.updated_at } : undefined;
+  };
 
   return {
     recordTest(workflowId: string, sha256: string, green: boolean, results: unknown, at = Date.now()): void {
@@ -72,7 +83,7 @@ export function createStatusResolver(db: LanePilotDatabase) {
             message: `The file says "${file}", but there is no green test run for exactly this version of it: it counts as a draft until its tests pass (run its tests from the Workflows tab).` }] };
         }
       }
-      if (file === "tested" && liveSuccess(workflow.id, workflow.version)) return { status: "published", notes: [] };
+      if (file === "tested" && liveSuccess(workflow.id, workflow.version, workflow.live_success)) return { status: "published", notes: [] };
       return { status: file, notes: [] };
     },
   };

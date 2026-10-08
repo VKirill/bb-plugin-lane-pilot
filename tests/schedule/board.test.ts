@@ -14,8 +14,9 @@ afterEach(async () => { await dispose?.(); dispose = null; });
 
 type HostCall = { method: string; input: Record<string, any> };
 
-async function setup(options: { answer?: "1" | "2"; metadata?: Record<string, Record<string, unknown>> } = {}) {
+async function setup(options: { answer?: "1" | "2"; metadata?: Record<string, Record<string, unknown>>; failJob?: boolean } = {}) {
   const hostCalls: HostCall[] = [];
+  const sent: Array<{ threadId: string; text: string }> = [];
   const registered = new Map<string, (context: { signal: AbortSignal }) => unknown>();
   let polls = 0;
   const { bb, harness } = createFakePluginHost({
@@ -31,6 +32,7 @@ async function setup(options: { answer?: "1" | "2"; metadata?: Record<string, Re
       threads: {
         getPluginMetadata: async ({ threadId }: { threadId: string }) => options.metadata?.[threadId] ?? {},
         get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle", projectId }),
+        send: async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; },
       },
     } as never,
     experimental_callHostRpc: async (call) => {
@@ -41,7 +43,7 @@ async function setup(options: { answer?: "1" | "2"; metadata?: Record<string, Re
         const progress = { startedAt: 1, updatedAt: Date.now(), elapsedSec: 1, lastLine: "" };
         if (polls === 1) return { hostId: "h1", jobId: "job_abcdefghij1", state: "running", progress, error: null };
         return { hostId: "h1", jobId: "job_abcdefghij1", state: "succeeded", progress, error: null,
-          result: { hostId: "h1", exitCode: 0, stdout: `token=${SECRET}\ndone\n`, stderr: "", truncated: false, timedOut: false, durationMs: 5 } };
+          result: { hostId: "h1", exitCode: options.failJob ? 1 : 0, stdout: `token=${SECRET}\ndone\n`, stderr: "", truncated: false, timedOut: false, durationMs: 5 } };
       }
       if (call.method === "jobCancel") return { hostId: "h1", jobId: "job_abcdefghij1", cancelled: true };
       throw new Error(`unexpected host call ${call.method}`);
@@ -58,7 +60,7 @@ async function setup(options: { answer?: "1" | "2"; metadata?: Record<string, Re
   const rpc = async (name: string, params: Record<string, unknown>) => await harness.behavior.callRpc(name, params) as Record<string, any>;
   const tool = async (params: Record<string, unknown>, threadId = "thr_pm") => JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_schedule", params, { threadId, projectId }))) as Record<string, any>;
   const tick = async () => { await registered.get("schedule-board-tick")!({ signal: new AbortController().signal }); };
-  return { harness, rpc, tool, tick, db, hostCalls, registered };
+  return { harness, rpc, tool, tick, db, hostCalls, registered, sent };
 }
 
 const script = (extra: Record<string, unknown> = {}) => ({
@@ -115,6 +117,25 @@ describe("the RPCs of the board", () => {
     expect(calendar.planned.every((row: { scheduleId: string }) => row.scheduleId === made.id)).toBe(true);
     expect((await rpc("schedule_delete", { id: made.id })).ok).toBe(true);
     expect((await rpc("schedule_get", { id: made.id })).schedule).toBeNull();
+  });
+});
+
+describe("a failed scheduled run", () => {
+  it("tells the PM chat once per failed run, before the schedule is paused, and the pause message names the pause (audit r4 item 16)", async () => {
+    const { rpc, tick, sent } = await setup({ failJob: true });
+    const made = (await rpc("schedule_upsert", { definition: script({ maxFailures: 2 }) })).schedule;
+    await rpc("schedule_run_now", { id: made.id, key: "one" });
+    await tick();
+    await tick();
+    expect(sent.filter((row) => row.threadId === "thr_pm")).toHaveLength(1);
+    expect(sent[0]!.text).toContain("«Sync keys» failed");
+    expect(sent[0]!.text).toContain("1 time in a row");
+    expect(sent[0]!.text).not.toContain("is paused");
+    await rpc("schedule_run_now", { id: made.id, key: "two" });
+    await tick();
+    await tick();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]!.text).toContain("2 times in a row and is paused");
   });
 });
 

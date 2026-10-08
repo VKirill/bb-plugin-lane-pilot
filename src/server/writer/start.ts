@@ -3,7 +3,7 @@ import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop,
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "../../provider-pool";
-import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../database";
+import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../database";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "../../owns-paths";
 import { reconcile } from "../../reconcile";
@@ -428,8 +428,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           ctx.log(`writer ${input.taskId}: ${kind} in thread ${writer.threadId} not possible (${turn.reason}); a fresh writer starts`);
           // A half-bound attempt cannot take a fresh spawn: it ends as Lane Pilot's fault and the retry spawns.
           if (turn.bound) {
-            transitionAttempt(db, attemptId, "spawn_rejected", { reason:turn.reason });
-            last = { status:"spawn_rejected", reason:turn.reason, attemptId };
+            last = { status:endSpawnFailure(db, attemptId, turn.reason), reason:turn.reason, attemptId };
             halfBound = true;
           }
           return false;

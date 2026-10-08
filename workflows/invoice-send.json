@@ -29,6 +29,7 @@
     "web-research"
   ],
   "status": "tested",
+  "live_success": { "output": "status", "in": ["sent"] },
   "tags": ["finance", "invoice", "elba", "telegram"],
   "triggers": ["chat", "schedule", "manual"],
   "inputs": {
@@ -102,6 +103,8 @@
       "amount": "{{$inputs.amount}}",
       "service": "{{$inputs.service}}",
       "number": "{{create.invoice_number}}",
+      "pdf_path": "{{create.pdf_path}}",
+      "pdf_host": "host_7sea4qaad8",
       "client_name": "{{create.client_name}}",
       "client_inn": "{{create.client_inn}}",
       "invoice_amount": "{{create.invoice_amount}}",

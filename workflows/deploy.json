@@ -30,6 +30,7 @@
     "analyze-plan-execute"
   ],
   "status": "tested",
+  "live_success": { "output": "status", "in": ["deployed"] },
   "tags": [
     "ops",
     "deploy"

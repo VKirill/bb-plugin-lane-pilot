@@ -43,8 +43,10 @@ export function hardProblems(input: InvoiceCheckInput): string[] {
   const { request, invoice } = input;
   const problems: string[] = [];
   if (!invoice.number.trim()) problems.push("the invoice has no number");
+  // `Math.abs(x - NaN) > 0.005` is false: an amount that could not be read used to switch the comparison off (audit r4 item 20).
+  if (!Number.isFinite(request.amount) || request.amount <= 0) problems.push("the amount in the request is not a usable number, so the invoice's amount cannot be compared with it");
   if (!Number.isFinite(invoice.amount) || invoice.amount <= 0) problems.push("the invoice has no amount");
-  else if (Math.abs(invoice.amount - request.amount) > 0.005) problems.push(`the amount in the invoice is ${invoice.amount}, the request says ${request.amount}`);
+  else if (Number.isFinite(request.amount) && request.amount > 0 && Math.abs(invoice.amount - request.amount) > 0.005) problems.push(`the amount in the invoice is ${invoice.amount}, the request says ${request.amount}`);
   if (!invoice.client_name.trim()) problems.push("the invoice names no client");
   if (!validInn(invoice.client_inn)) problems.push(`the client's INN "${invoice.client_inn}" is not a valid INN`);
   else if (request.inn && digits(request.inn) !== digits(invoice.client_inn)) problems.push(`the client's INN in the invoice is ${invoice.client_inn}, the request says ${request.inn}`);

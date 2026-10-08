@@ -1,6 +1,7 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { loadProjectSettings, recordSecretIssuance } from "../database";
 import { redactKnown } from "../redact";
+import { finalRuleOf, workflowFinish } from "../schedule/outcome";
 import type { Executor, ExecutorInput, PollResult } from "../schedule/scheduler";
 import type { ScheduleKind, ScheduleTask } from "../schedule/model";
 import type { ServerCore } from "./core";
@@ -30,7 +31,13 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
       const summary = services.workflowEngine.get(run.ref_id!);
       if (!summary) return { state: "done", status: "failed", error: `workflow run ${run.ref_id} is gone` };
       switch (summary.status) {
-        case "succeeded": return { state: "done", status: "succeeded", output: summary.output ? clip(JSON.stringify(summary.output, null, 2), 16_000) : "" };
+        case "succeeded": {
+          // The run succeeded, but its last node may be «aborted» or «send_failed»: that is a failed scheduled run (audit r4 item 16).
+          const rule = (() => { try { return finalRuleOf((db.prepare("SELECT definition_json FROM lane_pilot_wf_run WHERE id=?").get(run.ref_id!) as { definition_json?: string } | undefined)?.definition_json); } catch { return null; } })();
+          const finish = workflowFinish(summary.output, rule);
+          const output = summary.output ? clip(JSON.stringify(summary.output, null, 2), 16_000) : "";
+          return finish.ok ? { state: "done", status: "succeeded", output } : { state: "done", status: "failed", output, error: finish.detail, reason: `ended_${finish.status}` };
+        }
         case "failed": case "blocked": case "canceled":
           return { state: "done", status: "failed", error: summary.error ?? summary.reason ?? summary.status, reason: summary.failedNode ? `failed at ${summary.failedNode}` : summary.status };
         case "waiting": return { state: "waiting", note: summary.waiting[0]?.nodeId ?? "waiting" };

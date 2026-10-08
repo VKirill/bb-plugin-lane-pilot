@@ -4,6 +4,7 @@ import type { Hub } from "./hub";
 import { scrubQuote, sensitiveReason, type Source } from "./model";
 import type { CollectResponse, HostSource, UpsertSummary } from "./ops";
 import { HOST_SOURCES } from "./ops";
+import { maskPii } from "./pii";
 import { messageEvidence, scanOwnerMessages, type OwnerMessage, type ThreadsPort } from "./owner-messages";
 import { monthOf, spread } from "./sources/common";
 
@@ -18,6 +19,9 @@ import { monthOf, spread } from "./sources/common";
 export const JEV_TOKENS_PER_MESSAGE = 1_100;
 export const MIN_CLASSIFY_CHARS = 30;
 export const MAX_CLASSIFY_CHARS = 1_500;
+/** The most fragments one Jev pass sends unless the setting or `--max-classify` says otherwise (about 220k tokens), and the most it ever sends. */
+export const DEFAULT_MAX_CLASSIFY = 200;
+export const HARD_MAX_CLASSIFY = 2_000;
 const JEV_BATCH = 20;
 const DAY = 86_400_000;
 export const DEFAULT_LOOKBACK_DAYS = 365;
@@ -49,7 +53,7 @@ export type LoadReport = {
   };
   lpRuns: null | { enabled: boolean; runs: number; projects: number };
   hubRecords: null | { records: number; stored: UpsertSummary | null };
-  classify: null | { requested: boolean; asked: number; kept: number; nothing: number; unavailable: number; stored: UpsertSummary | null; note?: string };
+  classify: null | { requested: boolean; asked: number; masked: number; kept: number; nothing: number; unavailable: number; stored: UpsertSummary | null; note?: string };
   cost: { jevMessages: number; estimatedTokens: number; perMessage: number; note: string };
   review: string;
 };
@@ -130,15 +134,19 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
 
   /* ---- cost of the optional Jev pass ---- */
   const eligibleAll = report.messages?.eligibleForJev ?? 0;
-  const cap = options.maxClassify ?? eligibleAll;
+  // A pass always has a ceiling (audit 2026-10-08 round 4, item 19): the number asked for, else the setting (`config --max-classify`), else the default;
+  // never above the hard limit, whatever was asked for.
+  const asked = options.maxClassify !== undefined && Number.isInteger(options.maxClassify) && options.maxClassify >= 1 ? options.maxClassify : config.maxClassify ?? DEFAULT_MAX_CLASSIFY;
+  const cap = Math.min(asked, HARD_MAX_CLASSIFY);
   const jevMessages = Math.min(eligibleAll, cap);
+  const leftOut = eligibleAll - jevMessages;
   report.cost = { jevMessages, estimatedTokens: jevMessages * JEV_TOKENS_PER_MESSAGE, perMessage: JEV_TOKENS_PER_MESSAGE,
-    note: `Classifying ${jevMessages} message fragments with Jev costs about ${(jevMessages * JEV_TOKENS_PER_MESSAGE / 1000).toFixed(0)}k tokens (${JEV_TOKENS_PER_MESSAGE} per message). Nothing is sent unless you pass --classify.` };
+    note: `Classifying ${jevMessages} message fragments with Jev costs about ${(jevMessages * JEV_TOKENS_PER_MESSAGE / 1000).toFixed(0)}k tokens (${JEV_TOKENS_PER_MESSAGE} per message). Nothing is sent unless you pass --classify.${leftOut > 0 ? ` A ceiling of ${cap} fragments per pass applies (the newest go first; change it with: bb lane-pilot anamnesis config --max-classify N, at most ${HARD_MAX_CLASSIFY}); ${leftOut} more eligible fragments are left out.` : ""}` };
 
   /* ---- classification (the only step that sends message text outside) ---- */
   const candidateRecords: Array<Record<string, unknown>> = [];
   if (options.classify) {
-    const cls = { requested: true, asked: 0, kept: 0, nothing: 0, unavailable: 0, stored: null as UpsertSummary | null, note: undefined as string | undefined };
+    const cls = { requested: true, asked: 0, masked: 0, kept: 0, nothing: 0, unavailable: 0, stored: null as UpsertSummary | null, note: undefined as string | undefined };
     if (options.mode === "plan") cls.note = "plan mode: no fragment is sent; run with --run --classify to classify";
     else if (!deps.judge) cls.note = "Jev is not available (no key or switched off)";
     else {
@@ -146,7 +154,10 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
       for (let i = 0; i < chosen.length; i += JEV_BATCH) {
         options.signal?.throwIfAborted();
         const batch = chosen.slice(i, i + JEV_BATCH);
-        const decisions = await deps.judge(batch.map((m) => scrubQuote(m.text, MAX_CLASSIFY_CHARS)), options.signal);
+        // Keys are masked by `scrubQuote`, personal data (e-mails, phones, cards, documents, addresses) by `maskPii`: only the masked text leaves.
+        const outgoing = batch.map((m) => maskPii(scrubQuote(m.text, MAX_CLASSIFY_CHARS)));
+        cls.masked += outgoing.filter((item) => item.count > 0).length;
+        const decisions = await deps.judge(outgoing.map((item) => item.text), options.signal);
         batch.forEach((message, j) => {
           cls.asked += 1;
           const decision = decisions[j];

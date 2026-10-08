@@ -973,6 +973,18 @@ export function transitionAttempt(
   return changed;
 }
 
+/**
+ * Ends an attempt whose writer could not be started (or found again). The PM's stop can land while the spawn is still
+ * being made: `cancel_requested` has only canceled, blocked and accepted to go to, and the owner asked for the stop,
+ * so that attempt ends «canceled» whatever failed; any other attempt is «spawn_rejected» and retries.
+ */
+export function endSpawnFailure(db: LanePilotDatabase, attemptId: string, reason: string, threadId?: string): "canceled" | "spawn_rejected" {
+  const stopped = (db.prepare("SELECT state FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { state: string } | undefined)?.state === "cancel_requested";
+  const state = stopped ? "canceled" : "spawn_rejected";
+  transitionAttempt(db, attemptId, state, { reason: stopped ? `writer stop observed after: ${reason}`.slice(0, 500) : reason, ...(threadId ? { threadId } : {}) });
+  return state;
+}
+
 /** An accepted attempt credits the memory notes its brief carried, so the notes that serve briefs well rank higher. Never fails the transition. */
 function creditMemoryOfAttempt(db: LanePilotDatabase, attemptId: string): void {
   try {

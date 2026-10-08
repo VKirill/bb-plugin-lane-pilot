@@ -4,6 +4,8 @@ import { readyComposerSnapshot, spawnEnvironmentFromSelection } from "../compose
 import type { ComposerSelectionSnapshot } from "../composer-selection";
 import { TARGET_SHA } from "../constants";
 import { claimActivation, createRun, freezeRunBinding, getActivation, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../database";
+import { ownerCardBlock } from "../anamnesis/card";
+import { anamnesisFor } from "../anamnesis/wiring";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { buildRunPolicy } from "../stages/run-policy";
 import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../workspace/routing";
@@ -146,7 +148,8 @@ export function createActivation(ctx: ServerCore, services: Services) {
         ...(native
           ? writerExecutionSelection(spawnProviderId, spawnModel, native.reasoningLevel, spawnTier)
           : { providerId: spawnProviderId, model: spawnModel, executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const } }),
-        prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native), pmHasGuard(settings["main.agent"])),
+        // The owner's confirmed, non-sensitive facts (anamnesis A5), within 1800 characters; nothing when there are none or the store is out of reach.
+        prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native), pmHasGuard(settings["main.agent"])) + await ownerCardBlock(anamnesisFor(ctx).hub),
         environment: (snapshotEnv ?? (managedWorkspace
           ? { type:"host", hostId:config.hostId, workspace:{ type:"managed-worktree", baseBranch:{ kind:"default" } } }
           : { type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.pmWorkspacePath } })) as never,

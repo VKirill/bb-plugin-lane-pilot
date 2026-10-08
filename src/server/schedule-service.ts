@@ -2,6 +2,7 @@ import { loadProjectSettings } from "../database";
 import { QA_HOST_KEY, mapListedQaHosts } from "../qa-host";
 import { fireList, findConflicts, runView, scheduleView } from "../schedule/board";
 import { normalizeSchedule, type NormalizedWhen, type ScheduleDefinition, type ScheduleTask } from "../schedule/model";
+import { scheduleFailureNotice } from "../schedule/outcome";
 import { createScheduler } from "../schedule/scheduler";
 import { taskOf, whenOf, type ScheduleRow } from "../schedule/store";
 import type { ScheduleConflict, ScheduleView } from "../schedule/views";
@@ -32,11 +33,13 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
     log: (message) => bb.log.warn(`Lane Pilot schedule: ${message}`),
     onChange: (projectId) => ctx.realtime.notify(projectId, "schedule"),
     onFailure: ({ schedule, run, paused }) => {
-      const what = `Lane Pilot schedule «${schedule.name}» ${run.status === "timed_out" ? "timed out" : "failed"}: ${(run.error ?? run.reason ?? "no detail").slice(0, 300)}`;
-      bb.log.warn(what);
-      if (!paused) return;
+      // One message to the PM chat for every failed run, not only the one that pauses the schedule (a monthly invoice that failed once
+      // used to be visible in the log only); the pause-after-N rule stays as it was and is named in the message that triggers it.
+      const notice = scheduleFailureNotice(schedule, run, paused);
+      bb.log.warn(notice.split("\n", 1)[0]!);
       const pm = services.workflowTriggers.pmOf(schedule.project_id);
-      if (pm) void ctx.ownerAsk?.sendToThread(pm.pmThreadId, `${what}\nIt failed ${schedule.consecutive_failures} times in a row and is paused. Open the schedule board to look at the history and resume it.`).catch(() => undefined);
+      if (pm) void ctx.ownerAsk?.sendToThread(pm.pmThreadId, notice).catch(() => undefined);
+      else bb.log.warn(`Lane Pilot schedule «${schedule.name}»: no open PM chat in the project to tell about the failure`);
     },
   });
   const { store } = scheduler;

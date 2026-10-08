@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createOpencodeMinimalEnv } from "../../src/server/opencode-minimal";
+import { createOpencodeMinimalEnv, mountOpencodeMinimal } from "../../src/server/opencode-minimal";
 
 // B8 (audit 2026-10-08 round 2): helpers of a fan-out call the contributor together; a failed preparation used to be cached as
 // «nothing to do» for 60 s and the helpers went on with the machine's full config, silently.
@@ -96,5 +96,45 @@ describe("the minimal OpenCode config of a helper", () => {
     const { contribute, warns } = setup(async () => ({ result: PREPARED }), { metadataFails: true });
     expect(await contribute({ threadId: "thr_1", hostId: "ovh" })).toEqual([]);
     expect(warns.join("\n")).toContain("could not tell whether OpenCode thread thr_1 is a helper");
+  });
+});
+
+// Audit 2026-10-08 round 4, item 14: two thread reads of 1.5 s and a 2.5 s wait made 5.5 s against BB's 5 s.
+describe("the whole contributeEnv hook stays inside four seconds", () => {
+  const slow = <T,>(ms: number, value: T) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
+
+  it("the minimal-config hook: slow thread reads and a preparation that does not come end within 4 s", async () => {
+    vi.useFakeTimers();
+    try {
+      const bb = { log: { warn: () => undefined, info: () => undefined },
+        sdk: { threads: { getPluginMetadata: () => slow(1_400, { role: "writer" }), defaultExecutionOptions: () => slow(1_400, { model: "router9/x" }) } } };
+      const host = { call: vi.fn(() => new Promise(() => undefined)) };
+      const contribute = createOpencodeMinimalEnv({ bb, host } as never, Date.now, async () => undefined);
+      const outcome = contribute({ threadId: "thr_1", hostId: "ovh" }).then(() => "started", (cause: Error) => cause.message);
+      let settled = false;
+      void outcome.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(4_050);
+      expect(settled).toBe(true);
+      expect(await outcome).toMatch(/^opencode_minimal_config_pending:ovh:/);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("the mounted hook (minimal config + guard wrappers together): a machine that does not answer the wrappers ends within 4 s", async () => {
+    vi.useFakeTimers();
+    try {
+      let registered: ((context: { threadId: string; hostId: string }) => Promise<unknown>) | null = null;
+      const bb = { log: { warn: () => undefined, info: () => undefined },
+        providers: { experimental_contributeEnv: (_id: string, hook: typeof registered) => { registered = hook; } },
+        background: { schedule: () => undefined }, onDispose: () => undefined,
+        sdk: { threads: { getPluginMetadata: () => slow(500, { role: "writer" }), defaultExecutionOptions: async () => ({ model: "router9/x" }) } } };
+      const host = { call: vi.fn(async (method: string) => method === "prepareBbShim" ? new Promise(() => undefined) : ({ result: PREPARED })) };
+      mountOpencodeMinimal({ bb, host } as never);
+      const outcome = registered!({ threadId: "thr_1", hostId: "ovh" }).then(() => "started", (cause: Error) => cause.message);
+      let settled = false;
+      void outcome.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(4_050);
+      expect(settled).toBe(true);
+      expect(await outcome).toMatch(/contributeEnv/);
+    } finally { vi.useRealTimers(); }
   });
 });

@@ -1,6 +1,6 @@
 import { DISPATCH_STAGES_PENDING } from "../constants";
 import { taskV2Schema } from "../contracts";
-import { countAttempts, countChargedAttempts, createAttempt, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../database";
+import { countAttempts, countChargedAttempts, createAttempt, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../database";
 import { closeWriterStages } from "./stage-records";
 import { FREE_RETRY_LIMIT } from "../failure-class";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "../state-machine";
@@ -100,7 +100,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     if (result.kind === "not_found") {
       // Keep the spawn error that sent us here: alone, the reconcile outcome hid helper_parent_relation_missing for days.
       const spawnError = attempt.state === "spawn_unknown" && attempt.reason ? `spawn failed: ${attempt.reason}; ` : "";
-      transitionAttempt(db, attempt.id, "spawn_rejected", { reason:`${spawnError}reconcile completed on a short page without a matching thread` });
+      endSpawnFailure(db, attempt.id, `${spawnError}reconcile completed on a short page without a matching thread`);
       throw new Error("writer spawn was not created after a complete reconcile scan");
     }
     if (result.kind === "blocked") {

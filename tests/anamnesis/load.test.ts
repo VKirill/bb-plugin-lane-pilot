@@ -7,7 +7,7 @@ import { hostContract } from "../../src/contracts";
 import { anamnesisHandler } from "../../src/anamnesis/host";
 import { createHub } from "../../src/anamnesis/hub";
 import type { FragmentDecision } from "../../src/anamnesis/judgment";
-import { JEV_TOKENS_PER_MESSAGE, formatReport, loadAnamnesis, type LoadDeps } from "../../src/anamnesis/load";
+import { DEFAULT_MAX_CLASSIFY, HARD_MAX_CLASSIFY, JEV_TOKENS_PER_MESSAGE, formatReport, loadAnamnesis, type LoadDeps } from "../../src/anamnesis/load";
 import type { EventLike, ThreadLike, ThreadsPort } from "../../src/anamnesis/owner-messages";
 
 const DAY = 86_400_000;
@@ -170,5 +170,54 @@ describe("bb lane-pilot anamnesis load, review, config", () => {
     const deps = makeDeps(EVENTS());
     const config = JSON.parse((await cli(deps, ["config", "--authors", "a@b.c, Name", "--roots", "/x,/y"])).stdout!);
     expect(config).toMatchObject({ authors: ["a@b.c", "Name"], roots: ["/x", "/y"] });
+  });
+});
+
+// Audit 2026-10-08 round 4, item 19 (F-5): PII went to Jev unmasked, and one `--classify --yes` had no ceiling.
+describe("what leaves for Jev", () => {
+  const many = (count: number) => ({ thr_bb1: Array.from({ length: count }, (_, i) => turn(`Сообщение номер ${i} про наши рабочие планы на следующую неделю`, 1 + (i % 200))) });
+  const sentTo = async (events: Record<string, EventLike[]>, options: Partial<Parameters<typeof loadAnamnesis>[1]> = {}) => {
+    const sent: string[] = [];
+    const report = await loadAnamnesis(makeDeps(events, async (texts) => { sent.push(...texts); return texts.map(() => null); }), { mode: "run", sources: ["bb-message"], classify: true, ...options });
+    return { sent, report };
+  };
+
+  it("masks e-mails, phones, cards, documents and addresses in every fragment, and says how many fragments it touched", async () => {
+    const text = "Клиент пишет на anna.k@mail.example, телефон +7 (916) 123-45-67, карта 4111 1111 1111 1111, ИНН 7707083893, живёт на ул. Ленина, д. 5, кв. 12 — собрать все данные";
+    const { sent, report } = await sentTo({ thr_bb1: [turn(text, 3)] }, { allowSensitiveToJev: true });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toBe("Клиент пишет на [email], телефон [phone], карта [card], ИНН [inn], живёт на [address] — собрать все данные");
+    expect(sent.join()).not.toMatch(/anna\.k|916|4111|7707083893|Ленина/);
+    expect(report.classify).toMatchObject({ asked: 1, masked: 1 });
+  });
+
+  it("stops a pass at the ceiling by default, prices the ceiling and says how many were left out", async () => {
+    const { sent, report } = await sentTo(many(450));
+    expect(sent).toHaveLength(DEFAULT_MAX_CLASSIFY);
+    expect(report.cost.jevMessages).toBe(DEFAULT_MAX_CLASSIFY);
+    expect(report.cost.estimatedTokens).toBe(DEFAULT_MAX_CLASSIFY * JEV_TOKENS_PER_MESSAGE);
+    expect(report.cost.note).toContain(`ceiling of ${DEFAULT_MAX_CLASSIFY}`);
+    expect(report.cost.note).toContain(`${450 - DEFAULT_MAX_CLASSIFY} more`);
+    expect(formatReport(report)).toContain("ceiling");
+  });
+
+  it("takes the ceiling from the setting, and an explicit number may not go past the hard limit", async () => {
+    kv.set("anamnesis:config", { ...(kv.get("anamnesis:config") as object), maxClassify: 30 });
+    expect((await sentTo(many(100))).sent).toHaveLength(30);
+    expect((await sentTo(many(100), { maxClassify: 60 })).sent).toHaveLength(60);
+    const wild = await sentTo(many(HARD_MAX_CLASSIFY + 50), { maxClassify: 1_000_000 });
+    expect(wild.sent).toHaveLength(HARD_MAX_CLASSIFY);
+  });
+
+  it("the plan prices the same ceiling that a run would apply", async () => {
+    const plan = await loadAnamnesis(makeDeps(many(450)), { mode: "plan", sources: ["bb-message"], classify: true });
+    expect(plan.cost.jevMessages).toBe(DEFAULT_MAX_CLASSIFY);
+  });
+
+  it("config --max-classify sets the ceiling", async () => {
+    const deps = makeDeps(EVENTS());
+    const cli = (argv: string[]) => runAnamnesisCli(argv, { hub: deps.hub, deny: async () => null, load: (options) => loadAnamnesis(deps, options) });
+    expect(JSON.parse((await cli(["config", "--max-classify", "50"])).stdout!)).toMatchObject({ maxClassify: 50 });
+    expect(await cli(["config", "--max-classify", "0"])).toMatchObject({ exitCode: 1, stderr: expect.stringMatching(/whole number/) });
   });
 });

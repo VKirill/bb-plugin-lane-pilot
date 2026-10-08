@@ -23,6 +23,8 @@ export const configSchema = z.object({
   authors: z.array(z.string().min(1).max(200)).max(20).optional(),
   /** Folders searched for the owner's repositories and project journals (A3). */
   roots: z.array(z.string().startsWith("/")).max(20).optional(),
+  /** The most message fragments one Jev pass may send (a ceiling on cost, F-5); the pass default is `DEFAULT_MAX_CLASSIFY` in load.ts. */
+  maxClassify: z.number().int().min(1).max(2000).optional(),
 }).strict();
 export type AnamnesisConfig = z.infer<typeof configSchema>;
 

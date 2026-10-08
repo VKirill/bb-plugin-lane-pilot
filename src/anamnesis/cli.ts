@@ -20,7 +20,7 @@ export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis confirm|reject <id> [--reason TEXT]",
   "bb lane-pilot anamnesis forget <id> | --all --yes | --source SOURCE --yes",
   "bb lane-pilot anamnesis sources [--set SOURCE=on|off]",
-  "bb lane-pilot anamnesis config [--authors EMAIL,NAME] [--roots /path,/path]",
+  "bb lane-pilot anamnesis config [--authors EMAIL,NAME] [--roots /path,/path] [--max-classify N]",
   "bb lane-pilot anamnesis load [--run] [--since YYYY-MM-DD] [--sources a,b] [--classify --yes [--max-classify N] [--allow-sensitive-to-jev]] [--json]",
   "bb lane-pilot anamnesis review [--limit N]",
   "bb lane-pilot anamnesis whoami [--sections identity,skills,projects,timeline,people,interests,preferences,tools] [--detail brief|normal|full] [--confirmed-only] [--include-sensitive] [--public-only]",
@@ -158,7 +158,9 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
     case "config": {
       const csv = (text: string | undefined) => text?.split(",").map((part) => part.trim()).filter(Boolean);
       const authors = csv(values.authors), roots = csv(values.roots);
-      const next = authors || roots ? await hub.setConfig({ ...(authors ? { authors } : {}), ...(roots ? { roots } : {}) }) : await hub.config();
+      const maxClassify = values["max-classify"] ? Number(values["max-classify"]) : undefined;
+      if (maxClassify !== undefined && !(Number.isInteger(maxClassify) && maxClassify >= 1)) throw new Error("--max-classify must be a whole number of at least 1");
+      const next = authors || roots || maxClassify !== undefined ? await hub.setConfig({ ...(authors ? { authors } : {}), ...(roots ? { roots } : {}), ...(maxClassify !== undefined ? { maxClassify } : {}) }) : await hub.config();
       return out(next, true, () => "");
     }
     case "load": {

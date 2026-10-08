@@ -5,7 +5,7 @@ import { parseDirtSnapshots } from "../../cli-outcome";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
-import { HARNESS_VERSION, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../database";
+import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../database";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../../jev-reasoning";
 import { spawnWithSeam } from "../../spawn-seam";
 import { buildExecutionPacket, renderExecutionPacket } from "../../stages/execution-packet";
@@ -177,8 +177,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         const gate = services.providerBreaker.decide(breakerKey(writerProviderId, writerModel));
         if (!gate.allow) {
           const reason = `writer_provider_unavailable:breaker_open:${gate.reason}`;
-          transitionAttempt(db, input.attemptId, "spawn_rejected", { reason });
-          return { ok:false, status:"spawn_rejected", reason, attemptId:input.attemptId };
+          return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
         }
       }
       const requestedServiceTier = input.emergency ? "default" as const : bbServiceTier(writerServiceTier(settings));
@@ -488,12 +487,17 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       }
       if (cause instanceof WriterSelectionError) {
         const reason = cause.message;
-        transitionAttempt(db, input.attemptId, "spawn_rejected", { reason });
-        return { ok:false, status:"spawn_rejected", reason, attemptId:input.attemptId };
+        return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
       }
       // Only a spawn that is still being made is unknown. A failure after the thread was bound (the attempt is running) is
       // a bookkeeping error: reconcile below finds the thread it already has. Any other state is not a spawn's to change.
       const during = getAttempt(db, input.attemptId)?.state;
+      if (during === "cancel_requested") {
+        // The stop was requested while the spawn was being made and the spawn failed: nothing is left to reconcile for.
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        bb.log.warn(`Lane Pilot writer spawn for ${input.attemptId} failed after its stop was requested: ${reason}`);
+        return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
+      }
       if (during === "spawn_requested") transitionAttempt(db, input.attemptId, "spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });
       else if (during !== "running" && during !== "spawn_unknown") throw cause;
       // Reconcile overwrites this reason; keep the spawn error itself in the log.

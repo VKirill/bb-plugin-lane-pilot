@@ -12,7 +12,7 @@ import { createBbShimEnv } from "./helper-bb-shim";
  * BB gives a `contributeEnv` hook 5 seconds, and the preparation on the machine (reading the global config, linking its
  * entries, three tries of 4 seconds) took up to ~25 s (audit 2026-10-08 round 3, item 15). So it is done ahead: at start-up and
  * every few minutes for every connected machine, per machine and model provider (the set of auth plugins to keep). The hook
- * only reads that cache, waits at most ~2.5 s for a preparation already running, and otherwise refuses the helper's start at once
+ * only reads that cache, waits for a preparation already running only for what is left of 4 s in all (the mounted pair with the guard wrappers shares the same 4 s), and otherwise refuses the helper's start at once
  * with the reason (`opencode_minimal_config_pending:…` while one runs in the background, `…_failed:…` when it failed): the helper
  * never starts with the machine's full config because a preparation was late or failed (audit round 2, B8). A machine answering
  * «nothing to leave out» or an owner who switched it off (`~/.lane-pilot/opencode-min.json`) is not a failure and the thread keeps
@@ -23,7 +23,12 @@ export const OPENCODE_PROVIDER_ID = "acp-opencode";
 const FRESH_MS = 5 * 60_000;
 const KEEP_MS = 60 * 60_000;
 const CALL_MS = 4_000;
-/** What the hook itself may spend (BB's limit is 5 s): reading the thread, then waiting for a preparation already running. */
+/**
+ * What the whole hook may spend (BB's limit is 5 s; audit 2026-10-08 round 4, item 14: two thread reads of 1.5 s and a 2.5 s wait
+ * were 5.5 s): reading the thread, the cache and any wait together, and the mounted contributor (this hook plus the guard
+ * wrappers) as a whole. Each step gets at most what is left of it.
+ */
+export const HOOK_BUDGET_MS = 4_000;
 const THREAD_CALL_MS = 1_500;
 const WAIT_MS = 2_500;
 const PREFIXES_KEY = "opencode-min:prefixes";
@@ -120,15 +125,17 @@ export function createOpencodeMinimalEnv(ctx: Pick<ServerCore, "bb" | "host">, n
   }
 
   const hook = async (context: { threadId: string; hostId: string }): Promise<ExperimentalPluginProviderEnvEntry[]> => {
+    const deadline = Date.now() + HOOK_BUDGET_MS;
+    const left = (cap: number) => Math.max(0, Math.min(cap, deadline - Date.now()));
     // Only threads Lane Pilot started carry its role; the owner's own OpenCode chats keep their full config.
     let metadata: unknown = null;
-    try { metadata = await within(THREAD_CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch (cause) {
+    try { metadata = await within(left(THREAD_CALL_MS), "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch (cause) {
       bb.log.warn(`Lane Pilot: could not tell whether OpenCode thread ${context.threadId} is a helper (${reasonOf(cause)}); it starts with the machine's config`);
       return [];
     }
     if (!stringAt(metadata, "role")) return [];
     // The model only picks which provider's plugin is kept (all auth plugins are): without it the helper still starts.
-    const options = await within(THREAD_CALL_MS, "defaultExecutionOptions", Promise.resolve(bb.sdk.threads.defaultExecutionOptions({ threadId: context.threadId }))).catch(() => null);
+    const options = await within(left(THREAD_CALL_MS), "defaultExecutionOptions", Promise.resolve(bb.sdk.threads.defaultExecutionOptions({ threadId: context.threadId }))).catch(() => null);
     const model = stringAt(options, "model") ?? null;
     remember(model);
     const key = keyOf(context.hostId, model);
@@ -143,7 +150,7 @@ export function createOpencodeMinimalEnv(ctx: Pick<ServerCore, "bb" | "host">, n
       running.catch(() => undefined);
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        prepared = await Promise.race([running, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("pending")), WAIT_MS); })]);
+        prepared = await Promise.race([running, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("pending")), left(WAIT_MS)); })]);
       } catch (cause) {
         const reason = cause instanceof Error && cause.message === "pending"
           ? `opencode_minimal_config_pending:${context.hostId}: the minimal config for this machine is being prepared in the background; start the helper again in a moment`
@@ -166,7 +173,9 @@ export function mountOpencodeMinimal(ctx: ServerCore) {
   // One resolver per provider: the minimal config's variable and the guard wrappers' PATH (src/bb-shim.ts) go out together.
   const env = createOpencodeMinimalEnv(ctx);
   const shim = createBbShimEnv(ctx);
-  ctx.bb.providers.experimental_contributeEnv(OPENCODE_PROVIDER_ID, async (context) => (await Promise.all([env(context), shim(context)])).flat());
+  // The two run side by side and the pair gets the hook's whole budget: the wrappers' own reads (4 s each) must not stretch it past BB's 5 s.
+  ctx.bb.providers.experimental_contributeEnv(OPENCODE_PROVIDER_ID, async (context) =>
+    (await within(HOOK_BUDGET_MS, "contributeEnv", Promise.all([env(context), shim(context)]))).flat());
   // Ahead of the first helper, and again every few minutes: a machine that connects later is prepared at the next tick.
   const warm = () => { void env.warmConnected().catch(() => undefined); };
   const first = setTimeout(warm, 2_000);

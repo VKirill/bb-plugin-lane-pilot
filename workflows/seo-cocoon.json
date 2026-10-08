@@ -32,6 +32,7 @@
     "analyze-plan-execute"
   ],
   "status": "tested",
+  "live_success": { "output": "status", "in": ["done"] },
   "tags": [
     "seo",
     "content",
