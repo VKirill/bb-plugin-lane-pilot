@@ -4,7 +4,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/database";
 import { fenceOutside, ToolError, toolFailure } from "../src/server/tool-result";
-import { QA_HOST_KEY } from "../src/qa-host";
+import { QA_HOST_KEY } from "../src/rooms/qa/qa-host";
 
 function parseFailure(raw: unknown) {
   const parsed = JSON.parse(String(raw)) as { ok: boolean; error: { code: string; message: string; retryable: boolean; sideEffects: string; next?: string } };

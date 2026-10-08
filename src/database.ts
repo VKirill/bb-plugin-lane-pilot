@@ -17,8 +17,8 @@ import { workflowMigrations } from "./workflow/journal";
 import { workflowOpsMigrations } from "./workflow/ops-store";
 import { draftMigrations } from "./workflow/draft-store";
 import { jevMigrations } from "@lane-pilot/jev";
-import { learningMigrations } from "./learning/migrations";
-import { scheduleMigrations } from "./schedule/store";
+import { learningMigrations } from "./rooms/learning/migrations";
+import { scheduleMigrations } from "./rooms/schedule/store";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;

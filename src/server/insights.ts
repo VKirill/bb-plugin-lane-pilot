@@ -9,7 +9,7 @@ import { loadProjectSettings, type LanePilotDatabase } from "../database";
 import { configuredSetting, requirePmRun, type ServerContext } from "./context";
 import { registerObservedTool } from "./tool-result";
 import { scheduleIsolated } from "./schedules";
-import { poolHasRoom, poolTokens, ruleBudget } from "../learning/rule-budget";
+import { poolHasRoom, poolTokens, ruleBudget } from "../rooms/learning/rule-budget";
 import { sha256Hex } from "@lane-pilot/kit";
 
 export const INSIGHTS_TOOLS = ["lane_pilot_routing_stats", "lane_pilot_lessons_sweep", "lane_pilot_rule_propose", "lane_pilot_lesson", "lane_pilot_memory_golden"] as const;

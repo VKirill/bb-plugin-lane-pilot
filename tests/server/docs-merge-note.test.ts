@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDocsNightly, docsMergeNote } from "../../src/server/docs-nightly";
+import { createDocsNightly, docsMergeNote } from "../../src/rooms/docs/server/docs-nightly";
 import type { ServerCore } from "../../src/server/core";
 import type { Services } from "../../src/server/services";
 import { logIncidents } from "../../src/server/self-repair";

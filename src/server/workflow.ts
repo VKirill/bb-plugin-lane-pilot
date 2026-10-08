@@ -11,8 +11,8 @@ import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { registerDispatchExecutors } from "./writer/dispatch-workflow";
 import { registerInvoiceActions } from "./workflow-invoice";
-import { registerAnamnesisActions } from "../anamnesis/chain-actions";
-import { anamnesisFor } from "../anamnesis/wiring";
+import { registerAnamnesisActions } from "../rooms/anamnesis/chain-actions";
+import { anamnesisFor } from "../rooms/anamnesis/wiring";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 

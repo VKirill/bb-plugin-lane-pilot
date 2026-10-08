@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import bundledAgents from "../src/bundled-agents.json";
 import { buildCapabilityRegistry, chooseRecipient, describeRegistry } from "@lane-pilot/handoff";
 import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt } from "../src/native-agent-overlay";
-import { bundledAgentDefinitions } from "../src/server/handoff";
+import { bundledAgentDefinitions } from "../src/rooms/relay/server/handoff";
 import { SESSION_MAX_MS, SESSION_MAX_TURNS } from "../src/failure-class";
 import { LIVE_FOLDER_FILE_CAP } from "../src/live-folder";
 import { STICKY_WINDOW_MS } from "../src/server/writer/sticky";

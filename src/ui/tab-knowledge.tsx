@@ -1,7 +1,7 @@
 import { t } from "@lane-pilot/i18n";
-import { AnamnesisTab } from "./anamnesis-tab";
-import { DocsPlaces } from "./docs-places";
-import { MemoryRecords } from "./memory-records";
+import { AnamnesisTab } from "../rooms/anamnesis/ui/anamnesis-tab";
+import { DocsPlaces } from "../rooms/docs/ui/docs-places";
+import { MemoryRecords } from "../rooms/memory/ui/memory-records";
 import { RuleProposals } from "./rule-proposals";
 import { asBoolean } from "./page-model";
 import { CatalogField, CatalogFields } from "./catalog-field";

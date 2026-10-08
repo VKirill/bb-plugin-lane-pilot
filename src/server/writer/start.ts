@@ -7,9 +7,9 @@ import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, e
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
 import { reconcile } from "../../reconcile";
-import { emergencyFallbackDecision } from "../../stages/emergency-writer";
+import { emergencyFallbackDecision } from "../../rooms/night/emergency-writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer-fallbacks";
-import { usageHoldReason, usageSkipPercent } from "../provider-usage";
+import { usageHoldReason, usageSkipPercent } from "../../rooms/usage/server/provider-usage";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../failure-class";
 import { isTaskSatisfied } from "../blocked-by";
@@ -21,7 +21,7 @@ import { failureClass, type FailureClass } from "../../failure-class";
 import { jev } from "@lane-pilot/jev";
 import { judgedFailureClass } from "../../jev/failure-class-model";
 import { isRunHalted } from "../runs-halt";
-import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../secrets";
+import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../rooms/secrets/server/secrets";
 
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
 const DEPENDENCY_REDO_WAIT_MS = 6 * 3600_000;
@@ -37,7 +37,7 @@ import { resolve } from "node:path";
 import { findThreadsByMetadata } from "../thread-keys";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
-import { sendServiceMessage } from "../service-message";
+import { sendServiceMessage } from "../../rooms/relay/server/service-message";
 
 /** Where a new attempt of the task starts: the run's workspace, whatever worktree a resumed attempt was bound to. */
 export function freshAttemptStart(task:TaskV2, config:PrototypeConfig, runWorkspace:string|null):{task:TaskV2;config:PrototypeConfig} {

@@ -1,0 +1,472 @@
+{
+ "moves": [
+  {
+   "from": "src/anamnesis/card.ts",
+   "to": "src/rooms/anamnesis/card.ts"
+  },
+  {
+   "from": "src/anamnesis/chain-actions.ts",
+   "to": "src/rooms/anamnesis/chain-actions.ts"
+  },
+  {
+   "from": "src/anamnesis/cli.ts",
+   "to": "src/rooms/anamnesis/cli.ts"
+  },
+  {
+   "from": "src/anamnesis/collect.ts",
+   "to": "src/rooms/anamnesis/collect.ts"
+  },
+  {
+   "from": "src/anamnesis/contract.ts",
+   "to": "src/rooms/anamnesis/contract.ts"
+  },
+  {
+   "from": "src/anamnesis/daily.ts",
+   "to": "src/rooms/anamnesis/daily.ts"
+  },
+  {
+   "from": "src/anamnesis/extract.ts",
+   "to": "src/rooms/anamnesis/extract.ts"
+  },
+  {
+   "from": "src/anamnesis/host.ts",
+   "to": "src/rooms/anamnesis/host.ts"
+  },
+  {
+   "from": "src/anamnesis/hub.ts",
+   "to": "src/rooms/anamnesis/hub.ts"
+  },
+  {
+   "from": "src/anamnesis/judgment.ts",
+   "to": "src/rooms/anamnesis/judgment.ts"
+  },
+  {
+   "from": "src/anamnesis/load.ts",
+   "to": "src/rooms/anamnesis/load.ts"
+  },
+  {
+   "from": "src/anamnesis/model.ts",
+   "to": "src/rooms/anamnesis/model.ts"
+  },
+  {
+   "from": "src/anamnesis/ops.ts",
+   "to": "src/rooms/anamnesis/ops.ts"
+  },
+  {
+   "from": "src/anamnesis/owner-messages.ts",
+   "to": "src/rooms/anamnesis/owner-messages.ts"
+  },
+  {
+   "from": "src/anamnesis/pii.ts",
+   "to": "src/rooms/anamnesis/pii.ts"
+  },
+  {
+   "from": "src/anamnesis/profile-import.ts",
+   "to": "src/rooms/anamnesis/profile-import.ts"
+  },
+  {
+   "from": "src/anamnesis/skills.ts",
+   "to": "src/rooms/anamnesis/skills.ts"
+  },
+  {
+   "from": "src/anamnesis/sources/common.ts",
+   "to": "src/rooms/anamnesis/sources/common.ts"
+  },
+  {
+   "from": "src/anamnesis/sources/docs.ts",
+   "to": "src/rooms/anamnesis/sources/docs.ts"
+  },
+  {
+   "from": "src/anamnesis/sources/elba.ts",
+   "to": "src/rooms/anamnesis/sources/elba.ts"
+  },
+  {
+   "from": "src/anamnesis/sources/git.ts",
+   "to": "src/rooms/anamnesis/sources/git.ts"
+  },
+  {
+   "from": "src/anamnesis/sources/memories.ts",
+   "to": "src/rooms/anamnesis/sources/memories.ts"
+  },
+  {
+   "from": "src/anamnesis/sources/telegram.ts",
+   "to": "src/rooms/anamnesis/sources/telegram.ts"
+  },
+  {
+   "from": "src/anamnesis/store.ts",
+   "to": "src/rooms/anamnesis/store.ts"
+  },
+  {
+   "from": "src/anamnesis/whoami.ts",
+   "to": "src/rooms/anamnesis/whoami.ts"
+  },
+  {
+   "from": "src/anamnesis/wiring.ts",
+   "to": "src/rooms/anamnesis/wiring.ts"
+  },
+  {
+   "from": "src/anamnesis/year-review.ts",
+   "to": "src/rooms/anamnesis/year-review.ts"
+  },
+  {
+   "from": "src/learning/cli.ts",
+   "to": "src/rooms/learning/cli.ts"
+  },
+  {
+   "from": "src/learning/config.ts",
+   "to": "src/rooms/learning/config.ts"
+  },
+  {
+   "from": "src/learning/decide.ts",
+   "to": "src/rooms/learning/decide.ts"
+  },
+  {
+   "from": "src/learning/digest.ts",
+   "to": "src/rooms/learning/digest.ts"
+  },
+  {
+   "from": "src/learning/extract.ts",
+   "to": "src/rooms/learning/extract.ts"
+  },
+  {
+   "from": "src/learning/frustration.ts",
+   "to": "src/rooms/learning/frustration.ts"
+  },
+  {
+   "from": "src/learning/housekeeping.ts",
+   "to": "src/rooms/learning/housekeeping.ts"
+  },
+  {
+   "from": "src/learning/judgment.ts",
+   "to": "src/rooms/learning/judgment.ts"
+  },
+  {
+   "from": "src/learning/keys.ts",
+   "to": "src/rooms/learning/keys.ts"
+  },
+  {
+   "from": "src/learning/live.ts",
+   "to": "src/rooms/learning/live.ts"
+  },
+  {
+   "from": "src/learning/migrations.ts",
+   "to": "src/rooms/learning/migrations.ts"
+  },
+  {
+   "from": "src/learning/observe.ts",
+   "to": "src/rooms/learning/observe.ts"
+  },
+  {
+   "from": "src/learning/opinion.ts",
+   "to": "src/rooms/learning/opinion.ts"
+  },
+  {
+   "from": "src/learning/ops.ts",
+   "to": "src/rooms/learning/ops.ts"
+  },
+  {
+   "from": "src/learning/pm-rules.ts",
+   "to": "src/rooms/learning/pm-rules.ts"
+  },
+  {
+   "from": "src/learning/rule-budget.ts",
+   "to": "src/rooms/learning/rule-budget.ts"
+  },
+  {
+   "from": "src/learning/rules-port.ts",
+   "to": "src/rooms/learning/rules-port.ts"
+  },
+  {
+   "from": "src/learning/service.ts",
+   "to": "src/rooms/learning/service.ts"
+  },
+  {
+   "from": "src/learning/signals.ts",
+   "to": "src/rooms/learning/signals.ts"
+  },
+  {
+   "from": "src/learning/store.ts",
+   "to": "src/rooms/learning/store.ts"
+  },
+  {
+   "from": "src/owner-ask-shared.ts",
+   "to": "src/rooms/relay/owner-ask-shared.ts"
+  },
+  {
+   "from": "src/owner-ask.ts",
+   "to": "src/rooms/relay/owner-ask.ts"
+  },
+  {
+   "from": "src/qa-host.ts",
+   "to": "src/rooms/qa/qa-host.ts"
+  },
+  {
+   "from": "src/schedule/board.ts",
+   "to": "src/rooms/schedule/board.ts"
+  },
+  {
+   "from": "src/schedule/contract.ts",
+   "to": "src/rooms/schedule/contract.ts"
+  },
+  {
+   "from": "src/schedule/errand-model.ts",
+   "to": "src/rooms/schedule/errand-model.ts"
+  },
+  {
+   "from": "src/schedule/model.ts",
+   "to": "src/rooms/schedule/model.ts"
+  },
+  {
+   "from": "src/schedule/outcome.ts",
+   "to": "src/rooms/schedule/outcome.ts"
+  },
+  {
+   "from": "src/schedule/scheduler.ts",
+   "to": "src/rooms/schedule/scheduler.ts"
+  },
+  {
+   "from": "src/schedule/store.ts",
+   "to": "src/rooms/schedule/store.ts"
+  },
+  {
+   "from": "src/schedule/time.ts",
+   "to": "src/rooms/schedule/time.ts"
+  },
+  {
+   "from": "src/schedule/views.ts",
+   "to": "src/rooms/schedule/views.ts"
+  },
+  {
+   "from": "src/server/council.ts",
+   "to": "src/rooms/council/server/council.ts"
+  },
+  {
+   "from": "src/server/docs-nightly.ts",
+   "to": "src/rooms/docs/server/docs-nightly.ts"
+  },
+  {
+   "from": "src/server/errands.ts",
+   "to": "src/rooms/qa/server/errands.ts"
+  },
+  {
+   "from": "src/server/handoff.ts",
+   "to": "src/rooms/relay/server/handoff.ts"
+  },
+  {
+   "from": "src/server/memory-mix.ts",
+   "to": "src/rooms/memory/server/memory-mix.ts"
+  },
+  {
+   "from": "src/server/memory-sync.ts",
+   "to": "src/rooms/memory/server/memory-sync.ts"
+  },
+  {
+   "from": "src/server/owner-ask.ts",
+   "to": "src/rooms/relay/server/owner-ask.ts"
+  },
+  {
+   "from": "src/server/provider-usage.ts",
+   "to": "src/rooms/usage/server/provider-usage.ts"
+  },
+  {
+   "from": "src/server/relay.ts",
+   "to": "src/rooms/relay/server/relay.ts"
+  },
+  {
+   "from": "src/server/rpc/schedules.ts",
+   "to": "src/rooms/schedule/server/rpc/schedules.ts"
+  },
+  {
+   "from": "src/server/rpc/secrets.ts",
+   "to": "src/rooms/secrets/server/rpc/secrets.ts"
+  },
+  {
+   "from": "src/server/rpc/token-usage.ts",
+   "to": "src/rooms/usage/server/rpc/token-usage.ts"
+  },
+  {
+   "from": "src/server/schedule-cli.ts",
+   "to": "src/rooms/schedule/server/schedule-cli.ts"
+  },
+  {
+   "from": "src/server/schedule-default.ts",
+   "to": "src/rooms/schedule/server/schedule-default.ts"
+  },
+  {
+   "from": "src/server/schedule-executors.ts",
+   "to": "src/rooms/schedule/server/schedule-executors.ts"
+  },
+  {
+   "from": "src/server/schedule-place.ts",
+   "to": "src/rooms/schedule/server/schedule-place.ts"
+  },
+  {
+   "from": "src/server/schedule-service.ts",
+   "to": "src/rooms/schedule/server/schedule-service.ts"
+  },
+  {
+   "from": "src/server/schedule-tools.ts",
+   "to": "src/rooms/schedule/server/schedule-tools.ts"
+  },
+  {
+   "from": "src/server/schedule-usage.ts",
+   "to": "src/rooms/schedule/server/schedule-usage.ts"
+  },
+  {
+   "from": "src/server/secrets.ts",
+   "to": "src/rooms/secrets/server/secrets.ts"
+  },
+  {
+   "from": "src/server/service-message.ts",
+   "to": "src/rooms/relay/server/service-message.ts"
+  },
+  {
+   "from": "src/server/session-memory.ts",
+   "to": "src/rooms/memory/server/session-memory.ts"
+  },
+  {
+   "from": "src/server/stages/children.ts",
+   "to": "src/rooms/qa/server/children.ts"
+  },
+  {
+   "from": "src/server/stages/docs.ts",
+   "to": "src/rooms/docs/server/docs.ts"
+  },
+  {
+   "from": "src/server/stages/memory.ts",
+   "to": "src/rooms/memory/server/memory.ts"
+  },
+  {
+   "from": "src/server/stages/night.ts",
+   "to": "src/rooms/night/server/night.ts"
+  },
+  {
+   "from": "src/server/stages/onboarding.ts",
+   "to": "src/rooms/project-life/server/onboarding.ts"
+  },
+  {
+   "from": "src/server/stages/project-life.ts",
+   "to": "src/rooms/project-life/server/project-life.ts"
+  },
+  {
+   "from": "src/server/stages/qa-thread.ts",
+   "to": "src/rooms/qa/server/qa-thread.ts"
+  },
+  {
+   "from": "src/server/stages/qa.ts",
+   "to": "src/rooms/qa/server/qa.ts"
+  },
+  {
+   "from": "src/server/token-usage.ts",
+   "to": "src/rooms/usage/server/token-usage.ts"
+  },
+  {
+   "from": "src/stages/browser-qa.ts",
+   "to": "src/rooms/qa/browser-qa.ts"
+  },
+  {
+   "from": "src/stages/docs-defaults.ts",
+   "to": "src/rooms/docs/docs-defaults.ts"
+  },
+  {
+   "from": "src/stages/docs-lint.ts",
+   "to": "src/rooms/docs/docs-lint.ts"
+  },
+  {
+   "from": "src/stages/docs-worthiness.ts",
+   "to": "src/rooms/docs/docs-worthiness.ts"
+  },
+  {
+   "from": "src/stages/docs.ts",
+   "to": "src/rooms/docs/docs.ts"
+  },
+  {
+   "from": "src/stages/emergency-writer.ts",
+   "to": "src/rooms/night/emergency-writer.ts"
+  },
+  {
+   "from": "src/stages/memory.ts",
+   "to": "src/rooms/memory/memory.ts"
+  },
+  {
+   "from": "src/stages/night-fix.ts",
+   "to": "src/rooms/night/night-fix.ts"
+  },
+  {
+   "from": "src/stages/night.ts",
+   "to": "src/rooms/night/night.ts"
+  },
+  {
+   "from": "src/stages/onboarding.ts",
+   "to": "src/rooms/project-life/onboarding.ts"
+  },
+  {
+   "from": "src/stages/project-life.ts",
+   "to": "src/rooms/project-life/project-life.ts"
+  },
+  {
+   "from": "src/ui/anamnesis-tab.tsx",
+   "to": "src/rooms/anamnesis/ui/anamnesis-tab.tsx"
+  },
+  {
+   "from": "src/ui/council-page.tsx",
+   "to": "src/rooms/council/ui/council-page.tsx"
+  },
+  {
+   "from": "src/ui/docs-places.tsx",
+   "to": "src/rooms/docs/ui/docs-places.tsx"
+  },
+  {
+   "from": "src/ui/memory-records.tsx",
+   "to": "src/rooms/memory/ui/memory-records.tsx"
+  },
+  {
+   "from": "src/ui/owner-ask.tsx",
+   "to": "src/rooms/relay/ui/owner-ask.tsx"
+  },
+  {
+   "from": "src/ui/schedule-board.tsx",
+   "to": "src/rooms/schedule/ui/schedule-board.tsx"
+  },
+  {
+   "from": "src/ui/schedule-calendar.tsx",
+   "to": "src/rooms/schedule/ui/schedule-calendar.tsx"
+  },
+  {
+   "from": "src/ui/schedule-default.tsx",
+   "to": "src/rooms/schedule/ui/schedule-default.tsx"
+  },
+  {
+   "from": "src/ui/schedule-detail.tsx",
+   "to": "src/rooms/schedule/ui/schedule-detail.tsx"
+  },
+  {
+   "from": "src/ui/schedule-form.tsx",
+   "to": "src/rooms/schedule/ui/schedule-form.tsx"
+  },
+  {
+   "from": "src/ui/schedule-history.tsx",
+   "to": "src/rooms/schedule/ui/schedule-history.tsx"
+  },
+  {
+   "from": "src/ui/schedule-model.ts",
+   "to": "src/rooms/schedule/ui/schedule-model.ts"
+  },
+  {
+   "from": "src/ui/schedule-parts.tsx",
+   "to": "src/rooms/schedule/ui/schedule-parts.tsx"
+  },
+  {
+   "from": "src/ui/schedule-text.tsx",
+   "to": "src/rooms/schedule/ui/schedule-text.tsx"
+  },
+  {
+   "from": "src/ui/schedule-who.tsx",
+   "to": "src/rooms/schedule/ui/schedule-who.tsx"
+  },
+  {
+   "from": "src/ui/token-usage.tsx",
+   "to": "src/rooms/usage/ui/token-usage.tsx"
+  }
+ ]
+}

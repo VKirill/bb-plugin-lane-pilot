@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { buildOwnerAskPayload } from "../src/owner-ask";
+import { buildOwnerAskPayload } from "../src/rooms/relay/owner-ask";
 
 // The first import of the whole app takes 1-2 s alone and several times that on a loaded machine; at the 5 s default a test
 // that timed out kept running and mounted its form into the next test's DOM («Found multiple elements by

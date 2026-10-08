@@ -9,7 +9,7 @@ import {
   parseProjectLifeSettings,
   projectLifePrompt,
   shouldTriggerProjectLife,
-} from "../../src/stages/project-life";
+} from "../../src/rooms/project-life/project-life";
 
 describe("project-life settings", () => {
   it("defaults enabled to true and parses booleans", () => {

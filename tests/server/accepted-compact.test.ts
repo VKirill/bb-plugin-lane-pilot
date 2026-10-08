@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { memoryMaintenancePrompt, parseMemorySettings } from "../../packages/memory-core/src";
-import { nightReviewPrompt } from "../../src/stages/night";
+import { nightReviewPrompt } from "../../src/rooms/night/night";
 import { compactAcceptedResult } from "../../src/server/accepted-compact";
 
 /**

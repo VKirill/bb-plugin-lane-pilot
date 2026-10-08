@@ -17,7 +17,7 @@ import { isEnvironmentCheckFailure } from "./failure-class";
 import { readBoundedWorkspaceFile, sha256Hex } from "@lane-pilot/kit";
 import { casWriteWorkflowFile } from "./workflow/files";
 import { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
-import { runBrowserQaOnHost } from "./stages/browser-qa";
+import { runBrowserQaOnHost } from "./rooms/qa/browser-qa";
 import { cancelHostJob, hostJobStatus, startHostJob } from "./jobs";
 import { scanCritiqueCoverage } from "./stages/critique-coverage";
 import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "./verification/sandbox";

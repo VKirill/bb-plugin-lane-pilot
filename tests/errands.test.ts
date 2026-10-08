@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { runCommand } from "../src/host-handlers";
 import { createRun, openDatabase, setRunThread } from "../src/database";
-import { errandPrompt } from "../src/server/errands";
+import { errandPrompt } from "../src/rooms/qa/server/errands";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });

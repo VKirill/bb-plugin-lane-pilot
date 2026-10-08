@@ -4,12 +4,12 @@ import { THREAD_WATCH_EVENT_TYPES } from "@lane-pilot/thread-observe";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { runBrowserQaOnHost, type BrowserQaInput } from "../../src/stages/browser-qa";
+import { runBrowserQaOnHost, type BrowserQaInput } from "../../src/rooms/qa/browser-qa";
 import { claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../src/database";
-import { memoryRecordId } from "../../src/stages/memory";
+import { memoryRecordId } from "../../src/rooms/memory/memory";
 import type { TaskV2 } from "../../src/contracts";
 import { buildRunPolicy } from "../../src/stages/run-policy";
-import { docsInputHash } from "../../src/stages/docs";
+import { docsInputHash } from "../../src/rooms/docs/docs";
 
 const projectId = "stage-project";
 const pmThreadId = "stage-pm";

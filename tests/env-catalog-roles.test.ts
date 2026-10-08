@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { HELPER_ROLES, ROLE_PROFILES } from "../src/helper-context";
 import { WRITER_SETUP_LINES } from "../src/server/writer-task";
-import { qaThreadPrompt } from "../src/server/stages/qa-thread";
+import { qaThreadPrompt } from "../src/rooms/qa/server/qa-thread";
 import { specialistPrompt } from "../src/server/specialists";
 
 describe("Env Catalog access by role (J1)", () => {

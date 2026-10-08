@@ -1,11 +1,11 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/database";
-import type { OwnerMessage } from "../../src/anamnesis/owner-messages";
+import type { OwnerMessage } from "../../src/rooms/anamnesis/owner-messages";
 import type { JevClient } from "@lane-pilot/jev";
 import { createJev } from "@lane-pilot/jev";
 import type { JevAnswer, JevQuestion } from "@lane-pilot/jev";
-import { DEFAULT_CONFIG, type LearningConfig } from "../../src/learning/config";
-import { MESSAGE_KIND_NAMES } from "../../src/learning/judgment";
+import { DEFAULT_CONFIG, type LearningConfig } from "../../src/rooms/learning/config";
+import { MESSAGE_KIND_NAMES } from "../../src/rooms/learning/judgment";
 
 export const NOW = Date.UTC(2026, 9, 8, 12, 0, 0);
 export const database = () => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);

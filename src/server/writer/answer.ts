@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 import { saveFollowUp } from "./sticky";
-import { sendServiceMessage } from "../service-message";
+import { sendServiceMessage } from "../../rooms/relay/server/service-message";
 
 /** A blocked attempt whose reason is the writer's own question, not a fault. */
 const NEEDS_HUMAN_REASON = /^needs_human:/i;

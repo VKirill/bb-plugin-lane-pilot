@@ -155,6 +155,27 @@ for (const [pkg, list] of byPkg) {
   if (existsSync(join(ROOT, "node_modules/@lane-pilot")) && !existsSync(link)) execFileSync("ln", ["-s", `../../packages/${pkg}`, link]);
 }
 
+// 3b. string literals that spell a moved source path (tests that read a source file, the third-party notice, scripts)
+{
+  const pairs = (map.moves ?? []).filter((m) => /\.(ts|tsx|json)$/.test(m.from) && m.from !== m.to);
+  const targets: string[] = [];
+  for (const root of ["tests", "packages"]) if (existsSync(join(ROOT, root))) targets.push(...walkAll(root).filter((f) => /\.(ts|tsx|mjs)$/.test(f) && !f.includes("/src/")));
+  for (const f of ["THIRD_PARTY_NOTICES.md", "package.json"]) if (existsSync(join(ROOT, f))) targets.push(f);
+  if (existsSync(join(ROOT, "scripts"))) targets.push(...walkAll("scripts").filter((f) => /\.(ts|mjs|sh)$/.test(f) && !f.startsWith("scripts/refactor/")));
+  let changed = 0;
+  for (const f of targets) {
+    let text = readFileSync(join(ROOT, f), "utf8");
+    const before = text;
+    for (const { from, to } of pairs) {
+      if (!text.includes(from)) continue;
+      const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      text = text.replace(new RegExp(`(?<![A-Za-z0-9_@-])${escaped}`, "g"), to);
+    }
+    if (text !== before) { writeFileSync(join(ROOT, f), text); changed++; }
+  }
+  if (changed) console.log(`path strings rewritten in ${changed} files`);
+}
+
 // 4. report non-code references to the old paths
 const oldPaths = [...moves.keys()];
 // Only places that read paths at run time. docs/, *.md and the setting catalog (ui-catalog-hand.json, ui-catalog.ts) name source files as text and were already stale.

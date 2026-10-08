@@ -1,10 +1,10 @@
 import { parseOwnedAgents } from "../agent-profile";
 import { redactKnown } from "@lane-pilot/kit";
-import { createSecrets } from "./secrets";
+import { createSecrets } from "../rooms/secrets/server/secrets";
 import { bindDrainTarget, createDeployDrain } from "./deploy-drain";
 import { currentScheduleSignal } from "./schedules";
 import { createHostJobs, isHostJobKind } from "./host-jobs";
-import { createOwnerAsk } from "./owner-ask";
+import { createOwnerAsk } from "../rooms/relay/server/owner-ask";
 import { createRealtime, mountHelperSignals } from "./realtime";
 import { aggregateRun } from "../aggregation";
 import { TARGET_SHA } from "../constants";

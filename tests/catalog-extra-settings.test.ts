@@ -7,7 +7,7 @@ import { UI_CATALOG, VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { DEFAULT_SILENCE_NUDGE_MIN } from "../src/server/writer-silence";
 import { parseIntegrationGateSettings } from "../src/server/integration-gate";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
-import { DEFAULT_USAGE_SKIP_PERCENT } from "../src/server/provider-usage";
+import { DEFAULT_USAGE_SKIP_PERCENT } from "../src/rooms/usage/server/provider-usage";
 
 const row = (key: string) => VISIBLE_CATALOG.find((item) => item.storageKey === key);
 

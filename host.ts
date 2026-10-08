@@ -64,7 +64,7 @@ import {
 import { sessionInventory } from "./src/session-inventory";
 import { nativeInstallHost } from "./src/native-install-host";
 import { provideJevKey } from "./src/verification/docs-jev";
-import { anamnesisHandler } from "./src/anamnesis/host";
+import { anamnesisHandler } from "./src/rooms/anamnesis/host";
 
 /** Takes the Env Catalog key the server attached to a Jev call before the handler runs. */
 const withJevKey = <I extends { jevApiKey?: string }, C, O>(handler: (input: I, context: C) => O | Promise<O>) => async (input: I, context: C) => {

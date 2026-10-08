@@ -8,12 +8,12 @@ import type { ServerCore } from "./core";
 import { RUN_BUDGET_SETTINGS, runHealth } from "./health";
 import { configuredSetting } from "./context";
 import { getCouncilSession } from "@lane-pilot/council";
-import { SCHEDULE_USAGE, runScheduleCli } from "./schedule-cli";
+import { SCHEDULE_USAGE, runScheduleCli } from "../rooms/schedule/server/schedule-cli";
 import type { Services } from "./services";
-import { ANAMNESIS_USAGE } from "../anamnesis/cli";
-import { anamnesisFor } from "../anamnesis/wiring";
-import { LEARNING_USAGE, runLearningCli } from "../learning/cli";
-import { learningFor } from "../learning/service";
+import { ANAMNESIS_USAGE } from "../rooms/anamnesis/cli";
+import { anamnesisFor } from "../rooms/anamnesis/wiring";
+import { LEARNING_USAGE, runLearningCli } from "../rooms/learning/cli";
+import { learningFor } from "../rooms/learning/service";
 
 export function registerCli(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;

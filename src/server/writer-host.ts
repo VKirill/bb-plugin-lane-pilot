@@ -3,7 +3,7 @@ import { loadPrototypeConfig } from "../database";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { resolveWriterBinding } from "../project-binding";
 import type { ProjectSourceBinding } from "../project-binding";
-import { mapListedQaHosts } from "../qa-host";
+import { mapListedQaHosts } from "../rooms/qa/qa-host";
 import { stringAt } from "./values";
 import type { ServerCore } from "./core";
 

@@ -8,7 +8,7 @@ import {
   selectDocsPages, validateDocsEdits,
   type DocsPage,
   docsSelection, docsRepairPrompt,
-} from "../../src/stages/docs";
+} from "../../src/rooms/docs/docs";
 
 const now = new Date(2026, 8, 23, 5, 0, 0);
 const page = (path:string, modifiedAt:number, content="# Docs"):DocsPage => ({

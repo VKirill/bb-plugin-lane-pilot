@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ERRAND_BUILTIN, errandDefaultProblem, parseErrandDefault, resolveErrandModel } from "../../src/schedule/errand-model";
-import { errandTaskSchema, normalizeSchedule } from "../../src/schedule/model";
+import { ERRAND_BUILTIN, errandDefaultProblem, parseErrandDefault, resolveErrandModel } from "../../src/rooms/schedule/errand-model";
+import { errandTaskSchema, normalizeSchedule } from "../../src/rooms/schedule/model";
 import { validateSettingValue, validateSettingsObject } from "../../src/setting-validation";
 
 const KEY = "schedule.errand_default";

@@ -2,7 +2,7 @@ import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, transitionAtte
 import { closeWriterStages, recordGateEvaluation } from "./stage-records";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
-import { sendServiceMessage } from "./service-message";
+import { sendServiceMessage } from "../rooms/relay/server/service-message";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**

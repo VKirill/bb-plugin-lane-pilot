@@ -6,7 +6,7 @@ import { parseReadFirstHints } from "../stages/read-first";
 import { SUBJECTIVE_WORDS } from "../stages/role-method";
 import { isOutputPath, unownedExpectedOutputs } from "../validate-output";
 import { SANDBOX_OWN_ENV } from "../verification/sandbox";
-import type { CatalogEntry, SecretCheck } from "./secrets";
+import type { CatalogEntry, SecretCheck } from "../rooms/secrets/server/secrets";
 import { safeRelative, validateOwnershipContract } from "../verification/ownership";
 
 /** One problem in a task contract, with the concrete fix; `data` rides along in the answer to the PM. */

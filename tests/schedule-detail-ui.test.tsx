@@ -4,8 +4,8 @@ import React from "react";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { installTestPluginRuntime, loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
-import { definitionWithTask, modelFieldsOf, placeText, withModelFields } from "../src/ui/schedule-model";
-import type { CostView, ErrandDefaultView, ModelView, RunView, ScheduleView, WhereView } from "../src/schedule/views";
+import { definitionWithTask, modelFieldsOf, placeText, withModelFields } from "../src/rooms/schedule/ui/schedule-model";
+import type { CostView, ErrandDefaultView, ModelView, RunView, ScheduleView, WhereView } from "../src/rooms/schedule/views";
 
 /**
  * The detail view of a scheduled task, the «Default executor» block, the model/cost/machine of each run and the where-line of a card.
@@ -72,7 +72,7 @@ async function mount(handlers: Handlers = {}, props: { projectId?: string | null
     }),
   };
   await loadPluginApp(await import("../app"));
-  const { ScheduleBoard } = await import("../src/ui/schedule-board");
+  const { ScheduleBoard } = await import("../src/rooms/schedule/ui/schedule-board");
   const projectId = props.projectId === undefined ? "proj_a" : props.projectId;
   const list = props.schedules ?? [schedule("s1")];
   const locale = props.locale ?? "en";

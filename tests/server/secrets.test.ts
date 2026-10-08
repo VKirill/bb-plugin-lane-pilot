@@ -7,7 +7,7 @@ import type { TaskV2 } from "../../src/contracts";
 import { hostContract } from "../../src/contracts";
 import { listSecretIssuance, openDatabase, saveProjectSetting } from "../../src/database";
 import { forgetSecrets } from "@lane-pilot/kit";
-import { createSecrets, envForRecord, SecretsNotReadyError, secretProblem } from "../../src/server/secrets";
+import { createSecrets, envForRecord, SecretsNotReadyError, secretProblem } from "../../src/rooms/secrets/server/secrets";
 import { createWriterVerify } from "../../src/server/writer/verify";
 import { runSandboxedCommandOnHost } from "../../src/verification/sandbox";
 

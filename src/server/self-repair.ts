@@ -19,7 +19,7 @@ import type { rpcContract } from "../contracts";
 import type { ServerCore } from "./core";
 import { jev } from "@lane-pilot/jev";
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
-import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../learning/frustration";
+import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../rooms/learning/frustration";
 import { MAX_CANDIDATES, repairGroup } from "@lane-pilot/jev/judgments/repair-group";
 import { sha256Hex } from "@lane-pilot/kit";
 

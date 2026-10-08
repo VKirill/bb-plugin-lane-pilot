@@ -7,20 +7,20 @@ import { settingsRpc } from "./rpc/settings";
 import { selectionsRpc } from "./rpc/selections";
 import { stackRpc } from "./rpc/stack";
 import { insightsRpc } from "./rpc/insights";
-import { secretsRpc } from "./rpc/secrets";
+import { secretsRpc } from "../rooms/secrets/server/rpc/secrets";
 import { workspaceProviderRpc } from "./rpc/workspace-provider";
-import { tokenUsageRpc } from "./rpc/token-usage";
+import { tokenUsageRpc } from "../rooms/usage/server/rpc/token-usage";
 import { workflowsRpc } from "./rpc/workflows";
 import { workflowOpsRpc } from "./rpc/workflow-ops";
-import { schedulesRpc } from "./rpc/schedules";
-import { councilRpc } from "./council";
+import { schedulesRpc } from "../rooms/schedule/server/rpc/schedules";
+import { councilRpc } from "../rooms/council/server/council";
 import { selfRepairRpc } from "./self-repair";
 import { canaryRpc } from "./canary";
-import { sessionMemoryRpc } from "./session-memory";
+import { sessionMemoryRpc } from "../rooms/memory/server/session-memory";
 import { createWorkflowArchitect } from "./workflow-architect";
 import { architectStartRpc } from "./architect-start";
 import { timeRpcHandlers } from "./rpc-timing";
-import { anamnesisFor } from "../anamnesis/wiring";
+import { anamnesisFor } from "../rooms/anamnesis/wiring";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {

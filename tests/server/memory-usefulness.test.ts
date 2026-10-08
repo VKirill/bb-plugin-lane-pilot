@@ -4,7 +4,7 @@ import { createAttempt, createRun, createTask, openDatabase, saveReasoningTrace,
 import { memoryContext, memoryUsefulness, recordMemoryMixed, searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryRecord } from "../../packages/memory-core/src";
 import { writerMemory } from "../../src/writer-brief";
-import { mixWriterMemory } from "../../src/server/memory-mix";
+import { mixWriterMemory } from "../../src/rooms/memory/server/memory-mix";
 
 type Db = ReturnType<typeof openDatabase>;
 const newDb = (): Db => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);

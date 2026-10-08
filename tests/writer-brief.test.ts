@@ -165,7 +165,7 @@ describe("writer brief", () => {
     const vitestBrief = previousAttemptBrief({
       status:"validation_failed", reason:"verification failed (npx vitest run tests/server): exit 1",
       verification:[{ command:"npx vitest run tests/server", exitCode:1, stdout:vitest, stderr:"" }],
-    }, { owns_paths:["src/server/errands.ts", "tests/server/"] });
+    }, { owns_paths:["src/rooms/qa/server/errands.ts", "tests/server/"] });
     expect(vitestBrief.split("\n").find((line) => line.includes("outside owns_paths →")))
       .toContain("the failure points at tests/server-reconcile.test.ts, outside owns_paths → do not edit it.");
     // A failure inside owns_paths keeps the plain advice.

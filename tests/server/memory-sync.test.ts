@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, saveProjectSetting } from "../../src/database";
 import { storeMemoryRecords } from "../../packages/memory-core/src/store";
 import { exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile } from "../../packages/memory-core/src/files";
-import { exportFileMemory, importFileMemory } from "../../src/server/memory-sync";
+import { exportFileMemory, importFileMemory } from "../../src/rooms/memory/server/memory-sync";
 import type { ServerCore } from "../../src/server/core";
 
 const dir = "/w/.agents/memory";

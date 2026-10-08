@@ -7,7 +7,7 @@ import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-obse
 import { resolve } from "node:path";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
-import { sendServiceMessage } from "../service-message";
+import { sendServiceMessage } from "../../rooms/relay/server/service-message";
 
 /**
  * Sticky writers: an area's writer thread takes the area's next task, and a task-side failure is redone in the thread

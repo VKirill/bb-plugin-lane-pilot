@@ -4,7 +4,7 @@ vi.mock("@lane-pilot/thread-observe", () => ({ observeStageChild: async () => ({
 import { coreRequiredSessionAdvertisement, requiredSessionPolicySpawnBinding } from "../src/helper-context";
 import type { HelperPolicySnapshot } from "../src/helper-context";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
-import { awaitQaVerdict, parseQaCases, qaThreadPrompt } from "../src/server/stages/qa-thread";
+import { awaitQaVerdict, parseQaCases, qaThreadPrompt } from "../src/rooms/qa/server/qa-thread";
 
 // Test value only: not a real credential.
 const PASSWORD = "test-login-pass-Xk29LmQ";

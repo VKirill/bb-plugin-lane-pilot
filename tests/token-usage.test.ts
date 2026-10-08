@@ -6,7 +6,7 @@ import { costUsd } from "@lane-pilot/models";
 import {
   EVENT_PAGE, TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE,
   normalizeModel, queryTokenUsage, syncTokenUsage, threadUsage, tokenDelta, utcDay,
-} from "../src/server/token-usage";
+} from "../src/rooms/usage/server/token-usage";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });

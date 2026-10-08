@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hostContract } from "../../src/contracts";
-import { anamnesisHandler } from "../../src/anamnesis/host";
-import { createHub, type Hub } from "../../src/anamnesis/hub";
-import { PM_CARD_MAX_CHARS, ownerCardBlock } from "../../src/anamnesis/card";
+import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
+import { createHub, type Hub } from "../../src/rooms/anamnesis/hub";
+import { PM_CARD_MAX_CHARS, ownerCardBlock } from "../../src/rooms/anamnesis/card";
 
 // Audit 2026-10-08 round 4, item 19 (F-12 / A5): `renderCard` was written for the PM's context and never connected to it.
 const previousDir = process.env.LANE_PILOT_ANAMNESIS_DIR;

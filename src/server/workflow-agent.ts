@@ -22,7 +22,7 @@ import { SPECIALIST_ROLES } from "./specialists";
 import { findThreadsByMetadata, keyedSpawnSupported } from "./thread-keys";
 import { modelCatalogOf, pmHostOf } from "./model-catalog-reader";
 import { offeredOnHost } from "@lane-pilot/models";
-import { threadUsage } from "./token-usage";
+import { threadUsage } from "../rooms/usage/server/token-usage";
 import { stringAt } from "./values";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "./workflow-agent-model";
 import { outputText } from "./writer-task";

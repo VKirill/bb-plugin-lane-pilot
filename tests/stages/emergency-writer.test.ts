@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emergencyFallbackDecision, sameWriterSelection } from "../../src/stages/emergency-writer";
+import { emergencyFallbackDecision, sameWriterSelection } from "../../src/rooms/night/emergency-writer";
 
 describe("bounded emergency writer policy", () => {
   it("suppresses fallback after success and ambiguous or canceled outcomes", () => {

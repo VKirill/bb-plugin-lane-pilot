@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { localDateKey } from "../../src/stages/docs";
+import { localDateKey } from "../../src/rooms/docs/docs";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });

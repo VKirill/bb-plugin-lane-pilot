@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createRelay, relayFor, type RelayItem } from "../../src/server/relay";
+import { createRelay, relayFor, type RelayItem } from "../../src/rooms/relay/server/relay";
 import { openDatabase } from "../../src/database";
 
 type Queued = { threadId: string; text: string; sendAt: number };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, DOCS_PAUSE_AFTER_MS, DOCS_QUIET_AFTER_MS, fallbackDocsVerdict, type DocsWorthinessFacts } from "../../src/stages/docs-worthiness";
-import { createSerialQueue } from "../../src/server/docs-nightly";
+import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, DOCS_PAUSE_AFTER_MS, DOCS_QUIET_AFTER_MS, fallbackDocsVerdict, type DocsWorthinessFacts } from "../../src/rooms/docs/docs-worthiness";
+import { createSerialQueue } from "../../src/rooms/docs/server/docs-nightly";
 
 const facts = (over: Partial<DocsWorthinessFacts>): DocsWorthinessFacts => ({
   status: "ready", trackedFiles: 100, codeFiles: 0, testFiles: 0, contentFiles: 0, languages: [], commits30d: 5, manifests: [], deploy: false, docsPages: 0, ...over,

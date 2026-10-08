@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nightReviewResultSchema, parseNightReviewResult, shouldRunNightReview } from "../../src/stages/night";
+import { nightReviewResultSchema, parseNightReviewResult, shouldRunNightReview } from "../../src/rooms/night/night";
 
 describe("night review stage",()=>{
   it("is opt-in and rejects malformed policy values",()=>{

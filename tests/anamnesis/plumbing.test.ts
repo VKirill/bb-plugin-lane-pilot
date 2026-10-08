@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hostContract, rpcContract } from "../../src/contracts";
-import { runAnamnesisCli } from "../../src/anamnesis/cli";
-import { createHub, type HostInfo } from "../../src/anamnesis/hub";
-import { anamnesisHandler } from "../../src/anamnesis/host";
-import type { AnamnesisRequest } from "../../src/anamnesis/ops";
+import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
+import { createHub, type HostInfo } from "../../src/rooms/anamnesis/hub";
+import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
+import type { AnamnesisRequest } from "../../src/rooms/anamnesis/ops";
 
 const T0 = Date.UTC(2026, 2, 1);
 let hostCalls: Array<{ hostId: string; request: AnamnesisRequest }>;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAX_TEXT_CHARACTERS, collectOwnerMessages, createOwnerMessageHub, messageEvidence, ownerMessagesOf, scanOwnerMessages, sdkThreadsPort,
-  type EventLike, type ThreadLike, type ThreadsPort } from "../../src/anamnesis/owner-messages";
+  type EventLike, type ThreadLike, type ThreadsPort } from "../../src/rooms/anamnesis/owner-messages";
 
 const T = Date.UTC(2026, 5, 1);
 const thread = (id: string, over: Partial<ThreadLike> = {}): ThreadLike => ({ id, projectId: "proj_a", createdAt: T - 1000, visibility: "visible", parentThreadId: null, originPluginId: null, deletedAt: null, ...over });

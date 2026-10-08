@@ -4,10 +4,10 @@ import { readyComposerSnapshot, spawnEnvironmentFromSelection } from "../compose
 import type { ComposerSelectionSnapshot } from "../composer-selection";
 import { TARGET_SHA } from "../constants";
 import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../database";
-import { ownerCardBlock } from "../anamnesis/card";
-import { anamnesisFor } from "../anamnesis/wiring";
-import { pmRulesPromptBlock } from "../learning/pm-rules";
-import { ruleBudget } from "../learning/rule-budget";
+import { ownerCardBlock } from "../rooms/anamnesis/card";
+import { anamnesisFor } from "../rooms/anamnesis/wiring";
+import { pmRulesPromptBlock } from "../rooms/learning/pm-rules";
+import { ruleBudget } from "../rooms/learning/rule-budget";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { buildRunPolicy } from "../stages/run-policy";
 import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../workspace/routing";

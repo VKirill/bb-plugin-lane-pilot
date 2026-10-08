@@ -1,7 +1,7 @@
 import { t } from "@lane-pilot/i18n";
 import { CatalogField } from "./catalog-field";
 import { extraSettingTab } from "./placement";
-import { ScheduleBoard } from "./schedule-board";
+import { ScheduleBoard } from "../rooms/schedule/ui/schedule-board";
 import { Segments } from "./segments";
 import { SEGMENT_LABELS, segmentsFor } from "./tabs-model";
 import { SettingsGroup } from "./setting-controls";

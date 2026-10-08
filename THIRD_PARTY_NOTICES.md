@@ -16,7 +16,7 @@ Adapted from `workflows/plan.md`, `workflows/grill.md`, `workflows/verify.md`, `
 | Three acceptance layers (exists, substantive, wired), anti-patterns, six review dimensions, BLOCK / WARN / PASS thresholds, majority of 2 of 3 for critical and high findings | verify.md, review.md, wf-review.js | `src/stages/role-method.ts` (`CODE_CRITIC_METHOD`), used by `src/stages/code-critique.ts` |
 | Scientific debugging: confirmed root cause, at most 3 hypotheses with evidence, backward tracing, three-strike check | debug.md, ref/scientific-debug.md | `src/stages/role-method.ts` (`SCIENTIFIC_DEBUG_METHOD`), used by `src/server/self-repair.ts` |
 | Failure classification `test_defect` / `code_defect` / `env_issue` | auto-test.md | `src/stages/role-method.ts` (`FAILURE_TRIAGE_METHOD`), used by `src/server/self-repair.ts` |
-| Deterministic three-layer browser acceptance (entry point, write request, DOM result); silence is never a pass | ref/frontend-verify.md | `src/stages/role-method.ts` (`FRONTEND_VERIFY_METHOD`), used by `src/server/stages/qa-thread.ts` |
+| Deterministic three-layer browser acceptance (entry point, write request, DOM result); silence is never a pass | ref/frontend-verify.md | `src/stages/role-method.ts` (`FRONTEND_VERIFY_METHOD`), used by `src/rooms/qa/server/qa-thread.ts` |
 
 The workflow chains of `workflows/*.json` (W3) take their stage texts, thresholds and the composition of the chains from more
 files of the same repository. The texts are rewritten for Lane Pilot's roles (`src/stages/role-method.ts`: `ANALYST_METHOD`,

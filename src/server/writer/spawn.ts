@@ -1,6 +1,6 @@
 import { breakerKey, RunBudgetExceeded } from "@lane-pilot/resilience";
 import { recordMemoryMixed } from "@lane-pilot/memory-core";
-import { mixWriterMemory } from "../memory-mix";
+import { mixWriterMemory } from "../../rooms/memory/server/memory-mix";
 import { parseDirtSnapshots } from "../../cli-outcome";
 import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
@@ -9,7 +9,7 @@ import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { spawnWithSeam } from "../../spawn-seam";
 import { buildExecutionPacket, renderExecutionPacket } from "../../stages/execution-packet";
-import { parseMemorySettings } from "../../stages/memory";
+import { parseMemorySettings } from "../../rooms/memory/memory";
 import { resolveRetryEffort } from "../../stages/retry-effort";
 import { boundedAgentName } from "../../stages/role";
 import { WORKSPACE_DIRT_COMMAND } from "../../workspace-dirt";

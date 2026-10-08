@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { storeMemoryRecords } from "@lane-pilot/memory-core";
-import { memoryFill } from "../../src/learning/housekeeping";
+import { memoryFill } from "../../src/rooms/learning/housekeeping";
 import { NOW, database } from "./helpers";
 
 const BUDGETS = () => ({ noteBudget: 40, coreBudget: 3072 });

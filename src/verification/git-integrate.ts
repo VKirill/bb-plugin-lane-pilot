@@ -7,7 +7,7 @@ import { spawnAsync } from "@lane-pilot/kit";
 import { isBookkeepingPath } from "@lane-pilot/settings-catalog";
 import { matchOwnsPath } from "@lane-pilot/kit";
 import { REPLAY_CHECK_FAILED } from "../failure-class";
-import { isAllowedProjectLifePath } from "../stages/project-life";
+import { isAllowedProjectLifePath } from "../rooms/project-life/project-life";
 
 export type GitIntegration = {
   status:"merged"|"up-to-date"|"conflict"|"failed"|"busy";

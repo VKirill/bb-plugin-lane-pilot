@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
 import { createRun, openDatabase, setRunThread } from "../../src/database";
 import { setJevForTests } from "@lane-pilot/jev";
-import { listSignals } from "../../src/learning/store";
+import { listSignals } from "../../src/rooms/learning/store";
 import { jevWith } from "./helpers";
 
 describe("the learning room in the mounted plugin", () => {

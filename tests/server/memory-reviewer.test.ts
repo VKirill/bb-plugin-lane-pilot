@@ -3,10 +3,10 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, saveProjectSetting } from "../../src/database";
 import { storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryCandidate } from "../../packages/memory-core/src";
-import { mixReviewerMemory, reviewerMemoryFor } from "../../src/server/memory-mix";
+import { mixReviewerMemory, reviewerMemoryFor } from "../../src/rooms/memory/server/memory-mix";
 import { writerMemory } from "../../src/writer-brief";
 import { codeCritiquePrompt } from "../../src/stages/code-critique";
-import { nightReviewPrompt } from "../../src/stages/night";
+import { nightReviewPrompt } from "../../src/rooms/night/night";
 
 type Db = ReturnType<typeof openDatabase>;
 const newDb = (): Db => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);

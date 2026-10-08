@@ -3,7 +3,7 @@ import { compileEffectiveMainAgent, compileMainAgentProfile } from "../../agent-
 import { detectRequiredSessionPolicyCapability } from "../../helper-context";
 import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { userVisibleProjects } from "../../project-scope";
-import { mapListedQaHosts } from "../../qa-host";
+import { mapListedQaHosts } from "../../rooms/qa/qa-host";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../contracts";
 import type { ServerCore } from "../core";

@@ -5,7 +5,7 @@ import { taskFamily } from "../failure-class";
 import { parseSandboxUnsafePatterns } from "../stages/critique-coverage";
 import { isTaskSatisfied } from "./blocked-by";
 import { lintContract, lintProbePaths } from "./contract-lint";
-import { allowedSecretNames } from "./secrets";
+import { allowedSecretNames } from "../rooms/secrets/server/secrets";
 import { gateResolverFor } from "./gate-detect";
 import { parseIntegrationGateSettings } from "./integration-gate";
 import type { LintOpenTask, PathKind } from "./contract-lint";

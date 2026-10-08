@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lane-pilot/thread-observe", () => ({ observeStageChild: async () => ({ kind: "observing" }) }));
 
-import { createScheduleExecutors } from "../../src/server/schedule-executors";
-import { FAILED_FINAL_STATUSES, finalRuleOf, scheduleFailureNotice, workflowFinish } from "../../src/schedule/outcome";
-import type { ExecutorInput } from "../../src/schedule/scheduler";
-import type { RunRow, ScheduleRow } from "../../src/schedule/store";
+import { createScheduleExecutors } from "../../src/rooms/schedule/server/schedule-executors";
+import { FAILED_FINAL_STATUSES, finalRuleOf, scheduleFailureNotice, workflowFinish } from "../../src/rooms/schedule/outcome";
+import type { ExecutorInput } from "../../src/rooms/schedule/scheduler";
+import type { RunRow, ScheduleRow } from "../../src/rooms/schedule/store";
 
 // Audit 2026-10-08 round 4, item 16: a scheduled chain that ended aborted, blocked or send_failed was counted as a success
 // (the counter of failures went back to zero) and nobody was told.

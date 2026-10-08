@@ -3,7 +3,7 @@ import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStatsMany,
 import { acceptanceStats } from "../../acceptance-stats";
 import { rpcContract } from "../../contracts";
 import { loadProjectSettings } from "../../database";
-import { parseDocsSettings } from "../../stages/docs";
+import { parseDocsSettings } from "../../rooms/docs/docs";
 import { configuredSetting } from "../context";
 import { acceptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, revokeRule } from "../insights";
 import type { ServerCore } from "../core";

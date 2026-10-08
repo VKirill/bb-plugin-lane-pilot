@@ -11,7 +11,7 @@ import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../stag
 import { classifyWriterOutput, isOutputPath } from "../../validate-output";
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import { redactKnown, redactSecrets } from "@lane-pilot/kit";
-import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../secrets";
+import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../rooms/secrets/server/secrets";
 import type { VerifyResult } from "../../validate-output";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../../live-folder";

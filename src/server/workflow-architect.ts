@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../contracts";
 import { HARNESS_VERSION, findOpenNativeRun, getRunSettingsScopes, loadProjectSettings } from "../database";
-import { QA_HOST_KEY, mapListedQaHosts } from "../qa-host";
+import { QA_HOST_KEY, mapListedQaHosts } from "../rooms/qa/qa-host";
 import { collectCapabilities, CAPABILITY_SECTIONS } from "../workflow/capabilities";
 import { draftOpSchema, checkDraft } from "../workflow/draft";
 import type { DraftCheck } from "../workflow/draft";

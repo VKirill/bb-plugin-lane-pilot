@@ -6,7 +6,7 @@ import { stringAt } from "./values";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 import { saveFollowUp } from "./writer/sticky";
-import { sendServiceMessage } from "./service-message";
+import { sendServiceMessage } from "../rooms/relay/server/service-message";
 import { isEnvironmentCheckFailure } from "../failure-class";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { join } from "node:path";

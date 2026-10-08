@@ -218,7 +218,7 @@ describe("self-repair", () => {
     const env = setup({}, { thr_repair1: "Нужен выбор: чинить в Lane Stack или в ядре?\nSELF-REPAIR-VERDICT: needs-owner" });
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
     const form = createFakePluginHost({ pluginId: "lane-pilot" });
-    const { createOwnerAsk } = await import("../../src/server/owner-ask");
+    const { createOwnerAsk } = await import("../../src/rooms/relay/server/owner-ask");
     const real = createOwnerAsk(form.bb, () => undefined);
     const sent: Array<[string, string]> = [];
     Object.assign(env.ctx, { ownerAsk: { ...real, sendToThread: async (threadId: string, text: string) => { sent.push([threadId, text]); } } });

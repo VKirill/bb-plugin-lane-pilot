@@ -2,7 +2,7 @@ import { runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resili
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../database";
 import { saveBlockedBy, type BlockedBy } from "../blocked-by";
-import { relayFor } from "../relay";
+import { relayFor } from "../../rooms/relay/server/relay";
 import type { HelperPolicySnapshot } from "../../helper-context";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { actionableFindings, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../stages/code-critique";
@@ -30,7 +30,7 @@ import { loadWriterNudge } from "../writer-silence";
 import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../failure-class";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../merge-intent";
-import { sendServiceMessage } from "../service-message";
+import { sendServiceMessage } from "../../rooms/relay/server/service-message";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this writer";

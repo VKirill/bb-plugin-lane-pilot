@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
-import { FRUSTRATION_KEY, ONE_PER_THREAD_MS, frustrationReason, recordFrustration, type FrustrationRecord } from "../../src/learning/frustration";
-import type { Kv } from "../../src/learning/ops";
+import { FRUSTRATION_KEY, ONE_PER_THREAD_MS, frustrationReason, recordFrustration, type FrustrationRecord } from "../../src/rooms/learning/frustration";
+import type { Kv } from "../../src/rooms/learning/ops";
 import { NOW } from "./helpers";
 
 const record = (over: Partial<FrustrationRecord> = {}): FrustrationRecord => ({

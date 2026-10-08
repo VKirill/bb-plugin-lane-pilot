@@ -2,9 +2,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { anamnesisHandler } from "../../src/anamnesis/host";
-import { createHub } from "../../src/anamnesis/hub";
-import { checkArtifact, publicFacts, registerAnamnesisActions } from "../../src/anamnesis/chain-actions";
+import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
+import { createHub } from "../../src/rooms/anamnesis/hub";
+import { checkArtifact, publicFacts, registerAnamnesisActions } from "../../src/rooms/anamnesis/chain-actions";
 
 /** A8: the chains read the public, confirmed records only, and what they write is checked against them. Real store, no Jev. */
 const previous = process.env.LANE_PILOT_ANAMNESIS_DIR;

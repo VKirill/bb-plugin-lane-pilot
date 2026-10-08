@@ -13,7 +13,7 @@ import type { WorkflowAgents } from "./workflow-agent";
 import { lpTaskPipelineExecutor } from "./writer/dispatch-workflow";
 import type { DispatchRuntime } from "./writer/dispatch-workflow";
 import { keyedSpawnSupported } from "./thread-keys";
-import { threadUsage } from "./token-usage";
+import { threadUsage } from "../rooms/usage/server/token-usage";
 import { stringAt } from "./values";
 import { SCHEDULE_RUN_KEY_PREFIX, type ChainRuntime } from "./workflow-runtime";
 import type { ServerCore } from "./core";

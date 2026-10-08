@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/database";
 import { forgetSecrets } from "@lane-pilot/kit";
-import { errandAccountLines, errandPrompt } from "../../src/server/errands";
+import { errandAccountLines, errandPrompt } from "../../src/rooms/qa/server/errands";
 
 // Test values only: none of them is a real credential.
 const PRIVATE_KEY = "-----BEGIN TEST KEY-----\nQUJDREVGR0hJSktMTU5PUA\nUVJTVFVWV1hZWjAxMjM0NTY3\n-----END TEST KEY-----";
