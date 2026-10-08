@@ -462,11 +462,19 @@
           "has_design_md": false
         },
         "pack": {
-          "token_count": 24
+          "token_count": 24,
+          "pack_path": "docs/DESIGN.md"
         },
         "lp.plan": {
           "status": "ok",
-          "has_ui": true
+          "has_ui": true,
+          "tasks": [
+            {
+              "id": "u1",
+              "objective": "u1",
+              "depends_on": []
+            }
+          ]
         },
         "lp.build": {
           "status": "done",
@@ -474,20 +482,23 @@
             "u1"
           ]
         },
-        "browser-qa#1": {
-          "status": "rework",
-          "findings": [
-            {
-              "severity": "high",
-              "file": "src/pricing.tsx",
-              "line": 55,
-              "evidence": "CTA not reachable at 375"
-            }
-          ]
-        },
-        "browser-qa#2": {
-          "status": "pass"
-        },
+        "qa": [
+          {
+            "status": "rework",
+            "findings": [
+              {
+                "file": "src/pricing.tsx",
+                "line": 55,
+                "severity": "high",
+                "evidence": "CTA not reachable at 375",
+                "dimension": "correctness"
+              }
+            ]
+          },
+          {
+            "status": "pass"
+          }
+        ],
         "finish_review": {
           "disposition": "ship",
           "score": 33,

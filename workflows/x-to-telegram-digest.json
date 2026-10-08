@@ -520,8 +520,104 @@
         "language": "ru"
       },
       "stubs": {
-        "collect": "fixtures/x-design-systems-34.json (34 постов, 3 дубля)",
-        "send": "tg rich-send без --execute, message_id=stub-1"
+        "collect": {
+          "items": [
+            {
+              "url": "https://x.example/p/0",
+              "text": "post number 0 about design systems"
+            },
+            {
+              "url": "https://x.example/p/1",
+              "text": "post number 1 about design systems"
+            },
+            {
+              "url": "https://x.example/p/2",
+              "text": "post number 2 about design systems"
+            },
+            {
+              "url": "https://x.example/p/3",
+              "text": "post number 3 about design systems"
+            },
+            {
+              "url": "https://x.example/p/4",
+              "text": "post number 4 about design systems"
+            },
+            {
+              "url": "https://x.example/p/5",
+              "text": "post number 5 about design systems"
+            },
+            {
+              "url": "https://x.example/p/6",
+              "text": "post number 6 about design systems"
+            },
+            {
+              "url": "https://x.example/p/7",
+              "text": "post number 7 about design systems"
+            },
+            {
+              "url": "https://x.example/p/8",
+              "text": "post number 8 about design systems"
+            },
+            {
+              "url": "https://x.example/p/9",
+              "text": "post number 9 about design systems"
+            },
+            {
+              "url": "https://x.example/p/10",
+              "text": "post number 10 about design systems"
+            },
+            {
+              "url": "https://x.example/p/11",
+              "text": "post number 11 about design systems"
+            }
+          ],
+          "count": 12,
+          "status": "done"
+        },
+        "score:child": {
+          "scores": [
+            {
+              "item": {
+                "url": "https://x.example/p/0",
+                "text": "post number 0 about design systems"
+              },
+              "keep": true,
+              "topic": "tokens"
+            },
+            {
+              "item": {
+                "url": "https://x.example/p/1",
+                "text": "post number 1 about design systems"
+              },
+              "keep": true,
+              "topic": "tokens"
+            },
+            {
+              "item": {
+                "url": "https://x.example/p/2",
+                "text": "post number 2 about design systems"
+              },
+              "keep": true,
+              "topic": "tokens"
+            }
+          ]
+        },
+        "summarize": {
+          "summary_md": "# Digest",
+          "top": [],
+          "themes": [
+            "a",
+            "b"
+          ],
+          "quote_count": 3
+        },
+        "send": {
+          "message_id": "stub-1",
+          "status": "ok"
+        },
+        "archive": {
+          "archive_path": ".lane-pilot/digests/x"
+        }
       },
       "expect_path": [
         "collect",
@@ -545,7 +641,72 @@
       ],
       "variant_thin": {
         "stubs": {
-          "collect": "fixtures/x-thin-4.json"
+          "collect": {
+            "items": [
+              {
+                "url": "https://x.example/p/0",
+                "text": "post number 0 about design systems"
+              },
+              {
+                "url": "https://x.example/p/1",
+                "text": "post number 1 about design systems"
+              },
+              {
+                "url": "https://x.example/p/2",
+                "text": "post number 2 about design systems"
+              },
+              {
+                "url": "https://x.example/p/3",
+                "text": "post number 3 about design systems"
+              }
+            ],
+            "count": 4,
+            "status": "done"
+          },
+          "score:child": {
+            "scores": [
+              {
+                "item": {
+                  "url": "https://x.example/p/0",
+                  "text": "post number 0 about design systems"
+                },
+                "keep": true,
+                "topic": "tokens"
+              },
+              {
+                "item": {
+                  "url": "https://x.example/p/1",
+                  "text": "post number 1 about design systems"
+                },
+                "keep": true,
+                "topic": "tokens"
+              },
+              {
+                "item": {
+                  "url": "https://x.example/p/2",
+                  "text": "post number 2 about design systems"
+                },
+                "keep": true,
+                "topic": "tokens"
+              }
+            ]
+          },
+          "summarize": {
+            "summary_md": "# Digest",
+            "top": [],
+            "themes": [
+              "a",
+              "b"
+            ],
+            "quote_count": 3
+          },
+          "send": {
+            "message_id": "stub-1",
+            "status": "ok"
+          },
+          "archive": {
+            "archive_path": ".lane-pilot/digests/x"
+          }
         },
         "human_answers": {
           "ask_thin": "send_thin"

@@ -5,6 +5,8 @@ import { slugOf } from "../../src/workflow/values";
 import { AgentOutputError, agentPrompt, dataBlock, extractJsonObject, outputContract, parseAgentOutput } from "../../src/workflow/agent-output";
 import type { Field } from "../../src/workflow/schema";
 import { roleMethod } from "../../src/stages/role-method";
+import { loadWorkflow } from "../../src/workflow/validate";
+import { workflow } from "./fixtures";
 
 const fields: Field[] = [
   { name: "count", type: "number", required: true },
@@ -111,5 +113,29 @@ describe("the {{slug}} of a run", () => {
     expect(slugOf({ query: "дизайн-системы" })).toBe("dizayn-sistemy");
     expect(slugOf({})).toBe("run");
     expect(slugOf({ goal: "https://example.com/a/b" })).toBe("example-com-a-b");
+  });
+});
+
+describe("the fields `authorized` and `environment` of an agent node (audit 2026-10-08, item 11)", () => {
+  const base = { workflow: "w", node: "n", title: "Look", role: "errand", mode: "standard", task: "Do the thing", inputs: {}, contract: "CONTRACT", readOnly: true } as const;
+
+  it("`authorized` is told to the helper: true allows the reversible changes the outcome needs, false is read and report only, absent says nothing", () => {
+    expect(agentPrompt({ ...base, authorized: true })).toContain("every reversible step needed for the approved outcome");
+    expect(agentPrompt({ ...base, authorized: true })).toContain("stop and report instead of doing a destructive, paid, outgoing, permission or irreversible step");
+    expect(agentPrompt({ ...base, authorized: false })).toContain("reads and reports only");
+    const silent = agentPrompt(base);
+    expect(silent).not.toContain("Authorization follows");
+    expect(silent).not.toContain("reads and reports only");
+  });
+
+  it("`environment` is accepted so older files load, and the validator says it changes nothing", () => {
+    const node = (environment?: string) => ({ id: "a", type: "agent", role: "analyst", prompt: "x", ...(environment ? { environment } : {}), output: [{ name: "o", type: "string" }] });
+    const warnings = (environment?: string) => {
+      const found = loadWorkflow(workflow({ nodes: [node(environment)], edges: [{ from: "start", to: "a" }, { from: "a", to: "end" }] }));
+      return (found.ok ? found.warnings : found.problems).filter((problem) => problem.code === "environment_not_executed");
+    };
+    expect(warnings("worktree")).toEqual([expect.objectContaining({ level: "warning", node: "a" })]);
+    expect(warnings("none")).toEqual([]);
+    expect(warnings()).toEqual([]);
   });
 });

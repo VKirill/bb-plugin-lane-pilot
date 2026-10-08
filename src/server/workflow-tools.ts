@@ -20,6 +20,7 @@ import { jev } from "../jev/runtime";
 import { createJevRouterModel } from "../jev/route-model";
 import { createRouterModel } from "./workflow-router-model";
 import { realDeps } from "./workflow-architect";
+import { createWorkflowLibrary } from "./workflow-library";
 import { createWorkflowPreflight } from "./workflow-preflight";
 import type { ChainRuntime } from "./workflow-runtime";
 
@@ -29,7 +30,8 @@ import type { ChainRuntime } from "./workflow-runtime";
  */
 export type WorkflowToolDeps = {
   db: LanePilotDatabase;
-  store(): Promise<WorkflowStore>;
+  /** The library the PM sees: the built-in and global workflows, and with `projectId` the project's own files (`.lane-pilot/workflows`) too. */
+  store(projectId?: string): Promise<WorkflowStore>;
   engine(): Pick<WorkflowEngine, "start" | "get" | "snapshot"> & Partial<Pick<WorkflowEngine, "lastAudit" | "goalJournal" | "amendGoals">>;
   runtime(input: { pmThreadId: string; projectId: string; runId: string }): ChainRuntime;
   /** What the router may know about the environment; undefined facts count as available. */
@@ -71,7 +73,7 @@ const ROUTE_NEXT_ROUTE = "Show the owner the workflow, the boundary contract (gu
 
 export async function routeTool(deps: WorkflowToolDeps, params: { intent: string; context?: string | undefined }, context: ToolContext): Promise<string> {
   if (!context.threadId || !context.projectId) throw new Error("route_needs_pm_thread: call this from a Lane Pilot PM chat");
-  const store = await deps.store();
+  const store = await deps.store(context.projectId);
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   const state = deps.state?.({ projectId: context.projectId, runId });
   const model = deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId });
@@ -96,7 +98,7 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   if (!context.threadId || !context.projectId) throw new Error("workflow_needs_pm_thread: call this from a Lane Pilot PM chat");
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   if (!runId) throw new Error("workflow_needs_pm_chat: call this from a Lane Pilot PM chat");
-  const store = await deps.store();
+  const store = await deps.store(context.projectId);
   const stored = store.get(params.workflowId);
   const runnable = store.list().filter((item) => isOffered(item.workflow)).map((item) => item.workflow.id);
   const published = store.list().filter((item) => isOffered(item.workflow) && item.workflow.status === "published").map((item) => item.workflow.id);
@@ -200,9 +202,14 @@ export async function amendGoalsTool(deps: WorkflowToolDeps, params: { runId: st
 export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
   const { bb, db } = ctx;
   const preflight = createWorkflowPreflight(ctx, realDeps(ctx, services));
+  const library = createWorkflowLibrary(ctx, services);
   const deps: WorkflowToolDeps = {
     db,
-    store: () => services.workflowCatalog.store(),
+    // A project's own chains are read on its machine; when they cannot be, the PM still has the built-in and global ones.
+    store: async (projectId) => {
+      if (projectId) { try { return (await library.loadStore(projectId)).store; } catch (cause) { bb.log.warn(`Lane Pilot: project workflows not read for the PM tools (${cause instanceof Error ? cause.message : String(cause)})`); } }
+      return services.workflowCatalog.store();
+    },
     engine: () => services.workflowEngine,
     runtime: ({ pmThreadId, projectId, runId }) => ({ ctx, services, pmThreadId, projectId, runId }),
     state: ({ runId }) => ({

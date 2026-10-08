@@ -304,6 +304,8 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     }
     if (node.model_preset && !presetSlug(node.model_preset)) warn("unknown_preset", `${node.id}: model preset "${node.model_preset}" is not known (${PRESET_SLUGS.join(", ")}); the step falls through to Settings and the PM chat's model`, extra);
     if (node.type === "agent") {
+      // The helper runs in the PM chat's environment; the field is accepted so older files load, and says so instead of looking protective.
+      if (node.environment !== "none") warn("environment_not_executed", `${node.id}: environment "${node.environment}" changes nothing: the helper runs in the PM chat's environment (remove it, or use an lp-task for work in a worktree)`, extra);
       if (options.modelOffered && node.provider && node.model && options.modelOffered(node.provider, node.model) === false) {
         warn("unknown_model", `${node.id}: ${node.provider}/${node.model} is not offered by any machine (see the models section of lane_pilot_workflow_capabilities); the step would fail to start`, extra);
       }

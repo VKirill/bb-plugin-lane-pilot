@@ -417,10 +417,11 @@
         "chainsmith": {
           "ok": true
         },
-        "evidence": {
-          "skipped_branches": [
-            "frequency"
-          ]
+        "evidence:child": {
+          "branch": "frequency",
+          "findings_path": "frequency.md",
+          "sources": [],
+          "skipped": false
         },
         "architecture": {
           "page_count": 10,
@@ -432,17 +433,65 @@
               "name": "уход"
             }
           ],
-          "pages": "fixtures/pages-10.json"
+          "pages": [
+            {
+              "slug": "page-0",
+              "intent": "buy"
+            },
+            {
+              "slug": "page-1",
+              "intent": "buy"
+            },
+            {
+              "slug": "page-2",
+              "intent": "buy"
+            },
+            {
+              "slug": "page-3",
+              "intent": "buy"
+            },
+            {
+              "slug": "page-4",
+              "intent": "buy"
+            },
+            {
+              "slug": "page-5",
+              "intent": "buy"
+            },
+            {
+              "slug": "page-6",
+              "intent": "buy"
+            },
+            {
+              "slug": "page-7",
+              "intent": "buy"
+            },
+            {
+              "slug": "page-8",
+              "intent": "buy"
+            },
+            {
+              "slug": "page-9",
+              "intent": "buy"
+            }
+          ]
         },
-        "briefs": {
-          "ok_count": 10
+        "briefs:child": {
+          "slug": "page-0",
+          "brief_path": "briefs/page-0.md"
         },
-        "audit#1": {
-          "status": "rework",
-          "cannibal_count": 1
-        },
-        "audit#2": {
-          "status": "pass"
+        "audit": [
+          {
+            "status": "rework",
+            "cannibal_count": 1
+          },
+          {
+            "status": "pass"
+          }
+        ],
+        "package": {
+          "folder": ".agents/seo/kofemashiny",
+          "handoff_path": ".agents/seo/kofemashiny/handoff.md"
         }
       },
       "expect_path": [

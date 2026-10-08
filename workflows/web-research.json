@@ -334,12 +334,49 @@
         "language": "en"
       },
       "stubs": {
-        "tavily.search": "fixtures/tavily-react19.json (8 источников, 2 недоступных)",
+        "frame": {
+          "subquestions": [
+            "q1",
+            "q2"
+          ],
+          "sub_count": 2,
+          "needs_clarification": false
+        },
+        "search:child": {
+          "subquestion": "q1",
+          "sources": [
+            {
+              "url": "https://s1.example",
+              "title": "Source 1"
+            },
+            {
+              "url": "https://s2.example",
+              "title": "Source 2"
+            },
+            {
+              "url": "https://s3.example",
+              "title": "Source 3"
+            }
+          ]
+        },
         "claims": {
           "claim_count": 4,
           "unverified": [
             "benchmark numbers"
+          ],
+          "claims": [],
+          "counter": []
+        },
+        "report": {
+          "report_md": "A [1]. B [2]. C [3].",
+          "cited_ids": [
+            "1",
+            "2",
+            "3"
           ]
+        },
+        "deliver": {
+          "report_path": "reports/research-1.md"
         }
       },
       "expect_path": [

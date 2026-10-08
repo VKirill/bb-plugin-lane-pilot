@@ -382,42 +382,76 @@
         "quality_mode": "standard"
       },
       "stubs": {
-        "lp.review#1": {
-          "status": "rework",
-          "findings": [
-            {
-              "severity": "high",
-              "file": "src/orders/total.ts",
-              "line": 31
-            }
-          ]
-        },
+        "review": [
+          {
+            "status": "rework",
+            "findings": [
+              {
+                "file": "src/orders/total.ts",
+                "line": 31,
+                "severity": "high",
+                "evidence": "return value of save() ignored",
+                "dimension": "correctness"
+              }
+            ]
+          },
+          {
+            "status": "pass"
+          }
+        ],
         "coverage": {
           "gap_count": 2,
           "framework_found": true
         },
-        "test-gen": {
+        "test_gen": {
           "status": "done",
           "tests_added": 2
         },
-        "classify": {
-          "code_defect_count": 1,
-          "failures": [
+        "classify": [
+          {
+            "code_defect_count": 1,
+            "failures": [
+              {
+                "class": "code_defect"
+              }
+            ],
+            "code_defects": [
+              {
+                "file": "src/a.ts",
+                "line": 12,
+                "severity": "high",
+                "evidence": "return value of save() ignored",
+                "dimension": "correctness"
+              }
+            ]
+          },
+          {
+            "code_defect_count": 0
+          }
+        ],
+        "debug": {
+          "status": "confirmed",
+          "fix_directions": [
+            "use integer cents"
+          ]
+        },
+        "replan": {
+          "status": "ok",
+          "tasks": [
             {
-              "class": "code_defect"
+              "id": "q1",
+              "objective": "q1",
+              "depends_on": []
             }
           ]
         },
-        "debug": {
-          "status": "confirmed"
-        },
-        "lp.plan": {
-          "status": "ok"
-        },
         "lp.build": {
-          "status": "done"
+          "status": "done",
+          "merged_commits": [
+            "q1"
+          ]
         },
-        "lp.review#2": {
+        "qa": {
           "status": "pass"
         }
       },
