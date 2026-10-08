@@ -14,6 +14,7 @@ import { workflowsRpc } from "./rpc/workflows";
 import { workflowOpsRpc } from "./rpc/workflow-ops";
 import { councilRpc } from "./council";
 import { selfRepairRpc } from "./self-repair";
+import { deployIncidentRpc } from "./deploy-incident";
 import { canaryRpc } from "./canary";
 import { sessionMemoryRpc } from "./session-memory";
 import { createWorkflowArchitect } from "./workflow-architect";
@@ -35,6 +36,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...workflowOpsRpc(ctx, services),
     ...councilRpc(ctx.db, services.council),
     ...selfRepairRpc(ctx),
+    ...deployIncidentRpc(ctx),
     ...canaryRpc(services.canary),
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,

@@ -1424,6 +1424,19 @@ export const rpcContract = defineRpcContract({
     input: z.object({}).strict(),
     output: z.unknown(),
   },
+  /** An incident deploy asks the owner (src/server/deploy-incident.ts): without requestId it opens the form, with it it reports the answer. */
+  deploy_incident_request: {
+    input: z.object({
+      requestId: z.string().min(1).max(60).optional(),
+      reason: z.string().trim().min(1).max(300).optional(),
+      version: z.string().max(40).optional(),
+      sha: z.string().max(64).optional(),
+      requestedBy: z.string().max(120).optional(),
+      threadId: z.string().min(1).optional(),
+      consume: z.boolean().optional(),
+    }).strict(),
+    output: z.unknown(),
+  },
   self_repair_status: {
     input: z.object({}).strict(),
     output: z.unknown(),
