@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.204
+
+- **The PM sends work that is not code to a workflow first.** Asked to «find discussed posts on vibe coding», the PM read «tavily (web research)» right before the routing rule, searched the web itself and never called `lane_pilot_route`, so `insights-post` was not offered (thr_n6ukbhcv9t); a follow-up then ran the old BB Tasks pipeline, whose worker threads appeared visible in another project. The routing rule now opens «When to act»: posts, insights, research, reels, a cocoon, a digest or a deploy go to `lane_pilot_route` before any search, skill, errand or specialist, and `bb tasks` pipelines are not run from skills; tavily is for one quick lookup or research when no workflow fits. A test pins the rule's place.
+
 ## 0.1.203
 
 - **Anamnesis is a portrait of the owner as a person, from his chats, kept as Markdown files.** The first load had filled «Кто я» with project memories (hub, ssh keys, Lane Pilot internals), journal entries and registry rows. Now: the owner's chat messages are the main source (Jev finds identity, knowledge, skills, family and close people, hobbies, interests, life events, preferences); Claude memories only of type user/feedback, BB memories only preferences; journal, registry and run sources off by default; an infrastructure filter keeps IPs, ssh, key paths and hosts out. Family and health messages go to Jev masked (owner decision) and stay sensitive. Files in `~/Notes/Обо мне/` on the Mac mini are the source of truth: the owner's edits, additions and deletions are read back as confirm/edit/reject and never overwritten. `purge-technical` removes the technical drafts. The tab shows the portrait in Russian sections with links to the files.
