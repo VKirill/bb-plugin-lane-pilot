@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { scheduleRpcContract } from "../schedule";
-import { inventoryGroupSchema } from "./schemas";
+import { inventoryGroupSchema } from "@lane-pilot/contracts";
 
 /** Preferences, projects and sections, global settings and agent profiles. */
 export const rpcShell = {

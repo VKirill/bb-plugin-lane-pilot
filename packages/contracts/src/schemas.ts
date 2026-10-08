@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { stageReceiptSchema } from "../tasks";
+import { stageReceiptSchema } from "./stage-contract";
 
 /** A stage row as the screen lists it: no result body (`get_stage_result` loads it), only whether there is one. */
 export const stageSummarySchema = stageReceiptSchema.omit({ result: true }).extend({ hasResult: z.boolean() }).strict();

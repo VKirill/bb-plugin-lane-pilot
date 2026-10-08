@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { acceptanceTotalsSchema, acceptanceWeekSchema } from "./schemas";
+import { acceptanceTotalsSchema, acceptanceWeekSchema } from "@lane-pilot/contracts";
 
 /** Run control, statistics, deploy, self-repair, canary and the stack installer. */
 export const rpcOps = {

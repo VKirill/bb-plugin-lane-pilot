@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { settingValidationSchema } from "./schemas";
+import { settingValidationSchema } from "@lane-pilot/contracts";
 
 /** Saving settings and the model selections of every role. */
 export const rpcSettings = {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { anamnesisRpcMethods } from "../anamnesis";
-import { ruleProposalSchema, ruleScanSchema, rulesAnalyzerSchema } from "./schemas";
+import { ruleProposalSchema, ruleScanSchema, rulesAnalyzerSchema } from "@lane-pilot/contracts";
 
 /** Councils, rules, memory, docs, token usage, secrets and the workspace provider. */
 export const rpcKnowledge = {

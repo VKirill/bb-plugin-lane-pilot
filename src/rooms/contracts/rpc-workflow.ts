@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { modelCatalogSchema, stepExecutorSchema, workflowDetailSchema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowRunRowSchema, workflowRunSnapshotSchema, workflowSummarySchema, workflowTrialCaseSchema } from "./schemas";
+import { modelCatalogSchema, stepExecutorSchema, workflowDetailSchema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowRunRowSchema, workflowRunSnapshotSchema, workflowSummarySchema, workflowTrialCaseSchema } from "@lane-pilot/contracts";
 
 /** Workflows: library, runs, drafts, the editor and the architect. */
 export const rpcWorkflow = {

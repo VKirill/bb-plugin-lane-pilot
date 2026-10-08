@@ -70,9 +70,9 @@ describe("contract lint rules", () => {
 
   describe("expected_outputs", () => {
     it("rejects a file outside owns_paths with the fix", () => {
-      const { errors } = lint({ owns_paths:["src/a.ts"], expected_outputs:["src/a.ts", "src/rooms/tasks/contract.ts"] }, {}, { "src/a.ts":"file" });
+      const { errors } = lint({ owns_paths:["src/a.ts"], expected_outputs:["src/a.ts", "packages/contracts/src/stage-contract.ts"] }, {}, { "src/a.ts":"file" });
       expect(codes({ errors, warnings:[] })).toEqual(["output_unowned"]);
-      expect(errors[0]!.message).toContain("src/rooms/tasks/contract.ts");
+      expect(errors[0]!.message).toContain("packages/contracts/src/stage-contract.ts");
       expect(errors[0]!.message).toContain("add it (or its folder) to owns_paths");
     });
     it("leaves bare names, prose and a folder under owns_paths alone", () => {

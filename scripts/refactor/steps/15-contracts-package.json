@@ -1,0 +1,6 @@
+{
+  "moves": [
+    {"from": "src/rooms/contracts/schemas.ts", "to": "packages/contracts/src/schemas.ts"},
+    {"from": "src/rooms/tasks/contract.ts", "to": "packages/contracts/src/stage-contract.ts"}
+  ]
+}

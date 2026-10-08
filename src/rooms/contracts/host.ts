@@ -1,7 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { anamnesisHostMethods } from "../anamnesis";
-import { HOST_JOB_KINDS, coexistenceInventory, coexistenceManager, coexistenceOperation, coexistenceOperationResult, hostBaseFields, hostBaseInput, hostJobId, hostJobRef, installReceiptSchema, secretNameSchema } from "./schemas";
+import { HOST_JOB_KINDS, coexistenceInventory, coexistenceManager, coexistenceOperation, coexistenceOperationResult, hostBaseFields, hostBaseInput, hostJobId, hostJobRef, installReceiptSchema, secretNameSchema } from "@lane-pilot/contracts";
 
 export const hostContract = defineRpcContract({
   nativeInstall: {

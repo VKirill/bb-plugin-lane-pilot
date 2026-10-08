@@ -9,8 +9,8 @@ import { rpcWorkflow } from "./rpc-workflow";
 
 // The RPC contracts of the plugin. The schemas are in schemas.ts, the host methods in host.ts and the methods of the
 // screens in the rpc-*.ts parts; this file assembles them and is the only public file of the room.
-export { HOST_JOB_KINDS, WORKFLOW_NODE_TONES, installReceiptSchema, modelCatalogSchema, prototypeConfigSchema, secretNameSchema, settingValidationSchema, stepExecutorSchema, taskV2Schema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowStatsSchema, workflowTrialCaseSchema, workflowViewEdgeSchema, workflowViewNodeSchema, workflowViewSchema } from "./schemas";
-export type { HostJobKind, PrototypeConfig, TaskV2 } from "./schemas";
+export { HOST_JOB_KINDS, WORKFLOW_NODE_TONES, installReceiptSchema, modelCatalogSchema, prototypeConfigSchema, secretNameSchema, settingValidationSchema, stepExecutorSchema, taskV2Schema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowStatsSchema, workflowTrialCaseSchema, workflowViewEdgeSchema, workflowViewNodeSchema, workflowViewSchema } from "@lane-pilot/contracts";
+export type { HostJobKind, PrototypeConfig, TaskV2 } from "@lane-pilot/contracts";
 export { hostContract } from "./host";
 
 export const rpcContract = defineRpcContract({

@@ -10,7 +10,7 @@ import { qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
 import { WRITER_SETUP_LINES, buildTask, writerContextBlocks, writerPrompt } from "../../src/rooms/writer/server/writer-task";
 import { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, codeRepairPrompt, parseCodeCritique, parseWriterRepairReply, sameUnresolvedFindings, shouldRequestRepair, parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
 import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
-import { STAGE_IDS } from "../../src/rooms/tasks/contract";
+import { STAGE_IDS } from "@lane-pilot/contracts";
 import { docsMaintenancePrompt, nightlyDocsPrompt } from "../../src/rooms/docs/docs";
 import { gateTriagePrompt, parseGateTriageResult } from "../../src/rooms/verification/gate-triage";
 import { extractModelJson } from "../../src/rooms/critique/model-json";

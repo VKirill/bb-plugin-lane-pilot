@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runViewSchema, stageSummarySchema } from "./schemas";
+import { runViewSchema, stageSummarySchema } from "@lane-pilot/contracts";
 
 /** Run cards, stages, helper access and the screen snapshot. */
 export const rpcRuns = {

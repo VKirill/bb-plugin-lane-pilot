@@ -1,4 +1,4 @@
-import { sha256 } from "./contract";
+import { sha256 } from "@lane-pilot/contracts";
 import { parseReadFirstHints, type ReadFirstHint } from "./read-first";
 
 export type ReadFirstFile = {
