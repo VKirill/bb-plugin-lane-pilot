@@ -79,7 +79,8 @@ describe("owner-only RPC methods", () => {
 
   it("an owner mark with only the client's own words behind it is an unverified owner; a proved one is the owner", () => {
     expect(readVkCaller(forgedCli)?.kind).toBe("unverified-owner");
-    expect(readVkCaller(pageHeaders)?.kind).toBe("unverified-owner");
+    // The page in the owner's browser stays the owner while there is no owner login.
+    expect(readVkCaller(pageHeaders)?.kind).toBe("owner-ui");
     expect(readVkCaller({ experimental_vkCaller: { kind: "owner-cli" } })?.kind).toBe("unverified-owner");
     expect(readVkCaller(unverified)?.kind).toBe("unverified-owner");
     expect(readVkCaller(owner)?.kind).toBe("owner-ui");
@@ -105,7 +106,7 @@ describe("owner-only RPC methods", () => {
   it("an unverified owner meets the form on a schedule, an agent profile and the installs; the verified owner does not", async () => {
     const s = await setup();
     const definition = { name: "x", task: { kind: "script", hostId: "h", command: "echo hi" } };
-    for (const ctx of [forgedCli, pageHeaders, unverified]) {
+    for (const ctx of [forgedCli, unverified]) {
       await expect(s.call("schedule_upsert", { definition }, ctx)).rejects.toThrow(/cannot be told from an agent's.*asked in the PM chat|question is open/s);
     }
     await s.settled();
@@ -114,7 +115,8 @@ describe("owner-only RPC methods", () => {
     expect(s.forms[0]!.payload.detail).toContain("echo hi");
     for (const name of ["schedule_resume", "schedule_run_now"]) await expect(s.call(name, { id: "sch_x" }, forgedCli), name).rejects.toThrow(/owner's confirmation/);
     for (const name of ["stack_install", "self_repair_configure", "save_agent_profile", "native_install_start", "workflow_draft_publish"]) await expect(s.call(name, {}, forgedCli), name).rejects.toThrow(/owner's confirmation/);
-    // The verified owner, and a stop that only holds work back, pass.
+    // The page in the owner's browser, the verified owner, and a stop that only holds work back, pass.
+    expect(await s.call("schedule_run_now", { id: "sch_x" }, pageHeaders)).toMatchObject({ ok: false });
     expect(await s.call("schedule_run_now", { id: "sch_x" }, owner)).toMatchObject({ ok: false });
     expect(await s.call("schedule_delete", { id: "sch_x" }, forgedCli)).toMatchObject({ ok: false });
     expect(await s.call("schedule_pause", { id: "sch_x" }, forgedCli)).toMatchObject({ schedule: null });
@@ -140,7 +142,7 @@ describe("owner-only RPC methods", () => {
   it("an anonymous script is refused on every owner-only method, with no form", async () => {
     const s = await setup();
     for (const name of OWNER_ONLY_RPC) {
-      await expect(s.call(name, {}, anonymous), name).rejects.toThrow(/Refused: .* only from the Lane Pilot page/);
+      await expect(s.call(name, {}, anonymous), name).rejects.toThrow(/Refused: .* came with no identity/);
     }
     await s.settled();
     expect(s.forms).toHaveLength(0);

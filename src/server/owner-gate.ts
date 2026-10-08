@@ -11,11 +11,10 @@ import { anamnesisAccessOfRequest, type AnamnesisAccess } from "../anamnesis/acc
  * BB's HTTP API has no login, so `curl` or `python` reaches `/api/v1/plugins/lane-pilot/rpc/<method>` and the shell guard
  * never sees it. A VK core marks every call of a plugin that declares `vk.rpcCallerPolicy` (`experimental_vkCaller`):
  *
- * - `owner-ui`, `owner-cli` WITH a verified proof (the core's owner login, evidence other than the client's own words): the
- *   owner. Everything passes.
- * - `unverified-owner`: the core cannot tell the owner from an agent that sent the same headers (`x-bb-vk-client: cli`, a
- *   browser's fetch metadata). On a core without the owner login every `owner-ui` / `owner-cli` mark is this; it is never
- *   taken for the owner. Ordinary changes pass (a setting, a run control); what an agent must not do on this say-so — a
+ * - `owner-ui` (the Lane Pilot page in the owner's browser) and `owner-cli` WITH a verified proof (the core's owner login,
+ *   evidence other than the client's own words): the owner. Everything passes.
+ * - `unverified-owner`: the core cannot tell the owner from an agent that sent the same headers (`x-bb-vk-client: cli`). On a
+ *   core without the owner login an `owner-cli` mark is this; it is never taken for the owner. Ordinary changes pass (a setting, a run control); what an agent must not do on this say-so — a
  *   protected setting (its own form), a schedule, the anamnesis, an agent profile, installs and self-repair controls — goes
  *   to the owner as a form in the PM chat.
  * - `agent-thread` (the `bb` CLI of an agent session, with the per-thread token): every change goes to the owner as a form; a
@@ -95,13 +94,13 @@ export type VkCallerKind = "owner-ui" | "owner-cli" | "unverified-owner" | "agen
 export type VkCaller = { kind: VkCallerKind; threadId?: string; pluginId?: string; evidence?: string };
 
 const KINDS: readonly string[] = ["owner-ui", "owner-cli", "unverified-owner", "agent-thread", "plugin", "unknown"];
-/** What a client says about itself (headers, fetch metadata). A mark with only this behind it is not the owner. */
+/** What a client says about itself in a header. An `owner-cli` mark with only this behind it is not the owner. */
 const CLIENT_ASSERTED_EVIDENCE: ReadonlySet<string> = new Set(["cli-header", "browser-headers", "none"]);
 
 /**
- * The mark a VK core put on the call context, or undefined (a core without the function). `owner-ui` / `owner-cli` count as
- * the owner only when the core proved it (an evidence other than the client's own headers); otherwise they are read as
- * `unverified-owner`, so the plugin works on the current core and on one with the owner login.
+ * The mark a VK core put on the call context, or undefined (a core without the function). `owner-cli` counts as the owner
+ * only when the core proved it (an evidence other than the client's own header); otherwise it is read as `unverified-owner`,
+ * so the plugin works on the current core and on one with the owner login.
  */
 export function readVkCaller(rpcCtx: unknown): VkCaller | undefined {
   if (typeof rpcCtx !== "object" || rpcCtx === null) return undefined;
@@ -111,7 +110,9 @@ export function readVkCaller(rpcCtx: unknown): VkCaller | undefined {
   if (typeof kind !== "string") return undefined;
   if (!KINDS.includes(kind)) return { kind: "unknown" };
   const caller = raw as VkCaller;
-  if ((caller.kind === "owner-ui" || caller.kind === "owner-cli") && (typeof caller.evidence !== "string" || CLIENT_ASSERTED_EVIDENCE.has(caller.evidence))) {
+  // Only the CLI mark is the forgeable one (`x-bb-vk-client: cli`, a line any curl writes). A real browser mark (`owner-ui`: same-origin
+  // fetch metadata behind the host proxy, which cuts a forged Origin) keeps the Lane Pilot page working while there is no owner login.
+  if (caller.kind === "owner-cli" && (typeof caller.evidence !== "string" || CLIENT_ASSERTED_EVIDENCE.has(caller.evidence))) {
     return { ...caller, kind: "unverified-owner" };
   }
   return caller;
@@ -141,6 +142,9 @@ const PROTECTED_AWARE: ReadonlySet<string> = new Set(["save_setting", "save_sett
 export type OwnerGateVerdict = { ok: true } | { ok: false; message: string };
 const OK: OwnerGateVerdict = { ok: true };
 const refused = (message: string): OwnerGateVerdict => ({ ok: false, message });
+/** What a caller with no identity is told: the way in that works, and that an agent asks in its chat. */
+const unknownMessage = (label: string): string =>
+  `Refused: ${label} came with no identity (a bare HTTP call). Use the Lane Pilot page in BB or \`bb\` (\`bb plugin rpc call lane-pilot …\`, \`bb lane-pilot …\`); an agent runs it from its own session, and a form to the owner appears in the PM chat by itself when it is needed.`;
 
 const stable = (value: unknown): string => JSON.stringify(value, (_key, v) => (v && typeof v === "object" && !Array.isArray(v)
   ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : v)) ?? "null";
@@ -189,7 +193,7 @@ export function createOwnerGate(deps: OwnerGateDeps) {
         return form(label, input, caller, now, "agent");
       default:
         deps.log(`Lane Pilot: ${label} refused for a ${caller.kind} caller`);
-        return refused(`Refused: ${label} is available only from the Lane Pilot page in BB and the owner's bb CLI.`);
+        return refused(unknownMessage(label));
     }
   }
 
@@ -225,20 +229,22 @@ export function createOwnerGate(deps: OwnerGateDeps) {
     switch (caller.kind) {
       case "owner-ui": case "owner-cli":
         return OK;
+      case "plugin":
+        return access === "read" ? OK : refused(`Refused: ${label} changes or shows the owner's sensitive records; another plugin may only read the rest.`);
       case "unverified-owner":
         return access === "read" ? OK : form(`${label}`, input, caller, now, "unverified");
       case "agent-thread": {
         const denied = await deps.denyThread?.(caller.threadId);
         if (denied) return refused(`Refused: ${denied}`);
         if (access === "read") return OK;
-        if (access === "sensitive-read") return refused("Refused: sensitive records of the owner's anamnesis are not shown to an agent; the owner reads them in the Lane Pilot page or asks in their own terminal.");
-        if (access === "write-owner") return refused(`Refused: ${label} makes records public or confirmed, or lets sensitive text go to Jev; only the owner does that, not an agent.`);
+        if (access === "sensitive-read") return refused("Refused: sensitive records of the owner's anamnesis are not shown to an agent. Do not ask for a form: tell the owner what you need; they read the record themselves in the Lane Pilot page or their own terminal and give you what is fit to share.");
+        if (access === "write-owner") return refused(`Refused: ${label} makes records public or confirmed, or lets sensitive text go to Jev; only the owner does that, not an agent. Tell the owner what to run in their own terminal; no form will come for it.`);
         deps.log(`Lane Pilot: ${label} from an agent-thread caller${caller.threadId ? ` (thread ${caller.threadId})` : ""}`);
         return form(label, input, caller, now, "agent");
       }
       default:
         deps.log(`Lane Pilot: ${label} refused for a ${caller.kind} caller`);
-        return refused(`Refused: ${label} is available only from the Lane Pilot page in BB and the owner's bb CLI.`);
+        return refused(unknownMessage(label));
     }
   }
 

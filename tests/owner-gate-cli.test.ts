@@ -88,6 +88,15 @@ describe("bb lane-pilot schedule: who may change the board", () => {
   });
 });
 
+describe("the automation's own commands", () => {
+  it("`workflow-trigger`, called by the automation with no identity, is not stopped by the caller check", async () => {
+    const s = await setup();
+    const result = await s.cli(["workflow-trigger", projectId, "no-such-workflow"], anonymous);
+    expect(result.stdout).toContain("unknown_workflow");
+    expect(`${result.stdout}${result.stderr}`).not.toMatch(/Refused/);
+  });
+});
+
 describe("the anamnesis: reading, sensitive reading and changing", () => {
   it("sorts a request by what it does", () => {
     const access = anamnesisAccessOfRequest;

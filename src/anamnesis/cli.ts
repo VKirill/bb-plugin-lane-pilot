@@ -7,7 +7,7 @@ import { DEFAULT_LOOKBACK_DAYS, formatReport, type LoadOptions, type LoadReport 
 /**
  * `bb lane-pilot anamnesis …` — how the owner, and a PM that the owner asked, reach the records. There is no agent tool for it
  * (the PM's tool list is full); a PM runs this command in its shell when the owner asks who they are in its eyes.
- * Sensitive records appear only with --include-sensitive, which a PM may pass only when the owner asked for them by name.
+ * Sensitive records appear only with --include-sensitive, which the owner passes (an agent is refused; src/anamnesis/access.ts).
  */
 export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis status [--json]",
