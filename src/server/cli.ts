@@ -14,6 +14,8 @@ import type { Services } from "./services";
 import { ANAMNESIS_USAGE } from "../anamnesis/cli";
 import { anamnesisAccessOfCli } from "../anamnesis/access";
 import { anamnesisFor } from "../anamnesis/wiring";
+import { LEARNING_USAGE, runLearningCli } from "../learning/cli";
+import { learningFor } from "../learning/service";
 
 export function registerCli(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
@@ -84,6 +86,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"events-list", summary:"Read-only SDK events.list probe", usage:"bb lane-pilot events-list <thread-id>" },
       { name:"wait-thread", summary:"Read-only waitThreadIdle probe", usage:"bb lane-pilot wait-thread <thread-id>" },
       { name:"anamnesis", summary:"What Lane Pilot knows about its owner (records on the owner's machine); sensitive ones only on explicit request", usage:"bb lane-pilot anamnesis status|list|show|history|add|edit|confirm|reject|forget|sources|host" },
+      { name:"learning", summary:"What Lane Pilot learned from the owner's own messages: status, review, learned items, yes or no, settings", usage:LEARNING_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
     ],
@@ -95,6 +98,10 @@ export function registerCli(ctx: ServerCore, services: Services) {
           const verdict = await ownerGateFor(ctx).checkAnamnesisCli(anamnesisAccessOfCli(args), args, cliContext);
           if (!verdict.ok) return { exitCode:1, stderr:verdict.message };
           return await anamnesisFor(ctx).cli(args, cliContext);
+        }
+        if (command === "learning") {
+          const learning = learningFor(ctx);
+          return learning ? await runLearningCli(learning, args) : { exitCode:1, stderr:"learning is not mounted" };
         }
         if (command === "workflow-trigger" && args.length >= 2 && args.length <= 4) {
           const parsed: unknown = args[2] ? JSON.parse(args[2]) : {};

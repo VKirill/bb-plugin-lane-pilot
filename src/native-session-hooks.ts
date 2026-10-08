@@ -38,6 +38,7 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_lessons_sweep",
   "lane_pilot_rule_propose",
   "lane_pilot_lesson",
+  "lane_pilot_learned",
   "lane_pilot_memory_golden",
   "lane_pilot_run_health",
   "lane_pilot_memory_import",

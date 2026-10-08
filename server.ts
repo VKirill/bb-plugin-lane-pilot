@@ -40,6 +40,7 @@ import { createWorkflowEngine } from "./src/server/workflow";
 import { createWorkflowTriggersService } from "./src/server/workflow-triggers-live";
 import { createScheduleService } from "./src/server/schedule-service";
 import { relayFor } from "./src/server/relay";
+import { mountLearning } from "./src/learning/service";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
 import { mountLifecycleEvents } from "./src/server/lifecycle-events";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -90,6 +91,8 @@ export default async function plugin(bb: BbPluginApi) {
   } });
   registerRpc(ctx, services);
   mountCanary(ctx, services.canary);
+  // Learning from the owner's messages (src/learning): registers its PM tool before the tool families fold, so it comes first.
+  mountLearning(ctx, services);
   registerTools(ctx, services);
   registerCli(ctx, services);
   // Writer attempts get BB environments of this provider unless workspace.provider is off; a BB without the API
