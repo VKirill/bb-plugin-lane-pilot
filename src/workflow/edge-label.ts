@@ -140,7 +140,7 @@ function atom(raw: string, lang: LabelLang, nameOf: NameOf): string {
       const shown = value.kind === "string" ? statusWord(value.text, lang) : value.text;
       if (target.status) return op === "!=" ? `${ru ? "не" : "not"} ${shown}` : op === "==" ? shown : `${ru ? "статус" : "status"} ${op} ${shown}`;
       if (value.kind === "boolean") return value.text === (op === "!=" ? "false" : "true") ? fieldWord(target.field, lang) : notField(target.field, lang);
-      if (value.kind === "string" && value.text === "" && (op === "==" || op === "!=")) return `${fieldWord(target.field, lang)} ${(op === "==") === true ? (ru ? "пусто" : "is empty") : (ru ? "задано" : "is set")}`;
+      if (value.kind === "string" && value.text === "" && (op === "==" || op === "!=")) return `${fieldWord(target.field, lang)} ${op === "==" ? (ru ? "пусто" : "is empty") : (ru ? "задано" : "is set")}`;
       return `${fieldWord(target.field, lang)} ${op === "==" ? "=" : op === "!=" ? "≠" : op} ${shown}`;
     }
     return text;
@@ -151,18 +151,18 @@ function atom(raw: string, lang: LabelLang, nameOf: NameOf): string {
 }
 
 /** «если …» for a condition, or null when there is none. Several conditions read as «и» (and) / «или» (or). */
-export function humanCondition(when: string | null | undefined, lang: LabelLang, nameOf: NameOf = () => null): string | null {
+export function humanCondition(when: string | null | undefined, lang: LabelLang, nameOf: NameOf = () => null, options: { bare?: boolean } = {}): string | null {
   const expression = when?.replace(/\s+/g, " ").trim();
   if (!expression) return null;
   const ru = lang === "ru";
   const alternatives = splitTop(expression, "||").map((group) => splitTop(unwrap(group), "&&").map((part) => atom(part, lang, nameOf)).join(ru ? " и " : " and "));
   const body = alternatives.join(ru ? " или " : " or ");
-  return `${ru ? "если" : "if"} ${body}`;
+  return options.bare ? body : `${ru ? "если" : "if"} ${body}`;
 }
 
 /** The label of a connection: the author's own `label`, else the words of its condition, else nothing. */
-export function edgeCaption(edge: { label: string | null; when: string | null }, lang: LabelLang, nameOf?: NameOf): string | null {
-  return edge.label?.trim() || humanCondition(edge.when, lang, nameOf);
+export function edgeCaption(edge: { label: string | null; when: string | null }, lang: LabelLang, nameOf?: NameOf, options: { bare?: boolean } = {}): string | null {
+  return edge.label?.trim() || humanCondition(edge.when, lang, nameOf, options);
 }
 
 export const OTHERWISE = { en: "otherwise", ru: "иначе" } as const;

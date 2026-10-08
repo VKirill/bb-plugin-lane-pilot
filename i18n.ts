@@ -4,6 +4,7 @@ import { workflowEn, workflowRu } from "./src/i18n-workflows";
 import { editorEn, editorRu } from "./src/i18n-workflow-editor";
 import { opsEn, opsRu } from "./src/i18n-workflow-ops";
 import { modelsEn, modelsRu } from "./src/i18n-workflow-models";
+import { canvasEn, canvasRu } from "./src/i18n-workflow-canvas";
 
 const chromeEn = {
   panelTitle: "Lane Pilot",
@@ -1951,8 +1952,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_tavily: "Ищет в сети и собирает отчёты с источниками.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu };
 
 export type I18nKey = keyof typeof en;
 export type Locale = "en" | "ru";
