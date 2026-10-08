@@ -69,7 +69,7 @@ export type HelperRequest = {
   signal?: AbortSignal;
 };
 /** What the step spent: tokens and the price of them, from the thread's own usage events (the budget of the run counts these). */
-export type HelperResult = { threadId: string; output: Record<string, unknown>; text: string; usage?: { tokens: number; costUsd: number } };
+export type HelperResult = { threadId: string; output: Record<string, unknown>; text: string; usage?: { tokens: number; costUsd: number; unknown?: true } };
 
 export class HelperFailure extends Error {
   /** The code leads the message: it is what a run's step error shows. */
@@ -178,9 +178,9 @@ export function createWorkflowAgents() {
       if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
     }
     if (!output) throw new HelperFailure("output_invalid", `the ${request.role} helper's final message could not be read: ${problem}`);
-    // Read last, so the repair turn counts too; a thread whose usage cannot be read reports none, and the budget goes on what it has.
-    const usage = await threadUsage(bb, threadId!, { ...(sentAt !== undefined ? { since: sentAt } : {}), ...(request.model ? { fallbackModel: request.model } : {}) }).catch(() => undefined);
-    return { threadId: threadId!, output, text, ...(usage ? { usage } : {}) };
+    // Read last, so the repair turn counts too. A thread whose usage BB does not report (an ACP provider) or cannot be read is `unknown`, not 0.
+    const usage = await threadUsage(bb, threadId!, { ...(sentAt !== undefined ? { since: sentAt } : {}), ...(request.model ? { fallbackModel: request.model } : {}) }).catch((): { tokens: number; costUsd: number; unknown: true } => ({ tokens: 0, costUsd: 0, unknown: true }));
+    return { threadId: threadId!, output, text, usage };
   }
 
   return { run };

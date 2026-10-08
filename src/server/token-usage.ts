@@ -540,16 +540,22 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
   return { byModel, series, byProject, months: months.map((row) => row.month), lastSyncAt, noDataProviders, diagnostics, costUsd: totalCost };
 }
 
+/** What a thread spent. `unknown` is set when BB shows no usage for it at all: the 0 is then "not reported", not "free". */
+export type ThreadUsage = { tokens: number; costUsd: number; unknown?: true };
+
 /**
  * What one thread spent from `since` (ms; 0 = from its start): total tokens and the price of them. The same events and the same per-turn
  * deltas as the daily sync (`thread/tokenUsage/updated` with the model of the turn that asked), read for this thread alone, so a workflow's
  * budget (`maxTokens`, `maxCostUsd`) counts what the Usage tab counts. A model the price table does not know is priced at the dearest
- * known rate: a budget that cannot see a cost must err on the cautious side. Never throws: a thread that cannot be read spent nothing.
+ * known rate: a budget that cannot see a cost must err on the cautious side. Never throws. A thread that cannot be read, or that has no
+ * `thread/tokenUsage/updated` event at all (BB records none for ACP providers such as acp-opencode: only the context window), reports
+ * `unknown: true` with zeros, so a budget never takes it for a free step.
  */
-export async function threadUsage(bb: BbPluginApi, threadId: string, options: { since?: number; fallbackModel?: string } = {}): Promise<{ tokens: number; costUsd: number }> {
+export async function threadUsage(bb: BbPluginApi, threadId: string, options: { since?: number; fallbackModel?: string } = {}): Promise<ThreadUsage> {
   const since = options.since ?? 0;
   let events: unknown[];
-  try { events = await listThreadEvents(bb, threadId, 0); } catch { return { tokens: 0, costUsd: 0 }; }
+  try { events = await listThreadEvents(bb, threadId, 0); } catch { return { tokens: 0, costUsd: 0, unknown: true }; }
+  if (!events.some((event) => eventType(event) === "thread/tokenUsage/updated" && usageFromEvent(event))) return { tokens: 0, costUsd: 0, unknown: true };
   const dearest = Object.keys(MODEL_PRICES).reduce((top, key) => (MODEL_PRICES[key]!.output > MODEL_PRICES[top]!.output ? key : top));
   let model = options.fallbackModel ?? "";
   let prev = { last: { ...ZERO }, total: { ...ZERO }, turnId: "" };

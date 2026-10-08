@@ -5,7 +5,7 @@ import plugin from "../server";
 import { costUsd } from "../src/model-prices";
 import {
   EVENT_PAGE, TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE,
-  normalizeModel, queryTokenUsage, syncTokenUsage, tokenDelta, utcDay,
+  normalizeModel, queryTokenUsage, syncTokenUsage, threadUsage, tokenDelta, utcDay,
 } from "../src/server/token-usage";
 
 let dispose: (() => Promise<void> | void) | null = null;
@@ -387,5 +387,25 @@ describe("token usage schedule", () => {
     ]);
     expect(await settled(TOKEN_USAGE_SCHEDULE)).toBe("returned");
     expect(await settled(TOKEN_USAGE_SCHEDULE)).toBe("returned");
+  });
+});
+
+describe("threadUsage", () => {
+  it("reads the tokens and the price of a thread that reports usage events", async () => {
+    const { bb } = host({ thr_a: [usage(1, { last, total: last })] });
+    expect(await threadUsage(bb, "thr_a", { fallbackModel: "claude-opus-5-5" })).toMatchObject({ tokens: 14, costUsd: expect.any(Number) });
+    expect(await threadUsage(bb, "thr_a")).not.toHaveProperty("unknown");
+  });
+
+  it("says `unknown`, not 0, when the thread has no usage events at all (an ACP provider) or its events cannot be read", async () => {
+    const acp = host({ thr_acp: [{ seq: 1, createdAt: Date.now(), type: "client/thread/start", data: {} }] }, [{ id: "thr_acp", projectId: "proj_a", providerId: "acp-opencode" }]);
+    expect(await threadUsage(acp.bb, "thr_acp")).toEqual({ tokens: 0, costUsd: 0, unknown: true });
+    const broken = host({}, [{ id: "thr_x", projectId: "proj_a", providerId: "codex" }], { failThread: "thr_x" });
+    expect(await threadUsage(broken.bb, "thr_x")).toEqual({ tokens: 0, costUsd: 0, unknown: true });
+  });
+
+  it("a thread with usage events but none in the window since the step began spent 0 (known)", async () => {
+    const { bb } = host({ thr_a: [{ ...usage(1, { last, total: last }), createdAt: 1000 }] });
+    expect(await threadUsage(bb, "thr_a", { since: 5000 })).toEqual({ tokens: 0, costUsd: 0 });
   });
 });
