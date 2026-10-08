@@ -6,18 +6,24 @@ import { t, type I18nKey, type Locale } from "../../i18n";
 import { Button } from "../../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { LP_ALL_PROJECTS } from "../realtime-channel";
-import type { ViewNode, WorkflowView } from "../workflow/view";
+import type { ViewEdge, ViewNode, WorkflowView } from "../workflow/view";
 import { HELPER_PANEL_ACTION } from "./helper-threads";
 import { useLpRealtime } from "./use-lp-realtime";
 import { useObservedWidth } from "./panel-layout";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { dataTabs, SidePanel, useLatestRun } from "./workflow-node-data";
+import { useDrill } from "./workflow-drill";
 import { nodeTitle } from "./workflow-titles";
-import { pickRun, runView, stepStatus, type NodeRun, type RunSnapshot, type RunStep } from "./workflow-run";
+import { pickRun, runView, type NodeRun, type RunSnapshot } from "./workflow-run";
 import { ModelsPanel, providerMap, type ModelsAccess, useModelCatalog, useStepExecutors, issueText } from "./workflow-models";
 import { choiceRefusal, clearModelOps, choiceOps, type ModelChoice } from "./workflow-model-ops";
 import { getDraft } from "./workflow-drafts";
 import type { Expansions } from "./workflow-layout";
 import { GoalsPanel, RunHistory, WorkflowTrials } from "./workflow-actions";
+
+/** The page is wide enough for the panel of a step to sit beside the graph; below it the panel goes under the graph, and under this one it is a bottom sheet. */
+const SIDE_WIDTH = 900;
+const NARROW_SHEET = 560;
 
 /** Loaded when a graph is first shown: xyflow and elkjs are most of a megabyte. */
 export const WorkflowGraph = lazy(() => import("./workflow-graph"));
@@ -31,8 +37,6 @@ export const RUN_STATUS_KEY: Record<string, I18nKey> = {
   blocked: "wfRunStatus_blocked", interrupted: "wfRunStatus_interrupted", canceled: "wfRunStatus_canceled",
 };
 export const runPill = (status: string) => status === "succeeded" ? "lp-pill-success" : status === "running" || status === "waiting" ? "lp-pill-info" : status === "canceled" ? "lp-pill-muted" : "lp-pill-danger";
-const STEP_PILL: Record<string, string> = { pending: "lp-pill-muted", running: "lp-pill-info", waiting: "lp-pill-neutral", done: "lp-pill-success", failed: "lp-pill-danger", skipped: "lp-pill-muted" };
-const NODE_KEY: Record<string, I18nKey> = { pending: "wfNode_pending", running: "wfNode_running", waiting: "wfNode_waiting", done: "wfNode_done", failed: "wfNode_failed", skipped: "wfNode_skipped" };
 
 const DEFINITION = "__definition__";
 const dotClass = (status: string) => status === "succeeded" ? "bg-[var(--lp-success)]" : status === "running" || status === "waiting" ? "bg-[var(--lp-info)]" : status === "canceled" ? "bg-[var(--muted-foreground)]" : "bg-[var(--destructive)]";
@@ -55,71 +59,34 @@ function FieldList({ fields }: { fields: Field[] }) {
   );
 }
 
-/** What a step did, as the journal records it: state, times, the handoff it wrote and the result it produced. */
-function StepCard({ step, index, onOpenThread }: { step: RunStep; index: number; onOpenThread: (threadId: string) => void }) {
-  const status = stepStatus(step.state);
-  const output = step.output as { truncated?: boolean; preview?: string } | Record<string, unknown> | null;
-  const truncated = Boolean(output && typeof output === "object" && (output as { truncated?: boolean }).truncated);
-  const text = output === null || output === undefined ? "" : truncated ? String((output as { preview?: string }).preview ?? "") : JSON.stringify(output, null, 2);
-  return (
-    <li className="space-y-1.5 rounded-lg border border-[var(--lp-hairline)] p-2.5 text-xs" data-testid={`wf-step-${step.key}`}>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-medium">{t("wfNodeStep").replace("{n}", String(index + 1))}</span>
-        <span className={`${STEP_PILL[status]} rounded-full px-2 py-0.5 text-[11px] font-medium`}>{t(NODE_KEY[status]!)}</span>
-        {step.attempt > 1 ? <span className="text-muted-foreground">{t("wfNodeAttempt").replace("{n}", String(step.attempt))}</span> : null}
-        <span className="ml-auto text-muted-foreground">{when(step.startedAt ?? null)}</span>
-      </div>
-      {step.awaiting ? <p className="text-muted-foreground">{t("wfNodeAwaiting").replace("{what}", step.awaiting)}</p> : null}
-      {step.error ? <p className="break-words text-destructive-text" role="alert"><span className="font-medium">{t("wfNodeError")}: </span>{step.error}</p> : null}
-      {step.handoff ? <p className="break-words"><span className="font-medium">{t("wfNodeHandoff")}: </span>{step.handoff}</p> : null}
-      {text ? (
-        <div>
-          <div className="mb-0.5 font-medium">{t("wfNodeOutput")}</div>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--lp-well)] p-2 font-mono text-[11px] leading-4">{text}</pre>
-          {truncated ? <p className="mt-0.5 text-muted-foreground">{t("wfNodeOutputTruncated")}</p> : null}
-        </div>
-      ) : null}
-      {step.threadId ? <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2 text-xs" data-testid={`wf-open-thread-${step.key}`} onClick={() => onOpenThread(step.threadId!)}>{t("wfNodeOpenThread")}</Button> : null}
-    </li>
-  );
-}
-
 /**
  * What a node panel is given. The default panel is read-only; the editor (W6) passes `renderNodePanel` to put its property
  * form in the same place, with the same selection.
  */
 export type NodePanelContext = { node: ViewNode; nodeKey: string; locale: Locale; run: NodeRun | null; definitionOnly: boolean; readOnly: true | false; onOpenThread: (threadId: string) => void; onClose: () => void;
   /** Re-running this node of a finished run: absent when the run on screen cannot be re-run from here. */
-  rerun?: { busy: boolean; error: string | null; onRerun: () => void } };
+  rerun?: { busy: boolean; error: string | null; onRerun: () => void };
+  /** The connections into this step (what they carry is what it is given), the run the data comes from when it is the latest one and not the one on screen, and whether the panel is a bottom sheet. */
+  incoming?: readonly ViewEdge[]; from?: { runId: string; at: number } | null; narrow?: boolean };
 export type NodePanelRenderer = (context: NodePanelContext) => ReactNode;
 
-export function NodePanel({ node, locale, run, definitionOnly, onOpenThread, onClose, draft = false, rerun }: Pick<NodePanelContext, "node" | "locale" | "run" | "definitionOnly" | "onOpenThread" | "onClose" | "rerun"> & { draft?: boolean }) {
+export function NodePanel({ node, nodeKey, locale, run, definitionOnly, onOpenThread, onClose, draft = false, rerun, incoming = [], from = null, narrow = false }: Pick<NodePanelContext, "node" | "locale" | "run" | "definitionOnly" | "onOpenThread" | "onClose" | "rerun" | "incoming" | "from" | "narrow"> & { nodeKey?: string; draft?: boolean }) {
+  const [visit, setVisit] = useState<number | null>(null);
+  useEffect(() => setVisit(null), [nodeKey ?? node.id]);
+  const params = (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">{[node.role, node.uses].filter(Boolean).join(" · ")}</p>
+      {node.excerpt ? <p className="break-words text-xs">{node.excerpt}</p> : null}
+      {node.calls ? <p className="font-mono text-xs text-muted-foreground">{t("wfNodeCalls").replace("{id}", node.calls.id)}</p> : null}
+      {node.out.length ? <p className="text-xs"><span className="text-muted-foreground">{t("wfOutputs")}: </span><span className="font-mono">{node.out.join(", ")}</span></p> : null}
+      {node.stages.length ? <p className="text-xs"><span className="text-muted-foreground">{t("wfNodeStages")}: </span><span className="font-mono">{node.stages.join(", ")}</span></p> : null}
+    </div>
+  );
+  const data = { node, incoming, run, from, definitionOnly: definitionOnly && !draft, onOpenThread, ...(rerun && run && run.steps.length ? { rerun } : {}) };
   return (
-    <Surface testId="wf-node-panel" aria-label={t("wfNodeDetail")}>
-      <SurfaceHeader className="justify-between">
-        <h3 className="min-w-0 truncate text-sm font-medium">{nodeTitle(node, locale)}</h3>
-        <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={onClose}>{t("wfNodeClose")}</Button>
-      </SurfaceHeader>
-      <SurfaceBody>
-        <p className="text-xs text-muted-foreground">{[node.role, node.uses].filter(Boolean).join(" · ")}</p>
-        {node.excerpt ? <p className="break-words text-xs">{node.excerpt}</p> : null}
-        {node.calls ? <p className="font-mono text-xs text-muted-foreground">{t("wfNodeCalls").replace("{id}", node.calls.id)}</p> : null}
-        {node.out.length ? <p className="text-xs"><span className="text-muted-foreground">{t("wfOutputs")}: </span><span className="font-mono">{node.out.join(", ")}</span></p> : null}
-        {node.stages.length ? <p className="text-xs"><span className="text-muted-foreground">{t("wfNodeStages")}: </span><span className="font-mono">{node.stages.join(", ")}</span></p> : null}
-        {run && run.steps.length ? (
-          <ul className="space-y-2">{run.steps.map((step, index) => <StepCard key={step.key} step={step} index={index} onOpenThread={onOpenThread} />)}</ul>
-        ) : draft ? null : <p className="text-xs text-muted-foreground">{definitionOnly ? t("wfNodeNoRunDefinition") : t("wfNodeNoRun")}</p>}
-        {rerun && run && run.steps.length ? (
-          <div className="space-y-1">
-            <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2.5 text-xs" disabled={rerun.busy} data-testid="wf-rerun-node" onClick={rerun.onRerun}>
-              {rerun.busy ? t("wfRerunning") : t("wfRerunNode")}
-            </Button>
-            <p className="text-xs text-muted-foreground">{t("wfRerunHint")}</p>
-            {rerun.error ? <p className="break-words text-xs text-destructive-text" role="alert" data-testid="wf-rerun-error">{t("wfRerunError").replace("{reason}", rerun.error)}</p> : null}
-          </div>
-        ) : null}
-      </SurfaceBody>
-    </Surface>
+    <SidePanel testId="wf-node-panel" title={nodeTitle(node, locale)} subtitle={[node.role, node.uses].filter(Boolean).join(" · ")} onClose={onClose} narrow={narrow}
+      initial={run && run.steps.length && !from ? "lastrun" : "params"}
+      tabs={[{ id: "params", label: t("wfTabParams"), content: params }, ...dataTabs(data, visit, setVisit)]} />
   );
 }
 
@@ -236,7 +203,18 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
   const graph: WorkflowView | null = current ? current.graph : detail && detail !== "missing" ? detail.graph : null;
   const runMode = current !== null;
 
-  const { runStates, takenEdges } = useMemo(() => {
+  // «Open» on a subworkflow card goes into the workflow it calls; the trail leads back.
+  const drill = useDrill({ projectId, parentSnapshot: current });
+  const drilled = drill.trail.length ? drill.trail[drill.trail.length - 1]! : null;
+  const drilledView = useMemo(() => (drilled?.snapshot ? runView(drilled.snapshot) : null), [drilled]);
+  const drilledModels = useStepExecutors({ ...(drilled ? { workflowId: drilled.workflowId } : {}), projectId, revision: drilled ? drilled.workflowId : null });
+  const viewRunMode = drilled ? drilled.snapshot !== null : runMode;
+  useEffect(() => { drill.reset(); }, [id, runId]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const drillRefresh = useRef(drill.refresh);
+  drillRefresh.current = drill.refresh;
+  useEffect(() => { if (snapshot) void drillRefresh.current(); }, [snapshot]);
+
+  const { runStates: topStates, takenEdges: topEdges } = useMemo(() => {
     if (!current) return { runStates: undefined, takenEdges: undefined };
     const top = runView(current);
     const states = new Map(top.runs);
@@ -252,14 +230,20 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
     }
     return { runStates: states, takenEdges: edges };
   }, [current, expanded]);
+  const runStates = drilled ? drilledView?.runs : topStates;
+  const takenEdges = drilled ? drilledView?.edges : topEdges;
+  const shownGraph: WorkflowView | null = drilled ? drilled.graph : graph;
+  // The latest run of the workflow on screen, for the data tabs of the panel while no run is picked.
+  const latest = useLatestRun(!viewRunMode ? (drilled ? drilled.workflowId : detail && detail !== "missing" ? detail.id : null) : null, projectId, drilled ? drilled.workflowId : runs.map((row) => `${row.id}:${row.status}`).join());
 
-  const expansions = useMemo<Expansions>(() => new Map([...expanded].map(([key, entry]) => [key, entry.graph])), [expanded]);
+  const expansions = useMemo<Expansions>(() => (drilled ? new Map() : new Map([...expanded].map(([key, entry]) => [key, entry.graph]))), [expanded, drilled]);
 
   const openThread = useCallback((threadId: string, title: string) => {
     if (!navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: title.slice(0, 40), params: { threadId } })) navigate.toThread(threadId);
   }, [navigate]);
 
   const lookup = (key: string): ViewNode | null => {
+    if (drilled) return drilled.graph.nodes.find((node) => node.id === key) ?? null;
     const parts = key.split("/");
     let nodes = graph?.nodes ?? [];
     let found: ViewNode | null = null;
@@ -387,6 +371,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
         {starting.error ? <p className="break-words text-xs text-destructive" role="alert" data-testid="wf-edit-start-error">{t("wfEditStartError").replace("{error}", starting.error)}</p> : null}
       </div>
 
+      <div className="lp-wf-split" data-side={selectedNode && width >= SIDE_WIDTH ? "1" : "0"} data-testid="wf-split">
       <Surface testId="wf-graph-panel">
         <SurfaceHeader className="flex-wrap justify-between">
           <h3 className="text-sm font-medium">{t("wfGraphHeading")}</h3>
@@ -418,27 +403,40 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
           ) : null}
           {runId && snapshotGone ? <p className="text-xs text-muted-foreground">{t("wfRunGone")}</p> : null}
           {!runs.length && !runId ? <p className="text-xs text-muted-foreground">{t("wfRunNone")}</p> : null}
-          {graph ? (
+          {drill.opening ? <p className="text-xs text-muted-foreground" role="status">{t("wfCrumbsLoading").replace("{id}", drill.opening)}</p> : null}
+          {drill.missing ? <p className="text-xs text-destructive-text" role="alert">{t("wfCrumbsMissing").replace("{id}", drill.missing)}</p> : null}
+          {shownGraph ? (
             <Suspense fallback={<p className="py-10 text-center text-xs text-muted-foreground" role="status">{t("wfGraphLoading")}</p>}>
-              <WorkflowGraph graph={graph} locale={locale} expansions={expansions} runs={runStates} takenEdges={takenEdges} selected={selected} loadingKeys={loading}
-                onSelect={onSelect} onToggleExpand={toggle} direction={direction} height={direction === "DOWN" ? 420 : 460}
-                {...(runMode ? {} : { models: { executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: modelsAccess,
-                  onChoose: (nodeId: string, choice: ModelChoice | null) => chooseModel(detail, nodeId, choice), onDuplicate: editProjectId && onEditDraft ? () => void startEdit(detail) : null } })} />
+              <WorkflowGraph key={drilled ? `${drilled.key}:${drilled.workflowId}` : "top"} graph={shownGraph} locale={locale} expansions={expansions} runs={runStates} takenEdges={takenEdges} selected={selected} loadingKeys={loading}
+                onSelect={onSelect} {...(drilled ? {} : { onToggleExpand: toggle })} direction={direction} height={direction === "DOWN" ? 440 : 560}
+                onOpen={(key, node) => { setSelected(null); void drill.open(key, node, locale); }} trail={[{ label: detail.name[locale] }, ...drill.trail.map((step) => ({ label: step.label }))]} onTrail={(index) => { setSelected(null); drill.goTo(index); }}
+                {...(viewRunMode ? {} : drilled
+                  ? { models: { executors: drilledModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "readonly" as const } }
+                  : { models: { executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: modelsAccess,
+                    onChoose: (nodeId: string, choice: ModelChoice | null) => chooseModel(detail, nodeId, choice), onDuplicate: editProjectId && onEditDraft ? () => void startEdit(detail) : null } })} />
             </Suspense>
           ) : null}
         </SurfaceBody>
       </Surface>
 
-      {current ? <GoalsPanel snapshot={current} /> : null}
-
       {selectedNode ? (() => {
-        const context: NodePanelContext = { node: selectedNode, nodeKey: selected!, locale, run: runStates?.get(selected!) ?? null, definitionOnly: !runMode, readOnly: true,
+        const localKey = drilled ? selected! : selected!;
+        const states = runStates ?? (!localKey.includes("/") ? latest?.states : undefined);
+        const inner = (() => {
+          if (drilled || !localKey.includes("/")) return shownGraph;
+          return expanded.get(localKey.slice(0, localKey.lastIndexOf("/")))?.graph ?? null;
+        })();
+        const context: NodePanelContext = { node: selectedNode, nodeKey: selected!, locale, run: states?.get(localKey) ?? null, definitionOnly: !viewRunMode, readOnly: true,
+          incoming: inner?.edges.filter((edge) => edge.to === selectedNode.id) ?? [], from: !runStates && latest && !localKey.includes("/") ? { runId: latest.runId, at: latest.at } : null, narrow: width > 0 && width < NARROW_SHEET,
           onOpenThread: (threadId) => openThread(threadId, nodeTitle(selectedNode, locale)), onClose: () => setSelected(null),
           // A finished top-level run can start again from one of its own nodes; a child run is re-run from its parent.
-          ...(current && !isActive(current.run.status) && !current.run.parentRunId && !selected!.includes("/") && !current.run.workflowId.startsWith("draft-test.")
+          ...(!drilled && current && !isActive(current.run.status) && !current.run.parentRunId && !selected!.includes("/") && !current.run.workflowId.startsWith("draft-test.")
             ? { rerun: { ...rerunning, onRerun: () => void rerunNode(selectedNode.id) } } : {}) };
-        return renderNodePanel ? renderNodePanel(context) : <NodePanel {...context} />;
+        return <div className="lp-wf-side" data-testid="wf-side">{renderNodePanel ? renderNodePanel(context) : <NodePanel {...context} />}</div>;
       })() : null}
+      </div>
+
+      {current ? <GoalsPanel snapshot={current} /> : null}
 
       <WorkflowTrials detail={detail} projectId={projectId} runProjectId={editProjectId} onChanged={() => void loadDetail()}
         onOpenRun={(id) => { setRunId(id); setFollow(false); setSelected(null); }} />

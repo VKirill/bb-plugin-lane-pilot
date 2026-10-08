@@ -80,7 +80,50 @@ async function open(extra: Record<string, unknown> = {}, options: { editing?: bo
 }
 
 const patches = (calls: Array<{ method: string; input: unknown }>) => calls.filter((call) => call.method === "workflow_draft_patch").map((call) => call.input as { ops: Array<Record<string, unknown>>; expectedVersion: number });
-const edgeLabel = (container: HTMLElement, includes: string) => Array.from(container.querySelectorAll<HTMLElement>("[data-testid^='wf-edge-']")).find((element) => element.textContent?.includes(includes))!;
+/** The caption of a connection: its chip, or the named output of a branching step. The condition itself is in `data-when`. */
+const edgeLabel = (container: HTMLElement, includes: string) => Array.from(container.querySelectorAll<HTMLElement>("[data-when]")).find((element) => element.getAttribute("data-when")?.includes(includes))!;
+
+describe("canvas editing: places, arranging and the empty canvas", () => {
+  it("an empty canvas offers one big «+» that opens the step menu", async () => {
+    const w = await world();
+    const empty = w.architect.drafts.create({ projectId, threadId: null, scope: "global", name: "Empty", description: "Nothing yet" });
+    await loadPluginApp(() => import("../app"));
+    const { WorkflowDraftDetail } = await import("../src/ui/workflow-draft-detail");
+    const slot = await renderSlot({ component: () => <WorkflowDraftDetail draftId={empty.id} projectId={projectId} locale="en" onBack={() => undefined} startEditing /> }, {},
+      { context: { projectId, threadId: null }, rpc: w.rpc as never });
+    fireEvent.click(await slot.findByTestId("wf-empty-add"));
+    expect(await slot.findByTestId("wf-add-menu")).toBeTruthy();
+  });
+
+  it("draws steps where the file says (`ui.positions`), and «Arrange» drops those places with one patch", async () => {
+    const w = await world();
+    w.architect.drafts.patch(w.draftId, [{ op: "set_meta", set: { ui: { positions: { start: { x: 0, y: 0 }, search: { x: 300, y: 40 }, analyze: { x: 700, y: 40 } } } } }]);
+    await loadPluginApp(() => import("../app"));
+    const { WorkflowDraftDetail } = await import("../src/ui/workflow-draft-detail");
+    const slot = await renderSlot({ component: () => <WorkflowDraftDetail draftId={w.draftId} projectId={projectId} locale="en" onBack={() => undefined} startEditing /> }, {},
+      { context: { projectId, threadId: null }, rpc: w.rpc as never });
+    w.emit.current = (payload) => slot.behavior.emitRealtime(`lp:${projectId}`, payload);
+    await waitFor(() => expect(slot.getByTestId("workflow-graph").getAttribute("data-arranged")).toBe("1"));
+    const arrange = await slot.findByTestId("wf-arrange") as HTMLButtonElement;
+    expect(arrange.disabled).toBe(false);
+    fireEvent.click(arrange);
+    await waitFor(() => expect(patches(w.calls)).toHaveLength(1));
+    expect(patches(w.calls)[0]!.ops).toEqual([{ op: "set_meta", set: { ui: null } }]);
+    await waitFor(() => expect(slot.getByTestId("workflow-graph").getAttribute("data-arranged")).toBe("0"));
+    expect((w.architect.drafts.get(w.draftId)!.definition as Record<string, unknown>).ui).toBeUndefined();
+  });
+
+  it("a step of the draft opens a panel with tabs: parameters, inputs, outputs, last run", async () => {
+    const { slot } = await open();
+    fireEvent.click(await slot.findByTestId("wf-node-search"));
+    await slot.findByTestId("wf-node-tabs");
+    expect(slot.getByTestId("wf-tab-params").getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(slot.getByTestId("wf-tab-outputs"));
+    expect(slot.getByTestId("wf-output-declared").textContent).toContain("status");
+    fireEvent.click(slot.getByTestId("wf-tab-lastrun"));
+    expect(slot.getByTestId("wf-node-lastrun").textContent).toContain("Select a run");
+  });
+});
 
 describe("the editor model", () => {
   const draft = {

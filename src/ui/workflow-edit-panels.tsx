@@ -16,6 +16,7 @@ import type { Catalog, DraftEditing } from "./workflow-edit-state";
 import { choiceOps, type ModelChoice } from "./workflow-model-ops";
 import { NativeModelPicker } from "./workflow-native-picker";
 import { issueText, sourceText, useModelCatalog, type StepExecutor } from "./workflow-models";
+import { dataTabs, SidePanel, type NodeDataProps } from "./workflow-node-data";
 import type { DraftCaseResult, DraftDoc } from "./workflow-drafts";
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
@@ -149,8 +150,10 @@ function ModelFields({ node, edit, definition, executor }: { node: Raw; edit: Dr
 
 // ------------------------------------------------------------------ one node
 
-export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onConnect, executor = null }: { node: Raw; definition: Raw; catalog: Catalog; edit: DraftEditing; onClose: () => void; narrow: boolean; onConnect: (to: string) => void; executor?: StepExecutor | null }) {
+export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onConnect, executor = null, data = null }: { node: Raw; definition: Raw; catalog: Catalog; edit: DraftEditing; onClose: () => void; narrow: boolean; onConnect: (to: string) => void; executor?: StepExecutor | null; data?: NodeDataProps | null }) {
   const id = text(node.id);
+  const [visit, setVisit] = useState<number | null>(null);
+  useEffect(() => setVisit(null), [id]);
   const type = text(node.type) as NodeType;
   const set = (values: Raw, unset: string[] = []) => void edit.apply(setNodeOps(id, values, unset));
   const refs = refCandidates(definition, id);
@@ -165,8 +168,8 @@ export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onC
       </div>
     </>
   );
-  return (
-    <PanelFrame testId="wf-node-panel" title={text(node.label) || title.en || id} subtitle={`${typeLabel(type)} · ${id}`} onClose={onClose} narrow={narrow}>
+  const body = (
+    <>
       {description}
       {type === "agent" ? (
         <>
@@ -264,8 +267,15 @@ export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onC
       <div className="flex justify-end border-t border-[var(--lp-hairline)] pt-3">
         <Button type="button" size="sm" variant="outline" className="lp-raised h-8 px-3 text-xs text-destructive-text" data-testid="wf-edit-remove-node" onClick={() => { void edit.apply(removeNodeOps(id)); onClose(); }}>{t("wfEditRemoveStep")}</Button>
       </div>
-    </PanelFrame>
+    </>
   );
+  const frameTitle = text(node.label) || title.en || id;
+  const frameSubtitle = `${typeLabel(type)} · ${id}`;
+  // With the step's data at hand the panel has the same tabs as everywhere (parameters, inputs, outputs, last run); without it it is the form alone.
+  if (data && type !== "note") {
+    return <SidePanel testId="wf-node-panel" title={frameTitle} subtitle={frameSubtitle} onClose={onClose} narrow={narrow} tabs={[{ id: "params", label: t("wfTabParams"), content: body }, ...dataTabs(data, visit, setVisit)]} />;
+  }
+  return <PanelFrame testId="wf-node-panel" title={frameTitle} subtitle={frameSubtitle} onClose={onClose} narrow={narrow}>{body}</PanelFrame>;
 }
 
 const expressionCheck = (ref: string, definition: Raw): ModelError | null => expressionError(ref, definition);
