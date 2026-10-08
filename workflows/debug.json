@@ -114,6 +114,9 @@
     },
     {
       "id": "investigate",
+      "consumes": [{"kind": "report", "version": 1, "from": "verify_cause"}],
+      "produces": [{"kind": "diagnosis", "version": 1}],
+      "gates": ["investigate.confidence >= 0 && investigate.confidence <= 100"],
       "type": "agent",
       "role": "debugger",
       "title": {
@@ -144,6 +147,8 @@
     },
     {
       "id": "verify_cause",
+      "consumes": [{"kind": "diagnosis", "version": 1, "from": "investigate"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "debugger",
       "session": "new",

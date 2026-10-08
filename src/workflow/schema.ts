@@ -64,8 +64,32 @@ export const JOIN_POLICIES = ["all", "majority", "all_or_low_confidence"] as con
 
 const position = z.object({ x: z.number(), y: z.number() }).strict().optional();
 
+const artifactName = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, "artifact kind: lowercase letters, digits and -");
+const artifactVersion = z.number().int().min(1).max(99);
+const fieldName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,47}$/, "field name: letters, digits and _");
+
+/**
+ * What a step takes in (W0): an artifact of a kind and version from the registry (`artifacts.ts`). `from` names the node whose
+ * output it is (`$inputs` for the workflow's own inputs), `as` the input name it arrives under; a required one that is not
+ * there fails the step before a helper is started.
+ */
+export const consumesSchema = z.object({ kind: artifactName, version: artifactVersion, required: z.boolean().default(true), from: z.string().min(1).max(48).optional(), as: fieldName.optional() }).strict();
+/**
+ * What a step gives out (W0): the whole output (its declared fields), or the output field `field` (a list of them when `each`),
+ * is an artifact of this kind and version. The output is checked against the kind's schema when the step ends; a step that fails
+ * the check is not done (an agent gets one repair turn first).
+ */
+export const producesSchema = z.object({ kind: artifactName, version: artifactVersion, required: z.boolean().default(true), field: fieldName.optional(), each: z.boolean().optional() }).strict();
+export type Consumes = z.infer<typeof consumesSchema>;
+export type Produces = z.infer<typeof producesSchema>;
+
 /** What every node but a note carries (without its id, so a parallel's child can reuse it). */
 const nodeBase = {
+  /** The step contract (W0): what it takes in, what it gives out, and the conditions on its own output that must hold for it to count as done. */
+  consumes: z.array(consumesSchema).max(12).optional(),
+  produces: z.array(producesSchema).max(8).optional(),
+  /** Checkable conditions over the step's own output (`plan.task_count >= 1`, same language as `when`); one that is false makes the step not done. */
+  gates: z.array(z.string().min(1).max(300)).max(10).optional(),
   title: bilingual.optional(),
   label: z.string().max(80).optional(),
   /** Where the text of this node comes from (THIRD_PARTY_NOTICES). */
@@ -353,7 +377,7 @@ function fieldList(value: unknown, defaultRequired: boolean): unknown {
 
 const bilingualOf = (value: unknown): unknown => (typeof value === "string" ? { en: value, ru: value } : value);
 
-const ACTION_KEYS = new Set(["id", "type", "title", "label", "src", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
+const ACTION_KEYS = new Set(["id", "type", "title", "label", "src", "consumes", "produces", "gates", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
   "model_preset", "profile", "position", "action", "params", "map", "test_mode"]);
 
 function normalizeNode(node: unknown, isChild = false): unknown {

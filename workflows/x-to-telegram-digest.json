@@ -119,6 +119,8 @@
   "nodes": [
     {
       "id": "collect",
+      "consumes": [{"kind": "report", "version": 1, "from": "widen"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "errand",
       "title": {
@@ -141,6 +143,8 @@
     },
     {
       "id": "widen",
+      "consumes": [{"kind": "report", "version": 1, "from": "collect"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "model_preset": "cheap-fast",
@@ -218,6 +222,7 @@
         "ru": "Оценить релевантность"
       },
       "child": {
+        "produces": [{"kind": "report", "version": 1}],
         "type": "agent",
         "role": "analyst",
         "model_preset": "cheap-fast",
@@ -238,6 +243,7 @@
     },
     {
       "id": "summarize",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "profile": {

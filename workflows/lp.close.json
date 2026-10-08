@@ -46,6 +46,7 @@
   "nodes": [
     {
       "id": "goal_audit",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "auditor",
       "title": {
@@ -94,6 +95,8 @@
     },
     {
       "id": "memory",
+      "consumes": [{"kind": "report", "version": 1, "from": "goal_audit"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "memory",
       "title": {
@@ -113,6 +116,8 @@
     },
     {
       "id": "life",
+      "consumes": [{"kind": "report", "version": 1, "from": "memory"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "project-life",
       "out": {

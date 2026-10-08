@@ -5,6 +5,8 @@ import { ROLE_PROFILES } from "../helper-context";
 import type { ExtraAccess, HelperRole } from "../helper-context";
 import { redactKnown } from "../redact";
 import { agentPrompt, outputContract, parseAgentOutput } from "../workflow/agent-output";
+import { contractProblems, contractRepairPrompt, describeProblems, hasContractProblems } from "../workflow/contract";
+import type { ContractNode, ContractProblems } from "../workflow/contract";
 import type { AgentOutputError } from "../workflow/agent-output";
 import type { StepContext } from "../workflow/engine";
 import { goalsBlock } from "../workflow/goals";
@@ -66,10 +68,15 @@ export type HelperRequest = {
   plugins?: readonly string[]; mcp?: readonly string[];
   /** Same session: send into this thread (a step that goes on in the earlier helper's session). */
   intoThread?: string | null;
+  /** The step contract (`produces`, `gates`): an answer that breaks it gets the same one repair turn as an answer without a JSON block. */
+  contract?: ContractNode;
   signal?: AbortSignal;
 };
 /** What the step spent: tokens and the price of them, from the thread's own usage events (the budget of the run counts these). */
 export type HelperResult = { threadId: string; output: Record<string, unknown>; text: string; usage?: { tokens: number; costUsd: number; unknown?: true } };
+
+/** The answer is JSON but breaks the step's contract. */
+class ContractFailure extends Error { constructor(readonly problems: ContractProblems) { super(describeProblems(problems).join("; ")); } }
 
 export class HelperFailure extends Error {
   /** The code leads the message: it is what a run's step error shows. */
@@ -159,15 +166,23 @@ export function createWorkflowAgents() {
 
     await wait(sentAt);
     let text = await read();
-    let output: Record<string, unknown> | null = null, problem = "";
+    let output: Record<string, unknown> | null = null, problem = "", broken = false;
     for (let round = 0; round < 2 && !output; round += 1) {
-      try { output = parseAgentOutput(text, request.fields); }
-      catch (cause) {
-        problem = (cause as AgentOutputError).message;
+      try {
+        const parsed = parseAgentOutput(text, request.fields);
+        const issues = request.contract ? contractProblems(request.contract, parsed) : null;
+        if (issues && hasContractProblems(issues)) throw new ContractFailure(issues);
+        output = parsed;
+      } catch (cause) {
+        broken = cause instanceof ContractFailure;
+        problem = (cause as Error).message;
         if (round === 1) break;
-        // One repair turn in the same thread: the answer is judged by its JSON, so a missing block is asked for, not guessed.
+        // One repair turn in the same thread: the answer is judged by its JSON and by the step's contract, so a missing block or a wrong shape is asked for, not guessed.
         const asked = Date.now();
-        await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: `Your last message ended without the required JSON block (${problem}).\n\n${outputContract(request.fields)}\nAnswer with that block now; do not redo the work.`, mentions: [] }] } as never);
+        const repair = cause instanceof ContractFailure
+          ? contractRepairPrompt(cause.problems, request.contract?.produces, outputContract(request.fields))
+          : `Your last message ended without the required JSON block (${problem}).\n\n${outputContract(request.fields)}\nAnswer with that block now; do not redo the work.`;
+        await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: repair, mentions: [] }] } as never);
         await wait(asked);
         text = await read();
       }
@@ -177,7 +192,7 @@ export function createWorkflowAgents() {
       const edited = after ? detectRepoEdits(before, after, spec.editable) : [];
       if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
     }
-    if (!output) throw new HelperFailure("output_invalid", `the ${request.role} helper's final message could not be read: ${problem}`);
+    if (!output) throw new HelperFailure(broken ? "artifact_invalid" : "output_invalid", broken ? `the ${request.role} helper's answer breaks the step's contract: ${problem}` : `the ${request.role} helper's final message could not be read: ${problem}`);
     // Read last, so the repair turn counts too. A thread whose usage cannot be read, or has no usage events, reports `unknown`:
     // the engine then holds the run to a time and step limit instead of letting a token or money budget pass unseen.
     const measured = await threadUsage(bb, threadId!, { ...(sentAt !== undefined ? { since: sentAt } : {}), ...(request.model ? { fallbackModel: request.model } : {}) }).catch(() => undefined);
@@ -216,6 +231,7 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
     rt, workflowRunId: ctx.runId, workflowId: ctx.workflow.id, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role: node.role, title, prompt: body, fields,
     ...(node.provider ? { provider: node.provider } : {}), ...(node.model ? { model: node.model } : {}), ...(node.reasoning ? { reasoning: node.reasoning } : {}), ...(node.service_tier ? { serviceTier: node.service_tier } : {}), ...(node.model_preset ? { preset: node.model_preset } : {}),
     skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
+    ...(node.produces?.length || node.gates?.length ? { contract: { id: node.id, produces: node.produces, gates: node.gates } } : {}),
   };
 }
 

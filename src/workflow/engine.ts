@@ -10,6 +10,7 @@ import { executorKey, lowerWorkflow, outputFields } from "./lower";
 import { definitionSha256 } from "./store";
 import { WorkflowError, validateWorkflow } from "./validate";
 import { checkOutput, slugOf, valueAtPath } from "./values";
+import { contractProblems, describeProblems, hasContractProblems } from "./contract";
 import { goalsSchema, goalsSha, parseGoals, regroundDue } from "./goals";
 import type { GoalAudit, RunGoal } from "./goals";
 
@@ -134,6 +135,13 @@ const scopeChain = (scope: string): string[] => {
   const parts = scope ? scope.split("/") : [];
   return [...parts.map((_part, index) => parts.slice(0, parts.length - index).join("/")), ""];
 };
+/** The output of a step against its declared fields and then its contract (`produces`, `gates`): the first problem throws, so the step is not done. */
+function checkStepOutput(node: WorkflowNode, fields: readonly Field[] | "unknown", output: Record<string, unknown>): Record<string, unknown> {
+  const kept = fields === "unknown" ? output : checkOutput(fields, output);
+  const problems = contractProblems(node, kept);
+  if (hasContractProblems(problems)) throw new MissingValueError(problems.produces.length ? "artifact_invalid" : "gate_failed", `${node.id}: ${describeProblems(problems).join("; ")}`);
+  return kept;
+}
 const asObject = (text: string | null): Record<string, unknown> => (text ? JSON.parse(text) as Record<string, unknown> : {});
 const STARTED = ["succeeded", "failed", "running", "waiting", "interrupted"];
 /** In a value position (`emit.map`, `skip_out`, a node's `with`) a node that has not run gives nothing, where a condition on it would fail the run. */
@@ -796,8 +804,7 @@ export class WorkflowEngine {
           outcome = await limited;
         } finally { clearTimeout(timer); abort.signal.removeEventListener("abort", forward); }
         if (!("wait" in outcome)) {
-          const fields = outputFields(c.wf, node);
-          outcome = { ...outcome, output: fields === "unknown" ? outcome.output : checkOutput(fields, outcome.output) };
+          outcome = { ...outcome, output: checkStepOutput(node, outputFields(c.wf, node), outcome.output) };
         }
         lastError = null;
         break;
@@ -1279,7 +1286,7 @@ export class WorkflowEngine {
         return true;
       }
       let output: Record<string, unknown>;
-      try { const fields = outputFields(c.wf, node); output = fields === "unknown" ? result.output : checkOutput(fields, result.output); }
+      try { output = checkStepOutput(node, outputFields(c.wf, node), result.output); }
       catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         if (!j.moveStep(runId, stepKey, "waiting", "failed", { error: message, ended: true })) return false;

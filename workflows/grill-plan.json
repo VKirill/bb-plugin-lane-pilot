@@ -70,6 +70,7 @@
   "nodes": [
     {
       "id": "walk",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -92,6 +93,8 @@
     },
     {
       "id": "synth",
+      "consumes": [{"kind": "report", "version": 1, "from": "walk"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "session": "new",

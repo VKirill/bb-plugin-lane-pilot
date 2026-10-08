@@ -534,3 +534,63 @@ describe("a code task of a chain", () => {
     expect(rebuild({ workflow_id: "x", idem_key: null, project_id: null, link_run_id: null } as never)).toBeUndefined();
   });
 });
+
+describe("the step contract of an agent step (W0)", () => {
+  const audit = (node: Row = {}) => chain({
+    nodes: [
+      { id: "audit", type: "agent", role: "analyst", prompt: "Audit {{$inputs.dir}}.", output: [{ name: "findings", type: "array", ref: "Finding" }, { name: "count", type: "number" }],
+        produces: [{ kind: "findings", version: 1 }], gates: ["audit.count == audit.findings.length"], ...node },
+      { id: "done", type: "action", action: "emit", map: { count: "audit.count" } },
+    ],
+    inputs: [{ name: "dir", type: "string", required: false, default: "src" }],
+    outputs: [{ name: "count", type: "number", required: false }],
+    edges: [{ from: "start", to: "audit" }, { from: "audit", to: "done" }],
+  });
+  const good = reply({ findings: [{ severity: "high", file: "src/a.ts", title: "unchecked limit", evidence: "n > 0" }], count: 1, handoff: "h" });
+  const noSeverity = reply({ findings: [{ file: "src/a.ts", title: "unchecked limit" }], count: 1, handoff: "h" });
+
+  it("an answer that is the declared artifact passes with no repair turn", async () => {
+    const t = await setup({ audit: [good] });
+    dispose = t.dispose;
+    expect((await t.start(audit()).done).status).toBe("succeeded");
+    expect(t.sent).toHaveLength(0);
+  });
+
+  it("an answer with the wrong shape gets one repair turn that names the problem and shows the shape; a right second answer is accepted", async () => {
+    const t = await setup({ audit: [noSeverity, good] });
+    dispose = t.dispose;
+    const summary = await t.start(audit()).done;
+    expect(summary.status).toBe("succeeded");
+    expect(t.sent).toHaveLength(1);
+    expect(t.sent[0]!.text).toContain("does not meet this step's contract");
+    expect(t.sent[0]!.text).toContain("findings.0.severity");
+    expect(t.sent[0]!.text).toContain("Shape of findings/1");
+    expect(t.sent[0]!.text).toContain("do not redo the work");
+    // The thread is the same one: nothing new was spawned for the repair.
+    expect(t.spawned).toHaveLength(1);
+  });
+
+  it("a gate that is not met is repaired the same way", async () => {
+    const t = await setup({ audit: [reply({ findings: [], count: 3, handoff: "h" }), good] });
+    dispose = t.dispose;
+    expect((await t.start(audit()).done).status).toBe("succeeded");
+    expect(t.sent[0]!.text).toContain("gate not met: audit.count == audit.findings.length");
+  });
+
+  it("an answer that is still wrong after the repair turn fails the step: it is not done, and the reason is the contract", async () => {
+    const t = await setup({ audit: [noSeverity] });
+    dispose = t.dispose;
+    const summary = await t.start(audit()).done;
+    expect(summary.status).toBe("failed");
+    expect(summary.error).toContain("artifact_invalid");
+    expect(summary.error).toContain("findings.0.severity");
+    expect(t.sent).toHaveLength(1);
+  });
+
+  it("a step without a contract is unchanged: the same answer passes and nothing is repaired", async () => {
+    const t = await setup({ audit: [noSeverity] });
+    dispose = t.dispose;
+    expect((await t.start(audit({ produces: undefined, gates: undefined })).done).status).toBe("succeeded");
+    expect(t.sent).toHaveLength(0);
+  });
+});

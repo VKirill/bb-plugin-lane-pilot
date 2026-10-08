@@ -198,6 +198,7 @@
     },
     {
       "id": "classify",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "triager",
       "title": {

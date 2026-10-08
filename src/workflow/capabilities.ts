@@ -1,5 +1,6 @@
 import { BUILTIN_PRESETS, PRESET_SLUGS, presetSelection } from "./model-presets";
 import { NODE_EFFORTS, findModel, findProvider, offeredOnHost, type ModelCatalog } from "./model-catalog";
+import { ARTIFACTS, artifactId } from "./artifacts";
 import { CONDITION_OPS, FIELD_TYPES, PASS_MODES, QUALITY_MODES } from "./schema";
 
 /**
@@ -132,6 +133,7 @@ export const WORKFLOW_REFERENCE = {
   },
   triggers: "`triggers: [{type: chat|manual|schedule|telegram}]`. chat: the PM routes a request to a published chain; the router reads description, examples and not_for. manual: Run in the Workflows tab. schedule {cron (5 fields), timezone (IANA), projectId, inputs}: publishing a chain that has one creates a BB automation; a scheduled run starts only while the chain is published and the project has an open Lane Pilot chat, else the automation shows a failed run, and it gets only the trigger's inputs (a required input needs a value there or a default). telegram: declared only; no bot command starts a chain yet",
   testing: "`test` = {id, sim: {input, stubs: {nodeId: {field: value}}, human_answers: {nodeId: answer_kind}, expect_status (default succeeded), expect_path, expect_output, variant_<name>: {overrides}}}. Unstubbed fields get the first enum value and made-up strings, so stub every node that decides a branch. No `test`: one smoke case. Publishing needs every case green on the current version; any patch resets that",
+  contracts: `the contract of a step (every node may carry it): \`produces: [{kind, version, field?, each?}]\` says the step's output (or its field \`field\`, a list of them when \`each\`) is an artifact of a registered kind, checked when the step ends (an agent gets one repair turn; a step that still fails is not done); \`consumes: [{kind, version, from, as?}]\` says what it takes in and from which node (the validator checks that node produces it); \`gates: ["node.field >= 1"]\` are conditions on the step's own output in the language of \`when\`. An agent or code-task node without \`produces\` is a warning. Kinds (\`kind/version\`, the fields the output must declare): ${ARTIFACTS.map((def) => `${artifactId(def)} (${def.required.join(", ")})`).join("; ")}. \`report/1\` (a handoff) is for a step whose product is files or side effects.`,
   goals: "a run started through the PM carries goals {id, done_when, evidence} that a model audit judges before the run closes, so write outputs it can point to (a path, a message id, a count)",
 } as const;
 

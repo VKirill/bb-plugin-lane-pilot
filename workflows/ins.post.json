@@ -33,6 +33,7 @@
   "nodes": [
     {
       "id": "collect",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "errand",
       "title": {
@@ -66,6 +67,7 @@
     },
     {
       "id": "lenses",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "model_preset": "INS - анализ (Claude Opus 5)",
@@ -87,6 +89,8 @@
     },
     {
       "id": "psychology",
+      "consumes": [{"kind": "report", "version": 1, "from": "lenses"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "model_preset": "INS - психология (GPT-5.6 Luna)",
@@ -106,6 +110,8 @@
     },
     {
       "id": "critic",
+      "consumes": [{"kind": "report", "version": 1, "from": "psychology"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "auditor",
       "model_preset": "INS - проверка (Grok 4.6)",
@@ -144,6 +150,7 @@
     },
     {
       "id": "digest",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "model_preset": "INS - сводка (Claude Sonnet 5)",

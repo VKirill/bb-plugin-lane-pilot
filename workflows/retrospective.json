@@ -63,6 +63,7 @@
   "nodes": [
     {
       "id": "retro",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "memory",
       "src": "maestro-flow:workflows/retrospective.md",
@@ -79,6 +80,8 @@
     },
     {
       "id": "stage",
+      "consumes": [{"kind": "report", "version": 1, "from": "retro"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "memory",
       "prompt": "Stage the insights above the 0.5 confidence threshold as candidates; drop process narration. No publication.",

@@ -106,6 +106,7 @@
     },
     {
       "id": "retro",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "memory",
       "title": {

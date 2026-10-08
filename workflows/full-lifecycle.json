@@ -91,6 +91,7 @@
   "nodes": [
     {
       "id": "contract",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "planner",
       "title": {
@@ -210,6 +211,7 @@
     },
     {
       "id": "qa",
+      "produces": [{"kind": "qa-report", "version": 1}],
       "type": "agent",
       "role": "browser-qa",
       "applicable_modes": [

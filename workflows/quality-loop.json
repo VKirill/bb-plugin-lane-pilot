@@ -124,6 +124,7 @@
     },
     {
       "id": "coverage",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -162,6 +163,7 @@
     },
     {
       "id": "classify",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "triager",
       "title": {
@@ -227,6 +229,7 @@
     },
     {
       "id": "qa",
+      "produces": [{"kind": "qa-report", "version": 1}],
       "type": "agent",
       "role": "browser-qa",
       "applicable_modes": [

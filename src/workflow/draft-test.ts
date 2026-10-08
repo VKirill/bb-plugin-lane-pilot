@@ -2,6 +2,7 @@ import type { LanePilotDatabase } from "../database";
 import { WorkflowEngine } from "./engine";
 import type { NodeExecutor, StepContext } from "./engine";
 import { PURE_ACTION_KEYS, pureActionExecutor } from "./actions";
+import { contractSample } from "./contract";
 import { executorKey, lowerWorkflow, outputFields } from "./lower";
 import { registerReducers } from "./reducers";
 import type { Field, GraphNode, Workflow } from "./schema";
@@ -136,7 +137,7 @@ export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, te
     // A person answers at once from the case (`human_answers`): the first answer kind when it says nothing.
     if (ctx.node.type === "human") return answerFor(ctx.node, testCase.humanAnswers[ctx.nodeId], ctx.node.options);
     const fields = outputFields(ctx.workflow, ctx.node) as Field[] | "unknown";
-    return { ...(fields === "unknown" ? {} : sampleOutput(fields, ctx.nodeId)), ...(given ?? {}) };
+    return { ...(fields === "unknown" ? {} : { ...sampleOutput(fields, ctx.nodeId), ...contractSample("produces" in ctx.node ? ctx.node.produces : undefined, fields) }), ...(given ?? {}) };
   };
   const stubFor = (key: string): NodeExecutor => ({ reentrant: true, run: async (ctx: StepContext) => ({ output: answer(ctx, key) }) });
   // The executors of the workflow and of every workflow it calls, however deep: a child run needs its own agents, tasks and actions answered too.

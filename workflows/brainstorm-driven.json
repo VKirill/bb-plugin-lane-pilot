@@ -93,6 +93,7 @@
   "nodes": [
     {
       "id": "research",
+      "produces": [{"kind": "search-results", "version": 1}],
       "type": "agent",
       "role": "specialist:tavily",
       "skip_when": "!$inputs.research",

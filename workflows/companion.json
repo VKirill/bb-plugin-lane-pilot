@@ -76,6 +76,7 @@
   "nodes": [
     {
       "id": "self_check",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "planner",
       "model_preset": "cheap-fast",
@@ -100,6 +101,8 @@
     },
     {
       "id": "task",
+      "consumes": [{"kind": "report", "version": 1, "from": "self_check"}],
+      "produces": [{"kind": "task-result", "version": 1}],
       "type": "lp-task",
       "contract": "{{self_check.contract}}",
       "quality_mode": "quick",

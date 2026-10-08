@@ -146,6 +146,7 @@
     },
     {
       "id": "chainsmith",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "specialist:seo-specialist",
       "profile": {
@@ -181,6 +182,7 @@
         "ru": "Собрать доказательства"
       },
       "child": {
+        "produces": [{"kind": "report", "version": 1}],
         "type": "agent",
         "role": "specialist:seo-specialist",
         "prompt": "Branch {{item}}.\naudience: /исследование - Reddit Mapper evidence from forums, reviews and supplied material (pains, language, decision criteria, demand map, gaps); alphaXiv for scientific evidence when relevant.\nexternal: cited research (Tavily) - competitors, regulations, market facts; each fact with URL; separate evidence, hypothesis and proposal.\nfrequency: ONLY if use_seo_tools and the key is available - Mutagen/xmlstock frequency and competition; otherwise return skipped. Paid calls: log count and cost.\nNever claim a module ran or an artifact exists unless it did.\n",
@@ -204,6 +206,8 @@
     },
     {
       "id": "architecture",
+      "consumes": [{"kind": "verdict", "version": 1, "from": "audit"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "specialist:seo-specialist",
       "profile": {
@@ -239,6 +243,7 @@
         "ru": "GIST-бриф на страницу"
       },
       "child": {
+        "produces": [{"kind": "report", "version": 1}],
         "type": "agent",
         "role": "specialist:seo-specialist",
         "profile": {
@@ -264,6 +269,7 @@
     },
     {
       "id": "audit",
+      "produces": [{"kind": "verdict", "version": 1}],
       "type": "agent",
       "role": "plan-critic",
       "session": "new",

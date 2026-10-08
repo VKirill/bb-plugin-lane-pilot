@@ -94,6 +94,7 @@
   "nodes": [
     {
       "id": "frame",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "model_preset": "cheap-fast",
@@ -136,6 +137,7 @@
       "type": "parallel",
       "for_each": "frame.subquestions",
       "child": {
+        "produces": [{"kind": "search-results", "version": 1}],
         "type": "agent",
         "role": "specialist:tavily",
         "prompt": "Tavily search then extract for the sub-question {{item}}: candidates with URL, title, date, snippet; extract full text of the best 2-4. Mark each source as full_text, snippet, metadata_only or unavailable. A search result is a candidate, not a fact.",
@@ -157,6 +159,7 @@
     },
     {
       "id": "claims",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "model_preset": "strong",
@@ -178,6 +181,8 @@
     },
     {
       "id": "report",
+      "consumes": [{"kind": "report", "version": 1, "from": "claims"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "profile": {

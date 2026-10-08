@@ -43,6 +43,7 @@
         "ru": "Выполнить задачи"
       },
       "child": {
+        "produces": [{"kind": "task-result", "version": 1}],
         "type": "lp-task",
         "contract": "{{item}}",
         "quality_mode": "{{$mode}}",

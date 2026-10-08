@@ -80,6 +80,7 @@
   "nodes": [
     {
       "id": "write_tests",
+      "produces": [{"kind": "task-result", "version": 1}],
       "type": "lp-task",
       "title": {
         "en": "Write tests",
@@ -122,6 +123,7 @@
     },
     {
       "id": "classify",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "triager",
       "prompt": "FAILURE_TRIAGE_METHOD per failure: test_defect (fix the test), code_defect (confirmed bug - do not retry, do not edit sources), env_issue (blocked). A critical failure in a layer stops the next layer. In doubt - code_defect. Strategy: rounds 1-2 conservative; more than 80% pass with similar failures - broader; a regression - surgical rollback; stuck 3 rounds - reflect.",
@@ -139,6 +141,8 @@
     },
     {
       "id": "fix_tests",
+      "consumes": [{"kind": "report", "version": 1, "from": "classify"}],
+      "produces": [{"kind": "task-result", "version": 1}],
       "type": "lp-task",
       "title": {
         "en": "Fix the tests",

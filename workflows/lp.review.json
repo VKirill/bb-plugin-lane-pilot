@@ -57,6 +57,7 @@
     },
     {
       "id": "spec_check",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "code-critic",
       "applicable_modes": [
@@ -88,6 +89,7 @@
         "ru": "Ревью по измерению"
       },
       "child": {
+        "produces": [{"kind": "findings", "version": 1}],
         "type": "agent",
         "role": "code-critic",
         "session": "new",
@@ -124,6 +126,7 @@
       },
       "src": "maestro-flow:workflows/swarm/wf-review (2 of 3)",
       "child": {
+        "produces": [{"kind": "report", "version": 1}],
         "type": "agent",
         "role": "code-critic",
         "session": "new",

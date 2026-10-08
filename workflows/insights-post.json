@@ -113,6 +113,7 @@
   "nodes": [
     {
       "id": "discover",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "errand",
       "title": {
@@ -139,6 +140,8 @@
     },
     {
       "id": "pick",
+      "consumes": [{"kind": "report", "version": 1, "from": "discover"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "model_preset": "cheap-fast",
@@ -218,6 +221,7 @@
     },
     {
       "id": "enrich",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "model_preset": "strong",
@@ -257,6 +261,7 @@
     },
     {
       "id": "draft_post",
+      "produces": [{"kind": "post-draft", "version": 1}],
       "type": "agent",
       "role": "specialist:copy-lead",
       "profile": {

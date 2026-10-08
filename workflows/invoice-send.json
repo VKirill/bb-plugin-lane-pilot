@@ -68,6 +68,7 @@
   "nodes": [
     {
       "id": "create",
+      "produces": [{"kind": "invoice", "version": 1}],
       "type": "agent",
       "role": "errand",
       "title": { "en": "Make the invoice in Elba", "ru": "Выставить счёт в Эльбе" },
@@ -137,6 +138,7 @@
     },
     {
       "id": "send",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "errand",
       "title": { "en": "Send the PDF in Telegram", "ru": "Отправить PDF в Telegram" },
