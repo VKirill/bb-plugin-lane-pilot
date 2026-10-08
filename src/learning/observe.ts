@@ -1,7 +1,7 @@
 import { maskPii } from "../anamnesis/pii";
 import { sensitiveReason } from "../anamnesis/model";
 import type { OwnerMessage, OwnerMessageConsumer, OwnerMessageMeta } from "../anamnesis/owner-messages";
-import type { Jev } from "../jev/run";
+import type { Jev } from "@lane-pilot/jev";
 import type { LearningConfig } from "./config";
 import { ANGRY_P, ownerMessageJudgment, type MessageDecision, type MessageSignals, type Route } from "./judgment";
 import type { DecisionsClient, SecondOpinion } from "./opinion";

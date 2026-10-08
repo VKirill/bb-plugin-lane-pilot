@@ -4,8 +4,8 @@ import { openDatabase } from "../../src/database";
 import { classifyFailure } from "../../src/failure-class";
 import { judgedFailureClass } from "../../src/jev/failure-class-model";
 import { failureClassJudgment } from "../../src/jev/judgments/failure-class";
-import { createJev } from "../../src/jev/run";
-import type { JevClient } from "../../src/jev/client";
+import { createJev } from "@lane-pilot/jev";
+import type { JevClient } from "@lane-pilot/jev";
 
 // J-4: a reason the regular expressions have no confident match for goes to Jev; `shadow` records, `active` acts, the rules' class is the fallback.
 const UNKNOWN = "ssh: connect to host 10.8.0.1 port 22: Operation timed out while syncing the worktree";

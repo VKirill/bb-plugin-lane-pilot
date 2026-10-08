@@ -22,8 +22,8 @@ import { recordStage } from "./stage-records";
 import { stringAt, valueAt } from "./values";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { installJev, jev } from "../jev/runtime";
-import { createOutputGuard } from "../jev/output-guard";
+import { installJev, jev } from "@lane-pilot/jev";
+import { createOutputGuard } from "@lane-pilot/jev";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../database";
 

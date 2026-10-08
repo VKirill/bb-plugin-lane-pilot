@@ -1,11 +1,11 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/database";
-import type { JevClient } from "../../src/jev/client";
-import { hardProblems, invoiceCheck, overlap, validAccount, validCorrAccount, validInn, type InvoiceCheckInput } from "../../src/jev/judgments/invoice-check";
-import { createJev } from "../../src/jev/run";
-import { setJevForTests } from "../../src/jev/runtime";
-import type { JevAnswer, JevQuestion } from "../../src/jev/types";
+import type { JevClient } from "@lane-pilot/jev";
+import { hardProblems, invoiceCheck, overlap, validAccount, validCorrAccount, validInn, type InvoiceCheckInput } from "@lane-pilot/jev/judgments/invoice-check";
+import { createJev } from "@lane-pilot/jev";
+import { setJevForTests } from "@lane-pilot/jev";
+import type { JevAnswer, JevQuestion } from "@lane-pilot/jev";
 import { invoiceInput, registerInvoiceActions } from "../../src/server/workflow-invoice";
 import { engineOn, journalDb } from "../workflow/engine-helpers";
 import { parseWorkflow } from "../../src/workflow/validate";

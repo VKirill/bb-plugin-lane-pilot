@@ -1,5 +1,5 @@
 import { scorerOutput, type RouterCard, type RouterModelInput, type RouterModelOutput } from "../../workflow/router";
-import { choice, choiceOf, defineJudgment, noul, noulOf, type Answers } from "../registry";
+import { choice, choiceOf, defineJudgment, noul, noulOf, type Answers } from "@lane-pilot/jev";
 
 /**
  * J-1: which workflow fits the owner's request. One request carries a Choice over the top candidates (plus «none of these»), a

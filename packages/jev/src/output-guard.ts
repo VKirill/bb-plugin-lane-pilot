@@ -1,5 +1,4 @@
-import { sha256 } from "../stages/contract";
-import { redactKnown } from "@lane-pilot/kit";
+import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 import { outputGuard, type OutputKind } from "./judgments/output-guard";
 import type { Jev } from "./run";
 import { resolveMode, type JevSettings } from "./thresholds";
@@ -25,7 +24,7 @@ export const SHADOW_CHARS = 2_000;
 const SENSITIVE = /\.env\b|env[_ -]?catalog|\benv_(?:get|set|list|request)|printenv|process\.env|BEGIN [A-Z ]*PRIVATE KEY|\b[A-Za-z0-9_]*(?:API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL)[A-Za-z0-9_]*\s*[=:]|\bBearer\s+[A-Za-z0-9._~+/-]{12,}|\bAuthorization:|\b(?:sk|pk|rk)[-_](?:live|test|proj|ant)?[-_]?[A-Za-z0-9]{16,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bAKIA[0-9A-Z]{16}\b|\bxox[abpr]-[A-Za-z0-9-]{10,}/i;
 export const looksSensitive = (raw: string, redacted: string): boolean => raw !== redacted || SENSITIVE.test(redacted);
 /** The share of the unit interval a text falls on, the same every time, so a text is either always sampled or never. */
-const unitOf = (text: string): number => parseInt(sha256(text).slice(0, 8), 16) / 0x1_0000_0000;
+const unitOf = (text: string): number => parseInt(sha256Hex(text).slice(0, 8), 16) / 0x1_0000_0000;
 export const GUARD_STATS_KEY = "output-guard:stats";
 const KEEP_DAYS = 14;
 export type GuardStats = Record<string, { asked: number; notSampled: number; sensitive: number }>;

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Jev } from "../jev/run";
+import type { Jev } from "@lane-pilot/jev";
 import { sameAsJudgment, type Relation } from "./judgment";
 import { bumpItem, candidatesOf, finishCandidates, insertItem, itemId, listItems, type Db, type Item, type ItemKind, type Observation } from "./store";
 

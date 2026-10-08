@@ -1,4 +1,4 @@
-import { choice, choiceOf, defineJudgment, noul, noulOf, score, type Answers } from "../jev/registry";
+import { choice, choiceOf, defineJudgment, noul, noulOf, score, type Answers } from "@lane-pilot/jev";
 
 /**
  * What an owner's message is, for the part of Lane Pilot that learns from them (T1). One Jev request asks four things about the

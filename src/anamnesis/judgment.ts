@@ -1,4 +1,4 @@
-import { choice, choiceOf, defineJudgment, noul, noulOf } from "../jev/registry";
+import { choice, choiceOf, defineJudgment, noul, noulOf } from "@lane-pilot/jev";
 import type { Kind } from "./model";
 
 /**

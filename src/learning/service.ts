@@ -2,7 +2,7 @@ import { z } from "zod";
 import { anamnesisFor } from "../anamnesis/wiring";
 import { TURN_REQUESTED, type EventLike, type OwnerMessage } from "../anamnesis/owner-messages";
 import { getRunSettingsScopes } from "../database";
-import { jev } from "../jev/runtime";
+import { jev } from "@lane-pilot/jev";
 import { relayFor } from "../server/relay";
 import { scheduleIsolated } from "../server/schedules";
 import { memorySettingsFor } from "../server/insights";

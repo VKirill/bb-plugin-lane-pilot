@@ -1,6 +1,6 @@
 import { listRuleProposals, scopeApplies, RULE_RELEVANCE_THRESHOLD, type RuleProposal } from "@lane-pilot/run-insights";
-import type { Jev } from "../jev/run";
-import { defineJudgment, noul, noulOf } from "../jev/registry";
+import type { Jev } from "@lane-pilot/jev";
+import { defineJudgment, noul, noulOf } from "@lane-pilot/jev";
 import type { Db } from "./store";
 import { ruleTokens } from "./rule-budget";
 

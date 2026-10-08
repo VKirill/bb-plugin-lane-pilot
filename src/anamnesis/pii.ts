@@ -1,4 +1,4 @@
-import { validInn } from "../jev/judgments/invoice-check";
+import { validInn } from "@lane-pilot/jev/judgments/invoice-check";
 
 /**
  * Personal data masked in a message before any of it is sent to Jev (audit 2026-10-08 round 4, item 19, F-5). The word filter

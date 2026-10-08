@@ -5,7 +5,7 @@ import type { ServerCore } from "../server/core";
 import type { AnamnesisRpcRequest } from "./contract";
 import { runAnamnesisCli, type CliResult } from "./cli";
 import { createHub, type Hub } from "./hub";
-import { jev } from "../jev/runtime";
+import { jev } from "@lane-pilot/jev";
 import { fragmentJudgment, matchJudgment } from "./judgment";
 import { loadAnamnesis, type LoadDeps, type LoadOptions } from "./load";
 import { createOwnerMessageHub, isOwnerThread, sdkThreadsPort, type ThreadLike } from "./owner-messages";

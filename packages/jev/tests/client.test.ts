@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createJevClient } from "../../src/jev/client";
-import type { JevQuestion } from "../../src/jev/types";
+import { createJevClient } from "@lane-pilot/jev";
+import type { JevQuestion } from "@lane-pilot/jev";
 
 const QUESTIONS: Record<string, JevQuestion> = { urgent: { type: "noul", instructions: "Is it urgent?" } };
 const OK_BODY = { model: "jev-1.13.0", answers: { urgent: { type: "noul", noul: 0.9 } }, usage: { input_tokens: 100, output_tokens: 10 } };

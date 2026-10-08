@@ -15,7 +15,7 @@ import type { WorkflowStore } from "../workflow/store";
 import { fenceOutside, registerObservedTool } from "./tool-result";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
-import { jev } from "../jev/runtime";
+import { jev } from "@lane-pilot/jev";
 import { createJevRouterModel } from "../jev/route-model";
 import { createRouterModel } from "./workflow-router-model";
 import { realDeps } from "./workflow-architect";

@@ -1,5 +1,5 @@
 import type { FailureClass } from "../../failure-class";
-import { choice, choiceOf, defineJudgment } from "../registry";
+import { choice, choiceOf, defineJudgment } from "@lane-pilot/jev";
 
 /**
  * J-4: which side a failure is on, when the regular expressions of `failureClass` have no confident match. They know the reasons

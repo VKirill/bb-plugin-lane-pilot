@@ -1,11 +1,11 @@
 import { PROVIDER_POOL_KEY, providerPoolProblem } from "./provider-pool";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "./schedule/errand-model";
 import "./jev/judgments/route-workflow";
-import "./jev/judgments/repair-group";
+import "@lane-pilot/jev/judgments/repair-group";
 import "./jev/judgments/failure-class";
-import "./jev/judgments/output-guard";
-import { listJudgments } from "./jev/registry";
-import { jevSettingProblem } from "./jev/thresholds";
+import "@lane-pilot/jev/judgments/output-guard";
+import { listJudgments } from "@lane-pilot/jev";
+import { jevSettingProblem } from "@lane-pilot/jev";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "./ui-catalog";
 
 export type SettingValidationError = {

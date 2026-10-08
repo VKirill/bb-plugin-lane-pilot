@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/database";
 import { createSelfRepair, firstSeenOnRunningVersion, isDue, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/server/self-repair";
-import { createJev } from "../../src/jev/run";
-import { setJevForTests } from "../../src/jev/runtime";
-import type { JevClient } from "../../src/jev/client";
+import { createJev } from "@lane-pilot/jev";
+import { setJevForTests } from "@lane-pilot/jev";
+import type { JevClient } from "@lane-pilot/jev";
 import type { ServerCore } from "../../src/server/core";
 
 type HostCall = { method: string; input: Record<string, unknown> };

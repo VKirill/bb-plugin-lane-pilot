@@ -2,9 +2,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { migrations, openDatabase } from "../../src/database";
 import { routeWorkflow } from "../../src/jev/judgments/route-workflow";
-import { listJudgments } from "../../src/jev/registry";
-import { jevMigrations } from "../../src/jev/receipts";
-import { jevEnabled, jevSettingProblem, resolveMode, resolveThresholds } from "../../src/jev/thresholds";
+import { listJudgments } from "@lane-pilot/jev";
+import { jevMigrations } from "@lane-pilot/jev";
+import { jevEnabled, jevSettingProblem, resolveMode, resolveThresholds } from "@lane-pilot/jev";
 import { validateSettingValue } from "../../src/setting-validation";
 
 describe("jev settings", () => {

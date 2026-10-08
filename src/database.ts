@@ -16,7 +16,7 @@ import { recordMemoryAccepted } from "@lane-pilot/memory-core";
 import { workflowMigrations } from "./workflow/journal";
 import { workflowOpsMigrations } from "./workflow/ops-store";
 import { draftMigrations } from "./workflow/draft-store";
-import { jevMigrations } from "./jev/receipts";
+import { jevMigrations } from "@lane-pilot/jev";
 import { learningMigrations } from "./learning/migrations";
 import { scheduleMigrations } from "./schedule/store";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";

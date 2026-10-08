@@ -18,7 +18,7 @@ import { isMainfixTask } from "../../validate-output";
 import { openDatabase } from "../../database";
 import { createWriterSticky } from "./sticky";
 import { failureClass, type FailureClass } from "../../failure-class";
-import { jev } from "../../jev/runtime";
+import { jev } from "@lane-pilot/jev";
 import { judgedFailureClass } from "../../jev/failure-class-model";
 import { isRunHalted } from "../runs-halt";
 import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../secrets";

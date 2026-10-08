@@ -1,7 +1,7 @@
 import { classifyFailure, type FailureClass } from "../failure-class";
 import { failureClassJudgment } from "./judgments/failure-class";
-import type { Jev } from "./run";
-import type { JevSettings } from "./thresholds";
+import type { Jev } from "@lane-pilot/jev";
+import type { JevSettings } from "@lane-pilot/jev";
 
 /**
  * The class of a failure with J-4 behind the rules: the rules first, and only a reason they have no confident match for goes to
