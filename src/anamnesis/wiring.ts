@@ -5,6 +5,7 @@ import type { ServerCore } from "../server/core";
 import type { AnamnesisRpcRequest } from "./contract";
 import { runAnamnesisCli, type CliResult } from "./cli";
 import { createHub, type Hub } from "./hub";
+import { createOwnerMessageHub, sdkThreadsPort } from "./owner-messages";
 
 /** What Lane Pilot's own helper, writer and stage threads are: they never read the owner's records. */
 export function isAgentChild(thread: { parentThreadId?: string | null; originPluginId?: string | null } | null): boolean {
@@ -36,6 +37,9 @@ function build(ctx: ServerCore) {
   return {
     hub,
     deny,
+    /** The one collector of the owner's messages: layers subscribe to `ownerMessages`; T1 and the daily pass (A4) are the next subscribers. */
+    ownerMessages: createOwnerMessageHub(),
+    threads: sdkThreadsPort(bb as never),
     rpc: { anamnesis: async ({ request }: { request: AnamnesisRpcRequest }) => ({ result: await hub.dispatch(request) }) } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "anamnesis">,
     cli: (argv: string[], cliCtx?: { threadId?: string }): Promise<CliResult> => runAnamnesisCli(argv, { hub, deny, threadId: cliCtx?.threadId }),
   };
