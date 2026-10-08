@@ -17,7 +17,7 @@ import { previousAttemptBrief, stickyTurnPrompt } from "../writer-task";
 import { isMainfixTask } from "../../validate-output";
 import { openDatabase } from "../../database";
 import { createWriterSticky } from "./sticky";
-import { failureClass } from "../../failure-class";
+import { failureClass, type FailureClass } from "../../failure-class";
 import { jev } from "../../jev/runtime";
 import { judgedFailureClass } from "../../jev/failure-class-model";
 import { isRunHalted } from "../runs-halt";
@@ -125,6 +125,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let baselineWorkspacePath:string|null=input.dirtBefore?input.task.project_cwd:null;
     let executionPacketSha256:string|null = null;
     let last: Record<string, unknown> = {};
+    // The class Jev (J-4, active) or the rules gave the last failure: parking reads the same one, not its own recount.
+    let judged: { status: string; reason: string | null; klass: FailureClass } | null = null;
     let primaryFailure:Record<string,unknown>|null=null;
     // An earlier task of the same family (a redispatch, a mainfix) that failed the same way stops the next one early.
     let familyFailure = familyFailureRecord(db, input.runId, input.taskId);
@@ -598,6 +600,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A reason the rules have no confident match for goes to Jev (J-4, shadow by default: recorded, the rules' class used).
         const failedClass = await judgedFailureClass({ jev, settings:async () => runSettings, projectId:input.projectId, runId:input.runId },
           String(last.status), typeof last.reason === "string" ? last.reason : null, input.taskId);
+        judged = { status: String(last.status), reason: typeof last.reason === "string" ? last.reason : null, klass: failedClass };
         // A provider that takes no work fails every retry the same way: the writer chain below takes the task now.
         // The attempt ends blocked with its limit reason (uncharged); primaryFailure keeps the state the chain reads.
         // A writer that stayed silent through its nudges is handed on the same way: its session hung, not the task.
@@ -775,7 +778,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
       if (!accepted && last.status !== "canceled") {
         void services.stability.onTaskFailed({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,
-          pmThreadId:input.pmThreadId, state:String(last.status), reason:reason ?? "" }).catch(() => false);
+          pmThreadId:input.pmThreadId, state:String(last.status), reason:reason ?? "",
+          ...(judged && judged.status === String(last.status) && judged.reason === (typeof last.reason === "string" ? last.reason : null) ? { klass:judged.klass } : {}) }).catch(() => false);
       }
       for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
         const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);

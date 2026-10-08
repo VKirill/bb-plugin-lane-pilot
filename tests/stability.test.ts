@@ -126,6 +126,17 @@ describe("a dirty base checkout", () => {
   });
 });
 
+describe("the class the writer loop settled (J-4 active)", () => {
+  it("parks on the class it is given, not on its own recount of the reason", async () => {
+    const { stability } = setup();
+    const reason = "the build box answered with something nobody has seen before";
+    expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T7", pmThreadId:"pm", state:"blocked", reason }, 0)).toBe(false);
+    expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T7", pmThreadId:"pm", state:"blocked", reason, klass:"task" }, 0)).toBe(false);
+    expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T7", pmThreadId:"pm", state:"blocked", reason, klass:"infra" }, 0)).toBe(true);
+    expect((await stability.loadParked())[0]).toMatchObject({ taskId:"T7", klass:"infra" });
+  });
+});
+
 describe("breaker", () => {
   it("holds new writers after three tasks fail on the same fault, lets one probe through later", async () => {
     const { stability } = setup();

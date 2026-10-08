@@ -137,9 +137,11 @@ export function createStability(ctx:ServerCore, services:Services) {
    * Called once a task's writer loop ends without acceptance. Lane Pilot's own fault or the machine's parks the task;
    * returns whether it did.
    */
-  async function onTaskFailed(input:{ projectId:string; runId:string; taskId:string; pmThreadId:string; state:string; reason:string }, now = Date.now()):Promise<boolean> {
+  async function onTaskFailed(input:{ projectId:string; runId:string; taskId:string; pmThreadId:string; state:string; reason:string;
+    /** The class the caller already settled (Jev's, when J-4 is active); without it the rules classify the reason. */
+    klass?:FailureClass }, now = Date.now()):Promise<boolean> {
     if (input.reason.startsWith("run_budget_exceeded:")) return false;
-    const klass = failureClass(input.state, input.reason);
+    const klass = input.klass ?? failureClass(input.state, input.reason);
     const waitingSecret = isWaitingSecret(input.reason);
     if (!(PARKED_CLASSES.has(klass) || waitingSecret) || await isRunHalted(bb.storage.kv as never, input.runId)) return false;
     const fingerprint = failureFingerprint(input.reason);
