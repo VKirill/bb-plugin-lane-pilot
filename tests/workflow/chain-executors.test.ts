@@ -231,6 +231,28 @@ describe("the agent step", () => {
     expect(receipt).toMatchObject({ threadId: "helper-1", handoff: "counted" });
   });
 
+  it("a step of a run a schedule started marks its thread `origin: schedule`; an ordinary run does not (audit r4 P1-21)", async () => {
+    const t = await setup({ look: [reply({ count: 1, summary: "one", handoff: "h" })] });
+    dispose = t.dispose;
+    await t.start(oneAgent()).done;
+    expect(t.spawned[0]!.pluginMetadata).not.toHaveProperty("origin");
+    await t.engine.start({ workflow: oneAgent(), inputs: {}, runtime: { ...t.rt, origin: "schedule" }, link: { projectId: PROJECT, runId: RUN } }).done;
+    expect(t.spawned[1]!.pluginMetadata).toMatchObject({ origin: "schedule" });
+  });
+
+  it("after a reload the origin comes back from the run's key, and from the parent run for a subworkflow", async () => {
+    const t = await setup({ look: [reply({ count: 1, summary: "one", handoff: "h" })] });
+    dispose = t.dispose;
+    const rebuild = chainRuntimeFor(t.rt.ctx, t.services);
+    const parent = t.engine.start({ workflow: oneAgent(), inputs: {}, key: "wf-schedule:proj:chain-under-test:sch_1:1", runtime: t.rt, link: { projectId: PROJECT, runId: RUN } });
+    await parent.done;
+    const row = (extra: Row) => ({ idem_key: null, workflow_id: "chain-under-test", project_id: PROJECT, link_run_id: RUN, parent_run_id: null, ...extra }) as never;
+    expect(rebuild(row({ idem_key: "wf-schedule:proj:w:k" }))).toMatchObject({ origin: "schedule" });
+    expect(rebuild(row({ idem_key: "wf-manual:proj:w:k" }))).not.toHaveProperty("origin");
+    expect(rebuild(row({ idem_key: "child:x:y", parent_run_id: parent.runId }))).toMatchObject({ origin: "schedule" });
+    expect(rebuild(row({ idem_key: "child:x:y", parent_run_id: null }))).not.toHaveProperty("origin");
+  });
+
   it("asks once more in the same thread when the final message has no JSON block, then fails with the reason", async () => {
     const t = await setup({ look: ["I counted 7 files, trust me.", reply({ count: 7, summary: "x", handoff: "h" })] });
     dispose = t.dispose;

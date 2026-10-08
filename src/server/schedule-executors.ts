@@ -22,7 +22,7 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
     async start({ schedule, task, run }: ExecutorInput) {
       if (task.kind !== "workflow") return wrongKind(task, "workflow");
       // Source «manual»: the checks of a start by hand (published, inputs whole, requirements, a PM chat), without asking for a schedule trigger in the workflow's file.
-      const result = await services.workflowTriggers.start({ projectId: schedule.project_id, workflowId: task.workflowId, inputs: task.inputs, source: "manual", key: run.run_key });
+      const result = await services.workflowTriggers.start({ projectId: schedule.project_id, workflowId: task.workflowId, inputs: task.inputs, source: "manual", key: run.run_key, origin: "schedule" });
       if (!result.ok) throw new Error(`${result.reason}: ${result.message}`);
       return { refKind: "workflow_run", refId: result.runId };
     },

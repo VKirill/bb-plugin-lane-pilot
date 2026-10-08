@@ -135,7 +135,7 @@ export function createWorkflowAgents() {
           prompt: request.prompt,
           environment: { type: "reuse", environmentId },
           pluginMetadata: {
-            role: spec.metadata, ...(spec.specialist ? { specialist: spec.specialist } : {}), spawnId: request.spawnKey, lanePilotRunId: rt.runId, parentPmThreadId: rt.pmThreadId, helperMode: policy.mode,
+            role: spec.metadata, ...(spec.specialist ? { specialist: spec.specialist } : {}), ...(rt.origin ? { origin: rt.origin } : {}), spawnId: request.spawnKey, lanePilotRunId: rt.runId, parentPmThreadId: rt.pmThreadId, helperMode: policy.mode,
             lanePilotWorkflowRunId: request.workflowRunId, lanePilotWorkflowStep: request.stepKey, lanePilotWorkflowSpawn: request.spawnKey, lanePilotWorkflowNode: request.nodeId,
           },
         } as Parameters<typeof fullAccessSpawn>[1]);

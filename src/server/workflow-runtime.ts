@@ -13,4 +13,9 @@ export type ChainRuntime = {
   projectId: string;
   /** The Lane Pilot run (`lane_pilot_run`) of that chat: settings scopes, helper placement, budget. */
   runId: string;
+  /** `schedule` when a schedule started the run (the board, or a workflow's schedule trigger): the agents it starts cannot create schedules (schedule-tools.ts). */
+  origin?: "schedule";
 };
+
+/** The idempotency key prefix of a run a schedule started; the origin is read back from it (and from the parent run) after a reload. */
+export const SCHEDULE_RUN_KEY_PREFIX = "wf-schedule:";

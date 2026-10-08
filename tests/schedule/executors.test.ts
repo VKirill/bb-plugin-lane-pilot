@@ -40,7 +40,7 @@ describe("the workflow executor", () => {
     const { executors, calls, summaries } = world();
     const ref = await executors.workflow.start(input(task));
     expect(ref).toEqual({ refKind: "workflow_run", refId: "wfrun_1" });
-    expect(calls.workflowStart[0]).toMatchObject({ projectId: "p1", workflowId: "weekly-digest", inputs: { query: "cats" }, source: "manual", key: "sch_1:1790000000000" });
+    expect(calls.workflowStart[0]).toMatchObject({ projectId: "p1", workflowId: "weekly-digest", inputs: { query: "cats" }, source: "manual", key: "sch_1:1790000000000", origin: "schedule" });
     const polled = (summary: Record<string, any> | null) => { if (summary) summaries.set("wfrun_1", summary); else summaries.delete("wfrun_1"); return executors.workflow.poll(input(task, { ref_id: "wfrun_1" })); };
     expect(await polled({ status: "running", waiting: [] })).toEqual({ state: "running" });
     expect(await polled({ status: "interrupted", waiting: [] })).toEqual({ state: "running" });

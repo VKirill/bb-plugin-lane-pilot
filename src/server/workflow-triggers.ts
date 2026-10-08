@@ -10,7 +10,7 @@ import type { Workflow } from "../workflow/schema";
 import type { StoredWorkflow, WorkflowStore } from "../workflow/store";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
-import type { ChainRuntime } from "./workflow-runtime";
+import { SCHEDULE_RUN_KEY_PREFIX, type ChainRuntime } from "./workflow-runtime";
 
 /**
  * Starting a workflow other than through the router (W9): the Run button of the tab, a schedule (a BB automation that calls
@@ -106,7 +106,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
 
   const refuse = (reason: string, message: string, extra: Partial<Extract<TriggerResult, { ok: false }>> = {}): TriggerResult => ({ ok: false, reason, message, ...extra });
 
-  async function start(input: { projectId: string; workflowId: string; inputs: Record<string, unknown>; source: TriggerSource; key?: string | undefined; liveTrial?: boolean | undefined }): Promise<TriggerResult> {
+  async function start(input: { projectId: string; workflowId: string; inputs: Record<string, unknown>; source: TriggerSource; key?: string | undefined; liveTrial?: boolean | undefined; origin?: "schedule" | undefined }): Promise<TriggerResult> {
     const { store } = await deps.loadStore(input.projectId);
     const stored = store.get(input.workflowId);
     if (!stored) return refuse("unknown_workflow", `There is no workflow "${input.workflowId}".`);
@@ -135,8 +135,11 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
       notChecked = check.issues.map((issue) => issue.message);
     }
 
-    const key = input.key ? `wf-${input.source}:${input.projectId}:${workflow.id}:${input.key}` : `wf-${input.source}:${randomUUID()}`;
-    const runtime: ChainRuntime = { ctx, services: services as Services, pmThreadId: pm.pmThreadId, projectId: input.projectId, runId: pm.runId };
+    // A run a schedule started (the board starts it as `manual`, a trigger as `schedule`) is marked by its key, which is all a reload keeps.
+    const fromSchedule = input.source === "schedule" || input.origin === "schedule";
+    const prefix = fromSchedule ? SCHEDULE_RUN_KEY_PREFIX : `wf-${input.source}:`;
+    const key = input.key ? `${prefix}${input.projectId}:${workflow.id}:${input.key}` : `${prefix}${randomUUID()}`;
+    const runtime: ChainRuntime = { ctx, services: services as Services, pmThreadId: pm.pmThreadId, projectId: input.projectId, runId: pm.runId, ...(fromSchedule ? { origin: "schedule" as const } : {}) };
     try {
       const started = services.workflowEngine.start({ workflow, inputs: given, key, runtime, link: { projectId: input.projectId, runId: pm.runId } });
       started.done.catch((cause: unknown) => ctx.log(`Lane Pilot workflow run ${started.runId} (${workflow.id}) stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
