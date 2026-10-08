@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.203
+
+- **Anamnesis is a portrait of the owner as a person, from his chats, kept as Markdown files.** The first load had filled «Кто я» with project memories (hub, ssh keys, Lane Pilot internals), journal entries and registry rows. Now: the owner's chat messages are the main source (Jev finds identity, knowledge, skills, family and close people, hobbies, interests, life events, preferences); Claude memories only of type user/feedback, BB memories only preferences; journal, registry and run sources off by default; an infrastructure filter keeps IPs, ssh, key paths and hosts out. Family and health messages go to Jev masked (owner decision) and stay sensitive. Files in `~/Notes/Обо мне/` on the Mac mini are the source of truth: the owner's edits, additions and deletions are read back as confirm/edit/reject and never overwritten. `purge-technical` removes the technical drafts. The tab shows the portrait in Russian sections with links to the files.
+
 ## 0.1.202
 
 - **The integration gate no longer takes the BB server down.** On the first live SelfyStudio task the batch gate wrote its red verdict over the merged task's own, already passed `verification` receipt; «illegal stage transition verification: passed -> failed» was thrown from a call nobody awaited, and the unhandled rejection stopped the whole BB server (21:05 UTC); a dispatch in flight was lost. The gate's verdict is now a gate event of the batch, and both fire-and-forget gate calls catch and log.
