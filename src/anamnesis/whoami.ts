@@ -37,7 +37,8 @@ function describe(record: WhoamiRecord, detail: Detail): string {
   if (detail === "brief") return `${record.title}${mark}`;
   const statement = record.statement && record.statement !== record.title ? ` — ${record.statement}` : "";
   const range = record.firstSeen || record.lastSeen ? `, ${month(record.firstSeen)}…${month(record.lastSeen)}` : "";
-  let line = `${record.title}${statement}${mark} (confidence ${confidenceWord(record.confidence)}, ${record.evidenceCount} evidence${range})`;
+  const level = record.kind === "skill" && typeof record.attributes.level === "string" ? `, level ${record.attributes.level}` : "";
+  let line = `${record.title}${statement}${mark} (confidence ${confidenceWord(record.confidence)}${level}, ${record.evidenceCount} evidence${range})`;
   if (detail === "full" && record.evidence?.length) {
     const sample = record.evidence.slice(-5).map((e) => `${day(e.at)} ${e.source} ${e.ref}`).join("; ");
     line += `\n    evidence: ${sample}${record.evidence.length > 5 ? `; … ${record.evidence.length - 5} older` : ""}`;

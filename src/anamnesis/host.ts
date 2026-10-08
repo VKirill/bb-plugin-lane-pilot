@@ -3,6 +3,7 @@ import { anamnesisRequestSchema } from "./ops";
 import { existsSync } from "node:fs";
 import { collectSources } from "./collect";
 import { renderCard, renderWhoami, type WhoamiRecord } from "./whoami";
+import { renderYearReview } from "./year-review";
 import { anamnesisDbPath, openStore, type Store, type UpsertResult } from "./store";
 
 /**
@@ -59,7 +60,8 @@ export async function executeRequest(request: AnamnesisRequest, store: Store, co
       const withEvidence: WhoamiRecord[] = request.detail === "full"
         ? records.map((record, index) => (index < 300 ? { ...record, evidence: store.get(record.id, { includeSensitive: true })?.evidence ?? [] } : record))
         : records;
-      const { sections, detail, includeSensitive, includeDrafts, publicOnly } = request;
+      const { sections, detail, includeSensitive, includeDrafts, publicOnly, year } = request;
+      if (year !== undefined) return renderYearReview(records, { year, now, ...(includeSensitive ? { includeSensitive } : {}), ...(includeDrafts !== undefined ? { includeDrafts } : {}), ...(publicOnly ? { publicOnly } : {}) }) satisfies ResponseOf<"whoami">;
       return renderWhoami(withEvidence, { ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
         ...(includeDrafts !== undefined ? { includeDrafts } : {}), ...(publicOnly ? { publicOnly } : {}) }) satisfies ResponseOf<"whoami">;
     }

@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { currentLevel, skillSeries } from "../skills";
 import { discoverRepos, homeRelative, isClientPath, monthOf, runGit, spread, type SourceRecord, type SourceScan } from "./common";
 
 /**
@@ -97,10 +98,14 @@ export async function scanGit(options: GitOptions): Promise<SourceScan & { stats
   for (const [language, entry] of skills) {
     if (entry.commits.length < MIN_COMMITS_FOR_SKILL) continue;
     entry.commits.sort((a, b) => a.at - b.at);
+    // Commits per month give the level over time (A7): counts only, no commit text.
+    const byMonth: Record<string, number> = {};
+    for (const commit of entry.commits) byMonth[monthOf(commit.at)] = (byMonth[monthOf(commit.at)] ?? 0) + 1;
+    const levels = skillSeries(byMonth, entry.repos.size);
     records.push({
       kind: "skill", key: `lang:${language}`, title: language,
       statement: `Commits touching ${entry.files} ${language} files in ${entry.repos.size} repositories, ${monthOf(entry.commits[0]!.at)} to ${monthOf(entry.commits.at(-1)!.at)}`,
-      attributes: { origin: "git", category: "technical", commits: entry.commits.length, files: entry.files, repos: entry.repos.size },
+      attributes: { origin: "git", category: "technical", commits: entry.commits.length, files: entry.files, repos: entry.repos.size, byMonth, levels, level: currentLevel(levels) },
       confidence: 0.8, firstSeen: entry.commits[0]!.at, lastSeen: entry.commits.at(-1)!.at,
       evidence: spread(entry.commits.map((c) => ({ source: "git" as const, ref: c.ref, at: c.at })), 20),
     });

@@ -48,6 +48,8 @@ export const hostOps = {
   whoami: z.object({
     op: z.literal("whoami"), sections: z.array(z.enum(["identity", "skills", "projects", "timeline", "people", "interests", "preferences", "tools"])).max(8).optional(),
     detail: z.enum(["brief", "normal", "full"]).optional(), includeSensitive: z.boolean().optional(), includeDrafts: z.boolean().optional(), publicOnly: z.boolean().optional(),
+    /** The review of that calendar year (skills that grew, projects, activity, milestones) instead of the sections. */
+    year: z.number().int().min(2000).max(2200).optional(),
   }).strict(),
   /** The short card for the PM's context: confirmed, non-sensitive records only. Read-only. */
   card: z.object({ op: z.literal("card"), maxChars: z.number().int().min(200).max(4000).optional() }).strict(),

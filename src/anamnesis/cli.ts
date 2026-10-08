@@ -23,7 +23,7 @@ export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis config [--authors EMAIL,NAME] [--roots /path,/path] [--max-classify N] [--extract on|off]",
   "bb lane-pilot anamnesis load [--run] [--since YYYY-MM-DD] [--sources a,b] [--classify --yes [--max-classify N] [--allow-sensitive-to-jev]] [--json]",
   "bb lane-pilot anamnesis review [--limit N]",
-  "bb lane-pilot anamnesis whoami [--sections identity,skills,projects,timeline,people,interests,preferences,tools] [--detail brief|normal|full] [--confirmed-only] [--include-sensitive] [--public-only]",
+  "bb lane-pilot anamnesis whoami [--sections identity,skills,projects,timeline,people,interests,preferences,tools] [--detail brief|normal|full] [--confirmed-only] [--include-sensitive] [--public-only] [--year YYYY]",
   "bb lane-pilot anamnesis card [--max-chars N]",
 ].join("\n");
 
@@ -44,7 +44,7 @@ const OPTIONS = {
   sensitivity: { type: "string" }, reason: { type: "string" }, confidence: { type: "string" }, all: { type: "boolean" }, yes: { type: "boolean" },
   source: { type: "string" }, set: { type: "string" }, help: { type: "boolean" },
   run: { type: "boolean" }, classify: { type: "boolean" }, since: { type: "string" }, sources: { type: "string" }, "max-classify": { type: "string" },
-  "allow-sensitive-to-jev": { type: "boolean" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" }, extract: { type: "string" },
+  "allow-sensitive-to-jev": { type: "boolean" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, year: { type: "string" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" }, extract: { type: "string" },
 } as const;
 
 const day = (at: number | null): string => (at ? new Date(at).toISOString().slice(0, 10) : "—");
@@ -182,7 +182,9 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
     case "whoami": {
       const sections = values.sections ? values.sections.split(",").map((name) => oneOf(name.trim(), SECTIONS, "section") as Section) : undefined;
       const detail = oneOf(values.detail, DETAILS, "detail") as Detail | undefined;
-      const result = await hub.ask({ op: "whoami", ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
+      const year = values.year === undefined ? undefined : Number(values.year);
+      if (year !== undefined && !(Number.isInteger(year) && year >= 2000 && year <= 2200)) throw new Error("--year must be a calendar year such as 2026");
+      const result = await hub.ask({ op: "whoami", ...(year !== undefined ? { year } : {}), ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
         ...(values["confirmed-only"] ? { includeDrafts: false } : {}), ...(values["public-only"] ? { publicOnly: true } : {}) });
       return out(result, values.json, () => result.text);
     }
