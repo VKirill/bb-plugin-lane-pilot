@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A typed answer to a workflow question no longer becomes the first option (audit 2026-10-08, item 4).** `humanOutput` (`src/server/workflow-executors.ts`) maps words to an option only when they name one outright (the option's own words, case/punctuation/underscores aside, or its number); otherwise they are a text answer if the node has a text kind (`text`, `answered`, `provide`, `reason`, ...), and when it has none the step keeps waiting and the owner is asked again with the options listed. `approved`/`continue`/`proceed` are no longer text kinds. `deploy.approve` with "no, wait" used to deploy.
+
 ## 0.1.192
 
 - **A workflow agent step follows Settings instead of always running on Opus 5.5 / high.** One function (`resolveAgentModel`, `src/server/workflow-agent-model.ts`) answers it for the executor and for the Models view: the node's own `provider`/`model`/`reasoning` (field by field) over the base from the first level that gives a complete pair: the node's `model_preset`, the role's stage selection in project settings (analyst and pm-reader: `pm_read`; planner and plan-critic: `plan_critique`; code-critic: `code_critique`; auditor: `code_critique`, then `night_review`; debugger: the new `workflow.debugger.*`, then `specialist`; `specialist:<x>`: `specialist`), the new generic `workflow.agent.{provider,model,reasoning_effort}`, the model the PM chat runs on, and only then the built-in claude-code / claude-opus-5-5 / high. The generic agent node and the actions that run in an errand helper go through it (`withResolvedModel`); the router, the architect and the goal audit keep their own. A half-set provider/model pair in Settings is skipped and shown as `incomplete_selection`.

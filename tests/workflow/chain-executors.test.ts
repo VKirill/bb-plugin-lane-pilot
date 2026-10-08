@@ -240,10 +240,27 @@ describe("the owner's question", () => {
   it("words alone are an answer too; a timeout kind answers by the clock; humanOutput fills the other fields with empty values", () => {
     const node = ask.nodes[0] as never;
     expect(humanOptions(node)).toEqual(["go", "fix", "abort"]);
-    expect(humanOutput(node, { choiceIndex: null, text: "ok, go ahead" })).toEqual({ answer: "ok, go ahead", answer_kind: "go" });
+    expect(humanOutput(node, { choiceIndex: null, text: "Fix." })).toEqual({ answer: "Fix.", answer_kind: "fix" });
+    expect(humanOutput(node, { choiceIndex: null, text: "ok, go ahead" })).toBeNull(); // words around an option name are not a choice
     const rich = { out: [{ name: "answer", type: "string" }, { name: "answer_kind", type: "enum", values: ["answered", "abort", "timeout"] }, { name: "resolutions", type: "array" }, { name: "n", type: "number" }], options: [] } as never;
     expect(humanOutput(rich, { choiceIndex: null, text: "use postgres" })).toEqual({ answer: "use postgres", answer_kind: "answered", resolutions: [{ answer: "use postgres" }], n: 0 });
     expect(humanOutput(rich, { choiceIndex: 2, text: "" })).toMatchObject({ answer_kind: "abort", resolutions: [] });
+  });
+
+  it("a typed answer that names no option does not settle the step: the owner is asked again with the options", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    const started = t.start(ask);
+    await waitFor(() => t.harness.pendingInteractions.length);
+    t.harness.behavior.submitInteraction(t.harness.pendingInteractions[0]!.id, { text: "no, wait, not yet" });
+    await waitFor(() => t.harness.pendingInteractions.length > 1 || t.harness.pendingInteractions[0]?.id !== undefined);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(t.engine.get(started.runId)?.status).toBe("waiting");
+    const again = t.harness.pendingInteractions.at(-1)!;
+    expect(String(JSON.stringify(again.payload))).toContain("did not choose an option");
+    t.harness.behavior.submitInteraction(again.id, { choice: "3", text: "" });
+    await waitFor(() => t.engine.get(started.runId)?.status === "succeeded");
+    expect(t.engine.get(started.runId)).toMatchObject({ output: { kind: "abort" } });
   });
 
   it("an unanswered question past its deadline is answered `timeout` when the node allows it", async () => {
