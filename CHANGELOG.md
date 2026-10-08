@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A stop requested while the writer's thread errors ends the attempt `canceled`, not as an LP fault (audit 2026-10-08, item 1).** `cancel_requested → provider_error` is not in the transition table (and stays out: the owner asked for the stop), but five places of `finishWriterAttempt` (follow-up wait failure, silence sweep ended, thread error, provider limit notice, error in the finish path) asked for it and got `IllegalTransitionError`, so the attempt went `blocked`/`internal_error` and the task parked as a harness fault (3 times in the hub log). They now go through one `providerFailed` that moves a `cancel_requested` attempt to `canceled` and any other to `provider_error`. Test: `tests/writer-cancel-provider-error.test.ts`.
+
 ## 0.1.192
 
 - **A workflow agent step follows Settings instead of always running on Opus 5.5 / high.** One function (`resolveAgentModel`, `src/server/workflow-agent-model.ts`) answers it for the executor and for the Models view: the node's own `provider`/`model`/`reasoning` (field by field) over the base from the first level that gives a complete pair: the node's `model_preset`, the role's stage selection in project settings (analyst and pm-reader: `pm_read`; planner and plan-critic: `plan_critique`; code-critic: `code_critique`; auditor: `code_critique`, then `night_review`; debugger: the new `workflow.debugger.*`, then `specialist`; `specialist:<x>`: `specialist`), the new generic `workflow.agent.{provider,model,reasoning_effort}`, the model the PM chat runs on, and only then the built-in claude-code / claude-opus-5-5 / high. The generic agent node and the actions that run in an errand helper go through it (`withResolvedModel`); the router, the architect and the goal audit keep their own. A half-set provider/model pair in Settings is skipped and shown as `incomplete_selection`.

@@ -100,6 +100,16 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     dirtBefore:import("../../cli-outcome").DirtSnapshot[];
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
   }): Promise<Record<string,unknown>> {
+    // The PM's stop and the provider's error can land together: a writer whose stop was requested ends canceled
+    // (cancel_requested has no provider_error move, and the owner asked for the stop), any other ends as provider_error.
+    const providerFailed = (reason:string) => {
+      if (getAttempt(db, input.attemptId)?.state === "cancel_requested") {
+        transitionAttempt(db, input.attemptId, "canceled", { threadId:input.writerThreadId, reason:`writer stop observed after: ${reason}`.slice(0, 500) });
+        return { status:"canceled", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      }
+      transitionAttempt(db, input.attemptId, "provider_error", { reason });
+      return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+    };
     try {
       const budget = services.runBudgetFor(input.runId, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
       const watchBudget = budget.snapshot().limits.maxWallMs !== undefined || budget.snapshot().limits.maxTokens !== undefined;
@@ -149,8 +159,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const reason = cause instanceof Error ? cause.message : String(cause);
           // The owner deleted the queued instruction: it never reaches the writer, so the task is blocked, not retried.
           if (reason.endsWith(FOLLOW_UP_DELETED)) return await stopRunningWriter(`follow_up_deleted: ${FOLLOW_UP_DELETED}`);
-          transitionAttempt(db, input.attemptId, "provider_error", { reason });
-          return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+          return providerFailed(reason);
         }
       }
       // A writer runs as long as it works, unless the run's wall or token budget is gone; BB's events say when it has failed.
@@ -165,18 +174,18 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const nudge = await loadWriterNudge(bb.storage.kv, input.attemptId);
         if (nudge?.ended) {
           const reason = `${WRITER_SILENT_REASON}: no activity after ${nudge.count} nudges`;
-          transitionAttempt(db, input.attemptId, "provider_error", { reason });
+          const ended = providerFailed(reason);
           if (["active", "starting"].includes(currentStatus ?? "")) await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
-          return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+          return ended;
         }
         const listed = currentStatus === "idle" ? null : await listThreadEventsRaw(bb, { threadId:input.writerThreadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50" });
         const rawFailure = currentStatus === "error" ? "writer thread status error" : listed?.ok ? threadFailure(listed.events) : null;
         // A turn held in the concurrency-limit queue is waiting its turn: the provider's start limit is not a failure then.
         const failure = await startLimitWaiting(bb, input.writerThreadId, rawFailure) ? null : rawFailure;
         if (failure) {
-          transitionAttempt(db, input.attemptId, "provider_error", { reason:failure });
+          const ended = providerFailed(failure);
           if (["active", "starting"].includes(currentStatus ?? "")) await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
-          return { status:"provider_error", reason:failure, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+          return ended;
         }
         if (currentStatus === "idle") {
           completedThread = currentThread;
@@ -204,8 +213,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const limit = providerLimitNotice(answer);
       if (limit) {
         const reason = `writer_provider_limit: ${limit}`;
-        transitionAttempt(db, input.attemptId, "provider_error", { reason });
-        return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+        return providerFailed(reason);
       }
       const question = needsHumanQuestion(answer);
       if (question) {
@@ -679,8 +687,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     } catch (cause) {
       const thread = await getThreadBounded(input.writerThreadId);
       if (stringAt(thread, "status") === "error") {
-        transitionAttempt(db, input.attemptId, "provider_error", { reason:cause instanceof Error ? cause.message : String(cause) });
-        return { status:"provider_error", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+        return providerFailed(cause instanceof Error ? cause.message : String(cause));
       }
       throw cause;
     }
