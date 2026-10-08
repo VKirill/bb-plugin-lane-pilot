@@ -152,3 +152,42 @@ it("never parks a folder without git: «not a git repository» and the no-git li
   expect(FREE_CLASSES.has(failureClass("blocked", large))).toBe(false);
   expect(nextStep("blocked", large)).toMatch(/put it under git/);
 });
+
+// Reasons copied from the hub's lane_pilot_attempt table (7 days up to 2026-10-08): 35 of the 106 «harness» faults of the error
+// budget were the first two, 2 were a red check whose log printed EROFS.
+describe("reasons from the hub that were counted as Lane Pilot's own faults", () => {
+  const erofs = "npm warn using --force Recommended protections disabled.\nfailed to load config from /home/ubuntu/.lane-pilot/worktrees/lpattempt_ac105192f5024278b9b802a6e5f4881d/selfystudio/apps/marketing/vitest.config.ts\n\nError: EROFS: read-only file system, open '/home/ubuntu/.lane-pilot/worktrees/lpattempt_ac105192f5024278b9b802a6e5f4881d/selfystudio/apps/marketing/node_modules/.vite-temp/vitest.config.ts.timestamp-1790944873211-7800d1bbf19b4.mjs'";
+  it.each([
+    ["validation_failed", "merge_conflict: main changed since this attempt started: ", "merge"],
+    ["blocked", "retry limit 2 exhausted: merge_conflict: main changed since this attempt started: ", "merge"],
+    ["validation_failed", "merge_conflict: main changed since this attempt started: src/sum.js", "merge"],
+    ["validation_failed", `verification failed (npm -w @selfystudio/marketing run test -- ArticleBody): ${erofs}`, "task"],
+    ["blocked", `retry limit 2 exhausted: verification failed (npm -w @selfystudio/marketing run test -- ArticleBody): ${erofs}`, "task"],
+    ["blocked", "retry limit 2 exhausted: verification failed (npx vitest run --exclude 'tests/guard*.test.ts' --exclude tests/native-session-hooks.test.ts --exclude 'tests/verification/**'): exit 1", "task"],
+    ["validation_failed", "verification failed (node --test tests/): exit 1", "task"],
+    ["blocked", "retry limit 2 exhausted: verification failed (npm run typecheck && npm test && npm run build): exit 1", "task"],
+    // The wrapper is X tried too often: it classifies by X.
+    ["blocked", "retry limit 2 exhausted: writer_model_unavailable:codex/lp-drill-model-that-does-not-exist", "provider"],
+    ["blocked", "retry limit 2 exhausted: missing expected_outputs: CardMockCard.vue", "contract"],
+    ["blocked", "retry limit 2 exhausted: writer changed no files", "task"],
+    ["blocked", "retry limit 2 exhausted: writer thread status error", "task"],
+    ["blocked", "retry limit 2 exhausted: system_error:thread_provisioning_failed:Provisioning thread failed", "harness"],
+    ["blocked", "retry limit 2 exhausted: ownership run scope invalid: run scope contains a non-BB or invalid task contract", "harness"],
+  ] as const)("%s %s → %s", (state, reason, klass) => {
+    expect(failureClass(state, reason)).toBe(klass);
+  });
+
+  it("a merge conflict stays a free redo and a red check stays a charged attempt", () => {
+    expect(FREE_CLASSES.has(failureClass("blocked", "retry limit 2 exhausted: merge_conflict: main changed since this attempt started: "))).toBe(true);
+    expect(PARKED_CLASSES.has(failureClass("blocked", "retry limit 2 exhausted: merge_conflict: main changed since this attempt started: "))).toBe(false);
+    expect(FREE_CLASSES.has(failureClass("blocked", "retry limit 2 exhausted: verification failed (node --test tests/): exit 1"))).toBe(false);
+  });
+
+  it("a real fault of Lane Pilot is still one, and so is a check that died of the environment", () => {
+    expect(failureClass("blocked", "attempt_worktree_holder_ambiguous:page_cap")).toBe("harness");
+    expect(failureClass("blocked", "reconcile_page_cap")).toBe("harness");
+    expect(failureClass("blocked", "internal_error: illegal stage transition writer-agent: failed -> running")).toBe("harness");
+    expect(failureClass("validation_failed", "merge_failed: git merge failed: fatal: Unable to create '/repo/.git/index.lock': File exists.")).toBe("infra");
+    expect(failureClass("validation_failed", "verification failed (npm run build): environment: Error: EACCES: permission denied, rmSync '/x/.output'")).toBe("infra");
+  });
+});

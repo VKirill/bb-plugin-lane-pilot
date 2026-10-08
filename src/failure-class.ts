@@ -17,8 +17,14 @@ import { NO_ANSWER_REASON } from "./validate-output";
 
 const JUDGMENT = /needs_human/i;
 const MERGE = /(^|: )merge_conflict/i;
-// Before 0.1.117 a merge that git refused for another reason (a stale index.lock) was called a conflict with no files.
-const MISLABELED_MERGE = /merge_conflict: main changed since this attempt started:\s*$/i;
+// Before 0.1.117 a merge that git refused for another reason (a stale index.lock) was called a conflict with no files. Those rows
+// are still in the database, but no code path writes that reason any more (git-integrate.ts answers `failed`, i.e. merge_failed,
+// when git names no file), so one that is read now is a conflict like any other: a free redo, not a fault of Lane Pilot (hub
+// 2026-10-08: 35 of the 106 «harness» faults of the 7-day budget were these).
+/** «retry limit 2 exhausted: X» (reconcile.ts, writer/start.ts, rpc/runs.ts) is X tried too often: it is classified by X. */
+const RETRY_LIMIT_WRAPPER = /^retry limit \d+ exhausted:\s*/i;
+/** A red check: the task's, unless the reason carries the environment marker. Its output is a log, not a statement about Lane Pilot. */
+const CHECK_FAILED = /^verification failed\b/;
 /** The attempt replayed on a moved main failed the task's own checks there; part of the merge-conflict reason, so the redo is free. */
 export const REPLAY_CHECK_FAILED = "checks red after the replay on main";
 // Linux git 2.43 names no lock in «Unable to write index» (OVH 2026-10-06); the wording is added beside index.lock.
@@ -56,17 +62,17 @@ export const isWriterSilent = (reason:string | null | undefined):boolean => SILE
 const PROVIDER_STATES = new Set(["provider_error", "timeout"]);
 
 export function failureClass(state:string, reason:string | null | undefined):FailureClass {
-  const text = reason ?? "";
+  const text = (reason ?? "").replace(RETRY_LIMIT_WRAPPER, "");
   if (VERDICT_BLOCK.test(text)) return "contract";
   if (JUDGMENT.test(text)) return "judgment";
   if (BUDGET.test(text) || RETRY_BUDGET.test(text)) return "budget";
   if (LIMIT.test(text)) return "limit";
   if (SILENT.test(text)) return "provider";
   if (NO_GIT.test(text) || WAITING_SECRET.test(text)) return "contract";
-  if (MISLABELED_MERGE.test(text)) return "harness";
   if (MERGE.test(text)) return "merge";
   if (INFRA.test(text) || isEnvironmentReason(text)) return "infra";
-  if (HARNESS.test(text)) return "harness";
+  // The words of HARNESS (EROFS, spawn failed, …) in a check's output belong to the check (hub: a red vitest printing EROFS counted as a fault).
+  if (!CHECK_FAILED.test(text) && HARNESS.test(text)) return "harness";
   if (CONTRACT.test(text)) return "contract";
   if (PROVIDER_STATES.has(state) || /^(writer_provider_unavailable|writer_model_unavailable|writer_service_tier_unavailable)/.test(text)) return "provider";
   if (state === "empty_output") return text.includes(NO_ANSWER_REASON) ? "provider" : "task";
