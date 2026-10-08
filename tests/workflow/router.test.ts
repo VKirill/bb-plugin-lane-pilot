@@ -165,7 +165,7 @@ describe("state checks", () => {
 
   it("checks plugins, secrets and project facts; optional secrets and prose machines never exclude", () => {
     const find = (id: string) => catalog.find((workflow) => workflow.id === id)!;
-    expect(stateProblem(find("issue-full"), { plugin: (name) => (name === "bb-tasks" ? false : undefined) })).toBe("plugin bb-tasks is not available");
+    expect(stateProblem(find("issue-full"), { plugin: (name) => (name === "tasks" ? false : undefined) })).toBe("plugin tasks is not available");
     expect(stateProblem(find("web-research"), { secret: (name) => (name === "TAVILY_API_KEY" ? false : undefined) })).toBe("secret TAVILY_API_KEY is not set");
     expect(stateProblem(find("code-review"), { project: (key) => (key === "git" ? false : undefined) })).toBe("the project has no git");
     expect(stateProblem(find("brainstorm-driven"), { secret: () => false, machine: () => false })).toBeNull();

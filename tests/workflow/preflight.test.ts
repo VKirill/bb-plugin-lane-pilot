@@ -5,10 +5,10 @@ import { createRun, openDatabase, setRunThread } from "../../src/database";
 import { commandsScript, createWorkflowPreflight, parseCommandAnswers } from "../../src/server/workflow-preflight";
 import { runWorkflowTool } from "../../src/server/workflow-tools";
 import type { WorkflowToolDeps } from "../../src/server/workflow-tools";
-import { checkRequires, preflightRefusal, secretName, toolGroup } from "../../src/workflow/preflight";
+import { checkRequires, effectiveRequires, preflightRefusal, secretName, toolGroup } from "../../src/workflow/preflight";
 import type { RequirePorts } from "../../src/workflow/preflight";
 import type { Workflow } from "../../src/workflow/schema";
-import { builtinWorkflow } from "../../src/workflow/builtin";
+import { builtinWorkflow, builtinWorkflows } from "../../src/workflow/builtin";
 import { wf } from "./engine-helpers";
 
 const requires = (extra: Partial<Workflow["requires"]>): Workflow["requires"] =>
@@ -168,5 +168,25 @@ describe("lane_pilot_run_workflow with requirements and a first live run", () =>
     expect(JSON.parse(await runWorkflowTool(blocked.deps, { workflowId: "demo", inputs: { query: "q" }, liveTrial: true }, ctx)).reason).toContain("requirements_missing");
     // A draft stays refused whatever liveTrial says.
     expect(JSON.parse(await runWorkflowTool(setup("draft").deps, { workflowId: "demo", inputs: { query: "q" }, liveTrial: true }, ctx)).reason).toContain("not_runnable");
+  });
+});
+
+/** The ids `bb plugin list --json` printed on 2026-10-08, of the plugins a chain may need; a chain that names another id is blocked at start. */
+const REAL_PLUGIN_IDS = new Set(["lane-pilot", "tasks", "browser-automation", "env-catalog", "image-studio", "memory", "secrets", "workflows"]);
+
+describe("the plugins the shipped chains require are real BB plugin ids", () => {
+  it("every requires.plugins and every node's plugins entry names a real plugin (the tracker is `tasks`, not `bb-tasks`)", () => {
+    const named: string[] = [];
+    for (const found of builtinWorkflows()) for (const name of effectiveRequires(found).plugins) named.push(`${found.id}:${name}`);
+    expect(named.length).toBeGreaterThan(20);
+    expect(named.filter((entry) => !REAL_PLUGIN_IDS.has(entry.slice(entry.indexOf(":") + 1)))).toEqual([]);
+    expect(named.filter((entry) => entry.endsWith(":tasks")).map((entry) => entry.split(":")[0]).sort()).toEqual(["issue-discover", "issue-full", "issue-quick"]);
+  });
+
+  it("an older file's `bb-tasks` is read as `tasks`", async () => {
+    const result = await checkRequires(requires({ plugins: ["lane-pilot", "bb-tasks"] }), { plugins: async () => ["lane-pilot", "tasks"] });
+    expect(result.ok).toBe(true);
+    const missing = await checkRequires(requires({ plugins: ["bb-tasks"] }), { plugins: async () => ["lane-pilot"] });
+    expect(missing.issues[0]).toMatchObject({ kind: "plugin", name: "bb-tasks", level: "missing" });
   });
 });

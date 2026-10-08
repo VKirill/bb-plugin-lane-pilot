@@ -1,3 +1,4 @@
+import { pluginId } from "./preflight";
 import type { Workflow } from "./schema";
 
 /**
@@ -315,7 +316,7 @@ function baseScore(index: ReturnType<typeof buildIndex>, doc: Doc, query: string
 export function stateProblem(workflow: Workflow, state: RouterState | undefined): string | null {
   if (!state) return null;
   const { requires } = workflow;
-  for (const plugin of requires.plugins) if (state.plugin?.(plugin) === false) return `plugin ${plugin} is not available`;
+  for (const plugin of requires.plugins) if (state.plugin?.(pluginId(plugin)) === false) return `plugin ${plugin} is not available`;
   for (const skill of requires.skills) if (state.skill?.(skill) === false) return `skill ${skill} is not installed`;
   for (const raw of requires.secrets) {
     // `TAVILY_API_KEY (only with research=true)` names an optional secret: it never excludes the workflow.
