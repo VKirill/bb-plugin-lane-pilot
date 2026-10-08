@@ -9,7 +9,7 @@ import type { RunRow } from "../workflow/journal";
 import { outputFields } from "../workflow/lower";
 import type { Field, GraphNode } from "../workflow/schema";
 import { createTaskLinter } from "./lint-task";
-import { agentRequest, createWorkflowAgents, withResolvedModel } from "./workflow-agent";
+import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
 import type { WorkflowAgents } from "./workflow-agent";
 import { lpTaskPipelineExecutor } from "./writer/dispatch-workflow";
 import type { DispatchRuntime } from "./writer/dispatch-workflow";
@@ -146,8 +146,25 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     // A re-run after a reload is safe only when the spawn is idempotent (the VK thread keys); else the step is interrupted instead.
     get reentrant() { return keyedSpawnSupported(bb); },
     run: async (c) => {
-      need(c);
-      const result = await agents.run(await withResolvedModel(agentRequest(c, c.node as Extract<GraphNode, { type: "agent" }>)));
+      const rt = need(c);
+      const node = c.node as Extract<GraphNode, { type: "agent" }>;
+      // A required artifact that arrives under a name (`consumes.as`) must be there before a helper is started for it.
+      for (const spec of node.consumes ?? []) {
+        if (spec.required && spec.as && (c.input.with[spec.as] ?? c.inputs[spec.as]) === undefined) throw new Error(`consumes_missing: ${node.id} needs ${spec.kind}/${spec.version} as "${spec.as}"${spec.from ? ` from ${spec.from}` : ""}, which did not arrive`);
+      }
+      // The inputs that are too long to repeat stand in the packet as a file and a summary: the files are written first, and if that fails the packet shows them cut.
+      const plan = stepPacket(c, node);
+      let byReference = true;
+      if (plan?.files.length) {
+        try {
+          const checkout = await pmCheckout(rt);
+          for (const file of plan.files) await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${file.path}`, content: file.text, contentEncoding: "utf8", createParents: true });
+        } catch (cause) {
+          byReference = false;
+          bb.log.warn(`Lane Pilot could not write the input files of ${node.id} (${cause instanceof Error ? cause.message : String(cause)}); the packet shows them cut`);
+        }
+      }
+      const result = await agents.run(await withResolvedModel(agentRequest(c, node, { byReference })));
       return { output: result.output, threadId: result.threadId, ...(result.usage ? { usage: result.usage } : {}) };
     },
   } as NodeExecutor<ChainRuntime>);
