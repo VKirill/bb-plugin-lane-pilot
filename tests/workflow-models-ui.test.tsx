@@ -62,7 +62,8 @@ async function world() {
     edges: [{ from: "start", to: "search" }, { from: "search", to: "end", with: { result: "search.handoff" } }],
   })));
   const emit: { current: ((payload: unknown) => Promise<unknown>) | null } = { current: null };
-  const ctx = { bb, db, log: () => undefined, effectiveProjectSettings: async (scope: string) => ({ values: { ...settings, ...loadProjectSettings(db, scope) } }),
+  const kv = new Map<string, unknown>();
+  const ctx = { bb: { ...bb, log: { info: () => undefined }, storage: { kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { kv.set(key, value); } } } }, db, log: () => undefined, effectiveProjectSettings: async (scope: string) => ({ values: { ...settings, ...loadProjectSettings(db, scope) } }),
     realtime: { notify: (_project: string, kind: string, threadId?: string, draftId?: string) => { void emit.current?.({ kind, ...(draftId ? { draftId } : {}), ...(threadId ? { threadId } : {}) }); } },
     host: { call: async () => ({ hostId: "h", files: [] }) } } as unknown as ServerCore;
   const deps: ArchitectDeps = {
