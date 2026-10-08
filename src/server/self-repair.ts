@@ -19,6 +19,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../contracts";
 import type { ServerCore } from "./core";
 import { jev } from "../jev/runtime";
+import { GUARD_BLOCKED_KEY, type GuardBlock } from "../jev/output-guard";
 import { MAX_CANDIDATES, repairGroup } from "../jev/judgments/repair-group";
 
 /**
@@ -63,7 +64,7 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
 
 export type Incident = {
   signature: string;
-  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook";
+  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook" | "guard";
   projectId: string;
   runId: string;
   taskId: string;
@@ -170,7 +171,7 @@ export function isDue(record: SignatureRecord, now: number, version = VERSION): 
 }
 
 /** How much a kind of incident matters when it is real: a closed project (breaker) or a parked task outranks a log line or a drill. */
-const KIND_SEVERITY: Record<Incident["kind"], number> = { breaker: 5, parked: 4, blocked: 3, stuck: 3, triage: 3, repeat: 3, hook: 2, queued: 2, stage: 2, log: 1, drill: 0.4 };
+const KIND_SEVERITY: Record<Incident["kind"], number> = { breaker: 5, guard: 5, parked: 4, blocked: 3, stuck: 3, triage: 3, repeat: 3, hook: 2, queued: 2, stage: 2, log: 1, drill: 0.4 };
 const IMPACT_FLOOR = 0.3;
 
 /**
@@ -339,6 +340,14 @@ export function createSelfRepair(ctx: ServerCore) {
       out.push({ signature: reasonSignature("breaker", open.fingerprint), kind: "breaker", projectId, runId: "-", taskId: "-",
         attemptId: `breaker:${projectId}:${open.openedAt}`, pmThreadId: null, writerThreadId: null, version: VERSION,
         reason: `the project's writers have been held ${Math.round((now - open.openedAt) / 60_000)} min: several tasks failed on «${open.fingerprint}»`, at: now });
+    }
+    // J-11: an output the guard withheld (a secret value, instructions for the reader) is raised once, whatever its project.
+    const guarded = await bb.storage.kv.get(GUARD_BLOCKED_KEY).catch(() => null);
+    for (const row of (Array.isArray(guarded) ? guarded : []) as GuardBlock[]) {
+      if (row.at <= since || ignored.has(row.projectId)) continue;
+      out.push({ signature: reasonSignature("guard", `${row.kind} output withheld by the output guard: ${row.reason}`), kind: "guard", projectId: row.projectId, runId: row.runId ?? "-", taskId: row.subject ?? "-",
+        attemptId: `guard:${row.at}`, pmThreadId: null, writerThreadId: null, version: VERSION,
+        reason: `a ${row.kind} output was withheld by the output guard (${row.reason}); it was neither stored nor shown. Find where the ${row.reason === "secret" ? "value came from and why it was not masked" : "instructions came from and what let them reach the output"}.`, at: row.at });
     }
     const drill = await bb.storage.kv.get(DRILL_KEY).catch(() => null);
     for (const [hostId, row] of Object.entries((drill && typeof drill === "object" ? drill : {}) as Record<string, DrillOutcome>)) {

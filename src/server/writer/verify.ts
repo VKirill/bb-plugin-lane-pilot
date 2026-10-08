@@ -250,6 +250,12 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     /** Hash of the content of the files the attempt changed: two turns with the same one left the diff as it was. */
     diffKey?:string }> {
     const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
+    // J-11: the writer's answer is checked before it is stored with the attempt (shadow by default: recorded, never blocks).
+    const guarded = ctx.outputGuard ? await ctx.outputGuard({ kind:"writer", text:outputText(output), projectId:input.projectId, runId:input.runId, subject:input.taskId }) : null;
+    if (guarded?.blocked) {
+      recordGateEvaluation(db,{...input,gate:"validate",status:"rejected",input:JSON.stringify(input.task),summary:{reason:`output_guard_blocked:${guarded.reason}`}});
+      return { status:"validation_failed", reason:`verdict_block:output-guard: the writer's answer ${guarded.reason === "secret" ? "contains what looks like a secret value" : "contains instructions aimed at the agent that reads it"}; it was not stored | stopped, not redone: tell the owner before sending anything again`, output:guarded.text, produced:[], verification:[] };
+    }
     const bookkeeping = bookkeepingSetting(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
     const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
     if (!dirt.ok) {

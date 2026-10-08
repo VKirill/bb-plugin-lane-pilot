@@ -309,7 +309,7 @@ export function createQaStages(ctx: ServerCore) {
       // After a reload the remembered values are gone: fetch the logins again so the verdict is masked as it would have been.
       const logins = Array.isArray(frozen.logins) ? frozen.logins.filter((name): name is string => typeof name === "string") : [];
       const deadline = typeof frozen.deadline === "number" ? frozen.deadline : stage.updatedAt + timeoutSec * 1000;
-      void Promise.all(logins.map((name) => ctx.secrets.record(name))).then(() => awaitQaVerdict(ctx, threadId, deadline, timeoutSec)).then((verdict) => {
+      void Promise.all(logins.map((name) => ctx.secrets.record(name))).then(() => awaitQaVerdict(ctx, threadId, deadline, timeoutSec, { projectId: getRun(db, row.run_id)?.project_id ?? "-", runId: row.run_id })).then((verdict) => {
         if (!verdict) return;
         const reason = verdict.verdict === "passed" ? undefined : verdict.summary || undefined;
         recordStage(db, { ...base, state:verdict.verdict, result:{ ...frozen, backend:"bb-browser", ...verdict }, ...(reason ? { reason } : {}) });

@@ -587,3 +587,22 @@ describe("J-10: a new wording of a known problem (selfrepair.group)", () => {
     expect(Object.keys((await repair.state()).signatures)).toHaveLength(2);
   });
 });
+
+describe("J-11: an output the guard withheld becomes a self-repair incident", () => {
+  it("raises one incident for it, in the project it came from, and starts a repair", async () => {
+    const env = setup();
+    await env.ctx.bb.storage.kv.set("output-guard:blocked", [{ at: Date.now(), kind: "errand", reason: "secret", projectId: "proj_real", runId: "lprun_a", subject: "thr_errand" }] as never);
+    const repair = createSelfRepair(env.ctx);
+    const result = await repair.tick({ since: 0 });
+    expect(result.incidents).toBe(1);
+    expect(result.signatures[0]).toMatch(/^guard:/);
+    expect(result.spawned).toBe("thr_repair1");
+    expect(String(env.spawns[0]!.prompt)).toContain("withheld by the output guard");
+  });
+
+  it("ignores a block in the sandbox project", async () => {
+    const env = setup();
+    await env.ctx.bb.storage.kv.set("output-guard:blocked", [{ at: Date.now(), kind: "writer", reason: "injection", projectId: "proj_3tb652jpsi", runId: null, subject: null }] as never);
+    expect((await createSelfRepair(env.ctx).tick({ since: 0 })).incidents).toBe(0);
+  });
+});
