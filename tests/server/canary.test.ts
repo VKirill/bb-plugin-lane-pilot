@@ -23,10 +23,23 @@ function setup() {
     return id;
   };
   const kv = new Map<string, unknown>();
+  const projectRows: Array<{ id: string; name: string }> = [];
+  const listFails = { on: false };
+  /** A finished attempt of another project's run (the run is made on first use). */
+  const attemptIn = (projectId: string, state: string, reason: string | null = null, taskId?: string) => {
+    const runId = `run-${projectId}`;
+    if (!db.prepare("SELECT 1 FROM lane_pilot_run WHERE id=?").get(runId)) createRun(db, runId, projectId, "cli", "/repo");
+    const id = `att-${++n}`;
+    createAttempt(db, { id, runId, taskId: taskId ?? `task-${n}` });
+    db.prepare("UPDATE lane_pilot_attempt SET harness_version=?, created_at=?, state=?, reason=? WHERE id=?").run(VERSION, Date.now(), state, reason, id);
+  };
   const ctx = { bb: { storage: { kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { kv.set(key, value); } } },
-    sdk: { threads: { send: async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; } } },
+    sdk: {
+      threads: { send: async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; } },
+      projects: { list: async (query: { archived?: boolean }) => { if (listFails.on) throw new Error("BB is busy"); return query.archived ? [] : projectRows; } },
+    },
     log: { warn: () => undefined, info: () => undefined } }, db, isDisposed: () => false, log: () => undefined } as never;
-  return { db, harness, attempt, sent, canary: createCanary(ctx), kv };
+  return { db, harness, attempt, attemptIn, projectRows, listFails, sent, canary: createCanary(ctx), kv };
 }
 
 const own = "internal_error: Cannot read properties of undefined";
@@ -41,6 +54,44 @@ describe("canaryReport on reasons from the hub", () => {
     attempt("blocked", "attempt_worktree_holder_ambiguous:page_cap");
     const report = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
     expect(report.budget).toMatchObject({ attempts: 20, faults: 1, exhausted: false });
+  });
+});
+
+describe("the sandbox and the drills are not in the error budget or the canary (audit 2026-10-08 round 4, P1-12)", () => {
+  it("leaves out the drill's sandbox project, projects named LP sandbox / LP native and drill-* tasks, in the budget and in the canary", async () => {
+    const { db, attempt, attemptIn, projectRows, canary } = setup();
+    for (let i = 0; i < 20; i += 1) attempt("accepted");
+    // Deliberate failures of the sandbox and the drill: six of them would be 23% of the week.
+    for (let i = 0; i < 2; i += 1) attemptIn("proj_3tb652jpsi", "blocked", own);
+    projectRows.push({ id: "proj_named_sb", name: "LP sandbox 2026-10-08" }, { id: "proj_named_native", name: "LP native ab12" }, { id: "proj_real", name: "SelfyStudio" });
+    attemptIn("proj_named_sb", "blocked", own);
+    attemptIn("proj_named_native", "blocked", own);
+    attemptIn("proj", "blocked", own, "drill-parallel-1");
+    attemptIn("proj", "blocked", own, "drill-parallel-2");
+    // The sandbox's accepted attempts do not dilute the real rate either.
+    for (let i = 0; i < 10; i += 1) attemptIn("proj_3tb652jpsi", "accepted");
+    const bare = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
+    // Without the names only the project id and the drill tasks are known.
+    expect(bare.budget).toMatchObject({ attempts: 22, faults: 2 });
+    const status = await canary.status();
+    expect(status.budget).toMatchObject({ attempts: 20, faults: 0, exhausted: false });
+    expect(status).toMatchObject({ faults: 0, tripped: false });
+    // A real failure still counts.
+    attemptIn("proj_real", "blocked", own);
+    attemptIn("proj_real", "blocked", own);
+    const again = await canary.status(Date.now() + 61_000);
+    expect(again.budget).toMatchObject({ attempts: 22, faults: 2 });
+  });
+
+  it("keeps the last project list when BB cannot list projects, so the sandbox does not come back into the budget", async () => {
+    const { attemptIn, projectRows, listFails, canary } = setup();
+    projectRows.push({ id: "proj_named_sb", name: "LP sandbox x" });
+    for (let i = 0; i < 20; i += 1) attemptIn("proj_real", "accepted");
+    attemptIn("proj_named_sb", "blocked", own);
+    const first = await canary.status();
+    expect(first.budget).toMatchObject({ attempts: 20, faults: 0 });
+    listFails.on = true;
+    expect((await canary.status(Date.now() + 61_000)).budget.faults).toBe(0);
   });
 });
 

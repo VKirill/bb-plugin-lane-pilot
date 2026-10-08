@@ -11,7 +11,7 @@ import type { ServerCore } from "./core";
  * if too many of them failed on Lane Pilot's own fault (failure class «harness»: `internal_error`, `merge_failed`, spawn
  * and reconcile errors, …), the PMs of the affected tasks and the log are told once, with the command that rolls back.
  * Separately a 7-day budget over all versions says whether a routine deploy is wise (`budget.exhausted`); only an incident
- * deploy goes out while it is. Both read the plugin's own database (`lane_pilot_attempt.harness_version`), never write to it.
+ * deploy goes out while it is. Sandbox projects and drill tasks are left out of both (`SANDBOX_PROJECT_ID`, `isSandboxProjectName`, `isDrillTask`). Both read the plugin's own database (`lane_pilot_attempt.harness_version`), never write to it.
  *
  * Nothing here changes how a task runs: a tripped canary does not stop the version, it makes a human decide. Run from the
  * Mac mini with `scripts/lp-canary.sh` (RPC `canary_status`), which exits 1 when the canary tripped or the budget is spent.
@@ -28,6 +28,15 @@ export const BUDGET_DAYS = 7;
 export const BUDGET_MIN_ATTEMPTS = 20;
 const SINCE_KEY = (version: string) => `canary:since:${version}`;
 const ALERTED_KEY = (version: string) => `canary:alerted:${version}`;
+
+/**
+ * Sandbox and drill traffic is not the product's: the drill's sandbox project, every project named «LP sandbox …» or «LP native …» and
+ * the drill's tasks (`drill-*`, scripts/lp-drill.sh) fail on purpose and would spend the budget of the real projects (audit 2026-10-08
+ * round 4, P1-12). The same rule as scripts/lp-metrics-views.sql (`scope`), which tests/lp-metrics.test.ts keeps in step.
+ */
+export const SANDBOX_PROJECT_ID = "proj_3tb652jpsi";
+export const isSandboxProjectName = (name: string | null | undefined): boolean => typeof name === "string" && (name.startsWith("LP sandbox") || name.startsWith("LP native"));
+export const isDrillTask = (taskId: string): boolean => taskId.startsWith("drill-");
 
 const FAILED_STATES = ["blocked", "provider_error", "timeout", "empty_output", "validation_failed", "spawn_rejected"];
 type Row = { id: string; run_id: string; task_id: string; state: string; reason: string | null; project_id: string; pm_thread_id: string | null };
@@ -54,20 +63,21 @@ const asFault = (row: Row): boolean => row.state !== "accepted" && failureClass(
  */
 const asBudgetFault = (row: Row): boolean => row.state !== "accepted" && ["harness", "dirty_base"].includes(failureClass(row.state, row.reason));
 
-function selectFinished(db: LanePilotDatabase, where: string, args: unknown[]): Row[] {
-  return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, r.project_id, r.pm_thread_id FROM lane_pilot_attempt a
+function selectFinished(db: LanePilotDatabase, where: string, args: unknown[], sandboxProjects: ReadonlySet<string> = new Set()): Row[] {
+  return (db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, r.project_id, r.pm_thread_id FROM lane_pilot_attempt a
     JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN ('accepted',${FAILED_STATES.map(() => "?").join(",")}) AND ${where} ORDER BY a.created_at`)
-    .all(...FAILED_STATES, ...args) as Row[];
+    .all(...FAILED_STATES, ...args) as Row[])
+    .filter((row) => row.project_id !== SANDBOX_PROJECT_ID && !sandboxProjects.has(row.project_id) && !isDrillTask(row.task_id));
 }
 
 /** The canary of `version` since it first ran, and the 7-day budget over every version. */
-export function canaryReport(db: LanePilotDatabase, input: { version: string; since: number; now: number }): CanaryReport {
-  const { version, since, now } = input;
-  const own = selectFinished(db, "a.harness_version=? AND a.created_at>=?", [version, since]).slice(0, CANARY_MAX_ATTEMPTS);
+export function canaryReport(db: LanePilotDatabase, input: { version: string; since: number; now: number; sandboxProjects?: ReadonlySet<string> }): CanaryReport {
+  const { version, since, now, sandboxProjects } = input;
+  const own = selectFinished(db, "a.harness_version=? AND a.created_at>=?", [version, since], sandboxProjects).slice(0, CANARY_MAX_ATTEMPTS);
   const faultRows = own.filter(asFault);
   const minutes = Math.floor((now - since) / 60_000);
   const rate = own.length ? faultRows.length / own.length : 0;
-  const week = selectFinished(db, "a.created_at>=?", [now - BUDGET_DAYS * 86_400_000]);
+  const week = selectFinished(db, "a.created_at>=?", [now - BUDGET_DAYS * 86_400_000], sandboxProjects);
   const weekFaults = week.filter(asBudgetFault).length;
   const weekDirtyBase = week.filter((row) => row.state !== "accepted" && failureClass(row.state, row.reason) === "dirty_base").length;
   const weekRate = week.length ? weekFaults / week.length : 0;
@@ -107,8 +117,24 @@ export function createCanary(ctx: ServerCore) {
   /** The first time a version runs is its deploy time; called at start-up, and by every read as a fallback. */
   const noteStart = async (): Promise<void> => { await since(); };
 
+  let sandboxCache: { at: number; ids: ReadonlySet<string> } | null = null;
+  /** The ids of the projects named «LP sandbox …» / «LP native …»; a minute's memory, and none when BB cannot list projects. */
+  async function sandboxProjects(now: number): Promise<ReadonlySet<string>> {
+    if (sandboxCache && now - sandboxCache.at < 60_000) return sandboxCache.ids;
+    const projects = (bb.sdk as unknown as { projects?: { list: (query: unknown) => Promise<Array<{ id: string; name?: string }>> } }).projects;
+    let ids = new Set<string>(sandboxCache?.ids);
+    try {
+      if (projects) {
+        const rows = [...await projects.list({ includePersonal: true }), ...await projects.list({ includePersonal: true, archived: true }).catch(() => [])];
+        ids = new Set(rows.filter((row) => isSandboxProjectName(row.name)).map((row) => row.id));
+      }
+    } catch { /* keep the last answer: a project list that fails must not put the sandbox back into the budget */ }
+    sandboxCache = { at: now, ids };
+    return ids;
+  }
+
   async function status(now = Date.now()): Promise<CanaryReport & { alerted: boolean }> {
-    const report = canaryReport(db, { version: VERSION, since: await since(VERSION, now), now });
+    const report = canaryReport(db, { version: VERSION, since: await since(VERSION, now), now, sandboxProjects: await sandboxProjects(now) });
     return { ...report, alerted: Boolean(await bb.storage.kv.get(ALERTED_KEY(VERSION)).catch(() => null)) };
   }
 
