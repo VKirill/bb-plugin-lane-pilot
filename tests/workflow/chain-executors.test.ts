@@ -27,7 +27,9 @@ type Row = Record<string, unknown>;
 type Script = Record<string, Array<string | ((checkout: string) => string)>>;
 const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stringify(body)}\n\`\`\``;
 
-async function setup(script: Script, options: { dirty?: boolean } = {}) {
+/** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
+type Spent = { input: number; output: number; model?: string };
+async function setup(script: Script, options: { dirty?: boolean; spent?: Record<string, Spent> } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -53,6 +55,9 @@ async function setup(script: Script, options: { dirty?: boolean } = {}) {
         get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId: PROJECT, environmentId: "env-pm", sourceThreadId: PM, lifecycleOwnerThreadId: PM }),
         // A follow-up sent to a thread shows up as a new requested turn that starts and completes.
         events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
+          ...(options.spent?.[nodeOf.get(threadId) ?? ""] ? [
+            { type: "client/thread/start", threadId, seq: 3, createdAt: 1, data: { request: { params: { execution: { model: options.spent[nodeOf.get(threadId)!]!.model ?? "claude-opus-5-5" } } } } },
+            { type: "thread/tokenUsage/updated", threadId, seq: 4, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: options.spent[nodeOf.get(threadId)!]!.input, outputTokens: options.spent[nodeOf.get(threadId)!]!.output, totalTokens: options.spent[nodeOf.get(threadId)!]!.input + options.spent[nodeOf.get(threadId)!]!.output }, total: { inputTokens: options.spent[nodeOf.get(threadId)!]!.input, outputTokens: options.spent[nodeOf.get(threadId)!]!.output, totalTokens: options.spent[nodeOf.get(threadId)!]!.input + options.spent[nodeOf.get(threadId)!]!.output } } } }] : []),
           ...sent.filter((message) => message.threadId === threadId).flatMap((_message, at) => [{ type: "client/turn/requested", threadId, seq: 10 * (at + 1) + 3, createdAt: Date.now() + 60_000 },
             { type: "turn/started", threadId, seq: 10 * (at + 1) + 4 }, { type: "turn/completed", threadId, seq: 10 * (at + 1) + 5, data: { status: "completed" } }])] },
         send: async (args) => { const input = (args as unknown as { threadId: string; input: Array<{ text: string }> }); sent.push({ threadId: input.threadId, text: input.input.map((part) => part.text).join("\n") }); return {} as never; },
@@ -101,6 +106,72 @@ afterEach(async () => { await dispose?.(); dispose = null; });
 const chain = (extra: Row): Workflow => parseWorkflow({
   schemaVersion: 1, id: "chain-under-test", name: "Chain under test", description: { en: "A chain", ru: "Цепочка" }, inputs: [], outputs: [],
   ...extra,
+});
+
+describe("what a step spends counts against the run's budget", () => {
+  const agent = (id: string, extra: Row = {}) => ({ id, type: "agent", role: "analyst", prompt: `Work ${id}.`, output: [{ name: "n", type: "number" }], ...extra });
+  const twoSteps = (budget: Row) => chain({
+    nodes: [agent("first"), agent("second"), { id: "done", type: "action", action: "emit", map: { n: "second.n" } }],
+    outputs: [{ name: "n", type: "number", required: false }],
+    edges: [{ from: "start", to: "first" }, { from: "first", to: "second" }, { from: "second", to: "done" }],
+    budget,
+  });
+  const answers = { first: [reply({ n: 1, handoff: "a" })], second: [reply({ n: 2, handoff: "b" })] };
+
+  it("an agent step reports the tokens and the price its thread spent, into its receipt and the run's totals", async () => {
+    const t = await setup(answers, { spent: { first: { input: 1000, output: 500 }, second: { input: 2000, output: 100, model: "claude-sonnet-5-5" } } });
+    dispose = t.dispose;
+    const summary = await t.start(twoSteps({})).done;
+    expect(summary.status).toBe("succeeded");
+    const receipt = (node: string) => JSON.parse(t.engine.snapshot(summary.runId)!.steps.find((step) => step.node_id === node)!.receipt_json!);
+    expect(receipt("first").usage).toEqual({ tokens: 1500, costUsd: expect.closeTo(0.014, 6) });
+    expect(receipt("second").usage).toEqual({ tokens: 2100, costUsd: expect.closeTo(0.005, 6) });
+    expect(t.engine.snapshot(summary.runId)!.run).toMatchObject({ tokens_used: 3600 });
+    expect(t.engine.snapshot(summary.runId)!.run.cost_micro_usd).toBeGreaterThan(18_000);
+  });
+
+  it("maxTokens blocks the run before the next step, as blocked and not failed", async () => {
+    const t = await setup(answers, { spent: { first: { input: 1000, output: 500 }, second: { input: 10, output: 10 } } });
+    dispose = t.dispose;
+    const summary = await t.start(twoSteps({ max_steps: 10, maxTokens: 1000 })).done;
+    expect(summary).toMatchObject({ status: "blocked", reason: "budget_exceeded:tokens" });
+    expect(t.spawned).toHaveLength(1);
+  });
+
+  it("maxCostUsd (max_usd) blocks the run on the price of what was spent, from the model's rate", async () => {
+    const t = await setup(answers, { spent: { first: { input: 1000, output: 500 }, second: { input: 10, output: 10 } } });
+    dispose = t.dispose;
+    const summary = await t.start(twoSteps({ max_usd: 0.01 })).done;
+    expect(summary).toMatchObject({ status: "blocked", reason: "budget_exceeded:cost" });
+    expect(t.spawned).toHaveLength(1);
+    const cheap = await setup(answers, { spent: { first: { input: 1000, output: 500 }, second: { input: 10, output: 10 } } });
+    const ok = await cheap.start(twoSteps({ max_usd: 0.5 })).done;
+    await cheap.dispose();
+    expect(ok.status).toBe("succeeded");
+  });
+
+  it("a model the price table does not know is priced at the dearest known rate, so a budget is never blind", async () => {
+    const t = await setup(answers, { spent: { first: { input: 1_000_000, output: 0, model: "mystery-model-9" }, second: { input: 1, output: 1 } } });
+    dispose = t.dispose;
+    const summary = await t.start(twoSteps({ max_usd: 1 })).done;
+    expect(summary).toMatchObject({ status: "blocked", reason: "budget_exceeded:cost" });
+  });
+
+  it("a child run's spending is added to the parent step that called it", async () => {
+    const t = await setup(answers, { spent: { first: { input: 1000, output: 500 }, second: { input: 10, output: 10 } } });
+    dispose = t.dispose;
+    const inner = chain({ id: "inner", nodes: [agent("first"), { id: "done", type: "action", action: "emit", map: { n: "first.n" } }], outputs: [{ name: "n", type: "number", required: false }], edges: [{ from: "start", to: "first" }, { from: "first", to: "done" }] });
+    const outer = chain({
+      id: "outer", nodes: [{ id: "call", type: "subworkflow", workflow: "inner" }, { id: "done", type: "action", action: "emit", map: { n: "call.n" } }],
+      outputs: [{ name: "n", type: "number", required: false }], edges: [{ from: "start", to: "call" }, { from: "call", to: "done" }],
+    });
+    (t.engine as unknown as { options: { resolveWorkflow?: unknown } }).options.resolveWorkflow = (id: string) => (id === "inner" ? inner : null);
+    const summary = await t.start(outer).done;
+    expect(summary.status).toBe("succeeded");
+    const snapshot = t.engine.snapshot(summary.runId)!;
+    expect(snapshot.run).toMatchObject({ tokens_used: 1500 });
+    expect(JSON.parse(snapshot.steps.find((step) => step.node_id === "call")!.receipt_json!).usage.tokens).toBe(1500);
+  });
 });
 
 describe("the agent step", () => {

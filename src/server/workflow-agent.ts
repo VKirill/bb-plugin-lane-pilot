@@ -16,6 +16,7 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { detectRepoEdits, gitRepoStatus } from "./repo-edits";
 import { SPECIALIST_ROLES } from "./specialists";
 import { findThreadsByMetadata, keyedSpawnSupported } from "./thread-keys";
+import { threadUsage } from "./token-usage";
 import { stringAt } from "./values";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "./workflow-agent-model";
 import { outputText } from "./writer-task";
@@ -65,7 +66,8 @@ export type HelperRequest = {
   intoThread?: string | null;
   signal?: AbortSignal;
 };
-export type HelperResult = { threadId: string; output: Record<string, unknown>; text: string };
+/** What the step spent: tokens and the price of them, from the thread's own usage events (the budget of the run counts these). */
+export type HelperResult = { threadId: string; output: Record<string, unknown>; text: string; usage?: { tokens: number; costUsd: number } };
 
 export class HelperFailure extends Error {
   /** The code leads the message: it is what a run's step error shows. */
@@ -174,7 +176,9 @@ export function createWorkflowAgents() {
       if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
     }
     if (!output) throw new HelperFailure("output_invalid", `the ${request.role} helper's final message could not be read: ${problem}`);
-    return { threadId: threadId!, output, text };
+    // Read last, so the repair turn counts too; a thread whose usage cannot be read reports none, and the budget goes on what it has.
+    const usage = await threadUsage(bb, threadId!, { ...(sentAt !== undefined ? { since: sentAt } : {}), ...(request.model ? { fallbackModel: request.model } : {}) }).catch(() => undefined);
+    return { threadId: threadId!, output, text, ...(usage ? { usage } : {}) };
   }
 
   return { run };
