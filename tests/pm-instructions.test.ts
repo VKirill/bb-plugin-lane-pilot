@@ -3,6 +3,9 @@ import bundledAgents from "../src/bundled-agents.json";
 import { buildCapabilityRegistry, chooseRecipient, describeRegistry } from "@lane-pilot/handoff";
 import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt } from "../src/native-agent-overlay";
 import { bundledAgentDefinitions } from "../src/server/handoff";
+import { SESSION_MAX_MS, SESSION_MAX_TURNS } from "../src/failure-class";
+import { LIVE_FOLDER_FILE_CAP } from "../src/live-folder";
+import { STICKY_WINDOW_MS } from "../src/server/writer/sticky";
 
 it("defines shipping as push, bring the project up its own way, and prove it is live", () => {
   const ship = LANE_PILOT_PM_SESSION.split("## Ship")[1]!.split("## Docs")[0]!;
@@ -50,4 +53,11 @@ it("describes every handoff recipient by what it does, not by its header line", 
   expect(text).not.toMatch(/: You are \*\*/);
   expect(text).toMatch(/copy-lead \([^)]*\): Copywriter: headlines \(H1\)/);
   expect(chooseRecipient(registry, "rewrite the H1 and the landing headlines")?.agentId).toBe("copy-lead");
+});
+
+// Instructions audit 2026-10-08: numbers the PM prompt states about the writer are code constants; a copy in prose drifts when one changes.
+it("states the writer limits the code enforces", () => {
+  expect(LANE_PILOT_PM_SESSION).toContain(`at most ${SESSION_MAX_TURNS} turns or ${SESSION_MAX_MS / 60_000} minutes`);
+  expect(LANE_PILOT_PM_SESSION).toContain(`for ${STICKY_WINDOW_MS / 3_600_000 === 3 ? "three" : "?"} hours after its last accepted task`);
+  expect(LANE_PILOT_PM_SESSION).toContain(`over ${String(LIVE_FOLDER_FILE_CAP).replace(/(\d)(?=(\d{3})$)/, "$1 ")} files`);
 });
