@@ -497,6 +497,22 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
+  it("refreshes the runs panel by itself on the project's signal, without reloading the screen", async () => {
+    const base = screenFixture();
+    const screen = vi.fn(() => base);
+    const listed = { runs: [{ ...base.runs[0]!, id: "lprun_new", state: "running", updated_at: 99, attempts: [], stageCount: 0 }, ...base.runs], total: 2 };
+    const listRuns = vi.fn(() => listed);
+    const slot = await mountPage({ get_screen: screen, list_runs: listRuns });
+    openTab(slot, "monitor");
+    await slot.findByTestId("run-lprun_1");
+    expect(slot.queryByTestId("run-lprun_new")).toBeNull();
+    await slot.behavior.emitRealtime("lp:proj_ui", { kind: "helpers", threadId: "thr_pm" });
+    await slot.findByTestId("run-lprun_new");
+    expect(listRuns).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj_ui", offset: 0, pinOpen: true }));
+    expect(screen).toHaveBeenCalledTimes(1);
+    slot.lifecycle.unmount();
+  });
+
   it("mounts a tab on its first open instead of all ten at once, and keeps it after", async () => {
     const slot = await mountPage({}, { projectId:"proj_ui", threadId:null }, "", false);
     await slot.findByTestId("tab-settings");
