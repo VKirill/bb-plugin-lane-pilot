@@ -14,6 +14,12 @@
 - **Overview** shows what is running now, what needs the owner, the setup list and a folded «How it works» (inheritance levels and the path of an order from the chat to the merged result). The system Overview holds the language and the hidden projects.
 - **Strings.** New keys `src/i18n-tabs.ts` (EN+RU); the 19 `ru ? … : …` strings of the Agents page are keys in `src/i18n-owned.ts`; a test fails on any such ternary in `src/ui`. Two Tailwind palette colours became tokens.
 - **Tests.** `tests/ui-six-tabs.test.tsx` renders every tab and segment in the Advanced depth and checks that each of the 262 catalog setting keys is shown in exactly one tab; the settings-page UI tests (`ui-matrix`, `ui-settings-integration`, `agent-access-ui`, `layout-geometry`) follow the new layout with a shared `tests/ui-harness.tsx`; `ui-project-nav` covers the fold, hide, header and overview.
+Ideas taken from the Synapse AI talk (evaluation: `.bb/chats/thr_jn6c4d4rfj/artifacts/synapse/EVALUATION.md`); the rest was skipped or already done.
+
+- **A size ceiling on the standing agent prompts (`tests/prompt-budget.test.ts`).** The PM session prompt (18.3 KB), the Workflow architect (11.0 KB) and the small helpers (about 1 KB) each get a ceiling about 10 % above today's size, so growth is a decision and not an accident. Test only, no runtime change.
+- **Saving a schedule that looks like one already there now says so (`src/server/schedule-service.ts`).** The answer of `lane_pilot_schedule create`/`update` and the board's save carry a warning when an active or paused schedule of the project has the same name (case and edge spaces ignored) or the same task at the same time. The save still goes through; the caller decides. No new tool.
+
+- **The same reminder set twice is one reminder (`src/server/relay.ts`).** A retried call or a PM that forgot it had already set a reminder put a second identical card in the chat. `remind` now returns the open reminder of the same thread with the same note (case and edge spaces ignored), the same watched thread and tasks, and a due time within a minute. No refusal, no new tool.
 
 ## 0.1.197
 
