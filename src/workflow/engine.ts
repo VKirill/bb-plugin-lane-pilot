@@ -75,9 +75,20 @@ export type RunSummary = {
   stopped: boolean;
 };
 
+/**
+ * The engine/schema compatibility version: what a step stamped at start and what a reload compares. Bump it only when the journal
+ * layout or the semantics of a running step change in a way an old in-flight step cannot be resumed under; NOT on a plugin release.
+ */
+export const ENGINE_COMPAT_VERSION = "wfe-1";
+/** A step stamped before compat versions existed carries the plugin's package version; with a compat version set such a stamp counts as compatible. */
+const LEGACY_BUILD_STAMP = /^\d+\.\d+\.\d+/;
+
 export type EngineOptions = {
   db: LanePilotDatabase;
+  /** The build (package version): written to receipts and to the run row, informational. */
   harnessVersion: string;
+  /** What a reload compares to decide whether an in-flight step may be re-run (default: `harnessVersion`, i.e. every build is its own). */
+  compatVersion?: string;
   instanceId?: string;
   now?: () => number;
   log?: (message: string) => void;
@@ -134,6 +145,7 @@ export class WorkflowEngine {
   private readonly stoppedRuns = new Set<string>();
   private disposed = false;
   private readonly now: () => number;
+  private get compat(): string { return this.options.compatVersion ?? this.options.harnessVersion; }
   private readonly leaseMs: number;
 
   constructor(private readonly options: EngineOptions) {
@@ -489,6 +501,7 @@ export class WorkflowEngine {
     const j = this.journal;
     if (!j.setRunStatus(runId, ["running", "waiting"], "failed", reason)) return;
     this.cancelOpenSteps(runId);
+    this.aborts.get(runId)?.abort(); // the sibling branches still running stop (their threads are stopped) instead of finishing work nobody will read
   }
 
   private cancelOpenSteps(runId: string): void {
@@ -678,7 +691,7 @@ export class WorkflowEngine {
     if (step.state !== "pending") return "skip";
     const node = c.nodes.get(step.node_id)!;
     const limit = this.checkLimits(run, c);
-    if (limit) { if (j.setRunStatus(runId, ["running", "waiting"], "blocked", limit)) this.cancelOpenSteps(runId); return "skip"; }
+    if (limit) { if (j.setRunStatus(runId, ["running", "waiting"], "blocked", limit)) { this.cancelOpenSteps(runId); this.aborts.get(runId)?.abort(); } return "skip"; }
 
     // Skipped before it starts: the quality mode or skip_when says so; the node keeps a typed output.
     try {
@@ -721,7 +734,7 @@ export class WorkflowEngine {
     const startAttempt = Math.max(1, step.attempt);
     const spawnKey = this.spawnKeyOf(runId, step, startAttempt);
     this.fault("before-start");
-    if (!j.moveStep(runId, stepKey, "pending", "running", { started: true, harness_version: this.options.harnessVersion, attempt: startAttempt, spawn_key: spawnKey })) return "skip";
+    if (!j.moveStep(runId, stepKey, "pending", "running", { started: true, harness_version: this.compat, attempt: startAttempt, spawn_key: spawnKey })) return "skip";
     j.db.prepare("UPDATE lane_pilot_wf_run SET steps_used=steps_used+1, updated_at=? WHERE id=?").run(this.now(), runId);
     let executor = this.executors.get(executorKey(node)!)!;
     // A majority join needs more than half of its branches: it fails the run otherwise, whatever reducer builds its output.
@@ -770,7 +783,7 @@ export class WorkflowEngine {
     this.fault("after-run");
     const current = j.getRun(runId)!;
     if (TERMINAL_RUN.includes(current.status)) { j.moveStep(runId, stepKey, "running", "canceled", { ended: true }); return "skip"; }
-    const receipt = (extra: Record<string, unknown>) => JSON.stringify({ executor: executorKey(node), harnessVersion: this.options.harnessVersion, ...extra });
+    const receipt = (extra: Record<string, unknown>) => JSON.stringify({ executor: executorKey(node), harnessVersion: this.options.harnessVersion, engineCompat: this.compat, ...extra });
     if (!outcome) {
       const message = lastError instanceof Error ? lastError.message : String(lastError);
       const code = lastError instanceof MissingValueError ? lastError.code : "step_failed";
@@ -1157,10 +1170,11 @@ export class WorkflowEngine {
       for (const step of j.steps(row.id).filter((item) => item.state === "running")) {
         const node = c.nodes.get(step.node_id);
         const executor = node ? this.executors.get(executorKey(node) ?? "") : undefined;
-        const sameBuild = step.harness_version === this.options.harnessVersion;
-        if (executor?.reentrant && sameBuild) { j.moveStep(row.id, step.step_key, "running", "pending"); continue; }
+        const compatible = step.harness_version === this.compat || (this.options.compatVersion !== undefined && LEGACY_BUILD_STAMP.test(step.harness_version ?? ""));
+        if (executor?.reentrant && compatible) { j.moveStep(row.id, step.step_key, "running", "pending"); continue; }
         const why = executor?.reentrant ? "harness_changed" : "not_reentrant";
-        j.moveStep(row.id, step.step_key, "running", "interrupted", { error: `interrupted by a reload (${why})`, ended: true });
+        const detail = executor?.reentrant ? `: the step began under engine ${step.harness_version ?? "unknown"}, this one is ${this.compat}` : "";
+        j.moveStep(row.id, step.step_key, "running", "interrupted", { error: `interrupted by a reload (${why}${detail})`, ended: true });
         j.setRunStatus(row.id, ["running"], "interrupted", `step_interrupted:${step.node_id}:${why}`);
         this.cancelOpenSteps(row.id);
       }

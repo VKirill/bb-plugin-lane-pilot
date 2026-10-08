@@ -61,8 +61,8 @@ const PRUNE = /(^|\/)(node_modules|vendor|dist|build)\/|\.lock$|\.min\.[a-z]+$|(
 
 // ---------------------------------------------------------------- the owner's question
 
-/** The enum value a free answer stands for, when the owner typed words and chose no option. */
-const TEXT_KINDS = ["answered", "provide", "given", "reason", "chosen", "resolved", "approved", "continue", "proceed"];
+/** The enum values that carry words, not a decision: a free answer may stand for one of them, never for approve/deploy/send/proceed. */
+const TEXT_KINDS = ["text", "answered", "provide", "given", "reason", "chosen", "resolved"];
 
 /** What the form offers: the values of the node's `answer_kind` that a person can pick (not the clock's `timeout`, not the skip markers). */
 export function humanOptions(node: Extract<GraphNode, { type: "human" }>): string[] {
@@ -70,20 +70,44 @@ export function humanOptions(node: Extract<GraphNode, { type: "human" }>): strin
   return (kind?.values ?? node.options).filter((value) => !["timeout", "none", "given"].includes(value));
 }
 
-/** The node's output from the owner's answer: the chosen value as `answer_kind`, the words as `answer`, the other fields empty. */
-export function humanOutput(node: Extract<GraphNode, { type: "human" }>, answer: { choiceIndex: number | null; text: string }): Row {
-  const options = humanOptions(node);
-  const kindField = node.out.find((field) => field.name === "answer_kind");
-  const chosen = answer.choiceIndex !== null ? options[answer.choiceIndex - 1] : undefined;
-  const values = kindField?.values ?? [];
-  const kind = chosen ?? (answer.text ? TEXT_KINDS.find((value) => values.includes(value)) ?? options[0] : options[0]);
+const normalizeChoice = (text: string) => text.toLowerCase().replace(/[_\-\s]+/g, " ").replace(/^[\s.,;:!?'"«»()]+|[\s.,;:!?'"«»()]+$/g, "");
+
+/** The 1-based option a typed answer names outright (the option's own words, or its number); never a guess from the wording around it. */
+function namedOption(options: string[], text: string): number | null {
+  const said = normalizeChoice(text);
+  if (!said) return null;
+  const byName = options.findIndex((value) => normalizeChoice(value) === said);
+  if (byName >= 0) return byName + 1;
+  const byNumber = /^(?:option|choice|вариант|№|#)?\s*(\d{1,2})$/.exec(said);
+  const number = byNumber ? Number(byNumber[1]) : 0;
+  return number >= 1 && number <= options.length ? number : null;
+}
+
+/** The node's output with `answer_kind` set to `kind` and the words as `answer`; the other fields empty. */
+export function humanFields(node: Extract<GraphNode, { type: "human" }>, kind: string | undefined, text: string): Row {
   const out: Row = {};
   for (const field of node.out) {
     if (field.name === "answer_kind") { if (kind !== undefined) out.answer_kind = kind; continue; }
-    if (field.name === "answer") { out.answer = answer.text; continue; }
-    out[field.name] = field.type === "array" ? (answer.text && node.out.filter((other) => other.type === "array").length === 1 ? [{ answer: answer.text }] : []) : field.type === "number" ? 0 : field.type === "boolean" ? false : field.type === "object" ? {} : field.type === "enum" ? field.values![0] : "";
+    if (field.name === "answer") { out.answer = text; continue; }
+    out[field.name] = field.type === "array" ? (text && node.out.filter((other) => other.type === "array").length === 1 ? [{ answer: text }] : []) : field.type === "number" ? 0 : field.type === "boolean" ? false : field.type === "object" ? {} : field.type === "enum" ? field.values![0] : "";
   }
   return out;
+}
+
+/**
+ * The node's output from the owner's answer: the chosen value as `answer_kind`, the words as `answer`, the other fields empty.
+ * Words alone make a choice only when they name an option; otherwise they are a text answer if the node has a text kind.
+ * Null when the answer decides nothing (an approval answered with a remark): the step keeps waiting and the owner is asked again.
+ */
+export function humanOutput(node: Extract<GraphNode, { type: "human" }>, answer: { choiceIndex: number | null; text: string }): Row | null {
+  const options = humanOptions(node);
+  const values = node.out.find((field) => field.name === "answer_kind")?.values ?? [];
+  const index = answer.choiceIndex ?? (answer.text ? namedOption(options, answer.text) : null);
+  const chosen = index !== null ? options[index - 1] : undefined;
+  if (chosen !== undefined) return humanFields(node, chosen, answer.text);
+  if (!answer.text) return options.length ? null : humanFields(node, undefined, "");
+  const kind = TEXT_KINDS.find((value) => values.includes(value));
+  return kind !== undefined || !values.length ? humanFields(node, kind, answer.text) : null;
 }
 
 // ---------------------------------------------------------------- code tasks of a chain
@@ -125,6 +149,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
         openForms.delete(key);
         if (answer.outcome === "answered") {
           const output = humanOutput(node, { choiceIndex: answer.choice ? Number(answer.choice.id) : null, text: answer.text });
+          // Words that name no option and fit no text kind decide nothing: the step keeps waiting and the owner is asked again, with the options listed.
+          if (!output) { await ask(rt, runId, stepKey, node, `Your answer did not choose an option (${options.map((value) => value.replace(/_/g, " ")).join(" / ")}). ${question}`, deadline); return; }
           // The form opens while the step is being recorded as waiting: an answer that arrives first is retried until the step can take it.
           for (let tries = 0; tries < 50; tries += 1) {
             if (await engine.resolve(runId, stepKey, output)) return;
@@ -151,7 +177,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       if (step.await.deadline && Date.now() >= step.await.deadline) {
         // A question whose answer kinds include `timeout` is answered by the clock; otherwise onTimeout says.
         const kind = human.out.find((field) => field.name === "answer_kind");
-        if (kind?.values?.includes("timeout")) return { output: { ...humanOutput(human, { choiceIndex: null, text: "" }), answer_kind: "timeout", answer: "" } };
+        if (kind?.values?.includes("timeout")) return { output: humanFields(human, "timeout", "") };
         if (human.onTimeout === "default" && human.defaultOption) {
           const field = human.out.find((candidate) => candidate.type === "string" || candidate.type === "enum");
           return { output: field ? { [field.name]: human.defaultOption } : {} };
