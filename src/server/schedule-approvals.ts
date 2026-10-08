@@ -17,13 +17,21 @@ const REASK_AFTER_MS = 60 * 60_000;
 export type ScheduleAction = "create" | "update" | "delete";
 export type ApprovalVerdict = { ok: true } | { ok: false; message: string };
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
+/** The most a question's `detail` carries (src/owner-ask.ts clips at the same number): a description longer than this is not shown, it is refused. */
+export const FORM_DETAIL_MAX = 4000;
 
-/** What the owner is shown of a task: the command or the text, the machine, the names of the accounts. Never a value. */
+/** Characters the eye cannot see (controls, zero-width, bidi marks) are written out, so a yes is never given to text that hides something. */
+const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/gu;
+const visible = (text: string): string => text.replace(INVISIBLE, (char) => `\\u{${char.codePointAt(0)!.toString(16)}}`);
+
+/**
+ * What the owner is shown of a task: the whole command or text, the machine, the names of the accounts. Never a value, never a
+ * shortened text (audit 2026-10-08 round 4, item 17: the owner's yes covers every character, 32 000 of them in a command).
+ */
 export function describeTask(task: ScheduleTask): string {
-  if (task.kind === "script") return [`Script on machine ${task.hostId}, folder ${task.cwd}:`, clip(task.command, 700), task.env.length ? `Env Catalog names given to it: ${task.env.join(", ")}` : ""].filter(Boolean).join("\n");
-  if (task.kind === "errand") return [`Agent errand${task.authorized ? " (may change things in the owner's accounts)" : " (reads and reports only)"}${task.model ? `, model ${task.model}` : ""}:`, clip(task.task, 700), task.accounts.length ? `Env Catalog accounts: ${task.accounts.join(", ")}` : ""].filter(Boolean).join("\n");
-  return `Workflow ${task.workflowId} with inputs ${clip(JSON.stringify(task.inputs), 400)}`;
+  if (task.kind === "script") return [`Script on machine ${task.hostId}, folder ${task.cwd}, ${task.command.length} characters, shown in full:`, visible(task.command), task.env.length ? `Env Catalog names given to it: ${task.env.join(", ")}` : ""].filter(Boolean).join("\n");
+  if (task.kind === "errand") return [`Agent errand${task.authorized ? " (may change things in the owner's accounts)" : " (reads and reports only)"}${task.model ? `, model ${task.model}` : ""}, ${task.task.length} characters, shown in full:`, visible(task.task), task.accounts.length ? `Env Catalog accounts: ${task.accounts.join(", ")}` : ""].filter(Boolean).join("\n");
+  return `Workflow ${task.workflowId} with inputs ${visible(JSON.stringify(task.inputs))}`;
 }
 
 export const approvalHash = (parts: unknown): string => createHash("sha256").update(JSON.stringify(parts)).digest("hex").slice(0, 24);
@@ -42,13 +50,16 @@ export function createScheduleApprovals(deps: { db: LanePilotDatabase; ownerAsk:
     if ((open.get(input.hash) ?? -Infinity) + ASK_TIMEOUT_MS + 60_000 > now) return { ok: false, message: `${head} A question is open in the PM chat; once the owner answers yes, call this tool again with the same arguments.` };
     if ((quietUntil.get(input.hash) ?? 0) > now) return { ok: false, message: `${head} The owner declined this a short while ago; do not try to work around it.` };
     if (!deps.ownerAsk) return { ok: false, message: `${head} No form can be shown here: ask the owner to make the change on the schedule board.` };
-    open.set(input.hash, now);
     const verb = input.action === "create" ? "create" : input.action === "update" ? "change" : "delete";
+    const detail = [input.summary, "", "A schedule runs by itself, with your accounts and machines, and nobody watches it. If you did not ask for this, say no.",
+      `A yes is for exactly this and lasts ${SCHEDULE_APPROVAL_TTL_MS / 60_000} minutes: the agent calls the tool again.`].join("\n");
+    // The owner must read all of what they allow: a description the form cannot carry is not cut, it is not asked at all.
+    if (detail.length > FORM_DETAIL_MAX) return { ok: false, message: `${head} The description is ${detail.length} characters, too long to be shown in full in the owner's form (the most is ${FORM_DETAIL_MAX}), and the owner does not allow what they cannot read. Shorten it (move the long part into a script file on the machine and schedule a short command that runs it), or ask the owner to make this schedule on the schedule board.` };
+    open.set(input.hash, now);
     void deps.ownerAsk.askInBackground(threadFor(input.projectId, input.threadId), {
       source: "secret",
       question: `Allow the agent to ${verb} the schedule «${input.name}»?`,
-      detail: [input.summary, "", "A schedule runs by itself, with your accounts and machines, and nobody watches it. If you did not ask for this, say no.",
-        `A yes is for exactly this and lasts ${SCHEDULE_APPROVAL_TTL_MS / 60_000} minutes: the agent calls the tool again.`].join("\n"),
+      detail,
       options: ["Allow", "Do not allow"],
       allowText: false,
     }, (answer) => {
