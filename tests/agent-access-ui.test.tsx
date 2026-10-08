@@ -47,9 +47,11 @@ async function mount(options: { mode?: string; modeOrigin?: Origin | null; prese
         const key = roleAccessKey(role);
         let value: unknown = undefined; let origin: Origin | null = null;
         for (const [level, name] of levels) if (rows[level]![key]?.present) { value = rows[level]![key]!.value; origin = name; }
+        let originBelow: Origin | null = null;
+        for (const [level, name] of levels.slice(0, -1)) if (pid !== GLOBAL && rows[level]![key]?.present) originBelow = name;
         const access = parseRoleAccess(value);
         return {
-          role, key, version: own[key]?.version ?? 0, value: own[key]?.present ? own[key]!.value : null, inherited: !own[key]?.present && origin !== null, origin,
+          role, key, version: own[key]?.version ?? 0, value: own[key]?.present ? own[key]!.value : null, inherited: !own[key]?.present && origin !== null, origin, originBelow,
           groups: Object.fromEntries(ACCESS_GROUPS.map((group) => [group, effectiveGroup(role, group, access)])),
           switches: Object.fromEntries(ACCESS_SWITCHES.map((sw) => [sw, effectiveSwitch(sw, access)])),
         };
@@ -292,9 +294,9 @@ describe("Agent access tab", () => {
       fireEvent.click(await slot.findByTestId("tab-access", {}, { timeout: 5000 }).then((tab) => { fireEvent.mouseDown(tab, { button: 0 }); return slot.getByTestId(`project-item-${projectId}`); }));
       fireEvent.click(await slot.findByTestId("section-item-sec_b"));
       await waitFor(() => expect(slot.getByTestId("agent-access").getAttribute("data-scope")).toBe("section"));
-      // The nested section asks for its own view and for its parent's.
+      // The nested section asks for its own view only: the level below rides in the same answer.
       await waitFor(() => expect(views).toContainEqual({ projectId, sectionId: "sec_b" }));
-      expect(views).toContainEqual({ projectId, sectionId: "sec_a" });
+      expect(views).not.toContainEqual({ projectId, sectionId: "sec_a" });
       await waitFor(() => expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_section));
       fireEvent.click(within(slot.getByTestId("access-role-writer")).getByRole("button", { expanded: false }));
       fireEvent.click(await slot.findByRole("button", { name: en.accessResetTo_section }));
@@ -321,6 +323,7 @@ describe("Agent access tab", () => {
       expect((await call("save_setting", { projectId, key: "helper.access.writer", value: own, expectedVersion: 0 })).ok).toBe(true);
       view = await call("helper_access_view", { projectId });
       writer = view.roles.find((role: { role: string }) => role.role === "writer");
+      expect(writer.originBelow).toBe("global");
       expect(writer).toMatchObject({ origin: "project", version: 1, groups: { skills: { names: null, source: "owner" } }, switches: { userInstructions: { include: false, source: "role" } } });
       const reset = await call("reset_project_settings", { projectId, keys: ["helper.access.writer"], expectedVersions: { "helper.access.writer": 1 } });
       expect(reset.ok).toBe(true);
@@ -332,6 +335,7 @@ describe("Agent access tab", () => {
       expect(globalReset.ok).toBe(true);
       view = await call("helper_access_view", { projectId: "*" });
       expect(view.roles.find((role: { role: string }) => role.role === "writer").origin).toBeNull();
+      expect(view.roles.find((role: { role: string }) => role.role === "writer").originBelow).toBeNull();
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 });

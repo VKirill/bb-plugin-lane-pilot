@@ -9,6 +9,7 @@ export function Disclosure({
   testId,
   compact,
   className,
+  onToggle,
 }: {
   summary: ReactNode;
   children: ReactNode;
@@ -16,12 +17,14 @@ export function Disclosure({
   testId?: string;
   compact?: boolean;
   className?: string;
+  onToggle?: (open: boolean) => void;
 }) {
   return (
     <details
       data-testid={testId}
       className={cn("min-w-0 max-w-full [&[open]>summary_[data-disclosure-chevron]]:rotate-90", className)}
       {...(open === undefined ? {} : { open })}
+      {...(onToggle ? { onToggle: (event) => onToggle(event.currentTarget.open) } : {})}
     >
       <summary
         className={cn(

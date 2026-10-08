@@ -18,7 +18,7 @@ type Source = "role" | "owner";
 /** The layer a value comes from: the role profile in code, or the scope that holds the row. */
 type Origin = "global" | "project" | "section";
 type RoleView = {
-  role: string; key: string; version: number; value: unknown; inherited: boolean; origin: Origin | null;
+  role: string; key: string; version: number; value: unknown; inherited: boolean; origin: Origin | null; originBelow?: Origin | null;
   groups: Record<AccessGroup, { names: string[] | null; source: Source }>;
   switches: Record<AccessSwitch, { include: boolean; source: Source }>;
 };
@@ -423,7 +423,7 @@ function PmCard() {
  * personal and project instructions), where each value comes from (role profile, global, project or section), and
  * the owner's per-role changes at the current level.
  */
-export function AgentAccess({ projectId, sectionId, parentSectionId, modeControl, refreshKey }: {
+export function AgentAccess({ projectId, sectionId, modeControl, refreshKey }: {
   projectId: string; sectionId: string | null; parentSectionId?: string | null; modeControl: ReactNode; refreshKey: number;
 }) {
   const rpc = useRpc<typeof rpcContract>();
@@ -438,20 +438,15 @@ export function AgentAccess({ projectId, sectionId, parentSectionId, modeControl
 
   const load = useCallback(async () => {
     const mine = ++generation.current;
-    const parent = scope === "global" ? null
-      : scope === "project" ? { projectId: GLOBAL_SETTINGS_PROJECT_ID }
-        : { projectId, ...(parentSectionId ? { sectionId: parentSectionId } : {}) };
     try {
-      const [next, up] = await Promise.all([
-        rpc.call("helper_access_view", { projectId, ...(sectionId ? { sectionId } : {}) }) as Promise<AccessView>,
-        parent ? (rpc.call("helper_access_view", parent) as Promise<AccessView>).catch(() => null) : Promise.resolve(null),
-      ]);
+      // One call: the view carries each role's origin one level up too (it used to be a second call with the same catalog).
+      const next = await rpc.call("helper_access_view", { projectId, ...(sectionId ? { sectionId } : {}) }) as AccessView;
       if (mine !== generation.current) return;
       setView(next);
-      setBelow(Object.fromEntries((up?.roles ?? []).map((role) => [role.role, role.origin])));
+      setBelow(Object.fromEntries(next.roles.map((role) => [role.role, role.originBelow ?? null])));
       setFailed(false);
     } catch { if (mine === generation.current) setFailed(true); }
-  }, [projectId, sectionId, parentSectionId, scope, rpc]);
+  }, [projectId, sectionId, rpc]);
 
   // The mode field lives on the page, so a change there refetches the view.
   useEffect(() => { void load(); }, [load, refreshKey]);

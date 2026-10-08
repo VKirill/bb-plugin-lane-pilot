@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { openAllTabs } from "./ui-tabs";
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot, type RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -179,6 +180,7 @@ async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:s
       },
     },
   });
+  await openAllTabs(slot);
   await waitFor(() => {
     const picker = writerPicker(slot);
     expect(picker.getAttribute("data-provider")).toBe("codex");

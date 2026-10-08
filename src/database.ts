@@ -661,6 +661,31 @@ export function listStageReceipts(db:LanePilotDatabase, runId:string, taskId?:st
   }));
 }
 
+/** The stage rows of a run without their result bodies: the screen lists these and loads one body only when it is opened. */
+export function listStageReceiptSummaries(db:LanePilotDatabase, runId:string): Array<Omit<StageReceiptRow,"result"> & {hasResult:boolean}> {
+  const rows = db.prepare(`SELECT run_id,task_id,stage_id,contract_version,state,input_sha256,output_sha256,attempt,provider_id,model,thread_id,
+    (result_json IS NOT NULL) AS has_result,reason,updated_at FROM lane_pilot_stage_receipt WHERE run_id=? ORDER BY task_id,stage_id`).all(runId);
+  return (rows as Array<Record<string, unknown>>).map((row) => ({
+    runId:row.run_id as string, taskId:row.task_id as string, stageId:row.stage_id as StageId,
+    contractVersion:row.contract_version as 1, state:row.state as StageState,
+    inputSha256:row.input_sha256 as string, outputSha256:row.output_sha256 as string|null,
+    attempt:row.attempt as number, providerId:row.provider_id as string|null, model:row.model as string|null,
+    threadId:row.thread_id as string|null, hasResult:Boolean(row.has_result),
+    reason:row.reason as string|null, updatedAt:row.updated_at as number,
+  }));
+}
+
+export function countStageReceipts(db:LanePilotDatabase, runId:string): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_stage_receipt WHERE run_id=?").get(runId) as {n:number}).n;
+}
+
+/** One stage's result body, parsed; `found` tells a missing row from a row without a result. */
+export function getStageReceiptResult(db:LanePilotDatabase, runId:string, taskId:string, stageId:string): {found:boolean; result:unknown|null} {
+  const row = db.prepare("SELECT result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?").get(runId, taskId, stageId) as {result_json:string|null}|undefined;
+  if (!row) return { found:false, result:null };
+  return { found:true, result:row.result_json == null ? null : JSON.parse(row.result_json) };
+}
+
 /** Background stages a reload interrupted: still pending or running, with the PM thread that owns them. */
 export function listUnfinishedStages(db:LanePilotDatabase, stageIds:StageId[]): Array<{runId:string;taskId:string;stageId:StageId;projectId:string;pmThreadId:string}> {
   if(!stageIds.length) return [];
@@ -1232,6 +1257,23 @@ export function listRunsWithAttempts(db: LanePilotDatabase, projectId: string): 
       id:string; state:string; attempt_no:number; thread_id:string|null; reason:string|null; task_id:string;
     }>,
   }));
+}
+
+export type RunHistoryRow = {
+  id:string; state:string; kind:string; created_at:number; updated_at:number; closed_at:number|null; pm_thread_id:string|null;
+  attempts: Array<{ id:string; state:string; attempt_no:number; thread_id:string|null; reason:string|null; task_id:string }>;
+};
+
+/** A page of a project's runs, newest first, with their attempts; `pinOpen` adds the runs that are still open beyond the page. */
+export function listRunsPage(db: LanePilotDatabase, projectId: string, page: { limit:number; offset:number; pinOpen?:boolean }): { runs:RunHistoryRow[]; total:number } {
+  const rows = db.prepare(`SELECT id,state,kind,created_at,updated_at,closed_at,pm_thread_id FROM lane_pilot_run
+    WHERE project_id=? ORDER BY created_at DESC`).all(projectId) as Array<Omit<RunHistoryRow,"attempts">>;
+  const picked = rows.filter((run, index) => (index >= page.offset && index < page.offset + page.limit) || (page.pinOpen && !run.closed_at));
+  const attempts = db.prepare(`SELECT id,state,attempt_no,thread_id,reason,task_id FROM lane_pilot_attempt WHERE run_id=? ORDER BY attempt_no`);
+  return {
+    total: rows.length,
+    runs: picked.map((run) => ({ ...run, attempts: attempts.all(run.id) as RunHistoryRow["attempts"] })),
+  };
 }
 
 export function loadRunHelperPolicyJson(db: LanePilotDatabase, runId: string): string | null {

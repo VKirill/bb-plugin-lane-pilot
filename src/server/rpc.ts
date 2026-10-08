@@ -20,12 +20,13 @@ import { sessionMemoryRpc } from "./session-memory";
 import { createWorkflowArchitect } from "./workflow-architect";
 import { architectStartRpc } from "./architect-start";
 import { createOwnerGate, guardOwnerOnlyRpc } from "./owner-gate";
+import { timeRpcHandlers } from "./rpc-timing";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
-  // The methods that change configuration or runs answer to the owner only (owner-gate.ts).
+  // The methods that change configuration or runs answer to the owner only (owner-gate.ts); every call is timed (rpc-timing.ts).
   const gate = createOwnerGate({ db: ctx.db, ownerAsk: ctx.ownerAsk, log: ctx.log });
-  ctx.bb.rpc.register(rpcContract, guardOwnerOnlyRpc({
+  ctx.bb.rpc.register(rpcContract, timeRpcHandlers(guardOwnerOnlyRpc({
     ...preferencesRpc(ctx, services),
     ...runsRpc(ctx, services),
     ...settingsRpc(ctx, services),
@@ -44,5 +45,5 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),
-  }, gate));
+  }, gate), (message) => ctx.bb.log.debug(message)));
 }

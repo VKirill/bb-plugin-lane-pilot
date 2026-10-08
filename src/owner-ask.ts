@@ -1,15 +1,14 @@
 import { z } from "zod";
+import { OWNER_ASK_MAX_OPTIONS, OWNER_ASK_RENDERER_ID, OWNER_ASK_SOURCES, type OwnerAskPayload, type OwnerAskResponse, type OwnerAskSource } from "./owner-ask-shared";
+
+export { OWNER_ASK_MAX_OPTIONS, OWNER_ASK_RENDERER_ID, OWNER_ASK_SOURCES };
+export type { OwnerAskPayload, OwnerAskResponse, OwnerAskSource };
 
 /**
  * A question to the owner as a BB pending interaction (`bb.ui.requestInput`) instead of text in a chat. Server and
  * screen share this file: what the form carries, what the owner's answer looks like and how it reads back to the
  * agent. BB's push-notifications plugin sends the interaction's title to the owner's phone, so the title is the question.
  */
-export const OWNER_ASK_RENDERER_ID = "lane-pilot-ask";
-export const OWNER_ASK_SOURCES = ["pm", "gate", "repair", "council", "secret"] as const;
-export type OwnerAskSource = (typeof OWNER_ASK_SOURCES)[number];
-
-export const OWNER_ASK_MAX_OPTIONS = 6;
 const TITLE_MAX = 160;
 
 export const ownerAskPayloadSchema = z.object({
@@ -20,14 +19,12 @@ export const ownerAskPayloadSchema = z.object({
   options: z.array(z.object({ id: z.string().min(1).max(40), label: z.string().min(1).max(120) })).max(OWNER_ASK_MAX_OPTIONS),
   allowText: z.boolean(),
 });
-export type OwnerAskPayload = z.infer<typeof ownerAskPayloadSchema>;
 
 /** What the form submits: the option the owner picked and/or words of their own. */
 export const ownerAskResponseSchema = z.object({
   choice: z.string().max(40).nullable().optional(),
   text: z.string().max(4000).optional(),
 });
-export type OwnerAskResponse = z.infer<typeof ownerAskResponseSchema>;
 
 export type OwnerAskRequest = {
   source: OwnerAskSource;

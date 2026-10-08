@@ -101,7 +101,10 @@ const OPTIONS = (direction: Direction) => ({
 
 type ElkEngine = { layout(graph: ElkNode): Promise<ElkNode> };
 let engine: Promise<ElkEngine> | null = null;
-/** elkjs is the heavy part of the graph view (over a megabyte); it is read when a graph is first drawn, once. */
+/**
+ * elkjs is the heavy part of the graph view (1.4 MB): it is evaluated when a graph is first drawn, once. `bb plugin build` bundles
+ * the app into one `app.js` (esbuild `outfile`, no splitting), so this import defers parsing only; it is still downloaded with the page.
+ */
 const elk = (): Promise<ElkEngine> => (engine ??= import("elkjs/lib/elk.bundled.js").then((module) => new module.default()));
 
 export async function layoutGraph(graph: WorkflowView, expansions: Expansions | undefined, direction: Direction): Promise<Layout> {

@@ -2,6 +2,9 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { stageReceiptSchema } from "./stages/contract";
 
+/** A stage row as the screen lists it: no result body (`get_stage_result` loads it), only whether there is one. */
+const stageSummarySchema = stageReceiptSchema.omit({ result: true }).extend({ hasResult: z.boolean() }).strict();
+
 export const prototypeConfigSchema = z.object({
   projectId: z.string().min(1),
   hostId: z.string().min(1),
@@ -790,6 +793,28 @@ export const workflowTrialCaseSchema = z.object({
   path: z.array(z.string()), output: z.unknown(), runId: z.string().nullable(), failures: z.array(z.string()), stubbedCalls: z.array(z.string()), notChecked: z.array(z.string()),
 }).strict();
 
+const runViewSchema = z.object({
+  id: z.string(),
+  state: z.string(),
+  kind: z.string(),
+  created_at: z.number(),
+  updated_at: z.number(),
+  cliReceiptJson: z.string().nullable(),
+  /** The PM chat of an open run: what the owner sees instead of a bare run id. */
+  pmThread: z.object({ id: z.string(), title: z.string().nullable(), status: z.string().nullable() }).strict().nullable().optional(),
+  /** How many stage rows the run has; `list_run_stages` returns them when the owner opens the list. */
+  stageCount: z.number().int().nonnegative().optional(),
+  attempts: z.array(z.object({
+    id: z.string(),
+    state: z.string(),
+    attempt_no: z.number(),
+    thread_id: z.string().nullable(),
+    reason: z.string().nullable(),
+    task_id: z.string(),
+    cliReceiptJson: z.string().nullable(),
+  }).strict()),
+}).strict();
+
 export const rpcContract = defineRpcContract({
   get_preferences: {
     input: z.object({ suggestedLocale: z.enum(["en", "ru"]) }).strict(),
@@ -1056,6 +1081,18 @@ export const rpcContract = defineRpcContract({
       description: z.string().min(1),
     }).strict().nullable(),
   },
+  list_runs: {
+    input: z.object({ projectId: z.string().min(1), sectionId: z.string().min(1).optional(), offset: z.number().int().min(0), limit: z.number().int().min(1).max(200), pinOpen: z.boolean().optional() }).strict(),
+    output: z.object({ runs: z.array(runViewSchema), total: z.number().int().nonnegative() }).strict(),
+  },
+  list_run_stages: {
+    input: z.object({ runId: z.string().min(1) }).strict(),
+    output: z.object({ stages: z.array(stageSummarySchema) }).strict(),
+  },
+  get_stage_result: {
+    input: z.object({ runId: z.string().min(1), taskId: z.string().min(1), stageId: z.string().min(1) }).strict(),
+    output: z.object({ found: z.boolean(), result: z.unknown().nullable() }).strict(),
+  },
   helper_access_view: {
     input: z.object({ projectId: z.string().min(1), sectionId: z.string().min(1).optional() }).strict(),
     output: z.object({
@@ -1065,6 +1102,8 @@ export const rpcContract = defineRpcContract({
         role: z.string(), key: z.string(), version: z.number().int(), value: z.unknown(), inherited: z.boolean(),
         /** Which scope the role's change comes from; null = the role profile in code. */
         origin: z.enum(["global", "project", "section"]).nullable(),
+        /** The same one level up: what the role shows once this level's change is removed. */
+        originBelow: z.enum(["global", "project", "section"]).nullable(),
         groups: z.object({ bbPlugins: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict(), skills: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict(), mcpServers: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict(), nativePlugins: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict() }).strict(),
         switches: z.object({ userInstructions: z.object({ include: z.boolean(), source: z.enum(["role","owner"]) }).strict(), projectInstructions: z.object({ include: z.boolean(), source: z.enum(["role","owner"]) }).strict() }).strict(),
       }).strict()),
@@ -1077,7 +1116,7 @@ export const rpcContract = defineRpcContract({
     }).strict(),
   },
   get_screen: {
-    input: z.object({ projectId: z.string().min(1), sectionId: z.string().min(1).optional() }).strict(),
+    input: z.object({ projectId: z.string().min(1), sectionId: z.string().min(1).optional(), runsLimit: z.number().int().min(1).max(200).optional() }).strict(),
     output: z.object({
       projectId: z.string(),
       sectionId: z.string().nullable().optional(),
@@ -1104,26 +1143,10 @@ export const rpcContract = defineRpcContract({
         routingPath: z.string().nullable(),
         nightPath: z.string().nullable(),
       }).strict(),
-      runs: z.array(z.object({
-        id: z.string(),
-        state: z.string(),
-        kind: z.string(),
-        created_at: z.number(),
-        updated_at: z.number(),
-        cliReceiptJson: z.string().nullable(),
-        /** The PM chat of an open run: what the owner sees instead of a bare run id. */
-        pmThread: z.object({ id: z.string(), title: z.string().nullable(), status: z.string().nullable() }).strict().nullable().optional(),
-        stages: z.array(stageReceiptSchema).optional(),
-        attempts: z.array(z.object({
-          id: z.string(),
-          state: z.string(),
-          attempt_no: z.number(),
-          thread_id: z.string().nullable(),
-          reason: z.string().nullable(),
-          task_id: z.string(),
-          cliReceiptJson: z.string().nullable(),
-        }).strict()),
-      }).strict()),
+      runs: z.array(runViewSchema),
+      /** All runs of the project; `runs` carries the newest few and every open one, `list_runs` the rest. */
+      runsTotal: z.number().int().nonnegative().optional(),
+      runsLimit: z.number().int().positive().optional(),
       unapplied: z.array(z.object({ key: z.string(), reason: z.string() }).strict()),
       cliPreview: z.object({
         argv: z.array(z.string()),

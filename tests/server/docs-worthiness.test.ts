@@ -17,6 +17,7 @@ describe("docs in auto mode", () => {
   it("judges each folder on each machine: content gets no docs, a codebase does, System One settles the borderline one", async () => {
     const judged: string[] = [];
     const scoped: string[] = [];
+    let factsCalls = 0;
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
       sdk: {
@@ -31,7 +32,7 @@ describe("docs in auto mode", () => {
       },
       experimental_callHostRpc: (call) => {
         const input = call.input as { projectCwd?: string; state?: string };
-        if (call.method === "docsWorthinessFacts") return { hostId: "h", ...factsFor(input.projectCwd!) };
+        if (call.method === "docsWorthinessFacts") { factsCalls++; return { hostId: "h", ...factsFor(input.projectCwd!) }; }
         if (call.method === "councilJudge") { judged.push(input.state!); return { hostId: "h", status: "ok", answers: { worth: "needed" }, confidence: { worth: 0.82 }, reason: null }; }
         if (call.method === "gitDocsScope") {
           scoped.push(input.projectCwd!);
@@ -55,6 +56,12 @@ describe("docs in auto mode", () => {
     // A stored verdict is reused while the folder looks the same: no second question.
     await harness.behavior.callRpc("docs_overview", { projectId });
     expect(judged).toHaveLength(1);
+    // The tab reuses the machines' answers for a few minutes; «Recheck» asks them again.
+    const asked = factsCalls;
+    await harness.behavior.callRpc("docs_overview", { projectId });
+    expect(factsCalls).toBe(asked);
+    await harness.behavior.callRpc("docs_overview", { projectId, recheck: true });
+    expect(factsCalls).toBe(asked + 3);
 
     const result = await harness.behavior.runCli(["docs-nightly", projectId]) as { stdout: string };
     const rows = JSON.parse(result.stdout) as Array<Record<string, unknown>>;

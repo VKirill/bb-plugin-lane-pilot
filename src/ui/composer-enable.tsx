@@ -14,7 +14,7 @@ import {
   startBlocked,
   type ActivationBlock,
 } from "../activation";
-import { DEFAULT_NATIVE_AGENT } from "../native-session";
+import { DEFAULT_NATIVE_AGENT } from "../native-agent-id";
 import { selectionHostId } from "../composer-selection";
 import { setPendingNativeAgent } from "./pending-native-agent";
 import { useNativeComposerSelection } from "./composer-selection-hook";

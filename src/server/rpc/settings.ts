@@ -3,7 +3,8 @@ import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MAN
 import { detectCompiledMainAgentCapability } from "../../agent-profile";
 import { buildCliInvocation } from "../../argv-builder";
 import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../constants";
-import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, getSettingVersions, listRunsWithAttempts, listSettingRows, listStageReceipts, loadProjectSettings, loadPrototypeConfig, sectionBindingId } from "../../database";
+import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, sectionBindingId } from "../../database";
+import type { RunHistoryRow } from "../../database";
 import { writerServiceTier } from "../../jev-reasoning";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "../../lp-defaults";
 import { mapListedQaHosts } from "../../qa-host";
@@ -17,9 +18,65 @@ import { rpcContract } from "../../contracts";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
+/** Runs the screen carries up front (plus every open one); older history comes page by page from `list_runs`. */
+const SCREEN_RUNS_LIMIT = 10;
+
 export function settingsRpc(ctx: ServerCore, services: Services) {
   const { bb, cliSettingsFor, db, host, listProjectSections, screenWriterBinding, sectionChain, serializedKv, settingsAbove, writerBindingKey } = ctx;
   const protectedSettings = createProtectedSettings({ db, ownerAsk: ctx.ownerAsk, log: ctx.log });
+  // Runs as the screen shows them: a stage count only; `list_run_stages` lists the rows and `get_stage_result` loads one body.
+  const runViews = async (runs: RunHistoryRow[], values: Record<string, unknown>) => {
+    const listed = runs.map((run) => ({
+      id: run.id,
+      state: run.closed_at ? "closed" : run.state,
+      kind: run.kind,
+      created_at: run.created_at,
+      updated_at: run.updated_at,
+      cliReceiptJson: asJsonText(values[cliReceiptRunKey(run.id)]),
+      stageCount: countStageReceipts(db, run.id),
+      attempts: run.attempts.map((attempt) => ({
+        ...attempt,
+        cliReceiptJson: asJsonText(values[cliReceiptAttemptKey(attempt.id)]),
+      })),
+    }));
+    // Open runs carry their PM chat's title and status; closed ones are history and are not looked up.
+    const pmThreads = new Map(await Promise.all(runs
+      .filter((run) => !run.closed_at && run.pm_thread_id)
+      .map(async (run) => {
+        let thread: unknown = null;
+        let status: string | null = null;
+        try { thread = await bb.sdk.threads.get({ threadId: run.pm_thread_id! }); status = stringAt(thread, "status"); }
+        catch (cause) { if (/\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause))) status = "gone"; }
+        return [run.id, { id: run.pm_thread_id!, title: stringAt(thread, "title"), status }] as const;
+      })));
+    return listed.map((run) => ({ ...run, pmThread: pmThreads.get(run.id) ?? null }));
+  };
+  // The BB plugin list and the skills catalog cost host calls (the skills catalog is ~385 KB) and change rarely: kept per catalog project for a minute.
+  const catalogCache = new Map<string, { at: number; value: { pluginRows: Array<{ id?: string; name?: string; displayName?: string }>; skillRows: Array<{ name?: string; description?: string }> } }>();
+  const CATALOG_TTL_MS = 60_000;
+  const loadCatalog = async (projectId: string, isGlobal: boolean) => {
+    const cached = catalogCache.get(projectId);
+    if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return cached.value;
+    const pluginsRequest = (bb.sdk.plugins.list() as Promise<unknown>).catch(() => []);
+    // The skills catalog of the project; some BB versions want an environment, so the project's own is tried next.
+    // The global scope has no catalog of its own; the first project's stands in for it.
+    const listedProjects = isGlobal ? await (bb.sdk.projects.list() as Promise<unknown>).catch(() => []) : [];
+    const projectRows = (Array.isArray(listedProjects) ? listedProjects : ((listedProjects as { projects?: unknown[] })?.projects ?? [])) as Array<{ id?: string }>;
+    const catalogProject = isGlobal ? projectRows.find((p) => p?.id)?.id ?? projectId : projectId;
+    const listSkills = (environmentId: string | null) => bb.sdk.skills.list({ projectId: catalogProject, environmentId } as never) as Promise<unknown>;
+    let skills: unknown = await listSkills(null).catch((cause) => { ctx.log(`helper_access_view skills: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+    if (!skills) {
+      const envs = await (bb.sdk.environments.list({ projectId: catalogProject } as never) as Promise<unknown>).catch(() => []);
+      const env = (Array.isArray(envs) ? envs : ((envs as { environments?: unknown[] })?.environments ?? [])) as Array<{ id?: string }>;
+      if (env[0]?.id) skills = await listSkills(env[0].id).catch((cause) => { ctx.log(`helper_access_view skills (env): ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
+    }
+    const skillRows = (Array.isArray(skills) ? skills : ((skills as { skills?: unknown[] })?.skills ?? [])) as Array<{ name?: string; description?: string }>;
+    const plugins = await pluginsRequest;
+    const pluginRows = (Array.isArray(plugins) ? plugins : ((plugins as { plugins?: unknown[] })?.plugins ?? [])) as Array<{ id?: string; name?: string; displayName?: string }>;
+    const value = { pluginRows, skillRows };
+    if (pluginRows.length || skillRows.length) catalogCache.set(projectId, { at: Date.now(), value });
+    return value;
+  };
   const refusedBy = (key: string, message: string) => ({ code: "incompatible_setting" as const, key, params: [key, message] });
   return {
     helper_access_view: async ({ projectId, sectionId }) => {
@@ -36,7 +93,10 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         [isGlobal ? "global" : "project", new Set(listSettingRows(db, projectId, "").map((row) => row.key))],
         ...scopes.map((binding) => ["section", new Set(listSettingRows(db, projectId, binding).map((row) => row.key))] as ["section", Set<string>]),
       ];
-      const originOf = (key: string) => { let found: "global" | "project" | "section" | null = null; for (const [name, keys] of scopeRows) if (keys.has(key)) found = name; return found; };
+      const originIn = (rows: typeof scopeRows, key: string) => { let found: "global" | "project" | "section" | null = null; for (const [name, keys] of rows) if (keys.has(key)) found = name; return found; };
+      const originOf = (key: string) => originIn(scopeRows, key);
+      // What the role falls back to when this level's change is removed: the origin one level up (none at the global level).
+      const originBelow = (key: string) => isGlobal ? null : originIn(scopeRows.slice(0, -1), key);
       const roles = HELPER_ROLES.map((role) => {
         const key = roleAccessKey(role);
         const access = parseRoleAccess(settings[key]);
@@ -44,25 +104,12 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
           role, key, version: versions[key] ?? 0, value: own.get(key)?.value ?? null,
           inherited: !own.has(key) && settings[key] !== undefined,
           origin: originOf(key),
+          originBelow: originBelow(key),
           groups: Object.fromEntries(ACCESS_GROUPS.map((group) => [group, effectiveGroup(role, group, access)])) as never,
           switches: Object.fromEntries(ACCESS_SWITCHES.map((sw) => [sw, effectiveSwitch(sw, access)])) as never,
         };
       });
-      const plugins = await (bb.sdk.plugins.list() as Promise<unknown>).catch(() => []);
-      const pluginRows = (Array.isArray(plugins) ? plugins : ((plugins as { plugins?: unknown[] })?.plugins ?? [])) as Array<{ id?: string; name?: string; displayName?: string }>;
-      // The skills catalog of the project; some BB versions want an environment, so the project's own is tried next.
-      // The global scope has no catalog of its own; the first project's stands in for it.
-      const listedProjects = isGlobal ? await (bb.sdk.projects.list() as Promise<unknown>).catch(() => []) : [];
-      const projectRows = (Array.isArray(listedProjects) ? listedProjects : ((listedProjects as { projects?: unknown[] })?.projects ?? [])) as Array<{ id?: string }>;
-      const catalogProject = isGlobal ? projectRows.find((p) => p?.id)?.id ?? projectId : projectId;
-      const listSkills = (environmentId: string | null) => bb.sdk.skills.list({ projectId: catalogProject, environmentId } as never) as Promise<unknown>;
-      let skills: unknown = await listSkills(null).catch((cause) => { ctx.log(`helper_access_view skills: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
-      if (!skills) {
-        const envs = await (bb.sdk.environments.list({ projectId: catalogProject } as never) as Promise<unknown>).catch(() => []);
-        const env = (Array.isArray(envs) ? envs : ((envs as { environments?: unknown[] })?.environments ?? [])) as Array<{ id?: string }>;
-        if (env[0]?.id) skills = await listSkills(env[0].id).catch((cause) => { ctx.log(`helper_access_view skills (env): ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
-      }
-      const skillRows = (Array.isArray(skills) ? skills : ((skills as { skills?: unknown[] })?.skills ?? [])) as Array<{ name?: string; description?: string }>;
+      const { pluginRows, skillRows } = await loadCatalog(projectId, isGlobal);
       return {
         mode: parsed.ok ? parsed.settings.mode : "invalid",
         modeOrigin: originOf("helper.context_mode"),
@@ -75,7 +122,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).map(([id, groups]) => [id, [...groups]])),
       };
     },
-    get_screen: async ({ projectId, sectionId }) => {
+    get_screen: async ({ projectId, sectionId, runsLimit }) => {
       // A section shows its own values over its parents', its project's and the global ones.
       const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];
       const bindingId = scopes.at(-1) ?? "";
@@ -130,39 +177,15 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         settings: config ? await cliSettingsFor(projectId, config) : settings,
       });
       const unapplied = invocation.unapplied.map((item) => ({ key: item.key, reason: item.reason }));
-      const listed = listRunsWithAttempts(db, projectId).map((run) => {
-        const runReceipt = asJsonText(values[cliReceiptRunKey(run.id)]);
-        return {
-          id:run.id,
-          state: run.closed_at ? "closed" : run.state,
-          kind:run.kind,
-          created_at:run.created_at,
-          updated_at:run.updated_at,
-          cliReceiptJson: runReceipt,
-          stages:listStageReceipts(db, run.id),
-          attempts: run.attempts.map((attempt) => ({
-            ...attempt,
-            cliReceiptJson: asJsonText(values[cliReceiptAttemptKey(attempt.id)]),
-          })),
-        };
-      });
+      const runsWindow = runsLimit ?? SCREEN_RUNS_LIMIT;
+      const page = listRunsPage(db, projectId, { limit: runsWindow, offset: 0, pinOpen: true });
+      const listed = await runViews(page.runs, values);
       const latestReceipt = listed
         .flatMap((run) => [
           ...run.attempts.map((attempt) => attempt.cliReceiptJson),
           run.cliReceiptJson,
         ])
         .find((text) => text != null) ?? null;
-      // Open runs carry their PM chat's title and status; closed ones are history and are not looked up.
-      const pmThreads = new Map(await Promise.all(listRunsWithAttempts(db, projectId)
-        .filter((run) => !run.closed_at && run.pm_thread_id)
-        .map(async (run) => {
-          let thread: unknown = null;
-          let status: string | null = null;
-          try { thread = await bb.sdk.threads.get({ threadId: run.pm_thread_id! }); status = stringAt(thread, "status"); }
-          catch (cause) { if (/\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause))) status = "gone"; }
-          return [run.id, { id: run.pm_thread_id!, title: stringAt(thread, "title"), status }] as const;
-        })));
-      for (const run of listed) (run as { pmThread?: unknown }).pmThread = pmThreads.get(run.id) ?? null;
       return {
         projectId,
         sectionId: sectionId ?? null,
@@ -187,6 +210,8 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
             : null,
         },
         runs: listed,
+        runsTotal: page.total,
+        runsLimit: runsWindow,
         unapplied,
         cliPreview: {
           argv: invocation.argv,
@@ -233,6 +258,13 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         })(),
       };
     },
+    list_runs: async ({ projectId, sectionId, offset, limit, pinOpen }) => {
+      const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];
+      const page = listRunsPage(db, projectId, { limit, offset, pinOpen });
+      return { runs: await runViews(page.runs, loadProjectSettings(db, projectId, scopes)), total: page.total };
+    },
+    list_run_stages: ({ runId }) => ({ stages: listStageReceiptSummaries(db, runId) }),
+    get_stage_result: ({ runId, taskId, stageId }) => getStageReceiptResult(db, runId, taskId, stageId),
     save_setting: ({ projectId, sectionId, key, value, expectedVersion }) => {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
       const held = protectedSettings.check({ projectId, bindingId, changes:[{ key, value }] });
@@ -331,5 +363,5 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       await bb.storage.kv.set(writerBindingKey(projectId), { hostId, path });
       return { ok: true };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "helper_access_view" | "get_screen" | "save_setting" | "reset_project_settings" | "save_settings" | "save_writer_binding">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "helper_access_view" | "get_screen" | "list_runs" | "list_run_stages" | "get_stage_result" | "save_setting" | "reset_project_settings" | "save_settings" | "save_writer_binding">;
 }

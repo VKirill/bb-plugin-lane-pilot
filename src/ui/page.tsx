@@ -42,11 +42,14 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
+import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { HelpSup } from "./help-sup";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "../state-machine";
 import type { StageReceipt } from "../stages/contract";
+import { StageResult } from "./stage-result";
+import { useLpRealtime } from "./use-lp-realtime";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa-host";
 import { presentEnumLabel } from "../enum-labels";
 import { OwnedSettings } from "./owned-settings";
@@ -68,8 +71,14 @@ import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
 import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys } from "../writer-fallbacks";
 
+/** History comes this many runs at a time. */
+const RUNS_PAGE = 20;
+
 const CARD_HEAD = "space-y-1 px-3 pb-2 pt-3";
 const CARD_BODY = "px-3 pb-3 pt-0";
+
+/** A stage row as the list shows it: its result body loads when the owner opens it. */
+type StageSummary = Omit<StageReceipt, "result"> & { hasResult?: boolean };
 
 type ScreenPayload = {
   projectId: string;
@@ -81,6 +90,9 @@ type ScreenPayload = {
   versions: Record<string, number>;
   explicitKeys: string[];
   importSource: { completed: boolean; at: number | null; routingPath: string | null; nightPath: string | null };
+  /** All runs of the project; `runs` holds the newest few and every open one. */
+  runsTotal?: number;
+  runsLimit?: number;
   runs: Array<{
     id: string;
     state: string;
@@ -89,7 +101,8 @@ type ScreenPayload = {
     updated_at: number;
     cliReceiptJson: string | null;
     pmThread?: { id: string; title: string | null; status: string | null } | null;
-    stages?: StageReceipt[];
+    /** How many stage rows the run has; the rows themselves load when the owner opens the list. */
+    stageCount?: number;
     attempts: Array<{
       id: string;
       state: string;
@@ -616,6 +629,43 @@ function runTone(state: string): "default" | "secondary" | "destructive" | "outl
   return "outline";
 }
 
+function OverviewLoading() {
+  return <div data-testid="overview-loading" aria-busy="true" className="space-y-3">
+    <p className="text-sm text-muted-foreground">{t("overviewLoading")}</p>
+    <Skeleton className="h-28 w-full" />
+    <Skeleton className="h-16 w-full" />
+    <Skeleton className="h-16 w-full" />
+  </div>;
+}
+
+/** The stage receipts of a run: the screen carries only their count, the rows load when the list is opened. */
+function RunStages({ runId, count }: { runId: string; count: number }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [stages, setStages] = useState<StageSummary[] | "failed" | null>(null);
+  const open = (isOpen: boolean) => {
+    if (!isOpen) return;
+    void rpc.call("list_run_stages", { runId }).then((listed) => setStages(listed.stages as StageSummary[])).catch(() => setStages("failed"));
+  };
+  return <Disclosure compact testId={`stage-receipts-${runId}`} summary={`${t("stageReceipts")} (${count})`} onToggle={open}>
+    {stages === null ? <p className="text-xs text-muted-foreground">{t("stageResultLoading")}</p>
+      : stages === "failed" ? <p className="text-xs text-muted-foreground">{t("stageResultFailed")}</p>
+        : <div className="divide-y divide-border">
+          {stages.map((stage) => (
+            <div key={`${stage.taskId}-${stage.stageId}`} className="space-y-2 py-3 first:pt-0 last:pb-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-medium">{stageTitle(stage.stageId)}</span>
+                <Badge variant={runTone(stage.state)}>{stateLabel(stage.state)}</Badge>
+              </div>
+              <div className="break-all font-mono text-xs text-muted-foreground">{stage.taskId} · SHA-256 {stage.inputSha256.slice(0, 12)}{stage.outputSha256 ? ` / ${stage.outputSha256.slice(0, 12)}` : ""}</div>
+              {stage.reason ? <p className="text-xs text-muted-foreground">{t("stageReason")}: {stage.reason}</p> : null}
+              {stage.hasResult ? <StageResult runId={runId} taskId={stage.taskId} stageId={stage.stageId} /> : null}
+              {!stage.hasResult && !stage.reason ? <p className="text-xs text-muted-foreground">{t("stageNoEvidence")}</p> : null}
+            </div>
+          ))}
+        </div>}
+  </Disclosure>;
+}
+
 type MonitorRun = ScreenPayload["runs"][number];
 type MonitorAttempt = MonitorRun["attempts"][number];
 
@@ -639,6 +689,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   // «Общие настройки» edit the global level every project inherits, with the same panel as a project.
   const projectId = activeScope === "globals" ? GLOBAL_SETTINGS_PROJECT_ID : selectedProjectId ?? routeProjectId ?? (subPath || null);
   const isGlobal = projectId === GLOBAL_SETTINGS_PROJECT_ID;
+  // The project screen (get_screen and everything it feeds) is what «Projects» and «General settings» show; «Agents», «Tokens» and «Workflows» keep it hidden and must not pay for it.
+  const projectScreenActive = activeScope === "projects" || activeScope === "globals";
   // A section keeps its own settings over its project's; null edits the project itself.
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [routingStats, setRoutingStats] = useState<RoutingStats | null>(null);
@@ -662,7 +714,12 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const [finishing, setFinishing] = useState(false);
   const providers = useProviders();
   const [tab, setTab] = useState("overview");
+  // A tab mounts when it is first opened and stays mounted after that: ten tabs at once cost 25 000 DOM nodes on a big project.
+  const visited = useRef(new Set<string>());
+  visited.current.add(tab);
   const [runsShown, setRunsShown] = useState(20);
+  // How many of the newest runs the screen has fetched; the rest of the history comes by `list_runs` pages.
+  const runsWindow = useRef(0);
   const [nativeState, setNativeState] = useState<{ status: string; error: string | null } | null>(null);
   const [data, setData] = useState<ScreenPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -762,12 +819,14 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     writerDraftRef.current = null;
     setWriterDraft(null);
     try {
-      const next = await rpc.call("get_screen", { ...scoped, projectId }) as ScreenPayload;
-      if (generation !== loadGeneration.current) return;
-      setData(next);
+      // The council, routing and defaults lists do not depend on the screen: they start with it, not after it.
       void rpc.call("get_council_defaults", { projectId }).then((defaults) => { if (generation === loadGeneration.current) setCouncilDefaults((defaults as { seats: typeof councilDefaults }).seats); }).catch(() => setCouncilDefaults([]));
       void rpc.call("list_councils", { projectId }).then((listed) => { if (generation === loadGeneration.current) setCouncils((listed as { councils: CouncilRow[] }).councils); }).catch(() => setCouncils([]));
       void rpc.call("get_routing_hint", { projectId }).then((hint) => { if (generation === loadGeneration.current) setRoutingStats(hint as RoutingStats); }).catch(() => setRoutingStats(null));
+      const next = await rpc.call("get_screen", { ...scoped, projectId }) as ScreenPayload;
+      if (generation !== loadGeneration.current) return;
+      setData(next);
+      runsWindow.current = next.runsLimit ?? next.runs.length;
       if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
       setResultSource(next.writerResultJson);
       setResultPatch(next.writerResultPatch);
@@ -776,16 +835,56 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     }
   }, [projectId, selectedSectionId, rpc]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!projectScreenActive) return;
+    // Coming back from another scope keeps what is loaded; a different project or section loads its own screen.
+    const held = dataRef.current;
+    if (held && held.projectId === projectId && (held.sectionId ?? null) === selectedSectionId) return;
+    void load();
+  }, [load, projectScreenActive]);
+
+  // The runs panel reads its list on its own: the next page of the history, and a light re-read of what is loaded
+  // (no screen reload, so nothing blanks) when an attempt changes or the slow poll fires.
+  const mergeRuns = (incoming: ScreenPayload["runs"], total: number, replaceAll: boolean) => setData((prev) => {
+    if (!prev || prev.projectId !== projectId) return prev;
+    const known = new Set(incoming.map((run) => run.id));
+    return { ...prev, runsTotal: total, runs: replaceAll ? incoming : [...prev.runs.filter((run) => !known.has(run.id)), ...incoming] };
+  });
+  const loadMoreRuns = async () => {
+    if (!projectId) return;
+    const offset = runsWindow.current;
+    const generation = loadGeneration.current;
+    const page = await rpc.call("list_runs", { ...scoped, projectId, offset, limit: RUNS_PAGE });
+    if (generation !== loadGeneration.current) return;
+    runsWindow.current = offset + RUNS_PAGE;
+    mergeRuns(page.runs as ScreenPayload["runs"], page.total, false);
+  };
+  const refreshRuns = useCallback(async () => {
+    if (!projectId || isGlobal || !dataRef.current || dataRef.current.projectId !== projectId) return;
+    const generation = loadGeneration.current;
+    try {
+      const page = await rpc.call("list_runs", { ...(selectedSectionId ? { sectionId: selectedSectionId } : {}), projectId, offset: 0, limit: Math.max(runsWindow.current, 1), pinOpen: true });
+      if (generation === loadGeneration.current) mergeRuns(page.runs as ScreenPayload["runs"], page.total, true);
+    } catch { /* the next signal or poll retries */ }
+  }, [projectId, isGlobal, selectedSectionId, rpc]);
+  const runsPollMs = useLpRealtime(isGlobal || !projectScreenActive ? null : projectId, ["helpers"], () => { void refreshRuns(); });
+  const runsVisible = projectScreenActive && (tab === "monitor" || tab === "overview");
+  useEffect(() => {
+    if (!runsVisible || !projectId || isGlobal) return;
+    const timer = setInterval(() => { void refreshRuns(); }, runsPollMs);
+    return () => clearInterval(timer);
+  }, [runsVisible, projectId, isGlobal, refreshRuns, runsPollMs]);
 
   useEffect(() => {
     setSelectedSectionId(null);
     setSections([]);
-    if (!projectId || isGlobal) return;
+  }, [projectId]);
+  useEffect(() => {
+    if (!projectId || isGlobal || !projectScreenActive) return;
     let current = true;
     void rpc.call("list_sections", { projectId }).then((result) => { if (current) setSections(result.sections); }).catch(() => undefined);
     return () => { current = false; };
-  }, [projectId, rpc]);
+  }, [projectId, projectScreenActive, rpc]);
 
   // Leaving the global level drops cached project screens: their inherited values may have changed.
   useEffect(() => {
@@ -1350,6 +1449,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, [tab, nativeHostId, nativeState?.status === "installing", rpc]);
   const writerChosen = Boolean(data?.values[WRITER_PROVIDER] && data?.values[WRITER_MODEL]);
+  // The overview waits for the screen instead of showing the defaults («no model», «no runs») that the data then replaces.
+  const screenLoading = !data && !error && Boolean(projectId);
   const activeRuns = (data?.runs ?? []).filter((run) => run.state === "pending" || run.state === "running").length;
   const trackLines = (() => {
     if (!routingStats) return [];
@@ -1512,6 +1613,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             </div>
           {tabs.includes("overview") ? <>
           <TabsContent value="overview" forceMount={true} className="space-y-6" hidden={tab !== "overview"} data-testid="overview-panel">
+            {visited.current.has("overview") ? <>
+            {screenLoading ? <OverviewLoading /> : <>
             <Surface testId="setup-status">
               <SurfaceHeader><h2 className="text-sm font-medium">{t("overviewSetup")}</h2></SurfaceHeader>
               <SurfaceBody className="space-y-3">
@@ -1598,9 +1701,12 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </Select>
         </div>
         </Surface>
+            </>}
+            </> : null}
           </TabsContent>
           </> : null}
           <TabsContent value="settings" forceMount={true} className="space-y-6" hidden={tab !== "settings"} data-testid="settings-panel">
+            {visited.current.has("settings") ? <>
             <SettingsGroup testId="settings-execution">
               <section className="space-y-2" data-testid="writer-picker">
                 <div className="flex items-center justify-between gap-2">
@@ -1719,9 +1825,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
               </section>
             ))}
+            </> : null}
           </TabsContent>
 
           <TabsContent value="memory" forceMount={true} className="space-y-6" hidden={tab !== "memory"} data-testid="memory-panel">
+            {visited.current.has("memory") ? <>
             <SettingsGroup testId="settings-memory-docs">
               <section className="space-y-2" data-testid="memory-picker">
                 <div className="flex items-center justify-between gap-2">
@@ -1812,8 +1920,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </section>
             </SettingsGroup>
 
+            </> : null}
           </TabsContent>
           <TabsContent value="access" forceMount={true} className="space-y-6" hidden={tab !== "access"} data-testid="access-panel">
+            {visited.current.has("access") ? <>
             {projectId ? <AgentAccess projectId={projectId} sectionId={selectedSectionId} parentSectionId={sections.find((item) => item.id === selectedSectionId)?.parentId ?? null} refreshKey={data?.versions["helper.context_mode"] ?? 0}
               modeControl={<div className="space-y-2" data-testid="access-mode-fields">
                 {(["helper.context_mode", ...(displayedValue("helper.context_mode") === "selected" ? ["helper.skills", "helper.mcp_servers", "helper.bb_plugins", "helper.native_plugins"] : [])] as const).map((key) => {
@@ -1822,19 +1932,25 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
               </div>} /> : null}
+            </> : null}
           </TabsContent>
 
           {tabs.includes("rules") ? <>
           <TabsContent value="rules" forceMount={true} className="space-y-6" hidden={tab !== "rules"} data-testid="rules-panel">
+            {visited.current.has("rules") ? <>
             {!isGlobal && projectId ? <RuleProposals projectId={projectId} picker={modelPicker} /> : null}
+            </> : null}
           </TabsContent>
           </> : null}
           {tabs.includes("workflows") ? <>
           <TabsContent value="workflows" forceMount={true} className="space-y-6" hidden={tab !== "workflows"} data-testid="workflows-panel">
+            {visited.current.has("workflows") ? <>
             {tab === "workflows" && !isGlobal && projectId ? <WorkflowsScreen locale={locale} projectId={projectId} /> : null}
+            </> : null}
           </TabsContent>
           </> : null}
           <TabsContent value="checks" forceMount={true} className="space-y-6" hidden={tab !== "checks"} data-testid="checks-panel">
+            {visited.current.has("checks") ? <>
             {!isGlobal && projectId ? <WriterReuse projectId={projectId} /> : null}
             {!isGlobal && projectId ? <CriticValue projectId={projectId} /> : null}
             {!isGlobal && projectId ? <AcceptanceStats projectId={projectId} /> : null}
@@ -1924,9 +2040,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 ))}
               </AdvancedRows>
             </CheckGroup>
+            </> : null}
           </TabsContent>
 
           <TabsContent value="council" forceMount={true} className="space-y-6" hidden={tab !== "council"} data-testid="council-panel">
+            {visited.current.has("council") ? <>
             <CheckGroup testId="council-settings" title={t("councilSettingsTitle")} help={t("councilSettingsHelp")} toggle={(() => { const row = catalogRow("council.judge"); return row ? <Switch checked={asBoolean(displayedValue("council.judge"), true)} aria-label={t("settingCouncilJudge")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               {COUNCIL_SEATS.map((seat) => {
                 const fallback = councilDefaults.find((row) => row.id === seat);
@@ -1992,9 +2110,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
               ) : null}
             </section>}
+            </> : null}
           </TabsContent>
           {tabs.includes("monitor") ? <>
           <TabsContent value="monitor" forceMount={true} className="space-y-4" data-testid="run-monitor" hidden={tab !== "monitor"}>
+            {visited.current.has("monitor") ? <>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Button size="sm" variant="outline" onClick={() => projectId && void rpc.call("resume_runs", { projectId }).then(load)}>
                 {t("resume")}
@@ -2035,35 +2155,22 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                           </div>
                         ))}
                         {run.state !== "closed" && !hasOpenAttempt ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
-                        {run.stages?.length ? <Disclosure compact testId={`stage-receipts-${run.id}`} summary={`${t("stageReceipts")} (${run.stages.length})`}>
-                          <div className="divide-y divide-border">
-                    {run.stages?.map((stage) => (
-                      <div key={`${stage.taskId}-${stage.stageId}`} className="space-y-2 py-3 first:pt-0 last:pb-0">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-sm font-medium">{stageTitle(stage.stageId)}</span>
-                          <Badge variant={runTone(stage.state)}>{stateLabel(stage.state)}</Badge>
-                        </div>
-                        <div className="break-all font-mono text-xs text-muted-foreground">{stage.taskId} · SHA-256 {stage.inputSha256.slice(0, 12)}{stage.outputSha256 ? ` / ${stage.outputSha256.slice(0, 12)}` : ""}</div>
-                        {stage.reason ? <p className="text-xs text-muted-foreground">{t("stageReason")}: {stage.reason}</p> : null}
-                        {stage.result != null ? <SourceCode content={JSON.stringify(stage.result, null, 2)} path={`${stage.stageId}-receipt.json`} overflow="scroll" /> : null}
-                        {stage.result == null && !stage.reason ? <p className="text-xs text-muted-foreground">{t("stageNoEvidence")}</p> : null}
-                      </div>
-                    ))}
-                          </div>
-                        </Disclosure> : null}
+                        {run.stageCount ? <RunStages runId={run.id} count={run.stageCount} /> : null}
                       </SurfaceBody>
                     </Surface>;
                   })}
                 </div>
-                {ordered.length > runsShown ? <Button size="sm" variant="outline" data-testid="runs-show-more" onClick={() => setRunsShown((count) => count + 20)}>{t("runsShowMore").replace("{n}", String(Math.min(20, ordered.length - runsShown)))}</Button> : null}
+                {ordered.length > runsShown || (data.runsTotal ?? 0) > runsWindow.current ? <Button size="sm" variant="outline" data-testid="runs-show-more" onClick={() => { setRunsShown((count) => count + RUNS_PAGE); if ((data.runsTotal ?? 0) > runsWindow.current) void loadMoreRuns(); }}>{t("runsShowMore").replace("{n}", String(Math.min(RUNS_PAGE, Math.max(ordered.length - runsShown, (data.runsTotal ?? 0) - runsWindow.current))))}</Button> : null}
               </>;
             })()}
             <p className="sr-only">{[...RUN_STATES, ...ATTEMPT_STATES].join(" ")}</p>
+            </> : null}
           </TabsContent>
           </> : null}
 
           {tabs.includes("service") ? <>
           <TabsContent value="service" forceMount={true} className="space-y-5" hidden={tab !== "service"} data-testid="service-panel">
+            {visited.current.has("service") ? <>
             <section className="space-y-4" data-testid="install-panel">
             <Surface testId="native-install">
               <SurfaceHeader><h2 className="text-sm font-medium">{t("nativeTitle").replace("{host}", hostLabel(nativeHostId))}</h2></SurfaceHeader>
@@ -2268,6 +2375,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             </Surface> : null}
               </div>
             </Disclosure>
+            </> : null}
           </TabsContent>
           </> : null}
 
