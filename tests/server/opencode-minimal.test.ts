@@ -22,7 +22,7 @@ function setup(callHost: (calls: number) => Promise<unknown>, options: { role?: 
 }
 
 describe("the minimal OpenCode config of a helper", () => {
-  it("shares one preparation between helpers that ask at the same moment, and remembers a success for a minute", async () => {
+  it("shares one preparation between helpers that ask at the same moment, and serves the cache for an hour, refreshing it in the background after five minutes", async () => {
     let release: (value: unknown) => void = () => undefined;
     const { contribute, host, advance } = setup((calls) => calls === 1 ? new Promise((resolve) => { release = resolve; }) : Promise.resolve({ result: PREPARED }));
     const asks = Array.from({ length: 8 }, (_, index) => contribute({ threadId: `thr_${index}`, hostId: "ovh" }));
@@ -33,9 +33,39 @@ describe("the minimal OpenCode config of a helper", () => {
     expect(host.call).toHaveBeenCalledTimes(1);
     await contribute({ threadId: "thr_late", hostId: "ovh" });
     expect(host.call).toHaveBeenCalledTimes(1);
-    advance(61_000);
-    await contribute({ threadId: "thr_later", hostId: "ovh" });
+    // Stale after five minutes: the helper still gets the cached answer at once, and a refresh runs behind it.
+    advance(6 * 60_000);
+    expect((await contribute({ threadId: "thr_later", hostId: "ovh" }))[0]?.value).toBe(PREPARED.configHome);
+    await vi.waitFor(() => expect(host.call).toHaveBeenCalledTimes(2));
+    await contribute({ threadId: "thr_after_refresh", hostId: "ovh" });
     expect(host.call).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers from the cache without a host call once the machine was prepared ahead, for the models of one provider", async () => {
+    const { contribute, host } = setup(async () => ({ result: PREPARED }));
+    contribute.warm("ovh", "router9/x");
+    await vi.waitFor(() => expect(host.call).toHaveBeenCalledTimes(1));
+    await new Promise((done) => setTimeout(done, 0));
+    host.call.mockClear();
+    expect((await contribute({ threadId: "thr_1", hostId: "ovh" }))[0]?.value).toBe(PREPARED.configHome);
+    expect(host.call).not.toHaveBeenCalled();
+  });
+
+  it("refuses at once with a clear reason when the preparation is not ready within the hook's share of BB's five seconds, and the background run finishes", async () => {
+    vi.useFakeTimers();
+    try {
+      let release: (value: unknown) => void = () => undefined;
+      const { contribute, host, warns } = setup(() => new Promise((resolve) => { release = resolve; }));
+      const asked = contribute({ threadId: "thr_1", hostId: "ovh" });
+      const outcome = asked.then(() => "started", (cause: Error) => cause.message);
+      await vi.advanceTimersByTimeAsync(2_600);
+      expect(await outcome).toMatch(/^opencode_minimal_config_pending:ovh:/);
+      expect(warns.join("\n")).toContain("not started with the machine's full config");
+      release({ result: PREPARED });
+      await vi.advanceTimersByTimeAsync(10);
+      expect((await contribute({ threadId: "thr_2", hostId: "ovh" }))[0]?.value).toBe(PREPARED.configHome);
+      expect(host.call).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
   });
 
   it("tries again after a failure and uses the answer that comes", async () => {
