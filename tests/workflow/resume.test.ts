@@ -59,6 +59,43 @@ describe("a reload in the middle of a node", () => {
     expect(second.get(runId)).toMatchObject({ status: "interrupted", reason: "step_interrupted:search:harness_changed" });
   });
 
+  it("a deploy (the plugin version string changes) does not stop a run: the engine compatibility version decides, not the build", async () => {
+    const db = journalDb();
+    const hang: NodeExecutor = { reentrant: true, run: () => new Promise(() => undefined) };
+    const first = engineOn(db, { search: hang, write }, { harnessVersion: "0.1.192", compatVersion: "wfe-1" });
+    const { runId } = first.start({ workflow: wf(), inputs: { query: "q" } });
+    await until("search running", () => stepStates(db, runId)["search#1"] === "running");
+    first.dispose();
+    const second = engineOn(db, { search, write }, { harnessVersion: "0.1.193", compatVersion: "wfe-1" });
+    expect(await second.resume()).toEqual([runId]);
+    await second.idle();
+    expect(second.get(runId)).toMatchObject({ status: "succeeded", output: { result: "written" } });
+  });
+
+  it("a step stamped with a plugin version (before compat versions) resumes under a compat version; a different compat version is refused with a reason", async () => {
+    const hang: NodeExecutor = { reentrant: true, run: () => new Promise(() => undefined) };
+    const legacy = journalDb();
+    const old = engineOn(legacy, { search: hang, write }, { harnessVersion: "0.1.192" }); // before compat versions: the build is stamped
+    const started = old.start({ workflow: wf(), inputs: { query: "q" } });
+    await until("search running", () => stepStates(legacy, started.runId)["search#1"] === "running");
+    old.dispose();
+    const upgraded = engineOn(legacy, { search, write }, { harnessVersion: "0.1.193", compatVersion: "wfe-1" });
+    await upgraded.resume();
+    await upgraded.idle();
+    expect(upgraded.get(started.runId)?.status).toBe("succeeded");
+    // Two compat versions that differ: the step began under wfe-1, the engine is wfe-2.
+    const db = journalDb();
+    const first = engineOn(db, { search: hang, write }, { harnessVersion: "0.1.192", compatVersion: "wfe-1" });
+    const { runId } = first.start({ workflow: wf(), inputs: { query: "q" } });
+    await until("search running", () => stepStates(db, runId)["search#1"] === "running");
+    first.dispose();
+    const second = engineOn(db, { search, write }, { harnessVersion: "0.1.193", compatVersion: "wfe-2" });
+    await second.resume();
+    await second.idle();
+    expect(second.get(runId)).toMatchObject({ status: "interrupted", reason: "step_interrupted:search:harness_changed" });
+    expect(rows<{ error: string }>(db, "SELECT error FROM lane_pilot_wf_step WHERE run_id=? AND step_key='search#1'", runId)[0]!.error).toContain("began under engine wfe-1, this one is wfe-2");
+  });
+
   it("goes on with pending steps under a new build", async () => {
     const db = journalDb();
     let open = true;

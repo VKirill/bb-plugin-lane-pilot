@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A deploy no longer stops running workflow chains (audit 2026-10-08, item 5).** A reload used to resume an in-flight step only when `step.harness_version === package version`, so every release interrupted runs with `harness_changed`. The engine now stamps and compares an engine/schema compatibility version (`ENGINE_COMPAT_VERSION = "wfe-1"`, `src/workflow/engine.ts`; bump it only when the journal layout or step semantics change, not per release); the package version stays in receipts and the run row for information. Steps stamped with a package version by older builds count as compatible once, so the first deploy of this change does not stop them either. A really incompatible step is still refused: the run ends `interrupted` with `step_interrupted:<node>:harness_changed` and the step error names both versions. The run's own definition was already pinned (`definition_json` + `workflow_sha256`), so a workflow edited after the start never changes a running chain.
+
 - **A typed answer to a workflow question no longer becomes the first option (audit 2026-10-08, item 4).** `humanOutput` (`src/server/workflow-executors.ts`) maps words to an option only when they name one outright (the option's own words, case/punctuation/underscores aside, or its number); otherwise they are a text answer if the node has a text kind (`text`, `answered`, `provide`, `reason`, ...), and when it has none the step keeps waiting and the owner is asked again with the options listed. `approved`/`continue`/`proceed` are no longer text kinds. `deploy.approve` with "no, wait" used to deploy.
 
 ## 0.1.192
