@@ -99,6 +99,7 @@
   "nodes": [
     {
       "id": "brief",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "specialist:design-lead",
       "title": {
@@ -144,6 +145,7 @@
     },
     {
       "id": "pack",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "specialist:design-lead",
       "title": {
@@ -196,6 +198,7 @@
     },
     {
       "id": "qa",
+      "produces": [{"kind": "qa-report", "version": 1}],
       "type": "agent",
       "role": "browser-qa",
       "title": {
@@ -216,6 +219,8 @@
     },
     {
       "id": "finish_review",
+      "consumes": [{"kind": "qa-report", "version": 1, "from": "qa"}],
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "specialist:design-lead",
       "session": "new",
@@ -275,6 +280,8 @@
     },
     {
       "id": "document",
+      "consumes": [{"kind": "report", "version": 1, "from": "finish_review"}],
+      "produces": [{"kind": "task-result", "version": 1}],
       "type": "lp-task",
       "title": {
         "en": "DESIGN.md from the built result",

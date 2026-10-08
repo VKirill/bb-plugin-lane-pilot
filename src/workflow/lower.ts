@@ -56,12 +56,13 @@ export function lowerWorkflow(workflow: Workflow, resolve?: ResolveWorkflow): Wo
 
   for (const node of workflow.nodes) {
     if (node.type === "parallel" && node.child) {
-      const { child, join, ...fanBody } = node;
+      // The contract of the parallel node is the join's (it keeps the id and holds the joined output); the fan-out has no output of its own.
+      const { child, join, produces, gates, ...fanBody } = node;
       const fan: WorkflowNode = { ...fanBody, id: fanId(node.id), out: [] };
       const body = { ...child, id: childId(node.id) } as GraphNode;
       const joined: WorkflowNode = {
         id: node.id, type: "join", parallel: fanId(node.id), wait: "all", policy: join?.policy ?? "all", out: join?.out ?? [], maxAttempts: 1,
-        ...(join?.uses ? { uses: join.uses } : {}), ...(node.title ? { title: node.title } : {}), ...(node.src ? { src: node.src } : {}),
+        ...(join?.uses ? { uses: join.uses } : {}), ...(produces ? { produces } : {}), ...(gates ? { gates } : {}), ...(node.title ? { title: node.title } : {}), ...(node.src ? { src: node.src } : {}),
         ...(node.applicable_modes ? { applicable_modes: node.applicable_modes } : {}), ...(node.skip_when ? { skip_when: node.skip_when } : {}), ...(node.skip_out ? { skip_out: node.skip_out } : {}),
       };
       nodes.push(fan, body, joined);

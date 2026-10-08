@@ -100,6 +100,20 @@ export const taskV2Schema = z.object({
   quality_mode: z.enum(["quick", "standard", "full"]).optional(),
   /** Browser checks for a task of a project in full mode: the PM runs them with lane_pilot_helpers (action browser_qa), and the task is not done until they pass. */
   qa_cases: z.array(z.string().min(1).max(2000)).max(30).optional(),
+  /**
+   * Maestro `convergence`: the checks that decide the task is done, each one a command, a grep or a file read that names the exact
+   * string, value or exit code («src/a.ts contains 'RATE_LIMIT = 10'», «the command exits 0»). Next to `acceptance`, not instead of it;
+   * the contract lint refuses a criterion that rests on subjective words.
+   */
+  convergence: z.object({ criteria: z.array(z.string().min(1).max(600)).min(1).max(20) }).strict().optional(),
+  /** Maestro `files[]`: the concrete change per file, as a hint for the writer. `owns_paths` stays the rule; the lint refuses a file the task does not own. */
+  files: z.array(z.object({
+    path: z.string().min(1).max(300),
+    action: z.enum(["create", "modify", "delete"]),
+    /** The function, class or section the change is in. */
+    target: z.string().min(1).max(200).optional(),
+    change: z.string().min(1).max(1000),
+  }).strict()).max(40).optional(),
 }).strict();
 
 export type TaskV2 = z.infer<typeof taskV2Schema>;

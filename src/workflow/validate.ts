@@ -2,6 +2,7 @@ import { parse as parseJsonc, printParseErrorCode } from "jsonc-parser/lib/esm/m
 import type { ParseError } from "jsonc-parser/lib/esm/main.js";
 import { ExprSyntaxError, checkExpr, checkRef, exprRefs, parseExpr, placeholdersIn, refOf, toExpr, valueSpecOf } from "./expr";
 import type { CheckEnv, Ref, Typed } from "./expr";
+import { artifactDef, artifactId } from "./artifacts";
 import { cronProblem, timezoneProblem } from "./cron";
 import { EMIT, executorKey, lowerWorkflow, outputFields } from "./lower";
 import { PRESET_SLUGS, presetSlug } from "./model-presets";
@@ -300,6 +301,47 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     }
   }
 
+  // The step contract (W0): kinds that exist, fields that are declared, a producer upstream of every consumer, gates that parse and read declared fields.
+  const checkStepContract = (node: GraphNode, extra: { node: string }) => {
+    const have = outputFields(L, node, options.resolve);
+    (node.produces ?? []).forEach((spec) => {
+      const def = artifactDef(spec.kind, spec.version);
+      const id = artifactId(spec);
+      if (!def) { error("artifact_unknown", `${node.id}: produces ${id}, which is not in the artifact registry`, extra); return; }
+      if (have === "unknown") return;
+      if (spec.each && !spec.field) { error("produces_each", `${node.id}: produces ${id} with "each" needs "field", the list that holds them`, extra); return; }
+      if (spec.field !== undefined) {
+        const field = have.find((candidate) => candidate.name === spec.field);
+        if (!field) error("produces_field", `${node.id}: produces ${id} in the field "${spec.field}", which the step does not declare`, extra);
+        else if (spec.each && field.type !== "array" && field.type !== "json") error("produces_field", `${node.id}: produces ${id} for each item of "${spec.field}", which is a ${field.type}, not a list`, extra);
+        return;
+      }
+      const missing = def.required.filter((name) => !have.some((candidate) => candidate.name === name));
+      if (missing.length) error("produces_fields", `${node.id}: produces ${id}, which needs the field${missing.length > 1 ? "s" : ""} ${missing.join(", ")}; declare ${missing.length > 1 ? "them" : "it"} in the output (or name the "field" that holds the artifact)`, extra);
+    });
+    (node.consumes ?? []).forEach((spec) => {
+      const id = artifactId(spec);
+      if (!artifactDef(spec.kind, spec.version)) { error("artifact_unknown", `${node.id}: consumes ${id}, which is not in the artifact registry`, extra); return; }
+      if (spec.from === undefined || spec.from === "$inputs" || spec.from === "start") return;
+      const source = byId.get(spec.from);
+      if (!source) { error("consumes_from", `${node.id}: consumes ${id} from "${spec.from}", which is not a node of this workflow`, extra); return; }
+      if (!source.produces?.some((made) => made.kind === spec.kind && made.version === spec.version)) error("consumes_mismatch", `${node.id}: consumes ${id} from "${spec.from}", which does not declare that it produces ${id}`, extra);
+      else if (!ancestorOf(spec.from, node.id, true)) error("consumes_order", `${node.id}: consumes ${id} from "${spec.from}", which does not run before it`, extra);
+    });
+    (node.gates ?? []).forEach((gate, index) => {
+      const where = `${node.id} gates[${index}]`;
+      const expr = parseOrReport(() => toExpr(gate, node.id), where, extra);
+      if (expr) {
+        const list: string[] = [];
+        checkExpr(expr, { ...envFor(node.id, true, false), before: (id) => id === node.id || ancestorOf(id, node.id, true) }, list, where);
+        emit(list, "condition", extra);
+      }
+    });
+    if ((node.type === "agent" || node.type === "lp-task") && node.produces === undefined) {
+      warn("contract_missing", `${node.id}: no "produces": declare the artifact this step gives (kind and version from the registry in lane_pilot_workflow_capabilities; "report/1" when its product is files or side effects), so the output is checked when the step ends`, extra);
+    }
+  };
+
   // Node specifics.
   for (const node of byId.values()) {
     const extra = { node: node.id };
@@ -319,6 +361,7 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       if (handoff && handoff.type !== "string") error("handoff_type", `${node.id}: handoff must be a string`, extra);
       if (!node.prompt.trim() && !node.uses) warn("empty_prompt", `agent "${node.id}" has an empty prompt`, extra);
     }
+    checkStepContract(node, extra);
     if (node.type === "human" && node.onTimeout === "default" && !(node.defaultOption && node.options.includes(node.defaultOption))) error("human_default", `${node.id}: onTimeout "default" needs defaultOption from options`, extra);
     if (node.type === "decision" && node.reads_node) {
       const source = byId.get(node.reads_node);

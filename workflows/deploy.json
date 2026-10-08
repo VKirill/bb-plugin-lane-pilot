@@ -195,6 +195,7 @@
     },
     {
       "id": "run_deploy",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "errand",
       "authorized": true,
@@ -260,6 +261,7 @@
     },
     {
       "id": "record",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "memory",
       "prompt": "Stage a short note about this deploy (version, check result, anything surprising) as a candidate; no publication.",

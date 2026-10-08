@@ -29,7 +29,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { dirty?: boolean; spent?: Record<string, Spent> } = {}) {
+async function setup(script: Script, options: { dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -75,6 +75,7 @@ async function setup(script: Script, options: { dirty?: boolean; spent?: Record<
       environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
       files: {
         write: async (args: unknown) => {
+          if (options.failWrites) throw new Error("disk full");
           const input = args as { path: string; content: string };
           mkdirSync(dirname(input.path), { recursive: true });
           writeFileSync(input.path, input.content);
@@ -532,5 +533,190 @@ describe("a code task of a chain", () => {
     expect(rebuild(row)).toMatchObject({ pmThreadId: PM, projectId: PROJECT, runId: RUN });
     expect(rebuild({ workflow_id: "lp-task-pipeline", idem_key: "lp-task:a", project_id: PROJECT, link_run_id: RUN } as never)).toBeUndefined();
     expect(rebuild({ workflow_id: "x", idem_key: null, project_id: null, link_run_id: null } as never)).toBeUndefined();
+  });
+});
+
+describe("the step contract of an agent step (W0)", () => {
+  const audit = (node: Row = {}) => chain({
+    nodes: [
+      { id: "audit", type: "agent", role: "analyst", prompt: "Audit {{$inputs.dir}}.", output: [{ name: "findings", type: "array", ref: "Finding" }, { name: "count", type: "number" }],
+        produces: [{ kind: "findings", version: 1 }], gates: ["audit.count == audit.findings.length"], ...node },
+      { id: "done", type: "action", action: "emit", map: { count: "audit.count" } },
+    ],
+    inputs: [{ name: "dir", type: "string", required: false, default: "src" }],
+    outputs: [{ name: "count", type: "number", required: false }],
+    edges: [{ from: "start", to: "audit" }, { from: "audit", to: "done" }],
+  });
+  const good = reply({ findings: [{ severity: "high", file: "src/a.ts", title: "unchecked limit", evidence: "n > 0" }], count: 1, handoff: "h" });
+  const noSeverity = reply({ findings: [{ file: "src/a.ts", title: "unchecked limit" }], count: 1, handoff: "h" });
+
+  it("an answer that is the declared artifact passes with no repair turn", async () => {
+    const t = await setup({ audit: [good] });
+    dispose = t.dispose;
+    expect((await t.start(audit()).done).status).toBe("succeeded");
+    expect(t.sent).toHaveLength(0);
+  });
+
+  it("an answer with the wrong shape gets one repair turn that names the problem and shows the shape; a right second answer is accepted", async () => {
+    const t = await setup({ audit: [noSeverity, good] });
+    dispose = t.dispose;
+    const summary = await t.start(audit()).done;
+    expect(summary.status).toBe("succeeded");
+    expect(t.sent).toHaveLength(1);
+    expect(t.sent[0]!.text).toContain("does not meet this step's contract");
+    expect(t.sent[0]!.text).toContain("findings.0.severity");
+    expect(t.sent[0]!.text).toContain("Shape of findings/1");
+    expect(t.sent[0]!.text).toContain("do not redo the work");
+    // The thread is the same one: nothing new was spawned for the repair.
+    expect(t.spawned).toHaveLength(1);
+  });
+
+  it("a gate that is not met is repaired the same way", async () => {
+    const t = await setup({ audit: [reply({ findings: [], count: 3, handoff: "h" }), good] });
+    dispose = t.dispose;
+    expect((await t.start(audit()).done).status).toBe("succeeded");
+    expect(t.sent[0]!.text).toContain("gate not met: audit.count == audit.findings.length");
+  });
+
+  it("an answer that is still wrong after the repair turn fails the step: it is not done, and the reason is the contract", async () => {
+    const t = await setup({ audit: [noSeverity] });
+    dispose = t.dispose;
+    const summary = await t.start(audit()).done;
+    expect(summary.status).toBe("failed");
+    expect(summary.error).toContain("artifact_invalid");
+    expect(summary.error).toContain("findings.0.severity");
+    expect(t.sent).toHaveLength(1);
+  });
+
+  it("a step without a contract is unchanged: the same answer passes and nothing is repaired", async () => {
+    const t = await setup({ audit: [noSeverity] });
+    dispose = t.dispose;
+    expect((await t.start(audit({ produces: undefined, gates: undefined })).done).status).toBe("succeeded");
+    expect(t.sent).toHaveLength(0);
+  });
+});
+
+describe("handoff by reference and the start packet (W0)", () => {
+  const big = Array.from({ length: 40 }, (_, at) => ({ id: `T${at + 1}`, title: `Task number ${at + 1} of the plan`, objective: "x".repeat(120) }));
+  const bigText = JSON.stringify(big, null, 1);
+  const reader = (node: Row = {}, inputs: Row = {}) => chain({
+    nodes: [
+      { id: "read", type: "agent", role: "analyst", prompt: "Read the plan.", output: [{ name: "count", type: "number" }], produces: [{ kind: "report", version: 1 }], ...node },
+      { id: "done", type: "action", action: "emit", map: { count: "read.count" } },
+    ],
+    inputs: [{ name: "goal", type: "string" }, { name: "tasks", type: "array" }, { name: "note", type: "string", required: false }],
+    outputs: [{ name: "count", type: "number", required: false }],
+    edges: [{ from: "start", to: "read" }, { from: "read", to: "done" }],
+    ...inputs,
+  });
+  const run = { goal: "Rate-limit the export endpoint", tasks: big, note: "short note" };
+  const packetOf = (prompt: string) => /<step-packet>[\s\S]*<\/step-packet>/.exec(prompt)![0];
+
+  it("a big input is written to a file of the chat's folder and stands in the prompt as its path and a summary; a small one stays inline", async () => {
+    const t = await setup({ read: [reply({ count: 40, handoff: "h" })] });
+    dispose = t.dispose;
+    const summary = await t.start(reader(), run).done;
+    expect(summary.status).toBe("succeeded");
+    const prompt = String(t.spawned[0]!.prompt);
+    const packet = packetOf(prompt);
+    expect(packet).toContain("Goal: Rate-limit the export endpoint");
+    expect(packet).toContain("- note: short note");
+    expect(packet).toMatch(/- tasks — by reference, \d+\.\d KB: list of 40: Task number 1 of the plan; Task number 2 of the plan; Task number 3 of the plan; \.\.\.\n {2}file: \.bb\/chats\/chain-pm\/artifacts\/wf-[A-Za-z0-9_-]+\/tasks\.[0-9a-f]{8}\.json/);
+    expect(packet).toContain("Produce:\n- report/1 as the whole answer; needs handoff");
+    // The full text is not in the prompt, it is in the file, exactly as the engine passed it.
+    expect(prompt).not.toContain("Task number 17 of the plan");
+    expect(t.writes).toHaveLength(1);
+    expect(t.writes[0]!.path).toMatch(/\/\.bb\/chats\/chain-pm\/artifacts\/wf-[^/]+\/tasks\.[0-9a-f]{8}\.json$/);
+    expect(JSON.parse(t.writes[0]!.content)).toEqual(big);
+    expect(existsSync(t.writes[0]!.path)).toBe(true);
+    expect(prompt).toContain(t.writes[0]!.path.slice(t.checkout.length + 1));
+  });
+
+  it("the packet is about 3 KB however much the step was given", async () => {
+    const many = Object.fromEntries(Array.from({ length: 30 }, (_, at) => [`extra${at}`, `value ${at} ${"y".repeat(200)}`]));
+    const t = await setup({ read: [reply({ count: 1, handoff: "h" })] });
+    dispose = t.dispose;
+    const wide = reader({ gates: ["read.count >= 0"] }, { inputs: [{ name: "goal", type: "string" }, { name: "tasks", type: "array" }, ...Object.keys(many).map((name) => ({ name, type: "string", required: false }))] });
+    await t.start(wide, { goal: "g ".repeat(2000), tasks: big, ...many }).done;
+    const packet = packetOf(String(t.spawned[0]!.prompt));
+    expect(Buffer.byteLength(packet, "utf8")).toBeLessThanOrEqual(3072);
+    expect(packet).toContain("Gates (all must hold):\n- read.count >= 0");
+    expect(packet).toContain("Produce:");
+    // Inputs that did not fit became one file rather than being cut away: all of them are in it.
+    expect(packet).toMatch(/- inputs — by reference, [\d.]+ KB: 32 values: goal, tasks, extra0, extra1/);
+    expect(t.writes).toHaveLength(1);
+    const kept = JSON.parse(t.writes[0]!.content) as Row;
+    expect(Object.keys(kept)).toHaveLength(32);
+    expect(kept.extra29).toBe(many.extra29);
+    expect(String(kept.goal)).toHaveLength(4000);
+  });
+
+  it("the same value is the same file: two steps given the same input point at one path", async () => {
+    const twice = chain({
+      nodes: [
+        { id: "first", type: "agent", role: "analyst", prompt: "First.", output: [{ name: "n", type: "number" }], produces: [{ kind: "report", version: 1 }] },
+        { id: "second", type: "agent", role: "analyst", prompt: "Second.", output: [{ name: "n", type: "number" }], produces: [{ kind: "report", version: 1 }], session: "new" },
+        { id: "done", type: "action", action: "emit", map: { n: "second.n" } },
+      ],
+      inputs: [{ name: "tasks", type: "array" }], outputs: [{ name: "n", type: "number", required: false }],
+      edges: [{ from: "start", to: "first" }, { from: "first", to: "second" }, { from: "second", to: "done" }],
+    });
+    const t = await setup({ first: [reply({ n: 1, handoff: "a" })], second: [reply({ n: 2, handoff: "b" })] });
+    dispose = t.dispose;
+    await t.start(twice, { tasks: big }).done;
+    expect(t.writes).toHaveLength(2);
+    expect(t.writes[1]!.path).toBe(t.writes[0]!.path);
+    expect(t.writes[1]!.content).toBe(t.writes[0]!.content);
+  });
+
+  it("when the file cannot be written the packet shows the input cut, and the step still runs", async () => {
+    const t = await setup({ read: [reply({ count: 1, handoff: "h" })] }, { failWrites: true });
+    dispose = t.dispose;
+    const summary = await t.start(reader(), run).done;
+    expect(summary.status).toBe("succeeded");
+    const packet = packetOf(String(t.spawned[0]!.prompt));
+    expect(packet).toContain("(cut)");
+    expect(packet).not.toContain("by reference");
+  });
+
+  it("a node without a contract keeps the whole inputs in its prompt, as before", async () => {
+    const t = await setup({ read: [reply({ count: 1, handoff: "h" })] });
+    dispose = t.dispose;
+    await t.start(reader({ produces: undefined }), run).done;
+    const prompt = String(t.spawned[0]!.prompt);
+    expect(prompt).toContain("<inputs>");
+    expect(prompt).toContain("Task number 17 of the plan");
+    expect(prompt).not.toContain("<step-packet>");
+    expect(t.writes).toHaveLength(0);
+  });
+
+  it("a required artifact that did not arrive under its name stops the step before a helper is started", async () => {
+    const t = await setup({ read: [reply({ count: 1, handoff: "h" })] });
+    dispose = t.dispose;
+    const summary = await t.start(reader({ consumes: [{ kind: "plan", version: 1, from: "$inputs", as: "plan" }] }), run).done;
+    expect(summary.status).toBe("failed");
+    expect(summary.error).toContain("consumes_missing");
+    expect(t.spawned).toHaveLength(0);
+  });
+
+  it("the next step's packet carries the previous step's handoff by reference when it is long, and inline when it is short", async () => {
+    const long = `Wrote the plan to .agents/plan.md. ${"Details of the work. ".repeat(60)}Unique tail marker 4711.`;
+    const chained = chain({
+      nodes: [
+        { id: "first", type: "agent", role: "analyst", prompt: "First.", output: [{ name: "n", type: "number" }], produces: [{ kind: "report", version: 1 }] },
+        { id: "second", type: "agent", role: "analyst", prompt: "Second.", output: [{ name: "n", type: "number" }], produces: [{ kind: "report", version: 1 }], consumes: [{ kind: "report", version: 1, from: "first" }], session: "new" },
+        { id: "done", type: "action", action: "emit", map: { n: "second.n" } },
+      ],
+      inputs: [], outputs: [{ name: "n", type: "number", required: false }],
+      edges: [{ from: "start", to: "first" }, { from: "first", to: "second", pass: "read-prior-session" }, { from: "second", to: "done" }],
+    });
+    const t = await setup({ first: [reply({ n: 1, handoff: long })], second: [reply({ n: 2, handoff: "ok" })] });
+    dispose = t.dispose;
+    const summary = await t.start(chained).done;
+    expect(summary.status).toBe("succeeded");
+    const packet = packetOf(String(t.spawned[1]!.prompt));
+    expect(packet).toMatch(/- previous_handoff — by reference, [\d.]+ KB: Wrote the plan to \.agents\/plan\.md\./);
+    expect(String(t.spawned[1]!.prompt)).not.toContain("Unique tail marker 4711");
+    expect(t.writes.some((write) => write.content.includes("Unique tail marker 4711"))).toBe(true);
   });
 });

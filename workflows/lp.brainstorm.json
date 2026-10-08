@@ -43,6 +43,7 @@
   "nodes": [
     {
       "id": "terms",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "src": "maestro-flow:workflows/brainstorm.md (phase 2)",
@@ -63,6 +64,7 @@
       "for_each": "$inputs.roles",
       "max_fan_out": 5,
       "child": {
+        "produces": [{"kind": "report", "version": 1}],
         "type": "agent",
         "role": "analyst",
         "src": "maestro-flow:agents/role-design-author",
@@ -85,6 +87,7 @@
     },
     {
       "id": "cross_review",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "session": "new",
@@ -126,6 +129,7 @@
     },
     {
       "id": "guidance",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "planner",
       "src": "maestro-flow:workflows/brainstorm.md (guidance-specification)",

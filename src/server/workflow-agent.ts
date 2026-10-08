@@ -5,9 +5,13 @@ import { ROLE_PROFILES } from "../helper-context";
 import type { ExtraAccess, HelperRole } from "../helper-context";
 import { redactKnown } from "../redact";
 import { agentPrompt, outputContract, parseAgentOutput } from "../workflow/agent-output";
+import { contractProblems, contractRepairPrompt, describeProblems, hasContractProblems } from "../workflow/contract";
+import type { ContractNode, ContractProblems } from "../workflow/contract";
 import type { AgentOutputError } from "../workflow/agent-output";
 import type { StepContext } from "../workflow/engine";
 import { goalsBlock } from "../workflow/goals";
+import { planPacket } from "../workflow/handoff";
+import type { PacketInput, PacketPlan } from "../workflow/handoff";
 import { outputFields } from "../workflow/lower";
 import type { Field, GraphNode } from "../workflow/schema";
 import { roleMethod } from "../stages/role-method";
@@ -66,10 +70,15 @@ export type HelperRequest = {
   plugins?: readonly string[]; mcp?: readonly string[];
   /** Same session: send into this thread (a step that goes on in the earlier helper's session). */
   intoThread?: string | null;
+  /** The step contract (`produces`, `gates`): an answer that breaks it gets the same one repair turn as an answer without a JSON block. */
+  contract?: ContractNode;
   signal?: AbortSignal;
 };
 /** What the step spent: tokens and the price of them, from the thread's own usage events (the budget of the run counts these). */
 export type HelperResult = { threadId: string; output: Record<string, unknown>; text: string; usage?: { tokens: number; costUsd: number; unknown?: true } };
+
+/** The answer is JSON but breaks the step's contract. */
+class ContractFailure extends Error { constructor(readonly problems: ContractProblems) { super(describeProblems(problems).join("; ")); } }
 
 export class HelperFailure extends Error {
   /** The code leads the message: it is what a run's step error shows. */
@@ -159,15 +168,23 @@ export function createWorkflowAgents() {
 
     await wait(sentAt);
     let text = await read();
-    let output: Record<string, unknown> | null = null, problem = "";
+    let output: Record<string, unknown> | null = null, problem = "", broken = false;
     for (let round = 0; round < 2 && !output; round += 1) {
-      try { output = parseAgentOutput(text, request.fields); }
-      catch (cause) {
-        problem = (cause as AgentOutputError).message;
+      try {
+        const parsed = parseAgentOutput(text, request.fields);
+        const issues = request.contract ? contractProblems(request.contract, parsed) : null;
+        if (issues && hasContractProblems(issues)) throw new ContractFailure(issues);
+        output = parsed;
+      } catch (cause) {
+        broken = cause instanceof ContractFailure;
+        problem = (cause as Error).message;
         if (round === 1) break;
-        // One repair turn in the same thread: the answer is judged by its JSON, so a missing block is asked for, not guessed.
+        // One repair turn in the same thread: the answer is judged by its JSON and by the step's contract, so a missing block or a wrong shape is asked for, not guessed.
         const asked = Date.now();
-        await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: `Your last message ended without the required JSON block (${problem}).\n\n${outputContract(request.fields)}\nAnswer with that block now; do not redo the work.`, mentions: [] }] } as never);
+        const repair = cause instanceof ContractFailure
+          ? contractRepairPrompt(cause.problems, request.contract?.produces, outputContract(request.fields))
+          : `Your last message ended without the required JSON block (${problem}).\n\n${outputContract(request.fields)}\nAnswer with that block now; do not redo the work.`;
+        await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: repair, mentions: [] }] } as never);
         await wait(asked);
         text = await read();
       }
@@ -177,7 +194,7 @@ export function createWorkflowAgents() {
       const edited = after ? detectRepoEdits(before, after, spec.editable) : [];
       if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
     }
-    if (!output) throw new HelperFailure("output_invalid", `the ${request.role} helper's final message could not be read: ${problem}`);
+    if (!output) throw new HelperFailure(broken ? "artifact_invalid" : "output_invalid", broken ? `the ${request.role} helper's answer breaks the step's contract: ${problem}` : `the ${request.role} helper's final message could not be read: ${problem}`);
     // Read last, so the repair turn counts too. A thread whose usage cannot be read, or has no usage events, reports `unknown`:
     // the engine then holds the run to a time and step limit instead of letting a token or money budget pass unseen.
     const measured = await threadUsage(bb, threadId!, { ...(sentAt !== undefined ? { since: sentAt } : {}), ...(request.model ? { fallbackModel: request.model } : {}) }).catch(() => undefined);
@@ -191,8 +208,35 @@ export type WorkflowAgents = ReturnType<typeof createWorkflowAgents>;
 
 // ---------------------------------------------------------------- the executor of an agent node
 
+const GOAL_INPUTS = ["goal", "topic", "question", "query", "subject", "symptom", "idea", "task_ref"] as const;
+
+/** Whether the node has a step contract, which is what puts its inputs into a start packet. */
+const hasContract = (node: Extract<GraphNode, { type: "agent" }>): boolean => Boolean(node.produces?.length || node.consumes?.length);
+
+/** The session the step goes on in, when it continues an earlier helper's. */
+const intoThreadOf = (ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, { type: "agent" }>): string | null =>
+  ctx.input.via.mode === "same-session" && node.session !== "new" ? ctx.input.via.fromThreadId ?? null : null;
+
+/**
+ * The start packet of a step with a contract (W0): its goal, its inputs (the data of its edges and its `with`, the workflow's
+ * inputs when it starts a session, the item of its branch, the previous step's handoff), what it must produce and its gates,
+ * in about 3 KB. An input over a few hundred characters stands as a file and a summary (`files` are to be written before the helper
+ * starts; `byReference: false` shows them cut when they could not be). Null for a node without a contract.
+ */
+export function stepPacket(ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, { type: "agent" }>, byReference = true): PacketPlan | null {
+  if (!hasContract(node)) return null;
+  const intoThread = intoThreadOf(ctx, node);
+  const values = { ...(intoThread ? {} : ctx.inputs), ...ctx.input.with };
+  const inputs: PacketInput[] = Object.entries(values).map(([name, value]) => ({ name, value }));
+  if (ctx.input.item !== undefined) inputs.push({ name: "item", value: ctx.input.item });
+  if (ctx.input.via.handoff) inputs.push({ name: "previous_handoff", value: ctx.input.via.handoff });
+  const goalName = GOAL_INPUTS.find((name) => typeof values[name] === "string" && String(values[name]).trim());
+  const kinds = Object.fromEntries((node.consumes ?? []).flatMap((spec) => (spec.as ? [[spec.as, `${spec.kind}/${spec.version}`] as const] : [])));
+  return planPacket({ step: { id: node.id, role: node.role, mode: ctx.mode }, ...(goalName ? { goal: String(values[goalName]), goalInput: goalName } : {}), inputs, produces: node.produces, gates: node.gates, kinds, chatId: ctx.runtime?.pmThreadId ?? "chat", runId: ctx.runId, byReference });
+}
+
 /** The data a node hands its helper: the mapped edge fields and the node's own `with`, and the item of its branch. */
-export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, { type: "agent" }>): HelperRequest {
+export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, { type: "agent" }>, options: { byReference?: boolean } = {}): HelperRequest {
   const rt = ctx.runtime!;
   const fields = outputFields(ctx.workflow, node) as Field[];
   const spec = roleSpec(node.role);
@@ -201,21 +245,23 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
   const task = ctx.render(node.prompt);
   const method = roleMethod(spec.helper.startsWith("specialist:") ? "" : node.role);
   const title = node.title?.en ?? node.label ?? node.id;
-  const intoThread = via.mode === "same-session" && node.session !== "new" ? via.fromThreadId ?? null : null;
+  const intoThread = intoThreadOf(ctx, node);
+  const packet = stepPacket(ctx, node, options.byReference !== false)?.packet;
   // The step's own `with` over the workflow's `$inputs`: a fragment's goal reaches its helper even where no edge or node maps it. A step that
   // continues a thread was given the workflow's inputs earlier in it.
   const inputs = { ...(intoThread ? {} : ctx.inputs), ...ctx.input.with };
   // K7: the first step and every third remind the helper what the whole run is for.
   const goals = ctx.reground ? goalsBlock(ctx.goals) : undefined;
   const body = intoThread
-    ? `Continue the workflow step "${node.id}". New material for you:\n\n${JSON.stringify(inputs, null, 1).slice(0, 20_000)}\n\n${task}${goals ? `\n\n${goals}` : ""}\n\n${outputContract(fields)}`
+    ? `Continue the workflow step "${node.id}". New material for you:\n\n${packet ?? JSON.stringify(inputs, null, 1).slice(0, 20_000)}\n\n${task}${goals ? `\n\n${goals}` : ""}\n\n${outputContract(fields)}`
     : agentPrompt({ workflow: ctx.workflow.id, node: node.id, title, role: node.role, mode: ctx.mode, ...(method.length ? { method: method.join("\n") } : {}), task, inputs,
       ...(ctx.input.item !== undefined ? { item: ctx.input.item } : {}), handoff: via.handoff ?? null, ...(prior ? { prior } : {}), contract: outputContract(fields),
-      readOnly: spec.readOnly, skills: [...(node.skills ?? []), ...(node.profile?.skills ?? [])], ...(goals ? { goals } : {}), ...(node.authorized !== undefined ? { authorized: node.authorized } : {}) });
+      readOnly: spec.readOnly, skills: [...(node.skills ?? []), ...(node.profile?.skills ?? [])], ...(goals ? { goals } : {}), ...(packet ? { packet } : {}), ...(node.authorized !== undefined ? { authorized: node.authorized } : {}) });
   return {
     rt, workflowRunId: ctx.runId, workflowId: ctx.workflow.id, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role: node.role, title, prompt: body, fields,
     ...(node.provider ? { provider: node.provider } : {}), ...(node.model ? { model: node.model } : {}), ...(node.reasoning ? { reasoning: node.reasoning } : {}), ...(node.service_tier ? { serviceTier: node.service_tier } : {}), ...(node.model_preset ? { preset: node.model_preset } : {}),
     skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
+    ...(node.produces?.length || node.gates?.length ? { contract: { id: node.id, produces: node.produces, gates: node.gates } } : {}),
   };
 }
 

@@ -57,6 +57,7 @@
   "nodes": [
     {
       "id": "pm-read",
+      "produces": [{"kind": "summary", "version": 1}],
       "type": "agent",
       "label": "PM read",
       "role": "pm-reader",
@@ -113,6 +114,7 @@
     },
     {
       "id": "plan-critique",
+      "produces": [{"kind": "gate-decision", "version": 1}],
       "type": "agent",
       "label": "Plan critique",
       "role": "plan-critic",
@@ -131,6 +133,7 @@
     },
     {
       "id": "plan-critique-quick",
+      "produces": [{"kind": "gate-decision", "version": 1}],
       "type": "agent",
       "label": "Plan critique (quick: skipped by its own receipt)",
       "role": "plan-critic",
@@ -161,6 +164,8 @@
     },
     {
       "id": "specialist-review",
+      "consumes": [{"kind": "gate-decision", "version": 1, "from": "plan-critique-quick"}, {"kind": "gate-decision", "version": 1, "from": "plan-critique"}],
+      "produces": [{"kind": "gate-decision", "version": 1}],
       "type": "agent",
       "label": "Specialist review",
       "role": "specialist-reviewer",
@@ -245,6 +250,7 @@
     },
     {
       "id": "writer",
+      "produces": [{"kind": "dispatch-reply", "version": 1}],
       "type": "lp-task",
       "label": "Code task",
       "uses": "lp-task",

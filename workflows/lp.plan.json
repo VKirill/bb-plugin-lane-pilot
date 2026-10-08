@@ -50,6 +50,9 @@
   "nodes": [
     {
       "id": "plan",
+      "consumes": [{"kind": "verdict", "version": 1, "from": "plan_critic"}],
+      "produces": [{"kind": "plan", "version": 1}],
+      "gates": ["plan.confidence >= 0 && plan.confidence <= 100"],
       "type": "agent",
       "role": "planner",
       "title": {
@@ -57,7 +60,7 @@
         "ru": "Составить план"
       },
       "src": "maestro-flow:workflows/plan.md",
-      "prompt": "Produce task-v2 contracts; planning is never done inline in the PM chat. One feature = one task of about 15-60 minutes even across several files; never split by file; a user-visible feature is one end-to-end task.\nread_first = files the task changes + source-of-truth files + files whose pattern, signature or convention the change must follow.\nacceptance and verification are commands, greps or file reads naming the exact string, value or exit code; no subjective words (properly, clean, robust, works well, корректно, удобно).\nowns_paths must not overlap inside a wave; depends_on only for real output dependencies; at most 8 tasks (more than 3 modules: waves). UI work is a vertical slice with at least one [UI-observable] qa_case per wave.\nLocked decisions bind the plan, deferred ones are excluded. extra_rules from the calling workflow are binding. mode=gaps: cluster the gaps by root cause, one task per root cause, sources in order: open findings, verification gaps, review findings.\n",
+      "prompt": "Produce task-v2 contracts; planning is never done inline in the PM chat. One feature = one task of about 15-60 minutes even across several files; never split by file; a user-visible feature is one end-to-end task.\nread_first = files the task changes + source-of-truth files + files whose pattern, signature or convention the change must follow.\nacceptance and verification are commands, greps or file reads naming the exact string, value or exit code; no subjective words (properly, clean, robust, works well, корректно, удобно).\nowns_paths must not overlap inside a wave; depends_on only for real output dependencies; at most 8 tasks (more than 3 modules: waves). UI work is a vertical slice with at least one [UI-observable] qa_case per wave.\nLocked decisions bind the plan, deferred ones are excluded. extra_rules from the calling workflow are binding. mode=gaps: cluster the gaps by root cause, one task per root cause, sources in order: open findings, verification gaps, review findings.\nA task may also carry convergence.criteria (the checks that decide it is done, each a command, a grep or a file read with the exact string, value or exit code; next to acceptance) and files[] ({path, action create|modify|delete, target, change}: the concrete change per file, only files the task owns).\n",
       "out": {
         "tasks": "Task[]",
         "waves": "string[][]",
@@ -92,6 +95,7 @@
     },
     {
       "id": "plan_critic",
+      "produces": [{"kind": "verdict", "version": 1}],
       "type": "agent",
       "role": "plan-critic",
       "title": {

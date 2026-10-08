@@ -102,6 +102,7 @@
     },
     {
       "id": "root_cause",
+      "produces": [{"kind": "diagnosis", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -220,6 +221,7 @@
     },
     {
       "id": "memory",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "memory",
       "prompt": "Stage the lesson (root cause + fix pattern) as a candidate; no direct publication.",

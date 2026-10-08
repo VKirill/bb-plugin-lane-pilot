@@ -84,6 +84,7 @@
       "type": "parallel",
       "for_each": "$inputs.perspectives",
       "child": {
+        "produces": [{"kind": "findings", "version": 1}],
         "type": "agent",
         "role": "analyst",
         "src": "maestro-flow:workflows/issue-discover.md",
