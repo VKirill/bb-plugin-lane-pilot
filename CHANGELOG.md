@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.201
+
+- **Rooms refactor back (as 0.1.199).** Its drill failure was not the code: the Mac mini had 12 GB free, below the disk hold, so writers waited (the same tasks stayed queued under 0.1.198 too). Test temp dirs (41 GB in $TMPDIR, 150k `bb-fake-plugin-host-*`) were cleared.
+
 ## 0.1.199
 
 - **Code layout: rooms and shared packages (no behaviour change).** `src/` now holds only `src/rooms/<room>/` (29 rooms; each has `index.ts` for the domain, `server/index.ts`, `ui/index.ts` as its public files, the rest is private) and `packages/` gained nine workspace packages: `@lane-pilot/kit` (hash, redact, spawn, bounded reads, JSONC, owns-paths, paths), `ui-kit` (the components, `lib`, disclosure/surface, realtime channel names), `models` (catalog lookup, presets, prices, reasoning map), `jev` (client, registry, thresholds, run wrapper, three generic judgments), `host-calls` (`runOnHost`, the host-job client), `settings-catalog` (the generated catalog, channels, defaults, provider pool, bookkeeping paths) `i18n` (runtime and ten dictionaries), `contracts` (the zod schemas several rooms share, the stage receipt contract) and `workflow-engine` (schema, validator, expressions, engine, router, journal and the stores, catalog, view; the browser takes `@lane-pilot/workflow-engine/ui`). **`bb-plugin-push` has to run `npm install` once: the set of `packages/*` changed** (nine new workspace links and package-lock entries). All moves are `git mv`; about 4 700 import specifiers were rewritten with the TypeScript API (`scripts/refactor/move.ts`, maps in `scripts/refactor/steps/`), the entries `server.ts`, `host.ts`, `app.tsx` and the `bb` fields of `package.json` are unchanged. Map and rules: `docs/architecture.md`.
