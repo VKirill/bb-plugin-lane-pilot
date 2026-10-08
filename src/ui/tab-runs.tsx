@@ -5,6 +5,7 @@ import { Button } from "../../components/ui/button";
 import { AcceptanceStats } from "./acceptance-stats";
 import { CriticValue } from "./critic-value";
 import { WriterReuse } from "./writer-reuse";
+import { Disclosure } from "./disclosure";
 import { Pill } from "./pill";
 import { OPEN_ATTEMPT_STATES, RUNS_PAGE, canCancelAttempt, canRetryAttempt, runTone, type MonitorRun } from "./page-model";
 import { RunStages } from "./run-parts";
@@ -14,6 +15,8 @@ import { SEGMENT_LABELS, segmentsFor } from "./tabs-model";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import type { LpPage } from "./use-lp-page";
 
+/** A run with more attempts than this folds its finished ones. */
+const FOLD_ATTEMPTS = 6;
 const isOpen = (run: MonitorRun) => run.state === "pending" || run.state === "running";
 
 /** Runs of the project: those in progress, the history, how the checks and writers did, the council's sessions and the machine. */
@@ -71,17 +74,26 @@ function RunsList({ page, view }: { page: LpPage; view: "active" | "history" }) 
                   <span className="text-xs text-muted-foreground">{run.kind}{run.updated_at > 1e11 ? ` · ${new Date(run.updated_at).toLocaleString(locale)}` : ""}</span>
                 </SurfaceHeader>
                 <SurfaceBody className="space-y-2">
-                  {run.attempts.map((attempt) => (
-                    <div key={attempt.id} data-testid={`attempt-${attempt.id}`} className="flex min-w-0 items-center gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-mono text-xs" title={attempt.task_id}>{attempt.task_id}</div>
-                        <div className="text-xs text-muted-foreground">{t("attempt")} {attempt.attempt_no || "—"}</div>
+                  {(() => {
+                    const row = (attempt: MonitorRun["attempts"][number]) => (
+                      <div key={attempt.id} data-testid={`attempt-${attempt.id}`} className="flex min-w-0 items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-mono text-xs" title={attempt.task_id}>{attempt.task_id}</div>
+                          <div className="text-xs text-muted-foreground">{t("attempt")} {attempt.attempt_no || "—"}</div>
+                        </div>
+                        <Badge className="shrink-0" variant={runTone(run.state === "closed" ? run.state : attempt.state)}>{stateLabel(run.state === "closed" ? run.state : attempt.state)}</Badge>
+                        {canCancelAttempt(run, attempt) ? <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId: attempt.id }).then(load)}>{t("cancel")}</Button> : null}
+                        {canRetryAttempt(run, attempt) ? <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId: attempt.id }).then(load)}>{t("retry")}</Button> : null}
                       </div>
-                      <Badge className="shrink-0" variant={runTone(run.state === "closed" ? run.state : attempt.state)}>{stateLabel(run.state === "closed" ? run.state : attempt.state)}</Badge>
-                      {canCancelAttempt(run, attempt) ? <Button size="sm" variant="outline" onClick={() => void rpc.call("cancel_attempt", { attemptId: attempt.id }).then(load)}>{t("cancel")}</Button> : null}
-                      {canRetryAttempt(run, attempt) ? <Button size="sm" variant="outline" onClick={() => void rpc.call("retry_attempt", { attemptId: attempt.id }).then(load)}>{t("retry")}</Button> : null}
-                    </div>
-                  ))}
+                    );
+                    // A run of hundreds of attempts shows the ones in progress and folds the finished ones.
+                    const live = run.attempts.filter((attempt) => OPEN_ATTEMPT_STATES.includes(attempt.state));
+                    const folded = run.attempts.length > FOLD_ATTEMPTS ? run.attempts.filter((attempt) => !OPEN_ATTEMPT_STATES.includes(attempt.state)) : [];
+                    return <>
+                      {(folded.length ? live : run.attempts).map(row)}
+                      {folded.length ? <Disclosure compact testId={`attempts-${run.id}`} summary={`${t("runAttempts")} (${folded.length})`}><div className="space-y-2">{folded.map(row)}</div></Disclosure> : null}
+                    </>;
+                  })()}
                   {run.state !== "closed" && !hasOpenAttempt ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
                   {run.stageCount ? <RunStages runId={run.id} count={run.stageCount} /> : null}
                 </SurfaceBody>

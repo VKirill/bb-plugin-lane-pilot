@@ -5,7 +5,7 @@ import { Switch } from "../../components/ui/switch";
 import { asBoolean, sectionKey } from "./page-model";
 import { extraSettingTab } from "./placement";
 import { CatalogField, CatalogFields } from "./catalog-field";
-import { AdvancedRows, CheckGroup, SettingsGroup } from "./setting-controls";
+import { AdvancedRows, SettingsGroup } from "./setting-controls";
 import { HelpSup } from "./help-sup";
 import { Pill } from "./pill";
 import type { LpPage } from "./use-lp-page";
@@ -20,10 +20,16 @@ function RoleState({ page, enabledKey, fallback, teamLabel }: { page: LpPage; en
 export function WorkTab({ page }: { page: LpPage }) {
   const { advanced, extrasGrouped, displayedValue, applySetting, catalogRow } = page;
   const where = t("workModelInTeam");
+  // One level inside the panel: a titled block with the state of the role it governs, not a card in a card.
   const group = (key: string, children: ReactNode, title: string, help: string, testId: string, enabled: { key: string; fallback: boolean }) => (
-    <CheckGroup testId={testId} title={title} help={help} toggle={<RoleState page={page} enabledKey={enabled.key} fallback={enabled.fallback} teamLabel={where} />}>
+    <section className="space-y-2" data-testid={testId}>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">{title}</h3>
+        <RoleState page={page} enabledKey={enabled.key} fallback={enabled.fallback} teamLabel={where} />
+      </div>
+      <p className="max-w-xl text-xs text-muted-foreground">{help}</p>
       <AdvancedRows show={advanced} testId={`work-${key}`}>{children}</AdvancedRows>
-    </CheckGroup>
+    </section>
   );
   return (
     <div className="space-y-6" data-testid="work-panel-body">
