@@ -140,6 +140,13 @@ const SHOWN_MAX = 3000;
 const PROTECTED_AWARE: ReadonlySet<string> = new Set(["save_setting", "save_settings", "reset_project_settings"]);
 
 export type OwnerGateVerdict = { ok: true } | { ok: false; message: string };
+/**
+ * The gate keeping a caller out. It is the gate working, not a fault: the RPC log calls it `refused`, not `failed`, so the
+ * self-repair watcher does not open a repair thread for every script that probes a gated method.
+ */
+export class OwnerGateRefusal extends Error {
+  readonly refused = true;
+}
 const OK: OwnerGateVerdict = { ok: true };
 const refused = (message: string): OwnerGateVerdict => ({ ok: false, message });
 /** What a caller with no identity is told: the way in that works, and that an agent asks in its chat. */
@@ -319,7 +326,7 @@ export function guardRpc<T extends Record<string, (...args: never[]) => unknown>
     const handler = handlers[name] as (input: unknown, rpcCtx?: unknown) => unknown;
     wrapped[name] = async (input: unknown, rpcCtx?: unknown) => {
       const verdict = await gate.check(name, input, rpcCtx);
-      if (!verdict.ok) throw new Error(verdict.message);
+      if (!verdict.ok) throw new OwnerGateRefusal(verdict.message);
       return handler(input, rpcCtx);
     };
   }
