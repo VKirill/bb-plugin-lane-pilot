@@ -65,6 +65,7 @@ import { WriterReuse } from "./writer-reuse";
 import { AgentAccess } from "./agent-access";
 import { TokenUsage } from "./token-usage";
 import { WorkflowsScreen } from "./workflows";
+import { ScheduleBoard } from "./schedule-board";
 import { MemoryRecords } from "./memory-records";
 import { DocsPlaces } from "./docs-places";
 import { DOCS_DEFAULT_SELECTION } from "../stages/docs-defaults";
@@ -415,7 +416,7 @@ function StatusRow({ state, title, detail, action, testId }: { state: "ok" | "to
 
 const TAB_LABELS: Record<string, I18nKey> = {
   overview: "tabOverview", settings: "tabSettings", checks: "tabChecks", council: "tabCouncil",
-  memory: "tabMemory", access: "tabAccess", rules: "tabRules", workflows: "tabWorkflows", monitor: "tabMonitor", service: "tabService",
+  memory: "tabMemory", access: "tabAccess", rules: "tabRules", workflows: "tabWorkflows", schedule: "tabSchedule", monitor: "tabMonitor", service: "tabService",
 };
 /** Tabs the Basic/Advanced switch applies to. */
 const SETTINGS_TABS = new Set(["settings", "checks", "council", "memory"]);
@@ -682,7 +683,7 @@ function canRetryAttempt(run: MonitorRun, attempt: MonitorAttempt): boolean {
     && run.attempts.filter((item) => item.task_id === attempt.task_id).length < MAIN_ATTEMPT_LIMIT;
 }
 
-export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" }) {
+export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" }) {
   const [activeScope, setActiveScope] = useState(scope);
   const rpc = useRpc<typeof rpcContract>();
   const { projectId: routeProjectId, threadId: routeThreadId } = useBbContext();
@@ -897,7 +898,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   // Runs and maintenance belong to the project and its machine; the global level has no overview or rules.
   const tabs = isGlobal ? ["settings", "checks", "council", "memory", "access"]
     : selectedSectionId ? ["overview", "settings", "checks", "council", "memory", "access", "rules"]
-      : ["overview", "settings", "checks", "council", "memory", "access", "rules", "workflows", "monitor", "service"];
+      : ["overview", "settings", "checks", "council", "memory", "access", "rules", "workflows", "schedule", "monitor", "service"];
   useEffect(() => {
     if (!tabs.includes(tab)) setTab(tabs[0]!);
   }, [tabs.join(), tab]);
@@ -1477,7 +1478,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           <Select
             value={mobileNavValue}
             onValueChange={(next) => {
-              if (next === "globals" || next === "agents" || next === "tokens" || next === "workflows") setActiveScope(next);
+              if (next === "globals" || next === "agents" || next === "tokens" || next === "workflows" || next === "schedule") setActiveScope(next);
               else if (next.startsWith("project:")) chooseProject(next.slice("project:".length));
               else if (next.startsWith("section:")) { setActiveScope("projects"); setSelectedSectionId(next.slice("section:".length)); }
             }}
@@ -1490,6 +1491,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               <SelectItem value="agents">{t("navAgents")}</SelectItem>
               <SelectItem value="tokens">{t("tabTokens")}</SelectItem>
               <SelectItem value="workflows">{t("navWorkflows")}</SelectItem>
+              <SelectItem value="schedule">{t("navSchedule")}</SelectItem>
               {projects.flatMap((project) => [
                 <SelectItem key={project.id} value={`project:${project.id}`}>{project.name}</SelectItem>,
                 ...(activeScope === "projects" && project.id === projectId ? flatSections.map((section) => (
@@ -1506,6 +1508,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           <Button type="button" role="tab" size="sm" aria-selected={activeScope === "agents"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" onClick={() => setActiveScope("agents")}>{t("navAgents")}</Button>
           <Button type="button" role="tab" size="sm" aria-selected={activeScope === "tokens"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" data-testid="scope-nav-tokens" onClick={() => setActiveScope("tokens")}>{t("tabTokens")}</Button>
           <Button type="button" role="tab" size="sm" aria-selected={activeScope === "workflows"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" data-testid="scope-nav-workflows" onClick={() => setActiveScope("workflows")}>{t("navWorkflows")}</Button>
+          <Button type="button" role="tab" size="sm" aria-selected={activeScope === "schedule"} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover" data-testid="scope-nav-schedule" onClick={() => setActiveScope("schedule")}>{t("navSchedule")}</Button>
         </div>
         <div className="border-t border-[var(--lp-hairline)] px-3 pb-1 pt-3"><span className="text-xs font-medium text-muted-foreground">{t("projects")}</span></div>
         <div className="min-h-0 flex-1 overflow-y-auto pb-2">
@@ -1551,11 +1554,12 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div ref={contentRef} className={`mx-auto w-full min-w-0 space-y-6 px-4 py-5 ${activeScope === "workflows" ? "max-w-5xl" : "max-w-3xl"}`}>
+        <div ref={contentRef} className={`mx-auto w-full min-w-0 space-y-6 px-4 py-5 ${activeScope === "workflows" || activeScope === "schedule" ? "max-w-5xl" : "max-w-3xl"}`}>
         <OwnedSettings scope={activeScope === "agents" ? "agents" : "projects"} locale={locale} />
         {activeScope === "tokens" ? <TokenUsage projects={projects} /> : null}
         {activeScope === "workflows" ? <WorkflowsScreen locale={locale} projectId={null} architectProjectId={selectedProjectId ?? routeProjectId ?? (subPath || null)} /> : null}
-        <main hidden={activeScope === "agents" || activeScope === "tokens" || activeScope === "workflows"} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
+        {activeScope === "schedule" ? <ScheduleBoard projectId={null} projects={projects} locale={locale} /> : null}
+        <main hidden={activeScope === "agents" || activeScope === "tokens" || activeScope === "workflows" || activeScope === "schedule"}className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
         {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
         <div className="lp-strip">
           {isGlobal ? <>
@@ -1942,6 +1946,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             {visited.current.has("rules") ? <>
             {!isGlobal && projectId ? <RuleProposals projectId={projectId} picker={modelPicker} /> : null}
             </> : null}
+          </TabsContent>
+          </> : null}
+          {tabs.includes("schedule") ? <>
+          <TabsContent value="schedule" forceMount={true} className="space-y-6" hidden={tab !== "schedule"} data-testid="schedule-panel">
+            {visited.current.has("schedule") && !isGlobal && projectId ? <ScheduleBoard projectId={projectId} projects={projects} locale={locale} /> : null}
           </TabsContent>
           </> : null}
           {tabs.includes("workflows") ? <>
