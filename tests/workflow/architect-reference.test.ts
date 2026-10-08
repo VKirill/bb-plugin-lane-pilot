@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ROLE_PROFILES } from "../../src/helper-context";
 import { WORKFLOW_ARCHITECT_SESSION } from "../../src/workflow-architect";
@@ -60,5 +61,15 @@ describe("the workflow reference the architect reads", () => {
     // telegram.send_rich has an executor (it runs in an errand helper): it is not the example of an action that has none.
     expect(WORKFLOW_ARCHITECT_SESSION).not.toMatch(/telegram\.send_rich[^.]*no executor/);
     expect(WORKFLOW_ARCHITECT_SESSION).not.toContain("environment none|project|worktree|personal");
+  });
+
+  it("keeps the prompt short and the format in the reference; says the same about a model nobody offers", () => {
+    // Audit round 2, item 17: the prompt only summarizes the format, the reference carries it.
+    expect(WORKFLOW_ARCHITECT_SESSION.length).toBeLessThan(12_000);
+    // A known preset is used as it is (resolveAgentModel): the note must not promise a fall-through for `offered: false`.
+    const source = readFileSync(new URL("../../src/workflow/capabilities.ts", import.meta.url), "utf8");
+    expect(source).not.toContain("offered: false falls through to Settings");
+    expect(WORKFLOW_ARCHITECT_SESSION).toContain("name no pair: use a preset");
+    expect(WORKFLOW_ARCHITECT_SESSION).not.toContain("say the pair is unchecked");
   });
 });

@@ -60,7 +60,7 @@ export function modelsSection(catalog: ModelCatalog, settings: Record<string, un
     status: "ready" as const,
     machines: catalog.hosts.map((host) => ({ name: host.name, connected: host.connected })),
     providers, presets,
-    note: "a node names `provider` and `model` (the id column) together, with `reasoning` from that model's efforts; pick only pairs listed here: a pair no machine offers is a validator warning and the step fails to start. Prefer a preset (`model_preset`) to a pair; `only` means the model exists on those machines alone; a preset with offered: false falls through to Settings",
+    note: "a node names `provider` and `model` (the id column) together, with `reasoning` from that model's efforts; pick only pairs listed here: a pair no machine offers is a validator warning and the step fails to start. Prefer a preset (`model_preset`) to a pair; `only` means the model exists on those machines alone; a preset with offered: false is still used as it is and the step fails to start, so do not name it",
   };
 }
 
@@ -79,13 +79,13 @@ async function section<T>(read: (() => Promise<T[] | null>) | undefined, filter:
 /** The vocabulary of the chain format, so the architect writes only what the validator accepts. */
 export const WORKFLOW_REFERENCE = {
   nodeTypes: {
-    agent: "a model thread does one job: `role` (see roles: it sets what the thread can read and use), `prompt`, `skills`, `plugins` (BB plugin ids) and `mcp` (MCP server names) on top of its role's, `model_preset` or `provider`/`model`/`reasoning` (see models), `session: new` (do not continue the earlier thread on a same-session edge), `votes` (1-9 independent runs decided by code), `out` = the fields it must return; every agent also returns a non-empty `handoff`. `environment` and `authorized` are accepted by the format but change nothing today: the thread runs in the PM chat's environment and is read-only",
+    agent: "a model thread does one job: `role` (it sets what the thread can read and use), `prompt`, `skills`, `plugins` (BB plugin ids) and `mcp` (MCP server names) on top of its role's, `model_preset` or `provider`/`model`/`reasoning`/`service_tier` (see models), `session: new` (do not continue the earlier thread on a same-session edge), `votes` (1-9 independent runs decided by code), `out` = the fields it must return, each `{name, type, values (enum), required, default}` (types in fieldTypes); every agent also returns a non-empty `handoff`. `environment` and `authorized` change nothing: the thread runs in the PM chat's environment and is read-only",
     "lp-task": "a code change through Lane Pilot's writer, critics, checks and merge (owns_paths, contract); use it for anything that edits a repository",
     action: "a deterministic step run by code: `action` names it (telegram.send_rich, fs.write, items.dedupe ...), `params` feed it; `action: emit` ends the workflow with `map` (status and the workflow outputs)",
     decision: "branches on fields already produced (reads_node) without a model call",
-    human: "asks the owner as a form in the project's Lane Pilot chat (question, options, timeoutSec; onTimeout `stop`, or `default` with `defaultOption`); out usually answer and answer_kind (an enum the edges branch on). With a timeoutSec, add `timeout` to the answer_kind values and give it an edge: the clock then answers, else the step fails with human_timeout",
-    parallel: "fans out over a list (for_each, batch_size) with a `child` body (agent, lp-task, action or subworkflow) and a `join` {policy all|majority|all_or_low_confidence, out, uses}; `max_fan_out` caps how many branches there may be (overflow fails unless onOverflow: truncate), `concurrency` how many run at once",
-    join: "collects the branches of a parallel (only when the parallel has no child)",
+    human: "asks the owner as a form in the project's Lane Pilot chat (question, options, timeoutSec; onTimeout `stop`, or `default` with `defaultOption`); out usually answer and answer_kind (an enum the edges branch on). With a timeoutSec add `timeout` to the answer_kind values and give it an edge, else the step fails with human_timeout",
+    parallel: "fans out over a list (for_each, batch_size) with a `child` body (agent, lp-task, action or subworkflow) and a `join` {policy all|majority|all_or_low_confidence, out, uses}; `max_fan_out` caps the branches (overflow fails unless onOverflow: truncate), `concurrency` how many run at once",
+    join: "collects the branches of a parallel that has no child",
     subworkflow: "calls another workflow by id; at most 3 levels",
     note: "a comment on the canvas; never runs",
   },
@@ -105,33 +105,33 @@ export const WORKFLOW_REFERENCE = {
   fieldTypes: [...FIELD_TYPES],
   guards: "every loop needs `maxVisits` on one of its nodes or a `visits()` condition; `maxAttempts` (at most 5) retries a step; `timeoutSec` bounds one; guards.maxSteps (default 60) and `budget` {maxSteps, maxTokens, maxCostUsd, maxWallSeconds} cap a run (over budget: the run is blocked)",
   edges: "`from: start` begins the chain; every path ends in an `emit` action (or an edge to `end`); several conditional edges plus at most one unconditional fallback leave a node",
-  skipping: "`applicable_modes` (the node runs only in these quality modes), `skip_when` (an expression) and `skip_out` (the output a skipped node gives; required when a later node reads its fields)",
-  workflowQualityMode: "workflow `quality_mode` {default, effect, min, fixed}: `min` raises a lower request (a refactor is never quick), `fixed` ignores the request; an lp-task node may carry its own `quality_mode`",
+  skipping: "`applicable_modes` (the node runs only in these quality modes), `skip_when` (an expression) and `skip_out` (the output of a skipped node; required when a later node reads its fields)",
+  workflowQualityMode: "workflow `quality_mode` {default, effect, min, fixed}: `min` raises a lower request, `fixed` ignores it; an lp-task node may carry its own",
   roles: {
-    "analyst, planner, auditor, debugger": "read-only thin roles with a built-in method: they read the code graph (gitnexus) and nothing else, no browser, no accounts. An unknown role, the default `worker` included, runs as `analyst`",
+    "analyst, planner, auditor, debugger": "read-only thin roles: they read the code graph (gitnexus) and nothing else, no browser, no accounts. An unknown role, the default `worker` included, runs as `analyst`",
     "plan-critic, pm-reader, council, memory": "answer from the message alone: no tools, no code graph",
     "code-critic, triager": "read-only, code graph",
-    errand: "the role for work outside the code: the owner's browser (browser-automation, computer-use), Env Catalog accounts by name (env_get), mail, consoles",
+    errand: "work outside the code: the owner's browser (browser-automation, computer-use), Env Catalog accounts by name (env_get), mail, consoles",
     "browser-qa": "a browser check of a URL with cases; browser-automation only",
     "project-life": "may write .agents/ and CHANGELOG.md",
-    "specialist:design-lead, specialist:copy-lead, specialist:seo-specialist, specialist:tavily": "the Lane Pilot specialists with their skills; may write .agents/",
+    "specialist:design-lead, specialist:copy-lead, specialist:seo-specialist, specialist:tavily": "the specialists with their skills; may write .agents/",
     note: "every role but project-life and the specialists is read-only for the repository: a changed file fails the step (repo_edited). A file the chain must leave in the project goes through an `fs.write` action or an lp-task node; notes go under .bb/chats/",
   },
   models: {
     precedence: "the model of an agent step (and of an action that runs in a helper): the node's own `provider`/`model`/`reasoning` override, field by field, what the first of these gives: 1. the node's `model_preset`; 2. the role's stage selection in Settings (analyst and pm-reader: pm_read; planner and plan-critic: plan_critique; code-critic: code_critique; auditor: code_critique, then night_review; debugger: workflow.debugger, then specialist; specialist:x: specialist); 3. `workflow.agent.*` in Settings; 4. the model of the project's PM chat. An lp-task node runs on the writer chain (writer.* in Settings); decision, human and code actions use no model",
-    presets: "named settings `workflow.preset.<name>.{provider,model,reasoning_effort}`: the owner changes a model in Settings without editing the chain. `cheap-fast` (claude-haiku-5-5, low: collecting, extracting, sending), `strong` (claude-opus-5-5, high: judgment, planning), and the Insights ones `ins-analysis`, `ins-psychology`, `ins-check`, `ins-digest`. An unknown preset is a warning and the step falls through to Settings",
-    advice: "leave the model unset unless the step differs from the others in difficulty; name a preset, not a model; set `provider` and `model` together, only on the owner's word and only a pair listed in the `models` section of the capabilities (a pair no machine offers is a validator warning); `reasoning` is one of that model's efforts",
+    presets: "named settings `workflow.preset.<name>.{provider,model,reasoning_effort}`: the owner changes a model in Settings without editing the chain. `cheap-fast` (claude-haiku-5-5, low: collecting, extracting, sending), `strong` (claude-opus-5-5, high: judgment, planning), and the Insights ones `ins-analysis`, `ins-psychology`, `ins-check`, `ins-digest`. An unknown preset is a warning and the step falls through to Settings; a known one is used as it is",
+    advice: "leave the model unset unless the step differs in difficulty; name a preset, not a model; `provider` and `model` go together, only on the owner's word and only a pair from the `models` section of the capabilities; `reasoning` is one of that model's efforts (low, medium, high, xhigh, max, ultracode where the model has it); `service_tier: fast` only where the provider lists service tiers",
   },
-  requires: "`skills` (a hint on a step; only the ones listed here are checked before a run), `plugins` and `mcp` (those named on agent steps are added to the check by themselves), `secrets` (Env Catalog names, `NAME?` when optional), `tools` (commands: `ffmpeg`, `a|b`), `platforms` (signed-in networks: threads, instagram, facebook, vk are checked, x is not), `machines`, `browserSession`. A step that needs an account or a key runs as role `errand`: it reads the value by name with env_get and never prints it",
+  requires: "`skills` (a hint on a step; only the ones listed here are checked before a run), `plugins` and `mcp` (those named on agent steps are added by themselves), `secrets` (Env Catalog names, `NAME?` when optional), `tools` (commands: `ffmpeg`, `a|b`), `platforms` (threads, instagram, facebook, vk are checked, x is not), `machines` (shown to the owner, not passed to a step), `browserSession`. A step that needs an account or a key runs as role `errand`: it reads the value by name with env_get and never prints it",
   actions: {
     code: "items.dedupe, dag.validate, digest.check, citations.check, verdict.aggregate, lp.propose_workflow; `emit` ends the chain",
     "plugin state and checkout": "lp.state_probe, lp.run_status, lp.run_close, lp.lint_contract, lp.integration_gate_status (answers skipped today), fs.write, git.diff_files",
     "run in an errand helper with its skills and accounts": "telegram.send_rich, shell.skill_script, shell.repo_script, deploy.post_check, lp.preflight, lp.project_checks, bb.tasks.get, bb.tasks.update, bb.tasks.create; the node takes `model_preset` and `params.skill`",
     note: "an action name outside these lists has no executor: it runs on stubs in the test and a live run stops there",
   },
-  triggers: "`triggers: [{type: chat|manual|schedule|telegram}]`. chat: the PM routes a request to a published chain. manual: Run in the Workflows tab. schedule {cron (5 fields), timezone (IANA), projectId, inputs}: publishing a chain that has one creates a BB automation; a scheduled run starts only while the chain is published and the project has an open Lane Pilot chat, else the automation shows a failed run. telegram: declared only; no bot command starts a chain yet",
-  testing: "`test` = {id, sim: {input, stubs: {nodeId: {field: value}}, human_answers: {nodeId: answer_kind}, expect_status (default succeeded), expect_path, expect_output, variant_<name>: {overrides}}}. Stubs answer with the first enum value and made-up strings, so stub every node that decides a branch. A draft with no `test` runs one smoke case. Publishing needs every case green on the current version; any patch resets that",
-  goals: "a run started through the PM carries goals {id, done_when, evidence}; helper briefs are reminded of them and a model audit judges them before the run closes, so write outputs the audit can point to (a path, a message id, a count)",
+  triggers: "`triggers: [{type: chat|manual|schedule|telegram}]`. chat: the PM routes a request to a published chain; the router reads description, examples and not_for. manual: Run in the Workflows tab. schedule {cron (5 fields), timezone (IANA), projectId, inputs}: publishing a chain that has one creates a BB automation; a scheduled run starts only while the chain is published and the project has an open Lane Pilot chat, else the automation shows a failed run, and it gets only the trigger's inputs (a required input needs a value there or a default). telegram: declared only; no bot command starts a chain yet",
+  testing: "`test` = {id, sim: {input, stubs: {nodeId: {field: value}}, human_answers: {nodeId: answer_kind}, expect_status (default succeeded), expect_path, expect_output, variant_<name>: {overrides}}}. Unstubbed fields get the first enum value and made-up strings, so stub every node that decides a branch. No `test`: one smoke case. Publishing needs every case green on the current version; any patch resets that",
+  goals: "a run started through the PM carries goals {id, done_when, evidence} that a model audit judges before the run closes, so write outputs it can point to (a path, a message id, a count)",
 } as const;
 
 export async function collectCapabilities(ports: CapabilityPorts, query: CapabilityQuery = {}) {
@@ -165,7 +165,7 @@ export async function collectCapabilities(ports: CapabilityPorts, query: Capabil
   if (wanted("models")) {
     try {
       const read = ports.models ? await ports.models() : null;
-      result.models = read && read.catalog.providers.length ? modelsSection(read.catalog, read.settings, needle) : { status: "unavailable", note: "no machine answered the model catalog: the pairs cannot be verified, say so and name no provider/model (use a preset)" };
+      result.models = read && read.catalog.providers.length ? modelsSection(read.catalog, read.settings, needle) : { status: "unavailable", note: "no machine answered the model catalog: the pairs cannot be verified, so name no provider/model (use a preset)" };
     } catch (cause) {
       result.models = { status: "error", error: cause instanceof Error ? cause.message : String(cause) };
     }
