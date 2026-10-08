@@ -17,6 +17,7 @@ import { workflowMigrations } from "./workflow/journal";
 import { workflowOpsMigrations } from "./workflow/ops-store";
 import { draftMigrations } from "./workflow/draft-store";
 import { jevMigrations } from "./jev/receipts";
+import { learningMigrations } from "./learning/migrations";
 import { scheduleMigrations } from "./schedule/store";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
@@ -312,6 +313,8 @@ export const migrations = [
   `CREATE INDEX lane_pilot_secret_issuance_project ON lane_pilot_secret_issuance(project_id, at)`,
   // Schedule board: scheduled tasks and their runs (src/schedule). Always last.
   ...scheduleMigrations,
+  // Learning from the owner's messages (src/learning): observations, learned items, other signals. Append only.
+  ...learningMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
