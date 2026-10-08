@@ -1619,6 +1619,15 @@ export const rpcContract = defineRpcContract({
       }).strict()),
     }).strict(),
   },
+  // Lane Pilot's worktree provider is switched off on a machine after 3 errors in a row; it is probed again after an hour, or lifted here.
+  workspace_provider_status: {
+    input: z.object({}).strict(),
+    output: z.object({ hosts: z.array(z.object({ hostId: z.string(), failures: z.number().int(), disabled: z.boolean(), disabledAt: z.number().nullable(), probeAt: z.number().nullable(), lastReason: z.string().nullable() }).strict()) }).strict(),
+  },
+  workspace_provider_reset: {
+    input: z.object({ hostId: z.string().min(1).optional() }).strict(),
+    output: z.object({ cleared: z.array(z.string()) }).strict(),
+  },
   workflow_list: {
     input: z.object({ projectId: z.string().min(1).optional() }).strict(),
     output: z.object({

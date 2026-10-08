@@ -116,3 +116,30 @@ it("removes Lane Pilot's own area worktrees after the sticky window, once, and n
   expect(await cleanupStickyLaneWorktrees(db, remove, released, now + STICKY_WINDOW_MS)).toEqual([]);
   expect(calls).toEqual(["ovh:/repo:/lp/wt/a"]);
 });
+
+it("removes the worktree of a task without an area once its attempts are over for 30 minutes, and never while one is open or could still be redone", async () => {
+  const { createTask } = await import("../../src/database");
+  const { cleanupStickyLaneWorktrees } = await import("../../src/server/run-finish");
+  const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+  const db = openDatabase(bb);
+  createRun(db, "run", "proj", "bb", "/repo", "none", undefined, "ovh");
+  for (const id of ["done-task", "busy-task", "failed-task", "redone-task"]) createTask(db, { id, runId:"run", kind:"bb", contract:{} });
+  const now = 100_000_000;
+  const at = (id:string, task:string, path:string, state:string, updatedAt = now - 60_000) => {
+    createAttempt(db, { id, runId:"run", taskId:task });
+    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?, state=?, updated_at=? WHERE id=?").run(path, state, updatedAt, id);
+  };
+  at("a", "done-task", "/lp/wt/a", "accepted");
+  at("b", "busy-task", "/lp/wt/b", "running");
+  // A failed attempt nothing replaced may still be redone in its worktree: it stays.
+  at("c", "failed-task", "/lp/wt/c", "provider_error");
+  at("d", "redone-task", "/lp/wt/d", "provider_error");
+  at("e", "redone-task", "/lp/wt/e", "accepted");
+  const calls: string[] = [];
+  const remove = async (_host:string, _base:string, path:string) => { calls.push(path); return true; };
+  const released = new Set<string>();
+  expect(await cleanupStickyLaneWorktrees(db, remove, released, now)).toEqual([]);
+  const later = now + 31 * 60_000;
+  expect((await cleanupStickyLaneWorktrees(db, remove, released, later)).sort()).toEqual(["/lp/wt/a", "/lp/wt/d", "/lp/wt/e"]);
+  expect(calls.sort()).toEqual(["/lp/wt/a", "/lp/wt/d", "/lp/wt/e"]);
+});
