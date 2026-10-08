@@ -65,6 +65,7 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_run_workflow",
   "lane_pilot_workflow_status",
   "lane_pilot_workflow_amend",
+  "lane_pilot_schedule",
 ] as const;
 
 export const NATIVE_LP_BRIDGE_PM_TOOLS = [
@@ -106,6 +107,7 @@ export const NATIVE_LP_BRIDGE_PM_TOOLS = [
   "lane_pilot_run_workflow",
   "lane_pilot_workflow_status",
   "lane_pilot_workflow_amend",
+  "lane_pilot_schedule",
 ] as const;
 
 /** The tools of the Workflow architect: it builds chains, it does not dispatch writers. */
