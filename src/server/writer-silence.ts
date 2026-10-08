@@ -31,6 +31,8 @@ export type SilenceDeps = {
   /** Minutes of silence after which the project's writers are nudged. */
   silenceMinutes:(projectId:string, runId:string) => number;
   isDisposed:() => boolean;
+  /** True while this thread (the writer's, or its PM chat) waits for the owner's answer: a silent writer is not a stuck one then. */
+  waitingForOwner?:(threadId:string) => Promise<boolean>;
   /** The schedule run's signal: the sweep stops between attempts when the core aborts the run. */
   signal?:AbortSignal;
   log:(line:string) => void;
@@ -66,6 +68,9 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
       if (!last) continue;
       // A nudge is an event of its own, and a writer that ignores it is silent from the nudge on.
       if (now - Math.max(last, record?.at ?? 0) < limitMs) continue;
+      // A form open for the owner (on the writer's thread, or the PM's question that its answer may hang on) is a wait, not silence.
+      if (await deps.waitingForOwner?.(attempt.thread_id).catch(() => false)) continue;
+      if (attempt.pm_thread_id && await deps.waitingForOwner?.(attempt.pm_thread_id).catch(() => false)) continue;
       const count = record?.count ?? 0;
       const minutes = Math.round((now - last) / 60_000);
       if (count >= MAX_WRITER_NUDGES) {

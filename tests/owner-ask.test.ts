@@ -237,3 +237,50 @@ describe("thread lifecycle events do not disturb an open form (H8)", () => {
     await asked;
   });
 });
+
+describe("a question lost to a reload (H8, audit B3)", () => {
+  /** A BB whose form is cancelled by the reload (reason plugin-disposed) or by the owner, and a KV the next instance shares. */
+  function reloadHost(reason: string) {
+    const sent: Array<{ threadId: string; text: string }> = [];
+    const send = async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; };
+    const made = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: { send } } as never });
+    (made.bb as unknown as { ui: unknown }).ui = { requestInput: async () => ({ outcome: "cancelled", reason }) };
+    const logs: string[] = [];
+    return { ...made, sent, logs, ownerAsk: createOwnerAsk(made.bb, (line) => logs.push(line)) };
+  }
+
+  it("keeps the question when the reload took the form, and the next instance tells the chat", async () => {
+    const { bb, ownerAsk, sent } = reloadHost("plugin-disposed");
+    expect(await ownerAsk.ask("thr_pm", { source: "pm", question: "Ship the migration?\nsecond line" })).toEqual({ outcome: "cancelled", reason: "plugin-disposed" });
+    // The new instance: no form of its own is open in that chat, the old one's record is.
+    const next = createOwnerAsk(bb, () => undefined);
+    expect(await next.pending("thr_pm")).toBe(true);
+    expect(await next.recoverLost()).toEqual(["thr_pm"]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.threadId).toBe("thr_pm");
+    expect(sent[0]!.text).toContain("«Ship the migration?»");
+    expect(sent[0]!.text).toContain("lost when Lane Pilot reloaded");
+    expect(await next.pending("thr_pm")).toBe(false);
+    expect(await next.recoverLost()).toEqual([]);
+  });
+
+  it("forgets a question the owner dismissed, and one the chat itself ended", async () => {
+    for (const reason of ["user", "timeout", "thread-stopped", "thread-deleted"]) {
+      const { ownerAsk, sent } = reloadHost(reason);
+      await ownerAsk.ask("thr_pm", { source: "pm", question: "q" });
+      expect(await ownerAsk.pending("thr_pm"), reason).toBe(false);
+      expect(await ownerAsk.recoverLost(), reason).toEqual([]);
+      expect(sent, reason).toEqual([]);
+    }
+  });
+
+  it("an open form is pending while it waits", async () => {
+    const { harness, ownerAsk } = host();
+    const asked = ownerAsk.ask("thr_pm", { source: "pm", question: "q" });
+    expect(await ownerAsk.pending("thr_pm")).toBe(true);
+    expect(await ownerAsk.pending("thr_other")).toBe(false);
+    harness.behavior.submitInteraction(harness.pendingInteractions[0]!.id, { text: "yes" });
+    await asked;
+    expect(await ownerAsk.pending("thr_pm")).toBe(false);
+  });
+});

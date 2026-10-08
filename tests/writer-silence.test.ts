@@ -39,6 +39,20 @@ describe("writer silence sweep", () => {
     expect(sent).toEqual([]);
   });
 
+  it("does not nudge or end a writer while the owner's answer is awaited, on its own thread or on its PM's", async () => {
+    const waiting = new Set<string>(["thr_w"]);
+    const { deps, sent, store } = setup({ attempts:[{ id:"a1", run_id:"run", task_id:"T1", thread_id:"thr_w", state:"running", project_id:"proj", pm_thread_id:"thr_pm" }] });
+    deps.waitingForOwner = async (threadId) => waiting.has(threadId);
+    expect(await sweepWriterSilence(deps, T0 + 25 * MIN)).toEqual([]);
+    waiting.clear(); waiting.add("thr_pm");
+    expect(await sweepWriterSilence(deps, T0 + 70 * MIN)).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(store.get("writer-nudge:a1")).toBeUndefined();
+    // The owner answered: the silence counts again.
+    waiting.clear();
+    expect(await sweepWriterSilence(deps, T0 + 71 * MIN)).toEqual([{ attemptId:"a1", action:"nudged", count:1 }]);
+  });
+
   it("steers a silent active writer once, records it and reads only that thread's events", async () => {
     const { deps, sent, logs, store, listed } = setup();
     expect(await sweepWriterSilence(deps, T0 + 25 * MIN)).toEqual([{ attemptId:"a1", action:"nudged", count:1 }]);
