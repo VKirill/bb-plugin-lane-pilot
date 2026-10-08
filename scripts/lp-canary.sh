@@ -6,7 +6,8 @@
 #   scripts/lp-canary.sh --rollback <version> the commands that put <version> back (printed, never run)
 # The plugin counts the attempts that finished under its version since it started and how many failed on Lane Pilot's own
 # fault (failure class «harness»); it tells the PMs of those tasks once when the canary trips. A routine deploy is only
-# wise while «budget» is not spent (more than 5% own faults in 7 days); an incident deploy needs LP_DEPLOY_INCIDENT anyway.
+# wise while «budget» is not spent (more than 5% own faults in 7 days); an incident deploy needs the commit trailer
+# `Lane-Pilot-Incident: <repair thread|signature>` that the hub confirms (bb-plugin-push, audit r4 P0-8).
 set -uo pipefail
 export BB_SERVER_URL="${BB_SERVER_URL:-https://bb.vechkasov.pro}"
 BB="${BB_CLI:-/Users/vechkasov/.bb-machines/vechkasov.getbb.app/npm/lib/node_modules/bb-app/host-daemon/dist/bb}"
@@ -21,6 +22,8 @@ if [ "${1:-}" = "--rollback" ]; then
   [ -n "$sha" ] || { echo "no deploy of $version in $LOG; find its commit with: git -C $REPO log --oneline -S'\"version\": \"$version\"' -- package.json" >&2; exit 2; }
   cat <<EOF
 # Roll back Lane Pilot to $version ($sha). Printed, not run; bb-plugin-push has no --rollback, it deploys a clean pushed HEAD.
+# The one-a-day and error-budget rules are lifted only for a commit with the trailer "Lane-Pilot-Incident: <repair thread|signature>" that
+# the hub confirms (a problem first seen on the version that runs now); LP_DEPLOY_INCIDENT below is only the text for the deploy log.
 cd "$REPO"
 git fetch origin
 git switch --detach $sha

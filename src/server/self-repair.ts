@@ -161,6 +161,15 @@ export function parseVerdict(text: string): Verdict | null {
  * comes back only if it happens again under a newer version (the fix did not hold), a day later without a verdict,
  * or a week later when the repair said it is not Lane Pilot's or needs the owner.
  */
+/**
+ * Whether a kind of problem began under the version that is running now: it was first recorded after this load and every sample
+ * kept happened after it. The deploy script lifts the one-a-day and error-budget rules for an incident deploy only for such a kind
+ * (audit 2026-10-08 round 4, P0-8): a problem that was already there when this version started is not what this version broke.
+ */
+export function firstSeenOnRunningVersion(record: SignatureRecord, loadedAt = LOADED_AT, version = VERSION): boolean {
+  return record.firstAt >= loadedAt && record.samples.length > 0 && record.samples.every((sample) => sample.version === version);
+}
+
 export function isDue(record: SignatureRecord, now: number, version = VERSION): boolean {
   const live = record.samples.some((sample) => sample.version === version && sample.at > (record.spawnedAt ?? 0));
   if (!live) return false;
@@ -652,7 +661,7 @@ export function createSelfRepair(ctx: ServerCore) {
         attempts: Object.fromEntries(attempts.map((row) => [row.state, row.n])),
         failuresByFault: Object.fromEntries(faults.map((row) => [row.origin, row.n])),
         lanePilotIncidents: open.map(({ kind, projectId, taskId, attemptId, reason }) => ({ kind, projectId, taskId, attemptId, reason: reason.slice(0, 200) })),
-        repairs: current.spawned.filter((row) => row.at > since),
+        repairs: current.spawned.filter((row) => row.at > since).map((row) => ({ ...row, firstSeenOnRunningVersion: current.signatures[row.signature] ? firstSeenOnRunningVersion(current.signatures[row.signature]!) : false })),
       },
       version: VERSION,
       cursor: current.cursor,
@@ -661,6 +670,7 @@ export function createSelfRepair(ctx: ServerCore) {
       waiting: Object.entries(current.signatures).map(([signature, record]) => ({
         signature: signature.slice(0, 140), count: record.count, due: isDue(record, Date.now()), priority: repairPriority(signature, record, Date.now(), new Set(cfg.ignoreProjects)), verdict: record.verdict ?? null, status: repairStatus(record.verdict), threadId: record.threadId,
         branch: record.worktree?.branch ?? null, outcome: record.outcome ?? null,
+        firstSeenOnRunningVersion: firstSeenOnRunningVersion(record),
       })),
     };
   }

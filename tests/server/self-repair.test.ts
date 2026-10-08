@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/database";
-import { createSelfRepair, isDue, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/server/self-repair";
+import { createSelfRepair, firstSeenOnRunningVersion, isDue, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/server/self-repair";
 import { createJev } from "../../src/jev/run";
 import { setJevForTests } from "../../src/jev/runtime";
 import type { JevClient } from "../../src/jev/client";
@@ -156,6 +156,19 @@ describe("self-repair", () => {
     expect(rows.map((row) => row.at)).toEqual([100, 200]);
     expect(rows[0]!.signature).toBe(rows[1]!.signature);
     expect(rows[0]!.kind).toBe("log");
+  });
+
+  it("a kind of problem began under the running version only if it was first recorded after this load and all its samples are from it (deploy basis, audit r4 P0-8)", () => {
+    const sample = (at: number, version: string | null) => ({ signature: "s", kind: "blocked" as const, projectId: "p", runId: "r", taskId: "t", attemptId: `a${at}`, pmThreadId: null, writerThreadId: null, reason: "x", at, version });
+    const record = (firstAt: number, samples: ReturnType<typeof sample>[]) => ({ firstAt, lastAt: firstAt, count: samples.length, threadId: null, spawnedAt: null, samples });
+    expect(firstSeenOnRunningVersion(record(1000, [sample(1000, "2.0.0")]), 500, "2.0.0")).toBe(true);
+    expect(firstSeenOnRunningVersion(record(1000, [sample(1000, "2.0.0"), sample(1100, "2.0.0")]), 500, "2.0.0")).toBe(true);
+    // Already recorded before this load (a reload of the same version, or the previous version).
+    expect(firstSeenOnRunningVersion(record(400, [sample(1000, "2.0.0")]), 500, "2.0.0")).toBe(false);
+    // A sample from before this load (version unknown) or from another version.
+    expect(firstSeenOnRunningVersion(record(1000, [sample(300, null), sample(1000, "2.0.0")]), 500, "2.0.0")).toBe(false);
+    expect(firstSeenOnRunningVersion(record(1000, [sample(1000, "1.9.0")]), 500, "2.0.0")).toBe(false);
+    expect(firstSeenOnRunningVersion(record(1000, []), 500, "2.0.0")).toBe(false);
   });
 
   it("a failure from before this release waits to happen again; one under the running version is repaired", () => {

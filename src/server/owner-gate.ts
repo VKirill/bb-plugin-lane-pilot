@@ -61,7 +61,7 @@ export const RPC_CLASS = {
   halt_run: "mutate", cancel_attempt: "mutate", retry_attempt: "mutate", resume_runs: "mutate", finish_run: "mutate", activate_pm: "mutate",
   prepare_native_session: "mutate",
   // the drain only holds new work back while a deploy runs; the push script calls it and an owner form there is not wanted
-  deploy_drain: "mutate", deploy_status: "read", deploy_incident_request: "sensitive",
+  deploy_drain: "mutate", deploy_status: "read",
   native_install_start: "sensitive",
   self_repair_status: "read", self_repair_configure: "sensitive", self_repair_tick: "sensitive", canary_status: "read",
   stack_detect: "read", stack_install: "sensitive", stack_connect: "sensitive", stack_rollback: "sensitive",
