@@ -11,6 +11,7 @@ import { secretsRpc } from "./rpc/secrets";
 import { tokenUsageRpc } from "./rpc/token-usage";
 import { workflowsRpc } from "./rpc/workflows";
 import { workflowOpsRpc } from "./rpc/workflow-ops";
+import { schedulesRpc } from "./rpc/schedules";
 import { councilRpc } from "./council";
 import { selfRepairRpc } from "./self-repair";
 import { canaryRpc } from "./canary";
@@ -31,6 +32,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...secretsRpc(ctx),
     ...workflowsRpc(ctx, services),
     ...workflowOpsRpc(ctx, services),
+    ...schedulesRpc(ctx, services),
     ...councilRpc(ctx.db, services.council),
     ...selfRepairRpc(ctx),
     ...canaryRpc(services.canary),

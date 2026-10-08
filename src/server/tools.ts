@@ -351,7 +351,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountMemorySync(ctx);
   mountCouncilTools(ctx, services.council);
   mountSpecialists(ctx);
-  mountErrands(ctx);
+  services.errands = mountErrands(ctx);
   mountRelay(ctx);
   mountWorkflowTools(ctx, services);
   mountSelfRepair(ctx);

@@ -85,7 +85,17 @@ export function errandVerdict(output: string): { state: "done" | "blocked"; reas
   return { state: "blocked", reason: verdict.replace(/^blocked\s*:?\s*/i, "").trim() || "blocked without a reason" };
 }
 
-export function mountErrands(ctx: ServerCore): void {
+export type ErrandStart = {
+  projectId: string; runId: string; pmThreadId: string; task: string; title?: string | undefined; authorized: boolean; accounts: readonly CatalogEntry[];
+  /** Model and reasoning of the helper thread; the errand default when absent. */
+  model?: string | undefined; reasoning?: string | undefined;
+  /** Names this one spawn: the same id repeated returns the same thread. Default: derived from the task. */
+  spawnId?: string | undefined;
+  /** More plugin metadata on the thread (a scheduled errand marks its origin here). */
+  metadata?: Record<string, unknown> | undefined;
+};
+
+export function mountErrands(ctx: ServerCore) {
   const { bb, db, host } = ctx;
 
   function browserSetup(projectId: string, runId: string | null) {
@@ -137,6 +147,69 @@ export function mountErrands(ctx: ServerCore): void {
 
   const errandSnapshots = new Map<string, { hostId: string; cwd: string; before: Set<string> }>();
 
+  type Blocked = { state: "blocked"; reason: string; next: string; fix: string[] };
+
+  /**
+   * The accounts a PM or a schedule hands to an errand (J7): only names the owner allowed, only they are named to the helper.
+   * Not allowed or missing: nothing starts, the owner is asked once, and `blocked` says what to do.
+   */
+  async function resolveAccounts(input: { projectId: string; runId: string; pmThreadId: string; names: readonly string[] }): Promise<{ ok: true; accounts: CatalogEntry[] } | { ok: false; blocked: Blocked }> {
+    if (!input.names.length) return { ok: true, accounts: [] };
+    const gate = await ctx.secrets.check({ declared: [...input.names], allowed: allowedSecretNames(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))), kinds: ["secret", "login", "ssh", "ftp"] }, { fresh: true });
+    const problem = secretProblem(gate);
+    if (gate.denied.length) await ctx.secretApproval.request({ projectId: input.projectId, pmThreadId: input.pmThreadId, entries: gate.denied, use: "an errand helper" });
+    if (problem.length || gate.unavailable) {
+      return { ok: false, blocked: { state: "blocked", reason: waitingSecretReason(problem.length ? problem : [...input.names]), next: "No helper was started. Fix the access below, then call lane_pilot_errand again with the same arguments:", fix: secretFixLines(gate) } };
+    }
+    const accounts = input.names.map((name) => gate.catalog!.find((entry) => entry.name === name)!);
+    // Fetched only to be masked: whatever the helper prints of them never reaches the PM's view of its report.
+    for (const account of accounts) {
+      await ctx.secrets.record(account.name);
+      try { recordSecretIssuance(db, { projectId: input.projectId, runId: input.runId, consumer: "errand", threadId: input.pmThreadId, secretName: account.name }); } catch (cause) { bb.log.warn(`secret issuance journal: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    }
+    return { ok: true, accounts };
+  }
+
+  /** Spawns the helper thread of an errand under a PM chat. The same `spawnId` repeated returns the same thread. */
+  async function startErrand(input: ErrandStart): Promise<{ threadId: string; browserMachine: string | null }> {
+    const pm = await bb.sdk.threads.get({ threadId: input.pmThreadId });
+    const environmentId = stringAt(pm, "environmentId");
+    if (!environmentId) throw new Error("errand_needs_pm_environment");
+    const envObj = await bb.sdk.environments.get({ environmentId }).catch(() => null);
+    const checkoutPath = stringAt(envObj, "path") ?? "";
+    const checkoutHostId = stringAt(envObj, "hostId") ?? "";
+    const beforeStatus = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
+    const setup = browserSetup(input.projectId, input.runId);
+    const helperPolicy = requireHelperSpawn({ bb, db, projectId: input.projectId, runId: input.runId });
+    const placement = await helperChildPlacement({ bb, db, projectId: input.projectId, runId: input.runId, role: "errand", taskTitle: input.title ?? input.task.slice(0, 60) });
+    const spawned = await fullAccessSpawn(bb, {
+      ...placement,
+      ...requiredPolicyField(bb, helperPolicy, "claude-code", "errand"),
+      ...writerExecutionSelection("claude-code", input.model ?? ERRAND_MODEL, input.reasoning ?? "high", null),
+      prompt: errandPrompt({ task: input.task, browserHostId: setup.hostId, authorized: input.authorized, accounts: [...input.accounts] }),
+      environment: { type: "reuse", environmentId },
+      pluginMetadata: { role: "errand", spawnId: input.spawnId ?? `${input.runId}:${spawnTextId(input.task)}`, lanePilotRunId: input.runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode, ...input.metadata },
+    } as Parameters<typeof fullAccessSpawn>[1]);
+    const threadId = stringAt(spawned, "id");
+    if (!threadId) throw new Error("errand_thread_id_missing");
+    if (beforeStatus) errandSnapshots.set(threadId, { hostId: checkoutHostId, cwd: checkoutPath, before: beforeStatus });
+    return { threadId, browserMachine: setup.hostId };
+  }
+
+  /** The report of an errand thread that has ended: the helper's verdict and output, or `blocked` when it edited the repository. */
+  async function completedReport(threadId: string): Promise<{ state: "done" | "blocked"; reason?: string; output: string; files?: string[] }> {
+    const snapshot = errandSnapshots.get(threadId);
+    if (snapshot) {
+      errandSnapshots.delete(threadId);
+      const afterStatus = await gitRepoStatus(host, snapshot.hostId, snapshot.cwd);
+      const edited = afterStatus ? detectRepoEdits(snapshot.before, afterStatus, (f) => f.startsWith(".bb/chats/")) : [];
+      if (edited.length > 0) return { state: "blocked", reason: "repo_edited", files: edited, output: `Helper edited repository files: ${edited.join(", ")}` };
+    }
+    const raw = (await bb.sdk.threads.output({ threadId })).output;
+    const output = redactKnown(typeof raw === "string" ? raw : outputText(raw));
+    return { ...errandVerdict(output), output };
+  }
+
   registerObservedTool(bb.agents, {
     name: "lane_pilot_errand",
     description: "Hand a non-code task to a helper thread: a cloud console in the owner's browser, a mailbox, a screen recording, an account in Env Catalog.",
@@ -150,44 +223,11 @@ export function mountErrands(ctx: ServerCore): void {
     execute: async (params, context) => {
       if (!context.threadId || !context.projectId) throw new Error("errand_needs_pm_thread");
       const runId = openRun(context.projectId, context.threadId);
-      // Accounts for a deploy step (ssh, ftp, a login or a key): only names the owner allowed, and only they are named to the helper.
-      let accounts: CatalogEntry[] = [];
-      if (params.accounts?.length) {
-        const gate = await ctx.secrets.check({ declared: params.accounts, allowed: allowedSecretNames(loadProjectSettings(db, context.projectId, getRunSettingsScopes(db, runId))), kinds: ["secret", "login", "ssh", "ftp"] }, { fresh: true });
-        const problem = secretProblem(gate);
-        if (gate.denied.length) await ctx.secretApproval.request({ projectId: context.projectId, pmThreadId: context.threadId, entries: gate.denied, use: "an errand helper" });
-        if (problem.length || gate.unavailable) {
-          return JSON.stringify({ state: "blocked", reason: waitingSecretReason(problem.length ? problem : params.accounts), next: "No helper was started. Fix the access below, then call lane_pilot_errand again with the same arguments:", fix: secretFixLines(gate) }, null, 2);
-        }
-        accounts = params.accounts.map((name) => gate.catalog!.find((entry) => entry.name === name)!);
-        // Fetched only to be masked: whatever the helper prints of them never reaches the PM's view of its report.
-        for (const account of accounts) {
-          await ctx.secrets.record(account.name);
-          try { recordSecretIssuance(db, { projectId: context.projectId, runId, consumer: "errand", threadId: context.threadId, secretName: account.name }); } catch (cause) { bb.log.warn(`secret issuance journal: ${cause instanceof Error ? cause.message : String(cause)}`); }
-        }
-      }
-      const pm = await bb.sdk.threads.get({ threadId: context.threadId });
-      const environmentId = stringAt(pm, "environmentId");
-      if (!environmentId) throw new Error("errand_needs_pm_environment");
-      const envObj = await bb.sdk.environments.get({ environmentId }).catch(() => null);
-      const checkoutPath = stringAt(envObj, "path") ?? "";
-      const checkoutHostId = stringAt(envObj, "hostId") ?? "";
-      const beforeStatus = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
-      const setup = browserSetup(context.projectId, runId);
-      const helperPolicy = requireHelperSpawn({ bb, db, projectId: context.projectId, runId });
-      const placement = await helperChildPlacement({ bb, db, projectId: context.projectId, runId, role: "errand", taskTitle: params.title ?? params.task.slice(0, 60) });
-      const spawned = await fullAccessSpawn(bb, {
-        ...placement,
-        ...requiredPolicyField(bb, helperPolicy, "claude-code", "errand"),
-        ...writerExecutionSelection("claude-code", ERRAND_MODEL, "high", null),
-        prompt: errandPrompt({ task: params.task, browserHostId: setup.hostId, authorized: params.authorized, accounts }),
-        environment: { type: "reuse", environmentId },
-        pluginMetadata: { role: "errand", spawnId: `${runId}:${spawnTextId(params.task)}`, lanePilotRunId: runId, parentPmThreadId: context.threadId, helperMode: helperPolicy.mode },
-      } as Parameters<typeof fullAccessSpawn>[1]);
-      const threadId = stringAt(spawned, "id");
-      if (!threadId) throw new Error("errand_thread_id_missing");
-      if (beforeStatus) errandSnapshots.set(threadId, { hostId: checkoutHostId, cwd: checkoutPath, before: beforeStatus });
-      return JSON.stringify({ threadId, state: "running", browserMachine: setup.hostId, link: `@thread:${threadId}` }, null, 2);
+      const resolved = await resolveAccounts({ projectId: context.projectId, runId, pmThreadId: context.threadId, names: params.accounts ?? [] });
+      if (!resolved.ok) return JSON.stringify(resolved.blocked, null, 2);
+      const started = await startErrand({ projectId: context.projectId, runId, pmThreadId: context.threadId, task: params.task, title: params.title, authorized: params.authorized, accounts: resolved.accounts });
+      const { threadId } = started;
+      return JSON.stringify({ threadId, state: "running", browserMachine: started.browserMachine, link: `@thread:${threadId}` }, null, 2);
     },
   });
 
@@ -202,18 +242,8 @@ export function mountErrands(ctx: ServerCore): void {
       while (Date.now() < deadline && !ctx.isDisposed()) {
         const observed = await observeStageChild(bb, params.threadId, Math.min(WAIT_STEP_MS, Math.max(1, deadline - Date.now())));
         if (observed.kind === "completed") {
-          const snapshot = errandSnapshots.get(params.threadId);
-          if (snapshot) {
-            errandSnapshots.delete(params.threadId);
-            const afterStatus = await gitRepoStatus(host, snapshot.hostId, snapshot.cwd);
-            const edited = afterStatus ? detectRepoEdits(snapshot.before, afterStatus, (f) => f.startsWith(".bb/chats/")) : [];
-            if (edited.length > 0) {
-              return JSON.stringify({ threadId: params.threadId, state: "blocked", reason: "repo_edited", files: edited, output: fenceOutside("errand", `Helper edited repository files: ${edited.join(", ")}`) }, null, 2);
-            }
-          }
-          const raw = (await bb.sdk.threads.output({ threadId: params.threadId })).output;
-          const output = redactKnown(typeof raw === "string" ? raw : outputText(raw));
-          return JSON.stringify({ threadId: params.threadId, ...errandVerdict(output), output: fenceOutside("errand", output) }, null, 2);
+          const report = await completedReport(params.threadId);
+          return JSON.stringify({ threadId: params.threadId, ...report, output: fenceOutside("errand", report.output) }, null, 2);
         }
         if (observed.kind === "product_failure") return JSON.stringify({ threadId: params.threadId, state: "failed", output: fenceOutside("errand", redactKnown(`${observed.via}: ${observed.detail}`)) });
         detail = observed.detail;
@@ -221,4 +251,7 @@ export function mountErrands(ctx: ServerCore): void {
       return JSON.stringify({ threadId: params.threadId, state: "running", output: fenceOutside("errand", redactKnown(detail)) });
     },
   });
+
+  return { resolveAccounts, startErrand, completedReport, openRun };
 }
+export type ErrandsApi = ReturnType<typeof mountErrands>;
