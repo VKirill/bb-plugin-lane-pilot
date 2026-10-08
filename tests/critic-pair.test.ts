@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { criticPairCandidates, pairApartFromWriter, type CriticCatalog } from "../src/critic-pair";
+import { criticPairCandidates, pairApartFromWriter, type CriticCatalog } from "../src/rooms/critique/critic-pair";
 
 const config = { pmProviderId: "claude-code", pmModel: "opus" };
 

@@ -6,9 +6,9 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { redactKnownDeep } from "@lane-pilot/kit";
 import { stringAt } from "../../../server/values";
 import { outputText } from "../../../server/writer-task";
-import { FRONTEND_VERIFY_METHOD } from "../../../stages/role-method";
-import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "../../../stages/verdict";
-import type { VerdictFinding, VerdictStatus } from "../../../stages/verdict";
+import { FRONTEND_VERIFY_METHOD } from "../../critique/role-method";
+import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "../../critique/verdict";
+import type { VerdictFinding, VerdictStatus } from "../../critique/verdict";
 import type { ServerCore } from "../../../server/core";
 
 export type QaVerdict = {

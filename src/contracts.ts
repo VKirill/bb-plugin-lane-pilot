@@ -1,6 +1,6 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { stageReceiptSchema } from "./stages/contract";
+import { stageReceiptSchema } from "./rooms/tasks/contract";
 import { scheduleRpcContract } from "./rooms/schedule/contract";
 
 /** A stage row as the screen lists it: no result body (`get_stage_result` loads it), only whether there is one. */

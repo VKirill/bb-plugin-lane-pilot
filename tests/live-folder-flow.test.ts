@@ -5,7 +5,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import { runCommandOnHost } from "../src/cli-run";
-import { snapshotDryRun } from "../src/host-handlers";
+import { snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
 import type { TaskV2 } from "../src/contracts";
 import {
   createRun, getAttempt, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread,

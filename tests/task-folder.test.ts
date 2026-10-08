@@ -6,8 +6,8 @@ import { expect, it, vi } from "vitest";
 // vitest's 5 s default would cut it off (2026-10-06 check log, sibling git-integrate/git-lock timeouts).
 vi.setConfig({ testTimeout: 120_000 });
 import { stickyTurnPrompt, writerPrompt } from "../src/server/writer-task";
-import { classifyWriterOutput, parseGitChangedPaths } from "../src/validate-output";
-import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../src/verification/git-integrate";
+import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks/validate-output";
+import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../src/rooms/verification/git-integrate";
 import type { TaskV2 } from "../src/contracts";
 
 const task = {

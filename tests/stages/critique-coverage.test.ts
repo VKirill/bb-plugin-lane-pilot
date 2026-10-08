@@ -2,8 +2,8 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { dependencyFindings } from "../../src/server/critique-runs";
-import { binaryOutputs,collectGitNexusCallerPaths, filteredScriptRun, findTaskPlaceholderPaths, ignoresTrailingFilter, scanCritiqueCoverage } from "../../src/stages/critique-coverage";
+import { dependencyFindings } from "../../src/rooms/critique/server/critique-runs";
+import { binaryOutputs,collectGitNexusCallerPaths, filteredScriptRun, findTaskPlaceholderPaths, ignoresTrailingFilter, scanCritiqueCoverage } from "../../src/rooms/critique/critique-coverage";
 
 const roots:string[]=[];
 async function workspace():Promise<string>{const path=await mkdtemp(join(tmpdir(),"lane-pilot-critique-"));roots.push(path);return path;}

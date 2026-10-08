@@ -1,5 +1,5 @@
 import type { I18nKey } from "@lane-pilot/i18n";
-import { selectionKeys, type SelectionId } from "./picker-selections";
+import { selectionKeys, type SelectionId } from "../rooms/settings/ui/picker-selections";
 import { COUNCIL_SEATS } from "./page-model";
 import { writerFallbackKeys } from "../writer-fallbacks";
 

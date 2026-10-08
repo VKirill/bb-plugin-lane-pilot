@@ -3,9 +3,9 @@ import {
   HELPER_ROLES, MANDATORY_MCP_SERVERS, ROLE_PROFILES, coreRequiredSessionAdvertisement, parseHelperContextSettings, requiredSessionPolicySpawnBinding, roleProfilePolicy,
 } from "../../src/helper-context";
 import type { HelperRole } from "../../src/helper-context";
-import { codeCritiquePrompt, buildCandidateEvidence } from "../../src/stages/code-critique";
-import { critiquePrompt } from "../../src/stages/critique";
-import { pmReadPrompt } from "../../src/stages/pm-read";
+import { codeCritiquePrompt, buildCandidateEvidence } from "../../src/rooms/critique/code-critique";
+import { critiquePrompt } from "../../src/rooms/critique/critique";
+import { pmReadPrompt } from "../../src/rooms/critique/pm-read";
 import { roleSpec } from "../../src/server/workflow-agent";
 
 // Batch C of review 2: the one-shot readers answer from the message and carry no MCP schema (the code-graph tools cost ~8k tokens a turn).

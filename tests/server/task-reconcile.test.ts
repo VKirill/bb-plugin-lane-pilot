@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, getAttempt, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/database";
 import { recordStage } from "../../src/server/stage-records";
-import { createStability } from "../../src/server/stability";
+import { createStability } from "../../src/rooms/stability/server/stability";
 import type { Services } from "../../src/server/services";
 import { createTaskReconcile } from "../../src/server/task-reconcile";
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseProviderPools, providerPoolCap, providerPoolProblem } from "@lane-pilot/settings-catalog";
-import { validateSettingValue } from "../../../src/setting-validation";
+import { validateSettingValue } from "../../../src/rooms/settings/setting-validation";
 
 describe("provider pool setting", () => {
   it("reads pairs, lines and a JSON object", () => {

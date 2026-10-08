@@ -1,7 +1,7 @@
 import { tmpdir } from "node:os";
 import { expect, it } from "vitest";
 import { hostContract } from "../../src/contracts";
-import { diskFree } from "../../src/host-handlers";
+import { diskFree } from "../../src/rooms/host-worker/host-handlers";
 
 it("diskFree reports free and total bytes of the filesystem under a path", async () => {
   const result = await diskFree({ requestedHostId: "host-test", path: tmpdir() }, {} as never);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope, validateOwnershipContract } from "../../src/verification/ownership";
+import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope, validateOwnershipContract } from "../../src/rooms/verification/ownership";
 
 const task = {
   project_cwd:"/work/project",
@@ -71,7 +71,7 @@ describe("task ownership and workspace boundaries", () => {
 
 describe("directory paths with a trailing slash", () => {
   it("own and guard everything under them, as in owns-paths", async () => {
-    const { findUnownedChanges } = await import("../../src/verification/ownership");
+    const { findUnownedChanges } = await import("../../src/rooms/verification/ownership");
     const task = {
       project_cwd: "/repo",
       owns_paths: ["apps/bot-thin/src/handlers/import-preset.ts", "apps/bot-thin/src/handlers/__tests__/", "apps/marketing/i18n/locales/"],

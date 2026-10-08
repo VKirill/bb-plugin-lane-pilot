@@ -21,7 +21,7 @@ import {
   transitionAttempt,
 } from "../src/database";
 import type { TaskV2 } from "../src/contracts";
-import { validateAcceptanceV2 } from "../src/acceptance-v2";
+import { validateAcceptanceV2 } from "../src/rooms/tasks/acceptance-v2";
 import { familyDirtBaseline } from "../src/server/writer/verify";
 import { createFakeWorktreeHost } from "./own-worktree-host";
 

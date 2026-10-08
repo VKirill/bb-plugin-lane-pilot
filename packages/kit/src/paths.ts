@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export function resolveHome(homeDir?: string): string {
@@ -29,11 +29,13 @@ export function managedEngineDir(sha: string, homeDir?: string): string {
   return join(lanePilotRoot(homeDir), "engines", sha);
 }
 
+/** The plugin root above the nearest src/ or dist/ folder of a module (dist/host.js, src/x.ts, src/rooms/<room>/x.ts); the folder itself when there is none. */
 export function pluginRootFromModule(moduleUrl: string): string {
   const here = fileURLToPath(new URL(".", moduleUrl));
-  if (here.endsWith("/src/") || here.endsWith("/src")) return join(here, "..");
-  if (here.endsWith("/dist/") || here.endsWith("/dist")) return join(here, "..");
-  return here;
+  for (let dir = here.replace(/[\\/]$/, ""); ; dir = dirname(dir)) {
+    if (basename(dir) === "src" || basename(dir) === "dist") return dirname(dir);
+    if (dirname(dir) === dir) return here;
+  }
 }
 
 export function defaultLocalFallback(moduleUrl: string): string {

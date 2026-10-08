@@ -3,7 +3,7 @@ import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { memoryMaintenancePrompt, parseMemorySettings } from "../../packages/memory-core/src";
 import { nightReviewPrompt } from "../../src/rooms/night/night";
-import { compactAcceptedResult } from "../../src/server/accepted-compact";
+import { compactAcceptedResult } from "../../src/rooms/tasks/server/accepted-compact";
 
 /**
  * Real memory-maintenance briefs of the SelfyStudio project on the hub (first turn, 2026-10-02..07), task and accepted

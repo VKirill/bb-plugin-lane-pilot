@@ -104,7 +104,7 @@ it("gives a repeated task id a fresh key and frees paths held by a dead task", a
 });
 
 it("accepts upstream task-v2 context fields a BB writer does not use", async () => {
-  const { validateTaskV2 } = await import("../src/task-v2");
+  const { validateTaskV2 } = await import("../src/rooms/tasks/task-v2");
   const task = {
     schema_version: 2, id: "t1", title: "T", risk: "low", lane: "write", project_cwd: "/p", read_first: [], interfaces: [], invariants: [],
     out_of_scope: [], expected_outputs: ["a.ts"], owns_paths: ["a.ts"], never_touch: [], depends_on: [], objective: "o", acceptance: ["a"],
@@ -138,7 +138,7 @@ it("keeps section settings on top of the project's and resets a section back to 
 });
 
 it("accepts a switch's boolean for a true/false setting", async () => {
-  const { validateSettingValue } = await import("../src/setting-validation");
+  const { validateSettingValue } = await import("../src/rooms/settings/setting-validation");
   expect(validateSettingValue("docs.enabled", true)).toBeNull();
   expect(validateSettingValue("memory.enabled", false)).toBeNull();
   expect(validateSettingValue("docs.enabled", "true")).toBeNull();

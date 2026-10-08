@@ -9,7 +9,7 @@ import {
 import { failureClass, isWaitingSecret, nextStep } from "../src/failure-class";
 import { forgetSecrets } from "@lane-pilot/kit";
 import { createSecrets } from "../src/rooms/secrets/server/secrets";
-import { createStability } from "../src/server/stability";
+import { createStability } from "../src/rooms/stability/server/stability";
 
 // Test values only: none of them is a real credential.
 const KEY = "test-wait-key-Qw83LmZx1p";

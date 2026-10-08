@@ -6,9 +6,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { runCommandOnHost } from "../../src/cli-run";
 import { createAttempt, createRun, getAttempt, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/database";
-import { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, mergeIntentKey, mergeLanded, recordMergeIntent, type MergeIntent, type RunOnHost } from "../../src/server/merge-intent";
+import { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, mergeIntentKey, mergeLanded, recordMergeIntent, type MergeIntent, type RunOnHost } from "../../src/rooms/verification/server/merge-intent";
 import { recordStage } from "../../src/server/stage-records";
-import { integrateWorktree } from "../../src/verification/git-integrate";
+import { integrateWorktree } from "../../src/rooms/verification/git-integrate";
 
 // Real repositories: the proof that a merge landed is git's own answer, so the test asks git.
 vi.setConfig({ testTimeout: 120_000 });

@@ -9,7 +9,7 @@ import {
   buildAcceptanceV2,
   loadAcceptanceV2Schema,
   validateAcceptanceV2,
-} from "../src/acceptance-v2";
+} from "../src/rooms/tasks/acceptance-v2";
 import type { TaskV2 } from "../src/contracts";
 
 const task = {

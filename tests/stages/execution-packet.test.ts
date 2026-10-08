@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExecutionPacket, renderExecutionPacket } from "../../src/stages/execution-packet";
+import { buildExecutionPacket, renderExecutionPacket } from "../../src/rooms/tasks/execution-packet";
 
 describe("bounded execution packet", () => {
   it("reads exact requested lines and carries the inspected source hash", async () => {
@@ -37,7 +37,7 @@ describe("bounded execution packet", () => {
 });
 
 it("gives pm-read the excerpt text itself", async () => {
-  const { renderPacketExcerpts } = await import("../../src/stages/execution-packet");
+  const { renderPacketExcerpts } = await import("../../src/rooms/tasks/execution-packet");
   const text = renderPacketExcerpts({ sha256: "x", entries: [{ path: "a.ts", sha256: "abc", windows: [{ startLine: 1, endLine: 2, excerpt: "const a = 1;\nconst b = 2;" }] }] } as never);
   expect(text).toContain("### a.ts L1-L2");
   expect(text).toContain("const b = 2;");

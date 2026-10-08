@@ -1,7 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import { failureClass } from "../failure-class";
-import { boundPresentation } from "./tool-presentation";
+import { boundPresentation } from "../rooms/tools/server/tool-presentation";
 
 export type SideEffects = "none" | "unknown";
 

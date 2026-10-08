@@ -14,15 +14,15 @@ import {
   saveTaskPlan,
   updateTaskContract,
 } from "../../database";
-import { lintReply } from "../contract-lint";
-import { createTaskLinter } from "../lint-task";
-import { runPlanCritique, runPmRead } from "../critique-runs";
+import { lintReply } from "../../rooms/tasks/server/contract-lint";
+import { createTaskLinter } from "../../rooms/tasks/server/lint-task";
+import { runPlanCritique, runPmRead } from "../../rooms/critique/server/critique-runs";
 import { recordStage } from "../stage-records";
 import { markTaskSatisfied } from "../blocked-by";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
-import { validateTaskV2 } from "../../task-v2";
-import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
+import { validateTaskV2 } from "../../rooms/tasks/task-v2";
+import { appendExcludeCommand, persistTaskFolder } from "../../rooms/verification/git-integrate";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 export function createWriterUpdateTask(ctx: ServerCore, services: Services) {

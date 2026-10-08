@@ -4,7 +4,7 @@ import { SETTING_CATALOG, CONSUMER_KEYS, specFor, UNAPPLIED_REASON, type Setting
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER, type CatalogRow } from "@lane-pilot/settings-catalog";
 import { buildCliInvocation, isFlagOff, isFlagOn } from "../src/argv-builder";
 import { requiredCliFlags } from "../src/cli-flags";
-import { installEnv } from "../src/install-runner";
+import { installEnv } from "../src/rooms/native-install/install-runner";
 import plugin from "../server";
 import { NO_UPSTREAM } from "./upstream-fixture";
 import { execFileSync } from "node:child_process";

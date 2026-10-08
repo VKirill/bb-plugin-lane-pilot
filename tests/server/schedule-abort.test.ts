@@ -4,7 +4,7 @@ import plugin from "../../server";
 import { openDatabase } from "../../src/database";
 import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns } from "../../src/server/run-finish";
 import { createCore } from "../../src/server/core";
-import { createDeployDrain } from "../../src/server/deploy-drain";
+import { createDeployDrain } from "../../src/rooms/stability/server/deploy-drain";
 import { createHostJobs } from "../../src/server/host-jobs";
 import { currentScheduleSignal, scheduleIsolated } from "../../src/server/schedules";
 import { sweepWriterSilence } from "../../src/server/writer-silence";

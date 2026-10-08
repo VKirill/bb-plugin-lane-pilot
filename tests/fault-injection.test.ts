@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { TARGET_SHA } from "../src/constants";
 import { hashPath } from "@lane-pilot/kit";
-import { ownershipLedgerPath } from "../src/coexistence/ownership";
-import { installStack } from "../src/stack-ops";
+import { ownershipLedgerPath } from "../src/rooms/native-install/ownership";
+import { installStack } from "../src/rooms/native-install/stack-ops";
 
 const homes: string[] = [];
 const UPSTREAM_FIXTURE = [

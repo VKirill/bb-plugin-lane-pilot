@@ -22,7 +22,7 @@ function hostClosure(): string[] {
 
 it("reaches the host handlers' code (so the scan below cannot go quiet by finding nothing)", () => {
   const files = hostClosure();
-  for (const expected of ["host.ts", "src/host-handlers.ts", "src/jobs.ts", "src/verification/git-integrate.ts", "src/coexistence/index.ts", "src/stack-ops.ts", "packages/kit/src/spawn-async.ts"]) {
+  for (const expected of ["host.ts", "src/rooms/host-worker/host-handlers.ts", "src/rooms/host-worker/jobs.ts", "src/rooms/verification/git-integrate.ts", "src/rooms/native-install/coexistence.ts", "src/rooms/native-install/stack-ops.ts", "packages/kit/src/spawn-async.ts"]) {
     expect(files).toContain(expected);
   }
   expect(files.some((file) => file.startsWith("src/server/"))).toBe(false);

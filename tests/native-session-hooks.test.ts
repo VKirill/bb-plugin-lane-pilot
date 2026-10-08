@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
-import { NATIVE_HOOK_SOURCES } from "../src/native-hook-sources";
+import { NATIVE_HOOK_SOURCES } from "../src/rooms/native-install/native-hook-sources";
 import { lpBridgeCatalogNames, materializeNativeHookSession, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS, unionLpBridgeTools } from "../src/native-session-hooks";
 
 it("names only bb-bridge LP tools and does not invent a full allowlist", () => {

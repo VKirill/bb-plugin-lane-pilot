@@ -1,9 +1,9 @@
 import { VISIBLE_CATALOG, type CatalogRow } from "@lane-pilot/settings-catalog";
 import { t, type I18nKey } from "@lane-pilot/i18n";
-import { settingUnitKey } from "../setting-copy";
+import { settingUnitKey } from "../rooms/settings/setting-copy";
 import { Tabs } from "@lane-pilot/ui-kit";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../state-machine";
-import type { StageReceipt } from "../stages/contract";
+import type { StageReceipt } from "../rooms/tasks/contract";
 
 /** History comes this many runs at a time. */
 export const RUNS_PAGE = 20;

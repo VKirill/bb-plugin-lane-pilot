@@ -8,8 +8,8 @@ import plugin from "../server";
 import { BOOKKEEPING_EXCLUDE_LINES, isBookkeepingPath } from "@lane-pilot/settings-catalog";
 import { TARGET_SHA } from "../src/constants";
 import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/database";
-import { excludeBookkeeping } from "../src/server/bookkeeping-exclude";
-import { ensureExcludeLinesCommand } from "../src/verification/git-integrate";
+import { excludeBookkeeping } from "../src/rooms/verification/server/bookkeeping-exclude";
+import { ensureExcludeLinesCommand } from "../src/rooms/verification/git-integrate";
 
 const sh = (cwd:string, command:string) => execFileSync("sh", ["-c", command], { cwd, encoding: "utf8" });
 const git = (cwd:string, ...args:string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });

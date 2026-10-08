@@ -28,7 +28,7 @@ import { getRun, loadPrototypeConfig, type LanePilotDatabase } from "../../../da
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { configuredSetting, requirePmRun } from "../../../server/context";
 import type { ServerCore } from "../../../server/core";
-import { memorySettingsFor } from "../../../server/insights";
+import { memorySettingsFor } from "../../self-repair/server/insights";
 import type { OwnerAsk } from "../../relay/server/owner-ask";
 import { fullAccessSpawn } from "../../../server/pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../server/run-routing";

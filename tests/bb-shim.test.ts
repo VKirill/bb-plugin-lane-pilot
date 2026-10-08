@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { OPENCODE_BASH_DENY, withBashDeny } from "../src/opencode-min-config";
+import { OPENCODE_BASH_DENY, withBashDeny } from "../src/rooms/native-install/opencode-min-config";
 import { BB_SHIM_NAMES, prepareBbShim } from "../src/bb-shim";
 
 // Audit 2026-10-08 round 3, P0-2: Codex, OpenCode and Cursor writers run `bb` through guard wrappers at the front of PATH (since the owner decision of 2026-10-08 they stop only plugin admin and the hub).
@@ -130,7 +130,7 @@ describe("the OpenCode bash permission rules", () => {
   });
 
   it("are written into the minimal config home", async () => {
-    const { prepareOpencodeMinimal } = await import("../src/opencode-min-config");
+    const { prepareOpencodeMinimal } = await import("../src/rooms/native-install/opencode-min-config");
     const home = temp();
     const real = join(home, ".config", "opencode");
     mkdirSync(join(real, "plugins"), { recursive: true });

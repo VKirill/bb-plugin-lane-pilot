@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { createAttempt, createRun, openDatabase } from "../../src/database";
-import { attemptEnvironment } from "../../src/server/critique-runs";
+import { attemptEnvironment } from "../../src/rooms/critique/server/critique-runs";
 
 it("runs a code critic of a worktree attempt inside that attempt's BB environment", () => {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });

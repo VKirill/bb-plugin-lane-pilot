@@ -8,7 +8,7 @@ import { runBrowserQaOnHost, type BrowserQaInput } from "../../src/rooms/qa/brow
 import { claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../src/database";
 import { memoryRecordId } from "../../src/rooms/memory/memory";
 import type { TaskV2 } from "../../src/contracts";
-import { buildRunPolicy } from "../../src/stages/run-policy";
+import { buildRunPolicy } from "../../src/rooms/tasks/run-policy";
 import { docsInputHash } from "../../src/rooms/docs/docs";
 
 const projectId = "stage-project";

@@ -1,4 +1,4 @@
-import { acceptanceArtifactDir } from "../../../acceptance-v2";
+import { acceptanceArtifactDir } from "../../tasks/acceptance-v2";
 import { taskV2Schema } from "../../../contracts";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listOpenAttempts, listStageReceipts, loadProjectSettings } from "../../../database";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";

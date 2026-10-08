@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateSettingValue } from "../src/setting-validation";
+import { validateSettingValue } from "../src/rooms/settings/setting-validation";
 
 describe("validateSettingValue", () => {
   it("accepts any BB provider id for the specialist stage", () => {

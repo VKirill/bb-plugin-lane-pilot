@@ -1,4 +1,4 @@
-import { createMergeIntentRecovery } from "./merge-intent";
+import { createMergeIntentRecovery } from "../rooms/verification/server/merge-intent";
 import { closeOrphanWriterStages } from "./stage-records";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";

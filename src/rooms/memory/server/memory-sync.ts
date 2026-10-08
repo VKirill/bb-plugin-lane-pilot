@@ -16,7 +16,7 @@ import { getRun, type LanePilotDatabase } from "../../../database";
 import { requirePmRun } from "../../../server/context";
 import { registerObservedTool } from "../../../server/tool-result";
 import type { ServerCore } from "../../../server/core";
-import { memorySettingsFor } from "../../../server/insights";
+import { memorySettingsFor } from "../../self-repair/server/insights";
 import { sha256Hex } from "@lane-pilot/kit";
 
 export const MEMORY_SYNC_TOOLS = ["lane_pilot_memory_import", "lane_pilot_memory_export"] as const;

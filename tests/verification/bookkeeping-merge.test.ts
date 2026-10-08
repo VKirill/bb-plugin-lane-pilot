@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BOOKKEEPING_PATHS } from "@lane-pilot/settings-catalog";
-import { integrateWorktree } from "../../src/verification/git-integrate";
+import { integrateWorktree } from "../../src/rooms/verification/git-integrate";
 
 describe("bookkeeping merge collision", () => {
   let base: string;

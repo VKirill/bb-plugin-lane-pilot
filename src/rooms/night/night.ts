@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { clipped, extractModelJson, NO_TOOLS_LINE } from "../../stages/model-json";
+import { clipped, extractModelJson, NO_TOOLS_LINE } from "../critique/model-json";
 
 export const nightReviewResultSchema = z.object({
   decision:z.enum(["clear","findings"]),

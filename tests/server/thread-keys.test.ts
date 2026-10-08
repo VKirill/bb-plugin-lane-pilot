@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reconcile, reconcileHolder } from "../../src/reconcile";
+import { reconcile, reconcileHolder } from "../../src/rooms/stability/reconcile";
 import { fullAccessSpawn } from "../../src/server/pm-spawn";
 import { clearSpawnMarker, findThreadsByMetadata, spawnIdentity, spawnKey, spawnTextId } from "../../src/server/thread-keys";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/database";
-import { deleteMemoryRecord } from "../../src/server/insights";
+import { deleteMemoryRecord } from "../../src/rooms/self-repair/server/insights";
 import { memoryContext, memoryRecordId, searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryCandidate, MemoryDatabase } from "../../packages/memory-core/src";
 

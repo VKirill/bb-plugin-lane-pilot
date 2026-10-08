@@ -3,7 +3,7 @@ import { ATTEMPT_STATES, RUN_STATES } from "../state-machine";
 import { Badge } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
 import { AcceptanceStats } from "./acceptance-stats";
-import { CriticValue } from "./critic-value";
+import { CriticValue } from "../rooms/critique/ui/critic-value";
 import { WriterReuse } from "./writer-reuse";
 import { Disclosure } from "@lane-pilot/ui-kit";
 import { Pill } from "./pill";

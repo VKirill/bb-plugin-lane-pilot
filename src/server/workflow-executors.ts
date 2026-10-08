@@ -1,13 +1,13 @@
 import type { TaskV2 } from "../contracts";
 import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts } from "../database";
 import { redactKnown, sha256Hex } from "@lane-pilot/kit";
-import { validateTaskV2 } from "../task-v2";
+import { validateTaskV2 } from "../rooms/tasks/task-v2";
 import { agentPrompt, outputContract, parseAgentOutput } from "../workflow/agent-output";
 import type { NodeExecutor, PollResult, StepContext, WorkflowEngine } from "../workflow/engine";
 import type { RunRow } from "../workflow/journal";
 import { outputFields } from "../workflow/lower";
 import type { Field, GraphNode } from "../workflow/schema";
-import { createTaskLinter } from "./lint-task";
+import { createTaskLinter } from "../rooms/tasks/server/lint-task";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
 import type { WorkflowAgents } from "./workflow-agent";
 import { lpTaskPipelineExecutor } from "./writer/dispatch-workflow";

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { runCommand } from "../src/host-handlers";
+import { runCommand } from "../src/rooms/host-worker/host-handlers";
 import { createRun, openDatabase, setRunThread } from "../src/database";
 import { errandPrompt } from "../src/rooms/qa/server/errands";
 

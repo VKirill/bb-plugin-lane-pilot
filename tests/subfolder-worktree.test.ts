@@ -7,7 +7,7 @@ import { expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, setAttemptWorkspace, setRunThread } from "../src/database";
 import { createWriterSpawn, shouldMergeAttemptWorktree } from "../src/server/writer/spawn";
-import { dirtInsideWorkspace } from "../src/verification/git-ownership";
+import { dirtInsideWorkspace } from "../src/rooms/verification/git-ownership";
 
 const folder = "/repo/apps/bot";
 /** Where the host's gitCreateWorktree puts a nested chat folder: the same subfolder inside a worktree of the repo. */

@@ -5,7 +5,7 @@ import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/native-session-hooks";
 
 // The PM spent turns hunting tools its text named but it did not have (instructions audit, 2026-10-03).
 it("names only tools the PM actually has, in its prompt and its per-run instructions", () => {
-  const configure = readFileSync(new URL("../src/server/tools.ts", import.meta.url), "utf8");
+  const configure = readFileSync(new URL("../src/rooms/tools/server/tools.ts", import.meta.url), "utf8");
   const perRun = configure.slice(configure.indexOf("bb.agents.configure"), configure.indexOf("bb.agents.configure") + 4000);
   const mentioned = new Set([...`${LANE_PILOT_PM_SESSION}\n${perRun}`.matchAll(/\blane_pilot_[a-z_]+/g)].map((match) => match[0]));
   const missing = [...mentioned].filter((name) => !(NATIVE_LP_BRIDGE_PM_TOOLS as readonly string[]).includes(name));

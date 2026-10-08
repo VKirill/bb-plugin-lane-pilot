@@ -11,7 +11,7 @@ import {
   detectStack,
   importConfigStack,
   installStack,
-} from "../src/stack-ops";
+} from "../src/rooms/native-install/stack-ops";
 import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
 
 const FALLBACK = upstreamPath();

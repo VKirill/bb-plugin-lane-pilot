@@ -7,7 +7,7 @@ import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../s
 import { BB_AGENT_SUMMARIES, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt, overlaySessionTools } from "../src/native-agent-overlay";
 import { finalizeNativeLaneBinding } from "../src/native-run";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/native-session-hooks";
-import { foldedToolHome } from "../src/pm-tool-families";
+import { foldedToolHome } from "../src/rooms/tools/pm-tool-families";
 import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION } from "../src/workflow-architect";
 import { setLocaleOverride, t } from "@lane-pilot/i18n";
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { agentRequest, withResolvedModel, type HelperRequest } from "../../src/server/workflow-agent";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, modelOverrideKey, resolveAgentModel } from "../../src/server/workflow-agent-model";
 import { resolveStepExecutors, DELEGATED_ACTIONS } from "../../src/server/workflow-step-executors";
-import { validateSettingValue, validateSettingsObject } from "../../src/setting-validation";
+import { validateSettingValue, validateSettingsObject } from "../../src/rooms/settings/setting-validation";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { BUILTIN_PRESETS, PRESET_FIELDS, PRESET_SLUGS, presetKey, presetSelection, presetSlug } from "@lane-pilot/models";
 import type { StepContext } from "../../src/workflow/engine";

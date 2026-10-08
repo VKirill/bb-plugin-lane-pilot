@@ -8,7 +8,7 @@ import type { Services } from "../src/server/services";
 import { recordStage, reopenWriterStages } from "../src/server/stage-records";
 import { createWriterStart } from "../src/server/writer/start";
 import { LIVE_FOLDER_REASON } from "../src/live-folder";
-import { RunWriterPool } from "../src/stages/run-policy";
+import { RunWriterPool } from "../src/rooms/tasks/run-policy";
 
 const WORKSPACE = "/ws";
 

@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { hashBytes, planJson, transitionOwned, type NativeInstallManifest } from "../src/native-install-owned";
-import { nativeInstallOperation } from "../src/native-install-host";
-import { CLAUDE_LANE_SOURCE, claudeLaneEnv, detectClaudeLane, upgradeClaudeLane } from "../src/native-install-bootstrap";
+import { hashBytes, planJson, transitionOwned, type NativeInstallManifest } from "../src/rooms/native-install/native-install-owned";
+import { nativeInstallOperation } from "../src/rooms/native-install/native-install-host";
+import { CLAUDE_LANE_SOURCE, claudeLaneEnv, detectClaudeLane, upgradeClaudeLane } from "../src/rooms/native-install/native-install-bootstrap";
 import { execFileSync } from "node:child_process";
 import { reconcileClaudeLane } from "../src/native-lane-reconcile";
-import { createNativeInstaller, experimental_vkLifecycle, registerNativeInstallHost } from "../src/native-install-lifecycle";
+import { createNativeInstaller, experimental_vkLifecycle, registerNativeInstallHost } from "../src/rooms/native-install/native-install-lifecycle";
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 async function fixture() {

@@ -3,7 +3,7 @@ import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/tes
 import plugin from "../server";
 import { createOwnerAsk, OWNER_ASK_OPEN_GRACE_MS } from "../src/rooms/relay/server/owner-ask";
 import { buildOwnerAskPayload, ownerAnswerText, ownerAskPayloadSchema, ownerAskTitle, resolveOwnerResponse } from "../src/rooms/relay/owner-ask";
-import { IntegrationGateRunner } from "../src/server/integration-gate";
+import { IntegrationGateRunner } from "../src/rooms/verification/server/integration-gate";
 import { askOwnerToJoin } from "../src/rooms/council/server/council";
 
 afterEach(() => { vi.useRealTimers(); });

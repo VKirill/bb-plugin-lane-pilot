@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../src/database";
-import * as hostHandlers from "../src/host-handlers";
+import * as hostHandlers from "../src/rooms/host-worker/host-handlers";
 import { createWriterFinish } from "../src/server/writer/finish";
 
 // The batch gate runs the whole suite once, after the queue drains: a task that merges while another one is still open

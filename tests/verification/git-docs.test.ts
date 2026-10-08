@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { flowDocsWritable, nightlyDocsPrompt } from "../../src/rooms/docs/docs";
-import { docsWorthinessFacts, gitDocsScope, revertPaths } from "../../src/verification/git-docs";
+import { docsWorthinessFacts, gitDocsScope, revertPaths } from "../../src/rooms/verification/git-docs";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { stdio: "pipe" });
 const gitAt = (date: string, cwd: string, ...args: string[]) =>

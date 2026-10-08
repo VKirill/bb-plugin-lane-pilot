@@ -5,7 +5,7 @@ import { getRunSettingsScopes } from "../../database";
 import { jev } from "@lane-pilot/jev";
 import { relayFor } from "../relay/server/relay";
 import { scheduleIsolated } from "../../server/schedules";
-import { memorySettingsFor } from "../../server/insights";
+import { memorySettingsFor } from "../self-repair/server/insights";
 import { registerObservedTool } from "../../server/tool-result";
 import type { ServerCore } from "../../server/core";
 import type { Services } from "../../server/services";

@@ -384,7 +384,7 @@ describe("production spawn_unknown reconciliation", () => {
 
 describe("lost worktree holder scan", () => {
   it("runs only for an attempt whose holder spawn had begun", async () => {
-    const { createReconcile } = await import("../src/server/reconcile");
+    const { createReconcile } = await import("../src/rooms/stability/server/reconcile");
     const { openDatabase, createRun, getAttempt } = await import("../src/database");
     let listed = 0;
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: {

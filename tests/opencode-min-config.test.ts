@@ -2,7 +2,7 @@ import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { keepsPlugin, prepareOpencodeMinimal } from "../src/opencode-min-config";
+import { keepsPlugin, prepareOpencodeMinimal } from "../src/rooms/native-install/opencode-min-config";
 
 // N1 (review 2): on OVH the global OpenCode config loads plugins that add ~21k tokens to every helper session. The helpers run with
 // a config home of their own that keeps Lane Pilot's plugin and the auth plugin of the model's provider.

@@ -6,11 +6,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { TARGET_SHA } from "../../src/constants";
 import { hashPath, sha256Buffer } from "@lane-pilot/kit";
-import { inventoryCoexistenceAtHome, runCoexistenceOperation, runCoexistenceOperationAtHome } from "../../src/coexistence";
-import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readSnapshot, saveSnapshot } from "../../src/coexistence/ownership";
+import { inventoryCoexistenceAtHome, runCoexistenceOperation, runCoexistenceOperationAtHome } from "../../src/rooms/native-install/coexistence";
+import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readSnapshot, saveSnapshot } from "../../src/rooms/native-install/ownership";
 import { managedEngineDir } from "@lane-pilot/kit";
-import { finalizeSnapshotAfter, rollbackSnapshot, takeSnapshot, verifyRollback } from "../../src/snapshot";
-import { detectStack, installStack } from "../../src/stack-ops";
+import { finalizeSnapshotAfter, rollbackSnapshot, takeSnapshot, verifyRollback } from "../../src/rooms/native-install/snapshot";
+import { detectStack, installStack } from "../../src/rooms/native-install/stack-ops";
 
 const homes: string[] = [];
 const originalHome = process.env.HOME;

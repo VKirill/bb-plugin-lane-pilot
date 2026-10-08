@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseOpenCodeToolTelemetry } from "../../src/stages/opencode-telemetry";
+import { parseOpenCodeToolTelemetry } from "../../src/rooms/stability/opencode-telemetry";
 
 describe("OpenCode tool telemetry adapter", () => {
   it("correlates only the requested session, deduplicates by source-line hash, and drops tool arguments/output", () => {

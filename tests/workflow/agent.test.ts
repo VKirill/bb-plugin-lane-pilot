@@ -4,7 +4,7 @@ import { roleSpec } from "../../src/server/workflow-agent";
 import { slugOf } from "../../src/workflow/values";
 import { AgentOutputError, agentPrompt, dataBlock, extractJsonObject, outputContract, parseAgentOutput } from "../../src/workflow/agent-output";
 import type { Field } from "../../src/workflow/schema";
-import { roleMethod } from "../../src/stages/role-method";
+import { roleMethod } from "../../src/rooms/critique/role-method";
 import { loadWorkflow } from "../../src/workflow/validate";
 import { workflow } from "./fixtures";
 

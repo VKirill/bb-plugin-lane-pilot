@@ -20,7 +20,7 @@ import { definitionSha256, globalWorkflowDir } from "../workflow/store";
 import { loadWorkflow } from "../workflow/validate";
 import { findModel, findProvider } from "@lane-pilot/models";
 import { configuredSetting } from "./context";
-import { SPECIALIST_ROLES } from "./specialists";
+import { SPECIALIST_ROLES } from "../rooms/critique/server/specialists";
 import { modelCatalogOf } from "./model-catalog-reader";
 import { registerObservedTool, ToolError } from "./tool-result";
 import { stringAt } from "./values";

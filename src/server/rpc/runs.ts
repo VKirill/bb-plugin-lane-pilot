@@ -1,6 +1,6 @@
 import { t } from "@lane-pilot/i18n";
 import { setRunHalted } from "../runs-halt";
-import { PARKED_KEY } from "../stability";
+import { PARKED_KEY } from "../../rooms/stability/server/stability";
 import { agentPickerLabel } from "../../agent-display";
 import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../agent-profile";
 import { countAttempts, createAttempt, getActivation, getAttempt, transitionAttempt } from "../../database";

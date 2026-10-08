@@ -1,7 +1,7 @@
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { parse } from "jsonc-parser/lib/esm/main.js";
-import { NATIVE_HOOK_SOURCES } from "./native-hook-sources";
+import { NATIVE_HOOK_SOURCES } from "./rooms/native-install/native-hook-sources";
 import { defaultGuardSource } from "@lane-pilot/kit";
 
 function shellQuote(s: string) {

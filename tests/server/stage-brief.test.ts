@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StageReceiptRow } from "../../src/database";
-import { compactWaitResult } from "../../src/server/tools";
+import { compactWaitResult } from "../../src/rooms/tools/server/tools";
 import { compactDispatchReply, compactReceipt, compactStages, stageDetail, stageVerdict } from "../../src/server/stage-brief";
 
 const sha = (seed: string) => seed.repeat(64).slice(0, 64);

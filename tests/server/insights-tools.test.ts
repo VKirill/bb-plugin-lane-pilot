@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { acceptedRules } from "@lane-pilot/run-insights";
 import { createRun, createTask, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, searchMemoryRecords, setRunThread } from "../../src/database";
-import { adoptRuleProposal, sweepLessons } from "../../src/server/insights";
+import { adoptRuleProposal, sweepLessons } from "../../src/rooms/self-repair/server/insights";
 import { createCore } from "../../src/server/core";
 
 const projectId = "insights-project";

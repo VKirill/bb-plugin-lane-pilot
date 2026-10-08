@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { boundJevState, jevAsk, pageClaims, renderAnchorBrief, scanDeclarations, spreadAnchors, verifyDocsCitations, type Anchor } from "../../src/verification/docs-jev";
+import { boundJevState, jevAsk, pageClaims, renderAnchorBrief, scanDeclarations, spreadAnchors, verifyDocsCitations, type Anchor } from "../../src/rooms/verification/docs-jev";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 

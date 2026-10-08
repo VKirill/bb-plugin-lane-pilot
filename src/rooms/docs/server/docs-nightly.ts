@@ -1,7 +1,7 @@
 import { projectRoleField } from "../../../server/run-routing";
 import { claimDailySchedule, getActivation, getRun, listRunsWithAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../../../database";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { sha256 } from "../../../stages/contract";
+import { sha256 } from "../../tasks/contract";
 import { docsRepairPrompt, docsSelection, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings } from "../docs";
 import type { DocsUnit } from "../docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../docs-worthiness";

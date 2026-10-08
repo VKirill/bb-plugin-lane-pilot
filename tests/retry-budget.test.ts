@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createRun, openDatabase } from "../src/database";
 import { failureClass, nextStep } from "../src/failure-class";
 import { TASK_ATTEMPT_BUDGET, loadRetryBudget, retryBudgetKey, retryBudgetReason, spendRetryBudget } from "../src/retry-budget";
-import { createStability } from "../src/server/stability";
+import { createStability } from "../src/rooms/stability/server/stability";
 
 describe("overall retry budget of a task", () => {
   it("counts every fresh writer, primary and fallback, and ends the task once it is spent", async () => {

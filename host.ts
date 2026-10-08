@@ -60,10 +60,10 @@ import {
   prepareNativeClaudeHost,
   prepareOpencodeMinimalHost,
   prepareBbShimHost,
-} from "./src/host-handlers";
+} from "./src/rooms/host-worker/host-handlers";
 import { sessionInventory } from "./src/session-inventory";
-import { nativeInstallHost } from "./src/native-install-host";
-import { provideJevKey } from "./src/verification/docs-jev";
+import { nativeInstallHost } from "./src/rooms/native-install/native-install-host";
+import { provideJevKey } from "./src/rooms/verification/docs-jev";
 import { anamnesisHandler } from "./src/rooms/anamnesis/host";
 
 /** Takes the Env Catalog key the server attached to a Jev call before the handler runs. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/database";
-import { createSelfRepair, firstSeenOnRunningVersion, isDue, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/server/self-repair";
+import { createSelfRepair, firstSeenOnRunningVersion, isDue, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/rooms/self-repair/server/self-repair";
 import { createJev } from "@lane-pilot/jev";
 import { setJevForTests } from "@lane-pilot/jev";
 import type { JevClient } from "@lane-pilot/jev";

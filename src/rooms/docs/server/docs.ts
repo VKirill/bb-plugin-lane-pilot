@@ -1,11 +1,11 @@
 import { taskV2Schema } from "../../../contracts";
 import { claimDocsSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../../database";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { sha256 } from "../../../stages/contract";
-import { extractModelJson } from "../../../stages/model-json";
+import { sha256 } from "../../tasks/contract";
+import { extractModelJson } from "../../critique/model-json";
 import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../docs";
 import type { DocsPage } from "../docs";
-import { boundedAgentName } from "../../../stages/role";
+import { boundedAgentName } from "../../critique/role";
 import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../../../server/child-snapshots";
 import { configuredSetting } from "../../../server/context";
 import { fullAccessSpawn } from "../../../server/pm-spawn";

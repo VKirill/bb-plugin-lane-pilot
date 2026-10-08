@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { failureClass, failureFingerprint } from "../src/failure-class";
 import { countAttempts, countChargedAttempts, createAttempt, createRun, openDatabase, transitionAttempt } from "../src/database";
-import { createStability } from "../src/server/stability";
+import { createStability } from "../src/rooms/stability/server/stability";
 
 // Reasons copied from SelfyStudio attempts of 2026-10-03/04: each must land on the side that caused it.
 describe("failure class of real reasons", () => {
@@ -204,7 +204,7 @@ describe("superseded work is never restarted", () => {
     attempt("o3", "G1", "blocked", "internal_error: y", now - 3600_000);
     attempt("o4", "G1.2", "accepted", "", now - 7200_000); // accepted sibling, even earlier
     expect(await stability.adoptBlockedByFaults(now)).toEqual([]);
-    const { taskStem } = await import("../src/server/stability");
+    const { taskStem } = await import("../src/rooms/stability/server/stability");
     expect([taskStem("fix-r4"), taskStem("G1.12"), taskStem("plain")]).toEqual(["fix", "G1", "plain"]);
   });
 });

@@ -4,7 +4,7 @@ import plugin from "../server";
 import { compileMainAgentProfile } from "../src/agent-profile";
 import { createRun, getRun, loadProjectSettings, openDatabase, savePrototypeConfig } from "../src/database";
 import { inheritProjectValues, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
-import { buildRunPolicy, parseRunPolicy } from "../src/stages/run-policy";
+import { buildRunPolicy, parseRunPolicy } from "../src/rooms/tasks/run-policy";
 
 describe("inherited dispatch after override-row delete", () => {
   it("uses globals on a new settings merge, keeps the active run snapshot, and does not rewrite agent hashes", async () => {

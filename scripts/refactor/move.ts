@@ -161,6 +161,9 @@ for (const [pkg, list] of byPkg) {
   const targets: string[] = [];
   for (const root of ["tests", "packages"]) if (existsSync(join(ROOT, root))) targets.push(...walkAll(root).filter((f) => /\.(ts|tsx|mjs)$/.test(f) && !f.includes("/src/")));
   for (const f of ["THIRD_PARTY_NOTICES.md", "package.json"]) if (existsSync(join(ROOT, f))) targets.push(f);
+  // tests/applicability.test.ts compares the evidence text of the setting catalog, which names source files as history
+  const targets2 = targets.filter((f) => f !== "tests/applicability.test.ts");
+  targets.length = 0; targets.push(...targets2);
   if (existsSync(join(ROOT, "scripts"))) targets.push(...walkAll("scripts").filter((f) => /\.(ts|mjs|sh)$/.test(f) && !f.startsWith("scripts/refactor/")));
   let changed = 0;
   for (const f of targets) {

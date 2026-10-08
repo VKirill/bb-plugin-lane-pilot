@@ -17,9 +17,9 @@ import {
   setRunThread,
   transitionAttempt,
 } from "../src/database";
-import { runHealth } from "../src/server/health";
+import { runHealth } from "../src/rooms/stability/server/health";
 import { bindRunChildBudget, fullAccessSpawn } from "../src/server/pm-spawn";
-import { createStability } from "../src/server/stability";
+import { createStability } from "../src/rooms/stability/server/stability";
 import { createWriterFinish } from "../src/server/writer/finish";
 import { createWriterSpawn } from "../src/server/writer/spawn";
 import type { PrototypeConfig, TaskV2 } from "../src/contracts";

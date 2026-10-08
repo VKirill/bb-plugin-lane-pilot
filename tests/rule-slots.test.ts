@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, expect, it } from "vitest";
 import { getRuleProposal, listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
 import { openDatabase } from "../src/database";
-import { adoptRuleProposal, adoptWaitingRules } from "../src/server/insights";
+import { adoptRuleProposal, adoptWaitingRules } from "../src/rooms/self-repair/server/insights";
 import { DEFAULT_RULE_TOKENS, ruleTokens, setRuleBudgets } from "../src/rooms/learning/rule-budget";
 
 afterEach(() => setRuleBudgets({ ...DEFAULT_RULE_TOKENS }));

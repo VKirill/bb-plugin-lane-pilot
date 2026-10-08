@@ -7,8 +7,8 @@ import { Input } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { Switch } from "@lane-pilot/ui-kit";
-import { AdvancedRows } from "./setting-controls";
-import { CatalogField } from "./catalog-field";
+import { AdvancedRows } from "../rooms/settings/ui/setting-controls";
+import { CatalogField } from "../rooms/settings/ui/catalog-field";
 import { asBoolean, COUNCIL_SEATS } from "./page-model";
 import type { LpPage } from "./use-lp-page";
 

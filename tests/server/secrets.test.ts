@@ -9,7 +9,7 @@ import { listSecretIssuance, openDatabase, saveProjectSetting } from "../../src/
 import { forgetSecrets } from "@lane-pilot/kit";
 import { createSecrets, envForRecord, SecretsNotReadyError, secretProblem } from "../../src/rooms/secrets/server/secrets";
 import { createWriterVerify } from "../../src/server/writer/verify";
-import { runSandboxedCommandOnHost } from "../../src/verification/sandbox";
+import { runSandboxedCommandOnHost } from "../../src/rooms/verification/sandbox";
 
 // Test values only: none of them is a real credential.
 const STRIPE = "test-stripe-Zq81xW0pLm";

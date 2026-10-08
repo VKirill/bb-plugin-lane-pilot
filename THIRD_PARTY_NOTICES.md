@@ -12,14 +12,14 @@ Adapted from `workflows/plan.md`, `workflows/grill.md`, `workflows/verify.md`, `
 
 | Idea | Source | Lane Pilot file |
 |---|---|---|
-| `read_first` and checkable convergence criteria without subjective words, one feature per task, a question without file:line is not a question | plan.md, grill.md | `src/stages/role-method.ts` (`PLAN_CRITIC_METHOD`), used by `src/stages/critique.ts` |
-| Three acceptance layers (exists, substantive, wired), anti-patterns, six review dimensions, BLOCK / WARN / PASS thresholds, majority of 2 of 3 for critical and high findings | verify.md, review.md, wf-review.js | `src/stages/role-method.ts` (`CODE_CRITIC_METHOD`), used by `src/stages/code-critique.ts` |
-| Scientific debugging: confirmed root cause, at most 3 hypotheses with evidence, backward tracing, three-strike check | debug.md, ref/scientific-debug.md | `src/stages/role-method.ts` (`SCIENTIFIC_DEBUG_METHOD`), used by `src/server/self-repair.ts` |
-| Failure classification `test_defect` / `code_defect` / `env_issue` | auto-test.md | `src/stages/role-method.ts` (`FAILURE_TRIAGE_METHOD`), used by `src/server/self-repair.ts` |
-| Deterministic three-layer browser acceptance (entry point, write request, DOM result); silence is never a pass | ref/frontend-verify.md | `src/stages/role-method.ts` (`FRONTEND_VERIFY_METHOD`), used by `src/rooms/qa/server/qa-thread.ts` |
+| `read_first` and checkable convergence criteria without subjective words, one feature per task, a question without file:line is not a question | plan.md, grill.md | `src/rooms/critique/role-method.ts` (`PLAN_CRITIC_METHOD`), used by `src/rooms/critique/critique.ts` |
+| Three acceptance layers (exists, substantive, wired), anti-patterns, six review dimensions, BLOCK / WARN / PASS thresholds, majority of 2 of 3 for critical and high findings | verify.md, review.md, wf-review.js | `src/rooms/critique/role-method.ts` (`CODE_CRITIC_METHOD`), used by `src/rooms/critique/code-critique.ts` |
+| Scientific debugging: confirmed root cause, at most 3 hypotheses with evidence, backward tracing, three-strike check | debug.md, ref/scientific-debug.md | `src/rooms/critique/role-method.ts` (`SCIENTIFIC_DEBUG_METHOD`), used by `src/rooms/self-repair/server/self-repair.ts` |
+| Failure classification `test_defect` / `code_defect` / `env_issue` | auto-test.md | `src/rooms/critique/role-method.ts` (`FAILURE_TRIAGE_METHOD`), used by `src/rooms/self-repair/server/self-repair.ts` |
+| Deterministic three-layer browser acceptance (entry point, write request, DOM result); silence is never a pass | ref/frontend-verify.md | `src/rooms/critique/role-method.ts` (`FRONTEND_VERIFY_METHOD`), used by `src/rooms/qa/server/qa-thread.ts` |
 
 The workflow chains of `workflows/*.json` (W3) take their stage texts, thresholds and the composition of the chains from more
-files of the same repository. The texts are rewritten for Lane Pilot's roles (`src/stages/role-method.ts`: `ANALYST_METHOD`,
+files of the same repository. The texts are rewritten for Lane Pilot's roles (`src/rooms/critique/role-method.ts`: `ANALYST_METHOD`,
 `PLANNER_METHOD`, `AUDITOR_METHOD`) and each node of a chain names its source in its `src` field; no Maestro code is copied.
 
 | Idea | Source file of maestro-flow | Where in Lane Pilot |
@@ -37,7 +37,7 @@ files of the same repository. The texts are rewritten for Lane Pilot's roles (`s
 | A small task without a plan (self-check, then one quick task) | `.claude/commands/maestro-companion.md` | `workflows/companion.json` |
 | Closing a session and its knowledge | `.claude/commands/maestro-session-manage.md` | `workflows/milestone-close.json` |
 | Goal audit, confidence, re-grounding, the two-round ceiling of a fix loop, then the owner | `.claude/commands/maestro-ralph.md`, `prepare/ralph.md` | `workflows/lp.close.json`, `AUDITOR_METHOD`, the loop limits of the chains |
-| `convergence.criteria` (checkable, no subjective words) and `files[]` with the concrete change | `templates/task.json`, `prepare/plan.md` | `taskV2Schema` (`src/contracts.ts`), `src/server/contract-lint.ts` |
+| `convergence.criteria` (checkable, no subjective words) and `files[]` with the concrete change | `templates/task.json`, `prepare/plan.md` | `taskV2Schema` (`src/contracts.ts`), `src/rooms/tasks/server/contract-lint.ts` |
 | The step contract (`consumes` / `produces` / `gates`) and the typed artifact kinds (`plan`, `findings`, `verdict`, ...) | the `contract:` heads of `prepare/*.md` | `src/workflow/artifacts.ts`, `src/workflow/contract.ts`, the `consumes` / `produces` / `gates` of `workflows/*.json` |
 | Verification in three layers (exists, substantive, wired) with the unified gap object | `templates/verification.json`, `prepare/verify.md` | the `verification/1` kind in `src/workflow/artifacts.ts` |
 

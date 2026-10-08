@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { cancelHostJob, hostJobStatus, startHostJob, type JobOptions, type JobStatus } from "../src/jobs";
+import { cancelHostJob, hostJobStatus, startHostJob, type JobOptions, type JobStatus } from "../src/rooms/host-worker/jobs";
 
 /**
  * A stand-in for the host bundle: its `detect` handler does what the workspace path asks. The job process loads it

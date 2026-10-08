@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { registerSecrets, secretStrings } from "@lane-pilot/kit";
-import { parseSandboxUnsafePatterns } from "../../../stages/critique-coverage";
-import { SANDBOX_OWN_ENV } from "../../../verification/sandbox";
+import { parseSandboxUnsafePatterns } from "../../critique/critique-coverage";
+import { SANDBOX_OWN_ENV } from "../../verification/sandbox";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
 export const ENV_CATALOG_PLUGIN = "env-catalog";

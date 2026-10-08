@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { integrateWorktree, prepareWorktree } from "../../src/verification/git-integrate";
+import { integrateWorktree, prepareWorktree } from "../../src/rooms/verification/git-integrate";
 
 // Drill 2026-10-07 20:29 (provider_limit): the project-life stage had `git add`ed CHANGELOG, PROGRESS and plan items in the
 // base checkout and not yet committed them when another task merged. Git's ort strategy refuses any merge while the index

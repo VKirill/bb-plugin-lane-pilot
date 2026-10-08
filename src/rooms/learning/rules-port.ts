@@ -1,7 +1,7 @@
 import { memoryRecordId, storeMemoryRecords } from "@lane-pilot/memory-core";
 import { listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
 import type { LanePilotDatabase } from "../../database";
-import { adoptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, retireAdoptedRule } from "../../server/insights";
+import { adoptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, retireAdoptedRule } from "../self-repair/server/insights";
 import type { NotesPort, RulesPort } from "./extract";
 import { sha256Hex } from "@lane-pilot/kit";
 

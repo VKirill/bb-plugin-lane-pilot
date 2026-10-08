@@ -14,7 +14,7 @@ import { fenceOutside, registerObservedTool } from "../../../server/tool-result"
 import { redactKnown } from "@lane-pilot/kit";
 import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server/secrets";
 import type { CatalogEntry } from "../../secrets/server/secrets";
-import { detectRepoEdits, gitRepoStatus } from "../../../server/repo-edits";
+import { detectRepoEdits, gitRepoStatus } from "../../verification/server/repo-edits";
 import type { ServerCore } from "../../../server/core";
 
 const WAIT_STEP_MS = 5_000;

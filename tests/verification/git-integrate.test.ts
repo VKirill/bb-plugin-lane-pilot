@@ -7,8 +7,8 @@ import { expect, it, vi } from "vitest";
 // These tests build real repositories and worktrees; inside Lane Pilot's sandboxed check the whole suite runs
 // about 2.5x slower and vitest's 5 s default cut them off (2026-10-06 log: 12 uniform 5000 ms timeouts).
 vi.setConfig({ testTimeout: 120_000 });
-import { integrateWorktree, prepareWorktree, withBaseLock } from "../../src/verification/git-integrate";
-import { gitOwnershipChangedPaths } from "../../src/verification/git-ownership";
+import { integrateWorktree, prepareWorktree, withBaseLock } from "../../src/rooms/verification/git-integrate";
+import { gitOwnershipChangedPaths } from "../../src/rooms/verification/git-ownership";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 
@@ -52,7 +52,7 @@ it("merges two writers' edits to one file and reports a real conflict without to
 });
 
 it("links the base node_modules into a writer worktree and keeps the link out of commits", async () => {
-  const { prepareWorktree } = await import("../../src/verification/git-integrate");
+  const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
   const { mkdir } = await import("node:fs/promises");
   const { base, worktree } = await repo();
   await mkdir(join(base, "node_modules", "vitest"), { recursive: true });
@@ -65,7 +65,7 @@ it("links the base node_modules into a writer worktree and keeps the link out of
 });
 
 it("gives tool caches in node_modules their own folder so checks never write into the base checkout", async () => {
-  const { prepareWorktree } = await import("../../src/verification/git-integrate");
+  const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
   const { mkdir, lstat } = await import("node:fs/promises");
   const { base, worktree } = await repo();
   await mkdir(join(base, "node_modules", "vitest"), { recursive: true });
@@ -80,7 +80,7 @@ it("gives tool caches in node_modules their own folder so checks never write int
 });
 
 it("installs dependencies from the lockfile before the first writer so nobody runs npm install", async () => {
-  const { prepareWorktree } = await import("../../src/verification/git-integrate");
+  const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
   const { base, worktree } = await repo();
   const { mkdir, rm } = await import("node:fs/promises");
   await mkdir(join(base, "dep"));
@@ -96,7 +96,7 @@ it("installs dependencies from the lockfile before the first writer so nobody ru
 }, 120_000);
 
 it("creates Lane Pilot's own worktree of a section repo and removes it once merged", async () => {
-  const { createWorktree } = await import("../../src/verification/git-integrate");
+  const { createWorktree } = await import("../../src/rooms/verification/git-integrate");
   const { stat } = await import("node:fs/promises");
   const { base } = await repo();
   const target = join(base, "..", "own", "main");
@@ -110,7 +110,7 @@ it("creates Lane Pilot's own worktree of a section repo and removes it once merg
 });
 
 it("removes only Lane Pilot's own worktree of a failed attempt", async () => {
-  const { createWorktree, removeLaneWorktree } = await import("../../src/verification/git-integrate");
+  const { createWorktree, removeLaneWorktree } = await import("../../src/rooms/verification/git-integrate");
   const { stat } = await import("node:fs/promises");
   const { base, worktree } = await repo();
   const own = join(base, "..", "own2", "main");
@@ -122,7 +122,7 @@ it("removes only Lane Pilot's own worktree of a failed attempt", async () => {
 });
 
 it("re-points workspace package links at the worktree so checks import the writer's edits", async () => {
-  const { prepareWorktree } = await import("../../src/verification/git-integrate");
+  const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
   const { mkdir, lstat, readlink, realpath } = await import("node:fs/promises");
   const { base, worktree } = await repo();
   await writeFile(join(base, "package.json"), JSON.stringify({ name: "mono", workspaces: ["packages/*", "apps/api"] }) + "\n");
@@ -309,7 +309,7 @@ it("docs worktree: commits under its own lock and merges only what is committed,
 
 it("saves a released worktree's uncommitted edits and unshared commits as a patch", async () => {
   const { base, worktree } = await repo();
-  const { snapshotWorktree } = await import("../../src/verification/git-integrate");
+  const { snapshotWorktree } = await import("../../src/rooms/verification/git-integrate");
   const a = await worktree("rejected");
   await writeFile(join(a, "kept.ts"), "export const committed = 1;\n");
   git(a, "add", "-A"); git(a, "commit", "-qm", "rejected commit");
@@ -325,7 +325,7 @@ it("saves a released worktree's uncommitted edits and unshared commits as a patc
 });
 
 it("writes the task folder, excludes it once, copies it into both worktree paths, and does not commit it", async () => {
-  const { appendExcludeCommand, persistTaskFolder, prepareWorktree, createWorktree, TASK_FOLDER_EXCLUDE } = await import("../../src/verification/git-integrate");
+  const { appendExcludeCommand, persistTaskFolder, prepareWorktree, createWorktree, TASK_FOLDER_EXCLUDE } = await import("../../src/rooms/verification/git-integrate");
   const { mkdir, readFile, writeFile } = await import("node:fs/promises");
   const { dirname } = await import("node:path");
   const { base, worktree } = await repo();

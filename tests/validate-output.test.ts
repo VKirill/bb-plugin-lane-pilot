@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { classifyWriterOutput } from "../src/validate-output";
+import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
 import type { TaskV2 } from "../src/contracts";
 
 const task = (expected: string[]) => ({

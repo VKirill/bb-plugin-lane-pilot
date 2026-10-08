@@ -5,7 +5,7 @@ import { routeWorkflow } from "../../src/jev/judgments/route-workflow";
 import { listJudgments } from "@lane-pilot/jev";
 import { jevMigrations } from "@lane-pilot/jev";
 import { jevEnabled, jevSettingProblem, resolveMode, resolveThresholds } from "@lane-pilot/jev";
-import { validateSettingValue } from "../../src/setting-validation";
+import { validateSettingValue } from "../../src/rooms/settings/setting-validation";
 
 describe("jev settings", () => {
   it("starts from the registry defaults and clamps a project's values to the allowed range", () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { HELPER_ROLES, ROLE_PROFILES } from "../src/helper-context";
 import { WRITER_SETUP_LINES } from "../src/server/writer-task";
 import { qaThreadPrompt } from "../src/rooms/qa/server/qa-thread";
-import { specialistPrompt } from "../src/server/specialists";
+import { specialistPrompt } from "../src/rooms/critique/server/specialists";
 
 describe("Env Catalog access by role (J1)", () => {
   it("only errands and specialists carry its tools", () => {

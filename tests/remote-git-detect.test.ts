@@ -4,7 +4,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import plugin from "../server";
 import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../src/database";
-import { IntegrationGateRunner } from "../src/server/integration-gate";
+import { IntegrationGateRunner } from "../src/rooms/verification/server/integration-gate";
 import type { ServerCore } from "../src/server/core";
 import type { Services } from "../src/server/services";
 

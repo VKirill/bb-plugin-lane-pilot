@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kindForReadFirstPath, parseReadFirstHints, readFirstKindError, renderReadFirstInstructions } from "../../src/stages/read-first";
+import { kindForReadFirstPath, parseReadFirstHints, readFirstKindError, renderReadFirstInstructions } from "../../src/rooms/tasks/read-first";
 
 describe("task read_first execution hints", () => {
   it("preserves whole-file hints and parses 1-based inclusive windows", () => {

@@ -12,7 +12,7 @@ describe("layout geometry harness", () => {
   });
 
   it("requires fieldset min-inline-size reset in Agents markup", () => {
-    const source = readFileSync(join(import.meta.dirname, "../src/ui/owned-settings.tsx"), "utf8");
+    const source = readFileSync(join(import.meta.dirname, "../src/rooms/settings/ui/owned-settings.tsx"), "utf8");
     expect(source).toContain("minInlineSize: 0");
     expect(source).toContain("min-w-0 max-w-full");
     expect(source).toContain('id="agent-prompt"');

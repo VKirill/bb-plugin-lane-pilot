@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { extractModelJson, NO_TOOLS_LINE } from "../../stages/model-json";
+import { extractModelJson, NO_TOOLS_LINE } from "../critique/model-json";
 import { sha256Hex } from "@lane-pilot/kit";
 
 const onboardingEditSchema = z.object({

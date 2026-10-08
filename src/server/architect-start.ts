@@ -8,7 +8,7 @@ import { createDraftStore } from "../workflow/draft-store";
 import type { ServerCore } from "./core";
 import { storeNativeSelection } from "./native-profile";
 import { fullAccessSpawn } from "./pm-spawn";
-import { CONFIG_KEY, SELF_REPAIR_DEFAULTS } from "./self-repair";
+import { CONFIG_KEY, SELF_REPAIR_DEFAULTS } from "../rooms/self-repair/server/self-repair";
 import type { Services } from "./services";
 import { stringAt } from "./values";
 

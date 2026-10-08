@@ -29,7 +29,7 @@ it("matches wildcards inside names and double stars inside segments (SelfyStudio
 });
 
 it("uses the same matcher for the run's ownership check", async () => {
-  const { findUnownedChanges } = await import("../src/verification/ownership");
+  const { findUnownedChanges } = await import("../src/rooms/verification/ownership");
   const task = { project_cwd: "/p", owns_paths: ["apps/api/src/**greeting-card*", "packages/db/prisma/migrations/*_greeting_cards_core/**"], never_touch: [], verification: [] } as never;
   expect(findUnownedChanges(["apps/api/src/routes/greeting-cards.ts", "packages/db/prisma/migrations/20261002_greeting_cards_core/migration.sql"], task)).toEqual([]);
   expect(findUnownedChanges(["apps/api/src/routes/other.ts"], task)).toEqual(["apps/api/src/routes/other.ts"]);

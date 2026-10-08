@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, taskFamily } from "../src/failure-class";
-import { classifyWriterOutput } from "../src/validate-output";
+import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
 import type { TaskV2 } from "../src/contracts";
 import { providerLimitNotice } from "../src/server/writer-task";
 

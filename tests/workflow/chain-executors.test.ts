@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRun, createTask, createAttempt, openDatabase, setRunThread, transitionAttempt } from "../../src/database";
-import { runCommand } from "../../src/host-handlers";
+import { runCommand } from "../../src/rooms/host-worker/host-handlers";
 import { createCore } from "../../src/server/core";
 import type { Services } from "../../src/server/services";
 import { createWorkflowAgents } from "../../src/server/workflow-agent";

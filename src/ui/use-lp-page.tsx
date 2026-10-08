@@ -1,6 +1,6 @@
 import { readHiddenProjects, splitProjects, writeHiddenProjects } from "./service-projects";
 import { resolveTab, SEGMENTS, type SegmentedTab, type TabId } from "./tabs-model";
-import { selectionKeys, selectionValue, SELECTION_SPECS, type SelectionId } from "./picker-selections";
+import { selectionKeys, selectionValue, SELECTION_SPECS, type SelectionId } from "../rooms/settings/ui/picker-selections";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_ProviderModelPicker as ProviderModelPicker,

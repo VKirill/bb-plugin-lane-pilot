@@ -1,7 +1,7 @@
 import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunBudget } from "@lane-pilot/resilience";
-import { RunWriterPool } from "../../stages/run-policy";
+import { RunWriterPool } from "../../rooms/tasks/run-policy";
 import { createProviderUsage } from "../../rooms/usage/server/provider-usage";
-import { createProviderRetryGuard } from "../provider-retry";
+import { createProviderRetryGuard } from "../../rooms/stability/server/provider-retry";
 import { createTasksMirror } from "../tasks-mirror";
 import { createConcurrencyLimit } from "../concurrency-limit";
 import { getRunSettingsScopes } from "../../database";

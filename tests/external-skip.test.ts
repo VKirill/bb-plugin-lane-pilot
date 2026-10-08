@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
-import { instrumentInstallSh, isolatedNpmPrefix, writeSkipWrappers } from "../src/install-runner";
+import { instrumentInstallSh, isolatedNpmPrefix, writeSkipWrappers } from "../src/rooms/native-install/install-runner";
 import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
 
 const INSTALL_SH = NO_UPSTREAM ? "" : readFileSync(upstreamPath("install.sh"), "utf8");

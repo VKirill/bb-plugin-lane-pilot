@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listDocsPages } from "../../src/host-handlers";
+import { listDocsPages } from "../../src/rooms/host-worker/host-handlers";
 import {
   docsInputHash, docsScheduleDue, docsSinceEpoch, parseDocsSettings,
   selectDocsPages, validateDocsEdits,

@@ -1,6 +1,6 @@
 import { experimental_Diff as Diff, experimental_SourceCode as SourceCode } from "@get-bb/plugin-sdk/app";
 import { t, unappliedReason } from "@lane-pilot/i18n";
-import { settingLabel } from "../setting-copy";
+import { settingLabel } from "../rooms/settings/setting-copy";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +20,7 @@ import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { Disclosure } from "@lane-pilot/ui-kit";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { CARD_BODY, CARD_HEAD, COEXISTENCE_MANAGER_KEYS, COEXISTENCE_VALUE_KEYS, compatibilityAliasRows, reasonKey, sectionKey } from "./page-model";
-import { FieldControl, StatusBadge, StatusRow } from "./setting-controls";
+import { FieldControl, StatusBadge, StatusRow } from "../rooms/settings/ui/setting-controls";
 import type { LpPage } from "./use-lp-page";
 
 /** The machine and the install of Lane Pilot on it, and the technical details behind the settings. */

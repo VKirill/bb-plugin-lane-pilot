@@ -11,7 +11,7 @@ import { createWriterDispatch } from "../src/server/writer/dispatch";
 import { retryInSameThread } from "../src/server/writer/sticky";
 import { createWriterStart } from "../src/server/writer/start";
 import { createWriterUpdateTask } from "../src/server/writer/update-task";
-import { classifyWriterOutput } from "../src/validate-output";
+import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
 
 const WORKSPACE = "/ws";
 const WORKTREE = "/ws/wt";
