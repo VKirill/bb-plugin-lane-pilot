@@ -20,6 +20,7 @@ import type { rpcContract } from "../contracts";
 import type { ServerCore } from "./core";
 import { jev } from "../jev/runtime";
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "../jev/output-guard";
+import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../learning/frustration";
 import { MAX_CANDIDATES, repairGroup } from "../jev/judgments/repair-group";
 
 /**
@@ -64,7 +65,7 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
 
 export type Incident = {
   signature: string;
-  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook" | "guard";
+  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook" | "guard" | "owner";
   projectId: string;
   runId: string;
   taskId: string;
@@ -180,7 +181,7 @@ export function isDue(record: SignatureRecord, now: number, version = VERSION): 
 }
 
 /** How much a kind of incident matters when it is real: a closed project (breaker) or a parked task outranks a log line or a drill. */
-const KIND_SEVERITY: Record<Incident["kind"], number> = { breaker: 5, guard: 5, parked: 4, blocked: 3, stuck: 3, triage: 3, repeat: 3, hook: 2, queued: 2, stage: 2, log: 1, drill: 0.4 };
+const KIND_SEVERITY: Record<Incident["kind"], number> = { breaker: 5, guard: 5, parked: 4, owner: 3, blocked: 3, stuck: 3, triage: 3, repeat: 3, hook: 2, queued: 2, stage: 2, log: 1, drill: 0.4 };
 const IMPACT_FLOOR = 0.3;
 
 /**
@@ -357,6 +358,13 @@ export function createSelfRepair(ctx: ServerCore) {
       out.push({ signature: reasonSignature("guard", `${row.kind} output withheld by the output guard: ${row.reason}`), kind: "guard", projectId: row.projectId, runId: row.runId ?? "-", taskId: row.subject ?? "-",
         attemptId: `guard:${row.at}`, pmThreadId: null, writerThreadId: null, version: VERSION,
         reason: `a ${row.kind} output was withheld by the output guard (${row.reason}); it was neither stored nor shown. Find where the ${row.reason === "secret" ? "value came from and why it was not masked" : "instructions came from and what let them reach the output"}.`, at: row.at });
+    }
+    // T6 (src/learning): the owner was clearly frustrated in a chat. The incident carries the thread and what the agent had just said.
+    const annoyed = await bb.storage.kv.get(FRUSTRATION_KEY).catch(() => null);
+    for (const row of (Array.isArray(annoyed) ? annoyed : []) as FrustrationRecord[]) {
+      if (row.at <= since || ignored.has(row.projectId)) continue;
+      out.push({ signature: reasonSignature("owner", "the owner was clearly frustrated in a chat"), kind: "owner", projectId: row.projectId, runId: row.runId ?? "-", taskId: "-",
+        attemptId: `owner:${row.messageId}`, pmThreadId: row.pmThreadId, writerThreadId: row.pmThreadId ? null : row.threadId, version: VERSION, reason: frustrationReason(row), at: row.at });
     }
     const drill = await bb.storage.kv.get(DRILL_KEY).catch(() => null);
     for (const [hostId, row] of Object.entries((drill && typeof drill === "object" ? drill : {}) as Record<string, DrillOutcome>)) {
