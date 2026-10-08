@@ -429,7 +429,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     }
   }, { timeoutMs: 10 * 60_000 });
 
-  return { analyzerFor, chainForRun, evaluateRules, saveAnalyzer, scanLabel: scopeLabel, scanState, startScan, summary, triageNew };
+  return { analyzerFor, chainForRun, evaluateRules, runAnalyzer, saveAnalyzer, scanLabel: scopeLabel, scanState, startScan, summary, triageNew };
 }
 
 export type RuleScanApi = ReturnType<typeof createRuleScan>;
