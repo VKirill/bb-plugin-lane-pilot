@@ -1,0 +1,273 @@
+{
+  "id": "resume",
+  "name": {
+    "en": "A resume from the public anamnesis",
+    "ru": "Резюме из публичного анамнеза"
+  },
+  "description": {
+    "en": "Writes a one-page resume (Markdown) from the records of the anamnesis that the owner confirmed and marked public: who they are, skills with their levels, projects, milestones, tools. Nothing private or sensitive is read; no link or address the facts do not have gets in. Saves a file in the project; nothing is sent.",
+    "ru": "Пишет резюме на одну страницу (Markdown) из записей анамнеза, которые владелец подтвердил и пометил публичными: кто он, навыки с уровнями, проекты, вехи, инструменты. Приватное и чувствительное не читается, ссылки и адреса, которых нет в фактах, не попадают. Сохраняет файл в проекте, ничего не отправляет."
+  },
+  "examples": {
+    "ru": [
+      "Составь моё резюме из публичных записей анамнеза",
+      "Сделай резюме-портфолио по тому, что я пометил публичным",
+      "Нужно резюме под вакансию маркетолога, бери только публичное из анамнеза",
+      "Подготовь портфолио обо мне из анамнеза"
+    ],
+    "en": [
+      "Write my resume from the public records of my anamnesis",
+      "Make a one-page portfolio from what I marked public"
+    ]
+  },
+  "not_for": [
+    "about-site",
+    "year-review",
+    "editing an existing resume file"
+  ],
+  "status": "tested",
+  "live_success": {
+    "output": "status",
+    "in": [
+      "done"
+    ]
+  },
+  "tags": [
+    "anamnesis",
+    "resume",
+    "public"
+  ],
+  "triggers": [
+    "chat",
+    "manual"
+  ],
+  "inputs": {
+    "language": {
+      "type": "string",
+      "default": "ru",
+      "note": "ru or en"
+    },
+    "notes": {
+      "type": "string",
+      "default": "",
+      "note": "the role or vacancy to aim at, what to stress; never a source of facts"
+    }
+  },
+  "outputs": {
+    "status": "done|nothing_public|blocked",
+    "resume_path": "string",
+    "records": "int",
+    "reason": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "not used: there are no code tasks"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "ru-text"
+    ],
+    "secrets": [],
+    "machines": [
+      "the owner's Mac mini: the anamnesis store (~/.lane-pilot/anamnesis) is read through the host"
+    ]
+  },
+  "budget": {
+    "max_steps": 10,
+    "max_minutes": 30,
+    "max_usd": 1
+  },
+  "nodes": [
+    {
+      "id": "facts",
+      "type": "action",
+      "action": "anamnesis.public",
+      "title": {
+        "en": "Read the public facts",
+        "ru": "Прочитать публичные факты"
+      },
+      "rule": "code: the owner's records that are confirmed AND marked public, nothing else; drafts, candidates, private and sensitive records never leave the Mac mini",
+      "view": "resume",
+      "out": {
+        "text": "string",
+        "records": "int",
+        "empty": "bool"
+      }
+    },
+    {
+      "id": "write",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "ru-text"
+        ]
+      },
+      "title": {
+        "en": "Write the resume",
+        "ru": "Написать резюме"
+      },
+      "prompt": "Write the owner's resume as ONE Markdown document of at most one page: name or role line, a summary of two or three sentences, skills with the level the facts give, projects with what they are, milestones in date order, tools. Aim it at what `notes` says, but only choose and order facts, never add one. Sources: ONLY `facts_text`: records the owner confirmed and marked public. Nothing else is a source: not your memory of the owner, not this chat, not `notes` (`notes` only says what to stress). Do not invent employers, dates, numbers, places, links or e-mail addresses; every link or address you write must stand in the facts. A part with no facts is left out, not filled. Language: `language` (ru or en). If `fix` is given, a check of your earlier text failed: correct exactly those violations. Put the whole text in `artifact`.",
+      "out": {
+        "artifact": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "check",
+      "type": "action",
+      "action": "anamnesis.check",
+      "title": {
+        "en": "Check what was written against the facts",
+        "ru": "Сверить написанное с фактами"
+      },
+      "rule": "code: not empty, within the size limit, no link or e-mail address that the facts do not contain, no draft mark",
+      "artifact": "{{write.artifact}}",
+      "facts": "{{facts.text}}",
+      "out": {
+        "ok": "bool",
+        "violations": "string[]"
+      }
+    },
+    {
+      "id": "deliver",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Save the file",
+        "ru": "Сохранить файл"
+      },
+      "path": ".lane-pilot/anamnesis/resume-{{date}}/",
+      "files": [
+        "resume.md"
+      ],
+      "contents": {
+        "resume.md": "{{write.artifact}}"
+      },
+      "out": {
+        "resume_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "resume_path": "deliver.resume_path",
+        "records": "facts.records",
+        "reason": "''"
+      }
+    },
+    {
+      "id": "nothing_public",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "nothing_public",
+        "resume_path": "''",
+        "records": "facts.records",
+        "reason": "'no record is both confirmed and marked public: open the Anamnesis tab, confirm what is right and mark what may be shown as public'"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "resume_path": "''",
+        "records": "facts.records",
+        "reason": "'the text did not pass the check against the public facts twice (a link, address or mark that is not in the facts)'"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "facts"
+    },
+    {
+      "from": "facts",
+      "to": "nothing_public",
+      "when": "facts.empty"
+    },
+    {
+      "from": "facts",
+      "to": "write",
+      "with": {
+        "facts_text": "facts.text",
+        "language": "input.language",
+        "notes": "input.notes"
+      }
+    },
+    {
+      "from": "write",
+      "to": "check"
+    },
+    {
+      "from": "check",
+      "to": "write",
+      "when": "!check.ok && visits('write') < 2",
+      "label": "fix",
+      "with": {
+        "facts_text": "facts.text",
+        "language": "input.language",
+        "notes": "input.notes",
+        "fix": "check.violations"
+      }
+    },
+    {
+      "from": "check",
+      "to": "deliver",
+      "when": "check.ok"
+    },
+    {
+      "from": "check",
+      "to": "blocked"
+    },
+    {
+      "from": "deliver",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "resume-1",
+    "sim": {
+      "input": {
+        "language": "ru"
+      },
+      "stubs": {
+        "facts": {
+          "text": "What I know about you\n\n## Projects (1)\n- Lane Pilot",
+          "records": 1,
+          "empty": false
+        },
+        "write": {
+          "artifact": "# Kirill\n\n## Projects\n- Lane Pilot\n"
+        },
+        "deliver": {
+          "resume_path": ".lane-pilot/anamnesis/resume-2026-10-08/"
+        }
+      },
+      "expect_path": [
+        "facts",
+        "write",
+        "check",
+        "deliver",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done"
+      }
+    },
+    "live": "on the owner's real records: run the chain after marking the right records public; read resume.md line by line against the public records and the skill levels in the Anamnesis tab; every claim must be traceable to a public record.",
+    "note": "Tested on stubs: the facts, the writing agent and the file save answer from stubs; the check and the routing are real. Not live yet: the first run on the owner's real public records in the Mac mini store. See `live` for the acceptance run."
+  }
+}

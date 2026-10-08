@@ -14,6 +14,7 @@ import { adoptWaitingRules } from "./src/server/insights";
 import { createRuleScan } from "./src/server/rule-scan";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/server/run-finish";
 import { registerRpc } from "./src/server/rpc";
+import { mountAnamnesis } from "./src/anamnesis/wiring";
 import { registerLaneWorktreeProvider } from "./src/server/environment-provider";
 import { scheduleIsolated } from "./src/server/schedules";
 import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "./src/server/deploy-drain";
@@ -95,6 +96,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountLearning(ctx, services);
   registerTools(ctx, services);
   registerCli(ctx, services);
+  // What Lane Pilot learns about its owner by itself (the daily pass and new messages); inert until the owner switches it on.
+  mountAnamnesis(ctx);
   // Writer attempts get BB environments of this provider unless workspace.provider is off; a BB without the API
   // registers nothing and every attempt keeps the old worktree path.
   registerLaneWorktreeProvider(ctx);

@@ -11,6 +11,8 @@ import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { registerDispatchExecutors } from "./writer/dispatch-workflow";
 import { registerInvoiceActions } from "./workflow-invoice";
+import { registerAnamnesisActions } from "../anamnesis/chain-actions";
+import { anamnesisFor } from "../anamnesis/wiring";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 
@@ -54,6 +56,8 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   registerChainExecutors(engine, ctx, services, workflowAgents);
   // The invoice check of `invoice-send` (a Jev judgment behind a chain action).
   registerInvoiceActions(engine, ctx);
+  // The public-only facts of the anamnesis for `about-site`, `resume` and `year-review`, and the check of what they wrote.
+  registerAnamnesisActions(engine, ctx, (core) => anamnesisFor(core).hub);
   bb.onDispose(() => engine.dispose());
   return { workflowEngine: engine, workflowCatalog, workflowAgents };
 }

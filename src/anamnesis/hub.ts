@@ -25,6 +25,10 @@ export const configSchema = z.object({
   roots: z.array(z.string().startsWith("/")).max(20).optional(),
   /** The most message fragments one Jev pass may send (a ceiling on cost, F-5); the pass default is `DEFAULT_MAX_CLASSIFY` in load.ts. */
   maxClassify: z.number().int().min(1).max(2000).optional(),
+  /** The daily pass and the at-message extraction (A4) send masked fragments of the owner's messages to Jev; they run only while this is on. Off until the owner switches it on. */
+  extract: z.boolean().optional(),
+  /** The owner's own Telegram channels (`@name` or a t.me link) that the Telegram source reads (A10), when that source is switched on. */
+  telegramChannels: z.array(z.string().trim().min(2).max(200)).max(10).optional(),
 }).strict();
 export type AnamnesisConfig = z.infer<typeof configSchema>;
 
@@ -64,9 +68,14 @@ export function createHub(deps: HubDeps) {
       if (request.hostId) await setConfig({ hostId: request.hostId });
       return { hostId: await resolveHost(), config: await config() };
     }
+    if (request.op === "config") {
+      if (request.set) await setConfig(request.set);
+      return { config: await config() };
+    }
+    if (request.op === "pass") throw new Error("The daily pass runs from Lane Pilot's server, not from the hub client");
     return await ask(request as Extract<AnamnesisRequest, { op: OpName }>);
   }
 
-  return { config, setConfig, resolveHost, ask, dispatch };
+  return { config, setConfig, resolveHost, ask, dispatch, kv: deps.kv };
 }
 export type Hub = ReturnType<typeof createHub>;

@@ -1,0 +1,273 @@
+{
+  "id": "about-site",
+  "name": {
+    "en": "A personal page from the public anamnesis",
+    "ru": "Сайт-визитка из публичного анамнеза"
+  },
+  "description": {
+    "en": "Writes a one-page personal site about the owner from the records of the anamnesis that the owner confirmed and marked public (nothing private or sensitive is read), checks that it carries no link or address the facts do not have, and saves it as a file in the project. Nothing is published.",
+    "ru": "Пишет одностраничный сайт-визитку о владельце из записей анамнеза, которые владелец подтвердил и пометил публичными (приватное и чувствительное не читается), сверяет, что в нём нет ссылок и адресов, которых нет в фактах, и сохраняет файлом в проекте. Ничего не публикуется."
+  },
+  "examples": {
+    "ru": [
+      "Сделай сайт-визитку обо мне из публичных записей анамнеза",
+      "Собери страницу «обо мне» из того, что я пометил публичным в анамнезе",
+      "Нужна визитка-лендинг про меня по анамнезу, только публичное",
+      "Сделай about-страницу из моего анамнеза"
+    ],
+    "en": [
+      "Make a personal about-me page from my public anamnesis records",
+      "Build my business-card site from what I marked public in the anamnesis"
+    ]
+  },
+  "not_for": [
+    "resume",
+    "year-review",
+    "copywriting of a client's site (use copy-lead)"
+  ],
+  "status": "tested",
+  "live_success": {
+    "output": "status",
+    "in": [
+      "done"
+    ]
+  },
+  "tags": [
+    "anamnesis",
+    "site",
+    "public"
+  ],
+  "triggers": [
+    "chat",
+    "manual"
+  ],
+  "inputs": {
+    "language": {
+      "type": "string",
+      "default": "ru",
+      "note": "ru or en"
+    },
+    "notes": {
+      "type": "string",
+      "default": "",
+      "note": "what to stress; never a source of facts"
+    }
+  },
+  "outputs": {
+    "status": "done|nothing_public|blocked",
+    "site_path": "string",
+    "records": "int",
+    "reason": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "not used: there are no code tasks"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "ru-text"
+    ],
+    "secrets": [],
+    "machines": [
+      "the owner's Mac mini: the anamnesis store (~/.lane-pilot/anamnesis) is read through the host"
+    ]
+  },
+  "budget": {
+    "max_steps": 10,
+    "max_minutes": 30,
+    "max_usd": 1
+  },
+  "nodes": [
+    {
+      "id": "facts",
+      "type": "action",
+      "action": "anamnesis.public",
+      "title": {
+        "en": "Read the public facts",
+        "ru": "Прочитать публичные факты"
+      },
+      "rule": "code: the owner's records that are confirmed AND marked public, nothing else; drafts, candidates, private and sensitive records never leave the Mac mini",
+      "view": "site",
+      "out": {
+        "text": "string",
+        "records": "int",
+        "empty": "bool"
+      }
+    },
+    {
+      "id": "write",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "ru-text"
+        ]
+      },
+      "title": {
+        "en": "Write the page",
+        "ru": "Написать страницу"
+      },
+      "prompt": "Write the owner's personal one-page site as ONE self-contained HTML file: inline CSS, no scripts, no external fonts, images or trackers, readable at 375 px and at 1280 px. A short heading and a line about who they are, then the parts the facts support (skills, projects, interests, tools), calm and factual, no superlatives that the facts do not give. Sources: ONLY `facts_text`: records the owner confirmed and marked public. Nothing else is a source: not your memory of the owner, not this chat, not `notes` (`notes` only says what to stress). Do not invent employers, dates, numbers, places, links or e-mail addresses; every link or address you write must stand in the facts. A part with no facts is left out, not filled. Language: `language` (ru or en). If `fix` is given, a check of your earlier text failed: correct exactly those violations. Put the whole text in `artifact`.",
+      "out": {
+        "artifact": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "check",
+      "type": "action",
+      "action": "anamnesis.check",
+      "title": {
+        "en": "Check what was written against the facts",
+        "ru": "Сверить написанное с фактами"
+      },
+      "rule": "code: not empty, within the size limit, no link or e-mail address that the facts do not contain, no draft mark",
+      "artifact": "{{write.artifact}}",
+      "facts": "{{facts.text}}",
+      "out": {
+        "ok": "bool",
+        "violations": "string[]"
+      }
+    },
+    {
+      "id": "deliver",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Save the file",
+        "ru": "Сохранить файл"
+      },
+      "path": ".lane-pilot/anamnesis/about-site-{{date}}/",
+      "files": [
+        "index.html"
+      ],
+      "contents": {
+        "index.html": "{{write.artifact}}"
+      },
+      "out": {
+        "site_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "site_path": "deliver.site_path",
+        "records": "facts.records",
+        "reason": "''"
+      }
+    },
+    {
+      "id": "nothing_public",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "nothing_public",
+        "site_path": "''",
+        "records": "facts.records",
+        "reason": "'no record is both confirmed and marked public: open the Anamnesis tab, confirm what is right and mark what may be shown as public'"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "site_path": "''",
+        "records": "facts.records",
+        "reason": "'the text did not pass the check against the public facts twice (a link, address or mark that is not in the facts)'"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "facts"
+    },
+    {
+      "from": "facts",
+      "to": "nothing_public",
+      "when": "facts.empty"
+    },
+    {
+      "from": "facts",
+      "to": "write",
+      "with": {
+        "facts_text": "facts.text",
+        "language": "input.language",
+        "notes": "input.notes"
+      }
+    },
+    {
+      "from": "write",
+      "to": "check"
+    },
+    {
+      "from": "check",
+      "to": "write",
+      "when": "!check.ok && visits('write') < 2",
+      "label": "fix",
+      "with": {
+        "facts_text": "facts.text",
+        "language": "input.language",
+        "notes": "input.notes",
+        "fix": "check.violations"
+      }
+    },
+    {
+      "from": "check",
+      "to": "deliver",
+      "when": "check.ok"
+    },
+    {
+      "from": "check",
+      "to": "blocked"
+    },
+    {
+      "from": "deliver",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "about-site-1",
+    "sim": {
+      "input": {
+        "language": "ru"
+      },
+      "stubs": {
+        "facts": {
+          "text": "What I know about you\n\n## Projects (1)\n- Lane Pilot",
+          "records": 1,
+          "empty": false
+        },
+        "write": {
+          "artifact": "<!doctype html><html><body><h1>Kirill</h1><p>Lane Pilot</p></body></html>"
+        },
+        "deliver": {
+          "site_path": ".lane-pilot/anamnesis/about-site-2026-10-08/"
+        }
+      },
+      "expect_path": [
+        "facts",
+        "write",
+        "check",
+        "deliver",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done"
+      }
+    },
+    "live": "on the owner's real records: mark two or three records public in the Anamnesis tab, run the chain, open the file at the reported path in a browser at 375 and 1280 px and compare every statement with the public records; then check that nothing from a private record is on the page.",
+    "note": "Tested on stubs: the facts, the writing agent and the file save answer from stubs; the check and the routing are real. Not live yet: the first run on the owner's real public records in the Mac mini store. See `live` for the acceptance run."
+  }
+}

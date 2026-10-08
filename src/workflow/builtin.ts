@@ -1,3 +1,4 @@
+import aboutSite from "../../workflows/about-site.json";
 import analyzeCode from "../../workflows/analyze-code.json";
 import analyzePlanExecute from "../../workflows/analyze-plan-execute.json";
 import blueprintDriven from "../../workflows/blueprint-driven.json";
@@ -27,6 +28,7 @@ import milestoneClose from "../../workflows/milestone-close.json";
 import planOnly from "../../workflows/plan-only.json";
 import qualityLoop from "../../workflows/quality-loop.json";
 import reels from "../../workflows/reels.json";
+import resume from "../../workflows/resume.json";
 import refactor from "../../workflows/refactor.json";
 import retrospective from "../../workflows/retrospective.json";
 import reviewFix from "../../workflows/review-fix.json";
@@ -37,11 +39,13 @@ import testGen from "../../workflows/test-gen.json";
 import uiAudit from "../../workflows/ui-audit.json";
 import webResearch from "../../workflows/web-research.json";
 import xToTelegramDigest from "../../workflows/x-to-telegram-digest.json";
+import yearReview from "../../workflows/year-review.json";
 import type { Workflow } from "./schema";
 import { parseWorkflow } from "./validate";
 
 /** The workflows that ship with Lane Pilot (`workflows/*.json`, inlined by the bundler). Add a file here to add one (a test checks that every file is listed). */
 export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = [
+  { name: "about-site.json", value: aboutSite },
   { name: "analyze-code.json", value: analyzeCode },
   { name: "analyze-plan-execute.json", value: analyzePlanExecute },
   { name: "blueprint-driven.json", value: blueprintDriven },
@@ -71,6 +75,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "plan-only.json", value: planOnly },
   { name: "quality-loop.json", value: qualityLoop },
   { name: "reels.json", value: reels },
+  { name: "resume.json", value: resume },
   { name: "refactor.json", value: refactor },
   { name: "retrospective.json", value: retrospective },
   { name: "review-fix.json", value: reviewFix },
@@ -81,6 +86,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "ui-audit.json", value: uiAudit },
   { name: "web-research.json", value: webResearch },
   { name: "x-to-telegram-digest.json", value: xToTelegramDigest },
+  { name: "year-review.json", value: yearReview },
 ];
 
 /** The per-task pipeline every dispatch runs through (PM read, critiques, ownership base, writer). */

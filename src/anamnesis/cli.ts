@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { KINDS, SENSITIVITIES, SOURCES, STATUSES, type AnamnesisRecord, type Kind, type Source, type Status } from "./model";
 import type { Hub } from "./hub";
+import { profileSchema } from "./profile-import";
 import { DETAILS, SECTIONS, type Detail, type Section } from "./whoami";
 import { DEFAULT_LOOKBACK_DAYS, formatReport, type LoadOptions, type LoadReport } from "./load";
 
@@ -20,11 +21,12 @@ export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis confirm|reject <id> [--reason TEXT]",
   "bb lane-pilot anamnesis forget <id> | --all --yes | --source SOURCE --yes",
   "bb lane-pilot anamnesis sources [--set SOURCE=on|off]",
-  "bb lane-pilot anamnesis config [--authors EMAIL,NAME] [--roots /path,/path] [--max-classify N]",
+  "bb lane-pilot anamnesis config [--authors EMAIL,NAME] [--roots /path,/path] [--max-classify N] [--extract on|off] [--telegram-channels @name,@name]",
   "bb lane-pilot anamnesis load [--run] [--since YYYY-MM-DD] [--sources a,b] [--classify --yes [--max-classify N] [--allow-sensitive-to-jev]] [--json]",
   "bb lane-pilot anamnesis review [--limit N]",
-  "bb lane-pilot anamnesis whoami [--sections identity,skills,projects,timeline,people,interests,preferences,tools] [--detail brief|normal|full] [--confirmed-only] [--include-sensitive] [--public-only]",
+  "bb lane-pilot anamnesis whoami [--sections identity,skills,projects,timeline,people,interests,preferences,tools] [--detail brief|normal|full] [--confirmed-only] [--include-sensitive] [--public-only] [--year YYYY]",
   "bb lane-pilot anamnesis card [--max-chars N]",
+  "bb lane-pilot anamnesis import-profile --profile '<JSON of bb memory-profile get --json>'",
 ].join("\n");
 
 export type CliResult = { exitCode: number; stdout?: string; stderr?: string };
@@ -41,7 +43,7 @@ const OPTIONS = {
   sensitivity: { type: "string" }, reason: { type: "string" }, confidence: { type: "string" }, all: { type: "boolean" }, yes: { type: "boolean" },
   source: { type: "string" }, set: { type: "string" }, help: { type: "boolean" },
   run: { type: "boolean" }, classify: { type: "boolean" }, since: { type: "string" }, sources: { type: "string" }, "max-classify": { type: "string" },
-  "allow-sensitive-to-jev": { type: "boolean" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" },
+  "allow-sensitive-to-jev": { type: "boolean" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, year: { type: "string" }, profile: { type: "string" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" }, extract: { type: "string" }, "telegram-channels": { type: "string" },
 } as const;
 
 const day = (at: number | null): string => (at ? new Date(at).toISOString().slice(0, 10) : "—");
@@ -152,10 +154,13 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
     }
     case "config": {
       const csv = (text: string | undefined) => text?.split(",").map((part) => part.trim()).filter(Boolean);
-      const authors = csv(values.authors), roots = csv(values.roots);
+      const authors = csv(values.authors), roots = csv(values.roots), telegramChannels = csv(values["telegram-channels"]);
       const maxClassify = values["max-classify"] ? Number(values["max-classify"]) : undefined;
       if (maxClassify !== undefined && !(Number.isInteger(maxClassify) && maxClassify >= 1)) throw new Error("--max-classify must be a whole number of at least 1");
-      const next = authors || roots || maxClassify !== undefined ? await hub.setConfig({ ...(authors ? { authors } : {}), ...(roots ? { roots } : {}), ...(maxClassify !== undefined ? { maxClassify } : {}) }) : await hub.config();
+      if (values.extract !== undefined && values.extract !== "on" && values.extract !== "off") throw new Error("--extract on|off: automatic learning sends masked fragments of your messages to Jev every day and as they come");
+      const extract = values.extract === undefined ? undefined : values.extract === "on";
+      const next = authors || roots || telegramChannels || maxClassify !== undefined || extract !== undefined
+        ? await hub.setConfig({ ...(authors ? { authors } : {}), ...(roots ? { roots } : {}), ...(telegramChannels ? { telegramChannels } : {}), ...(maxClassify !== undefined ? { maxClassify } : {}), ...(extract !== undefined ? { extract } : {}) }) : await hub.config();
       return out(next, true, () => "");
     }
     case "load": {
@@ -174,13 +179,24 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
     case "whoami": {
       const sections = values.sections ? values.sections.split(",").map((name) => oneOf(name.trim(), SECTIONS, "section") as Section) : undefined;
       const detail = oneOf(values.detail, DETAILS, "detail") as Detail | undefined;
-      const result = await hub.ask({ op: "whoami", ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
+      const year = values.year === undefined ? undefined : Number(values.year);
+      if (year !== undefined && !(Number.isInteger(year) && year >= 2000 && year <= 2200)) throw new Error("--year must be a calendar year such as 2026");
+      const result = await hub.ask({ op: "whoami", ...(year !== undefined ? { year } : {}), ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
         ...(values["confirmed-only"] ? { includeDrafts: false } : {}), ...(values["public-only"] ? { publicOnly: true } : {}) });
       return out(result, values.json, () => result.text);
     }
     case "card": {
       const result = await hub.ask({ op: "card", ...(values["max-chars"] ? { maxChars: Number(values["max-chars"]) } : {}) });
       return out(result, values.json, () => result.text);
+    }
+    case "import-profile": {
+      if (!values.profile) throw new Error("import-profile needs --profile '<JSON>': the output of `bb memory-profile get --json` (enable the plugin for a moment if it is off)");
+      let profile: unknown;
+      try { profile = JSON.parse(values.profile); } catch { throw new Error("--profile is not JSON"); }
+      const parsed = profileSchema.safeParse(profile);
+      if (!parsed.success) throw new Error(`--profile is not a memory-profile card: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+      const result = await hub.ask({ op: "import_profile", profile: parsed.data });
+      return out(result, values.json, () => `moved ${result.imported} records from the card${result.skipped.length ? ` (empty fields: ${result.skipped.join(", ")})` : ""}; they are confirmed. Check them in the Anamnesis tab, then the plugin can be switched off.`);
     }
     case "review": {
       const perKind = values.limit ? Number(values.limit) : 8;

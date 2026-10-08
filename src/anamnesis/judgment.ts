@@ -65,3 +65,43 @@ export const fragmentJudgment = defineJudgment<FragmentInput, FragmentDecision>(
 
 /** The sensitivity a decision gives a stored fragment: never `public`, and `sensitive` from a moderate probability on. */
 export const SENSITIVE_FROM = 0.4;
+
+/**
+ * Whether a new fragment restates a record the owner already has, or contradicts it (A4). One known record at a time, the nearest by
+ * words (chosen in code, so Jev is not asked about a fragment with nothing close). Both texts are masked before they are sent. `new` is
+ * also what a failed or unclear answer means: the fragment is stored as its own candidate, never merged on a guess.
+ */
+export const MATCH_JUDGMENT_ID = "anamnesis.match";
+export type MatchInput = { fragment: string; known: string };
+export type MatchDecision = { relation: "same" | "contradicts" | "new"; same: number; contradicts: number };
+
+export const matchJudgment = defineJudgment<MatchInput, MatchDecision>({
+  id: MATCH_JUDGMENT_ID,
+  version: 1,
+  defaultMode: "active",
+  timeoutMs: 6_000,
+  stateBuilder: (input) => ({ fragment: input.fragment, known: input.known }),
+  questions: () => ({
+    same: noul(
+      "Does `fragment` state the same thing about the writer as `known` (the same fact, preference or project, only worded differently or repeated)?",
+      { true: "known: «I live in Madrid», fragment: «we moved to Madrid two years ago, I like it here»", false: "known: «I live in Madrid», fragment: «I am looking for a flat in Valencia»" },
+    ),
+    contradicts: noul(
+      "Does `fragment` say something that cannot be true together with `known`, or replace it with a newer value (a changed city, role, rule, status)?",
+      { true: "known: «reports in English», fragment: «from now on all reports in Russian»", false: "known: «reports in English», fragment: «reports should be short»" },
+    ),
+  }),
+  thresholds: {
+    min_same: { default: 0.65, min: 0.4, max: 0.95, about: "least probability that the fragment restates the known record" },
+    min_contradicts: { default: 0.65, min: 0.4, max: 0.95, about: "least probability that the fragment contradicts the known record" },
+  },
+  decide(answers, t) {
+    const same = noulOf(answers, "same") ?? 0, contradicts = noulOf(answers, "contradicts") ?? 0;
+    // A contradiction is shown to the owner, so it wins over a restatement; a clear restatement is merged; anything else is new.
+    if (contradicts >= t.min_contradicts!) return { decision: { relation: "contradicts", same, contradicts } };
+    if (same >= t.min_same!) return { decision: { relation: "same", same, contradicts } };
+    return { decision: { relation: "new", same, contradicts } };
+  },
+  fallback: () => ({ relation: "new", same: 0, contradicts: 0 }),
+  describe: (decision) => decision.relation,
+});
