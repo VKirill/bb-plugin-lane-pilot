@@ -29,6 +29,7 @@
     "web-research"
   ],
   "status": "tested",
+  "live_success": { "output": "status", "in": ["sent"] },
   "tags": ["finance", "invoice", "elba", "telegram"],
   "triggers": ["chat", "schedule", "manual"],
   "inputs": {

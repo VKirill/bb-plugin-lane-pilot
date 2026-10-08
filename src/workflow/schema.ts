@@ -253,6 +253,12 @@ export const workflowSchema = z.object({
   }).strict().default({ plugins: [], skills: [], secrets: [], machines: [], env: [], browserSession: false, mcp: [], tools: [], platforms: [] }),
   status: z.enum(["draft", "tested", "published", "deprecated"]).default("draft"),
   version: z.number().int().min(1).default(1),
+  /**
+   * What a live run must have ended with to lift a `tested` chain to `published`. A run is `succeeded` also on the branches that
+   * did not do the job (the owner said no, a login wall): the final output's field `output` (default `status`) must be one of `in`.
+   * Without it any succeeded run proves the chain.
+   */
+  live_success: z.object({ output: z.string().min(1).max(60).default("status"), in: z.array(z.string().min(1).max(80)).min(1).max(20) }).strict().optional(),
   budget: z.object({
     maxSteps: z.number().int().min(1).max(5000).optional(),
     maxTokens: z.number().int().min(1).optional(),

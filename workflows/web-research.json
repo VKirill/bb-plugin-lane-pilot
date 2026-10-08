@@ -32,6 +32,7 @@
     "analyze-code"
   ],
   "status": "tested",
+  "live_success": { "output": "status", "in": ["done"] },
   "tags": [
     "research",
     "web"

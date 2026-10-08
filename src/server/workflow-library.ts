@@ -127,7 +127,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
           qualityMode: workflow.quality_mode?.default ?? null, source: item.source, sha256: item.sha256,
           schedules: (db.prepare("SELECT project_id, slot, automation_id FROM lane_pilot_wf_trigger WHERE workflow_id=? ORDER BY project_id, slot").all(workflow.id) as Array<{ project_id: string; slot: number; automation_id: string }>)
             .map((row) => ({ projectId: row.project_id, slot: row.slot, automationId: row.automation_id })),
-          proven: (() => { const live = statuses.liveSuccess(workflow.id, workflow.version); return live ? { runId: live.id, at: live.updated_at } : null; })(),
+          proven: (() => { const live = statuses.liveSuccess(workflow.id, workflow.version, workflow.live_success); return live ? { runId: live.id, at: live.updated_at } : null; })(),
           warningMessages: item.warnings.map((warning) => warning.message),
           graph: workflowView(workflow, store.resolve),
           runs: runs.map((row) => ({ id: row.id, status: row.status, reason: row.reason, mode: row.mode, createdAt: row.created_at, updatedAt: row.updated_at,

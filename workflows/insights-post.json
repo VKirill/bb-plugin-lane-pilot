@@ -32,6 +32,7 @@
     "seo-cocoon"
   ],
   "status": "tested",
+  "live_success": { "output": "status", "in": ["done"] },
   "tags": [
     "social",
     "research",
