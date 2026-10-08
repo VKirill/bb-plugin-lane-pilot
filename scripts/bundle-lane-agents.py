@@ -2,6 +2,9 @@
 """Regenerate src/bundled-agents.json from a Claude Lane Stack revision.
 
 Usage: bundle-lane-agents.py <claude-lane-stack checkout> <git revision>
+
+The prompts it writes are the CLI bodies; run `node_modules/.bin/tsx scripts/sync-bundled-prompts.ts` right after: it replaces them
+with the BB session prompts of src/native-agent-overlay.ts (a test keeps the two equal).
 """
 import hashlib, json, re, subprocess, sys
 import yaml

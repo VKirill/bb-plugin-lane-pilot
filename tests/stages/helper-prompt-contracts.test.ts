@@ -302,6 +302,9 @@ describe("other helper prompts", () => {
     expect(text).not.toContain("does not run tests");
     expect(text).toContain("bb-plugin-push is the release train");
     expect(text).toContain("Do NOT deploy");
+    // One role, one place for code: the guard of this repository is Lane Pilot's, the claude-lane-stack copy and the VK core are the owner's.
+    expect(text).toContain("including the guard in lane-stack/hooks/");
+    expect(text).not.toContain("or the VK core), fix the cause");
     const watchdog = readFileSync(new URL("../../scripts/self-repair-watchdog.sh", import.meta.url), "utf8");
     expect(watchdog).not.toContain("does not run tests");
     expect(watchdog).toContain("refuses a red one");

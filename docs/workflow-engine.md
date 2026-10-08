@@ -133,13 +133,14 @@ The schema takes the authoring spelling of the chains spec and normalizes it (`n
 - Expressions (`when`, `skip_when`, `where`, value positions): `== != < <= > >= && || ! + - in [...]`, `.length`, `visits('node')`, `$inputs.x`, `$mode`, `ctx.run_id|goal|merged_commits`, `item`, `index`, `node.field`. Checked at save against the declared fields (unknown field, enum literal that can never match, number compared with a string, list compared with `==`); at run time a node that has not run fails the run (`condition_field_missing`), a field it left out compares as nothing. In value positions (`emit.map`, `skip_out`, node `with`) a node that did not run gives nothing instead. A loop is bounded by a `maxVisits` or by a `visits()` condition on one of its edges; a node without `maxVisits` may be visited any number of times (`guards.maxSteps` still caps the run).
 - Node `with`: `{{ref}}` templates (a lone placeholder keeps the value's type), nested lists and objects, `{by_mode: {quick, standard, full}}`. `$mode` is the `quality_mode` input, else the parent's mode, else the workflow default.
 - `pass` other than `artifact` needs an agent as the target (the agent that goes on in its own earlier session or the one the source left behind).
-- Not run yet (the schema accepts them; the engine refuses to start such a workflow with a clear message): `join.policy` other than `all`, `votes` above 1, `order: depends_on`, `on_child_fail`. W3 builds them.
+- Run since W3: `join.policy` `majority` and `all_or_low_confidence`, `votes` above 1, `order: depends_on` and `on_child_fail` all run (section 14). Still accepted by the format and read by no executor: an agent node's `environment` and `authorized`, and `pass: fork` (it behaves as `artifact`).
 - Fixtures: `tests/workflow/chains/` holds `lp.analyze`, `lp.plan`, `lp.build`, `lp.review`, `lp.close`, `analyze-plan-execute` (the spec's, not the built-in of this repo), `review-fix` and `x-to-telegram-digest` converted from the spec by script; `x-to-telegram-digest` also runs end to end on stubs. The validator found defects in the spec text itself (listed in the report).
 
 ## 13. The Workflows tab (W5)
 
 Read side only; the editor (W6) adds saves next to it. `src/server/workflow-library.ts` reads the store (built-in, `~/.lane-pilot/workflows`, the project's files through the host call `listWorkflowFiles`) and the journal; `src/workflow/view.ts` reduces the lowered workflow to what a screen draws (the lowered form, so a run's node ids and edge indexes match). `workflow_run_snapshot` is `engine.snapshot` with each step's chat, handoff and a clipped output. Every journal event goes to `EngineOptions.onEvent`; the server maps it to `lp:<project>` kind `workflow` (with `runId`) and to the global channel `lp:-`. Drafts of the workflow architect arrive as `workflow-draft` signals (`draftId`) and are drawn by `src/workflow/draft-view.ts`, which reads a half-written workflow without the closed schema.
-## 13. The Workflow architect (drafts)
+
+## 14. The Workflow architect (drafts)
 
 An agent profile (`workflow-architect`, `src/workflow-architect.ts`) builds chains with six tools in `src/server/workflow-architect.ts`; the pure parts live in `src/workflow/`.
 
@@ -152,9 +153,9 @@ An agent profile (`workflow-architect`, `src/workflow-architect.ts`) builds chai
   - `votes: N` on an agent child runs the step N times independently (own spawn keys, `ctx.vote`) and code decides: a boolean field is true when more than half of the answers say true (2 of 3), a number is the median, another scalar the most common value; arrays and objects come from the first answer that agrees with the majority. More than half of the votes must answer or the step fails. The answers are kept in the receipt (`detail.votes`).
   - `order: depends_on` on a fan-out over objects with `id` and `depends_on`: branch `i` starts only after the branches its `depends_on` names have arrived at the join (an id outside the list counts as done; a cycle fails the run before anything starts). `on_child_fail: block_dependents` lets a failed branch arrive as failed and blocks what depends on it, transitively (`upstream_blocked:<id>`, step `canceled`); without it a failed branch fails an `all` join as before. The gate is read from the journal, so a reload goes on from where it was.
   - A join that builds more than the concatenation of arrays names its reducer in `join.uses` (`reduce.<workflow>.<node>`, `src/workflow/reducers.ts`).
-- Chains: all 37 workflows of the spec are `workflows/*.json` (see section 13).
+- Chains: all 37 workflows of the spec are `workflows/*.json` (see section 15).
 
-## 13. The chains (W3)
+## 15. The chains (W3)
 
 All 38 workflows of the chains spec are `workflows/*.json`: the 15 built-in chains, the 9 single-step chains, the 6 owner's own chains, 7 internal fragments (`lp.analyze`, `lp.plan`, `lp.build`, `lp.review`, `lp.close`, `lp.brainstorm`, `ins.post`) and the per-task pipeline `lp-task-pipeline`. They were converted from the spec's YAML by script and then checked by the validator and by a test case each (`tests/workflow/chains-*.test.ts`, run on stubs through the real engine with the real reducers and code-only actions; the harness is `chain-harness.ts`). Defects of the spec text found on the way are fixed in the data (skipped nodes without `skip_out`, a missing input, bare words read as literals, loops that could not take their second visit, joins that cut a list at a cap).
 

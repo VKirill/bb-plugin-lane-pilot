@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { taskV2Schema } from "../src/contracts";
 import { compactContract, pathAnchors, pmReadBrief, writerMemory } from "../src/writer-brief";
-import { stickyTurnPrompt, writerPrompt, previousAttemptBrief } from "../src/server/writer-task";
+import { needsHumanQuestion, stickyTurnPrompt, writerPrompt, previousAttemptBrief } from "../src/server/writer-task";
 
 // The real brief SelfyStudio's writer got for gc-pages-polish-2 on 2026-10-02 (4130 tokens, 64% memory).
 const original = readFileSync(join(__dirname, "fixtures/writer-brief-gc-pages-polish-2.md"), "utf8");
@@ -245,8 +245,22 @@ describe("writer brief", () => {
 
   it("brief includes sandbox NEEDS_HUMAN instruction and done definition", () => {
     const brief = writerPrompt(task);
-    expect(brief).toContain("Lane Pilot runs the contract's verification itself, in a sandbox.");
+    expect(brief).not.toContain("verification itself");
     expect(brief).toContain("NEEDS_HUMAN: check <command> cannot run in the sandbox: <error>");
-    expect(brief).toContain("Done when every verification command exits 0 and your answer lists the changed paths.");
+    // One statement of who runs the checks (instructions audit 2, 2026-10-08): the old pair said Lane Pilot runs them and the writer must make them exit 0.
+    expect(brief).toContain("Done when your change is complete and each verification command would exit 0; Lane Pilot runs them in a sandbox and returns a failure to you in this thread.");
+    expect(brief).not.toContain("Done when every verification command exits 0");
+  });
+});
+
+// Instructions audit 2026-10-08: two setup lines said «end with NEEDS_HUMAN» while the parser reads only the first line of the answer.
+describe("the NEEDS_HUMAN marker", () => {
+  it("is asked for only as the first line, which is the only place the parser reads", () => {
+    const brief = writerPrompt(task);
+    expect(brief).not.toMatch(/end with `NEEDS_HUMAN/);
+    expect(brief).toContain("answer with the first line `NEEDS_HUMAN: <one question>`");
+    expect(brief).toContain("answer with the first line `NEEDS_HUMAN: needs secret <NAME>`");
+    expect(needsHumanQuestion("NEEDS_HUMAN: which port?\nnothing changed")).toBe("which port?");
+    expect(needsHumanQuestion("Checked it.\nNEEDS_HUMAN: which port?")).toBeNull();
   });
 });

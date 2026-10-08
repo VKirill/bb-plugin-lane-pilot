@@ -57,6 +57,7 @@ import {
   writePmSettings,
   discoverClaudeAgentsHost,
   prepareNativeClaudeHost,
+  prepareOpencodeMinimalHost,
 } from "./src/host-handlers";
 import { sessionInventory } from "./src/session-inventory";
 import { nativeInstallHost } from "./src/native-install-host";
@@ -74,6 +75,6 @@ export default experimental_defineHostEntry({
     nativeInstall: nativeInstallHost,
     detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, docsAnchors:withJevKey(docsAnchors), docsFlows:withJevKey(docsFlows), docsDepth:withJevKey(docsDepth), docsVerifyCitations:withJevKey(docsVerifyCitations), docsStaleness:withJevKey(docsStalenessHandler), gitIntegrate, gateRun, gateBisect, jobStart, jobStatus, jobCancel, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, readOpenCodeTelemetry, readBoundedFile, listDocsPages, listWorkflowFiles, applyOnboardingPages, writeDocsPages, writeWorkflowFile, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan:withJevKey(classifyPlan), inspectCritiqueCoverage,
     councilJudge:withJevKey(councilJudge), browserGoal, runCli, runCommand, runSandboxedCommand, sandboxCommandLine, sandboxRelease, vpnAddress, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
-    discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
+    discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost, prepareOpencodeMinimal: prepareOpencodeMinimalHost,
   },
 });

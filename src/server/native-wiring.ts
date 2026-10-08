@@ -2,6 +2,7 @@ import { getAttempt } from "../database";
 import { handleNativeDispatch, mentionContext, nativeContributedEnv } from "../native-dispatch";
 import { NATIVE_MENTION_PROVIDER, nativeSelectionSchema } from "../native-session";
 import { attachStreamRetry, droppedStreamDetail } from "../stream-retry";
+import { mountOpencodeMinimal } from "./opencode-minimal";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "./core";
 
@@ -27,6 +28,7 @@ export function mountNativeWiring(ctx: ServerCore) {
   bb.experimental_hooks.on("message.dispatch", (ctx) => handleNativeDispatch(bb, nativeHost, ctx, db));
 
   bb.providers.experimental_contributeEnv("claude-code", (ctx) => nativeContributedEnv(bb, nativeHost, ctx));
+  mountOpencodeMinimal(ctx);
 
   attachStreamRetry({
     events: bb.events,

@@ -43,7 +43,19 @@ async function setup(options: { project?: string; secrets?: boolean } = {}) {
           throw new Error(`unexpected rpc ${method}`);
         },
       },
-      hosts: { list: async () => [{ id: "host_arch", name: "MacBook", status: "online" }, { id: "mini", name: "Mac mini", status: "online" }] },
+      hosts: { list: async () => [{ id: "host_arch", name: "MacBook", status: "connected" }, { id: "mini", name: "Mac mini", status: "connected" }] },
+      providers: {
+        list: async ({ hostId }: { hostId: string }) => [
+          { id: "claude-code", displayName: "Claude Code", available: true, capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "fast" }] },
+          ...(hostId === "mini" ? [{ id: "codex", displayName: "Codex", available: true }] : []),
+        ],
+        models: async ({ providerId, hostId }: { providerId: string; hostId: string }) => ({
+          models: providerId === "codex"
+            ? [{ id: "gpt-5.6-luna", model: "gpt-5.6-luna", displayName: "Luna", supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "max" }], isDefault: true }]
+            : [{ id: "claude-opus-5-5", model: "claude-opus-5-5", displayName: "Opus", supportedReasoningEfforts: [{ reasoningEffort: "high" }, { reasoningEffort: "none" }], isDefault: true },
+              ...(hostId === "mini" ? [{ id: "claude-haiku-5-5", model: "claude-haiku-5-5", displayName: "Haiku", supportedReasoningEfforts: [{ reasoningEffort: "low" }] }] : [])],
+        }),
+      },
     } as never,
   });
   await plugin(bb);
@@ -212,6 +224,30 @@ describe("workflow architect tools", () => {
     const reference = await call("lane_pilot_workflow_capabilities", { sections: ["reference"] });
     expect(Object.keys(reference.reference.nodeTypes)).toEqual(expect.arrayContaining(["agent", "lp-task", "action", "human", "parallel"]));
     expect(Object.keys(reference.reference.passModes)).toEqual(["artifact", "same-session", "read-prior-session", "fork"]);
+  });
+
+  it("lists the provider/model pairs each machine offers, with the presets resolved, and warns about a pair no machine has", async () => {
+    const { call } = await setup();
+    const result = await call("lane_pilot_workflow_capabilities", { sections: ["models"] });
+    expect(result.models.status).toBe("ready");
+    const claude = result.models.providers.find((row: { provider: string }) => row.provider === "claude-code");
+    expect(claude).toMatchObject({ machines: ["MacBook", "Mac mini"], serviceTiers: ["fast"] });
+    // The efforts are the ones a node may name; a model only the Mac mini has says so.
+    expect(claude.models).toEqual([{ id: "claude-haiku-5-5", efforts: ["low"], only: ["Mac mini"] }, { id: "claude-opus-5-5", efforts: ["high"], default: true }].sort((a, b) => claude.models.findIndex((m: { id: string }) => m.id === a.id) - claude.models.findIndex((m: { id: string }) => m.id === b.id)));
+    expect(result.models.providers.find((row: { provider: string }) => row.provider === "codex")).toMatchObject({ machines: ["Mac mini"] });
+    expect(result.models.presets["cheap-fast"]).toMatchObject({ provider: "claude-code", model: "claude-haiku-5-5", reasoning: "low", offered: true, machines: ["Mac mini"] });
+    expect(result.models.presets["ins-check"]).toMatchObject({ provider: "acp-cursor", offered: false });
+    const narrowed = await call("lane_pilot_workflow_capabilities", { sections: ["models"], query: "luna" });
+    expect(narrowed.models.providers.map((row: { provider: string }) => row.provider)).toEqual(["codex"]);
+
+    // The same catalog makes an unknown pair on a node a warning (never an error), once it has been read.
+    const created = await call("lane_pilot_workflow_draft_create", { name: "Model check", description: "pair check", scope: "global" });
+    const node = (provider: string, model: string) => ({ op: "add_node", node: { id: `n_${model.replace(/\W/g, "_")}`, type: "agent", prompt: "do it", provider, model, out: [{ name: "handoff", type: "string" }] } });
+    const patched = await call("lane_pilot_workflow_draft_patch", { draftId: created.draftId, ops: [node("claude-code", "claude-opus-5-5"), node("claude-code", "claude-mystery-9"),
+      { op: "add_edge", edge: { from: "start", to: "n_claude_opus_5_5" } }, { op: "add_edge", edge: { from: "n_claude_opus_5_5", to: "n_claude_mystery_9" } }, { op: "add_edge", edge: { from: "n_claude_mystery_9", to: "end" } }] });
+    const unknown = patched.problems.filter((row: { code: string }) => row.code === "unknown_model");
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0]).toMatchObject({ level: "warning", node: "n_claude_mystery_9" });
   });
 
   it("says a source could not be read instead of listing it empty", async () => {
