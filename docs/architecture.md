@@ -9,74 +9,97 @@ started: 2026-09-30
 
 > [!NOTE]
 > This page is the map. It says where code lives, what may depend on what, and in which order the
-> plugin is being moved from one 7 000-line `server.ts` into modules and reusable packages.
+> plugin was moved from one 7 000-line `server.ts` into modules, rooms and reusable packages.
 > The rules in [Rules](#rules) apply to every change from 2026-09-30 on.
 
-## Target layout
+## Layout
 
 ```text
 bb-plugin-lane-pilot/
-├── server.ts                 entry only: open storage, build the context, mount modules
-├── host.ts                   host worker entry (unchanged)
-├── app.tsx                   UI entry (unchanged)
-├── packages/                 reusable, plugin-agnostic; depend on SDK types + zod only
-│   ├── thread-observe/       bounded thread event listing, idle wait, child observation
-│   ├── memory-core/          memory records, guards, budgets, retrieval over SQLite
-│   ├── handoff/              task cards between agents, receipts, capability registry, leases
-│   ├── resilience/           provider circuit breaker, run budgets (stream retry joins after merge)
-│   ├── run-insights/         writer statistics per model and risk, lessons from receipts, golden checks
-│   ├── council/              council of directors: roles, prompts, moderator, protocol, storage, decision page
-│   └── stage-kit/            stage receipt contract, child snapshot parsing, stage harness (planned)
-└── src/
-    ├── server/               plugin modules on one core and one services bag
-    │   ├── core.ts           bb, db, host client, native installer, shared helpers (settings, sections, run scopes)
-    │   ├── services.ts       the interface of everything one module offers another
-    │   ├── native-wiring.ts  mention provider, native dispatch hook, provider env, stream retry
-    │   ├── reconcile.ts      orphan and holder-thread recovery
-    │   ├── activation.ts     PM activation and composer environment checks
-    │   ├── writer/           state (task set, pool, breaker, budgets), spawn, verify, finish, start, dispatch
-    │   ├── writer-host.ts    project writer host resolution and agent profiles
-    │   ├── stages/           qa, children, docs, onboarding, memory, project-life, night
-    │   ├── docs-nightly.ts   nightly docs pass, units, catch-ups and their schedules
-    │   ├── probes.ts         live probes for cancel, provider error and ambiguity
-    │   ├── critique-runs.ts  pm-read, plan critique, code critique, specialist review
-    │   ├── run-routing.ts    helper placement, run routing, native setting keys
-    │   ├── run-finish.ts     finish and cancel rules
-    │   ├── writer-task.ts    writer prompt and fixture task
-    │   ├── child-snapshots.ts, stage-records.ts, values.ts, pm-spawn.ts
-    │   ├── handoff.ts        handoff tools and expiry schedule
-    │   ├── insights.ts       routing statistics, lessons sweep, golden checks
-    │   ├── rpc.ts, rpc/      RPC handlers by group: preferences, runs, settings, selections, stack, insights
-    │   ├── memory-sync.ts    lane-memory files ↔ the hub corpus
-    │   ├── health.ts         provider breaker and run budget for the PM and the CLI
-    │   ├── council.ts        council sessions on hidden seat threads: room or rounds, Jev judge, owner messages, presence, decision page, handoffs, RPC
-    │   ├── tools.ts          agent tool registration and PM configuration
-    │   └── cli.ts            bb lane-pilot commands
-    ├── stages/               stage logic: prompts, parsers, policies (no SDK calls)
-    ├── host/                 host worker: detect, install, snapshot, rollback, stack ops
-    ├── ui/                   settings and monitor surfaces
-    ├── verification/         sandbox, git ownership, docs checks
-    └── workspace/            routing and dirt detection
+├── server.ts  host.ts  app.tsx   entries: mount room faces, no logic (bb plugin build reads them from package.json "bb")
+├── packages/                     shared code, imported by name (@lane-pilot/<name>), never imports src/
+│   ├── kit/                      hash (sha256Hex), redact, spawn-async, bounded reads, JSONC edits, owns_paths globs, paths
+│   ├── ui-kit/                   shadcn-style components, cn(), disclosure, surface, realtime channel names (no node:)
+│   ├── models/                   provider/model catalog lookup (findModel, findModelIn), presets, prices, reasoning map
+│   ├── jev/                      Jev client, registry, thresholds, run wrapper, receipts, three generic judgments
+│   ├── host-calls/               runOnHost: runCommand on a BB host with the timeout rules in one place
+│   ├── settings-catalog/         ui-catalog (generated), channels, defaults, provider pool, bookkeeping paths
+│   ├── i18n/                     t(), locale detection, the chrome dictionary and ten partial dictionaries
+│   └── council handoff memory-core resilience run-insights thread-observe   (older packages, own READMEs)
+└── src/rooms/                    one folder per domain
+    └── <room>/
+        ├── index.ts              public domain API (what other rooms import)
+        ├── server/  index.ts     code that runs on the hub with ServerCore (src/server/* in the old layout)
+        ├── ui/      index.ts     React for the page (src/ui/*)
+        └── …                     everything else is private to the room
 ```
 
-## Dependency rule
+Rooms (files, lines of TypeScript; the lines include the index files):
+
+| Room | Files | Lines | server / ui | Public faces |
+|---|---:|---:|---|---|
+| `anamnesis` | 30 | 3602 | 0 / 2 | domain, ui |
+| `contracts` | 10 | 1888 | 0 / 0 | domain (index.ts assembles `hostContract` and `rpcContract` from `schemas`, `host` and seven `rpc-*` parts) |
+| `core` | 17 | 1654 | 17 / 0 | server (ServerCore, Services, RPC aggregator, schedules, thread keys) |
+| `council` | 4 | 661 | 2 / 2 | server, ui |
+| `critique` | 19 | 2556 | 3 / 2 | domain, server, ui |
+| `docs` | 10 | 1691 | 3 / 2 | domain, server, ui |
+| `host-worker` | 4 | 1040 | 0 / 0 | domain (host handlers, jobs, script runner) |
+| `learning` | 21 | 2103 | 0 / 0 | domain |
+| `memory` | 9 | 601 | 5 / 2 | domain, server, ui |
+| `native-agent` | 38 | 4891 | 7 / 9 | domain, server, ui |
+| `native-install` | 25 | 6250 | 2 / 0 | domain, server |
+| `night` | 6 | 516 | 2 / 0 | domain, server |
+| `project-life` | 6 | 663 | 3 / 0 | domain, server |
+| `qa` | 8 | 1151 | 5 / 0 | domain, server |
+| `relay` | 10 | 1030 | 5 / 2 | domain, server, ui |
+| `runs` | 27 | 2513 | 12 / 7 | domain, server, ui |
+| `schedule` | 30 | 3151 | 9 / 11 | domain, server, ui |
+| `secrets` | 3 | 176 | 3 / 0 | server |
+| `self-repair` | 7 | 1862 | 5 / 2 | server, ui |
+| `settings` | 15 | 2434 | 4 / 6 | domain, server, ui |
+| `stability` | 12 | 1296 | 9 / 0 | domain, server |
+| `storage` | 7 | 2017 | 0 / 0 | domain (database.ts and the workflow stores it imports) |
+| `tasks` | 14 | 966 | 4 / 0 | domain, server |
+| `tools` | 6 | 1125 | 5 / 0 | server |
+| `ui-shell` | 19 | 2385 | 0 / 19 | ui (page, tabs, project header and rail) |
+| `usage` | 6 | 1021 | 4 / 2 | server, ui |
+| `verification` | 22 | 3685 | 6 / 0 | domain, server |
+| `workflow` | 75 | 13542 | 22 / 23 | domain, server, ui (the pure engine is still here, see Open) |
+| `writer` | 33 | 6138 | 17 / 2 | domain, server, ui |
+
+`scripts/refactor/rooms.ts` is the table that says which file is in which room; `rooms-plan.ts` reports what is unmapped.
+The move steps are in `scripts/refactor/steps/*.json` and were applied with `scripts/refactor/move.ts` (git mv plus every import rewritten with
+the TypeScript API); `barrels.ts` wrote the index files from the imports that existed; `graph.ts` is the import graph both the codemod and the test use.
+
+## Dependency rules (checked by `tests/architecture/boundaries.test.ts`, which `npx vitest run` and the deploy gate run)
 
 ```text
-app.tsx / host.ts / server.ts
+server.ts  host.ts  app.tsx
+        ↓ index files of rooms
+   src/rooms/<room>/{index.ts, server/index.ts, ui/index.ts}   a room imports another room only through these
         ↓
-   src/server/* ──► src/stages, src/host, src/verification, src/workspace
-   (modules receive `ctx: ServerCore` and `services: Services`; cross-module calls go through `services`, read at call time)
-        ↓                          ↓
-   packages/*  ◄───────────────────┘
+   packages/*  ◄── a package never imports src/; packages depend downward only (PACKAGE_DEPENDENCIES in the test)
         ↓
    @get-bb/plugin-sdk types, zod, node:*
 ```
 
-- A package never imports from `src/`. It ships its own tests under `packages/<name>/tests`.
-- `src/stages` holds pure logic: prompts, parsers, decisions. It never calls the SDK.
-- Only `src/server/*` calls `bb.sdk`, `bb.rpc`, `bb.agents`, `bb.cli`.
-- Packages are npm workspaces inside this repository, imported as `@lane-pilot/<name>`.
-  They are not published yet; another plugin can consume them by path until they are.
+- No value-level import cycle anywhere (type-only imports do not count).
+- `ui/` never imports `server/` and the other way round; the UI bundle (everything `app.tsx` reaches) imports no `node:` module.
+- Another room is entered through its index files. 77 imports still reach into private files; they are counted per room pair in `tests/architecture/deep-imports.json`,
+  the count may only go down (`UPDATE_ARCH_BASELINE=1 npx vitest run tests/architecture` writes the new numbers after you removed some).
+- A `.ts` file does not import a `ui/index.ts` (a model file must not load every component).
+- `src/rooms/package.json` says `sideEffects` is limited to the listed files, so a re-export nobody uses is not bundled (without it the host bundle grew by 49 %).
+  A file that does something when imported (registers a Jev judgment, hooks `globalThis`) must be listed there; the test finds it if it is not. Such a file is imported
+  where it is needed, never through an index file.
+- `npm run check:deps` prints the same rules as a dependency-cruiser report (not a dependency of the project; fetched by npx).
+
+## Open
+
+- `@lane-pilot/workflow-engine` is not a package yet: the engine files in `src/rooms/workflow` import the storage stores, `database.ts` types and a critique helper directly, and `contracts` needs them as schemas; ports (`WorkflowStore`, `Journal`, `OpsStore`) come first.
+- `@lane-pilot/contracts` is a room, not a package: it assembles the schedule and anamnesis contract fragments that live in their rooms; `host-jobs` (core) waits for it.
+- The tests are still in `tests/` (vitest also looks in `src/rooms/**/tests`); only the tests of the packages moved with them.
+- `src/rooms/storage/database.ts` (1 300 lines, 78 functions) is not split into per-room stores yet; `core/server/services.ts` still names every module's type (51-file type cycle).
 
 ## Storage rule
 
@@ -117,7 +140,8 @@ BB-kind writer harness failures noted on 2026-09-30.
 
 ## Rules
 
-1. New server-side behaviour goes into a module under `src/server/` or a package, never into the body of `plugin()` in `server.ts`.
+1. New server-side behaviour goes into the `server/` folder of a room or into a package, never into the body of `plugin()` in `server.ts`.
 2. Touching an old closure in `server.ts` means moving it out first, then changing it.
 3. A package gets a `README.md` with its contract and one sentence on who else may use it.
 4. Every move is a separate commit with tests green; moves and behaviour changes are never mixed.
+5. Another room is imported through its index files; a name other rooms need is added to the `index.ts` of the face it lives in (see Layout).

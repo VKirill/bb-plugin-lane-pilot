@@ -9,7 +9,7 @@
 --
 -- Scope. Sandbox and drill traffic is not the product's: proj_3tb652jpsi, every project named «LP sandbox …» or «LP native …», and the
 -- drill tasks (`drill-*`, scripts/lp-drill.sh). It is counted in its own line; every other project is `real`.
--- Class. `cls` mirrors failureClass() of src/failure-class.ts for a failed attempt (tests/lp-metrics.test.ts keeps the two equal);
+-- Class. `cls` mirrors failureClass() of src/rooms/runs/failure-class.ts for a failed attempt (tests/lp-metrics.test.ts keeps the two equal);
 -- the classes the report needs are named, everything else (task, provider, contract) is `other`.
 create temp view lp_cut as select (strftime('%s', 'now') - (select days from lp_params) * 86400) * 1000 as ms;
 
