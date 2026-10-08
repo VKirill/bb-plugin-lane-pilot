@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { BACKLINKS_MARK, buildBacklinks, expandCitationLists, pageCitations, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/stages/docs-lint";
+import { BACKLINKS_MARK, blockingDocsFindings, buildBacklinks, expandCitationLists, pageCitations, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/stages/docs-lint";
 import { commitDocs } from "../../src/verification/git-docs";
 
 const page = (fields: Record<string, string>, body: string) => [
@@ -163,4 +163,28 @@ it("leaves the design canon alone", () => {
   expect(lintDocsPages(pages, { "src/check.ts":9 })).toEqual([]);
   expect(buildBacklinks(pages).map((p) => p.path)).toEqual(["apps/web/docs/overview.md"]);
   expect(buildDocsIndex(pages, "apps/web/docs")).not.toContain("DESIGN");
+});
+
+// SelfyStudio, 2026-10-08: the repair round grew docs/capabilities.md past 40000 bytes, so the page was listed as
+// oversized and left out of the pages; 16 of the 17 findings then said that links to it point at a missing page.
+it("treats a page too large to read as present for links", () => {
+  const feature = { path:"docs/features/payments.md", content:page({ title:"Payments" }, good.replace("# Checks", "# Payments").replace("[CLI](cli.md)", "[capabilities](../capabilities.md)")) };
+  expect(lintDocsPages([feature], { "src/check.ts":9 }).map((finding) => `${finding.rule} ${finding.target}`)).toEqual(["links docs/capabilities.md"]);
+  expect(lintDocsPages([feature], { "src/check.ts":9 }, ["docs/capabilities.md"])).toEqual([]);
+});
+
+// treba, 2026-10-02..07: docs/ predates the method (auto-wiki pages: type explanation, no sources, docs/_briefs/,
+// docs/plans/). The refresh wrote a few pages, the lint held it to every page in the folder (215 findings on main
+// alone), one repair round could not convert them, and every night failed without landing anything.
+it("blocks a docs pass only on the pages it wrote, or on links to pages it removed", () => {
+  const legacy = { path:"docs/ARCHITECTURE.md", content:"---\ntitle: Architecture\ntype: explanation\nstatus: current\n---\n\n# Architecture\n\nSee [old](old.md).\n" };
+  const written = { path:"docs/deployment.md", content:page({ title:"Deployment", type:"deployment", tags:"" }, "# Deployment\n\nShips (src/check.ts:1).\n") };
+  const findings = lintDocsPages([legacy, written], { "src/check.ts":9 });
+  expect(findings.some((finding) => finding.path === legacy.path)).toBe(true);
+  expect(blockingDocsFindings(findings, [written.path]).map((finding) => `${finding.path} ${finding.rule}`).sort())
+    .toEqual(["docs/deployment.md evidence", "docs/deployment.md frontmatter"]);
+  // The pass removed docs/old.md: the untouched page that links to it is now broken by this pass.
+  expect(blockingDocsFindings(findings, [written.path, "docs/old.md"]).map((finding) => `${finding.path} ${finding.rule}`))
+    .toContain("docs/ARCHITECTURE.md links");
+  expect(blockingDocsFindings(findings, [])).toEqual([]);
 });

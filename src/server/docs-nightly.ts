@@ -6,7 +6,7 @@ import { docsRepairPrompt, docsSelection, docsScheduleDue, docsSinceEpoch, flowD
 import type { DocsUnit } from "../stages/docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../stages/docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../stages/docs-worthiness";
-import { buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, pagesToRefresh, unlinkedPages, withCitedSources, withVerifiedConfidence } from "../stages/docs-lint";
+import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, pagesToRefresh, unlinkedPages, withCitedSources, withVerifiedConfidence } from "../stages/docs-lint";
 import { configuredSetting } from "./context";
 import { fullAccessSpawn } from "./pm-spawn";
 import { stringAt } from "./values";
@@ -539,8 +539,10 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         const pages=await allPages();
         const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(mine(pages))},{hostId:place.hostId,timeoutMs:60_000})).counts;
         const docsDirty=after.dirty.filter(writable);
-        const findings=[...oversized.filter(writable).map((path)=>({path,rule:"size",detail:"page is over 40000 bytes; split it into pages under 30000 bytes (a large data model into data-model/<area>.md pages) and link them"})),
-          ...lintDocsPages(pages,counts).filter((finding)=>writable(finding.path))];
+        // Pages too large to read still exist: links to them resolve, the size check reports them.
+        // Only what this pass wrote, or a link to a page it removed, blocks it: untouched pages are on main as they are.
+        const findings:Array<{path:string;rule:string;detail:string}>=blockingDocsFindings([...oversized.filter(writable).map((path)=>({path,rule:"size",detail:"page is over 40000 bytes; split it into pages under 30000 bytes (a large data model into data-model/<area>.md pages) and link them"})),
+          ...lintDocsPages(pages,counts,oversized).filter((finding)=>writable(finding.path))],docsDirty);
         // The capabilities catalogue covers every capability the apps document, not only the ones inside a flow.
         const catalogue=unit.flows?.length?pages.find((page)=>page.path===`${d}/capabilities.md`):undefined;
         if(catalogue){
@@ -581,7 +583,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const warnings=checked.findings.filter(judged);
       checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};
       let commit:string|null=null, merged:string|null=null;
-      // Every page of this folder passed the checks, so pages an earlier pass left uncommitted go in too; code never does.
+      // Every page this pass wrote passed the checks, pages an earlier pass left uncommitted included, so they go in; code never does.
       if(!checked.findings.length&&checked.docsDirty.length){
         // Builders own what the model must not write: Referenced by blocks, verified confidence, the index.
         // They work on the pages as they are on disk now, and rebuild once if a page moved under them.

@@ -279,6 +279,7 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
 export function docsRepairPrompt(findings:Array<{ path:string; rule:string; detail:string }>):string {
   return [
     "Lane Pilot checked the docs and found these problems. Fix exactly these, following the same method; change nothing else.",
+    "Keep every page under 30000 bytes: a page over 40000 bytes fails the checks again and this is the only round. When a fix would add to a page near that size, put the new content on a linked page of its own and keep only the link and a line on the page.",
     ...findings.slice(0, 80).map((finding) => `- ${finding.path} [${finding.rule}]: ${finding.detail}`),
     ...(findings.length > 80 ? [`- …and ${findings.length - 80} more of the same kinds`] : []),
   ].join("\n");
