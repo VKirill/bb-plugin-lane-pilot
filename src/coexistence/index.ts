@@ -3,13 +3,13 @@ import { access, lstat, mkdir, readFile, readdir, rename, rm } from "node:fs/pro
 import { dirname, join } from "node:path";
 import { parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { TARGET_SHA } from "../constants";
-import { hashPath } from "../hash";
-import { agentsDir, resolveHome } from "../paths";
+import { hashPath } from "@lane-pilot/kit";
+import { agentsDir, resolveHome } from "@lane-pilot/kit";
 import { assessEngineCapabilities, IMPACTED_FUNCTIONS, inspectEngineCapabilities, inspectEngineCapabilitiesDetailed } from "../upstream-adapter/capabilities";
 import { createOpenCodePluginShim, isManagedOpenCodePlugin } from "../upstream-adapter/opencode-plugin";
 import { ensureUpstream } from "../upstream";
-import { spawnAsync } from "../spawn-async";
-import { ensureOpenCodePluginEntry, removeOpenCodePluginEntry } from "../jsonc";
+import { spawnAsync } from "@lane-pilot/kit";
+import { ensureOpenCodePluginEntry, removeOpenCodePluginEntry } from "@lane-pilot/kit";
 import { compareAndSwapText, readTextState } from "./cas";
 import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readOwnershipLedgerStrict, readSnapshot, removeOwnershipEntry, removeOwnershipEntryIfMatches, removeSnapshotIfMatches, restoreOwnershipLedgerWrite, saveSnapshot, snapshotPath } from "./ownership";
 import type {

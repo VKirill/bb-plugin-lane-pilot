@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { TARGET_SHA } from "../src/constants";
-import { hashPath } from "../src/hash";
+import { hashPath } from "@lane-pilot/kit";
 import { ownershipLedgerPath } from "../src/coexistence/ownership";
 import { installStack } from "../src/stack-ops";
 

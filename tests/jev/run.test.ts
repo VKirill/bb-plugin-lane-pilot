@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/database";
-import { forgetSecrets, registerSecrets } from "../../src/redact";
+import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import { choice, defineJudgment, noul, noulOf } from "../../src/jev/registry";
 import { summarizeReceipts } from "../../src/jev/receipts";
 import { createJev } from "../../src/jev/run";

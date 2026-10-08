@@ -5,7 +5,7 @@
  * files it produced and what each check said at the end; a failed check's full log is on disk at `checkLogPath`.
  */
 
-import { cleanCheckOutput, failureExcerpt } from "../output-excerpt";
+import { cleanCheckOutput, failureExcerpt } from "@lane-pilot/kit";
 
 const OUTPUT_CAP = 2000;
 const COMMAND_CAP = 300;

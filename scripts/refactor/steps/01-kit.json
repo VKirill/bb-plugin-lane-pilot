@@ -1,0 +1,16 @@
+{
+  "moves": [
+    {"from": "src/hash.ts", "to": "packages/kit/src/hash.ts"},
+    {"from": "src/redact.ts", "to": "packages/kit/src/redact.ts"},
+    {"from": "src/spawn-async.ts", "to": "packages/kit/src/spawn-async.ts"},
+    {"from": "src/output-excerpt.ts", "to": "packages/kit/src/output-excerpt.ts"},
+    {"from": "src/bounded-read.ts", "to": "packages/kit/src/bounded-read.ts"},
+    {"from": "src/jsonc.ts", "to": "packages/kit/src/jsonc.ts"},
+    {"from": "src/paths.ts", "to": "packages/kit/src/paths.ts"},
+    {"from": "tests/bounded-read.test.ts", "to": "packages/kit/tests/bounded-read.test.ts"},
+    {"from": "tests/jsonc.test.ts", "to": "packages/kit/tests/jsonc.test.ts"},
+    {"from": "tests/output-excerpt.test.ts", "to": "packages/kit/tests/output-excerpt.test.ts"},
+    {"from": "tests/redact.test.ts", "to": "packages/kit/tests/redact.test.ts"},
+    {"from": "tests/spawn-async.test.ts", "to": "packages/kit/tests/spawn-async.test.ts"}
+  ]
+}

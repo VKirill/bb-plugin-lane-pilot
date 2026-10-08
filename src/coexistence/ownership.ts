@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { hashPath, sha256Buffer } from "../hash";
+import { hashPath, sha256Buffer } from "@lane-pilot/kit";
 import type { CoexistenceManager, CoexistenceOwner } from "./contracts";
 import { compareAndSwapText, readTextState } from "./cas";
 

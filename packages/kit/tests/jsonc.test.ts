@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { patchOpenCodePlugin } from "../src/jsonc";
+import { patchOpenCodePlugin } from "@lane-pilot/kit";
 
 const sha = (text:string) => createHash("sha256").update(text).digest("hex");
 const valid = [

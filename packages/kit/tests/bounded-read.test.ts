@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   BOUNDED_READ_MAX_SLICE_BYTES,
   readBoundedWorkspaceFile,
-} from "../src/bounded-read";
+} from "@lane-pilot/kit";
 
 async function fixtureDir() {
   const root = await mkdtemp(join(tmpdir(), "lp-bounded-read-"));

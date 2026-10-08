@@ -1,5 +1,5 @@
 import { parseOwnedAgents } from "../agent-profile";
-import { redactKnown } from "../redact";
+import { redactKnown } from "@lane-pilot/kit";
 import { createSecrets } from "./secrets";
 import { bindDrainTarget, createDeployDrain } from "./deploy-drain";
 import { currentScheduleSignal } from "./schedules";

@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { sha256FileOrNull } from "../src/hash";
+import { sha256FileOrNull } from "@lane-pilot/kit";
 import { hideS8Files, restoreS8Files } from "../src/s8";
 
 describe("S8 hide/restore", () => {

@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { compareAndSwapText, readTextState } from "./coexistence/cas";
-import { ensureOpenCodePluginEntry } from "./jsonc";
-import { resolveHome } from "./paths";
-import { spawnAsync } from "./spawn-async";
+import { ensureOpenCodePluginEntry } from "@lane-pilot/kit";
+import { resolveHome } from "@lane-pilot/kit";
+import { spawnAsync } from "@lane-pilot/kit";
 
 export type ConnectOpencodeResult = {
   skipped: boolean;

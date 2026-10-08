@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contracts";
 import { isEnvironmentCheckFailure } from "./failure-class";
-import { readBoundedWorkspaceFile } from "./bounded-read";
+import { readBoundedWorkspaceFile } from "@lane-pilot/kit";
 import { casWriteWorkflowFile } from "./workflow/files";
 import { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
 import { runBrowserQaOnHost } from "./stages/browser-qa";

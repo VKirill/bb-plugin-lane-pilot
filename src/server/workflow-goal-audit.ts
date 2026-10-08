@@ -3,7 +3,7 @@ import type { EngineOptions } from "../workflow/engine";
 import { goalsSha } from "../workflow/goals";
 import type { GoalAudit } from "../workflow/goals";
 import type { Field } from "../workflow/schema";
-import { redactKnown } from "../redact";
+import { redactKnown } from "@lane-pilot/kit";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 import type { WorkflowAgents } from "./workflow-agent";

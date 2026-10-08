@@ -1,8 +1,8 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { assertSafeArgv } from "./argv-builder";
-import { agentsDir, expandHomePath, resolveHome } from "./paths";
-import { spawnAsync } from "./spawn-async";
+import { agentsDir, expandHomePath, resolveHome } from "@lane-pilot/kit";
+import { spawnAsync } from "@lane-pilot/kit";
 
 const FORBIDDEN = /(?:^|\s)(--apply(?:[= ]|$)|(?:^|\s)setup(?:\s|$))/;
 

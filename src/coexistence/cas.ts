@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { link, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { sha256Buffer } from "../hash";
+import { sha256Buffer } from "@lane-pilot/kit";
 
 export type FileState = { text: string | null; sha256: string | null; mode: number | null };
 export type FileCasResult = {

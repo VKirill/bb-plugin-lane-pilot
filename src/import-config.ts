@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { sha256Buffer } from "./hash";
-import { resolveHome } from "./paths";
+import { sha256Buffer } from "@lane-pilot/kit";
+import { resolveHome } from "@lane-pilot/kit";
 
 export type ImportedConfig = {
   routingProfile: { path: string; text: string; sha256: string } | null;

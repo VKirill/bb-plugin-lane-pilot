@@ -1,7 +1,7 @@
 import { mkdtemp, rm, statfs, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnAsync } from "../spawn-async";
+import { spawnAsync } from "@lane-pilot/kit";
 import { integrateWorktree } from "./git-integrate";
 
 export type DrillCheck = { name:string; ok:boolean; detail:string | null };

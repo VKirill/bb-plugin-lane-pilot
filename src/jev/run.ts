@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
-import { redactKnownDeep } from "../redact";
+import { redactKnownDeep } from "@lane-pilot/kit";
 import { MAX_STATE_CHARS, type JevClient } from "./client";
 import { MAX_QUESTIONS_PER_JUDGMENT, type Answers, type Decided, type Judgment, type JudgmentMode, type Thresholds } from "./registry";
 import { insertReceipt, recordOutcome } from "./receipts";

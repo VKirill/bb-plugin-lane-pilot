@@ -3,7 +3,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
-import { spawnAsync } from "../spawn-async";
+import { spawnAsync } from "@lane-pilot/kit";
 import { isBookkeepingPath } from "../bookkeeping-paths";
 import { matchOwnsPath } from "../owns-paths";
 import { REPLAY_CHECK_FAILED } from "../failure-class";

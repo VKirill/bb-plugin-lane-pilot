@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sha256Buffer } from "./hash";
+import { sha256Buffer } from "@lane-pilot/kit";
 import type { TaskV2 } from "./contracts";
 
 export const ACCEPTANCE_V2_REQUIRED = [

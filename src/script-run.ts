@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { redactSecrets } from "./redact";
+import { redactSecrets } from "@lane-pilot/kit";
 
 /** What a scheduled script may print and keep: the whole answer of one run, per stream. */
 export const SCRIPT_OUTPUT_DEFAULT_BYTES = 64 * 1024;

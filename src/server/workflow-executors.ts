@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { TaskV2 } from "../contracts";
 import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts } from "../database";
-import { redactKnown } from "../redact";
+import { redactKnown } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../task-v2";
 import { agentPrompt, outputContract, parseAgentOutput } from "../workflow/agent-output";
 import type { NodeExecutor, PollResult, StepContext, WorkflowEngine } from "../workflow/engine";

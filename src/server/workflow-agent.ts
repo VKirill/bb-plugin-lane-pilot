@@ -3,7 +3,7 @@ import { getRunSettingsScopes } from "../database";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { ROLE_PROFILES } from "../helper-context";
 import type { ExtraAccess, HelperRole } from "../helper-context";
-import { redactKnown } from "../redact";
+import { redactKnown } from "@lane-pilot/kit";
 import { agentPrompt, outputContract, parseAgentOutput } from "../workflow/agent-output";
 import { contractProblems, contractRepairPrompt, describeProblems, hasContractProblems } from "../workflow/contract";
 import type { ContractNode, ContractProblems } from "../workflow/contract";

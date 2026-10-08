@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
+import { buildGraph, runtimeClosure } from "../scripts/refactor/graph";
 
 /**
  * A host worker blocked in spawnSync cannot take the daemon's next call or its cancel: the call misses its deadline
@@ -14,36 +15,14 @@ const SYNC_SPAWN = /\b(?:spawnSync|execFileSync|execSync)\b/g;
 
 const withoutComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-function resolveImport(from: string, specifier: string): string | null {
-  const base = resolve(dirname(from), specifier.replace(/\.js$/, ""));
-  return [`${base}.ts`, `${base}.tsx`, join(base, "index.ts"), base].find((path) => /\.tsx?$/.test(path) && existsSync(path)) ?? null;
-}
-
-/** The project files host.ts loads: static and dynamic relative imports, type-only imports left out (they load nothing). */
+/** The project files host.ts loads: static and dynamic imports, workspace packages included, type-only imports left out (they load nothing). */
 function hostClosure(): string[] {
-  const seen = new Set<string>();
-  const queue = [join(root, "host.ts")];
-  while (queue.length) {
-    const file = queue.pop()!;
-    if (seen.has(file)) continue;
-    seen.add(file);
-    const source = withoutComments(readFileSync(file, "utf8"));
-    const specifiers = [
-      ...source.matchAll(/^\s*(?:import|export)\s+(?!type\b)[^;]*?from\s+["'](\.[^"']+)["']/gm),
-      ...source.matchAll(/^\s*import\s+["'](\.[^"']+)["']/gm),
-      ...source.matchAll(/\bimport\(\s*["'](\.[^"']+)["']\s*\)/g),
-    ].map((match) => match[1]!);
-    for (const specifier of specifiers) {
-      const next = resolveImport(file, specifier);
-      if (next) queue.push(next);
-    }
-  }
-  return [...seen].map((file) => relative(root, file)).sort();
+  return [...runtimeClosure(buildGraph(), "host.ts")].sort();
 }
 
 it("reaches the host handlers' code (so the scan below cannot go quiet by finding nothing)", () => {
   const files = hostClosure();
-  for (const expected of ["host.ts", "src/host-handlers.ts", "src/jobs.ts", "src/verification/git-integrate.ts", "src/coexistence/index.ts", "src/stack-ops.ts", "src/spawn-async.ts"]) {
+  for (const expected of ["host.ts", "src/host-handlers.ts", "src/jobs.ts", "src/verification/git-integrate.ts", "src/coexistence/index.ts", "src/stack-ops.ts", "packages/kit/src/spawn-async.ts"]) {
     expect(files).toContain(expected);
   }
   expect(files.some((file) => file.startsWith("src/server/"))).toBe(false);

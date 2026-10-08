@@ -209,7 +209,7 @@ describe("errands and specialists read the checkout's status on its host", () =>
 describe("the spy that proves it", () => {
   it("sees a process started at a project path, so an empty list above means none was started", async () => {
     spawned.calls.length = 0;
-    const { spawnAsync } = await import("../src/spawn-async");
+    const { spawnAsync } = await import("@lane-pilot/kit");
     await spawnAsync("true", [], { cwd: REMOTE });
     expect(touchedRemotePath()).toHaveLength(1);
   });

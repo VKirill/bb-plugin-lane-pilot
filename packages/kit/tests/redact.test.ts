@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanCheckOutput } from "../src/output-excerpt";
-import { forgetSecrets, redactKnown, redactKnownDeep, redactSecrets, registerSecrets, secretStrings } from "../src/redact";
-import { createCore } from "../src/server/core";
+import { cleanCheckOutput } from "@lane-pilot/kit";
+import { forgetSecrets, redactKnown, redactKnownDeep, redactSecrets, registerSecrets, secretStrings } from "@lane-pilot/kit";
+import { createCore } from "../../../src/server/core";
 
 // Test values only: none of them is a real credential.
 const KEY = "test-key-Zq81xW0pLm";

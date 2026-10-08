@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/database";
-import { forgetSecrets } from "../../src/redact";
+import { forgetSecrets } from "@lane-pilot/kit";
 import { errandAccountLines, errandPrompt } from "../../src/server/errands";
 
 // Test values only: none of them is a real credential.

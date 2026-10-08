@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { spawnAsync } from "../spawn-async";
+import { spawnAsync } from "@lane-pilot/kit";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, sep } from "node:path";
 

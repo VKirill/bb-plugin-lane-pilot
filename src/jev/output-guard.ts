@@ -1,5 +1,5 @@
 import { sha256 } from "../stages/contract";
-import { redactKnown } from "../redact";
+import { redactKnown } from "@lane-pilot/kit";
 import { outputGuard, type OutputKind } from "./judgments/output-guard";
 import type { Jev } from "./run";
 import { resolveMode, type JevSettings } from "./thresholds";

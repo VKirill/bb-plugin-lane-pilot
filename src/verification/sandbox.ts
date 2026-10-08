@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { redactSecrets } from "../redact";
-import { spawnAsync } from "../spawn-async";
+import { redactSecrets } from "@lane-pilot/kit";
+import { spawnAsync } from "@lane-pilot/kit";
 
 export type SandboxedCommandInput = {
   requestedHostId:string; workspacePath:string; cwd:string; command:string; backend?:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec?:number;

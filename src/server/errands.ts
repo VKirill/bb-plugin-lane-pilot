@@ -11,7 +11,7 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { stringAt } from "./values";
 import { outputText } from "./writer-task";
 import { fenceOutside, registerObservedTool } from "./tool-result";
-import { redactKnown } from "../redact";
+import { redactKnown } from "@lane-pilot/kit";
 import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "./secrets";
 import type { CatalogEntry } from "./secrets";
 import { detectRepoEdits, gitRepoStatus } from "./repo-edits";

@@ -3,7 +3,7 @@ import type { PrototypeConfig, TaskV2 } from "../contracts";
 import { valueAt } from "./values";
 import { createHash } from "node:crypto";
 import { compactContract, pmReadBrief } from "../writer-brief";
-import { cleanCheckOutput, failureExcerpt } from "../output-excerpt";
+import { cleanCheckOutput, failureExcerpt } from "@lane-pilot/kit";
 import { fileAllowedByOwns, matchOwnsPath } from "../owns-paths";
 export function outputText(value: unknown): string {
   for (const key of ["text", "output", "lastAssistantText", "content"]) {

@@ -7,8 +7,8 @@ import { readImportConfig } from "./import-config";
 import type { InstallPhase } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
 import { inventoryCoexistenceAtHome, runCoexistenceOperationAtHome } from "./coexistence";
-import { agentsDir, defaultLocalFallback, resolveHome } from "./paths";
-import { spawnAsync } from "./spawn-async";
+import { agentsDir, defaultLocalFallback, resolveHome } from "@lane-pilot/kit";
+import { spawnAsync } from "@lane-pilot/kit";
 import { skippedOpsReceipt, writeReceipt, type FileChange, type InstallReceipt } from "./receipt";
 import {
   finalizeSnapshotAfter,

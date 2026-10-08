@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { registerSecrets, secretStrings } from "../redact";
+import { registerSecrets, secretStrings } from "@lane-pilot/kit";
 import { parseSandboxUnsafePatterns } from "../stages/critique-coverage";
 import { SANDBOX_OWN_ENV } from "../verification/sandbox";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";

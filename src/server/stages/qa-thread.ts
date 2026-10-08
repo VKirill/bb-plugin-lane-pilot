@@ -3,7 +3,7 @@ import { writerExecutionSelection } from "../../jev-reasoning";
 import { fullAccessSpawn } from "../pm-spawn";
 import { spawnTextId } from "../thread-keys";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";
-import { redactKnownDeep } from "../../redact";
+import { redactKnownDeep } from "@lane-pilot/kit";
 import { stringAt } from "../values";
 import { outputText } from "../writer-task";
 import { FRONTEND_VERIFY_METHOD } from "../../stages/role-method";

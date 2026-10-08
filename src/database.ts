@@ -8,7 +8,7 @@ import type { PrototypeConfig } from "./contracts";
 import type { StageId, StageState } from "./stages/contract";
 import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
 import { validateSettingValue, validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
-import { sha256Buffer } from "./hash";
+import { sha256Buffer } from "@lane-pilot/kit";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "./lp-defaults";
 import packageJson from "../package.json";
 import { IllegalTransitionError, isLegalMove } from "./state-machine";

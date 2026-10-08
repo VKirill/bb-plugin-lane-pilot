@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnAsync } from "../spawn-async";
+import { spawnAsync } from "@lane-pilot/kit";
 import { prepareWorktree } from "./git-integrate";
 
 /**

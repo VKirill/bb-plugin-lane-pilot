@@ -1,6 +1,6 @@
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "./owns-paths";
 import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "./failure-class";
-import { cleanCheckOutput } from "./output-excerpt";
+import { cleanCheckOutput } from "@lane-pilot/kit";
 import type { TaskV2 } from "./contracts";
 
 export function isTaskFolderFile(path:string):boolean {

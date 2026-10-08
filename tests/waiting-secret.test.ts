@@ -7,7 +7,7 @@ import {
   countChargedAttempts, createAttempt, createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
 } from "../src/database";
 import { failureClass, isWaitingSecret, nextStep } from "../src/failure-class";
-import { forgetSecrets } from "../src/redact";
+import { forgetSecrets } from "@lane-pilot/kit";
 import { createSecrets } from "../src/server/secrets";
 import { createStability } from "../src/server/stability";
 

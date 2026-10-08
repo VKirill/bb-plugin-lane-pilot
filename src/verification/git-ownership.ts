@@ -1,7 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { filterOwnershipNoise } from "../bookkeeping-paths";
-import { spawnAsync } from "../spawn-async";
+import { spawnAsync } from "@lane-pilot/kit";
 
 export type GitOwnershipBase = {
   status:"ready"|"not-git"|"invalid-ref"|"failed";

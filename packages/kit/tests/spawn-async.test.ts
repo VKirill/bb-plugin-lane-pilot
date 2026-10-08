@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { spawnAsync } from "../src/spawn-async";
+import { spawnAsync } from "@lane-pilot/kit";
 
 describe("spawnAsync", () => {
   it("returns status and both streams like spawnSync", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanCheckOutput, failureExcerpt } from "../src/output-excerpt";
+import { cleanCheckOutput, failureExcerpt } from "@lane-pilot/kit";
 
 describe("check output cleaning", () => {
   it("strips escapes, redraws and npm notices but keeps the words and layout", () => {

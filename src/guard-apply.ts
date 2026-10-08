@@ -1,8 +1,8 @@
 import { cp, lstat, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { applyEdits, findNodeAtLocation, modify, parse, parseTree, type ParseError } from "jsonc-parser/lib/esm/main.js";
-import { defaultGuardSource } from "./paths";
-import { hashPath } from "./hash";
+import { defaultGuardSource } from "@lane-pilot/kit";
+import { hashPath } from "@lane-pilot/kit";
 import { compareAndSwapText, readTextState } from "./coexistence/cas";
 
 export type GuardAppliedFile = { path: string; sha256Before: string | null; sha256After: string };

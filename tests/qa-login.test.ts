@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@lane-pilot/thread-observe", () => ({ observeStageChild: async () => ({ kind: "completed" }) }));
 import { coreRequiredSessionAdvertisement, requiredSessionPolicySpawnBinding } from "../src/helper-context";
 import type { HelperPolicySnapshot } from "../src/helper-context";
-import { forgetSecrets, registerSecrets } from "../src/redact";
+import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import { awaitQaVerdict, parseQaCases, qaThreadPrompt } from "../src/server/stages/qa-thread";
 
 // Test value only: not a real credential.

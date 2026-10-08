@@ -1,6 +1,6 @@
 import { mountErrands } from "./errands";
 import { cancelAttemptById } from "./cancel";
-import { LANE_PILOT_READ_NAME } from "../bounded-read";
+import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema } from "../contracts";
 import { getRun, getRunSettingsScopes, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../database";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../native-run";

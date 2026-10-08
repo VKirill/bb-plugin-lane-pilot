@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/database";
-import { forgetSecrets, registerSecrets } from "../../src/redact";
+import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import { GUARD_BLOCKED_KEY, GUARD_STATS_KEY, SHADOW_CHARS, SHADOW_SAMPLE, createOutputGuard, looksSensitive, withheldText } from "../../src/jev/output-guard";
 import { outputGuard } from "../../src/jev/judgments/output-guard";
 import { createJev } from "../../src/jev/run";

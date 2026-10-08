@@ -3,7 +3,7 @@ import { access, lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
-import { spawnAsync } from "../spawn-async";
+import { spawnAsync } from "@lane-pilot/kit";
 
 export const browserQaInputSchema = z.object({
   requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), url:z.string().url(),

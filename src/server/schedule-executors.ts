@@ -1,6 +1,6 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { loadProjectSettings, recordSecretIssuance } from "../database";
-import { redactKnown } from "../redact";
+import { redactKnown } from "@lane-pilot/kit";
 import { finalRuleOf, workflowFinish } from "../schedule/outcome";
 import type { Executor, ExecutorInput, PollResult } from "../schedule/scheduler";
 import type { ScheduleKind, ScheduleTask } from "../schedule/model";

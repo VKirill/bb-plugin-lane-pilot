@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TaskV2 } from "../../src/contracts";
 import { hostContract } from "../../src/contracts";
 import { listSecretIssuance, openDatabase, saveProjectSetting } from "../../src/database";
-import { forgetSecrets } from "../../src/redact";
+import { forgetSecrets } from "@lane-pilot/kit";
 import { createSecrets, envForRecord, SecretsNotReadyError, secretProblem } from "../../src/server/secrets";
 import { createWriterVerify } from "../../src/server/writer/verify";
 import { runSandboxedCommandOnHost } from "../../src/verification/sandbox";

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { findOpenNativeRun, getRun, listTaskTerminalStates } from "../database";
 import type { LanePilotDatabase } from "../database";
-import { redactKnown } from "../redact";
+import { redactKnown } from "@lane-pilot/kit";
 import type { WorkflowEngine } from "../workflow/engine";
 import { isOffered, isPipeline, routeIntent } from "../workflow/router";
 import type { RouteDecision, RouterModel, RouterState, RunRecord } from "../workflow/router";

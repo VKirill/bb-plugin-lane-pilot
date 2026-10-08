@@ -16,7 +16,7 @@
  */
 export type FailureClass = "task" | "provider" | "merge" | "dirty_base" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit";
 
-import { cleanCheckOutput } from "./output-excerpt";
+import { cleanCheckOutput } from "@lane-pilot/kit";
 
 /** The reason recorded when the writer gave no answer at all; the only empty_output that reads as a provider fault. */
 export const NO_ANSWER_REASON = "writer returned no output";

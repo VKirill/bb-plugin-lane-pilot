@@ -2,7 +2,7 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { parse } from "jsonc-parser/lib/esm/main.js";
 import { NATIVE_HOOK_SOURCES } from "./native-hook-sources";
-import { defaultGuardSource } from "./paths";
+import { defaultGuardSource } from "@lane-pilot/kit";
 
 function shellQuote(s: string) {
   return "'" + s.replace(/'/g, "'\\''") + "'";
