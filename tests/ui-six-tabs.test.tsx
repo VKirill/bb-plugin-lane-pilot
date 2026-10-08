@@ -1,9 +1,13 @@
 /** @vitest-environment jsdom */
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { VISIBLE_CATALOG } from "../src/ui-catalog";
 import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/ui/tabs-model";
 import { setLocaleOverride, en, ru } from "../i18n";
+import { HELPER_ROLES } from "../src/helper-context";
+import { ROLE_GROUPS } from "../src/ui/team-model";
 import { screenFixture, mountPage } from "./ui-harness";
 import { openTab } from "./ui-tabs";
 
@@ -90,5 +94,19 @@ describe("six tabs", () => {
     expect(segmentsFor("knowledge", "system")).toEqual(["memory", "docs", "anamnesis"]);
     expect(segmentsFor("knowledge", "project")).toEqual(["memory", "docs", "rules"]);
     expect(segmentsFor("knowledge", "section")).toEqual(["memory", "docs", "rules"]);
+  });
+
+  it("lists every helper role in the team table once", () => {
+    const listed = ROLE_GROUPS.flatMap((group) => group.roles.map((role) => role.id));
+    expect(new Set(listed).size).toBe(listed.length);
+    expect([...HELPER_ROLES].filter((role) => !listed.includes(role))).toEqual([]);
+    expect(listed.filter((role) => !(HELPER_ROLES as readonly string[]).includes(role))).toEqual([]);
+  });
+
+  it("picks no string by `ru ? … : …` in the UI: every text comes from the dictionaries", () => {
+    const dir = join(process.cwd(), "src/ui");
+    const offenders = readdirSync(dir).filter((name) => /\.tsx?$/.test(name))
+      .filter((name) => /\bru\s*\?\s*["'`(]/.test(readFileSync(join(dir, name), "utf8")));
+    expect(offenders).toEqual([]);
   });
 });

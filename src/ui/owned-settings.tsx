@@ -158,7 +158,6 @@ function ResourcePicker({
 /** Kept mounted across navigation so unsaved drafts retain their original CAS token. */
 export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "projects" | "globals" | "agents"; locale: Locale; onDefaultsSaved?: (defaults: LanePilotDefaults) => void }) {
   const rpc = useRpc<typeof rpcContract>();
-  const ru = locale === "ru";
   const providers = useProviders();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [defaults, setDefaults] = useState<LanePilotDefaults>({});
@@ -203,9 +202,9 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
     try {
       if (scope === "globals") {
         const result = await rpc.call("save_globals", { defaults, expectedRevision: snapshot.revision });
-        if (!result.ok) throw new Error(ru ? "Настройки изменены в другом окне. Черновик сохранён; загрузите текущую версию ниже для сравнения." : "Settings changed in another window. Your draft is retained; load the current version below to compare.");
+        if (!result.ok) throw new Error(t("owned01"));
         const readback = await rpc.call("get_globals", {});
-        if (readback.revision !== result.revision) throw new Error(ru ? "После сохранения появилась новая версия. Черновик сохранён." : "A newer version appeared after saving. Your draft is retained.");
+        if (readback.revision !== result.revision) throw new Error(t("owned02"));
         setSnapshot((current) => current ? { ...current, defaults: readback.defaults, revision: readback.revision } : current);
         setDefaults(readback.defaults);
         onDefaultsSaved?.(readback.defaults);
@@ -227,10 +226,10 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
             mcpServers: agent.resourceModes?.mcpServers ?? resourceModeOf(agent.mcpServers),
           },
         });
-        if (!result.ok) throw new Error(ru ? "Профиль изменён в другом окне. Ваш черновик сохранён." : "Profile changed in another window. Your draft is retained.");
+        if (!result.ok) throw new Error(t("owned03"));
         const readback = await rpc.call("get_globals", {});
         const confirmed = readback.agents.find((item) => item.id === agent.id)!;
-        if (confirmed.sourceHash !== result.sourceHash) throw new Error(ru ? "После сохранения профиль снова изменился. Черновик сохранён." : "The profile changed again after saving. Your draft is retained.");
+        if (confirmed.sourceHash !== result.sourceHash) throw new Error(t("owned04"));
         setSnapshot((current) => current ? { ...current, agents: [...current.agents.filter((item) => item.id !== confirmed.id), confirmed] } : current);
         setAgents((current) => current.map((item) => item.id === confirmed.id ? confirmed : item));
       }
@@ -243,16 +242,16 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
       <h1 className="text-xl font-medium">{scope === "globals" ? t("navGlobals") : t("navAgents")}</h1>
       <p className="text-sm text-muted-foreground">{scope === "globals" ? t("globalsHelp") : t("agentsHelp")}</p>
     </div>
-    {error ? <div className="min-w-0 space-y-2"><p role="alert" className="break-words text-sm text-destructive">{error}</p><Button variant="outline" className={CONTROL_H} disabled={busy} onClick={() => { void rpc.call("get_globals", {}).then(setRemote).catch((cause) => setError(String(cause))); }}>{ru ? "Загрузить текущую версию для сравнения" : "Load current version to compare"}</Button></div> : null}
-    {remote ? <section className="lp-card min-w-0 max-w-full space-y-2 p-3"><h2 className="text-sm font-medium">{ru ? "Текущая сохранённая версия" : "Current saved version"}</h2><pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words text-xs">{scope === "globals" ? JSON.stringify(remote.defaults, null, 2) : remote.agents.find((item) => item.id === selected)?.prompt ?? "—"}</pre><p className="text-sm">{ru ? "Ваш черновик остаётся в редакторе. Следующее сохранение заменит показанную версию." : "Your draft remains in the editor. The next save will replace the version shown here."}</p><Button variant="outline" className={CONTROL_H} onClick={() => { setSnapshot(remote); setRemote(null); setError(""); }}>{ru ? "Продолжить с моим черновиком" : "Continue with my draft"}</Button></section> : null}
-    {!snapshot ? <p>{ru ? "Загрузка…" : "Loading…"}</p> : <>
+    {error ? <div className="min-w-0 space-y-2"><p role="alert" className="break-words text-sm text-destructive">{error}</p><Button variant="outline" className={CONTROL_H} disabled={busy} onClick={() => { void rpc.call("get_globals", {}).then(setRemote).catch((cause) => setError(String(cause))); }}>{t("owned05")}</Button></div> : null}
+    {remote ? <section className="lp-card min-w-0 max-w-full space-y-2 p-3"><h2 className="text-sm font-medium">{t("owned06")}</h2><pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words text-xs">{scope === "globals" ? JSON.stringify(remote.defaults, null, 2) : remote.agents.find((item) => item.id === selected)?.prompt ?? "—"}</pre><p className="text-sm">{t("owned07")}</p><Button variant="outline" className={CONTROL_H} onClick={() => { setSnapshot(remote); setRemote(null); setError(""); }}>{t("owned08")}</Button></section> : null}
+    {!snapshot ? <p>{t("owned09")}</p> : <>
       <fieldset disabled={busy} hidden={scope !== "globals"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }}>
         <Surface>
           <SurfaceHeader><h2 className="text-sm font-medium">{t("globalsSectionPlacement")}</h2></SurfaceHeader>
           <SurfaceBody>
           <Select value={defaults.helperPlacement ?? "plugin"} onValueChange={(value) => { setDefaults((current) => ({ ...current, helperPlacement: value as "plugin" | "project_tree" })); setSaved(false); }}>
-            <SelectTrigger id="global-placement" aria-label={ru ? "Расположение помощников по умолчанию" : "Default helper placement"} className={`${CONTROL_H} ${CONTROL}`}><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="plugin">{ru ? "В разделе Lane Pilot" : "In Lane Pilot"}</SelectItem><SelectItem value="project_tree">{ru ? "В дереве проекта" : "In the project tree"}</SelectItem></SelectContent>
+            <SelectTrigger id="global-placement" aria-label={t("owned10")} className={`${CONTROL_H} ${CONTROL}`}><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="plugin">{t("owned11")}</SelectItem><SelectItem value="project_tree">{t("owned12")}</SelectItem></SelectContent>
           </Select>
           </SurfaceBody>
         </Surface>
@@ -311,13 +310,13 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           <SurfaceHeader><h2 className="text-sm font-medium">{t("agentSectionProfile")}</h2></SurfaceHeader>
           <SurfaceBody>
           <div className={stackControls ? "flex min-w-0 flex-col gap-2" : "flex min-w-0 flex-row gap-2"} data-testid="agent-new-profile">
-            <Input className={`${CONTROL_H} ${CONTROL}`} aria-label={ru ? "ID нового профиля" : "New profile ID"} value={newId} placeholder="my-agent" onChange={(event) => setNewId(event.target.value)} />
-            <Button variant="outline" className={`${CONTROL_H} shrink-0`} disabled={!/^[a-z][a-z0-9-]{0,63}$/.test(newId) || agents.some((item) => item.id === newId)} onClick={() => { setAgents((current) => [...current, { id: newId, description: newId, prompt: "", sourceHash: "", sourceVersion: "lp-owned-1", edited: true }]); setSelected(newId); setNewId(""); }}>{ru ? "Добавить профиль" : "Add profile"}</Button>
+            <Input className={`${CONTROL_H} ${CONTROL}`} aria-label={t("owned13")} value={newId} placeholder="my-agent" onChange={(event) => setNewId(event.target.value)} />
+            <Button variant="outline" className={`${CONTROL_H} shrink-0`} disabled={!/^[a-z][a-z0-9-]{0,63}$/.test(newId) || agents.some((item) => item.id === newId)} onClick={() => { setAgents((current) => [...current, { id: newId, description: newId, prompt: "", sourceHash: "", sourceVersion: "lp-owned-1", edited: true }]); setSelected(newId); setNewId(""); }}>{t("owned14")}</Button>
           </div>
           <Label htmlFor="owned-agent">{t("agentSelectedProfile")}</Label>
           <Select value={selected} onValueChange={(value) => { setSelected(value); setSaved(false); }}><SelectTrigger id="owned-agent" className={`${CONTROL_H} ${CONTROL}`}><SelectValue /></SelectTrigger><SelectContent>{agents.map((item) => <SelectItem key={item.id} value={item.id}>{agentPickerLabel(item, t)}</SelectItem>)}</SelectContent></Select>
           {agent ? <>
-            <Label htmlFor="agent-description">{ru ? "Название и назначение" : "Name and purpose"}</Label>
+            <Label htmlFor="agent-description">{t("owned15")}</Label>
             <Input id="agent-description" className={`${CONTROL_H} ${CONTROL}`} value={agent.description} onChange={(event) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, description: event.target.value } : item)); setSaved(false); }} />
           </> : null}
           </SurfaceBody>
@@ -357,12 +356,12 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           </div>
           <Disclosure summary={t("settingsAdvanced")}>
             <p className="break-all text-xs text-muted-foreground">Lane Pilot · {agent.sourceVersion} · SHA-256 {agent.sourceHash}</p>
-            <p className="text-sm">{ru ? "После сохранения инструкции независимы от шаблона. Native MAIN требует поддержки ядра; сохранение профиля не подтверждает её наличие. Выбор модели сессии и потолок разрешений имеют приоритет." : "Once saved, instructions are independent of the template. Native MAIN requires core support; saving a profile does not confirm that support. The session model choice and permission ceiling take precedence."}</p>
+            <p className="text-sm">{t("owned16")}</p>
           </Disclosure>
         </> : null}
       </fieldset>
-      <Button className={CONTROL_H} disabled={busy || (scope === "agents" && (!agent?.prompt.trim() || !agent.description.trim()))} onClick={() => void save()}>{busy ? (ru ? "Сохранение…" : "Saving…") : (ru ? "Сохранить" : "Save")}</Button>
-      {saved ? <p role="status" className="text-sm">{ru ? "Сохранено и проверено повторным чтением." : "Saved and verified by readback."}</p> : null}
+      <Button className={CONTROL_H} disabled={busy || (scope === "agents" && (!agent?.prompt.trim() || !agent.description.trim()))} onClick={() => void save()}>{busy ? (t("owned17")) : (t("owned18"))}</Button>
+      {saved ? <p role="status" className="text-sm">{t("owned19")}</p> : null}
     </>}
   </section>;
 }
