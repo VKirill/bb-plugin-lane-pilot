@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { HOST_JOB_KINDS, type HostJobKind } from "../contracts";
+import { sha256Hex } from "@lane-pilot/kit";
 
 type RawCall = (method: string, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }) => Promise<unknown>;
 type JobKv = { get<T>(key: string): Promise<T | undefined>; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void> };
@@ -37,7 +37,7 @@ export function createHostJobs(deps: {
   return {
     async run(kind: HostJobKind, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }, directCall: () => Promise<unknown>, jobKey?: string): Promise<unknown> {
       const { hostId } = options;
-      const key = `host-job:${kind}:${hostId}:${createHash("sha256").update(JSON.stringify(input)).digest("hex").slice(0, 24)}${jobKey ? `:${createHash("sha256").update(jobKey).digest("hex").slice(0, 16)}` : ""}`;
+      const key = `host-job:${kind}:${hostId}:${sha256Hex(JSON.stringify(input)).slice(0, 24)}${jobKey ? `:${sha256Hex(jobKey).slice(0, 16)}` : ""}`;
       // A check's verdict is of one moment: a finished one is taken again only by the call that named it (same jobKey, e.g. after
       // a reload), never by a later call whose input happens to be identical (a second merge's post-merge check).
       const takeFinished = kind !== "runSandboxedCommand" || Boolean(jobKey);

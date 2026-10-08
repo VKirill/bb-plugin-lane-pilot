@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import { findOpenNativeRun, getRun, listTaskTerminalStates } from "../database";
 import type { LanePilotDatabase } from "../database";
-import { redactKnown } from "@lane-pilot/kit";
+import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 import type { WorkflowEngine } from "../workflow/engine";
 import { isOffered, isPipeline, routeIntent } from "../workflow/router";
 import type { RouteDecision, RouterModel, RouterState, RunRecord } from "../workflow/router";
@@ -49,7 +48,7 @@ type ToolContext = { threadId?: string | null; projectId?: string | null };
 
 const OPEN_ATTEMPT_STATES = new Set(["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"]);
 const refused = (reason: string, extra: Record<string, unknown> = {}): string => JSON.stringify({ status: "refused", ...extra, reason }, null, 2);
-const sha16 = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 16);
+const sha16 = (text: string): string => sha256Hex(text).slice(0, 16);
 
 /** Keys sorted, so the same inputs give the same text whatever the order the PM wrote them in. */
 const canonical = (value: unknown): string => {

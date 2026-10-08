@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
 import { outputContract, agentPrompt } from "../workflow/agent-output";
 import type { RouterModel, RouterModelOutput } from "../workflow/router";
 import type { Field } from "../workflow/schema";
 import type { WorkflowAgents } from "./workflow-agent";
 import type { ChainRuntime } from "./workflow-runtime";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * The escalation of `lane_pilot_route` (Jev decides the clear cases first, src/jev/route-model.ts): a read-only helper thread of the PM chat that sees the owner's request and the cards of
@@ -23,7 +23,7 @@ const FIELDS: Field[] = [
 export function createRouterModel(rt: ChainRuntime, agents: WorkflowAgents): RouterModel {
   return async (input): Promise<RouterModelOutput> => {
     const cards = input.candidates.map((card) => ({ id: card.id, name: card.name, description: card.description, examples: card.examples, not_for: card.not_for, inputs: card.inputs, score: card.score, rules: card.rules }));
-    const spawnKey = createHash("sha256").update(`route|${rt.runId}|${input.intent}|${input.context ?? ""}`).digest("hex").slice(0, 32);
+    const spawnKey = sha256Hex(`route|${rt.runId}|${input.intent}|${input.context ?? ""}`).slice(0, 32);
     const task = [
       "Choose which workflow fits the owner's request. Candidates are below, already ranked by a text search; the search can be wrong, so judge by what the request asks for.",
       "A candidate whose `not_for` describes the request is a bad match. If two fit equally well, or the request is too broad to tell, choose none and write up to 3 questions that would settle it. If none fits, choose none and ask nothing.",

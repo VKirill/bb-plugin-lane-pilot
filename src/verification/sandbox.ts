@@ -1,9 +1,8 @@
 import { accessSync, constants as fsConstants } from "node:fs";
-import { createHash } from "node:crypto";
 import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { redactSecrets } from "@lane-pilot/kit";
+import { redactSecrets, sha256Hex } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
 
 export type SandboxedCommandInput = {
@@ -194,7 +193,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       // the sandbox keeps exactly them plus the variables --setenv gives it.
       const secrets=sandboxSecretEnv(input.env);
       const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
-      const policySha256=createHash("sha256").update(JSON.stringify(args),"utf8").digest("hex");
+      const policySha256=sha256Hex(JSON.stringify(args));
       const child=await spawnAsync(bubblewrapPath!,[...(Object.keys(secrets).length?args.filter((arg)=>arg!=="--clearenv"):args),input.command],{
         cwd,env:secrets,timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
       });
@@ -205,7 +204,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
         policySha256,stdout:maskSecrets((child.stdout ?? "").slice(0,200_000),secrets),stderr:maskSecrets((child.stderr ?? child.error?.message ?? "").slice(0,12_000),secrets)};
     }
     const profile = buildSeatbeltProfile(workspacePath,tempPath);
-    const policySha256 = createHash("sha256").update(profile,"utf8").digest("hex");
+    const policySha256 = sha256Hex(profile);
     const seatbeltSecrets=sandboxSecretEnv(input.env);
     const child = await spawnAsync(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],{
       cwd,
@@ -272,7 +271,7 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & 
   if (backend === "linux-bubblewrap") {
     const {guardPaths,created}=await prepareGuardPaths(workspacePath);
     const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
-    const policySha256=createHash("sha256").update(JSON.stringify(args),"utf8").digest("hex");
+    const policySha256=sha256Hex(JSON.stringify(args));
     // With variables to pass, `env -i` starts bwrap with only those, instead of bwrap's --clearenv; the sandbox's
     // own PATH, HOME and temp folders are still set by --setenv and win.
     const bwrapLine=[bubblewrapPath!,...(passed.length?args.filter((arg)=>arg!=="--clearenv"):args),input.command].map(shellQuote).join(" ");
@@ -280,7 +279,7 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & 
       commandLine:passed.length?`exec /usr/bin/env -i ${passed.join(" ")} ${bwrapLine}`:`exec ${bwrapLine}`};
   }
   const profile = buildSeatbeltProfile(workspacePath,tempPath);
-  const policySha256 = createHash("sha256").update(profile,"utf8").digest("hex");
+  const policySha256 = sha256Hex(profile);
   const env = [`PATH=${sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")}`,`HOME=${tempPath}`,`TMPDIR=${tempPath}`,`TMP=${tempPath}`,`TEMP=${tempPath}`,`BB_DATA_DIR=${bbDataDir()}`,"LANG=C","LC_ALL=C"];
   return {hostId,backend,workspacePath,cwd,policySha256,cleanup:{tempPath,created:[]},
     // Passed variables come before the sandbox's own, so PATH, HOME and the temp folders always win.

@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * VK core thread keys (`experimental_vkSpawnKeyed`, `experimental_vkFindByKey`, `experimental_vkFindByPluginMetadata`).
@@ -31,7 +32,7 @@ export const metadataLookupSupported = (bb: BbPluginApi) => typeof threadsOf(bb)
 export type SpawnIdentity = { stable: string; role: string };
 
 /** A short stable id for free text (a task, a title) inside a `spawnId`. */
-export const spawnTextId = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 16);
+export const spawnTextId = (text: string): string => sha256Hex(text).slice(0, 16);
 
 /**
  * The identity a spawn has when its metadata names it, or null: a helper that names no owner and no `spawnId` gets a
@@ -64,7 +65,7 @@ export function spawnIdentity(metadata: Record<string, unknown> | undefined): Sp
 export function spawnKey(stable: string, role: string, n: number): string {
   const key = `lp:${stable}:${role}:${n}`;
   if (key.length <= MAX_KEY_LENGTH) return key;
-  return `lp:${createHash("sha256").update(stable).digest("hex").slice(0, 40)}:${role.slice(0, 60)}:${n}`;
+  return `lp:${sha256Hex(stable).slice(0, 40)}:${role.slice(0, 60)}:${n}`;
 }
 
 const markerKey = (identity: SpawnIdentity) => `spawn-key:${identity.stable}:${identity.role}`;

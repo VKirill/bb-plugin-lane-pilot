@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 
+import { sha256Hex } from "@lane-pilot/kit";
 export type OpenCodeToolTelemetryEvent = {
   eventId: string;
   timestamp: number | string | null;
@@ -28,7 +28,7 @@ const MAX_LOG_LINES = 2048;
 const MAX_EVENTS = 512;
 
 function hash(value: string): string {
-  return createHash("sha256").update(value, "utf8").digest("hex");
+  return sha256Hex(value);
 }
 
 function record(value: unknown): Record<string, unknown> | null {

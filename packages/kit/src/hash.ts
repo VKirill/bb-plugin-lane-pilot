@@ -1,11 +1,14 @@
-import { createHash } from "node:crypto";
+import { createHash, type BinaryLike } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readdir, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
 
-export function sha256Buffer(data: Buffer | string): string {
+/** SHA-256 of a string (UTF-8) or bytes, as lower-case hex. The one place the plugin calls createHash("sha256"). */
+export function sha256Hex(data: BinaryLike): string {
   return createHash("sha256").update(data).digest("hex");
 }
+
+export const sha256Buffer = sha256Hex;
 
 export async function sha256File(path: string): Promise<string> {
   return new Promise((resolve, reject) => {

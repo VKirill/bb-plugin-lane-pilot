@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import { artifactDef, artifactExample, artifactId, summarizeValue } from "./artifacts";
 import type { ProducesSpec } from "./artifacts";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * Handoff between steps by reference (W0, Maestro's «artifact by reference, not by text»). A step does not get the whole text
@@ -18,7 +18,7 @@ export type PacketInput = { name: string; value: unknown };
 
 export const textOf = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value, null, 1) ?? "");
 export const isBig = (value: unknown): boolean => textOf(value).length > INLINE_CHARS;
-const sha8 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex").slice(0, 8);
+const sha8 = (text: string): string => sha256Hex(text).slice(0, 8);
 const safeName = (name: string): string => name.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "input";
 
 /** Where an input is kept, relative to the repository root: the chat's folder, the run, and a name from the input and its content. */

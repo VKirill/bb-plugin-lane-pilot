@@ -1,9 +1,8 @@
 import { taskV2Schema } from "../contracts";
 import type { PrototypeConfig, TaskV2 } from "../contracts";
 import { valueAt } from "./values";
-import { createHash } from "node:crypto";
 import { compactContract, pmReadBrief } from "../writer-brief";
-import { cleanCheckOutput, failureExcerpt } from "@lane-pilot/kit";
+import { cleanCheckOutput, failureExcerpt, sha256Hex } from "@lane-pilot/kit";
 import { fileAllowedByOwns, matchOwnsPath } from "../owns-paths";
 export function outputText(value: unknown): string {
   for (const key of ["text", "output", "lastAssistantText", "content"]) {
@@ -320,5 +319,5 @@ export function answerTurnPrompt(answer:string): string {
 }
 
 export function planDigest(plan:string): { sha256:string; length:number } {
-  return { sha256:createHash("sha256").update(plan, "utf8").digest("hex"), length:Buffer.byteLength(plan, "utf8") };
+  return { sha256:sha256Hex(plan), length:Buffer.byteLength(plan, "utf8") };
 }

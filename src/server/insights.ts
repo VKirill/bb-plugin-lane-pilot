@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import { dropMemoryIndexes, memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, type MemoryCandidate, type MemorySettings } from "@lane-pilot/memory-core";
 import {
@@ -11,6 +10,7 @@ import { configuredSetting, requirePmRun, type ServerContext } from "./context";
 import { registerObservedTool } from "./tool-result";
 import { scheduleIsolated } from "./schedules";
 import { poolHasRoom, poolTokens, ruleBudget } from "../learning/rule-budget";
+import { sha256Hex } from "@lane-pilot/kit";
 
 export const INSIGHTS_TOOLS = ["lane_pilot_routing_stats", "lane_pilot_lessons_sweep", "lane_pilot_rule_propose", "lane_pilot_lesson", "lane_pilot_memory_golden"] as const;
 
@@ -54,7 +54,7 @@ export function acceptRuleProposal(db: LanePilotDatabase, projectId: string, id:
   const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot);
   storeMemoryRecords(db, {
     projectId, personalBot: settings.personalBot, audience: "subagent",
-    sourceSha256: createHash("sha256").update(`rule:${id}`).digest("hex"),
+    sourceSha256: sha256Hex(`rule:${id}`),
     entries: [{ kind: "core", content, concepts: ["rule", "owner-confirmed"] }],
     coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget,
   });
@@ -151,7 +151,7 @@ export function rewordAdoptedRule(db: LanePilotDatabase, projectId: string, id: 
   const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot);
   storeMemoryRecords(db, {
     projectId, personalBot: settings.personalBot, audience: "subagent",
-    sourceSha256: createHash("sha256").update(`rule:${id}:${proposal.revision + 1}`).digest("hex"),
+    sourceSha256: sha256Hex(`rule:${id}:${proposal.revision + 1}`),
     entries: [{ kind: "core", content, concepts: ["rule", "auto-adopted"] }],
     coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget,
   });

@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { Workflow } from "./schema";
 import { loadWorkflow, validateWorkflow } from "./validate";
 import type { WorkflowProblem } from "./validate";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /** Where workflow files are read from: the hub's disk here, the host of a project's machine later. */
 export type WorkflowFileSource = {
@@ -38,9 +38,9 @@ export type WorkflowStore = {
 
 const RANK: Record<WorkflowOrigin, number> = { builtin: 0, global: 1, project: 2 };
 /** The hash of what a workflow does: the places of its steps on the canvas (`ui`) are left out, so dragging a card does not make a published workflow «another version» with no test receipt. */
-export const definitionSha256 = (workflow: Workflow): string => { const { ui: _ui, ...rest } = workflow; return createHash("sha256").update(JSON.stringify(rest)).digest("hex"); };
+export const definitionSha256 = (workflow: Workflow): string => { const { ui: _ui, ...rest } = workflow; return sha256Hex(JSON.stringify(rest)); };
 /** The hash before 0.1.194, with `ui` in it: a receipt written then is still honoured for the same file. */
-export const legacyDefinitionSha256 = (workflow: Workflow): string => createHash("sha256").update(JSON.stringify(workflow)).digest("hex");
+export const legacyDefinitionSha256 = (workflow: Workflow): string => sha256Hex(JSON.stringify(workflow));
 
 /**
  * Loads the three sources and keeps, per id, the narrowest valid one (project over global over built-in). A file that does

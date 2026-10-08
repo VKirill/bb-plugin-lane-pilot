@@ -1,9 +1,8 @@
-import { createHash } from "node:crypto";
 import { access, lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
-import { spawnAsync } from "@lane-pilot/kit";
+import { spawnAsync, sha256Hex } from "@lane-pilot/kit";
 
 export const browserQaInputSchema = z.object({
   requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), url:z.string().url(),
@@ -25,7 +24,7 @@ export type BrowserQaResult = {
 };
 
 function sha256(data:Buffer|string):string {
-  return createHash("sha256").update(data).digest("hex");
+  return sha256Hex(data);
 }
 
 function redact(text:string):string {

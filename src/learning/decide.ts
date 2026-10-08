@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import type { NotesPort, RulesPort } from "./extract";
 import { getItem, setItemState, type Db, type Item } from "./store";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * What the owner decides about a learned item (T3, T5): `accept` the ones that wait for a yes, `reject` them, `drop` one already in force.
@@ -24,7 +24,7 @@ const shellQuote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'
 /** `bb memory add …` for a global preference, as argv. */
 export function bbMemoryAddArgs(item: Pick<Item, "id" | "text" | "evidence">): string[] {
   const slug = item.text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
-  const name = `owner-${slug.length >= 6 ? slug : "pref"}-${createHash("sha256").update(item.id).digest("hex").slice(0, 6)}`;
+  const name = `owner-${slug.length >= 6 ? slug : "pref"}-${sha256Hex(item.id).slice(0, 6)}`;
   return ["bb", "memory", "add", "--scope", "global", "--kind", "preference", "--name", name, "--summary", item.text.slice(0, 400),
     "--details", `${item.text}\n\nSource: ${item.evidence}`, "--reason", "The owner said this to an agent and confirmed it when Lane Pilot asked.", "--tag", "learned", "--importance", "60"];
 }

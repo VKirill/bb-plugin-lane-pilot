@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
 import type { TaskV2 } from "../contracts";
 import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts } from "../database";
-import { redactKnown } from "@lane-pilot/kit";
+import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../task-v2";
 import { agentPrompt, outputContract, parseAgentOutput } from "../workflow/agent-output";
 import type { NodeExecutor, PollResult, StepContext, WorkflowEngine } from "../workflow/engine";
@@ -233,7 +232,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const { contract, usage: planned } = await contractOf(c, rt, node);
       const run = getRun(db, rt.runId);
       if (!run?.writer_workspace_path) throw new Error("the run has no workspace to build in");
-      const stem = createHash("sha256").update(`${c.runId}|${c.stepKey}`).digest("hex").slice(0, 8);
+      const stem = sha256Hex(`${c.runId}|${c.stepKey}`).slice(0, 8);
       const task = { ...contract, id: `w${stem}-${safeId(str(contract.id) || node.id)}`, project_cwd: run.writer_workspace_path, ...(node.quality_mode && node.quality_mode !== "{{$mode}}" ? { quality_mode: node.quality_mode } : { quality_mode: c.mode }) };
       const valid = validateTaskV2(task);
       if (!valid.ok) return { output: failedTask("failed", `task-v2 invalid: ${valid.errors.join("; ")}`) };

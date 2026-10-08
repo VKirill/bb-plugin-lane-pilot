@@ -5,7 +5,7 @@ import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey,
 import { buildDocsFlows } from "./verification/docs-flows";
 import { runStabilityDrill } from "./verification/stability-drill";
 import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, revertPaths } from "./verification/git-docs";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { chmod, lstat, mkdir, open, stat, statfs, readFile, readlink, readdir, realpath, rename, unlink } from "node:fs/promises";
@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contracts";
 import { isEnvironmentCheckFailure } from "./failure-class";
-import { readBoundedWorkspaceFile } from "@lane-pilot/kit";
+import { readBoundedWorkspaceFile, sha256Hex } from "@lane-pilot/kit";
 import { casWriteWorkflowFile } from "./workflow/files";
 import { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
 import { runBrowserQaOnHost } from "./stages/browser-qa";
@@ -39,7 +39,7 @@ import {
 } from "./stack-ops";
 
 async function hashFile(path: string): Promise<string> {
-  return createHash("sha256").update(await readFile(path)).digest("hex");
+  return sha256Hex(await readFile(path));
 }
 
 function ctx(input: {
@@ -247,7 +247,7 @@ export const readOpenCodeTelemetry: ExperimentalHostRpcHandlers<typeof hostContr
   try { content = new TextDecoder("utf-8", { fatal:true }).decode(bytes); }
   catch { throw new Error("telemetry log is not valid UTF-8"); }
   return { hostId:process.env.BB_HOST_ID ?? input.requestedHostId, relativePath:normalized,
-    size:bytes.byteLength, sha256:createHash("sha256").update(bytes).digest("hex"), content };
+    size:bytes.byteLength, sha256:sha256Hex(bytes), content };
 };
 
 export const readBoundedFile: ExperimentalHostRpcHandlers<typeof hostContract>["readBoundedFile"] = async (input) => {
@@ -281,7 +281,7 @@ export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["li
       const bytes = await readFile(path);
       // The nightly pass reports an oversized page to the folder that owns it instead of failing every folder.
       if (bytes.byteLength > 40_000) { if (input.skipOversized) { oversized.push(rel); continue; } throw new Error(`docs page exceeds 40000 bytes: ${rel}`); }
-      pages.push({path:rel,modifiedAt:Math.trunc(info.mtimeMs),sha256:createHash("sha256").update(bytes).digest("hex"),content:bytes.toString("utf8")});
+      pages.push({path:rel,modifiedAt:Math.trunc(info.mtimeMs),sha256:sha256Hex(bytes),content:bytes.toString("utf8")});
       if (pages.length > 5000) throw new Error("docs inventory exceeds 5000 markdown files; reduce the source tree before running maintenance");
     }
   };
@@ -335,7 +335,7 @@ export const writeWorkflowFile: ExperimentalHostRpcHandlers<typeof hostContract>
 };
 
 async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inScope:(path:string) => boolean):Promise<Awaited<ReturnType<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>>> {
-  const suppliedPreviewSha256=createHash("sha256").update(JSON.stringify(input.edits),"utf8").digest("hex");
+  const suppliedPreviewSha256=sha256Hex(JSON.stringify(input.edits));
   if(suppliedPreviewSha256!==input.previewSha256) return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:"blocked",writes:[],reason:"onboarding preview hash did not match supplied edits"};
   const rootInfo=await lstat(input.projectCwd);
   if(!rootInfo.isDirectory()||rootInfo.isSymbolicLink()) throw new Error("onboarding project root must be a real directory");
@@ -372,7 +372,7 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inSco
     try{
       const info=await lstat(fullPath);
       if(info.isSymbolicLink()||!info.isFile()) throw new Error(`onboarding target must be a regular file: ${normalized}`);
-      const currentHash=createHash("sha256").update(await readFile(fullPath)).digest("hex");
+      const currentHash=sha256Hex(await readFile(fullPath));
       if(edit.expectedSha256===null||currentHash!==edit.expectedSha256){
         return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:"conflict",writes:[],reason:`onboarding expected hash changed: ${normalized}`};
       }
@@ -392,7 +392,7 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inSco
         if((cause as NodeJS.ErrnoException).code==="ENOENT") return null;
         throw cause;
       });
-      const currentHash=currentInfo?createHash("sha256").update(await readFile(target.fullPath)).digest("hex"):null;
+      const currentHash=currentInfo?sha256Hex(await readFile(target.fullPath)):null;
       if((currentInfo?.isSymbolicLink()??false)||currentHash!==target.expectedSha256){
         writes.push({path:target.path,beforeSha256:currentHash,afterSha256:currentHash,status:"conflict",reason:"target changed after onboarding preflight"});
         return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:writes.length===1?"conflict":"blocked",writes,reason:"onboarding compare-and-swap changed during apply"};
@@ -407,15 +407,15 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inSco
         if((cause as NodeJS.ErrnoException).code==="ENOENT") return null;
         throw cause;
       });
-      const latestHash=latestInfo?createHash("sha256").update(await readFile(target.fullPath)).digest("hex"):null;
+      const latestHash=latestInfo?sha256Hex(await readFile(target.fullPath)):null;
       if((latestInfo?.isSymbolicLink()??false)||latestHash!==target.expectedSha256){
         await unlink(tempPath).catch(()=>undefined);tempPath=undefined;
         writes.push({path:target.path,beforeSha256:latestHash,afterSha256:latestHash,status:"conflict",reason:"target changed before atomic replacement"});
         return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:writes.length===1?"conflict":"blocked",writes,reason:"onboarding compare-and-swap changed during apply"};
       }
       await rename(tempPath,target.fullPath);tempPath=undefined;
-      const afterSha256=createHash("sha256").update(await readFile(target.fullPath)).digest("hex");
-      if(afterSha256!==createHash("sha256").update(bytes).digest("hex")) throw new Error("onboarding atomic-write readback hash mismatch");
+      const afterSha256=sha256Hex(await readFile(target.fullPath));
+      if(afterSha256!==sha256Hex(bytes)) throw new Error("onboarding atomic-write readback hash mismatch");
       writes.push({path:target.path,beforeSha256:target.expectedSha256,afterSha256,status:"applied",reason:null});
     }catch(cause){
       if(tempPath) await unlink(tempPath).catch(()=>undefined);
@@ -567,12 +567,12 @@ const PLAN_EFFORT_QUESTION = {
 
 export const classifyPlan: ExperimentalHostRpcHandlers<typeof hostContract>["classifyPlan"] = async (input) => {
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
-  const planSha256 = createHash("sha256").update(input.plan, "utf8").digest("hex");
+  const planSha256 = sha256Hex(input.plan);
   const sourceLength = Buffer.byteLength(input.plan, "utf8");
   const payload = { model:"jev-latest", state:{ task:input.plan }, questions:{ effort:PLAN_EFFORT_QUESTION } };
   const body = JSON.stringify(payload);
   const decodedPlan = (JSON.parse(body) as { state:{ task:string } }).state.task;
-  const sentPlanSha256 = createHash("sha256").update(decodedPlan, "utf8").digest("hex");
+  const sentPlanSha256 = sha256Hex(decodedPlan);
   const sentLength = Buffer.byteLength(decodedPlan, "utf8");
   const transportProof = { planSha256, sentPlanSha256, sourceLength, sentLength };
   if (sentPlanSha256 !== planSha256 || sentLength !== sourceLength) {

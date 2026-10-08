@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
-import { redactKnownDeep } from "@lane-pilot/kit";
+import { redactKnownDeep, sha256Hex } from "@lane-pilot/kit";
 import { MAX_STATE_CHARS, type JevClient } from "./client";
 import { MAX_QUESTIONS_PER_JUDGMENT, type Answers, type Decided, type Judgment, type JudgmentMode, type Thresholds } from "./registry";
 import { insertReceipt, recordOutcome } from "./receipts";
@@ -44,7 +43,7 @@ export type Jev = {
 
 type Entry = { judgment: Judgment<any, any>; input: unknown; mode: JudgmentMode; thresholds: Thresholds; state: unknown; stateText: string; questions: Record<string, JevQuestion> };
 
-const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
+const sha256 = (text: string): string => sha256Hex(text);
 
 function summarize(answers: Answers): Record<string, AnswerSummary> {
   return Object.fromEntries(Object.entries(answers).map(([id, answer]) => {

@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
 
 export const DOCS_SINCE_CHOICES = ["yesterday", "24 hours ago", "7 days ago"] as const;
 export type DocsSince = (typeof DOCS_SINCE_CHOICES)[number];
 
 import { DOCS_DEFAULT_SELECTION } from "./docs-defaults";
+import { sha256Hex } from "@lane-pilot/kit";
 export { DOCS_DEFAULT_SELECTION };
 
 /** The project's own docs model when it set one, otherwise the docs default (not the writer's model). */
@@ -114,7 +114,7 @@ export function validateDocsEdits(raw:unknown, selected:DocsPage[], pageCap:numb
 }
 
 export function docsInputHash(pages:DocsPage[]):string {
-  return createHash("sha256").update(JSON.stringify(pages.map(({path,modifiedAt,sha256}) => ({path,modifiedAt,sha256}))), "utf8").digest("hex");
+  return sha256Hex(JSON.stringify(pages.map(({path,modifiedAt,sha256}) => ({path,modifiedAt,sha256}))));
 }
 
 export function docsMaintenancePrompt(input:{since:DocsSince; pages:DocsPage[]; pageCap:number; agent?:string}):string {

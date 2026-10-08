@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { HOST_JOB_KINDS, hostContract, type HostJobKind } from "./contracts";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * Background jobs on a host (B4). The host daemon cancels a call at its deadline and SIGKILLs the plugin worker five
@@ -131,7 +132,7 @@ export async function startHostJob(
   return taken.existing ?? await launchJob(request, options, taken.claim);
 }
 
-const keyFile = (key: string, options: JobOptions) => join(jobsRoot(options), "keys", `${createHash("sha256").update(key).digest("hex").slice(0, 32)}.id`);
+const keyFile = (key: string, options: JobOptions) => join(jobsRoot(options), "keys", `${sha256Hex(key).slice(0, 32)}.id`);
 
 /**
  * One logical job per key: the first start writes the key file (exclusively) and launches; a second start with the same key, also

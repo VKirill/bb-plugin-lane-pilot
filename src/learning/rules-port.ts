@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
 import { memoryRecordId, storeMemoryRecords } from "@lane-pilot/memory-core";
 import { listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
 import type { LanePilotDatabase } from "../database";
 import { adoptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, retireAdoptedRule } from "../server/insights";
 import type { NotesPort, RulesPort } from "./extract";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /** The extractor's view of Lane Pilot's rules (server/insights.ts): the same proposal, trial and retirement a PM's `lane_pilot_lesson` uses. */
 export function lpRulesPort(db: LanePilotDatabase): RulesPort {
@@ -28,7 +28,7 @@ export function lpNotesPort(db: LanePilotDatabase): NotesPort {
       const content = `Decision of the owner, ${new Date(at).toISOString().slice(0, 10)}: ${text} (${evidence})`.slice(0, 900);
       const result = storeMemoryRecords(db, {
         projectId, personalBot: settings.personalBot, audience: "subagent",
-        sourceSha256: createHash("sha256").update(`learning:${content}`).digest("hex"),
+        sourceSha256: sha256Hex(`learning:${content}`),
         entries: [{ kind: "note", content, concepts: ["decision", "owner-message"] }],
         coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget, origin: "learning", now: at,
       });

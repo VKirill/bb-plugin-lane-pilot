@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "./model-json";
 import { CODE_CRITIC_METHOD } from "./role-method";
 import { VERDICT_STATUSES, isVerdictShape, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "./verdict";
 import type { Verdict, VerdictFinding, VerdictStatus } from "./verdict";
+import { sha256Hex } from "@lane-pilot/kit";
 
 export const CODE_CRITIQUE_STAGE = "code-critique" as const;
 export const CODE_CRITIQUE_MAX_ROUNDS = 3;
@@ -145,7 +145,7 @@ export type CodeCritiqueSettings = {
 };
 
 export function sha256Text(value: string): string {
-  return createHash("sha256").update(value, "utf8").digest("hex");
+  return sha256Hex(value);
 }
 
 export function settingOff(value: unknown): boolean {

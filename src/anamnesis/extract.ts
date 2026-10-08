@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import { SENSITIVE_FROM, type FragmentDecision, type MatchDecision, type MatchInput } from "./judgment";
 import type { Hub } from "./hub";
 import { scrubQuote, sensitiveReason, type AnamnesisRecord, type Kind } from "./model";
 import type { UpsertSummary } from "./ops";
 import { maskPii } from "./pii";
 import { messageEvidence, type OwnerMessage, type OwnerMessageConsumer, type OwnerMessageMeta } from "./owner-messages";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * Learning from the owner's messages as they come (A4): the at-message path and the daily pass use this one function.
@@ -51,7 +51,7 @@ export type ExtractReport = {
 const emptyReport = (live: boolean): ExtractReport => ({ live, considered: 0, tooShort: 0, heldBackSensitive: 0, alreadySeen: 0, overCeiling: 0,
   asked: 0, masked: 0, nothing: 0, unavailable: 0, kept: 0, created: 0, merged: 0, contradictions: 0, duplicates: 0, stored: null, complete: true });
 
-const sha = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 12);
+const sha = (text: string): string => sha256Hex(text).slice(0, 12);
 
 /** The day the ceiling counts in: Madrid, where the owner's day and the 04:00 pass are. */
 export const madridDay = (at: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid" }).format(at);

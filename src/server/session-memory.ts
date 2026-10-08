@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
@@ -7,6 +6,7 @@ import type { rpcContract } from "../contracts";
 import { adoptRuleProposal, memorySettingsFor } from "./insights";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * Project memory for sessions on any machine — a PM chat, a terminal claude-lane session — so there is one memory,
@@ -37,7 +37,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       catch (cause) { return { stored: false, id: null, reason: cause instanceof Error ? cause.message : String(cause) }; }
       try {
         const result = storeMemoryRecords(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
-          sourceSha256: createHash("sha256").update(`session:${source ?? ""}`).digest("hex"), entries,
+          sourceSha256: sha256Hex(`session:${source ?? ""}`), entries,
           // One CLI session is one voice: its note reaches writers once a second source states it or a day has passed.
           trust: "observed", origin: "session",
           coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget });

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { execFile } from "node:child_process";
@@ -8,6 +8,7 @@ import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:p
 import { unionLpBridgeToolsOnAgentsJson } from "./native-agent-overlay";
 import { nativeAgentCliId, nativeAgentSettingId } from "./native-session";
 import { materializeNativeHookSession } from "./native-session-hooks";
+import { sha256Hex } from "@lane-pilot/kit";
 
 const exec = promisify(execFile);
 
@@ -266,9 +267,9 @@ export async function prepareNativeClaude(input: {
     }
   }
   const command = await installedClaudeExecutable();
-  const digest = createHash("sha256").update(JSON.stringify({
+  const digest = sha256Hex(JSON.stringify({
     agentId, command, agentsJson: sessionAgentsJson, settingId, sourceStamp, version: 7,
-  })).digest("hex").slice(0, 24);
+  })).slice(0, 24);
   const dir = join(input.dataDir, "native-launchers", digest);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const session = await materializeNativeHookSession({

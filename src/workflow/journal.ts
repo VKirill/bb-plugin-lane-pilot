@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import type { LanePilotDatabase } from "../database";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * The workflow journal: run, step, join arrival, effect and an append-only event log. Every change of a step is a
@@ -141,7 +141,7 @@ export type EffectRow = {
   intent_json: string | null; result_json: string | null; created_at: number; updated_at: number;
 };
 
-export const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
+export const sha256 = (text: string): string => sha256Hex(text);
 /** A short stable id from parts: the same parts always give the same id, so re-routing after a crash creates nothing twice. */
 export const stableId = (...parts: Array<string | number>): string => sha256(parts.join("\u0000")).slice(0, 16);
 

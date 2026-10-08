@@ -1,5 +1,4 @@
 import { writerReuseStats } from "../writer-reuse-stats";
-import { createHash } from "node:crypto";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -22,6 +21,7 @@ import { jev } from "../jev/runtime";
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "../jev/output-guard";
 import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../learning/frustration";
 import { MAX_CANDIDATES, repairGroup } from "../jev/judgments/repair-group";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * Self-repair: every 15 minutes Lane Pilot looks for failures that are its own fault (triage origin
@@ -142,7 +142,7 @@ export function reasonSignature(kind: Incident["kind"], reason: string): string 
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 160);
-  return `${kind}:${createHash("sha256").update(core).digest("hex").slice(0, 16)}:${core}`;
+  return `${kind}:${sha256Hex(core).slice(0, 16)}:${core}`;
 }
 
 /** The repair thread's verdict as the unified status: fixed or already-fixed is a pass, not-lane-pilot a rework (the PM changes something), needs-owner a block. */
@@ -430,7 +430,7 @@ export function createSelfRepair(ctx: ServerCore) {
     const environment = await bb.sdk.environments.get({ environmentId: cfg.environmentId });
     const hostId = stringAt(environment, "hostId"), basePath = stringAt(environment, "path");
     if (!hostId || !basePath) throw new Error(`environment ${cfg.environmentId} has no host path`);
-    const name = `self-repair-${createHash("sha256").update(signature).digest("hex").slice(0, 8)}-${now.toString(36)}`;
+    const name = `self-repair-${sha256Hex(signature).slice(0, 8)}-${now.toString(36)}`;
     const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath, name }, { hostId, timeoutMs: 120_000 });
     if (created.status !== "ready" || !created.path || !created.branch) throw new Error(`worktree not created: ${created.reason ?? "unknown"}`);
     // node_modules and built output are linked in so the suite runs there at once; without them the repair reinstalls.

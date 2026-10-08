@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { maskPii } from "../anamnesis/pii";
 import { sensitiveReason } from "../anamnesis/model";
 import type { OwnerMessage, OwnerMessageConsumer, OwnerMessageMeta } from "../anamnesis/owner-messages";
@@ -7,6 +6,7 @@ import type { LearningConfig } from "./config";
 import { ANGRY_P, ownerMessageJudgment, type MessageDecision, type MessageSignals, type Route } from "./judgment";
 import type { DecisionsClient, SecondOpinion } from "./opinion";
 import { insertObservation, insertSignal, hasObservation, usageToday, type Db, type Observation } from "./store";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * The hook on the owner's messages (T1, T2). It subscribes to the owner-message hub of the anamnesis room, so both learning layers read
@@ -39,7 +39,7 @@ export type ObserveDeps = {
 
 /** A stable fraction of 0..1 from a message id and a purpose, so a retry of the same message decides the same way. */
 export function fractionOf(id: string, purpose: string): number {
-  return parseInt(createHash("sha256").update(`${purpose}:${id}`).digest("hex").slice(0, 8), 16) / 0x1_0000_0000;
+  return parseInt(sha256Hex(`${purpose}:${id}`).slice(0, 8), 16) / 0x1_0000_0000;
 }
 
 const clip = (text: string): string => (text.length <= KEEP_HEAD + KEEP_TAIL ? text : `${text.slice(0, KEEP_HEAD)}\n…\n${text.slice(-KEEP_TAIL)}`);

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { createHash } from "node:crypto";
 import { extractModelJson, NO_TOOLS_LINE } from "./model-json";
+import { sha256Hex } from "@lane-pilot/kit";
 
 const onboardingEditSchema = z.object({
   path:z.string().min(1).max(240),
@@ -49,7 +49,7 @@ export function acceptedOnboardingEvidence(input:{outputSha256?:string|null;resu
 }
 
 export function onboardingPreviewSha256(preview:OnboardingPreview):string {
-  return createHash("sha256").update(JSON.stringify(preview.edits),"utf8").digest("hex");
+  return sha256Hex(JSON.stringify(preview.edits));
 }
 
 export function onboardingPrompt(input:{task:unknown;pages:OnboardingInputPage[];accepted?:OnboardingAcceptedEvidence|null;agent?:string;depth:"fast"|"deep"}):string {

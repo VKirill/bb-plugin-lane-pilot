@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import type { WorkflowEngine } from "./engine";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * The reducers of the joins in the built-in chains: pure functions from what the branches returned to the fields the join
@@ -28,7 +28,7 @@ const done = (input: JoinInput) => input.rows.filter((row) => row.ok).map((row) 
 const lost = (input: JoinInput) => input.rows.filter((row) => !row.ok);
 
 /** A stable id for a finding the reviewer did not number: dimension, place and a hash of the evidence. */
-const findingId = (finding: Row): string => str(finding.id) || `${str(finding.dimension) || "f"}:${str(finding.file)}:${finding.line ?? 0}:${createHash("sha256").update(str(finding.evidence) + str(finding.impact)).digest("hex").slice(0, 6)}`;
+const findingId = (finding: Row): string => str(finding.id) || `${str(finding.dimension) || "f"}:${str(finding.file)}:${finding.line ?? 0}:${sha256Hex(str(finding.evidence) + str(finding.impact)).slice(0, 6)}`;
 
 export const REDUCERS: Record<string, Reducer> = {
   "reduce.insights-post.posts": (input) => {

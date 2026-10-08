@@ -1,9 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { sha256Hex } from "@lane-pilot/kit";
 
 export const WORKFLOW_FILE_ID = /^[a-z][a-z0-9.-]{0,47}$/;
-export const sha256Text = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
+export const sha256Text = (text: string): string => sha256Hex(text);
 
 export type WorkflowWrite = {
   status: "applied" | "conflict";

@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { Route } from "./judgment";
+import { sha256Hex } from "@lane-pilot/kit";
 
 export type Db = Pick<Database.Database, "prepare">;
 export const DAY_MS = 86_400_000;
@@ -113,7 +113,7 @@ const itemFrom = (row: Row): Item => ({
   note: (row.note as string | null) ?? null, createdAt: row.created_at as number, decidedAt: (row.decided_at as number | null) ?? null, announcedAt: (row.announced_at as number | null) ?? null,
 });
 
-export const itemId = (obsId: string, kind: string, text: string): string => `lrn_${createHash("sha256").update(`${obsId}\n${kind}\n${text.toLowerCase()}`).digest("hex").slice(0, 12)}`;
+export const itemId = (obsId: string, kind: string, text: string): string => `lrn_${sha256Hex(`${obsId}\n${kind}\n${text.toLowerCase()}`).slice(0, 12)}`;
 
 /** An item with no evidence is refused here, whatever the caller did: every record names the message it came from. */
 export function insertItem(db: Db, item: Item): boolean {

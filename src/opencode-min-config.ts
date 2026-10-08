@@ -1,8 +1,9 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, readlink, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { parse as parseJsonc } from "jsonc-parser/lib/esm/main.js";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * A minimal OpenCode config for Lane Pilot's helper threads (instructions audit 2026-10-08, N1).
@@ -178,7 +179,7 @@ async function build(input: OpencodeMinInput): Promise<OpencodeMinResult | null>
 
   const { agent: _agent, command: _command, ...rest } = config.value;
   const minimal: Json = { ...rest, ...(listed.length ? { plugin: keptSpecs } : {}), permission: withBashDeny(rest.permission) };
-  const key = createHash("sha256").update(JSON.stringify({ kept: keptSpecs.map(pluginName), local: localKept.map((item) => `${item.dir}/${item.name}`) })).digest("hex").slice(0, 12);
+  const key = sha256Hex(JSON.stringify({ kept: keptSpecs.map(pluginName), local: localKept.map((item) => `${item.dir}/${item.name}`) })).slice(0, 12);
   const configHome = join(input.dataDir, "opencode-min", key);
   const dir = join(configHome, "opencode");
   await mkdir(join(dir, "plugins"), { recursive: true });

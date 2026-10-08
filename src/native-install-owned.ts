@@ -1,7 +1,8 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, readlink, rename, rm, rmdir, symlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
+import { sha256Hex } from "@lane-pilot/kit";
 
 export type OwnedFile = { path: string; payload: string; mode: number; link?: string; hash: string };
 export type OwnedJson = { path: string; key: string[]; value: unknown; array: boolean; existed: boolean; parents: string[][] };
@@ -11,7 +12,7 @@ export type NativeInstallManifest = {
   blocks: OwnedBlock[]; preserved: string[]; createdConfigs: string[]; createdDirs: string[]; state: "prepared" | "enabled" | "disabled";
 };
 
-export const hashBytes = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
+export const hashBytes = (bytes: Buffer | string): string => sha256Hex(bytes);
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 export async function atomicText(path: string, text: string): Promise<void> {

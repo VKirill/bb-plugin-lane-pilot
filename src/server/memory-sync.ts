@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   exportedFileName,
@@ -18,6 +17,7 @@ import { requirePmRun } from "./context";
 import { registerObservedTool } from "./tool-result";
 import type { ServerCore } from "./core";
 import { memorySettingsFor } from "./insights";
+import { sha256Hex } from "@lane-pilot/kit";
 
 export const MEMORY_SYNC_TOOLS = ["lane_pilot_memory_import", "lane_pilot_memory_export"] as const;
 
@@ -83,7 +83,7 @@ export async function importFileMemory(ctx: ServerCore, input: { projectId: stri
       base.skipped.push({ file: file.name, reason: cause instanceof Error ? cause.message : String(cause) });
     }
   }
-  const sourceSha256 = createHash("sha256").update(files.map((file) => file.path).join("\n")).digest("hex");
+  const sourceSha256 = sha256Hex(files.map((file) => file.path).join("\n"));
   let imported = 0;
   for (const [audience, entries] of byAudience) {
     const store = (batch: MemoryCandidate[]) => storeMemoryRecords(db, { projectId: input.projectId, personalBot: settings.personalBot, audience, sourceSha256, entries: batch, origin: "import", coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget }).insertedIds.length;
