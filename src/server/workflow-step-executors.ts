@@ -75,10 +75,10 @@ function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null)
   const role = text(node.role) ?? "worker";
   const helper = roleSpec(role).helper;
   // The same function the executor calls (withResolvedModel, workflow-agent.ts): the card says what will be spawned.
-  const chosen = resolveAgentModel({ role, node: { provider: text(node.provider), model: text(node.model), reasoning: text(node.reasoning), model_preset: text(node.model_preset) }, settings, pm });
+  const chosen = resolveAgentModel({ role, node: { provider: text(node.provider), model: text(node.model), reasoning: text(node.reasoning), service_tier: text(node.service_tier), model_preset: text(node.model_preset) }, settings, pm });
   return {
     nodeId: id, kind: "agent", uses: text(node.uses), mode: "model", agent: { role, helper, label: role },
-    providerId: chosen.providerId, model: chosen.model, reasoningEffort: chosen.reasoningEffort, serviceTier: null,
+    providerId: chosen.providerId, model: chosen.model, reasoningEffort: chosen.reasoningEffort, serviceTier: chosen.serviceTier,
     source: chosen.source, sourceKey: chosen.sourceKey, inherited: chosen.inherited,
     fallbacks: [], parts: [], overridable: true, settingsKey: null, costTier: costTier(chosen.model), issues: chosen.issues,
   };

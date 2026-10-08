@@ -55,7 +55,7 @@ export type HelperRequest = {
   /** The whole first message (or, into a running thread, the follow-up). */
   prompt: string;
   fields: readonly Field[];
-  provider?: string; model?: string; reasoning?: string; preset?: string;
+  provider?: string; model?: string; reasoning?: string; serviceTier?: "default" | "fast"; preset?: string;
   skills?: readonly string[];
   /** BB plugins and MCP servers the step's session may load on top of its role's. */
   plugins?: readonly string[]; mcp?: readonly string[];
@@ -125,7 +125,7 @@ export function createWorkflowAgents() {
         const spawned = await fullAccessSpawn(bb, {
           ...placement,
           ...requiredPolicyField(bb, policy, providerId, spec.helper, extraAccessOf(request)),
-          ...writerExecutionSelection(providerId, request.model ?? DEFAULT_MODEL, request.reasoning ?? DEFAULT_REASONING, null),
+          ...writerExecutionSelection(providerId, request.model ?? DEFAULT_MODEL, request.reasoning ?? DEFAULT_REASONING, request.serviceTier ?? null),
           prompt: request.prompt,
           environment: { type: "reuse", environmentId },
           pluginMetadata: {
@@ -202,7 +202,7 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
       readOnly: spec.readOnly, skills: [...(node.skills ?? []), ...(node.profile?.skills ?? [])], ...(goals ? { goals } : {}) });
   return {
     rt, workflowRunId: ctx.runId, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role: node.role, title, prompt: body, fields,
-    ...(node.provider ? { provider: node.provider } : {}), ...(node.model ? { model: node.model } : {}), ...(node.reasoning ? { reasoning: node.reasoning } : {}), ...(node.model_preset ? { preset: node.model_preset } : {}),
+    ...(node.provider ? { provider: node.provider } : {}), ...(node.model ? { model: node.model } : {}), ...(node.reasoning ? { reasoning: node.reasoning } : {}), ...(node.service_tier ? { serviceTier: node.service_tier } : {}), ...(node.model_preset ? { preset: node.model_preset } : {}),
     skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
   };
 }
@@ -225,8 +225,8 @@ export async function withResolvedModel(request: HelperRequest): Promise<HelperR
   const { rt } = request;
   const settings = (await rt.ctx.effectiveProjectSettings(rt.projectId, getRunSettingsScopes(rt.ctx.db, rt.runId)).catch(() => ({ values: {} }))).values;
   const pm = await pmPairOfThread(rt.ctx.bb, rt.pmThreadId);
-  const chosen = resolveAgentModel({ role: request.role, node: { provider: request.provider, model: request.model, reasoning: request.reasoning, model_preset: request.preset }, settings, pm });
-  return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort };
+  const chosen = resolveAgentModel({ role: request.role, node: { provider: request.provider, model: request.model, reasoning: request.reasoning, service_tier: request.serviceTier, model_preset: request.preset }, settings, pm });
+  return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort, ...(chosen.serviceTier ? { serviceTier: chosen.serviceTier } : {}) };
 }
 
 export const agentUsesKeyedSpawn = (rt: ChainRuntime | undefined) => Boolean(rt && keyedSpawnSupported(rt.ctx.bb));

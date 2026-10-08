@@ -9,8 +9,12 @@ import type { WorkflowView, ViewNode, ViewEdge } from "../workflow/view";
 type ElkNode = { id: string; x?: number; y?: number; width?: number; height?: number; children?: ElkNode[]; edges?: ElkExtendedEdge[]; layoutOptions?: Record<string, string> };
 type ElkExtendedEdge = { id: string; sources: string[]; targets: string[] };
 
-export const CARD = { width: 264, height: 140 } as const;
-const TERMINAL = { width: 76, height: 34 } as const;
+/** A card is as tall as its title, its subtitle and the model line need; a decision with named outputs grows by a row per output. */
+export const CARD = { width: 252, height: 76 } as const;
+const TERMINAL = { width: 84, height: 36 } as const;
+/** The room one named output of a decision takes, and the card's top and bottom margin around them. */
+export const PORT_STEP = 26;
+const PORT_MARGIN = 18;
 export const GROUP_PAD = { top: 40, side: 14, bottom: 14 } as const;
 
 export type Direction = "RIGHT" | "DOWN";
@@ -23,9 +27,25 @@ export type Placed = {
   group: boolean;
 };
 export type PlacedEdge = { key: string; edge: ViewEdge; source: string; target: string };
-export type Layout = { nodes: Placed[]; edges: PlacedEdge[]; width: number; height: number };
+/** `x` and `y` are where the drawn graph starts (a node the owner dragged left of the origin moves them below zero). */
+export type Layout = { nodes: Placed[]; edges: PlacedEdge[]; width: number; height: number; x: number; y: number; arranged: boolean };
 
-const sizeOf = (node: ViewNode) => (node.kind === "start" || node.kind === "end" ? TERMINAL : CARD);
+/**
+ * A step with more than one way out and a condition on one of them has its outputs named on the card (a decision always has): the way out is chosen
+ * at the card, like an n8n IF or Switch, and the connections carry no condition of their own. A fan-out runs all its edges, so it has none to name.
+ */
+export const isBranching = (kind: ViewNode["kind"], out: readonly ViewEdge[]): boolean =>
+  out.length > 1 && kind !== "parallel" && kind !== "start" && kind !== "end" && kind !== "note" && (kind === "decision" || out.some((edge) => edge.when !== null));
+export const branchEdges = (graph: WorkflowView, node: ViewNode): ViewEdge[] => {
+  const out = graph.edges.filter((edge) => edge.from === node.id);
+  return isBranching(node.kind, out) ? out : [];
+};
+
+const sizeOf = (node: ViewNode, graph?: WorkflowView) => {
+  if (node.kind === "start" || node.kind === "end") return TERMINAL;
+  const ports = graph ? branchEdges(graph, node).length : 0;
+  return ports ? { width: CARD.width, height: Math.max(CARD.height, PORT_MARGIN * 2 + ports * PORT_STEP) } : CARD;
+};
 
 /** Mirrors an edge list so that a node's id is the one the canvas uses. */
 const keyOf = (prefix: string, id: string) => (prefix ? `${prefix}/${id}` : id);
@@ -50,7 +70,7 @@ function build(graph: WorkflowView, expansions: Expansions | undefined, prefix: 
         layoutOptions: { "elk.padding": `[top=${GROUP_PAD.top},left=${GROUP_PAD.side},bottom=${GROUP_PAD.bottom},right=${GROUP_PAD.side}]` } });
       into.placed.set(key, { key, node, parent: prefix || null, group: true });
     } else {
-      const { width, height } = sizeOf(node);
+      const { width, height } = sizeOf(node, graph);
       children.push({ id: key, width, height });
       into.placed.set(key, { key, node, parent: prefix || null, group: false });
     }
@@ -68,11 +88,13 @@ function build(graph: WorkflowView, expansions: Expansions | undefined, prefix: 
 const OPTIONS = (direction: Direction) => ({
   "elk.algorithm": "layered",
   "elk.direction": direction,
-  "elk.spacing.nodeNode": "44",
-  "elk.layered.spacing.nodeNodeBetweenLayers": direction === "RIGHT" ? "230" : "96",
+  "elk.spacing.nodeNode": direction === "RIGHT" ? "36" : "64",
+  "elk.layered.spacing.nodeNodeBetweenLayers": direction === "RIGHT" ? "180" : "78",
   "elk.layered.spacing.edgeNodeBetweenLayers": "24",
   "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
-  "elk.layered.cycleBreaking.strategy": "GREEDY",
+  // The order the author wrote the steps in decides which connection is the loop back, so a chain reads from its start to its end.
+  "elk.layered.cycleBreaking.strategy": "MODEL_ORDER",
+  "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
   "elk.edgeRouting": "POLYLINE",
   "elk.padding": "[top=16,left=16,bottom=16,right=16]",
 });
@@ -97,5 +119,44 @@ export async function layoutGraph(graph: WorkflowView, expansions: Expansions | 
     }
   };
   walk(laid, null);
-  return { nodes, edges: [...part.edges.values()], width: laid.width ?? 0, height: laid.height ?? 0 };
+  const positioned = direction === "RIGHT" ? placeByOwner(nodes, [...part.edges.values()], graph.positions) : false;
+  const extent = bounds(nodes, laid.width ?? 0, laid.height ?? 0, positioned);
+  return { nodes, edges: [...part.edges.values()], ...extent, arranged: positioned };
+}
+
+/** The drawn box of the graph: elk's own when it placed everything, else the box around the nodes where the owner put them. */
+function bounds(nodes: Placed[], laidWidth: number, laidHeight: number, positioned: boolean): { x: number; y: number; width: number; height: number } {
+  const top = nodes.filter((item) => !item.parent);
+  if (!positioned || !top.length) return { x: 0, y: 0, width: laidWidth, height: laidHeight };
+  const x = Math.min(...top.map((item) => item.x)), y = Math.min(...top.map((item) => item.y));
+  return { x, y, width: Math.max(...top.map((item) => item.x + item.width)) - x, height: Math.max(...top.map((item) => item.y + item.height)) - y };
+}
+
+/**
+ * The owner's own placement (`ui.positions`), over what elk laid out: a node with a stored position goes there; one without (added after the
+ * owner arranged the graph) goes to the right of the node that leads to it, so a new step never lands on top of an old one. Top-level nodes only:
+ * the inside of an expanded subworkflow keeps elk's order. Returns whether anything was placed by hand.
+ */
+function placeByOwner(nodes: Placed[], edges: PlacedEdge[], positions: WorkflowView["positions"]): boolean {
+  if (!positions || !Object.keys(positions).length) return false;
+  const top = nodes.filter((item) => !item.parent).sort((a, b) => a.x - b.x || a.y - b.y);
+  if (!top.some((item) => positions[item.key])) return false;
+  const done = new Map<string, Placed>();
+  for (const item of top) { const at = positions[item.key]; if (at) { item.x = at.x; item.y = at.y; done.set(item.key, item); } }
+  const used = new Set<string>();
+  const slot = (x: number, y: number) => `${Math.round(x / 20)}:${Math.round(y / 20)}`;
+  for (const item of done.values()) used.add(slot(item.x, item.y));
+  for (const item of top) {
+    if (done.has(item.key)) continue;
+    const lead = edges.find((edge) => edge.target === item.key && done.has(edge.source));
+    const from = lead ? done.get(lead.source)! : null;
+    if (from) {
+      let y = from.y;
+      while (used.has(slot(from.x + from.width + 90, y))) y += item.height + 28;
+      item.x = from.x + from.width + 90; item.y = y;
+    }
+    done.set(item.key, item);
+    used.add(slot(item.x, item.y));
+  }
+  return true;
 }

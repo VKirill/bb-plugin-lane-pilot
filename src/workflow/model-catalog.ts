@@ -24,7 +24,7 @@ export type CatalogProvider = {
 export type ModelCatalog = { hosts: CatalogHost[]; providers: CatalogProvider[] };
 
 /** The reasoning levels a workflow node can name (the node schema's own list). */
-export const NODE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export const NODE_EFFORTS = ["low", "medium", "high", "xhigh", "ultracode", "max"] as const;
 
 export type Choice = { providerId: string; model: string; effort?: string | null; serviceTier?: string | null };
 export type ChoiceError = "provider_unknown" | "provider_unavailable" | "model_unknown" | "model_unavailable" | "effort_unsupported" | "tier_unsupported";

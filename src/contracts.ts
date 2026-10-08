@@ -195,7 +195,8 @@ export const workflowViewEdgeSchema = z.object({
   index: z.number().int(), from: z.string(), to: z.string(), when: z.string().nullable(), label: z.string().nullable(),
   pass: z.enum(["artifact", "same-session", "read-prior-session", "fork"]), carries: z.array(z.string()),
 }).strict();
-export const workflowViewSchema = z.object({ nodes: z.array(workflowViewNodeSchema), edges: z.array(workflowViewEdgeSchema) }).strict();
+/** `positions`: where the owner put the nodes (the file's `ui.positions`, by node id); absent when the graph is laid out automatically. */
+export const workflowViewSchema = z.object({ nodes: z.array(workflowViewNodeSchema), edges: z.array(workflowViewEdgeSchema), positions: z.record(z.string(), z.object({ x: z.number(), y: z.number() }).strict()).optional() }).strict();
 /** Who works on a step and with which model, as the Models view and the graph cards show it (see server/workflow-step-executors.ts). */
 const executorPairSchema = z.object({ providerId: z.string().nullable(), model: z.string().nullable(), reasoningEffort: z.string().nullable(), serviceTier: z.string().nullable() }).strict();
 export const stepExecutorSchema = z.object({
@@ -259,6 +260,8 @@ const workflowStepSchema = z.object({
   parentKey: z.string().nullable(), edgeIndex: z.number().int().nullable(),
   startedAt: z.number().int().nullable(), endedAt: z.number().int().nullable(), error: z.string().nullable(),
   threadId: z.string().nullable(), handoff: z.string().nullable(), awaiting: z.string().nullable(),
+  /** What the step was given (its inputs, the item of a branch, how the data came); a large value is replaced by `{ truncated: true, preview }`. */
+  input: z.unknown(),
   /** The step's output; a large one is replaced by `{ truncated: true, preview }`. */
   output: z.unknown(),
 }).strict();

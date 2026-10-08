@@ -34,7 +34,7 @@ export type DraftOp = z.input<typeof draftOpSchema>;
 
 /** What `set_meta` may change: everything of a workflow but its graph, its version and its status (those have their own ways). */
 export const META_KEYS = ["id", "name", "description", "examples", "not_for", "tags", "internal", "inputs", "outputs", "requires", "budget", "guards", "quality_mode",
-  "triggers", "entry", "test", "common_inputs"] as const;
+  "triggers", "entry", "test", "common_inputs", "ui"] as const;
 const META_SET = new Set<string>(META_KEYS);
 
 export type Refusal = { index: number; op: string; reason: string };

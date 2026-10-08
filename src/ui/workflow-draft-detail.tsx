@@ -13,12 +13,14 @@ import { getDraft, type DraftDoc } from "./workflow-drafts";
 import { NodePanel, WorkflowGraph, type NodePanelContext, type NodePanelRenderer } from "./workflow-detail";
 import { nodeTitle } from "./workflow-titles";
 import {
-  connectOps, edgesOf, endName, insertAfterOps, isRaw, newNode, nodeById, problemMaps, viewEdgeIndexes, END_KEY, START_KEY, type NodeType, type Raw,
+  connectOps, edgesOf, endName, insertAfterOps, isRaw, newNode, nodeById, problemMaps, setMetaOps, viewEdgeIndexes, END_KEY, START_KEY, type NodeType, type Raw,
 } from "./workflow-edit-model";
 import { say } from "./workflow-edit-fields";
 import { AddNodeMenu, EdgeForm, NodeForm, TestResults, VersionsList, WorkflowForm } from "./workflow-edit-panels";
 import { useCatalog, useDraftEditing } from "./workflow-edit-state";
 import { ModelsPanel, issueText, providerMap, useModelCatalog, useStepExecutors } from "./workflow-models";
+import { useLatestRun, type NodeDataProps } from "./workflow-node-data";
+import { useDrill } from "./workflow-drill";
 import { choiceOps, clearModelOps, type ModelChoice } from "./workflow-model-ops";
 
 const bilingual = (value: unknown, locale: Locale): string | null => {
@@ -30,6 +32,8 @@ const bilingual = (value: unknown, locale: Locale): string | null => {
 /** What the panel under the graph shows: a step, an edge (named by its ends and which of them it is, so it survives a re-read), or the workflow itself. */
 type Selection = { kind: "node"; id: string } | { kind: "edge"; from: string; to: string; ordinal: number } | { kind: "workflow" } | null;
 const NARROW = 560;
+/** Wide enough for the panel of a step to sit beside the graph. */
+const SIDE_WIDTH = 900;
 
 /**
  * A workflow the architect is building, and the owner's editor for it. It redraws when the server says the draft was patched (no
@@ -84,14 +88,14 @@ export function WorkflowDraftDetail({ draftId, projectId, locale, onBack, render
   return (
     <div ref={rootRef} className="min-w-0 space-y-4" data-testid="workflow-draft-detail">
       <DraftScreen doc={draft} view={view} locale={locale} projectId={projectId} changes={changes} selection={selection} setSelection={setSelection} editing={editing} setEditing={setEditing}
-        narrow={narrow} wide={width >= 720} direction={direction} onBack={onBack} openChat={openChat} read={read} renderNodePanel={renderNodePanel} />
+        narrow={narrow} wide={width >= 720} room={width >= SIDE_WIDTH} direction={direction} onBack={onBack} openChat={openChat} read={read} renderNodePanel={renderNodePanel} />
     </div>
   );
 }
 
-function DraftScreen({ doc, view, locale, projectId, changes, selection, setSelection, editing, setEditing, narrow, wide, direction, onBack, openChat, read, renderNodePanel }: {
+function DraftScreen({ doc, view, locale, projectId, changes, selection, setSelection, editing, setEditing, narrow, wide, room, direction, onBack, openChat, read, renderNodePanel }: {
   doc: DraftDoc; view: WorkflowView; locale: Locale; projectId: string | null; changes: { nodes: Set<string>; edges: Set<string> }; selection: Selection; setSelection: (next: Selection) => void;
-  editing: boolean; setEditing: (next: boolean) => void; narrow: boolean; wide: boolean; direction: "RIGHT" | "DOWN"; onBack: () => void; openChat: (threadId: string) => void; read: () => Promise<unknown>; renderNodePanel?: NodePanelRenderer;
+  editing: boolean; setEditing: (next: boolean) => void; narrow: boolean; wide: boolean; room: boolean; direction: "RIGHT" | "DOWN"; onBack: () => void; openChat: (threadId: string) => void; read: () => Promise<unknown>; renderNodePanel?: NodePanelRenderer;
 }) {
   const edit = useDraftEditing(doc, read);
   // A draft belongs to the project it was made in, whichever library (global or a project's) the screen shows.
@@ -100,11 +104,17 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
   const stepModels = useStepExecutors({ draftId: doc.draftId, projectId: doc.projectId ?? projectId, revision: doc.version });
   const [adding, setAdding] = useState<{ after: string | null } | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
+  // «Open» on a subworkflow card goes to the workflow it calls, read-only; the trail leads back to the draft.
+  const drill = useDrill({ projectId: doc.projectId ?? projectId, parentSnapshot: null });
+  const drilled = drill.trail.length ? drill.trail[drill.trail.length - 1]! : null;
+  const drilledModels = useStepExecutors({ ...(drilled ? { workflowId: drilled.workflowId } : {}), projectId: doc.projectId ?? projectId, revision: drilled ? drilled.workflowId : null });
   const definition = (isRaw(doc.workflow) ? doc.workflow : {}) as Raw;
   const workflow = definition as { name?: unknown; description?: unknown; id?: unknown };
   const title = bilingual(workflow.name, locale) ?? t("wfDraftUnnamed");
   const description = bilingual(workflow.description, locale);
   const changed = changes.nodes.size + changes.edges.size;
+  // The runs of the workflow this draft edits (a draft of a new workflow has none): the data tabs of the panel read the latest.
+  const latest = useLatestRun(typeof workflow.id === "string" && workflow.id ? workflow.id : null, doc.projectId ?? projectId, String(doc.version ?? ""));
 
   const rawEdges = useMemo(() => viewEdgeIndexes(definition, view), [definition, view]);
   const problems = useMemo(() => problemMaps(doc.check?.problems ?? [], definition, rawEdges), [doc.check, definition, rawEdges]);
@@ -158,6 +168,13 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
     if (result.ok) setSelection({ kind: "edge", from, to, ordinal });
   };
 
+  /** A step dragged on the canvas: the places of all steps go into the file's `ui.positions` (the ends under their file names). */
+  const place = async (positions: Record<string, { x: number; y: number }>) => {
+    const named = Object.fromEntries(Object.entries(positions).map(([key, at]) => [key === START_KEY ? "start" : key === END_KEY ? "end" : key, at]));
+    await edit.apply(setMetaOps({ ui: { positions: named } }));
+  };
+  const arrange = async () => { await edit.apply(setMetaOps({ ui: null })); };
+
   /** A model picked in the table is a patch of the draft like any other edit; one the catalog does not offer is refused before it is sent. */
   const chooseModel = async (nodeId: string, choice: ModelChoice | null): Promise<string | null> => {
     const made = choice ? (modelCatalog ? choiceOps(definition, modelCatalog, nodeId, choice) : { ok: false as const, code: "model_unknown" as const, detail: "" }) : { ok: true as const, ops: clearModelOps(definition, nodeId) ?? [] };
@@ -174,19 +191,28 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
   const errors = doc.check?.errors ?? 0;
 
   const panelNarrow = narrow;
+  const dataFor = (nodeId: string): NodeDataProps | null => {
+    const node = view.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) return null;
+    const states = latest?.states;
+    return { node, incoming: view.edges.filter((edge) => edge.to === nodeId), run: states?.get(nodeId) ?? null, from: latest ? { runId: latest.runId, at: latest.at } : null, definitionOnly: !latest, onOpenThread: openChat };
+  };
   const panel = (() => {
     if (!editing) {
       if (!selectedNode) return null;
       const node: ViewNode | undefined = view.nodes.find((candidate) => candidate.id === selectedNode.id);
       if (!node) return null;
-      const context: NodePanelContext = { node, nodeKey: node.id, locale, run: null, definitionOnly: false, readOnly: true, onOpenThread: openChat, onClose: () => setSelection(null) };
+      const context: NodePanelContext = { node, nodeKey: node.id, locale, run: latest?.states.get(node.id) ?? null, definitionOnly: !latest, readOnly: true, onOpenThread: openChat, onClose: () => setSelection(null),
+        incoming: view.edges.filter((edge) => edge.to === node.id), from: latest ? { runId: latest.runId, at: latest.at } : null, narrow: panelNarrow };
       return renderNodePanel ? renderNodePanel(context) : <NodePanel {...context} draft />;
     }
-    if (selection?.kind === "node" && selectedNode) return <NodeForm node={selectedNode} definition={definition} catalog={catalog} edit={edit} narrow={panelNarrow} onClose={() => setSelection(null)} onConnect={(to) => void connect(selection.id, to === "end" ? END_KEY : to)} />;
+    if (selection?.kind === "node" && selectedNode) return <NodeForm node={selectedNode} definition={definition} catalog={catalog} edit={edit} narrow={panelNarrow} executor={stepModels.byNode.get(selection.id) ?? null} data={dataFor(selection.id)} onClose={() => setSelection(null)} onConnect={(to) => void connect(selection.id, to === "end" ? END_KEY : to)} />;
     if (selection?.kind === "edge" && selectedEdge && selectedEdge.raw >= 0) return <EdgeForm edge={{ from: selection.from, to: selection.to }} rawIndex={selectedEdge.raw} definition={definition} edit={edit} narrow={panelNarrow} onClose={() => setSelection(null)} />;
     if (selection?.kind === "workflow") return <WorkflowForm definition={definition} catalog={catalog} edit={edit} narrow={panelNarrow} onClose={() => setSelection(null)} />;
     return null;
   })();
+  const sideBySide = Boolean((panel || (editing && adding)) && !drilled && room);
+  const shown = drilled ? drilled.graph : view;
 
   return (
     <>
@@ -207,6 +233,7 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
         </div>
       </div>
 
+      <div className="lp-wf-split" data-side={sideBySide ? "1" : "0"} data-testid="wf-split">
       <Surface testId="wf-draft-graph-panel">
         <SurfaceHeader className="flex-wrap justify-between gap-2">
           <h3 className="text-sm font-medium">{t("wfGraphHeading")}</h3>
@@ -237,11 +264,17 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
               <p id="wf-publish-why" className="text-xs text-muted-foreground" data-testid="wf-publish-why">{canPublish ? t("wfEditPublishReady") : publishWhy}</p>
             </div>
           ) : <p className="text-xs text-muted-foreground">{t("wfDraftLive")}</p>}
+          {drill.opening ? <p className="text-xs text-muted-foreground" role="status">{t("wfCrumbsLoading").replace("{id}", drill.opening)}</p> : null}
+          {drill.missing ? <p className="text-xs text-destructive-text" role="alert">{t("wfCrumbsMissing").replace("{id}", drill.missing)}</p> : null}
           {view.nodes.length || editing ? (
             <Suspense fallback={<p className="py-10 text-center text-xs text-muted-foreground" role="status">{t("wfGraphLoading")}</p>}>
-              <WorkflowGraph graph={view} locale={locale} changedNodes={changes.nodes} changedEdges={changes.edges} selected={selection?.kind === "node" ? selection.id : null}
-                onSelect={onSelect} direction={direction} height={direction === "DOWN" ? 420 : 460} models={{ executors: stepModels.byNode, providers: providerMap(modelCatalog) }}
-                {...(editing ? { onAddAfter: (key: string) => { setSelection({ kind: "node", id: key }); setAdding({ after: key }); }, onConnect: (from: string, to: string) => void connect(from, to),
+              <WorkflowGraph key={drilled ? `${drilled.key}:${drilled.workflowId}` : "draft"} graph={shown} locale={locale} {...(drilled ? {} : { changedNodes: changes.nodes, changedEdges: changes.edges })} selected={!drilled && selection?.kind === "node" ? selection.id : null}
+                {...(drilled ? {} : { onSelect })} direction={direction} height={direction === "DOWN" ? 440 : 560}
+                onOpen={(key, node) => { setSelection(null); void drill.open(key, node, locale); }} trail={[{ label: title }, ...drill.trail.map((step) => ({ label: step.label }))]} onTrail={(index) => { setSelection(null); drill.goTo(index); }}
+                models={drilled ? { executors: drilledModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "readonly" as const }
+                  : { executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "draft" as const, onChoose: chooseModel }}
+                {...(editing && !drilled ? { onAddAfter: (key: string) => { setSelection({ kind: "node", id: key }); setAdding({ after: key }); }, onAddFirst: () => { setSelection(null); setAdding({ after: null }); }, onConnect: (from: string, to: string) => void connect(from, to),
+                  onMove: (positions: Record<string, { x: number; y: number }>) => void place(positions), onArrange: () => void arrange(),
                   selectedEdge: selectedEdge?.key ?? null, onSelectEdge, problems: problems.graph, focusKey, refit: "first" as const } : {})} />
             </Suspense>
           ) : <p className="py-6 text-center text-xs text-muted-foreground" data-testid="wf-draft-empty">{t("wfDraftEmpty")}</p>}
@@ -249,8 +282,16 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
         </SurfaceBody>
       </Surface>
 
-      {editing && adding ? <AddNodeMenu after={adding.after} onPick={(type) => void add(type)} onClose={() => setAdding(null)} /> : null}
-      {panel}
+      {sideBySide ? (
+        <div className="lp-wf-side" data-testid="wf-side">
+          {editing && adding ? <AddNodeMenu after={adding.after} onPick={(type) => void add(type)} onClose={() => setAdding(null)} /> : null}
+          {panel}
+        </div>
+      ) : null}
+      </div>
+
+      {!sideBySide && editing && adding ? <AddNodeMenu after={adding.after} onPick={(type) => void add(type)} onClose={() => setAdding(null)} /> : null}
+      {!sideBySide ? panel : null}
 
       {view.nodes.length ? <ModelsPanel graph={view} locale={locale} executors={stepModels.list} loaded={stepModels.loaded} catalog={modelCatalog} wide={wide} busy={edit.busy} access="draft" onChoose={chooseModel} /> : null}
 

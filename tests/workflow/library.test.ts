@@ -7,6 +7,7 @@ import { createWorkflowLibrary, clipJson } from "../../src/server/workflow-libra
 import type { ServerCore } from "../../src/server/core";
 import type { Services } from "../../src/server/services";
 import { parseWorkflow } from "../../src/workflow/validate";
+import { draftView } from "../../src/workflow/draft-view";
 import { conditionText, roleTone, workflowView } from "../../src/workflow/view";
 import { engineOn, journalDb, ok, trust, wf } from "./engine-helpers";
 import { workflow } from "./fixtures";
@@ -75,6 +76,13 @@ describe("workflow view model", () => {
     expect(view.edges.find((edge) => edge.label === "again")).toMatchObject({ from: "review", to: "build", when: "verdict == 'rework'" });
     expect(view.edges.find((edge) => edge.to === "ship")!.when).toBe("review.verdict == 'pass'");
     expect(view.edges.find((edge) => edge.to === "$end")!.carries).toEqual(["result"]);
+  });
+
+  it("carries the owner's placement of the nodes (`ui.positions`), with the entry and the exit under their view ids", () => {
+    const placed = workflowView(parseWorkflow(reviewFix("review-fix", { ui: { positions: { start: { x: 0, y: 0 }, build: { x: 200, y: -40 }, end: { x: 900, y: 0 } } } })));
+    expect(placed.positions).toEqual({ $start: { x: 0, y: 0 }, build: { x: 200, y: -40 }, $end: { x: 900, y: 0 } });
+    expect(workflowView(parseWorkflow(reviewFix())).positions).toBeUndefined();
+    expect(draftView({ ...reviewFix("review-fix"), ui: { positions: { build: { x: 1, y: 2 }, review: { x: "no" }, end: { x: 3, y: 4 } } } }).positions).toEqual({ build: { x: 1, y: 2 }, $end: { x: 3, y: 4 } });
   });
 
   it("shows a subworkflow node with the workflow it calls", () => {
@@ -148,6 +156,8 @@ describe("workflow run snapshot", () => {
     const review = snapshot!.steps.find((step) => step.nodeId === "review")!;
     expect(review).toMatchObject({ state: "succeeded", handoff: "done", output: { verdict: "pass" }, threadId: null });
     expect(snapshot!.steps.every((step) => step.state === "succeeded")).toBe(true);
+    // What the step was given comes with it, for the node panel's Inputs tab.
+    expect(snapshot!.steps.find((step) => step.nodeId === "ship")!.input).toMatchObject({ with: {}, via: { mode: "artifact" } });
     expect(snapshot!.events.length).toBeGreaterThan(3);
     expect(lib.runSnapshot({ runId: "missing" }).snapshot).toBeNull();
   });

@@ -22,6 +22,8 @@ export const DEFAULT_REASONING = "high";
 export type AgentModelSource = "node" | "preset" | "stage" | "agent" | "pm" | "role-default";
 export type AgentModel = {
   providerId: string; model: string; reasoningEffort: string;
+  /** The node's own `service_tier` (fast mode); null when it names none, so the provider's default applies. */
+  serviceTier: "default" | "fast" | null;
   source: AgentModelSource;
   /** The preset name, or the setting key the value comes from; null for the node's own fields, the PM and the last resort. */
   sourceKey: string | null;
@@ -31,7 +33,7 @@ export type AgentModel = {
 };
 export type AgentModelInput = {
   role: string;
-  node: { provider?: string | null; model?: string | null; reasoning?: string | null; model_preset?: string | null };
+  node: { provider?: string | null; model?: string | null; reasoning?: string | null; service_tier?: string | null; model_preset?: string | null };
   settings: Record<string, unknown>;
   pm: { providerId: string; model: string } | null;
 };
@@ -81,9 +83,11 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   level ??= { providerId: DEFAULT_PROVIDER, model: DEFAULT_MODEL, effort: null, source: "role-default", sourceKey: null };
 
   if (own.provider && !own.model) issues.push("provider_without_model");
-  const set = Boolean(own.provider || own.model || own.reasoning);
+  const tier = text(node.service_tier);
+  const set = Boolean(own.provider || own.model || own.reasoning || tier);
   return {
     providerId: own.provider ?? level.providerId, model: own.model ?? level.model, reasoningEffort: own.reasoning ?? level.effort ?? DEFAULT_REASONING,
+    serviceTier: tier === "fast" || tier === "default" ? tier : null,
     source: set ? "node" : level.source, sourceKey: set ? null : level.sourceKey, inherited: !set, issues,
   };
 }

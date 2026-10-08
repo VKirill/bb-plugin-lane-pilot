@@ -97,7 +97,9 @@ const agentBody = {
   prompt: z.string().max(12_000).default(""),
   provider: z.string().max(64).optional(),
   model: z.string().max(120).optional(),
-  reasoning: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+  reasoning: z.enum(["low", "medium", "high", "xhigh", "ultracode", "max"]).optional(),
+  /** `fast` asks the provider's fast mode where it has one (the picker offers it only for those providers); `default` is the normal tier. */
+  service_tier: z.enum(["default", "fast"]).optional(),
   skills: z.array(z.string().min(1).max(120)).max(8).default([]),
   /** BB plugins this step's session may load, on top of its role's (by plugin id; the helper's session policy narrows to the role's list plus these). */
   plugins: z.array(z.string().min(1).max(120)).max(8).default([]),
@@ -276,6 +278,8 @@ export const workflowSchema = z.object({
   entry: nodeId.optional(),
   /** A test case: `sim` (stubs, expected path) and `live`; run by W7, only its shape is checked here. */
   test: z.object({ id: z.string().max(80), sim: z.unknown().optional(), live: z.string().max(1000).optional() }).passthrough().optional(),
+  /** Canvas layout only (the editor's drag and «Arrange»): node positions by node id; the engine never reads it. */
+  ui: z.object({ positions: z.record(z.string(), z.object({ x: z.number(), y: z.number() }).strict()).default({}) }).strict().optional(),
   nodes: z.array(nodeSchema).min(1).max(80),
   edges: z.array(edgeSchema).min(1).max(300),
 }).strict();

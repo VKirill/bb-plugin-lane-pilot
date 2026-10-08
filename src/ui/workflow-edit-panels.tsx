@@ -13,8 +13,10 @@ import {
   type Clause, type ConditionOp, type ModelError, type NodeType, type Raw, type WhenModel,
 } from "./workflow-edit-model";
 import type { Catalog, DraftEditing } from "./workflow-edit-state";
-import { CatalogModelFields } from "./workflow-model-fields";
-import { useModelCatalog } from "./workflow-models";
+import { choiceOps, type ModelChoice } from "./workflow-model-ops";
+import { NativeModelPicker } from "./workflow-native-picker";
+import { issueText, sourceText, useModelCatalog, type StepExecutor } from "./workflow-models";
+import { dataTabs, SidePanel, type NodeDataProps } from "./workflow-node-data";
 import type { DraftCaseResult, DraftDoc } from "./workflow-drafts";
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
@@ -109,16 +111,31 @@ function RefMap({ label, rows, suggestions, onChange, hint, testId, check }: { l
 
 // ------------------------------------------------------------------ the model of an agent
 
-function ModelFields({ node, edit }: { node: Raw; edit: DraftEditing }) {
+function ModelFields({ node, edit, definition, executor }: { node: Raw; edit: DraftEditing; definition: Raw; executor: StepExecutor | null }) {
   const id = text(node.id);
   const models = useModelCatalog();
-  const reasoning = ["low", "medium", "high", "xhigh", "max"] as const;
-  // The hub's catalog (the Models table's own list); when no machine reported one, the names are typed.
+  const [refused, setRefused] = useState<string | null>(null);
+  const reasoning = ["low", "medium", "high", "xhigh", "ultracode", "max"] as const;
+  // BB's own provider and model window over the hub's catalog (the same one the Models table and the card use); without a catalog the names are typed.
   if (models?.providers.length) {
+    const own = Boolean(text(node.provider) || text(node.model) || text(node.reasoning) || text(node.service_tier));
+    const choose = (choice: ModelChoice) => {
+      const made = choiceOps(definition, models, id, choice);
+      if (!made.ok) { setRefused(issueText(made.code)); return; }
+      setRefused(null);
+      void edit.apply(made.ops);
+    };
     return (
       <Field label={t("wfEditModel")} hint={t("wfEditModelHint")}>
-        <CatalogModelFields provider={text(node.provider)} model={text(node.model)} reasoning={text(node.reasoning)} catalog={models}
-          onChange={(fields) => void edit.apply(setNodeOps(id, fields))} />
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="min-w-0 flex-1 basis-56">
+            <NativeModelPicker catalog={models} testId="wf-edit-model-picker" label={t("wfEditModel")} onChoose={choose}
+              seed={{ providerId: text(node.provider) || executor?.providerId || null, model: text(node.model) || executor?.model || null, effort: text(node.reasoning) || executor?.reasoningEffort || null, serviceTier: text(node.service_tier) || executor?.serviceTier || null }} />
+          </div>
+          {own ? <Button type="button" size="sm" variant="outline" className="lp-raised h-8 px-2.5 text-xs" data-testid="wf-edit-model-default" onClick={() => { setRefused(null); void edit.apply(setNodeOps(id, { provider: null, model: null, reasoning: null, service_tier: null })); }}>{t("wfEditDefault")}</Button> : null}
+        </div>
+        {!own ? <p className="text-xs text-muted-foreground" data-testid="wf-edit-model-inherited">{executor ? t("wfModelFrom").replace("{source}", sourceText(executor)) : t("wfEditDefault")}</p> : null}
+        {refused ? <p className="break-words text-xs text-destructive-text" role="alert" data-testid="wf-edit-model-refused">{t("wfModelRejected").replace("{reason}", refused)}</p> : null}
       </Field>
     );
   }
@@ -133,8 +150,10 @@ function ModelFields({ node, edit }: { node: Raw; edit: DraftEditing }) {
 
 // ------------------------------------------------------------------ one node
 
-export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onConnect }: { node: Raw; definition: Raw; catalog: Catalog; edit: DraftEditing; onClose: () => void; narrow: boolean; onConnect: (to: string) => void }) {
+export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onConnect, executor = null, data = null }: { node: Raw; definition: Raw; catalog: Catalog; edit: DraftEditing; onClose: () => void; narrow: boolean; onConnect: (to: string) => void; executor?: StepExecutor | null; data?: NodeDataProps | null }) {
   const id = text(node.id);
+  const [visit, setVisit] = useState<number | null>(null);
+  useEffect(() => setVisit(null), [id]);
   const type = text(node.type) as NodeType;
   const set = (values: Raw, unset: string[] = []) => void edit.apply(setNodeOps(id, values, unset));
   const refs = refCandidates(definition, id);
@@ -149,14 +168,14 @@ export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onC
       </div>
     </>
   );
-  return (
-    <PanelFrame testId="wf-node-panel" title={text(node.label) || title.en || id} subtitle={`${typeLabel(type)} · ${id}`} onClose={onClose} narrow={narrow}>
+  const body = (
+    <>
       {description}
       {type === "agent" ? (
         <>
           <TextField label={t("wfEditRole")} value={text(node.role)} list={[...new Set(["worker", "plan-analyst", "builder", "reviewer", "qa-browser", ...catalog.specialists])]} testId="wf-edit-role" hint={t("wfEditRoleHint")} onCommit={(next) => set({ role: next })} />
           <TextArea label={t("wfEditPrompt")} value={text(node.prompt)} rows={6} suggestions={refs} testId="wf-edit-prompt" hint={t("wfEditPromptHint")} onCommit={(next) => set({ prompt: next })} />
-          <ModelFields node={node} edit={edit} />
+          <ModelFields node={node} edit={edit} definition={definition} executor={executor} />
           <ChipsField label={t("wfEditSkills")} values={Array.isArray(node.skills) ? node.skills.filter((item): item is string => typeof item === "string") : []} catalog={catalog.skills.length ? catalog.skills : undefined} testId="wf-edit-skills" hint={t("wfEditSkillsHint")} onChange={(next) => set({ skills: next.slice(0, 8) })} />
           <ChipsField label={t("wfEditNodePlugins")} values={strings(node.plugins)} catalog={catalog.plugins.length ? catalog.plugins : undefined} testId="wf-edit-node-plugins" hint={t("wfEditNodePluginsHint")} onChange={(next) => set({ plugins: next.slice(0, 8) })} />
           <ChipsField label={t("wfEditNodeMcp")} values={strings(node.mcp)} catalog={catalog.mcpServers.length ? catalog.mcpServers.map((value) => ({ value })) : undefined} testId="wf-edit-node-mcp" hint={t("wfEditNodeMcpHint")} onChange={(next) => set({ mcp: next.slice(0, 8) })} />
@@ -248,8 +267,15 @@ export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onC
       <div className="flex justify-end border-t border-[var(--lp-hairline)] pt-3">
         <Button type="button" size="sm" variant="outline" className="lp-raised h-8 px-3 text-xs text-destructive-text" data-testid="wf-edit-remove-node" onClick={() => { void edit.apply(removeNodeOps(id)); onClose(); }}>{t("wfEditRemoveStep")}</Button>
       </div>
-    </PanelFrame>
+    </>
   );
+  const frameTitle = text(node.label) || title.en || id;
+  const frameSubtitle = `${typeLabel(type)} · ${id}`;
+  // With the step's data at hand the panel has the same tabs as everywhere (parameters, inputs, outputs, last run); without it it is the form alone.
+  if (data && type !== "note") {
+    return <SidePanel testId="wf-node-panel" title={frameTitle} subtitle={frameSubtitle} onClose={onClose} narrow={narrow} tabs={[{ id: "params", label: t("wfTabParams"), content: body }, ...dataTabs(data, visit, setVisit)]} />;
+  }
+  return <PanelFrame testId="wf-node-panel" title={frameTitle} subtitle={frameSubtitle} onClose={onClose} narrow={narrow}>{body}</PanelFrame>;
 }
 
 const expressionCheck = (ref: string, definition: Raw): ModelError | null => expressionError(ref, definition);

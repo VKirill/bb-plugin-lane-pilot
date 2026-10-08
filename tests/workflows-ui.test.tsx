@@ -150,14 +150,17 @@ describe("Workflow graph", () => {
     expect(slot.getByTestId("wf-node-review").getAttribute("data-tone")).toBe("review");
     expect(slot.getByTestId("wf-node-ship").getAttribute("data-tone")).toBe("action");
     expect(slot.getByTestId("wf-node-build").textContent).toContain("builder");
-    expect(slot.getByTestId("wf-node-build").textContent).toContain("Build the thing described in the task.");
-    // Every edge that has a condition, a label, a data mapping or a non-default passing mode says so; the bare entry edge says nothing.
-    await waitFor(() => expect(graph.querySelectorAll("[data-testid^='wf-edge-']").length).toBe(4));
+    // The card says one line about the step; what its prompt says is the tooltip.
+    expect(slot.getByTestId("wf-node-build").getAttribute("title")).toContain("Build the thing described in the task.");
+    // A step with a condition on one of its ways out names its outputs on the card (the author's label, else the condition in words); the expression is the tooltip.
+    const outputs = Array.from(graph.querySelectorAll<HTMLElement>("[data-testid^='wf-port-review-']"));
+    expect(outputs.map((node) => node.textContent)).toEqual(["again", "verdict = passed"]);
+    expect(outputs.map((node) => node.getAttribute("data-when"))).toEqual(["verdict == 'rework'", "review.verdict == 'pass'"]);
+    expect(outputs[1]!.getAttribute("title")).toContain("review.verdict == 'pass'");
+    // The connection that carries a non-default passing mode says so in its chip; a bare one has none.
     const labels = Array.from(graph.querySelectorAll("[data-testid^='wf-edge-']")).map((node) => node.textContent ?? "");
-    expect(labels.some((text) => text.includes("again") && text.includes("verdict == 'rework'"))).toBe(true);
-    expect(labels.some((text) => text.includes("review.verdict == 'pass'"))).toBe(true);
     expect(labels.some((text) => text.includes("prior session"))).toBe(true);
-    expect(labels.filter((text) => text.includes("artifact")).length).toBeGreaterThan(0);
+    expect(labels.some((text) => text.includes("artifact"))).toBe(false);
     // Read-only: no «+» until the editor passes a handler.
     expect(graph.querySelector(".lp-wf-add")).toBeNull();
 
@@ -167,7 +170,7 @@ describe("Workflow graph", () => {
     await slot.findByTestId("wf-node-search");
     expect(slot.getByTestId("wf-node-search").getAttribute("data-tone")).toBe("plan");
     expect(slot.queryByTestId("wf-node-review")).toBeNull();
-    await waitFor(() => expect(slot.getByTestId("workflow-graph").querySelectorAll("[data-testid^='wf-edge-']").length).toBe(2));
+    await waitFor(() => expect(slot.getByTestId("workflow-graph").querySelectorAll(".lp-wf-edge").length).toBe(3));
   });
 
   it("opens a subworkflow node into its own graph and closes it again", async () => {
@@ -187,6 +190,64 @@ describe("Workflow graph", () => {
     fireEvent.click(slot.getByTestId("wf-expand-call"));
     await waitFor(() => expect(slot.queryByTestId("wf-node-call/search")).toBeNull());
     expect(slot.getByTestId("wf-node-call")).toBeTruthy();
+  });
+});
+
+describe("Workflow canvas, n8n style", () => {
+  it("opens a subworkflow card into the workflow it calls, with a breadcrumb back", async () => {
+    const parentCall = workflow({
+      id: "parent", name: { en: "Parent", ru: "Родитель" }, description: { en: "calls the digest", ru: "вызывает сводку" },
+      nodes: [{ id: "call", type: "subworkflow", workflow: "x-digest", inputs: { query: "input.query" }, output: [{ name: "result", type: "string" }] }],
+      edges: [{ from: "start", to: "call", with: { query: "input.query" } }, { from: "call", to: "end", with: { result: "call.result" } }],
+    });
+    const { rpc } = await world({ files: { "parent.json": parentCall } });
+    const slot = await mount(rpc);
+    fireEvent.click(await slot.findByTestId("wf-row-parent"));
+    await slot.findByTestId("wf-node-call");
+    expect(slot.queryByTestId("wf-crumbs")).toBeNull();
+    fireEvent.click(await slot.findByTestId("wf-open-call"));
+    const crumbs = await slot.findByTestId("wf-crumbs");
+    expect(crumbs.textContent).toContain("Parent");
+    expect(crumbs.textContent).toContain("X digest");
+    await slot.findByTestId("wf-node-search");
+    expect(slot.queryByTestId("wf-node-call")).toBeNull();
+    fireEvent.click(slot.getByTestId("wf-crumb-0"));
+    await slot.findByTestId("wf-node-call");
+    expect(slot.queryByTestId("wf-crumbs")).toBeNull();
+  });
+
+  it("dims the rest of the graph while the pointer is on a step", async () => {
+    const { rpc } = await world();
+    const slot = await mount(rpc);
+    fireEvent.click(await slot.findByTestId("wf-row-review-fix"));
+    await slot.findByTestId("wf-node-ship");
+    const card = slot.getByTestId("wf-node-build").closest(".react-flow__node")!;
+    fireEvent.mouseEnter(card);
+    await waitFor(() => expect(slot.getByTestId("wf-node-ship").getAttribute("data-dim")).toBe("1"));
+    expect(slot.getByTestId("wf-node-review").getAttribute("data-dim")).toBe("0");
+    fireEvent.mouseLeave(card);
+    await waitFor(() => expect(slot.getByTestId("wf-node-ship").getAttribute("data-dim")).toBe("0"));
+  });
+
+  it("shows the data a step was given and gave in the latest run, in tabs, before any run is picked", async () => {
+    const { rpc, engine } = await world();
+    const started = engine.start({ workflow: wf(reviewFix() as never), inputs: { query: "q" }, link: { projectId: "proj_1" } });
+    await started.done;
+    const slot = await mount(rpc);
+    fireEvent.click(await slot.findByTestId("wf-row-review-fix"));
+    fireEvent.click(await slot.findByTestId("wf-node-review"));
+    // With no run picked the panel opens on the parameters, and its data tabs read the latest run.
+    await slot.findByTestId("wf-node-tabs");
+    expect(slot.getByTestId("wf-tab-params").getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(slot.getByTestId("wf-tab-outputs"));
+    await waitFor(() => expect(slot.getByTestId("wf-output-rows-verdict").textContent).toContain("pass"));
+    expect(slot.getByTestId("wf-data-from").textContent).toContain("From the run of");
+    fireEvent.click(slot.getByTestId("wf-tab-inputs"));
+    expect(slot.getByTestId("wf-node-inputs")).toBeTruthy();
+    fireEvent.click(slot.getByTestId("wf-tab-lastrun"));
+    expect(slot.getByTestId("wf-node-lastrun").textContent).toContain("Done");
+    // A step nothing has reached says which fields it is declared to give.
+    fireEvent.click(slot.getByTestId("wf-node-$end"));
   });
 });
 
@@ -240,11 +301,13 @@ describe("Workflow run view", () => {
     // A finished run is not opened by itself; the owner picks it.
     fireEvent.click(await slot.findByTestId("wf-run-pick"));
     fireEvent.click(await slot.findByTestId(`wf-pick-run-${started.runId}`));
-    await waitFor(() => expect(snapshots).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(slot.getByTestId("wf-run-summary")).toBeTruthy());
+    await new Promise((done) => setTimeout(done, 60));
+    const settled = snapshots.mock.calls.length;
     await slot.behavior.emitRealtime("lp:-", { kind: "workflow", runId: "wfrun_other" });
     await slot.behavior.emitRealtime("lp:-", { kind: "council" });
     await new Promise((done) => setTimeout(done, 60));
-    expect(snapshots).toHaveBeenCalledTimes(1);
+    expect(snapshots).toHaveBeenCalledTimes(settled);
     fireEvent.click(slot.getByTestId("wf-run-pick"));
     fireEvent.click(await slot.findByTestId("wf-pick-definition"));
     await waitFor(() => expect(slot.queryByTestId("wf-run-summary")).toBeNull());
@@ -363,7 +426,7 @@ describe("workflow drafts on the Workflows tab", () => {
     expect(slot.getByTestId("wf-node-search").getAttribute("data-changed")).toBe("0");
     expect(slot.getByTestId("wf-draft-version").textContent).toBe("version 2");
     expect(slot.getByTestId("wf-draft-changes").textContent).toMatch(/nodes: 2, edges: 2/);
-    await waitFor(() => expect(slot.getByTestId("workflow-graph").querySelectorAll("[data-testid^='wf-edge-'][data-changed='1']").length).toBeGreaterThan(0));
+    await waitFor(() => expect(slot.getByTestId("workflow-graph").querySelectorAll(".lp-wf-edge[data-changed='1']").length).toBeGreaterThan(0));
 
     // A node click opens the panel slot: the editor's form goes here.
     fireEvent.click(slot.getByTestId("wf-node-summarise"));

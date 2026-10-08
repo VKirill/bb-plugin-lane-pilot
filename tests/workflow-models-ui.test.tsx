@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library/react";
+import React from "react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { installTestPluginRuntime, loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "../i18n";
 import { migrations } from "../src/database";
 import { createWorkflowArchitect } from "../src/server/workflow-architect";
@@ -97,14 +98,37 @@ async function world() {
 }
 
 const patches = (calls: Array<{ method: string; input: unknown }>) => calls.filter((call) => call.method === "workflow_draft_patch").map((call) => call.input as { ops: Array<{ op: string; id: string; set: Record<string, unknown> }> });
-const optionOf = async (slot: Awaited<ReturnType<typeof renderSlot>>, trigger: string, option: string) => {
-  fireEvent.click(slot.getByTestId(trigger));
-  return await slot.findByTestId(option);
-};
+type PickerValue = { providerId: string; model: string; reasoningLevel: string; serviceTier?: "default" | "fast" };
+type PickerNode = HTMLElement & { __value?: PickerValue; __onChange?: (next: PickerValue) => void; __props?: Record<string, unknown> };
+
+/** BB's own window stands in as a node that records its value and routing and lets the test answer as the owner would. */
+async function loadAppWithPicker() {
+  installTestPluginRuntime();
+  const host = globalThis as typeof globalThis & { __bbPluginRuntime?: { pluginSdkApp: Record<string, unknown> } };
+  const sdk = host.__bbPluginRuntime!.pluginSdkApp;
+  host.__bbPluginRuntime!.pluginSdkApp = {
+    ...sdk,
+    experimental_ProviderModelPicker: (props: { value: PickerValue; onChange: (next: PickerValue) => void; routing?: { kind: string; hostId?: string }; disabled?: boolean }) => React.createElement("div", {
+      "data-testid": "bb-provider-model-picker", "data-provider": props.value.providerId, "data-model": props.value.model, "data-effort": props.value.reasoningLevel,
+      "data-tier": props.value.serviceTier ?? "none", "data-host": props.routing?.hostId ?? "primary", "data-disabled": props.disabled ? "1" : "0",
+      ref: (node: PickerNode | null) => { if (node) { node.__value = props.value; node.__onChange = props.onChange; } },
+    }),
+  };
+  // The SDK shim reads the runtime once, when the app is first imported: the window is swapped in before that.
+  await loadPluginApp(await import("../app"));
+}
+/** What BB's window shows for a step: provider, model, effort and tier. */
+const shownFor = (slot: Awaited<ReturnType<typeof renderSlot>>, nodeId: string) => { const node = nativeOf(slot, `wf-model-picker-${nodeId}`); return ["provider", "model", "effort", "tier"].map((key) => node.getAttribute(`data-${key}`)).join("|"); };
+const nativeOf = (slot: Awaited<ReturnType<typeof renderSlot>>, testId: string) => slot.getByTestId(testId).querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
+/** The owner answers in BB's window. */
+async function choose(slot: Awaited<ReturnType<typeof renderSlot>>, testId: string, next: Partial<PickerValue>) {
+  const node = nativeOf(slot, testId);
+  node.__onChange!({ ...node.__value!, ...next });
+}
 
 async function openDraft(options: { locale?: "en" | "ru"; width?: number } = {}) {
   const w = await world();
-  await loadPluginApp(() => import("../app"));
+  await loadAppWithPicker();
   const { WorkflowDraftDetail } = await import("../src/ui/workflow-draft-detail");
   const locale = options.locale ?? "en";
   const slot = await renderSlot({ component: () => <div style={{ width: options.width ?? 1100 }}><WorkflowDraftDetail draftId={w.draftId} projectId={projectId} locale={locale} onBack={() => undefined} /></div> }, {},
@@ -116,13 +140,16 @@ async function openDraft(options: { locale?: "en" | "ru"; width?: number } = {})
 }
 
 describe("the Models table of a draft", () => {
-  it("lists a row per step with a model: agent, provider, model, effort, where it comes from and the price class", async () => {
+  it("lists a row per step with a model: agent, BB's own picker on the step's model, where it comes from and the price class", async () => {
     const { slot } = await openDraft();
     const row = slot.getByTestId("wf-model-row-search");
     expect(within(row).getByTestId("wf-model-agent-search").textContent).toBe("researcher");
-    expect(within(row).getByTestId("wf-model-provider-search").textContent).toContain("Claude Code");
-    expect(within(row).getByTestId("wf-model-model-search").textContent).toContain("Opus 5.5");
-    expect(within(row).getByTestId("wf-model-effort-search").textContent).toContain("high");
+    // The window opens on what the step runs on and asks a machine that has the provider.
+    const native = nativeOf(slot, "wf-model-picker-search");
+    expect(native.getAttribute("data-provider")).toBe("claude-code");
+    expect(native.getAttribute("data-model")).toBe("claude-opus-5-5");
+    expect(native.getAttribute("data-effort")).toBe("high");
+    expect(native.getAttribute("data-host")).toBe("mac");
     expect(within(row).getByTestId("wf-model-source-search").textContent).toContain("role default");
     expect(within(row).getByTestId("wf-model-cost-search").textContent).toBe("High");
     expect(row.getAttribute("data-inherited")).toBe("1");
@@ -133,57 +160,68 @@ describe("the Models table of a draft", () => {
     expect(slot.getByTestId("wf-models-summary").textContent).toContain("claude-code 4");
   });
 
-  it("puts the same badge on the graph card, dimmed while the value is inherited", async () => {
+  it("puts BB's picker on the graph card too, on the same value, and a read-only card keeps the badge", async () => {
     const { slot } = await openDraft();
-    const badge = await slot.findByTestId("wf-model-search");
-    expect(badge.textContent).toBe("claude-code · claude-opus-5-5 · high");
-    expect(badge.getAttribute("data-inherited")).toBe("1");
-    expect(badge.getAttribute("title")).toContain("from: role default");
+    const card = await slot.findByTestId("wf-card-picker-search");
+    expect(card.querySelector("[data-testid='bb-provider-model-picker']")!.getAttribute("data-model")).toBe("claude-opus-5-5");
+    // The delegated action and the question have no model of their own to choose.
+    expect(slot.queryByTestId("wf-card-picker-approve")).toBeNull();
     expect(slot.queryByTestId("wf-model-approve")).toBeNull();
   });
 
-  it("choosing another provider writes a draft patch with its first available model, and the badge follows", async () => {
+  it("choosing in BB's window writes a draft patch (provider, model, effort, fast mode), and the window follows", async () => {
     const { slot, calls } = await openDraft();
-    const option = await optionOf(slot, "wf-model-provider-search", "wf-model-provider-option-acp-opencode");
-    fireEvent.click(option);
+    await choose(slot, "wf-model-picker-search", { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "high" });
     await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "high" } }]);
-    await waitFor(() => expect(slot.getByTestId("wf-model-search").textContent).toBe("opencode · gemini-3.8-flash-high · high"));
-    expect(slot.getByTestId("wf-model-search").getAttribute("data-inherited")).toBe("0");
+    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "high", service_tier: null } }]);
+    await waitFor(() => expect(shownFor(slot, "search")).toBe("acp-opencode|router9/ag/gemini-3.8-flash-high|high|none"));
+    expect(slot.getByTestId("wf-model-row-search").getAttribute("data-inherited")).toBe("0");
     expect(slot.getByTestId("wf-model-source-search").textContent).toContain("this step");
     expect(slot.getByTestId("wf-model-cost-search").textContent).toBe("Low");
+    // Fast mode goes into the node as `service_tier`.
+    await choose(slot, "wf-model-picker-search", { providerId: "codex", model: "gpt-6-luna", reasoningLevel: "high", serviceTier: "fast" });
+    await waitFor(() => expect(patches(calls)).toHaveLength(2));
+    expect(patches(calls)[1]!.ops[0]!.set).toEqual({ provider: "codex", model: "gpt-6-luna", reasoning: "high", service_tier: "fast" });
+    await waitFor(() => expect(shownFor(slot, "search")).toBe("codex|gpt-6-luna|high|fast"));
+    await choose(slot, "wf-model-picker-search", { reasoningLevel: "low", serviceTier: "default" });
+    await waitFor(() => expect(patches(calls)).toHaveLength(3));
+    expect(patches(calls)[2]!.ops[0]!.set).toEqual({ provider: "codex", model: "gpt-6-luna", reasoning: "low", service_tier: null });
   });
 
-  it("changing the model keeps the effort when the model has it, and the reset hands the step back to its default", async () => {
+  it("the reset hands the step back to its default and clears the fast mode with it", async () => {
     const { slot, calls, architect, draftId } = await openDraft();
-    fireEvent.click(await optionOf(slot, "wf-model-provider-search", "wf-model-provider-option-codex"));
-    await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    await waitFor(() => expect(slot.getByTestId("wf-model-search").textContent).toBe("codex · gpt-6-luna · high"));
-    fireEvent.click(await optionOf(slot, "wf-model-effort-search", "wf-model-effort-option-low"));
-    await waitFor(() => expect(patches(calls)).toHaveLength(2));
-    expect(patches(calls)[1]!.ops[0]!.set).toEqual({ provider: "codex", model: "gpt-6-luna", reasoning: "low" });
+    await choose(slot, "wf-model-picker-search", { providerId: "codex", model: "gpt-6-luna", reasoningLevel: "high", serviceTier: "fast" });
+    await waitFor(() => expect(shownFor(slot, "search")).toBe("codex|gpt-6-luna|high|fast"));
     fireEvent.click(await slot.findByTestId("wf-model-reset-search"));
-    await waitFor(() => expect(patches(calls)).toHaveLength(3));
-    expect(patches(calls)[2]!.ops[0]!.set).toEqual({ provider: null, model: null, reasoning: null });
-    await waitFor(() => expect(slot.getByTestId("wf-model-search").textContent).toBe("claude-code · claude-opus-5-5 · high"));
+    await waitFor(() => expect(patches(calls)).toHaveLength(2));
+    expect(patches(calls)[1]!.ops[0]!.set).toEqual({ provider: null, model: null, reasoning: null, service_tier: null });
+    await waitFor(() => expect(shownFor(slot, "search")).toBe("claude-code|claude-opus-5-5|high|none"));
     const node = (architect.drafts.get(draftId)!.definition.nodes as Array<Record<string, unknown>>).find((item) => item.id === "search")!;
     expect(node.provider).toBeUndefined();
-    expect(node.model).toBeUndefined();
+    expect(node.service_tier).toBeUndefined();
   });
 
-  it("lists a provider or model no machine offers but does not let it be picked", async () => {
+  it("refuses a provider or model no machine offers, and says so under the picker; one a machine has goes through", async () => {
     const { slot, calls } = await openDraft();
-    const router9 = await optionOf(slot, "wf-model-provider-search", "wf-model-provider-option-router9");
-    expect(router9.getAttribute("aria-disabled")).toBe("true");
-    expect(router9.textContent).toContain("not available");
-    fireEvent.click(router9);
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    // OpenCode is on the Mac mini only: its models say so, and a model the machine lost would be disabled the same way.
-    fireEvent.click(await optionOf(slot, "wf-model-provider-search", "wf-model-provider-option-acp-opencode"));
+    await choose(slot, "wf-model-picker-search", { providerId: "router9", model: "gemini-9", reasoningLevel: "high" });
+    expect((await slot.findByTestId("wf-model-error-search")).textContent).toContain("Not applied");
+    expect(patches(calls)).toHaveLength(0);
+    // OpenCode is on the Mac mini only: every provider the hub offers can be picked, DeepSeek included.
+    await choose(slot, "wf-model-picker-search", { providerId: "acp-opencode", model: "deepseek/v4", reasoningLevel: "high" });
     await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    const deepseek = await optionOf(slot, "wf-model-model-search", "wf-model-option-deepseek/v4");
-    expect(deepseek.textContent).toContain("DeepSeek V4");
-    expect(deepseek.textContent).toContain("on Mac mini");
+    expect(patches(calls)[0]!.ops[0]!.set).toMatchObject({ provider: "acp-opencode", model: "deepseek/v4", reasoning: "high" });
+    expect(slot.queryByTestId("wf-model-error-search")).toBeNull();
+  });
+
+  it("the badge on the card is BB's picker too, and a choice there is the same patch", async () => {
+    const { slot, calls } = await openDraft();
+    const card = await slot.findByTestId("wf-card-picker-search");
+    expect(card.querySelector("[data-testid='bb-provider-model-picker']")!.getAttribute("data-model")).toBe("claude-opus-5-5");
+    await choose(slot, "wf-card-picker-search", { providerId: "claude-code", model: "claude-sonnet-5-5", reasoningLevel: "medium" });
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "claude-code", model: "claude-sonnet-5-5", reasoning: "medium", service_tier: null } }]);
+    await choose(slot, "wf-card-picker-search", { providerId: "router9", model: "gemini-9", reasoningLevel: "high" });
+    expect((await slot.findByTestId("wf-card-refused-search")).textContent).toContain("Not applied");
     expect(patches(calls)).toHaveLength(1);
   });
 
@@ -201,7 +239,7 @@ describe("the Models table of a draft", () => {
     expect(chain).toContain("Code critic: codex · gpt-6-luna · high");
     const stage = slot.getByTestId("wf-model-row-plan-check");
     expect(stage.textContent).toContain("Set in Settings: plan_critique");
-    expect(within(stage).queryByTestId("wf-model-provider-plan-check")).toBeNull();
+    expect(within(stage).queryByTestId("wf-model-picker-plan-check")).toBeNull();
     expect(slot.getByTestId("wf-model-source-plan-check").textContent).toContain("writer settings");
   });
 
@@ -212,33 +250,34 @@ describe("the Models table of a draft", () => {
     expect(row.getAttribute("data-wide")).toBe("0");
     expect(slot.getByTestId("wf-models-panel").textContent).toContain("Модели");
     expect(within(row).getByTestId("wf-model-source-search").textContent).toContain("по умолчанию для роли");
-    expect(slot.getByTestId("wf-model-search").getAttribute("title")).toContain("откуда: по умолчанию для роли");
+    expect(slot.getByTestId("wf-card-picker-search").getAttribute("aria-label")).toContain("Модель шага");
   });
 });
 
 describe("the model picker of the node panel", () => {
-  it("lists the hub's providers and writes provider, model and effort into the step", async () => {
+  it("is BB's window over the hub's catalog and writes provider, model, effort and fast mode into the step", async () => {
     const { slot, calls } = await openDraft();
     fireEvent.click(slot.getByTestId("wf-edit-toggle"));
     fireEvent.click(await slot.findByTestId("wf-node-search"));
-    await slot.findByTestId("wf-edit-model-catalog");
-    fireEvent.click(slot.getByTestId("wf-edit-provider"));
-    const gone = await slot.findByTestId("wf-edit-provider-option-router9");
-    expect(gone.getAttribute("aria-disabled")).toBe("true");
-    fireEvent.click(await slot.findByTestId("wf-edit-provider-option-acp-opencode"));
+    await slot.findByTestId("wf-edit-model-picker");
+    expect(slot.getByTestId("wf-edit-model-inherited").textContent).toContain("role default");
+    await choose(slot, "wf-edit-model-picker", { providerId: "router9", model: "x", reasoningLevel: "high" });
+    expect((await slot.findByTestId("wf-edit-model-refused")).textContent).toContain("Not applied");
+    expect(patches(calls)).toHaveLength(0);
+    await choose(slot, "wf-edit-model-picker", { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" });
     await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: null } }]);
-    fireEvent.click(slot.getByTestId("wf-edit-provider"));
-    fireEvent.click(await slot.findByRole("option", { name: "Default" }));
+    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", service_tier: null } }]);
+    expect(slot.queryByTestId("wf-edit-model-refused")).toBeNull();
+    fireEvent.click(await slot.findByTestId("wf-edit-model-default"));
     await waitFor(() => expect(patches(calls)).toHaveLength(2));
-    expect(patches(calls)[1]!.ops[0]!.set).toEqual({ provider: null, model: null, reasoning: null });
+    expect(patches(calls)[1]!.ops[0]!.set).toEqual({ provider: null, model: null, reasoning: null, service_tier: null });
   });
 });
 
 describe("the Models table of a library workflow", () => {
   async function openLibrary(id: string, scope: "builtin" | "global") {
     const w = await world();
-    await loadPluginApp(() => import("../app"));
+    await loadAppWithPicker();
     const { WorkflowDetail } = await import("../src/ui/workflow-detail");
     const opened: string[] = [];
     const slot = await renderSlot({ component: () => <div style={{ width: 1100 }}><WorkflowDetail id={id} projectId={projectId} locale="en" onBack={() => undefined} editProjectId={projectId} onEditDraft={(draftId) => opened.push(draftId)} /></div> }, {},
@@ -251,32 +290,39 @@ describe("the Models table of a library workflow", () => {
   it("the built-in task pipeline shows its stages and the writer chain on the cards, and is read-only: duplicating is offered instead of pickers", async () => {
     const { slot, calls } = await openLibrary("lp-task-pipeline", "builtin");
     const writer = await slot.findByTestId("wf-model-writer");
-    expect(writer.textContent).toBe("codex · gpt-6-luna · high→ glm-5.3-flash → gemini-3.8-flash-high → PM model");
+    expect(writer.textContent).toBe("codex · gpt-6-luna · high · fast→ glm-5.3-flash → gemini-3.8-flash-high → PM model");
     expect(writer.getAttribute("data-mode")).toBe("chain");
     expect(slot.getByTestId("wf-chain-writer").textContent).toBe("→ glm-5.3-flash → gemini-3.8-flash-high → PM model");
     expect(slot.getByTestId("wf-model-pm-read").getAttribute("title")).toContain("from: writer settings (writer.model)");
-    expect(slot.getByTestId("wf-model-plan-critique").textContent).toBe("codex · gpt-6-luna · high");
+    expect(slot.getByTestId("wf-model-plan-critique").textContent).toBe("codex · gpt-6-luna · high · fast");
     expect(slot.queryByTestId("wf-model-ownership-base")).toBeNull();
     expect(slot.getByTestId("wf-models-hint").textContent).toContain("built-in");
     expect(slot.getByTestId("wf-models-duplicate")).toBeTruthy();
-    expect(slot.container.querySelector("[data-testid^='wf-model-provider-']")).toBeNull();
+    expect(slot.container.querySelector("[data-testid^='wf-model-picker-']")).toBeNull();
     expect(slot.getByTestId("wf-model-source-writer").textContent).toContain("writer settings");
     expect(calls.some((call) => call.method === "workflow_step_executors" && (call.input as { workflowId?: string }).workflowId === "lp-task-pipeline")).toBe(true);
   });
 
-  it("choosing a model for an own workflow opens a draft with the change; a model no machine has opens nothing", async () => {
-    const { slot, calls, opened } = await openLibrary("mine", "global");
-    await slot.findByTestId("wf-model-provider-search");
-    fireEvent.click(slot.getByTestId("wf-model-provider-search"));
-    const gone = await slot.findByTestId("wf-model-provider-option-router9");
-    expect(gone.getAttribute("aria-disabled")).toBe("true");
-    fireEvent.click(gone);
-    expect(calls.filter((call) => call.method === "workflow_draft_create")).toHaveLength(0);
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    fireEvent.click(await slot.findByTestId("wf-model-provider-search"));
-    fireEvent.click(await slot.findByTestId("wf-model-provider-option-acp-opencode"));
+  it("a built-in's badge offers «Duplicate to edit» instead of a picker", async () => {
+    const { slot, opened, calls } = await openLibrary("debug", "builtin");
+    const badge = await slot.findByTestId("wf-card-model-investigate");
+    expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).toBeNull();
+    fireEvent.click(badge);
+    const ask = await slot.findByTestId("wf-card-duplicate-investigate");
+    fireEvent.click(within(ask).getByRole("button", { name: /duplicate/i }));
     await waitFor(() => expect(opened).toHaveLength(1));
     expect(calls.filter((call) => call.method === "workflow_draft_create")).toHaveLength(1);
-    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "high" } }]);
+  });
+
+  it("choosing a model for an own workflow opens a draft with the change; a model no machine has opens nothing", async () => {
+    const { slot, calls, opened } = await openLibrary("mine", "global");
+    await slot.findByTestId("wf-model-picker-search");
+    await choose(slot, "wf-model-picker-search", { providerId: "router9", model: "gemini-9", reasoningLevel: "high" });
+    expect((await slot.findByTestId("wf-model-error-search")).textContent).toContain("Not applied");
+    expect(calls.filter((call) => call.method === "workflow_draft_create")).toHaveLength(0);
+    await choose(slot, "wf-model-picker-search", { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "high" });
+    await waitFor(() => expect(opened).toHaveLength(1));
+    expect(calls.filter((call) => call.method === "workflow_draft_create")).toHaveLength(1);
+    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "high", service_tier: null } }]);
   });
 });

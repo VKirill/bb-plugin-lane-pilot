@@ -182,8 +182,9 @@
   .lp-pill-warning { background-color: color-mix(in oklab, var(--lp-warning) 16%, transparent); color: var(--lp-warning-text); }
 
   /*
-   * Workflow graph (Workflows tab). A node carries --wf-tone, the colour of its type or role: plan blue, build green, QA
-   * orange, review violet; everything else is quiet gray. Colours come from the plugin tokens, so a theme repaints the graph.
+   * Workflow canvas (Workflows tab), drawn the way n8n draws one. A card carries --wf-tone, the colour of what its step does: plan blue, build green,
+   * QA orange, review violet, a question to the owner rose, a subworkflow teal; everything else is quiet gray. A status ring runs round the icon tile
+   * during a run. Colours come from the plugin tokens, so a theme repaints the graph.
    */
   .lp-wf-canvas {
     min-width: 0;
@@ -199,16 +200,19 @@
   .lp-wf-node {
     --wf-tone: var(--muted-foreground);
     position: relative;
+    display: flex;
     box-sizing: border-box;
     width: 100%;
     height: 100%;
-    padding: 9px 10px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px 8px 9px;
     border: 1px solid var(--lp-hairline);
-    border-left: 3px solid var(--wf-tone);
     border-radius: 12px;
     background-color: var(--lp-card);
     box-shadow: var(--lp-drop);
     cursor: pointer;
+    transition: opacity 0.15s, box-shadow 0.15s;
   }
   .lp-wf-node:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
   .lp-wf-node[data-selected="1"] { box-shadow: 0 0 0 2px var(--wf-tone), var(--lp-drop); }
@@ -219,17 +223,52 @@
   .lp-wf-node[data-tone="human"] { --wf-tone: color-mix(in oklab, var(--primary) 55%, var(--destructive)); }
   .lp-wf-node[data-tone="sub"] { --wf-tone: color-mix(in oklab, var(--lp-info) 55%, var(--lp-success)); }
   .lp-wf-node[data-tone="decision"] { --wf-tone: color-mix(in oklab, var(--lp-warning) 60%, var(--foreground)); }
-  .lp-wf-node[data-tone="flow"], .lp-wf-node[data-tone="action"] { --wf-tone: color-mix(in oklab, var(--foreground) 50%, transparent); }
-  .lp-wf-node[data-status="pending"] { opacity: 0.72; }
-  .lp-wf-node[data-status="skipped"] { opacity: 0.5; border-style: dashed; }
-  .lp-wf-node[data-status="running"] { border-color: var(--lp-info); }
-  .lp-wf-node[data-status="waiting"] { border-color: var(--lp-warning); }
+  .lp-wf-node[data-tone="flow"], .lp-wf-node[data-tone="action"] { --wf-tone: color-mix(in oklab, var(--foreground) 55%, transparent); }
+  .lp-wf-node[data-dim="1"], .lp-wf-terminal[data-dim="1"] { opacity: 0.38; }
+  .lp-wf-node[data-status="pending"] { opacity: 0.82; }
+  .lp-wf-node[data-status="skipped"] { opacity: 0.55; border-style: dashed; }
   .lp-wf-node[data-status="failed"] { border-color: var(--destructive); }
-  .lp-wf-node[data-status="done"] { border-color: color-mix(in oklab, var(--lp-success) 55%, var(--lp-hairline)); }
 
-  .lp-wf-role { color: var(--wf-tone); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
-  .lp-wf-node[data-tone="agent"] .lp-wf-role, .lp-wf-node[data-tone="flow"] .lp-wf-role, .lp-wf-node[data-tone="action"] .lp-wf-role { color: var(--muted-foreground); }
-  .lp-wf-tile { color: var(--wf-tone); background-color: color-mix(in oklab, var(--wf-tone) 12%, var(--lp-card)); }
+  /* The tile in the colour of the step, and the ring round it that says how the run is going. */
+  .lp-wf-ring { position: relative; display: grid; width: 40px; height: 40px; flex: none; place-items: center; border-radius: 13px; }
+  .lp-wf-ring::after { content: ""; position: absolute; inset: -1px; border: 2px solid transparent; border-radius: 13px; pointer-events: none; }
+  .lp-wf-ring[data-status="running"]::after { border-color: var(--lp-info); animation: lp-wf-ring 1.4s ease-out infinite; }
+  .lp-wf-ring[data-status="waiting"]::after { border-color: var(--lp-warning); border-style: dashed; }
+  .lp-wf-ring[data-status="done"]::after { border-color: var(--lp-success); }
+  .lp-wf-ring[data-status="failed"]::after { border-color: var(--destructive); }
+  .lp-wf-ring[data-status="skipped"]::after { border-color: var(--muted-foreground); border-style: dotted; }
+  @keyframes lp-wf-ring { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--lp-info) 45%, transparent); } 100% { box-shadow: 0 0 0 7px transparent; } }
+  @media (prefers-reduced-motion: reduce) { .lp-wf-ring[data-status="running"]::after { animation: none; } }
+  .lp-wf-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; background-color: color-mix(in oklab, var(--wf-tone) 14%, var(--lp-card)); color: var(--wf-tone); }
+
+  .lp-wf-body { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: center; gap: 1px; }
+  .lp-wf-title-row { display: flex; min-width: 0; align-items: center; gap: 6px; }
+  .lp-wf-title { min-width: 0; flex: 1; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+  .lp-wf-sub { overflow: hidden; color: var(--muted-foreground); font-size: 11px; line-height: 15px; text-overflow: ellipsis; white-space: nowrap; }
+  .lp-wf-sub[data-kind="subworkflow"] { font-family: ui-monospace, monospace; }
+
+  /* A subworkflow is a stack of cards: the one you see and the ones behind it. */
+  .lp-wf-cardbox { position: relative; width: 100%; height: 100%; }
+  .lp-wf-stack { position: absolute; inset: 0; border: 1px solid var(--lp-hairline); border-radius: 12px; background-color: var(--lp-card); pointer-events: none; }
+  .lp-wf-stack { border-color: var(--lp-outline); box-shadow: var(--lp-drop); }
+  .lp-wf-stack-1 { transform: translate(6px, 6px); }
+  .lp-wf-stack-2 { opacity: 0.75; transform: translate(12px, 12px); }
+  .lp-wf-node[data-kind="subworkflow"] { border-color: color-mix(in oklab, var(--wf-tone) 45%, var(--lp-hairline)); }
+  .lp-wf-actions { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .lp-wf-open, .lp-wf-expand, .lp-wf-expand-inline {
+    border: 1px solid var(--lp-outline);
+    border-radius: 8px;
+    background-color: var(--lp-card);
+    color: var(--foreground);
+    font-size: 11px;
+    line-height: 16px;
+    padding: 0 8px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .lp-wf-open { border-color: color-mix(in oklab, var(--wf-tone) 55%, var(--lp-outline)); color: var(--wf-tone); font-weight: 600; }
+  .lp-wf-open:hover, .lp-wf-expand:hover { background-color: var(--state-hover, var(--lp-well)); }
+  .lp-wf-expand:disabled { opacity: 0.5; cursor: default; }
 
   .lp-wf-port {
     width: 8px;
@@ -237,10 +276,35 @@
     min-width: 0;
     min-height: 0;
     border: 1.5px solid var(--muted-foreground);
+    border-radius: 9999px;
     background-color: var(--lp-card);
   }
+  /* The named outputs of a decision: a dot per output and its label on the wire, like n8n's IF and Switch. */
+  .lp-wf-port-named { border-color: var(--wf-tone); background-color: var(--wf-tone); }
+  .lp-wf-portlabel {
+    position: absolute;
+    left: calc(100% + 11px);
+    z-index: 1;
+    max-width: 164px;
+    overflow: hidden;
+    padding: 0 7px;
+    border: 1px solid var(--lp-hairline);
+    border-radius: 9999px;
+    background-color: var(--lp-card);
+    box-shadow: var(--lp-drop);
+    font-size: 11px;
+    line-height: 17px;
+    text-overflow: ellipsis;
+    transform: translateY(-50%);
+    white-space: nowrap;
+  }
+  .lp-wf-portlabel { cursor: default; }
+  .lp-wf-canvas[data-editing="1"] .lp-wf-portlabel { cursor: pointer; }
+  .lp-wf-portlabel[data-otherwise="1"] { color: var(--muted-foreground); font-style: italic; }
+  .lp-wf-canvas[data-direction="DOWN"] .lp-wf-portlabel { top: calc(100% + 9px); left: auto; max-width: 96px; transform: translateX(-50%); }
 
   .lp-wf-status { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .lp-wf-title-row .lp-wf-status { padding: 0 6px; font-size: 10px; line-height: 16px; }
   .lp-wf-pulse {
     display: inline-block;
     width: 6px;
@@ -251,19 +315,6 @@
   }
   @keyframes lp-wf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
   @media (prefers-reduced-motion: reduce) { .lp-wf-pulse { animation: none; } }
-
-  .lp-wf-expand, .lp-wf-expand-inline {
-    border: 1px solid var(--lp-outline);
-    border-radius: 8px;
-    background-color: var(--lp-card);
-    color: var(--foreground);
-    font-size: 11px;
-    line-height: 16px;
-    padding: 0 8px;
-    cursor: pointer;
-  }
-  .lp-wf-expand { position: absolute; right: 8px; bottom: 6px; }
-  .lp-wf-expand:disabled { opacity: 0.5; cursor: default; }
 
   /* The «+» sits past the port, so a drag from the port and a click on the plus do not meet. */
   .lp-wf-add {
@@ -285,7 +336,9 @@
   .lp-wf-add:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
   .lp-wf-canvas[data-direction="DOWN"] .lp-wf-add { top: auto; right: 50%; bottom: -34px; margin: 0 -11px 0 0; }
   .lp-wf-canvas[data-editing="1"] .lp-wf-port { width: 12px; height: 12px; cursor: crosshair; }
+  .lp-wf-canvas[data-editing="1"] .lp-wf-port-named { cursor: default; }
   .lp-wf-canvas[data-editing="1"] .react-flow__handle.connectingto { border-color: var(--lp-info); background-color: color-mix(in oklab, var(--lp-info) 30%, var(--lp-card)); }
+  .lp-wf-canvas[data-editing="1"][data-direction="RIGHT"] .lp-wf-node, .lp-wf-canvas[data-editing="1"][data-direction="RIGHT"] .lp-wf-terminal { cursor: grab; }
 
   /* What the validator named: a red outline and a «!» on the card or the edge label. */
   .lp-wf-problem {
@@ -307,10 +360,10 @@
   .lp-wf-node[data-problem="warning"] { border-color: var(--lp-warning); }
   .lp-wf-edge[data-problem="error"] { stroke: var(--destructive); stroke-width: 2; opacity: 1; }
   .lp-wf-edge[data-problem="warning"] { stroke: var(--lp-warning); stroke-width: 2; opacity: 1; }
-  .lp-wf-edge-label[data-problem="error"] { border-color: var(--destructive); }
-  .lp-wf-edge-label[data-problem="warning"] { border-color: var(--lp-warning); }
+  .lp-wf-chip[data-problem="error"] { border-color: var(--destructive); }
+  .lp-wf-chip[data-problem="warning"] { border-color: var(--lp-warning); }
   .lp-wf-edge[data-selected="1"] { stroke: var(--primary); stroke-width: 2.5; opacity: 1; }
-  .lp-wf-edge-label[data-selected="1"] { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 30%, transparent), var(--lp-drop); }
+  .lp-wf-chip[data-selected="1"] { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 30%, transparent), var(--lp-drop); }
 
   .lp-wf-terminal {
     display: flex;
@@ -324,7 +377,9 @@
     box-shadow: var(--lp-drop);
     color: var(--muted-foreground);
     font-size: 11px;
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
   }
   .lp-wf-terminal[data-status="done"] { color: var(--lp-success-text); }
   .lp-wf-terminal[data-status="failed"] { color: var(--lp-danger-text); }
@@ -350,6 +405,7 @@
   .lp-wf-note:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
   .lp-wf-note-mark { display: inline-flex; flex: none; padding-top: 2px; color: var(--lp-warning-text); }
 
+  /* An expanded subworkflow: its graph inside a dashed frame. */
   .lp-wf-group {
     box-sizing: border-box;
     width: 100%;
@@ -359,48 +415,88 @@
     background-color: color-mix(in oklab, var(--lp-card) 55%, transparent);
   }
   .lp-wf-group-head { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 8px 10px; }
+  .lp-wf-group-icon { display: inline-flex; color: color-mix(in oklab, var(--lp-info) 55%, var(--lp-success)); }
 
-  .lp-wf-edge { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; opacity: 0.75; }
+  .lp-wf-edge { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; opacity: 0.75; transition: opacity 0.15s; }
   .lp-wf-edge[data-state="taken"] { stroke: var(--lp-info); stroke-width: 2; opacity: 1; }
   .lp-wf-edge[data-state="untaken"] { opacity: 0.3; stroke-dasharray: 4 4; }
+  .lp-wf-edge[data-focus="on"] { stroke: var(--lp-info); stroke-width: 2.2; opacity: 1; }
+  .lp-wf-edge[data-focus="dim"] { opacity: 0.18; }
   .lp-wf-arrow path { fill: var(--muted-foreground); }
-  .lp-wf-arrow-taken path { fill: var(--lp-info); }
+  .lp-wf-arrow-taken path, .lp-wf-arrow-on path { fill: var(--lp-info); }
   .lp-wf-arrow-untaken path { opacity: 0.4; }
 
-  .lp-wf-edge-label {
+  /* The caption of a connection: a small rounded chip with the condition in words; the expression is its tooltip, and shows under it once picked. */
+  .lp-wf-chip {
     position: absolute;
-    display: flex;
-    max-width: 190px;
-    flex-direction: column;
+    display: inline-flex;
+    max-width: 176px;
     align-items: center;
-    padding: 3px 8px;
+    gap: 5px;
+    padding: 1px 9px;
     border: 1px solid var(--lp-hairline);
-    border-radius: 8px;
+    border-radius: 9999px;
     background-color: var(--lp-card);
     box-shadow: var(--lp-drop);
-    font-size: 12px;
-    line-height: 16px;
+    font-size: 11px;
+    line-height: 17px;
     pointer-events: all;
     cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.15s;
   }
-  .lp-wf-edge-label[data-state="untaken"] { opacity: 0.55; }
-  .lp-wf-edge-label span { max-width: 100%; overflow-wrap: anywhere; text-align: center; }
-  .lp-wf-edge-when { color: var(--foreground); font-family: ui-monospace, monospace; }
-  .lp-wf-edge-title { color: var(--foreground); font-weight: 500; }
-  .lp-wf-edge-sub { color: var(--muted-foreground); font-family: ui-monospace, monospace; }
+  .lp-wf-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .lp-wf-chip[data-otherwise="1"] { color: var(--muted-foreground); font-style: italic; }
+  .lp-wf-chip[data-state="untaken"] { opacity: 0.55; }
+  .lp-wf-chip[data-focus="dim"] { opacity: 0.2; }
+  .lp-wf-chip[data-focus="on"] { border-color: var(--lp-info); }
+  .lp-wf-chip[data-selected="1"] { z-index: 2; max-width: 280px; flex-wrap: wrap; border-radius: 12px; padding-top: 3px; padding-bottom: 3px; white-space: normal; }
+  .lp-wf-chip[data-selected="1"] .lp-wf-chip-text { overflow: visible; text-overflow: clip; }
+  .lp-wf-chip-expr { flex-basis: 100%; color: var(--muted-foreground); font-family: ui-monospace, monospace; font-size: 10px; line-height: 14px; overflow-wrap: anywhere; }
   .lp-wf-pass { color: var(--muted-foreground); font-size: 10px; letter-spacing: 0.02em; text-transform: uppercase; }
   .lp-wf-pass[data-pass="same-session"], .lp-wf-pass[data-pass="read-prior-session"], .lp-wf-pass[data-pass="fork"] { color: var(--primary); font-weight: 600; }
 
   /* A draft patch: what it touched is outlined until the next one. */
   .lp-wf-node[data-changed="1"] { box-shadow: 0 0 0 2px var(--lp-info), var(--lp-drop); animation: lp-wf-flash 1.8s ease-out 1; }
   .lp-wf-edge[data-changed="1"] { stroke: var(--lp-info); stroke-width: 2.5; opacity: 1; }
-  .lp-wf-edge-label[data-changed="1"] { border-color: var(--lp-info); }
+  .lp-wf-chip[data-changed="1"] { border-color: var(--lp-info); }
   @keyframes lp-wf-flash { 0% { box-shadow: 0 0 0 7px color-mix(in oklab, var(--lp-info) 35%, transparent), var(--lp-drop); } 100% { box-shadow: 0 0 0 2px var(--lp-info), var(--lp-drop); } }
   @media (prefers-reduced-motion: reduce) { .lp-wf-node[data-changed="1"] { animation: none; } }
 
   .lp-wf-tools { display: flex; gap: 4px; }
   .lp-wf-hint { margin: 0 !important; padding: 2px 8px; border-radius: 8px; background-color: color-mix(in oklab, var(--lp-card) 80%, transparent); color: var(--muted-foreground); font-size: 11px; line-height: 16px; pointer-events: none; }
   .lp-wf-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+
+  /* The minimap in the corner, in the card colours. */
+  .lp-wf-minimap { margin: 0 8px 8px 0 !important; overflow: hidden; border: 1px solid var(--lp-hairline); border-radius: 10px; background-color: var(--lp-card) !important; box-shadow: var(--lp-drop); }
+  .lp-wf-minimap .react-flow__minimap-mask { fill: color-mix(in oklab, var(--foreground) 9%, transparent); stroke: var(--lp-outline); stroke-width: 1; }
+
+  /* Where you are inside nested workflows. */
+  .lp-wf-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 0 2px; font-size: 12px; line-height: 20px; }
+  .lp-wf-crumb { display: inline-flex; min-width: 0; align-items: center; gap: 4px; }
+  .lp-wf-crumb-sep { color: var(--muted-foreground); }
+  .lp-wf-crumb-link { max-width: 220px; overflow: hidden; padding: 0 4px; border-radius: 6px; color: var(--muted-foreground); text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .lp-wf-crumb-link:hover { background-color: var(--state-hover, var(--lp-well)); color: var(--foreground); }
+  .lp-wf-crumb-here { max-width: 260px; overflow: hidden; padding: 0 4px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* An empty canvas in the editor: one big «+». */
+  .lp-wf-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; pointer-events: none; text-align: center; }
+  .lp-wf-empty-add { display: inline-flex; align-items: center; gap: 8px; padding: 14px 20px; border: 2px dashed var(--lp-outline); border-radius: 14px; background-color: var(--lp-card); font-size: 14px; font-weight: 500; pointer-events: all; cursor: pointer; }
+  .lp-wf-empty-add:hover { background-color: var(--state-hover, var(--lp-well)); }
+
+  /* The canvas and the panel of the selected step: side by side where there is room, stacked where there is not. */
+  .lp-wf-split { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .lp-wf-split[data-side="1"] { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); align-items: start; }
+  .lp-wf-side { min-width: 0; }
+  .lp-wf-split[data-side="1"] .lp-wf-side { position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow-y: auto; border-radius: 16px; }
+  .lp-wf-tabs { display: flex; min-width: 0; flex-wrap: wrap; gap: 2px; }
+  .lp-wf-tab { padding: 3px 8px; font-size: 12px; line-height: 18px; }
+  .lp-wf-data { margin: 0; padding: 0; list-style: none; }
+  .lp-wf-data-row { display: grid; grid-template-columns: minmax(0, 0.45fr) minmax(0, 1fr); gap: 2px 10px; padding: 5px 0; border-top: 1px solid var(--lp-hairline); font-size: 12px; line-height: 16px; }
+  .lp-wf-data-row:first-child { border-top: 0; }
+  .lp-wf-data-key { min-width: 0; overflow-wrap: anywhere; color: var(--muted-foreground); font-family: ui-monospace, monospace; font-size: 11px; }
+  .lp-wf-data-value { min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: 11px; }
+  .lp-wf-data-value[data-empty="1"] { color: var(--muted-foreground); font-style: italic; }
 
   /* The editor's property panel on a narrow screen: a bottom sheet that stays at the foot of the screen while the graph above it is in view. */
   .lp-wf-sheet[data-narrow="1"] {
@@ -415,7 +511,12 @@
   }
   .lp-wf-sheet[data-narrow="1"] .lp-panel-head { position: sticky; top: 0; z-index: 1; background-color: var(--lp-card); }
   /* The model badge on a card: provider logo, then «provider · model · effort»; dimmed when the value is inherited, amber when the catalog does not offer it. */
-  .lp-wf-models { display: flex; min-width: 0; flex-direction: column; gap: 1px; margin-top: 5px; font-size: 11px; line-height: 15px; }
+  .lp-wf-models { display: flex; min-width: 0; flex-direction: column; gap: 1px; margin-top: 1px; font-size: 11px; line-height: 15px; }
+  .lp-wf-card-model { margin-top: 1px; }
+  .lp-wf-card-picker { margin-left: -6px; }
+  .lp-wf-model-button { display: block; max-width: 100%; border-radius: 6px; text-align: left; cursor: pointer; }
+  .lp-wf-model-button:hover { background-color: var(--state-hover, var(--lp-well)); }
+  .lp-wf-dup { position: absolute; z-index: 5; width: 230px; margin-top: 4px; padding: 8px; border: 1px solid var(--lp-hairline); border-radius: 10px; background-color: var(--lp-card); box-shadow: 0 8px 20px -8px rgb(0 0 0 / 0.35); }
   .lp-wf-model { display: inline-flex; min-width: 0; align-items: center; gap: 4px; color: var(--foreground); }
   .lp-wf-model-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; }
   .lp-wf-models[data-inherited="1"] .lp-wf-model { color: var(--muted-foreground); }
@@ -429,14 +530,18 @@
   /* The Models table: a grid row on a wide panel, a stacked card with labelled cells on a narrow one. */
   .lp-model-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
   .lp-model-head { display: grid; grid-template-columns: var(--lp-model-cols); gap: 8px; padding: 0 10px; color: var(--muted-foreground); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
-  .lp-model-row { --lp-model-cols: minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.1fr) minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 0.6fr); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--lp-hairline); border-radius: 10px; background-color: var(--lp-card); }
+  .lp-model-row { --lp-model-cols: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 0.6fr); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--lp-hairline); border-radius: 10px; background-color: var(--lp-card); }
   .lp-model-row[data-issue="1"] { border-color: var(--lp-warning); }
   .lp-model-row > [data-label]::before { display: block; margin-bottom: 1px; color: var(--muted-foreground); content: attr(data-label); font-size: 10px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
   .lp-model-row > [data-label]:first-child { grid-column: 1 / -1; }
   .lp-model-row > [data-label]:first-child::before { display: none; }
   .lp-model-row > .lp-model-extra { grid-column: 1 / -1; font-size: 11px; line-height: 16px; }
+  .lp-model-row:not([data-wide="1"]) > [data-label]:nth-child(3) { grid-column: 1 / -1; }
   .lp-model-row[data-wide="1"] { grid-template-columns: var(--lp-model-cols); }
+  /* The host's own picker (a button with the provider, model and effort) takes the width it is given. */
+  .lp-native-picker { min-width: 0; max-width: 100%; }
+  .lp-native-picker > * { min-width: 0; max-width: 100%; }
   .lp-model-row[data-wide="1"] > [data-label]::before { display: none; }
   .lp-model-row[data-wide="1"] > [data-label]:first-child { grid-column: auto; }
-  .lp-model-head { --lp-model-cols: minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.1fr) minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 0.6fr); }
+  .lp-model-head { --lp-model-cols: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 0.6fr); }
 }
