@@ -1,8 +1,6 @@
 import { accessSync, constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
 import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir } from "node:fs/promises";
-import { request as httpRequest, createServer, type Server } from "node:http";
-import { connect as netConnect, type Socket } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { redactSecrets } from "../redact";
@@ -12,12 +10,6 @@ export type SandboxedCommandInput = {
   requestedHostId:string; workspacePath:string; cwd:string; command:string; backend?:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec?:number;
   /** Secret values for this command (Env Catalog): set in its environment, masked in what it printed. */
   env?:Record<string,string>;
-  /**
-   * A command given `env` has no network beyond localhost. These hosts (owner-approved) are the exception where the
-   * backend can filter by host: macOS, through a local proxy that allows only them. Bubblewrap cannot, so there the
-   * command has no network at all.
-   */
-  networkHosts?:readonly string[];
 };
 export type SandboxedCommandResult = {
   hostId:string; backend:"macos-seatbelt"|"linux-bubblewrap"; workspacePath:string; cwd:string; exitCode:number;
@@ -55,20 +47,14 @@ function sbplPath(path:string):string {
   return `"${path}"`;
 }
 
-/** What a command's network is: open (checks without secrets), or localhost only (checks that carry secrets). */
-export type SandboxNetwork = "open"|"loopback";
-
-export function buildSeatbeltProfile(workspacePath:string, tempPath:string, network:SandboxNetwork="open"):string {
+export function buildSeatbeltProfile(workspacePath:string, tempPath:string):string {
   const workspace = sbplPath(workspacePath);
   const temporary = sbplPath(tempPath);
   const denyWrites = [".git", ".agents", ".cls"].map((name) => `(deny file-write* (subpath ${sbplPath(resolve(workspacePath,name))}))`).join("\n");
   return [
     "(version 1)",
     "(allow default)",
-    // Network stays open for a check without secrets: checks such as curl against a dev server or an API must be able to pass.
-    // A check that carries secrets keeps localhost only: code from the writer could otherwise send the secret out. The deny
-    // also stops name lookups and UDP (verified on macOS: no DNS, no direct IP). One `(allow network* (local ip "localhost:*"))` looked the same but let every address out, so the three operations are listed apart.
-    ...(network === "loopback" ? ["(deny network*)",'(allow network-bind (local ip "localhost:*"))','(allow network-inbound (local ip "localhost:*"))','(allow network-outbound (remote ip "localhost:*"))'] : []),
+    // Network stays open: checks such as curl against a dev server or an API must be able to pass.
     `(deny file-write* (require-all (require-not (subpath ${workspace})) (require-not (subpath ${temporary})) (require-not (literal \"/dev/null\"))))`,
     denyWrites,
   ].join("\n");
@@ -102,12 +88,11 @@ function sandboxPath(base:string):string {
   return bb ? `${base}:${bb}` : base;
 }
 
-export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempPath:string;guardPaths:string[];network?:SandboxNetwork}):string[] {
+export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempPath:string;guardPaths:string[]}):string[] {
   // --share-net keeps the host network while every other namespace stays private: a check may curl a dev
   // server or an API, but still writes only into the workspace and its temp folder. Before, --unshare-all
   // alone cut the network, so no curl verification could ever pass.
-  // A command that carries secrets keeps the private network namespace (--unshare-all): only its own loopback, no host filter possible.
-  const args=["--die-with-parent","--new-session","--unshare-all",...(input.network === "loopback" ? [] : ["--share-net"]),"--ro-bind","/","/","--bind",input.workspacePath,input.workspacePath];
+  const args=["--die-with-parent","--new-session","--unshare-all","--share-net","--ro-bind","/","/","--bind",input.workspacePath,input.workspacePath];
   for (const guardPath of input.guardPaths) args.push("--ro-bind",guardPath,guardPath);
   args.push("--bind",input.tempPath,input.tempPath,"--proc","/proc","--dev","/dev","--chdir",input.cwd,
     "--clearenv","--setenv","PATH",sandboxPath("/usr/local/bin:/usr/bin:/bin"),"--setenv","HOME",input.tempPath,
@@ -125,60 +110,6 @@ export function sandboxSecretEnv(env:Record<string,string>|undefined):Record<str
   return out;
 }
 const maskSecrets=(text:string,secrets:Record<string,string>)=>Object.keys(secrets).length?redactSecrets(text,Object.values(secrets)):text;
-
-/** Whether a declared host pattern (`api.x.com`, or `*.x.com` for its subdomains) covers a requested host. */
-export function networkHostAllowed(hosts:readonly string[],requested:string):boolean {
-  const host=requested.toLowerCase().replace(/\.$/,"");
-  return hosts.some((entry)=>{
-    const pattern=entry.toLowerCase();
-    return pattern.startsWith("*.") ? host.endsWith(pattern.slice(1)) && host.length>pattern.length-1 : host===pattern;
-  });
-}
-
-const PROXY_PORTS=new Set([80,443]);
-
-/**
- * A local forward proxy that lets a sandboxed command reach only the hosts it was approved for (ports 80 and 443). The
- * sandbox allows localhost only, so a program that ignores the proxy variables simply has no network; one that follows
- * them (curl, npm, pip, git, python requests, node with NODE_USE_ENV_PROXY) reaches the approved hosts and nothing else.
- */
-export async function startAllowListProxy(hosts:readonly string[],ports:ReadonlySet<number>=PROXY_PORTS):Promise<{port:number;close:()=>Promise<void>}> {
-  const sockets=new Set<Socket>();
-  const track=(socket:Socket)=>{ sockets.add(socket); socket.on("close",()=>sockets.delete(socket)); socket.on("error",()=>undefined); };
-  const server:Server=createServer((req,res)=>{
-    let target:URL;
-    try { target=new URL(req.url ?? ""); } catch { res.writeHead(400).end(); return; }
-    const port=Number(target.port||80);
-    if (target.protocol!=="http:" || !networkHostAllowed(hosts,target.hostname) || !ports.has(port)) { res.writeHead(403).end("lane-pilot: host not approved for this check"); return; }
-    const upstream=httpRequest({host:target.hostname,port,method:req.method,path:`${target.pathname}${target.search}`,headers:req.headers},(reply)=>{ res.writeHead(reply.statusCode ?? 502,reply.headers); reply.pipe(res); });
-    upstream.on("error",()=>{ if (!res.headersSent) res.writeHead(502); res.end(); });
-    req.pipe(upstream);
-  });
-  server.on("connection",track);
-  server.on("connect",(req,client:Socket,head)=>{
-    const [host="",portText="443"]=(req.url ?? "").split(":");
-    const port=Number(portText);
-    if (!networkHostAllowed(hosts,host) || !ports.has(port)) { client.end("HTTP/1.1 403 Forbidden\r\n\r\n"); return; }
-    const upstream=netConnect(port,host,()=>{ client.write("HTTP/1.1 200 Connection Established\r\n\r\n"); if (head.length) upstream.write(head); upstream.pipe(client); client.pipe(upstream); });
-    track(upstream);
-    upstream.on("error",()=>client.destroy());
-    client.on("error",()=>upstream.destroy());
-  });
-  await new Promise<void>((done,fail)=>{ server.once("error",fail); server.listen(0,"127.0.0.1",()=>done()); });
-  const port=(server.address() as {port:number}).port;
-  return {port,close:()=>new Promise<void>((done)=>{ for (const socket of sockets) socket.destroy(); server.close(()=>done()); })};
-}
-
-const proxyEnv=(port:number):Record<string,string>=>{
-  const url=`http://127.0.0.1:${port}`;
-  return {HTTP_PROXY:url,HTTPS_PROXY:url,ALL_PROXY:url,http_proxy:url,https_proxy:url,all_proxy:url,NO_PROXY:"localhost,127.0.0.1",no_proxy:"localhost,127.0.0.1",NODE_USE_ENV_PROXY:"1"};
-};
-
-/** Said on a failed check that carried secrets, so the writer and the PM do not read a blocked connection as a bug in the code. */
-function networkNote(backend:"macos-seatbelt"|"linux-bubblewrap",hosts:readonly string[]):string {
-  if (backend==="linux-bubblewrap") return `\n[lane-pilot] this check carries secrets, so it ran with no network beyond localhost${hosts.length?` (bubblewrap cannot filter by host: ${hosts.join(", ")} was not reachable)`:""}.`;
-  return `\n[lane-pilot] this check carries secrets, so its network is limited to localhost${hosts.length?` and ${hosts.join(", ")} (ports 80 and 443, through a proxy: the tool must honour HTTP_PROXY/HTTPS_PROXY)`:"; declare the hosts it needs in the check's `network` list"}.`;
-}
 
 /** Guard paths the sandbox created, with how many running checks use each; checks of one attempt run at once. */
 const createdGuardUsers=new Map<string,number>();
@@ -262,8 +193,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       // Secrets travel in bwrap's own environment, never in its arguments (a process list shows those); without --clearenv
       // the sandbox keeps exactly them plus the variables --setenv gives it.
       const secrets=sandboxSecretEnv(input.env);
-      const carriesSecrets=Object.keys(secrets).length>0;
-      const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths,network:carriesSecrets?"loopback":"open"});
+      const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
       const policySha256=createHash("sha256").update(JSON.stringify(args),"utf8").digest("hex");
       const child=await spawnAsync(bubblewrapPath!,[...(Object.keys(secrets).length?args.filter((arg)=>arg!=="--clearenv"):args),input.command],{
         cwd,env:secrets,timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
@@ -271,24 +201,17 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       if (child.error && ["EPERM","EACCES","ENOENT"].includes(String((child.error as NodeJS.ErrnoException).code))) {
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
       }
-      const exitCode=child.status ?? (timedOut(child) ? 124 : 1);
-      return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode,
-        policySha256,stdout:maskSecrets((child.stdout ?? "").slice(0,200_000),secrets),
-        stderr:maskSecrets((child.stderr ?? child.error?.message ?? "").slice(0,12_000),secrets)+(carriesSecrets&&exitCode!==0?networkNote(backend,input.networkHosts ?? []):"")};
+      return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
+        policySha256,stdout:maskSecrets((child.stdout ?? "").slice(0,200_000),secrets),stderr:maskSecrets((child.stderr ?? child.error?.message ?? "").slice(0,12_000),secrets)};
     }
+    const profile = buildSeatbeltProfile(workspacePath,tempPath);
+    const policySha256 = createHash("sha256").update(profile,"utf8").digest("hex");
     const seatbeltSecrets=sandboxSecretEnv(input.env);
-    const carriesSecrets=Object.keys(seatbeltSecrets).length>0;
-    const hosts=carriesSecrets ? [...(input.networkHosts ?? [])] : [];
-    const profile = buildSeatbeltProfile(workspacePath,tempPath,carriesSecrets?"loopback":"open");
-    const policySha256 = createHash("sha256").update(hosts.length ? `${profile}\n;hosts ${hosts.join(",")}` : profile,"utf8").digest("hex");
-    const proxy=hosts.length?await startAllowListProxy(hosts):null;
-    try {
     const child = await spawnAsync(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],{
       cwd,
       env:{
         // Secrets first: the sandbox's own variables below always win.
         ...seatbeltSecrets,
-        ...(proxy?proxyEnv(proxy.port):{}),
         PATH:sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"),
         HOME:tempPath,TMPDIR:tempPath,TMP:tempPath,TEMP:tempPath,BB_DATA_DIR:bbDataDir(),
         LANG:"C",LC_ALL:"C",
@@ -301,14 +224,11 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     if (child.status === 71 && /sandbox_apply:.*operation not permitted/i.test(child.stderr ?? "")) {
       throw new Error("sandbox_backend_unavailable: Seatbelt policy could not be applied by the host");
     }
-    const exitCode=child.status ?? (timedOut(child) ? 124 : 1);
     return {
       hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,
-      exitCode,policySha256,
-      stdout:maskSecrets((child.stdout ?? "").slice(0,200_000),seatbeltSecrets),
-      stderr:maskSecrets((child.stderr ?? child.error?.message ?? "").slice(0,12_000),seatbeltSecrets)+(carriesSecrets&&exitCode!==0?networkNote(backend,hosts):""),
+      exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,
+      stdout:maskSecrets((child.stdout ?? "").slice(0,200_000),seatbeltSecrets),stderr:maskSecrets((child.stderr ?? child.error?.message ?? "").slice(0,12_000),seatbeltSecrets),
     };
-    } finally { await proxy?.close(); }
   } finally {
     await releaseGuards();
     await rm(tempPath,{recursive:true,force:true});

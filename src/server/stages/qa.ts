@@ -51,14 +51,13 @@ export function createQaStages(ctx: ServerCore) {
     const backend = backendValue == null || backendValue === "bb-browser" ? "bb-browser"
       : backendValue === "chrome-qa" || backendValue === "live-chrome" || backendValue === "headless" ? backendValue : null;
     const threadQa = backend === "bb-browser";
-    // A case that signs in names its login («login: NAME»): the owner must have allowed it and it must be a login in Env Catalog.
+    // A case that signs in names its login («login: NAME»): it must be a login in Env Catalog and not left out of a non-empty secrets.allow list.
     // Nothing is recorded, so the PM can call again once access is in place (J5/J6).
     const logins = parseQaCases(args.cases).logins;
     if (logins.length) {
       if (!threadQa) return { runId:args.runId,taskId:args.taskId,state:"blocked",reason:"login_cases_need_the_bb_browser_backend: only the browser-check thread can read a login from Env Catalog; set the browser backend to bb-browser or drop the login: prefix" };
       const gate = await ctx.secrets.check({ declared:logins, allowed:allowedSecretNames(loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId))), kinds:["login"] }, { fresh:true });
       const problem = secretProblem(gate);
-      if (gate.denied.length) await ctx.secretApproval.request({ projectId:args.projectId, pmThreadId:args.threadId, entries:gate.denied, use:"the browser check" });
       if (problem.length || gate.unavailable) {
         return { runId:args.runId,taskId:args.taskId,state:"blocked",reason:waitingSecretReason(problem.length ? problem : logins),
           next:"Nothing was started. Fix the access below, then call lane_pilot_helpers {action:\"browser_qa\"} again with the same arguments:",fix:secretFixLines(gate) };

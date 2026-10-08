@@ -1350,12 +1350,11 @@ export type SecretIssuance = {
  */
 export function recordSecretIssuance(db: LanePilotDatabase, input: {
   projectId: string; runId?: string; taskId?: string; consumer: "check" | "qa" | "errand" | "schedule"; threadId?: string; checkCommand?: string;
-  secretName: string; hostId?: string; network?: readonly string[]; now?: number;
+  secretName: string; hostId?: string; now?: number;
 }): void {
-  db.prepare(`INSERT INTO lane_pilot_secret_issuance(at,project_id,run_id,task_id,consumer,thread_id,check_command,secret_name,host_id,network)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(input.now ?? Date.now(), input.projectId, input.runId ?? null, input.taskId ?? null, input.consumer,
-    input.threadId ?? null, input.checkCommand ? input.checkCommand.slice(0, 300) : null, input.secretName, input.hostId ?? null,
-    input.network ? (input.network.length ? input.network.join(",") : "localhost") : null);
+  db.prepare(`INSERT INTO lane_pilot_secret_issuance(at,project_id,run_id,task_id,consumer,thread_id,check_command,secret_name,host_id)
+    VALUES (?,?,?,?,?,?,?,?,?)`).run(input.now ?? Date.now(), input.projectId, input.runId ?? null, input.taskId ?? null, input.consumer,
+    input.threadId ?? null, input.checkCommand ? input.checkCommand.slice(0, 300) : null, input.secretName, input.hostId ?? null);
 }
 
 /** The issuance journal of a project, newest first. */

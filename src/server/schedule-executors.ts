@@ -86,7 +86,6 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
       if (task.env.length) {
         const resolved = await ctx.secrets.resolve({ declared: task.env, allowed: allowedSecretNames(loadProjectSettings(db, schedule.project_id)) });
         const problem = secretProblem(resolved);
-        if (resolved.denied.length) await ctx.secretApproval.request({ projectId: schedule.project_id, pmThreadId: services.workflowTriggers.pmOf(schedule.project_id)?.pmThreadId, entries: resolved.denied, use: `the scheduled script «${schedule.name}»` });
         if (problem.length || resolved.unavailable) throw new Error(`secrets_not_ready: ${secretFixLines(resolved).join(" ")}`);
         env = Object.assign({}, ...task.env.map((name) => resolved.byName[name] ?? {})) as Record<string, string>;
         for (const name of task.env) {

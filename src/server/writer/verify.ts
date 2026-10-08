@@ -11,7 +11,7 @@ import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../stag
 import { classifyWriterOutput, isOutputPath } from "../../validate-output";
 import { cleanCheckOutput } from "../../output-excerpt";
 import { redactKnown, redactSecrets } from "../../redact";
-import { SecretsNotReadyError, allowedSecretNames, declaredAccess, secretProblem } from "../secrets";
+import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../secrets";
 import type { VerifyResult } from "../../validate-output";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../../owns-paths";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../../live-folder";
@@ -106,8 +106,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
   }>> {
     const policy=runId?runPolicyFor(runId):buildRunPolicy(loadProjectSettings(db,config.projectId));
     const verificationScopes=runId?getRunSettingsScopes(db,runId):[];
-    // Secrets a check declares (Env Catalog, J2): only declared and owner-allowed ones are fetched, and only their own check gets them.
-    const declaredSecrets=declaredAccess(task.verification);
+    // Secrets a check declares (Env Catalog, J2): only declared ones the project list leaves open are fetched, and only their own check gets them.
+    const declaredSecrets=[...new Set(task.verification.flatMap((command)=>command.secrets??[]))];
     const secrets=declaredSecrets.length?await ctx.secrets.resolve({declared:declaredSecrets,allowed:allowedSecretNames(loadProjectSettings(db,config.projectId,verificationScopes))}):null;
     if(secrets&&secretProblem(secrets).length) throw new SecretsNotReadyError(secretProblem(secrets));
     return mapBounded(task.verification,policy.pools.verification,async(command)=>{
@@ -130,7 +130,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       // Who was given which name, for which check; the value is never written (audit 2026-10-08, S1).
       if(hasSecrets) for(const name of command.secrets??[]) {
         if(!secrets?.byName[name]) continue;
-        try { recordSecretIssuance(db,{projectId:config.projectId,runId,taskId:task.id,consumer:"check",threadId:writerThreadId,checkCommand:command.command,secretName:name,hostId:config.hostId,network:command.network??[]}); }
+        try { recordSecretIssuance(db,{projectId:config.projectId,runId,taskId:task.id,consumer:"check",threadId:writerThreadId,checkCommand:command.command,secretName:name,hostId:config.hostId}); }
         catch(cause) { bb.log.warn(`secret issuance journal: ${cause instanceof Error?cause.message:String(cause)}`); }
         bb.log.info(`secret ${name} given to a check of ${task.id} (${runId??"-"})`);
       }
@@ -148,7 +148,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         command:command.command,
         cwd: command.cwd,
         timeoutSec,
-        ...(hasSecrets ? { env, ...(command.network?.length ? { networkHosts:command.network } : {}) } : {}),
+        ...(hasSecrets ? { env } : {}),
         // A background job is kept by the host with its input: a check with secrets runs as a plain call instead.
       }, { hostId:config.hostId, timeoutMs:(timeoutSec + 15) * 1000, ...(options?.background && !hasSecrets ? { job:true, ...(options.jobKey ? { jobKey:options.jobKey } : {}) } : {}) }).catch((cause: unknown) => ({
         hostId: config.hostId,

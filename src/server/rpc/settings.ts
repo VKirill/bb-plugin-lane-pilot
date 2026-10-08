@@ -11,7 +11,6 @@ import { mapListedQaHosts } from "../../qa-host";
 import { VISIBLE_CATALOG } from "../../ui-catalog";
 import { NATIVE_CODE_CRITIQUE_KEYS, NATIVE_DOCS_KEYS, NATIVE_MEMORY_KEYS, NATIVE_NIGHT_REVIEW_KEYS, NATIVE_ONBOARDING_KEYS, NATIVE_PLAN_CRITIQUE_KEYS, NATIVE_PM_READ_KEYS, NATIVE_PROJECT_LIFE_KEYS, NATIVE_SPECIALIST_KEYS, NATIVE_WRITER_KEYS } from "../run-routing";
 import { asJsonText } from "../writer-task";
-import { createProtectedSettings } from "../protected-settings";
 import { stringAt } from "../values";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../contracts";
@@ -23,7 +22,6 @@ const SCREEN_RUNS_LIMIT = 10;
 
 export function settingsRpc(ctx: ServerCore, services: Services) {
   const { bb, cliSettingsFor, db, host, listProjectSections, screenWriterBinding, sectionChain, serializedKv, settingsAbove, writerBindingKey } = ctx;
-  const protectedSettings = createProtectedSettings({ db, ownerAsk: ctx.ownerAsk, log: ctx.log });
   // Runs as the screen shows them: a stage count only; `list_run_stages` lists the rows and `get_stage_result` loads one body.
   const runViews = async (runs: RunHistoryRow[], values: Record<string, unknown>) => {
     const listed = runs.map((run) => ({
@@ -77,7 +75,6 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
     if (pluginRows.length || skillRows.length) catalogCache.set(projectId, { at: Date.now(), value });
     return value;
   };
-  const refusedBy = (key: string, message: string) => ({ code: "incompatible_setting" as const, key, params: [key, message] });
   return {
     helper_access_view: async ({ projectId, sectionId }) => {
       const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];
@@ -267,8 +264,6 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
     get_stage_result: ({ runId, taskId, stageId }) => getStageReceiptResult(db, runId, taskId, stageId),
     save_setting: ({ projectId, sectionId, key, value, expectedVersion }) => {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
-      const held = protectedSettings.check({ projectId, bindingId, changes:[{ key, value }] });
-      if (!held.ok) return {ok:false,conflict:false,version:expectedVersion,value,validation:refusedBy(held.key, held.message)};
       if (NATIVE_MEMORY_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic memory provider/model selection"]}};
       if (NATIVE_NIGHT_REVIEW_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic night-review provider/model selection"]}};
       if (NATIVE_DOCS_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic docs provider/model selection"]}};
@@ -297,8 +292,6 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
     reset_project_settings: async ({ projectId, sectionId, keys, expectedVersions }) => serializedKv(async () => {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
       const reject = (key: string, message: string) => ({ ok: false, conflict: false, values: {}, versions: {}, validation: { code: "incompatible_setting" as const, key, params: [key, message] } });
-      const held = protectedSettings.check({ projectId, bindingId, changes: keys.map((key) => ({ key, reset: true })) });
-      if (!held.ok) return reject(held.key, held.message);
       const editable = new Set(VISIBLE_CATALOG.filter((row) => row.uiStatus === "editable").map((row) => row.storageKey));
       // Per-role access rows (helper.access.<role>) are not catalog settings; dropping the row lets the level below show through.
       const roleAccessKeys = new Set(HELPER_ROLES.map(roleAccessKey));
@@ -335,8 +328,6 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
     }),
     save_settings: ({ projectId, sectionId, changes }) => {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
-      const held = protectedSettings.check({ projectId, bindingId, changes: changes.map(({ key, value }) => ({ key, value })) });
-      if (!held.ok) return {ok:false,conflict:false,values:{},versions:{},validation:refusedBy(held.key, held.message)};
       const memoryKey=changes.find(({key})=>NATIVE_MEMORY_KEYS.has(key))?.key;
       if(memoryKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:memoryKey,params:[memoryKey,"use atomic memory provider/model selection"]}};
       const nightKey=changes.find(({key})=>NATIVE_NIGHT_REVIEW_KEYS.has(key))?.key;

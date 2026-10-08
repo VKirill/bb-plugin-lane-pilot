@@ -115,7 +115,7 @@ describe("whoami through the hub, the host and the command", () => {
     ] });
   });
   afterEach(() => { if (previous === undefined) delete process.env.LANE_PILOT_ANAMNESIS_DIR; else process.env.LANE_PILOT_ANAMNESIS_DIR = previous; });
-  const cli = (argv: string[]) => runAnamnesisCli(argv, { hub, deny: async () => null });
+  const cli = (argv: string[]) => runAnamnesisCli(argv, { hub });
 
   it("answers with text only, drafts marked, the sensitive record counted but not shown", async () => {
     const out = (await cli(["whoami"])).stdout!;

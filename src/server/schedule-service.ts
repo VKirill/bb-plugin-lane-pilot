@@ -105,7 +105,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
       const gate = await ctx.secrets.check({ declared: names, allowed: allowedSecretNames(loadProjectSettings(db, definition.projectId)), kinds: task.kind === "errand" ? ["secret", "login", "ssh", "ftp"] : ["secret", "login"] });
       if (gate.missing.length) warnings.push(`not in Env Catalog: ${gate.missing.join(", ")}`);
       if (gate.wrongKind.length) problems.push(`${gate.wrongKind.join(", ")}: not a kind this task can take`);
-      if (gate.denied.length) warnings.push(`${gate.denied.join(", ")}: the owner has not allowed this for the project yet; the first run asks them in the PM chat`);
+      if (gate.denied.length) warnings.push(`${gate.denied.join(", ")}: the project list «Secrets checks may use» (secrets.allow) leaves it out; add it there or the run fails`);
     }
     if ((task.kind === "workflow" || task.kind === "errand") && !services.workflowTriggers.pmOf(definition.projectId)) warnings.push("the project has no open Lane Pilot PM chat; a run needs one for its threads and questions");
     const machine = machineOf(definition.projectId, task);

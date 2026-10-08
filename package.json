@@ -30,8 +30,7 @@
       "contributeEnv": {
         "timeoutMs": 10000
       }
-    },
-    "rpcCallerPolicy": true
+    }
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1",

@@ -21,7 +21,7 @@ import { failureClass, type FailureClass } from "../../failure-class";
 import { jev } from "../../jev/runtime";
 import { judgedFailureClass } from "../../jev/failure-class-model";
 import { isRunHalted } from "../runs-halt";
-import { allowedSecretNames, declaredAccess, secretProblem, waitingSecretNote, waitingSecretReason } from "../secrets";
+import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../secrets";
 
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
 const DEPENDENCY_REDO_WAIT_MS = 6 * 3600_000;
@@ -214,7 +214,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
      * in place. Env Catalog's change event reaches only the app, so the catalog is asked every 20 seconds meanwhile.
      */
     const waitForSecrets = async (shouldStop?:()=>string|null): Promise<string | null> => {
-      const declared = declaredAccess(input.task.verification);
+      const declared = [...new Set(input.task.verification.flatMap((check) => check.secrets ?? []))];
       if (!declared.length) return null;
       const since = Date.now();
       let noted = "";
@@ -227,12 +227,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const gate = await ctx.secrets.check({ declared, allowed:allowedSecretNames(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))) }, { fresh:true });
         const names = secretProblem(gate);
         if (!names.length && !gate.unavailable) return null;
-        // A name nobody allowed yet: the owner is asked once (a form in the PM chat); the answer is saved in secrets.allow and seen on the next look.
-        if (gate.denied.length) {
-          const asking = input.task.verification.find((check) => check.secrets?.some((name) => gate.denied.includes(name)) || check.network?.some((host) => gate.denied.includes(`net:${host.toLowerCase()}`)));
-          await ctx.secretApproval.request({ projectId:input.projectId, pmThreadId:input.pmThreadId, entries:gate.denied,
-            use:`the check \`${(asking?.command ?? "").replace(/\s+/g, " ").slice(0, 80)}\` of task ${input.taskId}` });
-        }
         const reason = waitingSecretReason(names.length ? names : declared);
         if (noted !== reason) {
           noted = reason;

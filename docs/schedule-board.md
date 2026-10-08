@@ -99,19 +99,9 @@ re-read `schedule_list`. The usual slow poll covers a missed signal.
 
 ## Who may change a schedule
 
-- The owner's screen (the board) and their terminal (`bb lane-pilot schedule ...`) change schedules directly, once the core can tell the owner from an
-  agent (owner login). Until then the core only passes on what the client says about itself, which an agent can say too: such a call is an
-  `unverified-owner`, and `schedule_upsert`, `schedule_resume` and `schedule_run_now` (and the CLI `create|update|resume|run-now`) meet the owner's
-  form in the PM chat (the whole command is shown); `pause`, `delete` and `cancel-run` only stop things and pass. An agent's call (the per-thread
-  token, or a CLI call that names a thread) always meets the form; a call with no marks (`curl`) is refused (`src/server/owner-gate.ts`, `RPC_CLASS`).
-- An agent never does: `schedule_upsert`, `schedule_delete`, `schedule_pause`, `schedule_resume`, `schedule_run_now`, `schedule_cancel_run` over
-  `bb plugin rpc call`, and `bb lane-pilot schedule create|update|delete|pause|resume|run-now|cancel-run`, are refused by the shell guard for
-  every Lane Pilot agent (`lane-stack/hooks/guard_shell.py`; the guard is installed from `~/.agents/hooks` on each machine, reinstall it after this lands).
-  Reading (`schedule_list`, `schedule_get`, `schedule_runs`, `schedule_preview`, `schedule_calendar`, `... schedule list|show|history|preview`) stays open.
-- The PM's tool `lane_pilot_schedule` (`action`: list, show, create, update, delete, pause, resume, run_now) is the agents' way. `create`, `update` and
-  `delete` put the change to the owner in a form in the PM chat (command or text, machine, account names; it reaches the phone); the first call answers
-  `waiting_owner`, and after their yes the same call goes through; the yes covers that one definition for ten minutes, a no is not asked again for an hour.
-  `pause`, `resume` and `run_now` use what the owner already set up and need no form.
+- Anyone may change a schedule: the board, `bb lane-pilot schedule ...`, `bb plugin rpc call lane-pilot schedule_*` and the PM's tool `lane_pilot_schedule`
+  (`action`: list, show, create, update, delete, pause, resume, run_now) all go straight through, with no caller check and no owner form (owner decision
+  2026-10-08: every machine is the owner's, BB is reachable only over his WireGuard). The PM creates schedules directly.
 - **A thread that a schedule started cannot touch schedules** (`create`, `update`, `delete`, `pause`, `resume`, `run_now` are refused with `schedule_origin`; `list` and `show` work):
   a scheduled errand's thread carries `pluginMetadata.origin = "schedule"` and so does anything below it (the check walks the parent chain, four hops).
   The tool is one tool, not nine, because a compiled agent profile holds at most 64 tools and the PM's list had room for two.

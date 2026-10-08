@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { OPENCODE_BASH_DENY, withBashDeny } from "../src/opencode-min-config";
 import { BB_SHIM_NAMES, prepareBbShim } from "../src/bb-shim";
 
-// Audit 2026-10-08 round 3, P0-2: Codex, OpenCode and Cursor writers run `bb` through guard wrappers at the front of PATH.
+// Audit 2026-10-08 round 3, P0-2: Codex, OpenCode and Cursor writers run `bb` through guard wrappers at the front of PATH (since the owner decision of 2026-10-08 they stop only plugin admin and the hub).
 const temp = () => mkdtempSync(join(tmpdir(), "bb-shim-"));
 
 async function setup() {
@@ -34,17 +34,6 @@ describe("the PATH wrappers of a Codex, OpenCode or Cursor helper", () => {
   });
 
   const DENIED: Array<[string, string[]]> = [
-    ["bb", ["env-catalog", "set", "A", "secret"]],
-    ["bb", ["env-catalog", "delete", "A"]],
-    ["bb", ["env-catalog", "export", "--format", "json"]],
-    ["bb", ["env-catalog", "import-machine-env"]],
-    ["bb", ["--json", "env-catalog", "set", "A", "B"]],
-    ["bb", ["env-catalog", "get", "OPENAI_API_KEY", "--raw"]],
-    ["bb", ["env-catalog", "get", "--raw=true", "OPENAI_API_KEY"]],
-    ["bb", ["plugin", "rpc", "call", "env-catalog", "env_delete", "--input", "{\"name\":\"A\"}"]],
-    ["bb", ["plugin", "rpc", "call", "lane-pilot", "save_setting", "--input", "{}"]],
-    ["bb", ["plugin", "rpc", "call", "bb-plugin-lane-pilot", "reset_project_settings"]],
-    ["bb", ["plugin", "rpc", "call", "lane-pilot", "stack_install"]],
     ["bb", ["plugin", "config", "lane-pilot", "set", "x", "y"]],
     ["bb", ["plugin", "token", "lane-pilot"]],
     ["bb", ["plugin", "disable", "lane-pilot"]],
@@ -52,9 +41,6 @@ describe("the PATH wrappers of a Codex, OpenCode or Cursor helper", () => {
     ["bb", ["plugin", "reload", "lane-pilot"]],
     ["bb", ["plugin", "remove", "lane-pilot"]],
     ["bb", ["plugin", "safe-mode", "on"]],
-    ["bb", ["lane-pilot", "configure", "--set", "x=1"]],
-    ["bb", ["lane-pilot", "host-install"]],
-    ["bb", ["plugin", "run", "lane-pilot", "budget"]],
     ["ssh", ["ovh-main", "cat ~/.bb/master.key"]],
     ["ssh", ["-i", "k", "ubuntu@10.8.0.1", "id"]],
     ["ssh", ["54.37.129.153"]],
@@ -67,7 +53,7 @@ describe("the PATH wrappers of a Codex, OpenCode or Cursor helper", () => {
       const { run } = await setup();
       const res = run(program, ...args);
       expect(res.status).toBe(126);
-      expect(res.stderr).toContain("[env-guard]");
+      expect(res.stderr).toContain("[hub-guard]");
       expect(res.stdout).not.toContain("REAL");
     });
   }
@@ -79,6 +65,15 @@ describe("the PATH wrappers of a Codex, OpenCode or Cursor helper", () => {
     ["bb", ["env-catalog", "list"]],
     ["bb", ["env-catalog", "get", "OPENAI_API_KEY"]],
     ["bb", ["env-catalog", "request", "NEW_KEY"]],
+    ["bb", ["env-catalog", "set", "A", "secret"]],
+    ["bb", ["env-catalog", "delete", "A"]],
+    ["bb", ["env-catalog", "export", "--format", "json"]],
+    ["bb", ["env-catalog", "get", "OPENAI_API_KEY", "--raw"]],
+    ["bb", ["plugin", "rpc", "call", "env-catalog", "env_delete", "--input", "{\"name\":\"A\"}"]],
+    ["bb", ["plugin", "rpc", "call", "lane-pilot", "save_setting", "--input", "{}"]],
+    ["bb", ["lane-pilot", "schedule", "create", "{}"]],
+    ["bb", ["lane-pilot", "anamnesis", "forget", "--all", "--yes"]],
+    ["bb", ["lane-pilot", "configure", "--set", "x=1"]],
     ["bb", ["threads", "message", "thr_1", "please do not plugin reload or env-catalog set anything"]],
     ["bb", ["thread", "list", "--json"]],
     ["ssh", ["vast", "nvidia-smi"]],
@@ -117,12 +112,12 @@ describe("the OpenCode bash permission rules", () => {
     expect(merged.edit).toBe("allow");
     expect(merged.bash["git push*"]).toBe("ask");
     const keys = Object.keys(merged.bash);
-    expect(merged.bash["*bb env-catalog set*"]).toBe("deny");
-    expect(merged.bash["*bb env-catalog*--raw*"]).toBe("deny");
     expect(merged.bash["*bb plugin reload*"]).toBe("deny");
     expect(merged.bash["*ssh *ovh-main*"]).toBe("deny");
+    // Env Catalog and Lane Pilot's own commands are not fenced any more (owner decision 2026-10-08).
+    expect(OPENCODE_BASH_DENY.filter((pattern) => /env-catalog|lane-pilot|rpc/.test(pattern))).toEqual([]);
     // last match wins in OpenCode: every deny stands after the machine's own catch-all
-    expect(keys.indexOf("*bb env-catalog set*")).toBeGreaterThan(keys.indexOf("*"));
+    expect(keys.indexOf("*bb plugin reload*")).toBeGreaterThan(keys.indexOf("*"));
     expect(OPENCODE_BASH_DENY.every((pattern) => merged.bash[pattern] === "deny")).toBe(true);
   });
 
@@ -145,6 +140,6 @@ describe("the OpenCode bash permission rules", () => {
     expect(result).not.toBeNull();
     const config = JSON.parse(readFileSync(join(result!.configHome, "opencode", "opencode.json"), "utf8")) as { permission: { bash: Record<string, string> } };
     expect(config.permission.bash["*"]).toBe("allow");
-    expect(config.permission.bash["*bb env-catalog delete*"]).toBe("deny");
+    expect(config.permission.bash["*bb plugin remove*"]).toBe("deny");
   });
 });

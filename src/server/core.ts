@@ -1,6 +1,5 @@
 import { parseOwnedAgents } from "../agent-profile";
 import { redactKnown } from "../redact";
-import { createSecretApproval } from "./secret-approval";
 import { createSecrets } from "./secrets";
 import { bindDrainTarget, createDeployDrain } from "./deploy-drain";
 import { currentScheduleSignal } from "./schedules";
@@ -354,11 +353,10 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   const writerBindingKey = (projectId: string) => `writer-binding:${projectId}`;
 
   const secrets = createSecrets({ bb });
-  const secretApproval = createSecretApproval({ db, ownerAsk, log: (message) => bb.log.warn(message) });
   // J-11: a second look (Jev, shadow by default) at what a helper or writer produced, before it is stored or shown.
   const outputGuard = createOutputGuard({ jev, settings: async (projectId) => (await effectiveProjectSettings(projectId)).values, kv: bb.storage.kv, log: (message) => bb.log.warn(message) });
 
-  return { bb, db, state, realtime, ownerAsk, secrets, secretApproval, outputGuard, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
+  return { bb, db, state, realtime, ownerAsk, secrets, outputGuard, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }
 
 export type ServerCore = ReturnType<typeof createCore>;

@@ -128,7 +128,7 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
       data:{ missingExcludes:missing, suggestedFlags } });
   }
 
-  // Secrets a check declares: a valid name, allowed by the owner, of a kind a check can take, and in Env Catalog.
+  // Secrets a check declares: a valid name, left open by the project list, of a kind a check can take, and in Env Catalog.
   // A name that is simply not saved yet is a warning: the task waits for it (waiting_secret) and starts once it is.
   const declared = [...new Set(task.verification.flatMap((check) => check.secrets ?? []))];
   const reserved = declared.filter((name) => SANDBOX_OWN_ENV.has(name));
@@ -138,9 +138,9 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     if (found.unavailable) {
       errors.push({ code:"secret_catalog_unavailable", message:`verification declares secrets (${declared.join(", ")}) but Env Catalog is not installed or not answering, so no check can receive them; install and enable the env-catalog plugin, or drop secrets from the checks` });
     } else {
-      // Not allowed yet is the normal first state: the owner is asked once when the task starts, and the task waits for the answer.
-      if (found.denied.length) warnings.push({ code:"secret_needs_approval", data:{ deniedSecrets:found.denied },
-        message:`verification ${found.denied.join(", ")} is not allowed for this project yet: when the task starts the owner gets one question (a form in this chat and on the phone) and the task waits (waiting_secret) until they answer; do not ask them yourself, you cannot allow it (project setting «Secrets checks may use», secrets.allow)` });
+      // The project list only narrows: a non-empty «Secrets checks may use» (secrets.allow) that leaves a name out stops it.
+      if (found.denied.length) errors.push({ code:"secret_not_allowed", data:{ deniedSecrets:found.denied },
+        message:`verification secrets ${found.denied.join(", ")} are left out of the project list «Secrets checks may use» (secrets.allow); add the name to the list (or empty the list, then every declared name is allowed), then send the task again` });
       if (found.wrongKind.length) errors.push({ code:"secret_kind", message:`verification secrets ${found.wrongKind.join(", ")} are SSH or FTP access, which a check cannot take; a deploy step that needs them goes to lane_pilot_errand` });
       for (const name of found.missing.filter((missing) => !reserved.includes(missing))) {
         const near = found.catalog ? nearSecretName(name, found.catalog) : null;
@@ -148,13 +148,6 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
         else warnings.push({ code:"secret_missing", message:`verification secrets ${name} is not in Env Catalog yet: call env_request for it now (name ${name}, with a purpose); the task waits (waiting_secret:${name}) and starts by itself once the owner saves it` });
       }
     }
-  }
-
-  // A check with secrets has no network beyond localhost; `network` names the hosts the owner may approve for it.
-  for (const check of task.verification) {
-    if (!check.network?.length) continue;
-    if (!check.secrets?.length) warnings.push({ code:"network_without_secrets", message:`verification network ${check.network.join(", ")} on "${check.command}" is ignored: a check without secrets has the open network; \`network\` is only for a check that lists \`secrets\`` });
-    else warnings.push({ code:"network_hosts_limits", message:`verification network ${check.network.join(", ")} on "${check.command}": hosts are filtered on macOS hosts only (a local proxy on ports 80 and 443, so the tool must honour HTTP_PROXY/HTTPS_PROXY); on a Linux host (bubblewrap) a check with secrets has no network at all, so keep the part that needs the network in a check without secrets` });
   }
 
   // depends_on a task that already ended blocked or canceled: the PM replans before this one is queued (a loop or a self reference is the plan critique's).

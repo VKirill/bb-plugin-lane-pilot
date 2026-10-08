@@ -15,7 +15,6 @@
     "experimental_vkLifecycle",
     "vkInstanceId",
     "experimental_vkSchedule",
-    "experimental_vkOnHookTimeout",
-    "experimental_vkCaller"
+    "experimental_vkOnHookTimeout"
   ]
 }

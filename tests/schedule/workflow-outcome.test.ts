@@ -15,7 +15,7 @@ const input = (): ExecutorInput => ({ schedule, task, run: { id: "srun_1", sched
 
 function world(definition: unknown, summary: Record<string, unknown>) {
   const db = { prepare: () => ({ get: () => (definition === undefined ? undefined : { definition_json: JSON.stringify(definition) }) }) };
-  const ctx = { bb: { log: { warn: () => undefined } }, db, host: {}, secrets: {}, secretApproval: {} } as never;
+  const ctx = { bb: { log: { warn: () => undefined } }, db, host: {}, secrets: {} } as never;
   const services = { workflowEngine: { get: () => summary } } as never;
   return createScheduleExecutors(ctx, services);
 }

@@ -15,7 +15,7 @@ function world() {
   const calls = { workflowStart: [] as Array<Record<string, any>>, errandStart: [] as Array<Record<string, any>>, resolve: [] as Array<Record<string, any>>, cancel: [] as string[], stopped: [] as string[] };
   const summaries = new Map<string, Record<string, any>>();
   let pm: { pmThreadId: string; runId: string } | null = { pmThreadId: "thr_pm", runId: "lprun_1" };
-  const ctx = { bb: { sdk: { threads: { stop: async ({ threadId }: { threadId: string }) => { calls.stopped.push(threadId); } } }, log: { warn: () => undefined } }, db: {}, host: {}, secrets: {}, secretApproval: {} } as never;
+  const ctx = { bb: { sdk: { threads: { stop: async ({ threadId }: { threadId: string }) => { calls.stopped.push(threadId); } } }, log: { warn: () => undefined } }, db: {}, host: {}, secrets: {} } as never;
   const services = {
     workflowTriggers: {
       pmOf: () => pm,

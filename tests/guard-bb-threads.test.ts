@@ -119,7 +119,15 @@ describe("BB native PM can run project node scripts", () => {
       expect(allowedNative(command, pluginCheckout)).toBe(0);
       expect(allowedIn("/srv/apps/selfystudio", command)).toBe(2);
     }
-    for (const command of ["bb thread create --prompt x", "bb plugin rpc call x y", "bb env-catalog get SECRET"]) expect(allowedNative(command)).toBe(2);
+    for (const command of ["bb thread create --prompt x", "bb plugin rpc call x y"]) expect(allowedNative(command)).toBe(2);
+  });
+  // Owner decision 2026-10-08: Env Catalog and Lane Pilot's own CLI and RPC are the PM's to use.
+  it("lets the PM use Env Catalog and Lane Pilot's CLI and RPC", () => {
+    for (const command of ["bb env-catalog get SECRET", "bb env-catalog set A B", "bb env-catalog delete A", "bb env-catalog export", "bb lane-pilot schedule create '{}'",
+      "bb lane-pilot anamnesis confirm rec_1", "bb plugin rpc call lane-pilot save_setting --input '{}'", "bb plugin rpc call env-catalog env_get --input '{}'", "bb plugin run lane-pilot configure '{}'"]) {
+      expect(allowedNative(command), command).toBe(0);
+      expect(allowed("lane-pilot-pm", command), command).toBe(0);
+    }
   });
   it("keeps the terminal orchestrator's bb allowlist as it was", () => {
     expect(allowed("dev-orchestrator", "bb plugin reload lane-pilot")).toBe(2);
