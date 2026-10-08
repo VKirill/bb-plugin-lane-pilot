@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+From a self-repair of «Lane Pilot nightly docs failed for <path> docs» (treba 2026-10-05…07, treba-sites 2026-10-07, SelfyStudio 2026-10-08):
+- **A nightly docs pass is blocked only by the pages it wrote.** The lint held every pass to every page of the folder. treba's docs/ predates the method (auto-wiki pages with type `explanation`, no `sources`, `docs/_briefs/`, `docs/plans/`): main alone has 216 findings. The refresh wrote a few pages, the repair round was handed the legacy findings, touched 37 pages and still left 110, so every night failed and nothing landed. Now a finding blocks when it is on a page the pass wrote, or is a link to a page the pass removed or moved (`blockingDocsFindings`); a legacy page is converted when a pass writes it. The catalogue coverage check blocks as before.
+- **A page over 40000 bytes still exists for the link check.** Oversized pages are left out of the pages the lint reads, so every link to one was reported as a link to a missing page: 16 of SelfyStudio's 17 findings on 2026-10-08 pointed at `docs/capabilities.md`, the one real finding being its size. `lintDocsPages` takes the oversized paths as present.
+- **The repair round is reminded of the page size limit.** That SelfyStudio round grew the 35 KB catalogue past 40000 bytes while fixing coverage findings and had no round left to split it; the repair prompt now says to keep pages under 30000 bytes and put new content on a linked page.
+
 ## 0.1.193
 
 Audit 2026-10-08 urgent items 1–7 (0.1.192 was never deployed; its changes ship here).

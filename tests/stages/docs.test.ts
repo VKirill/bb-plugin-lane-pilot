@@ -7,7 +7,7 @@ import {
   docsInputHash, docsScheduleDue, docsSinceEpoch, parseDocsSettings,
   selectDocsPages, validateDocsEdits,
   type DocsPage,
-  docsSelection,
+  docsSelection, docsRepairPrompt,
 } from "../../src/stages/docs";
 
 const now = new Date(2026, 8, 23, 5, 0, 0);
@@ -89,4 +89,12 @@ describe("living docs stage policy", () => {
     expect(docsInputHash(selected)).toMatch(/^[a-f0-9]{64}$/);
     expect(docsInputHash(selected)).toBe(docsInputHash(selected));
   });
+});
+
+// SelfyStudio, 2026-10-08: fixing a coverage finding, the repair round added capabilities to a 35 KB catalogue,
+// pushed it past 40000 bytes and had no round left to split it.
+it("reminds the one repair round of the page size limit", () => {
+  const prompt = docsRepairPrompt([{ path:"docs/capabilities.md", rule:"coverage", detail:"does not link apps/api/docs/features/x.md" }]);
+  expect(prompt).toContain("under 30000 bytes");
+  expect(prompt).toContain("linked page of its own");
 });

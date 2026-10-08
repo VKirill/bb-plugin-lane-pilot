@@ -31,7 +31,8 @@ export const isDesignCanon = (path:string):boolean => /(^|\/)DESIGN\.md$/.test(p
 const isDocsContent = (path:string):boolean => isDocsPage(path) && !isDocsIndex(path) && !isDesignCanon(path);
 const docsDirOf = (path:string):string => /^(.*?(?:^|\/)?docs)\//.exec(path)?.[1] ?? "";
 export type Frontmatter = Record<string, string | string[]>;
-export type DocsFinding = { path:string; rule:string; detail:string };
+/** `target` names the page a finding is about when that is another page: a link's target. */
+export type DocsFinding = { path:string; rule:string; detail:string; target?:string };
 
 /** The YAML subset the contract uses: scalars, `[a, b]` lists and `- item` lists. */
 export function parseFrontmatter(content:string): { data:Frontmatter; body:string } | null {
@@ -75,14 +76,15 @@ export function pageCitations(body:string): Array<{ file:string; start:number; e
 
 /**
  * Checks every page but the builder-owned index. `lineCounts` maps each cited file to its number of
- * lines, or null when the file does not exist.
+ * lines, or null when the file does not exist. `present` names pages that exist but are not in `pages`
+ * (too large to read): links to them resolve, the size check reports them.
  */
-export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number | null>): DocsFinding[] {
+export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number | null>, present:string[] = []): DocsFinding[] {
   const findings:DocsFinding[] = [];
-  const paths = new Set(pages.map((page) => page.path));
+  const paths = new Set([...pages.map((page) => page.path), ...present]);
   for (const page of pages) {
     if (!isDocsContent(page.path)) continue;
-    const add = (rule:string, detail:string) => findings.push({ path:page.path, rule, detail });
+    const add = (rule:string, detail:string, target?:string) => findings.push({ path:page.path, rule, detail, ...(target ? { target } : {}) });
     const parsed = parseFrontmatter(page.content);
     if (!parsed) { add("frontmatter", "page must start with a YAML frontmatter block"); continue; }
     const { data, body } = parsed;
@@ -119,7 +121,7 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
       if (/^[a-z]+:\/\//i.test(target)) continue;
       const resolved = resolveRelative(page.path, target);
       // A link into another workspace's docs may point at a page that folder's own pass is still writing: a warning, not a block.
-      if (isDocsPage(resolved) && !paths.has(resolved)) add(docsDirOf(resolved) === docsDirOf(page.path) ? "links" : "links-external", `link ${target} points at a page that does not exist`);
+      if (isDocsPage(resolved) && !paths.has(resolved)) add(docsDirOf(resolved) === docsDirOf(page.path) ? "links" : "links-external", `link ${target} points at a page that does not exist`, resolved);
     }
   }
   return findings;
@@ -138,6 +140,17 @@ function resolveRelative(from:string, target:string):string {
 export function unlinkedPages(from:DocPage, targets:string[]):string[] {
   const linked = new Set([...withoutBacklinks(from.content).matchAll(/\]\(([^)#\s]+\.md)(?:#[^)]*)?\)/g)].map((link) => resolveRelative(from.path, link[1]!)));
   return targets.filter((target) => !linked.has(target));
+}
+
+/**
+ * The findings that block a docs pass: those on a page the pass wrote, or about a page it wrote
+ * (a link to a page it removed or moved).
+ * Pages it did not touch are already on main as they are; holding the pass to them blocks every
+ * night on a docs folder that predates the method and never lands what the pass did write.
+ */
+export function blockingDocsFindings<T extends DocsFinding>(findings:T[], written:string[]):T[] {
+  const mine = new Set(written);
+  return findings.filter((finding) => mine.has(finding.path) || (finding.target !== undefined && mine.has(finding.target)));
 }
 
 /** Files cited anywhere in the pages, for the line-count lookup the lint needs. */
