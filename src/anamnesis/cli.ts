@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { KINDS, SENSITIVITIES, SOURCES, STATUSES, type AnamnesisRecord, type Kind, type Source, type Status } from "./model";
 import type { Hub } from "./hub";
+import { profileSchema } from "./profile-import";
 import { DETAILS, SECTIONS, type Detail, type Section } from "./whoami";
 import { DEFAULT_LOOKBACK_DAYS, formatReport, type LoadOptions, type LoadReport } from "./load";
 
@@ -25,6 +26,7 @@ export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis review [--limit N]",
   "bb lane-pilot anamnesis whoami [--sections identity,skills,projects,timeline,people,interests,preferences,tools] [--detail brief|normal|full] [--confirmed-only] [--include-sensitive] [--public-only] [--year YYYY]",
   "bb lane-pilot anamnesis card [--max-chars N]",
+  "bb lane-pilot anamnesis import-profile --profile '<JSON of bb memory-profile get --json>'",
 ].join("\n");
 
 export type CliResult = { exitCode: number; stdout?: string; stderr?: string };
@@ -44,7 +46,7 @@ const OPTIONS = {
   sensitivity: { type: "string" }, reason: { type: "string" }, confidence: { type: "string" }, all: { type: "boolean" }, yes: { type: "boolean" },
   source: { type: "string" }, set: { type: "string" }, help: { type: "boolean" },
   run: { type: "boolean" }, classify: { type: "boolean" }, since: { type: "string" }, sources: { type: "string" }, "max-classify": { type: "string" },
-  "allow-sensitive-to-jev": { type: "boolean" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, year: { type: "string" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" }, extract: { type: "string" }, "telegram-channels": { type: "string" },
+  "allow-sensitive-to-jev": { type: "boolean" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, year: { type: "string" }, profile: { type: "string" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" }, extract: { type: "string" }, "telegram-channels": { type: "string" },
 } as const;
 
 const day = (at: number | null): string => (at ? new Date(at).toISOString().slice(0, 10) : "—");
@@ -191,6 +193,15 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
     case "card": {
       const result = await hub.ask({ op: "card", ...(values["max-chars"] ? { maxChars: Number(values["max-chars"]) } : {}) });
       return out(result, values.json, () => result.text);
+    }
+    case "import-profile": {
+      if (!values.profile) throw new Error("import-profile needs --profile '<JSON>': the output of `bb memory-profile get --json` (enable the plugin for a moment if it is off)");
+      let profile: unknown;
+      try { profile = JSON.parse(values.profile); } catch { throw new Error("--profile is not JSON"); }
+      const parsed = profileSchema.safeParse(profile);
+      if (!parsed.success) throw new Error(`--profile is not a memory-profile card: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+      const result = await hub.ask({ op: "import_profile", profile: parsed.data });
+      return out(result, values.json, () => `moved ${result.imported} records from the card${result.skipped.length ? ` (empty fields: ${result.skipped.join(", ")})` : ""}; they are confirmed. Check them in the Anamnesis tab, then the plugin can be switched off.`);
     }
     case "review": {
       const perKind = values.limit ? Number(values.limit) : 8;

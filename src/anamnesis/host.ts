@@ -3,6 +3,7 @@ import { anamnesisRequestSchema } from "./ops";
 import { existsSync } from "node:fs";
 import { collectSources } from "./collect";
 import { renderCard, renderWhoami, type WhoamiRecord } from "./whoami";
+import { profileRecords } from "./profile-import";
 import { renderYearReview } from "./year-review";
 import { anamnesisDbPath, openStore, type Store, type UpsertResult } from "./store";
 
@@ -66,6 +67,19 @@ export async function executeRequest(request: AnamnesisRequest, store: Store, co
         ...(includeDrafts !== undefined ? { includeDrafts } : {}), ...(publicOnly ? { publicOnly } : {}) }) satisfies ResponseOf<"whoami">;
     }
     case "card": return renderCard(store.list({ includeSensitive: false, statuses: ["confirmed"], limit: 2000 }), { ...(request.maxChars ? { maxChars: request.maxChars } : {}), now }) satisfies ResponseOf<"card">;
+    case "import_profile": {
+      const { records, skipped } = profileRecords(request.profile, now);
+      const reason = "moved from the memory-profile card";
+      const results = store.transaction(() => records.map((record) => {
+        const result = store.upsert(record, { actor: "owner", reason, now });
+        // The card was the owner's own text: a record that already existed as a draft is confirmed with it.
+        const stored = result.id && result.action !== "invalid" && result.action !== "ignored" ? store.get(result.id, { includeSensitive: true }) : null;
+        if (stored && stored.status !== "confirmed") store.edit(stored.id, { status: "confirmed" }, reason, now);
+        return result;
+      }));
+      const summary = summarizeUpserts(results);
+      return { imported: results.filter((result) => result.id && result.action !== "invalid" && result.action !== "ignored").length, ids: summary.ids, skipped, reasons: summary.reasons } satisfies ResponseOf<"import_profile">;
+    }
     case "load_report": return { id: store.saveLoad(request.mode, request.report, now) } satisfies ResponseOf<"load_report">;
     case "sources": {
       if (request.set) store.setSource(request.set.source, request.set.enabled, now);

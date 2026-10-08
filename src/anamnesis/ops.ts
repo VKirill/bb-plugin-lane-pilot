@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { profileSchema } from "./profile-import";
 import { KINDS, SENSITIVITIES, SOURCES, STATUSES, evidenceSchema, historySchema, recordSchema, recordWithEvidenceSchema } from "./model";
 
 /**
@@ -57,11 +58,13 @@ export const hostOps = {
   card: z.object({ op: z.literal("card"), maxChars: z.number().int().min(200).max(4000).optional() }).strict(),
   /** Keeps the report of a load on the machine, for the owner's review. */
   load_report: z.object({ op: z.literal("load_report"), mode: z.enum(["plan", "run", "daily"]), report: z.record(z.string(), z.unknown()) }).strict(),
+  /** Moves the card of the retired memory-profile plugin into records the owner confirmed (A9). */
+  import_profile: z.object({ op: z.literal("import_profile"), profile: profileSchema }).strict(),
   sources: z.object({ op: z.literal("sources"), set: z.object({ source: source.exclude(["manual"]), enabled: z.boolean() }).strict().optional() }).strict(),
 } as const;
 
 export const anamnesisRequestSchema = z.union([
-  hostOps.status, hostOps.upsert, hostOps.add, hostOps.list, hostOps.get, hostOps.edit, hostOps.history, hostOps.forget, hostOps.collect, hostOps.load_report, hostOps.whoami, hostOps.card, hostOps.sources,
+  hostOps.status, hostOps.upsert, hostOps.add, hostOps.list, hostOps.get, hostOps.edit, hostOps.history, hostOps.forget, hostOps.collect, hostOps.load_report, hostOps.whoami, hostOps.card, hostOps.import_profile, hostOps.sources,
 ]);
 export type AnamnesisRequest = z.infer<typeof anamnesisRequestSchema>;
 
@@ -110,6 +113,7 @@ export const responseSchemas = {
   whoami: z.object({ text: z.string(), included: z.number().int(), hiddenSensitive: z.number().int(), drafts: z.number().int() }).strict(),
   card: z.object({ text: z.string(), chars: z.number().int(), records: z.number().int() }).strict(),
   sources: z.object({ sources: z.array(sourceStateSchema) }).strict(),
+  import_profile: z.object({ imported: z.number().int(), ids: z.array(z.string()), skipped: z.array(z.string()), reasons: z.record(z.string(), z.number().int()) }).strict(),
 } as const;
 export type OpName = keyof typeof responseSchemas;
 export type ResponseOf<O extends OpName> = z.infer<(typeof responseSchemas)[O]>;
