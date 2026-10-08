@@ -89,6 +89,9 @@ const ONE_SHOT: RoleProfile = { bbPlugins: [], skills: [], mcpServers: [] };
 // Env Catalog (J1): the roles that need an account or key get its tools. A writer does not: its checks get the secrets the
 // contract declares (verification[].secrets) from the server, by name. A browser check gets it only for a case that names
 // a login (qa-thread.ts, extraAccess).
+// BB's session policy narrows whole plugins (bbPlugins), never one tool of a plugin (checked in the core, 2026-10-08), so a role that
+// carries env-catalog gets env_set and env_delete too. The tool-level cut is the PreToolUse guard (lane-stack/hooks/guard_shell.py,
+// _env_catalog_denial): no helper and no PM sets or deletes, the PM reads no value, a browser check does not list the catalog.
 export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "writer": CODER,
   "code-repair": CODER,
