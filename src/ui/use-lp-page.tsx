@@ -21,7 +21,7 @@ import {
   type I18nKey,
   type Locale,
   type LocalePreference,
-} from "../../i18n";
+} from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { useLpRealtime } from "./use-lp-realtime";
 import { readRunsWindow } from "./runs-window";

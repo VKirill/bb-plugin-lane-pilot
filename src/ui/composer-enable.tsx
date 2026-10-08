@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useComposer, useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
-import { t, detectLocale, setLocaleOverride } from "../../i18n";
+import { t, detectLocale, setLocaleOverride } from "@lane-pilot/i18n";
 import { agentPickerLabel } from "../agent-display";
 import { Button } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";

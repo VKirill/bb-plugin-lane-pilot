@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { setLocaleOverride } from "../i18n";
+import { setLocaleOverride } from "@lane-pilot/i18n";
 import { createWorkflowLibrary } from "../src/server/workflow-library";
 import { createWorkflowOps } from "../src/server/workflow-ops";
 import type { ServerCore } from "../src/server/core";

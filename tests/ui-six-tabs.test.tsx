@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/ui/tabs-model";
-import { setLocaleOverride, en, ru } from "../i18n";
+import { setLocaleOverride, en, ru } from "@lane-pilot/i18n";
 import { HELPER_ROLES } from "../src/helper-context";
 import { ROLE_GROUPS } from "../src/ui/team-model";
 import { screenFixture, mountPage } from "./ui-harness";

@@ -1,5 +1,5 @@
 import { experimental_Diff as Diff, experimental_SourceCode as SourceCode } from "@get-bb/plugin-sdk/app";
-import { t, unappliedReason } from "../../i18n";
+import { t, unappliedReason } from "@lane-pilot/i18n";
 import { settingLabel } from "../setting-copy";
 import {
   AlertDialog,

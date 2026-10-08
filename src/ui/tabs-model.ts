@@ -1,4 +1,4 @@
-import type { I18nKey } from "../../i18n";
+import type { I18nKey } from "@lane-pilot/i18n";
 
 /** The same six tabs at every level: the system defaults, a project and a section of a project. */
 export const TAB_IDS = ["overview", "team", "work", "knowledge", "automation", "runs"] as const;

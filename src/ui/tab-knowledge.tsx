@@ -1,4 +1,4 @@
-import { t } from "../../i18n";
+import { t } from "@lane-pilot/i18n";
 import { AnamnesisTab } from "./anamnesis-tab";
 import { DocsPlaces } from "./docs-places";
 import { MemoryRecords } from "./memory-records";

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { PluginPendingInteractionProps } from "@get-bb/plugin-sdk/app";
-import { t } from "../../i18n";
+import { t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Icon } from "@lane-pilot/ui-kit";
 import { readOwnerAskPayload, type OwnerAskResponse } from "../owner-ask-shared";

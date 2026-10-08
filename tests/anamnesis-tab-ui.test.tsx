@@ -7,7 +7,7 @@ import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { installTestPluginRuntime, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { anamnesisHandler } from "../src/anamnesis/host";
 import { createHub } from "../src/anamnesis/hub";
-import { setLocaleOverride } from "../i18n";
+import { setLocaleOverride } from "@lane-pilot/i18n";
 
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 vi.setConfig({ testTimeout: 30_000 });

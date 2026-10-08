@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { t, type I18nKey } from "../../i18n";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 import { agentPickerLabel } from "../agent-display";
 import { Badge } from "@lane-pilot/ui-kit";
 import { Icon } from "@lane-pilot/ui-kit";

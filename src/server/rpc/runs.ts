@@ -1,4 +1,4 @@
-import { t } from "../../../i18n";
+import { t } from "@lane-pilot/i18n";
 import { setRunHalted } from "../runs-halt";
 import { PARKED_KEY } from "../stability";
 import { agentPickerLabel } from "../../agent-display";

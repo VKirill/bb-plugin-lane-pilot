@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
-import { t, type I18nKey } from "../../i18n";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import type { RunView, ScheduleView } from "../schedule/views";
 import { HELPER_PANEL_ACTION } from "./helper-threads";

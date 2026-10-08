@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { en, ru } from "../i18n";
+import { en, ru } from "@lane-pilot/i18n";
 import { EXTERNAL_OPS } from "../src/constants";
 
 const root = process.cwd();

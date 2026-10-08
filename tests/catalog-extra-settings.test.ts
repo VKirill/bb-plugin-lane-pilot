@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { en, ru } from "../i18n";
+import { en, ru } from "@lane-pilot/i18n";
 import { readFileSync } from "node:fs";
 import { UI_CATALOG, VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { DEFAULT_SILENCE_NUDGE_MIN } from "../src/server/writer-silence";

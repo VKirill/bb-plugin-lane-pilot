@@ -1,14 +1,14 @@
 import { UNAPPLIED_REASON } from "@lane-pilot/settings-catalog";
-import { fieldEn, fieldRu } from "./src/i18n-fields";
-import { workflowEn, workflowRu } from "./src/i18n-workflows";
-import { editorEn, editorRu } from "./src/i18n-workflow-editor";
-import { opsEn, opsRu } from "./src/i18n-workflow-ops";
-import { modelsEn, modelsRu } from "./src/i18n-workflow-models";
-import { canvasEn, canvasRu } from "./src/i18n-workflow-canvas";
-import { scheduleEn, scheduleRu } from "./src/i18n-schedule";
-import { anamnesisEn, anamnesisRu } from "./src/i18n-anamnesis";
-import { tabsEn, tabsRu } from "./src/i18n-tabs";
-import { ownedEn, ownedRu } from "./src/i18n-owned";
+import { fieldEn, fieldRu } from "./i18n-fields";
+import { workflowEn, workflowRu } from "./i18n-workflows";
+import { editorEn, editorRu } from "./i18n-workflow-editor";
+import { opsEn, opsRu } from "./i18n-workflow-ops";
+import { modelsEn, modelsRu } from "./i18n-workflow-models";
+import { canvasEn, canvasRu } from "./i18n-workflow-canvas";
+import { scheduleEn, scheduleRu } from "./i18n-schedule";
+import { anamnesisEn, anamnesisRu } from "./i18n-anamnesis";
+import { tabsEn, tabsRu } from "./i18n-tabs";
+import { ownedEn, ownedRu } from "./i18n-owned";
 
 const chromeEn = {
   panelTitle: "Lane Pilot",

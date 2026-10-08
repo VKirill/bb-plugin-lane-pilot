@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { setLocaleOverride } from "../i18n";
+import { setLocaleOverride } from "@lane-pilot/i18n";
 import { setPendingNativeAgent } from "../src/ui/pending-native-agent";
 import { requestArchitectLaunch, takeArchitectLaunch } from "../src/ui/architect-launch";
 

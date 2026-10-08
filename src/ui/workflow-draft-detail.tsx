@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
-import { t, type I18nKey, type Locale } from "../../i18n";
+import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import { draftChanges, draftView } from "../workflow/draft-view";

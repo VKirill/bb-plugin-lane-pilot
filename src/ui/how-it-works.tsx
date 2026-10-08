@@ -1,4 +1,4 @@
-import { t, type I18nKey } from "../../i18n";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Disclosure } from "@lane-pilot/ui-kit";
 import { Pill } from "./pill";
 

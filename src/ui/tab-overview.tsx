@@ -1,4 +1,4 @@
-import { stateLabel, t } from "../../i18n";
+import { stateLabel, t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { HowItWorks } from "./how-it-works";

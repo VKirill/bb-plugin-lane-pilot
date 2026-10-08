@@ -1,4 +1,4 @@
-import { t, type I18nKey } from "../i18n";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 import type { CatalogRow } from "@lane-pilot/settings-catalog";
 
 export type SettingMeta = {

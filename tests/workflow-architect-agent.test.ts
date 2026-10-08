@@ -9,7 +9,7 @@ import { finalizeNativeLaneBinding } from "../src/native-run";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/native-session-hooks";
 import { foldedToolHome } from "../src/pm-tool-families";
 import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION } from "../src/workflow-architect";
-import { setLocaleOverride, t } from "../i18n";
+import { setLocaleOverride, t } from "@lane-pilot/i18n";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn(); setLocaleOverride(null); });

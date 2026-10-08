@@ -1,6 +1,6 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
-import { t } from "./i18n";
+import { t } from "@lane-pilot/i18n";
 import { LanePilotPage } from "./src/ui/page";
 import { CouncilPage } from "./src/ui/council-page";
 import { ComposerAgentBadge } from "./src/ui/composer-agent-badge";

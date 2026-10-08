@@ -1,4 +1,4 @@
-import type { I18nKey } from "../i18n";
+import type { I18nKey } from "@lane-pilot/i18n";
 
 export const STOCK_AGENT_SEED_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "dev-orchestrator": "Lane Pilot development orchestrator",

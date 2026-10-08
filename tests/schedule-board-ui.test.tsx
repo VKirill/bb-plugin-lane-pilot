@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { setLocaleOverride } from "../i18n";
+import { setLocaleOverride } from "@lane-pilot/i18n";
 import { COLUMNS, conflictKeys, cronWords, groupByColumn, viewDays } from "../src/ui/schedule-model";
 import type { RunView, ScheduleView } from "../src/schedule/views";
 

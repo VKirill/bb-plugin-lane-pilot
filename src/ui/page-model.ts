@@ -1,5 +1,5 @@
 import { VISIBLE_CATALOG, type CatalogRow } from "@lane-pilot/settings-catalog";
-import { t, type I18nKey } from "../../i18n";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 import { settingUnitKey } from "../setting-copy";
 import { Tabs } from "@lane-pilot/ui-kit";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../state-machine";

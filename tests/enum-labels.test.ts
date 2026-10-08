@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { en, ru, setLocaleOverride } from "../i18n";
+import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { enumLabelKnown, isBrandEnumValue, presentEnumLabel } from "../src/enum-labels";
 

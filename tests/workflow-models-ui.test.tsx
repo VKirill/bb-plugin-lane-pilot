@@ -7,7 +7,7 @@ import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library
 import React from "react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { setLocaleOverride } from "../i18n";
+import { setLocaleOverride } from "@lane-pilot/i18n";
 import { loadProjectSettings, migrations } from "../src/database";
 import { createWorkflowArchitect } from "../src/server/workflow-architect";
 import type { ArchitectDeps } from "../src/server/workflow-architect";

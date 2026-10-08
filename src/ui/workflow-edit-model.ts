@@ -1,4 +1,4 @@
-import type { I18nKey } from "../../i18n";
+import type { I18nKey } from "@lane-pilot/i18n";
 import type { DraftOp } from "../workflow/draft";
 import type { WorkflowView } from "../workflow/view-core";
 import type { GraphProblems } from "./workflow-graph";

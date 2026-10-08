@@ -1,4 +1,4 @@
-import { t, type Locale } from "../../i18n";
+import { t, type Locale } from "@lane-pilot/i18n";
 import type { ViewNode } from "../workflow/view";
 
 /** The name a node shows: its title in the owner's language, else its label, else its id; the entry and exit are named by the screen. */

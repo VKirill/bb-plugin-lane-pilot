@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } f
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract, stepExecutorSchema } from "../contracts";
-import { t, type I18nKey, type Locale } from "../../i18n";
+import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import type { CatalogProvider, ModelCatalog } from "@lane-pilot/models";
 import type { ViewNode, WorkflowView } from "../workflow/view-core";

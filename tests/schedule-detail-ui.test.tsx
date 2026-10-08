@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import React from "react";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { installTestPluginRuntime, loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { setLocaleOverride } from "../i18n";
+import { setLocaleOverride } from "@lane-pilot/i18n";
 import { definitionWithTask, modelFieldsOf, placeText, withModelFields } from "../src/ui/schedule-model";
 import type { CostView, ErrandDefaultView, ModelView, RunView, ScheduleView, WhereView } from "../src/schedule/views";
 

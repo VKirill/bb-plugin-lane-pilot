@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { t, validationMessage } from "../../i18n";
+import { t, validationMessage } from "@lane-pilot/i18n";
 import { Alert, AlertDescription, AlertTitle } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";

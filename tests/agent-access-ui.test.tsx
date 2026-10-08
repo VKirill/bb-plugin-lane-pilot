@@ -5,7 +5,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot, type RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import { openDatabase, savePrototypeConfig } from "../src/database";
 import { ACCESS_GROUPS, ACCESS_SWITCHES, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, CORE_PROVIDER_GROUPS, effectiveGroup, effectiveSwitch, parseRoleAccess, roleAccessKey } from "../src/helper-context";
-import { en, ru, setLocaleOverride } from "../i18n";
+import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
 import plugin from "../server";
 
 // The whole file takes 70-80 s on OVH and single tests near 15 s under a loaded machine (clean-clone run 2026-10-07).

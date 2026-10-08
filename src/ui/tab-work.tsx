@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { t } from "../../i18n";
+import { t } from "@lane-pilot/i18n";
 import { Label } from "@lane-pilot/ui-kit";
 import { Switch } from "@lane-pilot/ui-kit";
 import { asBoolean, sectionKey } from "./page-model";

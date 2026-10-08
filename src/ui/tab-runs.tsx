@@ -1,4 +1,4 @@
-import { stateLabel, t, type I18nKey } from "../../i18n";
+import { stateLabel, t, type I18nKey } from "@lane-pilot/i18n";
 import { ATTEMPT_STATES, RUN_STATES } from "../state-machine";
 import { Badge } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";

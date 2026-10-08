@@ -6,7 +6,7 @@ import type { AnamnesisConfig } from "../anamnesis/hub";
 import type { AnamnesisRecord, AnamnesisRecordFull, HistoryEntry, Kind, Sensitivity, Source, Status } from "../anamnesis/model";
 import type { AnamnesisRequest, OpName, ResponseOf } from "../anamnesis/ops";
 import { LEVELS, stepsOf, type SkillStep } from "../anamnesis/skills";
-import { t, type I18nKey } from "../../i18n";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Badge } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";

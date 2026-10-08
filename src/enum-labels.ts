@@ -1,4 +1,4 @@
-import { t, type I18nKey } from "../i18n";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 
 const BRANDS = new Set([
   "jev", "codex", "claude", "claude-code", "grok", "qwen", "kimi", "agy", "cursor", "opencode",

@@ -1596,7 +1596,7 @@ def main() -> None:
         assert key in field_en, key
         field_en[key], field_ru[key] = en_text, ru_text
 
-    fields_path = ROOT / "src/i18n-fields.ts"
+    fields_path = ROOT / "packages/i18n/src/i18n-fields.ts"
     fields_path.write_text(
         "export const fieldEn = {\n"
         + ",\n".join(f"  {js_key(k)}: {js_str(v)}" for k, v in field_en.items())

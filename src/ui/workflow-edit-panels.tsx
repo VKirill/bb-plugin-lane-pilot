@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { t, type I18nKey, type Locale } from "../../i18n";
+import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Icon, type IconName } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";

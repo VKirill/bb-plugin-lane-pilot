@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { en, ru } from "../i18n";
+import { en, ru } from "@lane-pilot/i18n";
 import { anamnesisEn } from "../src/i18n-anamnesis";
 import { fieldEn } from "../src/i18n-fields";
 import { canvasEn } from "../src/i18n-workflow-canvas";

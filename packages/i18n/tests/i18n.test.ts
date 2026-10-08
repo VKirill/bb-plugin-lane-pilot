@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
 import { UNAPPLIED_REASON, SETTING_CATALOG, unappliedNotValidReason } from "@lane-pilot/settings-catalog";
-import { detectLocale, detectLocaleHint, en, localeFromSources, ru, setLocaleOverride, subscribeToLocaleHintChanges, unappliedReason, type I18nKey } from "../i18n";
+import { detectLocale, detectLocaleHint, en, localeFromSources, ru, setLocaleOverride, subscribeToLocaleHintChanges, unappliedReason, type I18nKey } from "@lane-pilot/i18n";
 
 afterEach(() => {
   document.body.replaceChildren();

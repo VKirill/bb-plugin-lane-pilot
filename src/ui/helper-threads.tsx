@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { useLpRealtime } from "./use-lp-realtime";
 import type { rpcContract } from "../contracts";
-import { t, type I18nKey } from "../../i18n";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Icon, type IconName } from "@lane-pilot/ui-kit";
 
 export const HELPER_PANEL_ACTION = "lane-helper-thread";

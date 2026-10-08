@@ -1,5 +1,5 @@
 import type { ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
-import { t, validationMessage, type I18nKey } from "../../i18n";
+import { t, validationMessage, type I18nKey } from "@lane-pilot/i18n";
 import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys } from "../writer-fallbacks";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa-host";
 import { Button } from "@lane-pilot/ui-kit";
