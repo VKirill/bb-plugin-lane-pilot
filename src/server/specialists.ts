@@ -2,7 +2,7 @@ import type { HelperRole } from "../helper-context";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
 import { findOpenNativeRun, getRun } from "../database";
-import { writerExecutionSelection } from "../jev-reasoning";
+import { writerExecutionSelection } from "@lane-pilot/models";
 import { mentionContext } from "../native-dispatch";
 import { fullAccessSpawn } from "./pm-spawn";
 import { spawnTextId } from "./thread-keys";

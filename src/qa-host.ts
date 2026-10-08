@@ -1,3 +1,4 @@
+import { findModelIn } from "@lane-pilot/models";
 export const QA_HOST_KEY = "browser_qa.host_id";
 export const QA_WORKSPACE_KEY = "browser_qa.workspace_path";
 
@@ -38,7 +39,7 @@ export function qaCodexPreflight(args: {
   const provider = args.providers.find((row) => row.id === "codex");
   if (!provider?.available) return { ok: false, reason: `browser_qa_provider_unavailable_on_host:${args.hostId}:codex` };
   if (!args.model) return { ok: false, reason: "browser_qa_codex_requires_configured_model" };
-  const found = args.models.find((row) => row.id === args.model || row.model === args.model);
+  const found = findModelIn(args.models, args.model);
   if (!found) return { ok: false, reason: `browser_qa_model_unavailable_on_host:${args.hostId}:codex/${args.model}` };
   const supported = (found.supportedReasoningEfforts ?? []).map((item) => item.reasoningEffort);
   const effort = args.reasoning ?? (typeof found.defaultReasoningEffort === "string" ? found.defaultReasoningEffort : undefined);

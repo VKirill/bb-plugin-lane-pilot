@@ -1,7 +1,7 @@
 import { acceptanceArtifactDir } from "../../acceptance-v2";
 import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listOpenAttempts, listStageReceipts, loadProjectSettings } from "../../database";
-import { bbServiceTier, writerExecutionSelection } from "../../jev-reasoning";
+import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { PROJECT_LIFE_DEFAULT_WRITER, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeWriterSelection, shouldTriggerProjectLife } from "../../stages/project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../child-snapshots";
 import { configuredSetting } from "../context";

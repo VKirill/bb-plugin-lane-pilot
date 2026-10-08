@@ -1,4 +1,4 @@
-import type { ModelCatalog, CatalogProvider } from "../workflow/model-catalog";
+import type { ModelCatalog, CatalogProvider } from "@lane-pilot/models";
 import { mapListedQaHosts } from "../qa-host";
 import type { ServerCore } from "./core";
 import { stringAt } from "./values";

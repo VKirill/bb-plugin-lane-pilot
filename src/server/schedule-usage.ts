@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { costUsd, priceFor } from "../model-prices";
+import { costUsd, priceFor } from "@lane-pilot/models";
 import type { CostView } from "../schedule/views";
 import { billedFrom, parseBreakdown } from "./token-usage";
 

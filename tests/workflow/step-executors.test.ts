@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { builtinWorkflow } from "../../src/workflow/builtin";
-import { costTier, nodeEffortsFor, validateChoice, type ModelCatalog } from "../../src/workflow/model-catalog";
+import { costTier, nodeEffortsFor, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { DELEGATED_ACTIONS, resolveStepExecutors, type StepExecutor } from "../../src/server/workflow-step-executors";
 
 const pm = { providerId: "claude-code", model: "claude-opus-5-5" };

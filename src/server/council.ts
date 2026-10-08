@@ -25,7 +25,7 @@ import {
   type CouncilSession,
 } from "@lane-pilot/council";
 import { getRun, loadPrototypeConfig, type LanePilotDatabase } from "../database";
-import { writerExecutionSelection } from "../jev-reasoning";
+import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { configuredSetting, requirePmRun } from "./context";
 import type { ServerCore } from "./core";
 import { memorySettingsFor } from "./insights";
@@ -219,7 +219,7 @@ export function createCouncil(ctx: ServerCore) {
   async function effortFor(hostId: string, providerId: string, model: string): Promise<string> {
     try {
       const catalog = await bb.sdk.providers.models({ providerId, hostId });
-      const entry = catalog.models.find((item) => item.id === model || item.model === model);
+      const entry = findModelIn(catalog.models, model);
       const supported = entry?.supportedReasoningEfforts.map((item) => item.reasoningEffort) ?? [];
       if (supported.includes("high")) return "high";
       return entry?.defaultReasoningEffort ?? supported[0] ?? "medium";

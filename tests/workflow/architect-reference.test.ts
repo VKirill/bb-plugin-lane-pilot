@@ -4,7 +4,7 @@ import { ROLE_PROFILES } from "../../src/helper-context";
 import { WORKFLOW_ARCHITECT_SESSION } from "../../src/workflow-architect";
 import { PURE_ACTION_KEYS } from "../../src/workflow/actions";
 import { WORKFLOW_REFERENCE } from "../../src/workflow/capabilities";
-import { PRESET_SLUGS } from "../../src/workflow/model-presets";
+import { PRESET_SLUGS } from "@lane-pilot/models";
 import { nodeSchema, workflowSchema } from "../../src/workflow/schema";
 import { DELEGATED_ACTIONS } from "../../src/server/workflow-step-executors";
 import { resolveAgentModel } from "../../src/server/workflow-agent-model";

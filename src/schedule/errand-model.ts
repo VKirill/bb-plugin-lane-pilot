@@ -1,4 +1,4 @@
-import { PRESET_SLUGS, presetSelection, presetSlug } from "../workflow/model-presets";
+import { PRESET_SLUGS, presetSelection, presetSlug } from "@lane-pilot/models";
 
 /**
  * Which model a scheduled errand runs on. ONE pure function answers it for the executor (what is spawned) and for the board (what the

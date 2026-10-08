@@ -6,7 +6,7 @@ import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { ERRAND_BUILTIN } from "../schedule/errand-model";
 import type { CostView, ErrandDefaultView, ModelView } from "../schedule/views";
-import { PRESET_SLUGS, presetSelection } from "../workflow/model-presets";
+import { PRESET_SLUGS, presetSelection } from "@lane-pilot/models";
 import { Pill } from "./pill";
 import { fill } from "./schedule-parts";
 import type { ModelFields } from "./schedule-model";

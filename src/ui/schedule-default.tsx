@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
 import { ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY } from "../schedule/errand-model";
 import type { ErrandDefaultView } from "../schedule/views";
-import { PRESET_SLUGS } from "../workflow/model-presets";
+import { PRESET_SLUGS } from "@lane-pilot/models";
 import { Surface, SurfaceBody } from "@lane-pilot/ui-kit";
 import { errorText, fill } from "./schedule-parts";
 import { defaultSeed, modelLine } from "./schedule-who";

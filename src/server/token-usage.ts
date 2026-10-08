@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../database";
 import { pluginStopped } from "./run-finish";
 import { stringAt, valueAt } from "./values";
-import { MODEL_PRICES, costUsd } from "../model-prices";
+import { MODEL_PRICES, costUsd } from "@lane-pilot/models";
 import type { ServerCore } from "./core";
 import { scheduleIsolated } from "./schedules";
 

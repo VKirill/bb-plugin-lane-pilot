@@ -1,5 +1,5 @@
 import { experimental_ProviderModelPicker as ProviderModelPicker, type ExperimentalProviderModelPickerProps, type ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
-import { findModel, findProvider, nodeEffortsFor, type ModelCatalog } from "../workflow/model-catalog";
+import { findModel, findProvider, nodeEffortsFor, type ModelCatalog } from "@lane-pilot/models";
 import type { ModelChoice } from "./workflow-model-ops";
 
 /**

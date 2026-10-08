@@ -1,4 +1,4 @@
-import { presetSelection, presetSlug } from "../workflow/model-presets";
+import { presetSelection, presetSlug } from "@lane-pilot/models";
 
 /**
  * Which model a generic workflow agent step runs on. ONE function answers it for the executor (what is spawned) and for the Models

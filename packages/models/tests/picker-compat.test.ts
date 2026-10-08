@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compatibleReasoningLevel, compatibleServiceTier } from "../src/picker-compat";
+import { compatibleReasoningLevel, compatibleServiceTier } from "@lane-pilot/models";
 
 describe("picker catalog remapping", () => {
   it("keeps an explicitly supported effort", () => {

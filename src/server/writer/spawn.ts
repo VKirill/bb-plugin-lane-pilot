@@ -6,7 +6,7 @@ import type { DirtSnapshot } from "../../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
 import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../database";
-import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../../jev-reasoning";
+import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { spawnWithSeam } from "../../spawn-seam";
 import { buildExecutionPacket, renderExecutionPacket } from "../../stages/execution-packet";
 import { parseMemorySettings } from "../../stages/memory";
@@ -193,7 +193,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       }
       const provider = providers.find((row) => row.id === writerProviderId);
       if (!provider?.available) throw new WriterSelectionError(`writer_provider_unavailable:${writerProviderId}`);
-      const model = catalog.models.find((row) => row.id === writerModel || row.model === writerModel);
+      const model = findModelIn(catalog.models, writerModel);
       if (!model) throw new WriterSelectionError(`writer_model_unavailable:${writerProviderId}/${writerModel}`);
       const tierIds = new Set(provider.serviceTiers?.map((tier) => tier.id) ?? []);
       if (requestedServiceTier === "fast" && !tierIds.has("fast")) {

@@ -4,7 +4,7 @@ import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun,
 import { saveBlockedBy, type BlockedBy } from "../blocked-by";
 import { relayFor } from "../relay";
 import type { HelperPolicySnapshot } from "../../helper-context";
-import { writerExecutionSelection } from "../../jev-reasoning";
+import { writerExecutionSelection } from "@lane-pilot/models";
 import { actionableFindings, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../stages/code-critique";
 import type { WriterIdentity } from "../../stages/code-critique";
 import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../../stages/quality-mode";

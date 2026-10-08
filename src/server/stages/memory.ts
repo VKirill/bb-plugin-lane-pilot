@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, searchMemoryRecords, storeMemoryRecords } from "../../database";
-import { bbServiceTier, writerExecutionSelection } from "../../jev-reasoning";
+import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../stage-writer-selection";
 import { sha256 } from "../../stages/contract";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../../stages/memory";

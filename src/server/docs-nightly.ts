@@ -1,6 +1,6 @@
 import { projectRoleField } from "./run-routing";
 import { claimDailySchedule, getActivation, getRun, listRunsWithAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../database";
-import { bbServiceTier, writerExecutionSelection } from "../jev-reasoning";
+import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../stages/contract";
 import { docsRepairPrompt, docsSelection, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings } from "../stages/docs";
 import type { DocsUnit } from "../stages/docs";

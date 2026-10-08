@@ -3,7 +3,7 @@ import { hostContract, taskV2Schema } from "../contracts";
 import type { PrototypeConfig, TaskV2 } from "../contracts";
 import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, loadProjectSettings, openDatabase } from "../database";
 import { criticPairCandidates, latestWriterPair, pairApartFromWriter, sdkCriticCatalog } from "../critic-pair";
-import { bbServiceTier, writerExecutionSelection, writerServiceTier } from "../jev-reasoning";
+import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../qa-host";
 import { reconcileCritic } from "../reconcile";
 import { resolveStageWriterSelection } from "../stage-writer-selection";
@@ -237,7 +237,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
       input.bb.sdk.providers.models({ providerId, hostId:input.config.hostId }),
     ]);
     const provider = providers.find((row) => row.id === providerId && row.available);
-    const model = catalog.models.find((row) => row.id === modelId || row.model === modelId);
+    const model = findModelIn(catalog.models, modelId);
     if (!provider || !model) throw new Error("critique_provider_or_model_unavailable");
     const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
     const configuredEffort = typeof settings["plan_critique.reasoning_effort"] === "string"
@@ -489,7 +489,7 @@ export async function runCodeCritique(input:{
       input.bb.sdk.providers.models({ providerId, hostId:input.config.hostId }),
     ]);
     const provider = providers.find((row) => row.id === providerId && row.available);
-    const model = catalog.models.find((row) => row.id === modelId || row.model === modelId);
+    const model = findModelIn(catalog.models, modelId);
     if (!provider || !model) throw new Error("critique_provider_or_model_unavailable");
     const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
     if (!new Set<string>(levels).has(configuredEffort)) throw new Error(`critique_reasoning_effort_unsupported:${configuredEffort}`);
@@ -574,7 +574,7 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
       input.bb.sdk.providers.models({providerId,hostId:input.config.hostId}),
     ]);
     const provider = providers.find((row) => row.id === providerId && row.available);
-    const model = catalog.models.find((row) => row.id === modelId || row.model === modelId);
+    const model = findModelIn(catalog.models, modelId);
     if (!provider || !model) throw new Error("specialist_provider_or_model_unavailable");
     if (!model.supportedReasoningEfforts.some((item) => item.reasoningEffort === effort)) {
       throw new Error(`specialist_reasoning_effort_unsupported:${effort}`);

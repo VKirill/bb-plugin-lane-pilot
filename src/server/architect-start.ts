@@ -1,7 +1,7 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { rpcContract } from "../contracts";
-import { writerExecutionSelection } from "../jev-reasoning";
+import { writerExecutionSelection } from "@lane-pilot/models";
 import { mentionContext } from "../native-dispatch";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME } from "../workflow-architect";
 import { createDraftStore } from "../workflow/draft-store";

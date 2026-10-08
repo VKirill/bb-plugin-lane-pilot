@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MODEL_PRICES, PRICES_CHECKED_AT, costUsd, priceFor } from "../src/model-prices";
+import { MODEL_PRICES, PRICES_CHECKED_AT, costUsd, priceFor } from "@lane-pilot/models";
 
 describe("priceFor", () => {
   it("strips a trailing [..] suffix and a -YYYYMMDD snapshot suffix", () => {

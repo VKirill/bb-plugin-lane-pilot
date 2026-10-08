@@ -1,4 +1,4 @@
-import { priceFor } from "../model-prices";
+import { priceFor } from "./model-prices";
 
 /**
  * The hub's catalog of agent providers and their models, as the Workflows tab needs it: every provider BB knows (codex, claude-code,
@@ -38,7 +38,9 @@ export type ChoiceError = "provider_unknown" | "provider_unavailable" | "model_u
 export type ChoiceVerdict = { ok: true } | { ok: false; code: ChoiceError; detail: string };
 
 export const findProvider = (catalog: ModelCatalog, providerId: string): CatalogProvider | undefined => catalog.providers.find((row) => row.id === providerId);
-export const findModel = (provider: CatalogProvider | undefined, model: string): CatalogModel | undefined => provider?.models.find((row) => row.id === model || row.model === model);
+/** The model a provider lists under this id or this model name; every lookup of a model by what the owner or a setting wrote goes through here. */
+export const findModelIn = <T extends { id?: string; model?: string }>(models: readonly T[] | undefined, model: string): T | undefined => models?.find((row) => row.id === model || row.model === model);
+export const findModel = (provider: CatalogProvider | undefined, model: string): CatalogModel | undefined => findModelIn(provider?.models, model);
 
 /**
  * Whether the machine the helpers run on offers the model: true or false when the catalog can say, null when it cannot (no such machine in the

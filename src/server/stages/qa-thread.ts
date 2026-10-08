@@ -1,5 +1,5 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import { writerExecutionSelection } from "../../jev-reasoning";
+import { writerExecutionSelection } from "@lane-pilot/models";
 import { fullAccessSpawn } from "../pm-spawn";
 import { spawnTextId } from "../thread-keys";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../run-routing";

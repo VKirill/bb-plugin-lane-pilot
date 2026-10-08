@@ -1,6 +1,6 @@
 import { writerFallbackKeys } from "../../writer-fallbacks";
 import { casUpsertSettings, sectionBindingId } from "../../database";
-import { compatibleReasoningLevel, compatibleServiceTier } from "../../picker-compat";
+import { compatibleReasoningLevel, compatibleServiceTier, findModelIn } from "@lane-pilot/models";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../contracts";
 import type { ServerCore } from "../core";
@@ -28,7 +28,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       }
       const provider = providers.find((item) => item.id === providerId && item.available);
       if (!provider) return reject("invalid_choice", "writer.provider", `provider ${providerId} is unavailable on this host`);
-      const selectedModel = catalog.models.find((item) => item.id === modelId || item.model === modelId);
+      const selectedModel = findModelIn(catalog.models, modelId);
       if (!selectedModel) return reject("invalid_choice", "writer.model", `model ${modelId} is not in the live catalog for ${providerId}`);
       const supportedEfforts = selectedModel.supportedReasoningEfforts.map((item) => item.reasoningEffort);
       const catalogDefault = typeof selectedModel.defaultReasoningEffort === "string"

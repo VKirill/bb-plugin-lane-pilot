@@ -1,5 +1,5 @@
-import { BUILTIN_PRESETS, PRESET_SLUGS, presetSelection } from "./model-presets";
-import { NODE_EFFORTS, findModel, findProvider, offeredOnHost, type ModelCatalog } from "./model-catalog";
+import { BUILTIN_PRESETS, PRESET_SLUGS, presetSelection } from "@lane-pilot/models";
+import { NODE_EFFORTS, findModel, findProvider, offeredOnHost, type ModelCatalog } from "@lane-pilot/models";
 import { ARTIFACTS, artifactId } from "./artifacts";
 import { CONDITION_OPS, FIELD_TYPES, PASS_MODES, QUALITY_MODES } from "./schema";
 

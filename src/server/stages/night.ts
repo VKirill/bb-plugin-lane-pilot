@@ -1,7 +1,7 @@
 import { attemptProduced } from "../../cli-outcome";
 import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listAttemptsForTask, listStageReceipts, loadProjectSettings } from "../../database";
-import { bbServiceTier, writerExecutionSelection } from "../../jev-reasoning";
+import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../stage-writer-selection";
 import { readGateReport } from "../../stages/gate-report";
 import { gateTriagePrompt, parseGateTriageResult } from "../../stages/gate-triage";

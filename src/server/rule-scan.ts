@@ -6,7 +6,7 @@ import {
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { getRun, getRunSettingsScopes } from "../database";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../owns-paths";
-import { bbServiceTier, writerExecutionSelection } from "../jev-reasoning";
+import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
 import { fullAccessSpawn } from "./pm-spawn";
 import { spawnTextId } from "./thread-keys";

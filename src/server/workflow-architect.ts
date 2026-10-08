@@ -18,7 +18,7 @@ import { createStatusResolver } from "../workflow/ops-store";
 import { checkRequires, effectiveRequires } from "../workflow/preflight";
 import { definitionSha256, globalWorkflowDir } from "../workflow/store";
 import { loadWorkflow } from "../workflow/validate";
-import { findModel, findProvider } from "../workflow/model-catalog";
+import { findModel, findProvider } from "@lane-pilot/models";
 import { configuredSetting } from "./context";
 import { SPECIALIST_ROLES } from "./specialists";
 import { modelCatalogOf } from "./model-catalog-reader";

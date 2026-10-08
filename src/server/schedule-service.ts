@@ -1,7 +1,7 @@
 import { loadProjectSettings } from "../database";
 import { QA_HOST_KEY, mapListedQaHosts } from "../qa-host";
 import { fireList, findConflicts, runView, scheduleView } from "../schedule/board";
-import { PRESET_SLUGS, presetSlug } from "../workflow/model-presets";
+import { PRESET_SLUGS, presetSlug } from "@lane-pilot/models";
 import { normalizeSchedule, type NormalizedWhen, type ScheduleDefinition, type ScheduleTask } from "../schedule/model";
 import { scheduleFailureNotice } from "../schedule/outcome";
 import { createScheduler } from "../schedule/scheduler";

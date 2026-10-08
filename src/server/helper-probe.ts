@@ -1,6 +1,6 @@
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRun, loadPrototypeConfig } from "../database";
-import { writerExecutionSelection } from "../jev-reasoning";
+import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { fullAccessSpawn } from "./pm-spawn";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "./run-routing";
 import { stringAt } from "./values";
@@ -41,7 +41,7 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
         bb.sdk.providers.models({ providerId, hostId: config.hostId }),
       ]);
       if (!providers.some((row) => row.id === providerId && row.available)) throw new Error(`helper_probe_provider_unavailable:${providerId}`);
-      const model = catalog.models.find((row) => row.id === modelId || row.model === modelId);
+      const model = findModelIn(catalog.models, modelId);
       if (!model) throw new Error(`helper_probe_model_unavailable:${providerId}/${modelId}`);
       const efforts = model.supportedReasoningEfforts.map((row) => row.reasoningEffort);
       const effort = efforts.includes("low") ? "low" : efforts.includes("medium") ? "medium" : efforts[0] ?? "none";

@@ -1,5 +1,5 @@
 import type { DraftOp } from "../workflow/draft";
-import { findModel, findProvider, nodeEffortsFor, validateChoice, type CatalogModel, type ChoiceError, type ModelCatalog } from "../workflow/model-catalog";
+import { findModel, findProvider, nodeEffortsFor, validateChoice, type CatalogModel, type ChoiceError, type ModelCatalog } from "@lane-pilot/models";
 import { isRaw, nodeById, setNodeOps, type Raw } from "./workflow-edit-model";
 
 /**

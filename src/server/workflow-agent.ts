@@ -1,6 +1,6 @@
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRunSettingsScopes } from "../database";
-import { writerExecutionSelection } from "../jev-reasoning";
+import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { ROLE_PROFILES } from "../helper-context";
 import type { ExtraAccess, HelperRole } from "../helper-context";
 import { redactKnown } from "@lane-pilot/kit";
@@ -21,7 +21,7 @@ import { detectRepoEdits, gitRepoStatus } from "./repo-edits";
 import { SPECIALIST_ROLES } from "./specialists";
 import { findThreadsByMetadata, keyedSpawnSupported } from "./thread-keys";
 import { modelCatalogOf, pmHostOf } from "./model-catalog-reader";
-import { offeredOnHost } from "../workflow/model-catalog";
+import { offeredOnHost } from "@lane-pilot/models";
 import { threadUsage } from "./token-usage";
 import { stringAt } from "./values";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "./workflow-agent-model";
@@ -290,7 +290,7 @@ export async function withResolvedModel(request: HelperRequest): Promise<HelperR
   const offered = read && hostId ? (providerId: string, model: string) => offeredOnHost(read, providerId, model, hostId) : undefined;
   const chosen = resolveAgentModel({ role: request.role, node: { provider: request.provider, model: request.model, reasoning: request.reasoning, service_tier: request.serviceTier, model_preset: request.preset }, settings, pm, ...(offered ? { offered } : {}), ...(request.workflowId ? { at: { workflowId: request.workflowId, nodeId: request.nodeId } } : {}) });
   if (chosen.issues.includes("model_unavailable_here") && read) {
-    const where = read.providers.find((row) => row.id === chosen.providerId)?.models.find((row) => row.id === chosen.model || row.model === chosen.model)?.hostIds.map((id) => read.hosts.find((row) => row.id === id)?.name ?? id).join(", ") ?? "";
+    const where = findModelIn(read.providers.find((row) => row.id === chosen.providerId)?.models, chosen.model)?.hostIds.map((id) => read.hosts.find((row) => row.id === id)?.name ?? id).join(", ") ?? "";
     throw new HelperFailure("model_unavailable", `${chosen.providerId}/${chosen.model} is not offered by the machine this workflow's helpers run on (${read.hosts.find((row) => row.id === hostId)?.name ?? hostId})${where ? `; it is on ${where}` : ""}. Pick another model for the step.`);
   }
   return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort, ...(chosen.serviceTier ? { serviceTier: chosen.serviceTier } : {}) };

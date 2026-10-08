@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/database";
 import plugin from "../server";
-import { costUsd } from "../src/model-prices";
+import { costUsd } from "@lane-pilot/models";
 import {
   EVENT_PAGE, TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE,
   normalizeModel, queryTokenUsage, syncTokenUsage, threadUsage, tokenDelta, utcDay,

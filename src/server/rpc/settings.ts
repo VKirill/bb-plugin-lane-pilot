@@ -6,7 +6,7 @@ import { buildCliInvocation } from "../../argv-builder";
 import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../constants";
 import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, sectionBindingId } from "../../database";
 import type { RunHistoryRow } from "../../database";
-import { writerServiceTier } from "../../jev-reasoning";
+import { writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "../../lp-defaults";
 import { mapListedQaHosts } from "../../qa-host";
 import { VISIBLE_CATALOG } from "../../ui-catalog";
@@ -316,7 +316,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
             if (typeof providerId !== "string" || typeof modelId !== "string") return reject(group[0]!, "inherited provider and model are not configured");
             const provider = providers.find((item) => item.id === providerId && item.available);
             const catalog = await bb.sdk.providers.models({ hostId: host.hostId, providerId });
-            const model = catalog.models.find((item) => item.id === modelId || item.model === modelId);
+            const model = findModelIn(catalog.models, modelId);
             if (!provider || !model) return reject(group[0]!, "inherited selection is unavailable in this host catalog");
             const effort = effective[group[2]!];
             if (effort && !model.supportedReasoningEfforts.some((item) => item.reasoningEffort === effort)) return reject(group[2]!, "inherited effort is unsupported");

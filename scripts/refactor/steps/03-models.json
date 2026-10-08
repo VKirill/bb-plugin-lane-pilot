@@ -1,0 +1,32 @@
+{
+  "moves": [
+    {
+      "from": "src/workflow/model-catalog.ts",
+      "to": "packages/models/src/model-catalog.ts"
+    },
+    {
+      "from": "src/workflow/model-presets.ts",
+      "to": "packages/models/src/model-presets.ts"
+    },
+    {
+      "from": "src/jev-reasoning.ts",
+      "to": "packages/models/src/jev-reasoning.ts"
+    },
+    {
+      "from": "src/picker-compat.ts",
+      "to": "packages/models/src/picker-compat.ts"
+    },
+    {
+      "from": "src/model-prices.ts",
+      "to": "packages/models/src/model-prices.ts"
+    },
+    {
+      "from": "tests/model-prices.test.ts",
+      "to": "packages/models/tests/model-prices.test.ts"
+    },
+    {
+      "from": "tests/picker-compat.test.ts",
+      "to": "packages/models/tests/picker-compat.test.ts"
+    }
+  ]
+}

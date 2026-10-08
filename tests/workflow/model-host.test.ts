@@ -4,9 +4,9 @@ import { withResolvedModel, type HelperRequest } from "../../src/server/workflow
 import { resolveAgentModel } from "../../src/server/workflow-agent-model";
 import { createWorkflowModels } from "../../src/server/workflow-models";
 import { resolveStepExecutors } from "../../src/server/workflow-step-executors";
-import { offeredOnHost, validateChoice, type ModelCatalog } from "../../src/workflow/model-catalog";
+import { offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { modelsSection } from "../../src/workflow/capabilities";
-import { presetKey } from "../../src/workflow/model-presets";
+import { presetKey } from "@lane-pilot/models";
 import type { ServerCore } from "../../src/server/core";
 import { journalDb } from "./engine-helpers";
 

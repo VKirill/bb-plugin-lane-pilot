@@ -5,7 +5,7 @@ import type { CheckEnv, Ref, Typed } from "./expr";
 import { artifactDef, artifactId } from "./artifacts";
 import { cronProblem, timezoneProblem } from "./cron";
 import { EMIT, executorKey, lowerWorkflow, outputFields } from "./lower";
-import { PRESET_SLUGS, presetSlug } from "./model-presets";
+import { PRESET_SLUGS, presetSlug } from "@lane-pilot/models";
 import { END, MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES, START, parseWorkflowObject } from "./schema";
 import type { Field, GraphNode, Workflow, WorkflowNode } from "./schema";
 

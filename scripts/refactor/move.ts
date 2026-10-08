@@ -157,14 +157,15 @@ for (const [pkg, list] of byPkg) {
 
 // 4. report non-code references to the old paths
 const oldPaths = [...moves.keys()];
-const nonCode = ["scripts", "docs", "package.json", "README.md", "tsconfig.json", "vitest.config.ts", "lane-stack", "workflows", "CHANGELOG.md"];
+// Only places that read paths at run time. docs/, *.md and the setting catalog (ui-catalog-hand.json, ui-catalog.ts) name source files as text and were already stale.
+const nonCode = ["scripts", "package.json", "tsconfig.json", "vitest.config.ts", "workflows"];
 const hits: string[] = [];
 for (const root of nonCode) {
   const abs = join(ROOT, root);
   if (!existsSync(abs)) continue;
   const files = statSync(abs).isDirectory() ? walkAll(root) : [root];
   for (const f of files) {
-    if (!/\.(md|py|sh|json|mjs|cjs|ts|tsx|yml|yaml|txt)$/.test(f) || f.includes("CHANGELOG") || f.startsWith("scripts/refactor/")) continue;
+    if (!/\.(py|sh|mjs|cjs|ts|tsx|yml|yaml)$/.test(f) || f.startsWith("scripts/refactor/")) continue;
     let text: string;
     try { text = readFileSync(join(ROOT, f), "utf8"); } catch { continue; }
     for (const old of oldPaths) {

@@ -8,7 +8,7 @@ import { ownerCardBlock } from "../anamnesis/card";
 import { anamnesisFor } from "../anamnesis/wiring";
 import { pmRulesPromptBlock } from "../learning/pm-rules";
 import { ruleBudget } from "../learning/rule-budget";
-import { writerExecutionSelection } from "../jev-reasoning";
+import { writerExecutionSelection } from "@lane-pilot/models";
 import { buildRunPolicy } from "../stages/run-policy";
 import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../workspace/routing";
 import { excludeBookkeeping } from "./bookkeeping-exclude";

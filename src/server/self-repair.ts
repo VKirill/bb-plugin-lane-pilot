@@ -7,7 +7,7 @@ import { fullAccessSpawn } from "./pm-spawn";
 import { clearSpawnMarker, keyedSpawnSupported } from "./thread-keys";
 import { scheduleIsolated } from "./schedules";
 import { HOOK_TIMEOUTS_KEY, type HookTimeoutRecord } from "./hook-timeouts";
-import { writerExecutionSelection } from "../jev-reasoning";
+import { writerExecutionSelection } from "@lane-pilot/models";
 import { stringAt } from "./values";
 import { writerBriefStats } from "../writer-brief";
 import { BREAKERS_KEY, DRILL_KEY, PARKED_KEY, type DrillOutcome, type ParkedTask } from "./stability";

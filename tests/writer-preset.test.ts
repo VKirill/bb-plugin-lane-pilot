@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { inheritProjectValues } from "../src/lp-defaults";
-import { automaticEffortRoutingEnabled, writerServiceTier } from "../src/jev-reasoning";
+import { automaticEffortRoutingEnabled, writerServiceTier } from "@lane-pilot/models";
 
 it("gives an unconfigured project Luna high fast with explicit effort routing", () => {
   const result = inheritProjectValues({}, {});

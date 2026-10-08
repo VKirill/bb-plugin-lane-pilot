@@ -4,7 +4,7 @@ import type { z } from "zod";
 import type { rpcContract, stepExecutorSchema } from "../contracts";
 import { t, type I18nKey, type Locale } from "../../i18n";
 import { Button } from "@lane-pilot/ui-kit";
-import type { CatalogProvider, ModelCatalog } from "../workflow/model-catalog";
+import type { CatalogProvider, ModelCatalog } from "@lane-pilot/models";
 import type { ViewNode, WorkflowView } from "../workflow/view-core";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { choiceRefusal, type ModelChoice } from "./workflow-model-ops";

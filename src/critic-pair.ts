@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { getReasoningTrace, listAttemptsForTask, type LanePilotDatabase } from "./database";
-import { bbServiceTier } from "./jev-reasoning";
+import { bbServiceTier, findModelIn } from "@lane-pilot/models";
 
 /**
  * G9: the code critic is another model than the writer. Reviewing the writer's own work with the writer's own model
@@ -37,7 +37,7 @@ export function criticPairCandidates(settings: Record<string, unknown>, config: 
 async function usable(catalog: CriticCatalog, pair: Pair, effort: string, tier: "fast" | "standard"): Promise<boolean> {
   const provider = await catalog.provider(pair.providerId);
   if (!provider?.available) return false;
-  const model = (await catalog.models(pair.providerId)).find((row) => row.id === pair.model || row.model === pair.model);
+  const model = findModelIn(await catalog.models(pair.providerId), pair.model);
   if (!model || !model.efforts.includes(effort)) return false;
   const serviceTier = provider.supportsServiceTier ? bbServiceTier(tier) : null;
   return !serviceTier || provider.serviceTiers.includes(serviceTier);

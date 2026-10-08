@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { costUsd } from "../../src/model-prices";
+import { costUsd } from "@lane-pilot/models";
 import { createDb } from "./harness";
 import { averageCost, priceView, scheduleCost, threadUsage, usageOfCursor } from "../../src/server/schedule-usage";
 

@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import { claimDocsSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../database";
-import { bbServiceTier, writerExecutionSelection } from "../../jev-reasoning";
+import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../stages/contract";
 import { extractModelJson } from "../../stages/model-json";
 import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../../stages/docs";
