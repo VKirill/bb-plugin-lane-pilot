@@ -52,7 +52,7 @@ export const hostOps = {
   /** The short card for the PM's context: confirmed, non-sensitive records only. Read-only. */
   card: z.object({ op: z.literal("card"), maxChars: z.number().int().min(200).max(4000).optional() }).strict(),
   /** Keeps the report of a load on the machine, for the owner's review. */
-  load_report: z.object({ op: z.literal("load_report"), mode: z.enum(["plan", "run"]), report: z.record(z.string(), z.unknown()) }).strict(),
+  load_report: z.object({ op: z.literal("load_report"), mode: z.enum(["plan", "run", "daily"]), report: z.record(z.string(), z.unknown()) }).strict(),
   sources: z.object({ op: z.literal("sources"), set: z.object({ source: source.exclude(["manual"]), enabled: z.boolean() }).strict().optional() }).strict(),
 } as const;
 

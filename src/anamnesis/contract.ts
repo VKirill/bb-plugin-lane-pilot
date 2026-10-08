@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { configSchema } from "./hub";
 import { anamnesisRequestSchema } from "./ops";
 
 /**
@@ -17,9 +18,13 @@ export const anamnesisHostMethods = {
 /** What the hub itself does besides forwarding a store request. */
 export const hubOps = {
   host: z.object({ op: z.literal("host"), hostId: z.string().min(1).optional() }).strict(),
+  /** Reads the settings of anamnesis kept on the hub, or changes some of them (the extraction switch, the Jev ceiling, the Telegram channels). */
+  config: z.object({ op: z.literal("config"), set: configSchema.partial().omit({ hostId: true, authors: true, roots: true }).optional() }).strict(),
+  /** Runs the daily pass now (the Anamnesis tab's «run now»); it answers with the pass report. */
+  pass: z.object({ op: z.literal("pass") }).strict(),
 } as const;
 
-export const anamnesisRpcRequestSchema = z.union([anamnesisRequestSchema, hubOps.host]);
+export const anamnesisRpcRequestSchema = z.union([anamnesisRequestSchema, hubOps.host, hubOps.config, hubOps.pass]);
 export type AnamnesisRpcRequest = z.infer<typeof anamnesisRpcRequestSchema>;
 
 export const anamnesisRpcMethods = {

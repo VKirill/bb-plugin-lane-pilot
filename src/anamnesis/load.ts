@@ -1,11 +1,11 @@
-import { createHash } from "node:crypto";
-import { SENSITIVE_FROM, type FragmentDecision } from "./judgment";
+import { candidateRecord } from "./extract";
+import type { FragmentDecision } from "./judgment";
 import type { Hub } from "./hub";
-import { scrubQuote, sensitiveReason, type Source } from "./model";
+import { scrubQuote, sensitiveReason, type Kind, type Source } from "./model";
 import type { CollectResponse, HostSource, UpsertSummary } from "./ops";
 import { HOST_SOURCES } from "./ops";
 import { maskPii } from "./pii";
-import { messageEvidence, scanOwnerMessages, type OwnerMessage, type ThreadsPort } from "./owner-messages";
+import { scanOwnerMessages, type OwnerMessage, type ThreadsPort } from "./owner-messages";
 import { monthOf, spread } from "./sources/common";
 
 /**
@@ -57,8 +57,6 @@ export type LoadReport = {
   cost: { jevMessages: number; estimatedTokens: number; perMessage: number; note: string };
   review: string;
 };
-
-const sha = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 12);
 
 export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promise<LoadReport> {
   const until = deps.now();
@@ -117,19 +115,9 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
 
   /* ---- Lane Pilot runs ---- */
   if (wanted("lp-runs")) {
-    const runs = deps.lpRuns().filter((run) => run.createdAt >= from && run.createdAt < until);
-    const byProject = new Map<string, typeof runs>();
-    for (const run of runs) byProject.set(run.projectId, [...(byProject.get(run.projectId) ?? []), run]);
-    report.lpRuns = { enabled: true, runs: runs.length, projects: byProject.size };
-    for (const [projectId, list] of byProject) {
-      list.sort((a, b) => a.createdAt - b.createdAt);
-      const name = nameOf(projectId);
-      hubRecords.push({
-        kind: "project", key: name, title: name, attributes: { lpRuns: list.length, lpFirstRun: list[0]!.createdAt, lpLastRun: list.at(-1)!.createdAt },
-        confidence: 0.8, firstSeen: list[0]!.createdAt, lastSeen: list.at(-1)!.createdAt,
-        evidence: spread(list, 8).map((run) => ({ source: "lp-runs", ref: `run:${run.id}`, at: run.createdAt })),
-      });
-    }
+    const { records, runs, projects } = lpRunRecords(deps.lpRuns(), from, until, nameOf);
+    report.lpRuns = { enabled: true, runs, projects };
+    hubRecords.push(...records);
   }
 
   /* ---- cost of the optional Jev pass ---- */
@@ -164,13 +152,7 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
           if (!decision) { cls.unavailable += 1; return; }
           if (decision.kind === "nothing") { cls.nothing += 1; return; }
           cls.kept += 1;
-          const text = scrubQuote(message.text, 240);
-          candidateRecords.push({
-            kind: decision.kind, key: `msg-${sha(message.id)}`, title: text.slice(0, 80), statement: text, status: "candidate",
-            ...(decision.sensitive >= SENSITIVE_FROM ? { sensitivity: "sensitive" } : {}),
-            attributes: { origin: "jev-fragment", kindP: Math.round(decision.kindP * 100) / 100, aboutOwner: Math.round(decision.aboutOwner * 100) / 100, sensitiveP: Math.round(decision.sensitive * 100) / 100 },
-            confidence: Math.min(decision.kindP, decision.aboutOwner), evidence: [messageEvidence(message, text)],
-          });
+          candidateRecords.push(candidateRecord(message, decision as FragmentDecision & { kind: Kind }));
         });
       }
     }
@@ -194,6 +176,24 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
   // A plan leaves no trace on the machine; only a run keeps its report.
   if (options.mode === "run") await deps.hub.ask({ op: "load_report", mode: "run", report: report as unknown as Record<string, unknown> }).catch(() => undefined);
   return report;
+}
+
+/** One project record per BB project the owner ran Lane Pilot in, inside the window (shared with the daily pass). */
+export function lpRunRecords(allRuns: Array<{ id: string; projectId: string; createdAt: number }>, from: number, until: number, nameOf: (projectId: string) => string): { records: Array<Record<string, unknown>>; runs: number; projects: number } {
+  const runs = allRuns.filter((run) => run.createdAt >= from && run.createdAt < until);
+  const byProject = new Map<string, typeof runs>();
+  for (const run of runs) byProject.set(run.projectId, [...(byProject.get(run.projectId) ?? []), run]);
+  const records: Array<Record<string, unknown>> = [];
+  for (const [projectId, list] of byProject) {
+    list.sort((a, b) => a.createdAt - b.createdAt);
+    const name = nameOf(projectId);
+    records.push({
+      kind: "project", key: name, title: name, attributes: { lpRuns: list.length, lpFirstRun: list[0]!.createdAt, lpLastRun: list.at(-1)!.createdAt },
+      confidence: 0.8, firstSeen: list[0]!.createdAt, lastSeen: list.at(-1)!.createdAt,
+      evidence: spread(list, 8).map((run) => ({ source: "lp-runs", ref: `run:${run.id}`, at: run.createdAt })),
+    });
+  }
+  return { records, runs: runs.length, projects: byProject.size };
 }
 
 function merge(parts: UpsertSummary[]): UpsertSummary {
