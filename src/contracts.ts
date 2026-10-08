@@ -1,6 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { stageReceiptSchema } from "./stages/contract";
+import { anamnesisHostMethods, anamnesisRpcMethods } from "./anamnesis/contract";
 
 export const prototypeConfigSchema = z.object({
   projectId: z.string().min(1),
@@ -326,6 +327,7 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1) }).strict(),
     output: z.object({ hostId:z.string(), checks:z.array(z.object({ name:z.string(), ok:z.boolean(), detail:z.string().nullable() }).strict()) }).strict(),
   },
+  ...anamnesisHostMethods,
   diskFree: {
     input: z.object({ requestedHostId:z.string().min(1), path:z.string().startsWith("/") }).strict(),
     output: z.object({ hostId:z.string(), path:z.string(), freeBytes:z.number().nonnegative(), totalBytes:z.number().nonnegative() }).strict(),
@@ -1509,6 +1511,7 @@ export const rpcContract = defineRpcContract({
       events: z.array(z.object({ ruleId: z.string(), action: z.string(), detail: z.string().nullable(), at: z.number().int() }).strict()),
     }).strict(),
   },
+  ...anamnesisRpcMethods,
   session_memory_project: {
     input: z.object({ hostId: z.string().min(1), path: z.string().startsWith("/") }).strict(),
     output: z.object({ projectId: z.string().nullable(), scopes: z.array(z.string()) }).strict(),

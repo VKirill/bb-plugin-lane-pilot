@@ -9,6 +9,8 @@ import { RUN_BUDGET_SETTINGS, runHealth } from "./health";
 import { configuredSetting } from "./context";
 import { getCouncilSession } from "@lane-pilot/council";
 import type { Services } from "./services";
+import { ANAMNESIS_USAGE } from "../anamnesis/cli";
+import { anamnesisFor } from "../anamnesis/wiring";
 
 export function registerCli(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
@@ -38,6 +40,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot events-list <thread-id>",
     "bb lane-pilot wait-thread <thread-id>",
     "bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]",
+    ANAMNESIS_USAGE,
   ].join("\n");
 
   bb.cli.register({
@@ -74,11 +77,13 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"dispatch-bb", summary:"Dispatch a BB writer task, optional task-v2 JSON", usage:"bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json]" },
       { name:"events-list", summary:"Read-only SDK events.list probe", usage:"bb lane-pilot events-list <thread-id>" },
       { name:"wait-thread", summary:"Read-only waitThreadIdle probe", usage:"bb lane-pilot wait-thread <thread-id>" },
+      { name:"anamnesis", summary:"What Lane Pilot knows about its owner (records on the owner's machine); sensitive ones only on explicit request", usage:"bb lane-pilot anamnesis status|list|show|history|add|edit|confirm|reject|forget|sources|host" },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
     ],
-    async run(argv) {
+    async run(argv, cliContext) {
       try {
         const [command, ...args] = argv;
+        if (command === "anamnesis") return await anamnesisFor(ctx).cli(args, cliContext);
         if (command === "workflow-trigger" && args.length >= 2 && args.length <= 4) {
           const parsed: unknown = args[2] ? JSON.parse(args[2]) : {};
           if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("inputs must be a JSON object");

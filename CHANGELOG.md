@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+Anamnesis (owner memory «Анамнез», replaces the retired memory-profile plugin). Not released, not deployed.
+
+- **A1: the store and the model.** `src/anamnesis/` keeps short records about the owner (self, skill, project, event, person, interest, preference, fact, tool), each with evidence pointers and dates, a confidence, a sensitivity (`public` / `private` / `sensitive`), a status (`candidate` / `draft` / `confirmed` / `rejected`) and a history of changes. The store is a SQLite file on the owner's machine (`~/.lane-pilot/anamnesis/anamnesis.db`, 0600 in a 0700 folder, `LANE_PILOT_ANAMNESIS_DIR` overrides), opened only by the new host method `anamnesis`; the hub keeps no copy and gets counts. The memory-profile evidence rules are in the store: no automatic change without evidence; an owner edit protects a record from older evidence; forgetting leaves a cutoff so old chats cannot bring a record back; per-source checkpoints and on/off switches; text with credentials or instructions to a reader is refused, quotes are masked. Words about health, money, family and identity documents raise a record to `sensitive`; automatic writers never set `public` or lower a sensitivity. Sensitive records are never listed unless asked for by name. Reachable by `bb lane-pilot anamnesis status|list|show|history|add|edit|confirm|reject|forget|sources|host` and the RPC `anamnesis`; writers, helpers and stage threads are refused. No agent tool is added (the PM's tool list is full).
+
 ## 0.1.195
 
 - **OpenCode helpers start again.** The host contract of `prepareOpencodeMinimal` refused the `requestedHostId` every host call carries, so on the live hub (0.1.194) each OpenCode helper's minimal-config preparation failed and the helper was refused (fail-closed). A new test checks every server `host.call` against its host contract.
