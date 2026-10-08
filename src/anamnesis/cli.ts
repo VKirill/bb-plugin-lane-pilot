@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { KINDS, SENSITIVITIES, SOURCES, STATUSES, type AnamnesisRecord, type Kind, type Source, type Status } from "./model";
 import type { Hub } from "./hub";
+import { DETAILS, SECTIONS, type Detail, type Section } from "./whoami";
 import { DEFAULT_LOOKBACK_DAYS, formatReport, type LoadOptions, type LoadReport } from "./load";
 
 /**
@@ -22,6 +23,8 @@ export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis config [--authors EMAIL,NAME] [--roots /path,/path]",
   "bb lane-pilot anamnesis load [--run] [--since YYYY-MM-DD] [--sources a,b] [--classify --yes [--max-classify N] [--allow-sensitive-to-jev]] [--json]",
   "bb lane-pilot anamnesis review [--limit N]",
+  "bb lane-pilot anamnesis whoami [--sections identity,skills,projects,timeline,people,interests,preferences,tools] [--detail brief|normal|full] [--confirmed-only] [--include-sensitive] [--public-only]",
+  "bb lane-pilot anamnesis card [--max-chars N]",
 ].join("\n");
 
 export type CliResult = { exitCode: number; stdout?: string; stderr?: string };
@@ -41,7 +44,7 @@ const OPTIONS = {
   sensitivity: { type: "string" }, reason: { type: "string" }, confidence: { type: "string" }, all: { type: "boolean" }, yes: { type: "boolean" },
   source: { type: "string" }, set: { type: "string" }, help: { type: "boolean" },
   run: { type: "boolean" }, classify: { type: "boolean" }, since: { type: "string" }, sources: { type: "string" }, "max-classify": { type: "string" },
-  "allow-sensitive-to-jev": { type: "boolean" }, authors: { type: "string" }, roots: { type: "string" },
+  "allow-sensitive-to-jev": { type: "boolean" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" },
 } as const;
 
 const day = (at: number | null): string => (at ? new Date(at).toISOString().slice(0, 10) : "—");
@@ -170,6 +173,17 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
         ...(values["max-classify"] ? { maxClassify: Number(values["max-classify"]) } : {}), allowSensitiveToJev: values["allow-sensitive-to-jev"] === true });
       return out(report, values.json, () => `${formatReport(report)}
 (default window: the last ${DEFAULT_LOOKBACK_DAYS} days)`);
+    }
+    case "whoami": {
+      const sections = values.sections ? values.sections.split(",").map((name) => oneOf(name.trim(), SECTIONS, "section") as Section) : undefined;
+      const detail = oneOf(values.detail, DETAILS, "detail") as Detail | undefined;
+      const result = await hub.ask({ op: "whoami", ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
+        ...(values["confirmed-only"] ? { includeDrafts: false } : {}), ...(values["public-only"] ? { publicOnly: true } : {}) });
+      return out(result, values.json, () => result.text);
+    }
+    case "card": {
+      const result = await hub.ask({ op: "card", ...(values["max-chars"] ? { maxChars: Number(values["max-chars"]) } : {}) });
+      return out(result, values.json, () => result.text);
     }
     case "review": {
       const perKind = values.limit ? Number(values.limit) : 8;

@@ -2,6 +2,7 @@ import type { AnamnesisRequest, ResponseOf, UpsertSummary } from "./ops";
 import { anamnesisRequestSchema } from "./ops";
 import { existsSync } from "node:fs";
 import { collectSources } from "./collect";
+import { renderCard, renderWhoami, type WhoamiRecord } from "./whoami";
 import { anamnesisDbPath, openStore, type Store, type UpsertResult } from "./store";
 
 /**
@@ -52,6 +53,17 @@ export async function executeRequest(request: AnamnesisRequest, store: Store, co
       return { removed: dropped.records, evidence: dropped.evidence } satisfies ResponseOf<"forget">;
     }
     case "collect": return await collectSources(request, store) satisfies ResponseOf<"collect">;
+    case "whoami": {
+      // Sensitive records are read so that they can be counted and held back; they leave this function only on the explicit flag.
+      const records = store.list({ includeSensitive: true, statuses: ["confirmed", "draft"], limit: 2000 });
+      const withEvidence: WhoamiRecord[] = request.detail === "full"
+        ? records.map((record, index) => (index < 300 ? { ...record, evidence: store.get(record.id, { includeSensitive: true })?.evidence ?? [] } : record))
+        : records;
+      const { sections, detail, includeSensitive, includeDrafts, publicOnly } = request;
+      return renderWhoami(withEvidence, { ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
+        ...(includeDrafts !== undefined ? { includeDrafts } : {}), ...(publicOnly ? { publicOnly } : {}) }) satisfies ResponseOf<"whoami">;
+    }
+    case "card": return renderCard(store.list({ includeSensitive: false, statuses: ["confirmed"], limit: 2000 }), { ...(request.maxChars ? { maxChars: request.maxChars } : {}), now }) satisfies ResponseOf<"card">;
     case "load_report": return { id: store.saveLoad(request.mode, request.report, now) } satisfies ResponseOf<"load_report">;
     case "sources": {
       if (request.set) store.setSource(request.set.source, request.set.enabled, now);
@@ -64,7 +76,7 @@ export async function executeRequest(request: AnamnesisRequest, store: Store, co
 export async function anamnesisHandler(input: { requestedHostId: string; request: unknown }): Promise<{ hostId: string; response: unknown }> {
   const request = anamnesisRequestSchema.parse(input.request);
   // Reading, or planning a load, on a machine that has no store yet answers from an empty one in memory and leaves no file behind.
-  const readOnly = request.op === "status" || request.op === "list" || request.op === "get" || request.op === "history"
+  const readOnly = request.op === "status" || request.op === "whoami" || request.op === "card" || request.op === "list" || request.op === "get" || request.op === "history"
     || (request.op === "collect" && request.mode === "plan") || (request.op === "sources" && !request.set);
   const store = readOnly && !existsSync(anamnesisDbPath()) ? openStore(":memory:") : openStore();
   try {
