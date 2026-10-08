@@ -28,6 +28,11 @@ export const canvasEn = {
   wfDataCameBy: "Came by: {mode}",
   wfDataFromEdges: "Carried in by the connections",
   wfDataVisit: "Visit {n}",
+  wfDataVisits: "Visits",
+  wfDataFromNode: "← {from}",
+  wfDataStartName: "start",
+  wfDataItemRow: "item",
+  wfSecondsShort: "{n} s",
   wfLastRunNone: "No run has reached this step.",
 } as const;
 
@@ -60,5 +65,10 @@ export const canvasRu: { [K in keyof typeof canvasEn]: string } = {
   wfDataCameBy: "Пришло так: {mode}",
   wfDataFromEdges: "Приходит по связям",
   wfDataVisit: "Заход {n}",
+  wfDataVisits: "Заходы",
+  wfDataFromNode: "← {from}",
+  wfDataStartName: "старт",
+  wfDataItemRow: "элемент",
+  wfSecondsShort: "{n} с",
   wfLastRunNone: "До этого шага запуски не доходили.",
 };

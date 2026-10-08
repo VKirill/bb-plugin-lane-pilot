@@ -189,14 +189,14 @@ function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, cha
       width: placed.width, height: placed.height, initialWidth: placed.width, initialHeight: placed.height, handles: portsOf(orientation, placed.width, placed.height, named),
       style: { width: placed.width, height: placed.height }, draggable: draggable && !placed.parent && !placed.group, selectable: false, connectable: editing,
       data: { view, locale, direction: orientation, run: runs?.get(key) ?? null, selected: selected === key, changed: changedNodes?.has(key) ?? false, expanded: placed.group, loading: loadingKeys?.has(key) ?? false,
-        dim: lit !== null && !lit.nodeKeys.has(key),
+        dim: false,
         problems: problems.nodes.get(key) ?? [], level: problems.errors.has(`node:${key}`) ? "error" : "warning", editing, ports: named,
         executor: models && !placed.parent && !placed.group ? executorFor(models.executors, view) ?? null : null, models: models ?? null,
         onPick: () => pick(key), onToggle: canExpand ? () => handlers.current.onToggleExpand?.(key, view) : null,
         onOpen: view.kind === "subworkflow" && hasOpen && view.calls && !placed.group ? () => handlers.current.onOpen?.(key, view) : null,
         onAddAfter: hasAdd && view.kind !== "end" && !placed.group && !named.length ? () => handlers.current.onAddAfter?.(key) : null },
     } satisfies FlowNode;
-  }), [layout, locale, orientation, runs, selected, changedNodes, loadingKeys, hasToggle, hasOpen, hasAdd, editing, draggable, problems, pick, models, parts, lit, moved]);
+  }), [layout, locale, orientation, runs, selected, changedNodes, loadingKeys, hasToggle, hasOpen, hasAdd, editing, draggable, problems, pick, models, parts, moved]);
 
   const edges = useMemo<FlowEdge[]>(() => (layout?.edges ?? []).map((placed) => {
     const words = parts.captionOf.get(placed.key);
@@ -205,9 +205,38 @@ function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, cha
       id: placed.key, source: placed.source, target: placed.target, type: "flow", selectable: false, focusable: false, ...(port ? { sourceHandle: port } : {}),
       data: { edge: placed.edge, active: runs ? takenEdges?.has(placed.key) ?? false : null, changed: changedEdges?.has(placed.key) ?? false, direction: orientation,
         selected: selectedEdge === placed.key, problems: problems.edges.get(placed.key) ?? [], level: problems.errors.has(`edge:${placed.key}`) ? "error" : "warning", onPick: () => handlers.current.onSelectEdge?.(placed.key),
-        focus: lit ? (lit.edgeKeys.has(placed.key) ? "on" : "dim") : "none", caption: words?.caption ?? null, otherwise: words?.otherwise ?? false, fromPort: Boolean(port) },
+        focus: "none" as const, caption: words?.caption ?? null, otherwise: words?.otherwise ?? false, fromPort: Boolean(port) },
     } satisfies FlowEdge;
-  }), [layout, runs, takenEdges, changedEdges, orientation, selectedEdge, problems, parts, lit]);
+  }), [layout, runs, takenEdges, changedEdges, orientation, selectedEdge, problems, parts]);
+
+  // The hover recedes the rest of the graph with CSS (`data-hovering` on the canvas, `lp-wf-lit` on what stays), so only the pointer's own card,
+  // its neighbours and their connections get a new object: every other card and connection keeps the one it had and its memo skips it.
+  // Redrawing all of them on every mouse move cost about 100 ms a frame on a 60-step chain.
+  const litCache = useRef(new Map<string, { base: FlowNode | FlowEdge; made: FlowNode | FlowEdge }>());
+  const shownNodes = useMemo<FlowNode[]>(() => {
+    const cache = litCache.current;
+    return nodes.map((node) => {
+      if (!lit?.nodeKeys.has(node.id)) return node;
+      const prior = cache.get(`n:${node.id}`);
+      if (prior && prior.base === node) return prior.made as FlowNode;
+      const made = { ...node, className: "lp-wf-lit" } as FlowNode;
+      cache.set(`n:${node.id}`, { base: node, made });
+      return made;
+    });
+  }, [nodes, lit]);
+  const shownEdges = useMemo<FlowEdge[]>(() => {
+    const cache = litCache.current;
+    return edges.map((edge) => {
+      if (!lit?.edgeKeys.has(edge.id)) return edge;
+      const prior = cache.get(`e:${edge.id}`);
+      if (prior && prior.base === edge) return prior.made as FlowEdge;
+      const made = { ...edge, className: "lp-wf-lit", data: { ...edge.data!, focus: "on" as const } } as FlowEdge;
+      cache.set(`e:${edge.id}`, { base: edge, made });
+      return made;
+    });
+  }, [edges, lit]);
+  // A layout or a data change makes new base objects: the cache holds nothing for them, and what it held is dropped.
+  useEffect(() => { litCache.current.clear(); }, [nodes, edges]);
 
   /**
    * The first view: as much of the graph as fits at a readable zoom. When the whole graph would need less than READABLE_ZOOM,
@@ -285,10 +314,10 @@ function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, cha
           ))}
         </nav>
       ) : null}
-      <div ref={boxRef} className="lp-wf-canvas relative min-w-0" style={{ height: shown }} data-testid="workflow-graph" data-layout={layout ? "ready" : failed ? "failed" : "pending"} data-direction={orientation} data-editing={editing ? "1" : "0"} data-arranged={layout?.arranged ? "1" : "0"}>
+      <div ref={boxRef} className="lp-wf-canvas relative min-w-0" style={{ height: shown }} data-testid="workflow-graph" data-layout={layout ? "ready" : failed ? "failed" : "pending"} data-direction={orientation} data-editing={editing ? "1" : "0"} data-arranged={layout?.arranged ? "1" : "0"} data-hovering={lit ? "1" : "0"}>
         <Markers />
         <ReactFlow<FlowNode, FlowEdge>
-          nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
+          nodes={shownNodes} edges={shownEdges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
           nodesDraggable={draggable} nodesConnectable={editing} nodesFocusable={false} elementsSelectable={false} edgesFocusable={false} connectionRadius={28}
           zoomOnScroll={false} preventScrolling={false} panOnScroll={false} zoomOnDoubleClick={false} minZoom={0.3} maxZoom={1.6}
           proOptions={{ hideAttribution: true }}

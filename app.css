@@ -225,6 +225,10 @@
   .lp-wf-node[data-tone="decision"] { --wf-tone: color-mix(in oklab, var(--lp-warning) 60%, var(--foreground)); }
   .lp-wf-node[data-tone="flow"], .lp-wf-node[data-tone="action"] { --wf-tone: color-mix(in oklab, var(--foreground) 55%, transparent); }
   .lp-wf-node[data-dim="1"], .lp-wf-terminal[data-dim="1"] { opacity: 0.38; }
+  /* The hover: what the pointer is not on recedes (done in CSS, so a hover redraws no card). */
+  .lp-wf-canvas[data-hovering="1"] .react-flow__node:not(.lp-wf-lit) { opacity: 0.38; }
+  .lp-wf-canvas[data-hovering="1"] .react-flow__edge:not(.lp-wf-lit) { opacity: 0.25; }
+  .lp-wf-canvas[data-hovering="1"] .lp-wf-chip:not([data-focus="on"]) { opacity: 0.2; }
   .lp-wf-node[data-status="pending"] { opacity: 0.82; }
   .lp-wf-node[data-status="skipped"] { opacity: 0.55; border-style: dashed; }
   .lp-wf-node[data-status="failed"] { border-color: var(--destructive); }
