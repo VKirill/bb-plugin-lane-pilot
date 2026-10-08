@@ -99,6 +99,55 @@ describe("whether the work landed, asked of git", () => {
     expect(await mergeLanded(intent, run)).toMatchObject({ landed: true, how: expect.stringContaining("worktree tip") });
   });
 
+  // Audit 2026-10-08, item 2: a worktree is made from main's head of that day; when another task merged since, the
+  // fork point is an ancestor of main (and not main's head) without anything of this attempt being in main.
+  it("is not landed when main moved on after the worktree was made and the merge never ran (loose edits only)", async () => {
+    const { base, worktree } = await repo();
+    const wt = await worktree("a");
+    const other = await worktree("b");
+    await writeFile(join(wt, "a.ts"), "a\n");
+    await writeFile(join(other, "b.ts"), "b\n"); git(other, "add", "-A"); git(other, "commit", "-qm", "b");
+    expect((await integrateWorktree({ basePath: base, worktreePath: other, message: "b" })).status).toBe("merged");
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const intent = await intentFor(bb.storage.kv as never, base, wt);
+    expect(intent.sha).not.toBe(intent.baseHead); // the fork point is behind main
+    expect(await mergeLanded(intent, run)).toEqual({ landed: false });
+  });
+
+  it("is not landed when main moved on and the attempt's worktree is clean at the fork point", async () => {
+    const { base, worktree } = await repo();
+    const wt = await worktree("a");
+    const other = await worktree("b");
+    await writeFile(join(other, "b.ts"), "b\n"); git(other, "add", "-A"); git(other, "commit", "-qm", "b");
+    expect((await integrateWorktree({ basePath: base, worktreePath: other, message: "b" })).status).toBe("merged");
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const intent = await intentFor(bb.storage.kv as never, base, wt);
+    expect(await mergeLanded(intent, run)).toEqual({ landed: false });
+  });
+
+  it("is not landed when main moved on after the intent and the attempt's own commit is not in main", async () => {
+    const { base, worktree } = await repo();
+    const wt = await worktree("a");
+    const other = await worktree("b");
+    await writeFile(join(wt, "a.ts"), "a\n"); git(wt, "add", "-A"); git(wt, "commit", "-qm", "a");
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const intent = await intentFor(bb.storage.kv as never, base, wt);
+    await writeFile(join(other, "b.ts"), "b\n"); git(other, "add", "-A"); git(other, "commit", "-qm", "b");
+    expect((await integrateWorktree({ basePath: base, worktreePath: other, message: "b" })).status).toBe("merged");
+    expect(await mergeLanded(intent, run)).toEqual({ landed: false });
+  });
+
+  it("does not take another attempt's trailer, or a longer id with the same prefix, for this attempt's merge", async () => {
+    const { base, worktree } = await repo();
+    const wt = await worktree("a");
+    const other = await worktree("b");
+    await writeFile(join(other, "b.ts"), "b\n");
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const intent = await intentFor(bb.storage.kv as never, base, wt);
+    expect((await integrateWorktree({ basePath: base, worktreePath: other, message: attemptMergeMessage({ id: "T2", title: "Other" }, "a10") })).status).toBe("merged");
+    expect(await mergeLanded(intent, run)).toEqual({ landed: false });
+  });
+
   it("is unknown when the machine does not answer", async () => {
     const intent = { attemptId: "a1", runId: "r", taskId: "T", projectId: "p", hostId: "h", basePath: "/x", worktreePath: "/y", branch: null, sha: null, baseHead: null, message: "m", at: 0 };
     expect(await mergeLanded(intent, async () => { throw new Error("offline"); })).toEqual({ unknown: true });

@@ -54,29 +54,44 @@ export type MergeVerdict = { landed:true; how:string; commit:string | null } | {
 
 /**
  * Whether the attempt's work is in the base checkout now, asked of git on the project's machine. Three witnesses, any
- * one is enough: the attempt's commit made before the merge (not main's own HEAD, which is an ancestor of itself), the
+ * one is enough, each naming the exact commit that proves it: the attempt's commit made before the merge, the
  * worktree's present tip when it is clean (a rebase or the commit of the writer's loose edits made it), and the merge
- * commit carrying the attempt's trailer among the commits main took since the intent. `unknown` when the machine did not answer.
+ * commit carrying the attempt's own trailer among the commits main took since the intent. The first two count only a
+ * commit that was not already in main when the intent was written: a worktree is made from main's head of that day, so
+ * its fork point (the HEAD of an attempt with only loose edits, or of a clean worktree) is an ancestor of a main that
+ * moved on whether or not the merge ever ran. `unknown` when the machine did not answer.
  */
 export async function mergeLanded(intent:MergeIntent, run:RunOnHost):Promise<MergeVerdict> {
   const ask = (cwd:string, command:string) => run(intent.hostId, cwd, command).catch(() => ({ exitCode:-1, stdout:"", stderr:"unreachable" }));
   const head = await ask(intent.basePath, "git rev-parse HEAD");
   if (head.exitCode !== 0 || !head.stdout.trim()) return { unknown:true };
   const main = head.stdout.trim();
-  const ancestor = async (sha:string) => (await ask(intent.basePath, `git merge-base --is-ancestor ${quote(sha)} HEAD`)).exitCode === 0;
-  if (intent.sha && intent.sha !== intent.baseHead && await ancestor(intent.sha)) return { landed:true, how:`attempt commit ${intent.sha.slice(0, 12)} is in main`, commit:main };
+  const ancestor = async (sha:string, of?:string) => (await ask(intent.basePath, `git merge-base --is-ancestor ${quote(sha)} ${of ? quote(of) : "HEAD"}`)).exitCode === 0;
+  // A commit of the attempt itself: in main now, and not in main's history as it stood when the intent was written.
+  // Without that head (the machine did not answer then) no commit can be told from the fork point, only the trailer proves it.
+  const attemptCommitInMain = async (sha:string) =>
+    Boolean(intent.baseHead) && sha !== intent.baseHead && !await ancestor(sha, intent.baseHead!) && await ancestor(sha);
+  if (intent.sha && await attemptCommitInMain(intent.sha)) return { landed:true, how:`attempt commit ${intent.sha.slice(0, 12)} is in main`, commit:main };
   const tip = await ask(intent.worktreePath, "git status --porcelain --untracked-files=all && git rev-parse HEAD");
   if (tip.exitCode === 0) {
     const lines = tip.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
     // Clean worktree only: loose edits not committed yet say nothing about the merge, whatever the tip is.
-    if (lines.length === 1 && lines[0] !== intent.baseHead && await ancestor(lines[0]!)) return { landed:true, how:`worktree tip ${lines[0]!.slice(0, 12)} is in main`, commit:main };
+    if (lines.length === 1 && await attemptCommitInMain(lines[0]!)) return { landed:true, how:`worktree tip ${lines[0]!.slice(0, 12)} is in main`, commit:main };
   }
   // The merge commit carrying the attempt's trailer among what main took since the intent: after main's head at that time, or by the clock when
   // the machine could not tell the head.
   const since = intent.baseHead ? (await ancestor(intent.baseHead) ? quote(`${intent.baseHead}..HEAD`) : null) : `--since=@${Math.floor(intent.at / 1000)} HEAD`;
   if (since) {
-    const subject = await ask(intent.basePath, `git log -n 1 --format=%H --fixed-strings --grep=${quote(attemptTrailer(intent.attemptId))} ${since}`);
-    if (subject.exitCode === 0 && subject.stdout.trim()) return { landed:true, how:`merge commit ${subject.stdout.trim().slice(0, 12)} is in main`, commit:subject.stdout.trim() };
+    // The trailer is matched line by line: a fixed-string grep alone takes `a10` for `a1`.
+    const found = await ask(intent.basePath, `git log -n 50 --format=%H%x1f%B%x1e --fixed-strings --grep=${quote(attemptTrailer(intent.attemptId))} ${since}`);
+    if (found.exitCode === 0) {
+      for (const entry of found.stdout.split("\x1e")) {
+        const [commit, body = ""] = entry.split("\x1f");
+        if (commit?.trim() && body.split("\n").some((line) => line.trim() === attemptTrailer(intent.attemptId))) {
+          return { landed:true, how:`merge commit ${commit.trim().slice(0, 12)} is in main`, commit:commit.trim() };
+        }
+      }
+    }
   }
   return { landed:false };
 }

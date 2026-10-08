@@ -63,7 +63,11 @@ function createModel(rand:() => number) {
   const mergedAttempts = new Set<string>();
   let hostOffline = false;
   const head = () => log.at(-1)?.sha ?? "M0";
-  const ancestors = () => new Set(["M0", ...log.flatMap((commit) => [commit.sha, commit.attemptCommit])]);
+  /** What main's history holds up to a commit (its head by default): the commits, and the attempts' own commits they merged. */
+  const ancestors = (upTo?:string) => {
+    const end = upTo === undefined || upTo === "HEAD" ? log.length : upTo === "M0" ? 0 : log.findIndex((commit) => commit.sha === upTo) + 1;
+    return new Set(["M0", ...log.slice(0, end).flatMap((commit) => [commit.sha, commit.attemptCommit])]);
+  };
   const answer = (cwd:string, command:string) => {
     if (hostOffline) throw new Error("host is not connected");
     const ok = (stdout:string) => ({ exitCode:0, stdout, stderr:"" });
@@ -76,8 +80,8 @@ function createModel(rand:() => number) {
       return ok(`${head()}\n${tree?.dirty ? head() : `c:${attemptId}`}\nlane/${attemptId}\n`);
     }
     if (command === "git rev-parse HEAD") return ok(`${head()}\n`);
-    const ancestor = /^git merge-base --is-ancestor '([^']+)' HEAD$/.exec(command);
-    if (ancestor) return ancestors().has(ancestor[1]!) ? ok("") : no();
+    const ancestor = /^git merge-base --is-ancestor '([^']+)' (?:HEAD|'([^']+)')$/.exec(command);
+    if (ancestor) return ancestors(ancestor[2]).has(ancestor[1]!) ? ok("") : no();
     if (command.startsWith("git status --porcelain")) {
       const attemptId = cwd.split("/").pop()!;
       const tree = worktrees.get(attemptId);
@@ -88,7 +92,7 @@ function createModel(rand:() => number) {
     if (grep) {
       const from = !grep[2] || grep[2] === "M0" ? -1 : log.findIndex((commit) => commit.sha === grep[2]);
       const found = log.slice(from + 1).find((commit) => commit.attemptCommit === `c:${grep[1]}`);
-      return found ? ok(`${found.sha}\n`) : ok("");
+      return found ? ok(`${found.sha}\x1f${found.message}\n\x1e`) : ok("");
     }
     return no(127);
   };
