@@ -22,6 +22,7 @@ import { createWorkflowArchitect } from "./workflow-architect";
 import { architectStartRpc } from "./architect-start";
 import { createOwnerGate, guardOwnerOnlyRpc } from "./owner-gate";
 import { timeRpcHandlers } from "./rpc-timing";
+import { anamnesisFor } from "../anamnesis/wiring";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
@@ -47,5 +48,6 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),
+    ...anamnesisFor(ctx).rpc,
   }, gate), (message) => ctx.bb.log.debug(message)));
 }
