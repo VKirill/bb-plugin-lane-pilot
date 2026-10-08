@@ -81,6 +81,8 @@ describe("which providers get the wrappers", () => {
       log: { warn: () => undefined, info: () => undefined },
       providers: { experimental_contributeEnv: (id: string, resolve: never) => { registered.set(id, resolve); } },
       sdk: { threads: { getPluginMetadata: async () => ({ role: "writer" }), defaultExecutionOptions: async () => ({ model: "router9/x" }) } },
+      background: { schedule: () => undefined },
+      onDispose: () => undefined,
     };
     const host = { call: vi.fn(async (method: string) => method === "prepareBbShim" ? SHIM : { result: { configHome: "/data/opencode-min/abc", kept: [], left: [] } }) };
     mount({ bb, host } as never);

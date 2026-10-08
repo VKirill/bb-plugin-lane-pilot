@@ -171,6 +171,6 @@ export function mountOpencodeMinimal(ctx: ServerCore) {
   const warm = () => { void env.warmConnected().catch(() => undefined); };
   const first = setTimeout(warm, 2_000);
   first.unref?.();
-  ctx.bb.onDispose(() => clearTimeout(first));
+  ctx.bb.onDispose?.(() => clearTimeout(first));
   scheduleIsolated(ctx.bb, "opencode-minimal-warm", "1-58/3 * * * *", async () => { warm(); }, { timeoutMs: 60_000 });
 }

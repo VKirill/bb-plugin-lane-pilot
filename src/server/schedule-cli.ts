@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import type { Services } from "./services";
 
 /**
@@ -9,9 +8,9 @@ export const SCHEDULE_USAGE = [
   "bb lane-pilot schedule list [--project <id>] [--json]",
   "bb lane-pilot schedule show <id> [--runs N] [--json]",
   "bb lane-pilot schedule history <id> [--limit N] [--json]",
-  "bb lane-pilot schedule preview '<definition-json>' | --file <path>",
-  "bb lane-pilot schedule create '<definition-json>' | --file <path> [--project <id>]",
-  "bb lane-pilot schedule update <id> '<changes-json>' | --file <path>",
+  "bb lane-pilot schedule preview '<definition-json>'",
+  "bb lane-pilot schedule create '<definition-json>' [--project <id>]",
+  "bb lane-pilot schedule update <id> '<changes-json>'",
   "bb lane-pilot schedule pause <id> [reason]",
   "bb lane-pilot schedule resume <id>",
   "bb lane-pilot schedule run-now <id>",
@@ -44,9 +43,10 @@ export async function runScheduleCli(services: Services, args: string[]): Promis
   const out = (value: unknown): Result => ({ exitCode: 0, stdout: typeof value === "string" ? value : JSON.stringify(value, null, 2) });
   const fail = (message: string): Result => ({ exitCode: 1, stdout: JSON.stringify({ ok: false, error: message }) });
   const jsonArg = async (index: number): Promise<unknown> => {
-    const file = flags.get("--file");
-    const text = file ? await readFile(file, "utf8") : positional[index];
-    if (!text) throw new Error("give the JSON as an argument or with --file <path>");
+    // The CLI runs on the hub, so a path would name a file there, not on the caller's machine: the JSON comes inline ("$(cat file.json)").
+    if (flags.get("--file")) throw new Error("--file is not supported: pass the JSON inline, e.g. \"$(cat schedule.json)\"");
+    const text = positional[index];
+    if (!text) throw new Error("give the JSON as an argument");
     return JSON.parse(text) as unknown;
   };
 

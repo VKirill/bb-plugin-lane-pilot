@@ -70,7 +70,7 @@ describe("the router on the catalog as it ships (audit 2026-10-08, item 9)", () 
 
   it("offers the tested chains instead of hiding them: 27 or more of the 30 phrases, the held-out and the reserve ones too", async () => {
     expect(real.filter((workflow) => workflow.status === "tested" && !workflow.internal).map((workflow) => workflow.id).sort())
-      .toEqual(["deploy", "insights-post", "reels", "seo-cocoon", "web-research", "x-to-telegram-digest"]);
+      .toEqual(["deploy", "insights-post", "invoice-send", "reels", "seo-cocoon", "web-research", "x-to-telegram-digest"]);
     const wrong: string[] = [];
     for (const [n, phrase, expected] of EVAL_SET) { const decision = await ask(phrase); if ((decision.workflowId ?? "clarify") !== expected) wrong.push(`${n} ${expected} <- ${decision.workflowId ?? "clarify"} (${decision.confidence})`); }
     expect(30 - wrong.length, wrong.join("; ")).toBeGreaterThanOrEqual(27);
