@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+Ideas taken from the Synapse AI talk (evaluation: `.bb/chats/thr_jn6c4d4rfj/artifacts/synapse/EVALUATION.md`); the rest was skipped or already done.
+
+- **The same reminder set twice is one reminder (`src/server/relay.ts`).** A retried call or a PM that forgot it had already set a reminder put a second identical card in the chat. `remind` now returns the open reminder of the same thread with the same note (case and edge spaces ignored), the same watched thread and tasks, and a due time within a minute. No refusal, no new tool.
+
 ## 0.1.197
 
 - **A call the owner gate keeps out is not a Lane Pilot failure (self-repair).** The RPC log wrote a refused call as `rpc reset_project_settings 1 ms failed`, and the self-repair watcher reads `failed` as a fault: two `curl` probes of the round 4 audit (`save_setting` 12:07, `reset_project_settings` 12:16) each opened an Opus repair thread, and any script poking a gated method could open more. `guardRpc` now throws `OwnerGateRefusal` and the log line says `refused`; a handler that really fails still logs `failed` and is still an incident (`tests/rpc-timing.test.ts`). The same change on the 0.1.196 base (`de30d98`, branch `lane/self-repair-cf0aecea-muzi1pim`) does not merge onto the round 4 gate; this one supersedes it.

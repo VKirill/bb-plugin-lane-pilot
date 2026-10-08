@@ -30,6 +30,8 @@ export type RelayReminder = {
 };
 export type RelayItem = RelayAsk | RelayReminder;
 
+/** Two reminders with the same note, watch and tasks due this close together are one. */
+export const DUPLICATE_REMINDER_MS = 60_000;
 /** Guards against two agents talking in circles or an agent snoozing for ever. */
 // A PM watching a day-long run sets a reminder per batch; 30 a day ran out on SelfyStudio (2026-10-04).
 export const RELAY_LIMITS = { asksPerPairPerHour:6, openRemindersPerThread:20, remindersPerThreadPerDay:150, keepMs:7 * 86_400_000 };
@@ -151,8 +153,14 @@ export function createRelay(deps:RelayDeps) {
       if (mine.filter((row) => row.createdAt > deps.now() - 86_400_000).length >= RELAY_LIMITS.remindersPerThreadPerDay) {
         throw new Error(`relay limit: ${RELAY_LIMITS.remindersPerThreadPerDay} reminders a day; escalate to the owner`);
       }
+      // The same reminder set twice (a retried call, a PM that forgot it already did): the open one is returned, no second card in the chat.
+      const dueAt = deps.now() + input.inMinutes * 60_000;
+      const sameTasks = (row:RelayReminder) => [...(row.taskIds ?? [])].sort().join() === [...new Set(input.taskIds ?? [])].sort().join();
+      const twin = mine.find((row) => !row.firedAt && row.note.trim().toLowerCase() === input.note.trim().toLowerCase() && (row.watchThreadId ?? null) === (input.watchThreadId ?? null)
+        && sameTasks(row) && Math.abs(row.dueAt - dueAt) <= DUPLICATE_REMINDER_MS);
+      if (twin) return twin;
       const item:RelayReminder = { kind:"remind", id:id("rem"), projectId:input.projectId, threadId:input.threadId, note:input.note,
-        dueAt:deps.now() + input.inMinutes * 60_000, watchThreadId:input.watchThreadId ?? null, createdAt:deps.now(), firedAt:null, firedBy:null,
+        dueAt, watchThreadId:input.watchThreadId ?? null, createdAt:deps.now(), firedAt:null, firedBy:null,
         ...(input.taskIds?.length ? { taskIds:[...new Set(input.taskIds)] } : {}) };
       // BB's queue keeps the time: the reminder is a card in the chat, due at `dueAt`, and survives a reload of this plugin.
       if (deps.scheduleQueued) {

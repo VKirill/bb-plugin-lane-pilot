@@ -47,6 +47,19 @@ describe("relay", () => {
     expect(await h.relay.threadSettled("writer")).toBe(0);
   });
 
+  it("returns the open reminder when the same one is set again, and keeps a different one", async () => {
+    const h = harness();
+    const first = await h.relay.remind({ projectId:"P", threadId:"pm", note:"Check the merge", inMinutes:10, watchThreadId:"holder" });
+    h.tick(20_000);
+    const again = await h.relay.remind({ projectId:"P", threadId:"pm", note:" check the merge ", inMinutes:10, watchThreadId:"holder" });
+    expect(again.id).toBe(first.id);
+    const later = await h.relay.remind({ projectId:"P", threadId:"pm", note:"Check the merge", inMinutes:30, watchThreadId:"holder" });
+    const unwatched = await h.relay.remind({ projectId:"P", threadId:"pm", note:"Check the merge", inMinutes:10 });
+    const other = await h.relay.remind({ projectId:"Q", threadId:"other", note:"Check the merge", inMinutes:10, watchThreadId:"holder" });
+    expect(new Set([first.id, later.id, unwatched.id, other.id]).size).toBe(4);
+    expect(h.items().filter((row) => row.kind === "remind")).toHaveLength(4);
+  });
+
   it("fires a reminder when its watched thread settles, or when it is due", async () => {
     const h = harness();
     await h.relay.remind({ projectId:"P", threadId:"pm", note:"retry the merge", inMinutes:10, watchThreadId:"holder" });
