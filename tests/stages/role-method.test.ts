@@ -23,16 +23,17 @@ describe("K1: role texts adapted from Maestro-Flow", () => {
     expect(prompt).not.toMatch(MAESTRO_ONLY);
   });
 
-  it("code critic: three acceptance layers, anti-patterns, six dimensions, BLOCK/WARN/PASS, majority of three for critical and high", () => {
+  it("code critic: three acceptance layers, anti-patterns, six dimensions, BLOCK/REWORK/PASS, a single-reviewer self-check (no vote) for critical and high", () => {
     const prompt = codeCritiquePrompt({ evidence, task: {} });
     for (const layer of ["existence", "substance", "wiring"]) expect(prompt).toContain(layer);
     expect(prompt).toMatch(/Anti-patterns/);
     expect(prompt).toMatch(/placeholder/i);
     expect(prompt).toMatch(/six: correctness.*security.*performance.*architecture.*maintainability.*best practices/);
-    expect(prompt).toMatch(/BLOCK: any critical finding, or more than 5 high/);
-    expect(prompt).toMatch(/WARN: 1 to 5 high/);
+    expect(prompt).toMatch(/BLOCK: a critical finding that is a security hole, data loss or a break of a rule the task forbids, or more than 5 high/);
+    expect(prompt).toMatch(/REWORK: a critical unmet or stubbed requirement \(the writer repairs it first\), or 1 to 5 high/);
     expect(prompt).toMatch(/PASS: no critical and no high/);
-    expect(prompt).toMatch(/at least 2 of the 3/);
+    expect(prompt).not.toMatch(/at least 2 of the 3|Majority of three/);
+    expect(prompt).toMatch(/this is not a vote and you must not write a tally/);
     expect(prompt).toMatch(/no quoted code at a file:line is not accepted/);
     expect(prompt).toMatch(/what the candidate implements/);
     expect(prompt).not.toMatch(MAESTRO_ONLY);

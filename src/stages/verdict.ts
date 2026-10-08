@@ -73,14 +73,28 @@ function counts(finding: VerdictFinding, kind: VerdictKind): boolean {
   return kind === "specialist" || finding.line != null;
 }
 
+/**
+ * A critical finding that is not about an unmet or stubbed requirement: a security hole, data loss or a rule the task forbids.
+ * These stop the task at once. Any other critical finding (the writer left a requirement undone or a stub) is repaired first
+ * (audit 2026-10-08, B6: every unmet requirement was a `block` with no repair round).
+ */
+const HARD_CRITICAL = /\b(secrets?|credentials?|passwords?|api[ _-]?keys?|injection|xss|csrf|sqli|sql injection|(?:auth|access|api|bearer|session|owner'?s?|user'?s?) tokens?|privilege|authori[sz]ation bypass|auth bypass|exfiltrat\w*|data[ -]loss|lose[sd]? data|drop table|rm -rf|destroys?|destructive|irreversib\w*|never_touch|forbid\w*)\b/i;
+export function isHardCritical(finding: Pick<VerdictFinding, "severity" | "evidence" | "finding" | "criterion" | "dimension" | "impact">): boolean {
+  if (finding.severity !== "critical") return false;
+  if (/^security$/i.test(finding.dimension?.trim() ?? "")) return true;
+  return HARD_CRITICAL.test([finding.finding, finding.criterion, finding.impact, finding.evidence].filter(Boolean).join("\n"));
+}
+
 export type SettledVerdict = { verdict: Verdict; demoted: number };
 
 /**
  * The host's reading of a verdict, so a model's status cannot say more than its findings back up:
  * - a critical or high finding with no file, no line (specialist: no file) or no quoted evidence does not count and is read as medium;
  * - a pass that carries a critical or high finding is a rework;
- * - code: BLOCK is one critical finding or more than 5 high, a block below that is a rework, a rework with no serious
- *   finding is a pass (it has nothing to repair).
+ * - code: BLOCK is a critical finding that is a security hole, data loss or a broken rule of the task (`isHardCritical`), or more
+ *   than 5 high. A critical unmet or stubbed requirement is a rework: the writer gets its repair round first (the round limit
+ *   of the code critique ends it when the requirement is still unmet). A block below that is a rework, a rework with no
+ *   serious finding is a pass (it has nothing to repair).
  */
 export function settleVerdict(verdict: Verdict, kind: VerdictKind): SettledVerdict {
   let demoted = 0;
@@ -90,13 +104,14 @@ export function settleVerdict(verdict: Verdict, kind: VerdictKind): SettledVerdi
     return { ...finding, severity: "medium" as const };
   });
   const critical = findings.filter((finding) => finding.severity === "critical").length;
+  const hard = findings.filter(isHardCritical).length;
   const high = findings.filter((finding) => finding.severity === "high").length;
   let status = verdict.status;
   if (kind === "code") {
-    const blocks = critical >= 1 || high > 5;
+    const blocks = hard >= 1 || high > 5;
     if (blocks) status = "block";
-    else if (status === "block") status = high > 0 ? "rework" : "pass";
-    if (status === "rework" && high === 0) status = "pass";
+    else if (status === "block") status = high + critical > 0 ? "rework" : "pass";
+    if (status === "rework" && high + critical === 0) status = "pass";
   }
   if (status === "pass" && critical + high > 0) status = "rework";
   return { verdict: { ...verdict, status, findings }, demoted };
@@ -110,7 +125,9 @@ export function blockReason(stage: string, input: { summary?: string; findings: 
   const lead = (input.summary ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
   const top = input.findings.filter(isSerious).slice(0, 3)
     .map((finding) => `${finding.file || "-"}${finding.line ? `:${finding.line}` : ""} [${finding.severity}] ${(finding.finding ?? finding.evidence).replace(/\s+/g, " ").trim().slice(0, 160)}`);
-  return `${VERDICT_BLOCK_PREFIX}${stage}: ${lead || "the reviewer stopped this task"}${top.length ? ` | ${top.join(" | ")}` : ""} | stopped, not redone: the work is not fixable by another turn of the same task; tell the owner or change the approach before sending anything again`;
+  // The code critic is one model: its verdict is not a vote of three, and the PM reads it that way.
+  const single = stage.startsWith("code") ? " | single-model verdict (one reviewer model, no vote or second opinion)" : "";
+  return `${VERDICT_BLOCK_PREFIX}${stage}: ${lead || "the reviewer stopped this task"}${top.length ? ` | ${top.join(" | ")}` : ""}${single} | stopped, not redone: the work is not fixable by another turn of the same task; tell the owner or change the approach before sending anything again`;
 }
 
 /** A model that answers with `status` sometimes keeps the old `decision` next to it: the status is the answer. */

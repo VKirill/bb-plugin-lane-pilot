@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VERDICT_BLOCK_PREFIX, blockReason, isVerdictBlockReason, legacyDecisionToStatus, legacySeverityToVerdict, settleVerdict, verdictSchema, verdictSeverityToLegacy } from "../../src/stages/verdict";
+import { VERDICT_BLOCK_PREFIX, blockReason, isHardCritical, isVerdictBlockReason, legacyDecisionToStatus, legacySeverityToVerdict, settleVerdict, verdictSchema, verdictSeverityToLegacy } from "../../src/stages/verdict";
 import type { Verdict } from "../../src/stages/verdict";
 
 const finding = (over: Record<string, unknown> = {}): never => ({ file: "src/a.ts", line: 12, severity: "high", evidence: "return null; // TODO: implement", ...over }) as never;
@@ -56,13 +56,25 @@ describe("the host's reading of a verdict", () => {
     expect(settleVerdict(verdict("pass", [finding({ severity: "medium" })]), "plan").verdict.status).toBe("pass");
   });
 
-  it("code: one critical or more than 5 high is a block; below that a model's block is a rework; a rework with nothing serious is a pass", () => {
-    expect(settleVerdict(verdict("rework", [finding({ severity: "critical" })]), "code").verdict.status).toBe("block");
+  it("code: a security or destructive critical finding, or more than 5 high, is a block; below that a model's block is a rework; a rework with nothing serious is a pass", () => {
+    expect(settleVerdict(verdict("rework", [finding({ severity: "critical", evidence: "const API_KEY = 'sk-live-123456'; // hardcoded secret" })]), "code").verdict.status).toBe("block");
+    expect(settleVerdict(verdict("rework", [finding({ severity: "critical", dimension: "security", evidence: "the query is built from the request body" })]), "code").verdict.status).toBe("block");
+    expect(settleVerdict(verdict("rework", [finding({ severity: "critical", finding: "the migration drops the orders table on start", impact: "data loss", evidence: "DROP TABLE orders;" })]), "code").verdict.status).toBe("block");
     expect(settleVerdict(verdict("rework", Array.from({ length: 6 }, () => finding())), "code").verdict.status).toBe("block");
     expect(settleVerdict(verdict("block", Array.from({ length: 5 }, () => finding())), "code").verdict.status).toBe("rework");
     expect(settleVerdict(verdict("block", [finding({ severity: "medium" })]), "code").verdict.status).toBe("pass");
     expect(settleVerdict(verdict("rework", [finding({ severity: "medium" })]), "code").verdict.status).toBe("pass");
     expect(settleVerdict(verdict("rework", [finding()]), "code").verdict.status).toBe("rework");
+  });
+
+  it("code: a critical unmet or stubbed requirement gets its repair round: rework, also when the model said block or pass", () => {
+    const stub = finding({ severity: "critical", finding: "the login handler only logs; acceptance line 2 is unmet" });
+    for (const said of ["block", "rework", "pass"]) expect(settleVerdict(verdict(said, [stub]), "code").verdict.status, said).toBe("rework");
+    // with a hard critical beside it the task still stops
+    expect(settleVerdict(verdict("rework", [stub, finding({ severity: "critical", dimension: "security" })]), "code").verdict.status).toBe("block");
+    expect(isHardCritical(stub)).toBe(false);
+    expect(isHardCritical(finding({ severity: "high", dimension: "security" }))).toBe(false);
+    expect(isHardCritical(finding({ severity: "critical", finding: "edits a file the task forbids (never_touch)" }))).toBe(true);
   });
 
   it("plan and specialist keep the critic's own block", () => {
