@@ -1,19 +1,43 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
 
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 
-function run(command: string, agentType: string | null, env: Record<string, string> = {}) {
+function payloadOf(command: string, agentType: string | null) {
   const payload: Record<string, unknown> = { tool_name: "Bash", tool_input: { command }, cwd: "/tmp" };
   if (agentType) payload.agent_type = agentType;
-  return spawnSync("python3", [guard], { input: JSON.stringify(payload), encoding: "utf8", env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
+  return JSON.stringify(payload);
+}
+function run(command: string, agentType: string | null, env: Record<string, string> = {}) {
+  return spawnSync("python3", [guard], { input: payloadOf(command, agentType), encoding: "utf8", env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
 }
 const denied = (command: string, agentType: string | null, env: Record<string, string> = {}) => {
   const res = run(command, agentType, env);
   return res.status === 2 && /\[env-guard\]/.test(res.stdout);
 };
+
+// One Python start costs about 30 ms, a role test starts it once per form (58 of them): run one after another they took 1.7 s idle
+// and went past the 5 s limit of a test when the whole suite ran beside them (audit 2026-10-08 round 3, item 19). The cases are
+// independent, so they run a few at a time, as asynchronous children; the limit stays what it was.
+const POOL = 8;
+type Verdict = { status: number | null; stdout: string };
+async function runMany(cases: Array<{ command: string; agentType: string | null; env?: Record<string, string> }>): Promise<Verdict[]> {
+  const results: Verdict[] = new Array(cases.length);
+  let next = 0;
+  const one = (index: number) => new Promise<void>((done) => {
+    const { command, agentType, env = {} } = cases[index]!;
+    const child = spawn("python3", [guard], { env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
+    let stdout = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.on("close", (status) => { results[index] = { status, stdout }; done(); });
+    child.stdin.end(payloadOf(command, agentType));
+  });
+  await Promise.all(Array.from({ length: Math.min(POOL, cases.length) }, async () => { for (let index = next++; index < cases.length; index = next++) await one(index); }));
+  return results;
+}
+const isDenied = (verdict: Verdict) => verdict.status === 2 && /\[env-guard\]/.test(verdict.stdout);
 
 // Audit 2026-10-08 r2, N2: the tool-level cut of env_set / env_delete was bypassed by the bb CLI in a shell.
 const FORMS: Array<[string, string]> = [
@@ -86,13 +110,14 @@ const ROLES: Array<[string, string | null, Record<string, string>]> = [
 
 describe("Lane Pilot agents cannot change the Env Catalog or Lane Pilot's settings from a shell", () => {
   for (const [role, agentType, env] of ROLES) {
-    it(`denies every form for ${role}`, () => {
-      const missed = FORMS.filter(([, command]) => !denied(command, agentType, env)).map(([name]) => name);
+    it(`denies every form for ${role}`, async () => {
+      const verdicts = await runMany(FORMS.map(([, command]) => ({ command, agentType, env })));
+      const missed = FORMS.filter((_, index) => !isDenied(verdicts[index]!)).map(([name]) => name);
       expect(missed).toEqual([]);
     });
   }
 
-  it("leaves reading, requesting and ordinary commands alone", () => {
+  it("leaves reading, requesting and ordinary commands alone", async () => {
     const allowed = [
       "bb env-catalog list --json",
       "bb env-catalog request MY_KEY --purpose 'deploy'",
@@ -107,12 +132,11 @@ describe("Lane Pilot agents cannot change the Env Catalog or Lane Pilot's settin
       "echo 'bb env-catalog set A B' > /tmp/note.txt",
       "ls -la",
     ];
-    for (const command of allowed) {
-      for (const [role, agentType, env] of ROLES.filter(([, type]) => type === "errand" || type === "writer")) {
-        const res = run(command, agentType, env);
-        expect(`${role}: ${command}: ${/\[env-guard\]/.test(res.stdout)}`).toBe(`${role}: ${command}: false`);
-      }
-    }
+    const cases = allowed.flatMap((command) => ROLES.filter(([, type]) => type === "errand" || type === "writer").map(([role, agentType, env]) => ({ role, command, agentType, env })));
+    const verdicts = await runMany(cases);
+    cases.forEach(({ role, command }, index) => {
+      expect(`${role}: ${command}: ${/\[env-guard\]/.test(verdicts[index]!.stdout)}`).toBe(`${role}: ${command}: false`);
+    });
   });
 
   it("does not touch a session that is not a Lane Pilot agent", () => {
