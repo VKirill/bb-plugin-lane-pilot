@@ -38,7 +38,7 @@ export function createOpencodeMinimalEnv(ctx: Pick<ServerCore, "bb" | "host">, n
 
   /** One host call; throws on a failure or a timeout, answers null only when the machine said there is nothing to do. */
   async function ask(hostId: string, model: string | null): Promise<Prepared> {
-    const answer = await within(CALL_MS, "prepareOpencodeMinimal", Promise.resolve(host.call("prepareOpencodeMinimal", { requestedHostId: hostId, model } as never, { hostId, timeoutMs: CALL_MS } as never)));
+    const answer = await within(CALL_MS, "prepareOpencodeMinimal", Promise.resolve(host.call("prepareOpencodeMinimal", { requestedHostId: hostId, model }, { hostId, timeoutMs: CALL_MS })));
     return (answer as { result: Prepared }).result;
   }
 

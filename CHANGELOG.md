@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.195
+
+- **OpenCode helpers start again.** The host contract of `prepareOpencodeMinimal` refused the `requestedHostId` every host call carries, so on the live hub (0.1.194) each OpenCode helper's minimal-config preparation failed and the helper was refused (fail-closed). A new test checks every server `host.call` against its host contract.
+
 ## 0.1.194
 
 Audit 2026-10-08 round 2 (P0, P1, P2) and audit 1 items 8–18 with Jev J-4/J-10/J-11 in shadow mode.

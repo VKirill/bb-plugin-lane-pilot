@@ -713,7 +713,7 @@ export const hostContract = defineRpcContract({
   },
   /** A minimal OpenCode config home for a helper thread (see src/opencode-min-config.ts); a null result means: run with the machine's own config. */
   prepareOpencodeMinimal: {
-    input: z.object({ model: z.string().max(300).nullable() }).strict(),
+    input: z.object({ requestedHostId: z.string().min(1), model: z.string().max(300).nullable() }).strict(),
     output: z.object({
       result: z.object({ configHome: z.string(), kept: z.array(z.string()), left: z.array(z.string()) }).strict().nullable(),
     }).strict(),
