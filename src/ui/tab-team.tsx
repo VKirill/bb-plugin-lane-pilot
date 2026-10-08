@@ -80,7 +80,7 @@ function RoleRow({ spec, page, access, rules, open, onToggle }: {
   const hasDrawer = Boolean(spec.detail || role || spec.keys.length);
   const wide = wideTable && !stackControls;
   return (
-    <div id={`access-card-${id}`} data-testid={`access-role-${id}`} data-role-row={spec.id} data-open={open} data-changed={changed} data-origin={accessOrigin}
+    <div id={`access-card-${id}`} data-testid={`access-role-${id}`} data-role-row={spec.id} data-lp-keys={spec.keys.join(" ")} data-open={open} data-changed={changed} data-origin={accessOrigin}
       className="min-w-0 scroll-mt-3 border-t border-[var(--lp-hairline)] first:border-t-0">
       <div data-testid={spec.testId} className={wide ? `${WIDE_GRID} px-3 py-2.5` : "grid min-w-0 gap-2 px-3 py-3"}>
         <div className="flex min-w-0 items-start justify-between gap-2">

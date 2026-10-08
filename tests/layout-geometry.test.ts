@@ -25,9 +25,12 @@ describe("layout geometry harness", () => {
 
   it("uses one Disclosure and matching control height on project settings", () => {
     const source = readFileSync(join(import.meta.dirname, "../src/ui/page.tsx"), "utf8");
-    expect(source).toContain("<Disclosure");
+    const header = readFileSync(join(import.meta.dirname, "../src/ui/project-header.tsx"), "utf8");
+    const service = readFileSync(join(import.meta.dirname, "../src/ui/runs-service.tsx"), "utf8");
+    expect(service).toContain("<Disclosure");
     expect(source).toContain("CONTROL_H");
-    expect(source).toContain("settings-toolbar");
+    expect(header).toContain("settings-depth");
+    expect(header).not.toMatch(/<details /);
     expect(source).not.toMatch(/<details /);
     expect(source).not.toMatch(/size="sm" variant=\{settingsDepth/);
     expect(source).toContain("titleOnly");

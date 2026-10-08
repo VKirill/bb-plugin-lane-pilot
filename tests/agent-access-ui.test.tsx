@@ -99,8 +99,21 @@ async function mount(options: { mode?: string; modeOrigin?: Origin | null; prese
 }
 
 async function openAccessTab(slot: RenderedSlot) {
-  fireEvent.mouseDown(await slot.findByTestId("tab-access"), { button: 0 });
+  fireEvent.mouseDown(await slot.findByTestId("tab-team"), { button: 0 });
   await slot.findByTestId("access-role-writer");
+}
+
+/** The table answers «…» until helper_access_view came back; the summary of a role is real from then on. */
+async function accessReady(slot: RenderedSlot) {
+  await waitFor(() => expect(slot.getByTestId("access-summary-writer").textContent).not.toBe("…"));
+}
+
+/** A role row shows its access only in the drawer: open it and wait for the editor. */
+async function openRole(slot: RenderedSlot, roleKey: string) {
+  await accessReady(slot);
+  const open = slot.getByTestId(`role-open-${roleKey}`);
+  if (open.getAttribute("aria-expanded") !== "true") fireEvent.click(open);
+  await slot.findByTestId(`access-body-${roleKey}`);
 }
 
 async function choose(slot: RenderedSlot, testId: string, label: string) {
@@ -125,16 +138,23 @@ describe("Agent access tab", () => {
     const { slot, harness } = await mount();
     try {
       await openAccessTab(slot);
+      await accessReady(slot);
       for (const role of HELPER_ROLES) expect(slot.getByTestId(`access-role-${role.replace(/[:-]/g, "_")}`)).toBeTruthy();
       expect(slot.getByTestId("access-summary-writer").textContent).toBe("2 skills · 2 MCP");
       expect(slot.getByTestId("access-summary-code_critic").textContent).toBe("1 MCP");
       expect(slot.getByTestId("access-summary-browser_qa").textContent).toBe("1 skill · 1 BB plugin");
-      expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_role);
+      // A role nobody changed has no badge in its row; the origin shows in the drawer.
+      expect(slot.queryByTestId("access-badge-writer")).toBeNull();
       expect(slot.getByTestId("access-providers").textContent).toContain("Claude Code and Codex: everything.");
       expect(slot.getByTestId("access-providers").textContent).toContain("OpenCode: everything except CLI plugins.");
       expect(slot.getByTestId("access-providers").textContent).toContain("Grok (Cursor): everything except CLI plugins; Cursor's own skills cannot be turned off; project instructions cannot be turned off.");
       expect(slot.queryByTestId("access-writer-skills")).toBeNull();
-      fireEvent.click(within(slot.getByTestId("access-role-writer")).getByRole("button", { expanded: false }));
+      expect(slot.queryByTestId("role-drawer-writer")).toBeNull();
+      expect(slot.getByTestId("role-open-writer").getAttribute("aria-expanded")).toBe("false");
+      await openRole(slot, "writer");
+      expect(slot.getByTestId("role-open-writer").getAttribute("aria-expanded")).toBe("true");
+      expect(within(slot.getByTestId("role-drawer-writer")).getByTestId("access-body-writer")).toBeTruthy();
+      expect(slot.getByTestId("access-badge-open-writer").textContent).toBe(en.accessOrigin_role);
       for (const group of ["bbPlugins", "skills", "mcpServers", "nativePlugins", "userInstructions", "projectInstructions"]) expect(slot.getByTestId(`access-writer-${group}`)).toBeTruthy();
       expect(slot.getByTestId("access-writer-skills-effective").textContent).toBe("writer-practices, karpathy-guidelines · role default");
       expect(slot.getByTestId("access-writer-bbPlugins-effective").textContent).toBe("environment-project-checkout, project-folders · role default");
@@ -150,7 +170,7 @@ describe("Agent access tab", () => {
     const { slot, harness, saves, resets } = await mount();
     try {
       await openAccessTab(slot);
-      fireEvent.click(within(slot.getByTestId("access-role-writer")).getByRole("button", { expanded: false }));
+      await openRole(slot, "writer");
       await choose(slot, "access-writer-skills-mode", en.accessModeAllow);
       await waitFor(() => expect(saves).toHaveLength(1));
       expect(saves[0]).toEqual({ projectId, key: "helper.access.writer", expectedVersion: 0, value: { skills: { mode: "allow", names: ["writer-practices", "karpathy-guidelines"] } } });
@@ -183,7 +203,8 @@ describe("Agent access tab", () => {
       await waitFor(() => expect(resets).toHaveLength(1));
       expect(saves).toHaveLength(4);
       expect(resets[0]).toEqual({ projectId, keys: ["helper.access.writer"], expectedVersions: { "helper.access.writer": 4 } });
-      await waitFor(() => expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_role));
+      await waitFor(() => expect(slot.queryByTestId("access-badge-writer")).toBeNull());
+      expect(slot.getByTestId("access-badge-open-writer").textContent).toBe(en.accessOrigin_role);
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   }, 45_000); // jsdom clicks through two menus; under a full parallel run it took 16 s and timed out
 
@@ -191,7 +212,7 @@ describe("Agent access tab", () => {
     const { slot, harness, saves } = await mount();
     try {
       await openAccessTab(slot);
-      fireEvent.click(within(slot.getByTestId("access-role-docs_maintainer")).getByRole("button", { expanded: false }));
+      await openRole(slot, "docs_maintainer");
       await choose(slot, "access-docs_maintainer-mcpServers-mode", en.accessModeAllow);
       const editor = await slot.findByTestId("access-docs_maintainer-mcpServers-editor");
       const input = within(editor).getByLabelText(en.accessAddTypeName);
@@ -212,40 +233,62 @@ describe("Agent access tab", () => {
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
-  it("shows a summary matrix with counts, «all», dashes and origins, and a row opens and scrolls to its card", async () => {
+  it("shows a role table with a summary per row and an origin badge where the owner changed it, and a row opens its drawer", async () => {
     const { slot, harness } = await mount({ preset: { project: { skills: { mode: "allow", names: ["ru-text"] }, bbPlugins: { mode: "all" }, userInstructions: "include" } } });
     try {
       await openAccessTab(slot);
-      const matrix = slot.getByTestId("access-matrix");
-      expect(matrix.querySelectorAll("tbody tr[data-testid^=access-matrix-row-]")).toHaveLength(HELPER_ROLES.length);
-      const cell = (role: string, column: string) => slot.getByTestId(`access-matrix-${role}-${column}`).textContent;
-      expect([cell("browser_qa", "skills"), cell("browser_qa", "bbPlugins"), cell("browser_qa", "mcpServers"), cell("browser_qa", "projectInstructions")]).toEqual(["1", "1", "—", "✓"]);
-      expect([cell("plan_critic", "skills"), cell("plan_critic", "userInstructions")]).toEqual(["—", "—"]);
-      expect([cell("docs_maintainer", "skills"), cell("specialist_seo_specialist", "skills")]).toEqual(["2", "18"]);
-      // A change at this level: «all» for everything BB has, the changed count, the personal switch on.
-      expect([cell("writer", "bbPlugins"), cell("writer", "skills"), cell("writer", "userInstructions")]).toEqual([en.accessAllShort, "1", "✓"]);
-      expect(slot.getByTestId("access-matrix-origin-writer").textContent).toBe(en.accessOrigin_project);
-      expect(slot.getByTestId("access-matrix-origin-code_critic").textContent).toBe(en.accessOrigin_role);
-      // The table scrolls inside its own box, so the page itself never gets wider.
-      expect(slot.getByTestId("access-matrix-scroll").className).toContain("overflow-x-auto");
-      const scrolled = vi.spyOn(window.HTMLElement.prototype, "scrollIntoView");
+      await accessReady(slot);
+      expect(slot.getByTestId("access-roles").getAttribute("data-inactive")).toBe("false");
+      const rows = slot.getByTestId("access-roles").querySelectorAll("[data-role-row]");
+      expect(rows).toHaveLength(HELPER_ROLES.length);
+      for (const role of HELPER_ROLES) {
+        const id = role.replace(/[:-]/g, "_");
+        const row = slot.getByTestId(`access-role-${id}`);
+        expect(row.getAttribute("data-role-row"), role).toBe(role);
+        expect(slot.getByTestId(`access-summary-${id}`).textContent?.trim(), role).toBeTruthy();
+        expect(slot.getByTestId(`access-summary-${id}`).textContent, role).not.toBe("…");
+        // The badge is only for a change of the owner at this level.
+        expect(slot.queryByTestId(`access-badge-${id}`) !== null, role).toBe(role === "writer");
+      }
+      // Counts, «all» for what BB has and the personal switch, as the old matrix showed them.
+      const summary = (id: string) => slot.getByTestId(`access-summary-${id}`).textContent;
+      expect(summary("browser_qa")).toBe("1 skill · 1 BB plugin");
+      expect(summary("plan_critic")).toBe(en.accessNothingExtra);
+      expect(summary("writer")).toContain("1 skill");
+      expect(summary("writer")).toContain(`: ${en.accessAllShort}`);
+      expect(summary("writer")).toContain(en.accessUserOn);
+      expect(summary("code_critic")).toBe("1 MCP");
+      expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_project);
+      // The sections of the table keep the roles in groups.
+      for (const group of ["code", "check", "project", "browser", "specialists", "workflow"]) expect(slot.getByTestId(`access-section-${group}`)).toBeTruthy();
+      expect(within(slot.getByTestId("access-section-specialists")).getByTestId("access-role-specialist_seo_specialist")).toBeTruthy();
+      // A row opens its drawer with the editor, and closes it again.
+      expect(slot.getByTestId("role-open-docs_maintainer").getAttribute("aria-expanded")).toBe("false");
       expect(slot.getByTestId("access-role-docs_maintainer").getAttribute("data-open")).toBe("false");
-      fireEvent.click(within(slot.getByTestId("access-matrix-row-docs_maintainer")).getByRole("button"));
-      await waitFor(() => expect(slot.getByTestId("access-role-docs_maintainer").getAttribute("data-open")).toBe("true"));
-      await waitFor(() => expect(scrolled.mock.contexts.some((node) => (node as HTMLElement).id === "access-card-docs_maintainer")).toBe(true));
-      scrolled.mockRestore();
+      expect(slot.queryByTestId("role-drawer-docs_maintainer")).toBeNull();
+      fireEvent.click(slot.getByTestId("role-open-docs_maintainer"));
+      const drawer = await slot.findByTestId("role-drawer-docs_maintainer");
+      expect(slot.getByTestId("role-open-docs_maintainer").getAttribute("aria-expanded")).toBe("true");
+      expect(slot.getByTestId("access-role-docs_maintainer").getAttribute("data-open")).toBe("true");
+      expect(within(drawer).getByTestId("access-body-docs_maintainer")).toBeTruthy();
+      expect(within(drawer).getByTestId("access-badge-open-docs_maintainer").textContent).toBe(en.accessOrigin_role);
+      fireEvent.click(slot.getByTestId("role-open-docs_maintainer"));
+      await waitFor(() => expect(slot.queryByTestId("role-drawer-docs_maintainer")).toBeNull());
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
-  it("shows the main agent (PM) as an information card without controls", async () => {
+  it("shows the main agent (PM) with an information note and a picker, and no access controls", async () => {
     const { slot, harness } = await mount();
     try {
       await openAccessTab(slot);
-      const card = slot.getByTestId("access-pm-card");
-      expect(card.textContent).toContain(en.accessPmTitle);
+      const surface = slot.getByTestId("main-agent");
+      expect(surface.textContent).toContain(en.mainAgent);
+      const card = within(surface).getByTestId("access-pm-card");
       expect(card.textContent).toContain(en.accessPmBody);
       expect(card.textContent).toContain(en.accessPmNarrow);
       expect(card.querySelectorAll("button, select, input, [role=combobox]")).toHaveLength(0);
+      // Next to the note there is one picker of the main agent, and nothing else to set.
+      expect(surface.querySelectorAll("button, select, input, [role=combobox]")).toHaveLength(1);
       // It comes before the first group of helpers.
       expect(card.compareDocumentPosition(slot.getByTestId("access-section-code")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
@@ -259,7 +302,7 @@ describe("Agent access tab", () => {
       expect(slot.getByTestId("agent-access").getAttribute("data-scope")).toBe("global");
       expect(slot.getByTestId("access-scope-note").textContent).toBe(en.accessIntroGlobal);
       expect(slot.getByTestId("access-mode-origin").textContent).toContain(en.accessOrigin_global);
-      fireEvent.click(within(slot.getByTestId("access-role-writer")).getByRole("button", { expanded: false }));
+      await openRole(slot, "writer");
       expect(slot.queryByRole("button", { name: en.accessResetTo_role })).toBeNull();
       await choose(slot, "access-writer-skills-mode", en.accessModeAllow);
       await waitFor(() => expect(saves).toHaveLength(1));
@@ -272,8 +315,7 @@ describe("Agent access tab", () => {
       await waitFor(() => expect(slot.getByTestId("agent-access").getAttribute("data-scope")).toBe("project"));
       expect(slot.getByTestId("access-scope-note").textContent).toBe(en.accessOrder);
       await waitFor(() => expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_global));
-      expect(slot.getByTestId("access-matrix-origin-writer").textContent).toBe(en.accessOrigin_global);
-      fireEvent.click(within(slot.getByTestId("access-role-writer")).getByRole("button", { expanded: false }));
+      await openRole(slot, "writer");
       expect(slot.queryByRole("button", { name: /^Back to/ })).toBeNull();
       // Overriding in the project keeps what the global level changed for the other groups and takes over the whole role.
       await choose(slot, "access-writer-userInstructions-mode", en.accessInclude);
@@ -291,14 +333,15 @@ describe("Agent access tab", () => {
   it("in a section names the level below: the parent section, the project, global or the role profile", async () => {
     const { slot, harness, resets, views } = await mount({ preset: { sec_a: { skills: { mode: "all" } }, sec_b: { userInstructions: "include" } } });
     try {
-      fireEvent.click(await slot.findByTestId("tab-access", {}, { timeout: 5000 }).then((tab) => { fireEvent.mouseDown(tab, { button: 0 }); return slot.getByTestId(`project-item-${projectId}`); }));
+      await openAccessTab(slot);
+      fireEvent.click(slot.getByTestId(`project-item-${projectId}`));
       fireEvent.click(await slot.findByTestId("section-item-sec_b"));
       await waitFor(() => expect(slot.getByTestId("agent-access").getAttribute("data-scope")).toBe("section"));
       // The nested section asks for its own view only: the level below rides in the same answer.
       await waitFor(() => expect(views).toContainEqual({ projectId, sectionId: "sec_b" }));
       expect(views).not.toContainEqual({ projectId, sectionId: "sec_a" });
       await waitFor(() => expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_section));
-      fireEvent.click(within(slot.getByTestId("access-role-writer")).getByRole("button", { expanded: false }));
+      await openRole(slot, "writer");
       fireEvent.click(await slot.findByRole("button", { name: en.accessResetTo_section }));
       await waitFor(() => expect(resets).toHaveLength(1));
       expect(resets[0]).toEqual({ projectId, sectionId: "sec_b", keys: ["helper.access.writer"], expectedVersions: { "helper.access.writer": 1 } });

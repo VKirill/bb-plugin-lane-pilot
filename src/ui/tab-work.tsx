@@ -54,7 +54,7 @@ export function WorkTab({ page }: { page: LpPage }) {
         {group("specialist", <CatalogField page={page} keyName="specialist.when" />,
           t("specialistReview"), t("settingSpecialistEnabledHelp"), "specialist-policy", { key: "specialist.enabled", fallback: false })}
         {group("night", <>
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2" data-storage-key="night_review.auto_merge">
             <div className="flex min-w-0 items-center gap-1">
               <span><Label className="text-sm" htmlFor="night-review-auto-merge">{t("nightReviewAutoMerge")}</Label><HelpSup label={t("nightReviewAutoMergeHelp")}><p>{t("nightReviewAutoMergeHelp")}</p></HelpSup></span>
             </div>

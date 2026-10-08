@@ -50,7 +50,7 @@ export const tabsEn = {
   howStep_learn: "Memory and rules",
   howStepBody_learn: "repeated failures become rules the next tasks follow",
   attnWriter: "The model that writes the code is not chosen.",
-  attnFailedRuns: "{n} runs ended with an error or are blocked.",
+  attnFailedRuns: "Runs that ended with an error or are blocked: {n}.",
   overviewNow: "Now",
   overviewAllRuns: "All runs",
   overviewMoreRuns: "and {n} more",

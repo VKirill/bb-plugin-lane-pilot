@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openAllTabs } from "./ui-tabs";
+import { openAllTabs, openTab } from "./ui-tabs";
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot, type RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -228,7 +228,7 @@ describe("native writer settings against the registered SQLite backend", () => {
     const ruleCalls:Array<Record<string, unknown>> = [];
     const { harness, slot } = await mountWithBackend({ rules, ruleCalls });
     try {
-      fireEvent.mouseDown(slot.getByTestId("tab-rules"), { button:0 });
+      openTab(slot, "rules");
       const card = await slot.findByTestId("rule-rule_a");
       // Opening the screen must not save an analyzer the picker merely normalized.
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -260,7 +260,7 @@ describe("native writer settings against the registered SQLite backend", () => {
     ];
     const { harness, slot } = await mountWithBackend({ rules, ruleCalls:[] });
     try {
-      fireEvent.mouseDown(slot.getByTestId("tab-rules"), { button:0 });
+      openTab(slot, "rules");
       await slot.findByTestId("rule-rule_a");
       rules.push({ id:"rule_new", rule:"Run the focused test before the full suite.", author:"pm", state:"proposed", occurrences:1, taskCount:1, examples:[], evidence:[], lastSeenAt:2, decidedAt:null });
       await slot.behavior.emitRealtime(`lp:${projectId}`, { kind:"council" });
@@ -346,6 +346,7 @@ describe("native writer settings against the registered SQLite backend", () => {
     const before = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };
     const key = "jev.LANE_JEV_EFFORT";
     const expectedValue = String(before.values[key]) === "1" ? "0" : "1";
+    fireEvent.click(slot.getByTestId("role-open-writer"));
     fireEvent.click(slot.getByTestId("writer-effort-mode").querySelector("button") as HTMLButtonElement);
     fireEvent.click(slot.getByText(expectedValue === "1" ? en.writerEffortAutomatic : en.writerEffortManual));
     await waitFor(() => expect(singleSaveCalls).toContainEqual(expect.objectContaining({ key, value:expectedValue, expectedVersion:before.versions[key] ?? 0 })));
@@ -405,15 +406,16 @@ describe("native writer settings against the registered SQLite backend", () => {
     expect(slot.getByTestId(`project-item-${projectId}`)).toBeTruthy();
     expect(slot.getByTestId("writer-picker")).toBeTruthy();
     expect(slot.getByTestId("memory-picker")).toBeTruthy();
+    fireEvent.click(slot.getByTestId("role-open-writer"));
     expect(slot.getByTestId("jev-settings").querySelectorAll("[role='switch']")).toHaveLength(1);
     expect(slot.getByTestId("writer-effort-mode")).toBeTruthy();
-    expect(slot.getByTestId("night-review-settings").textContent).toContain(en.nightReviewEnabled);
+    expect(slot.getByTestId("night-review-settings")).toBeTruthy();
     expect(slot.getByLabelText(en.nightReviewEnabled)).toBeTruthy();
-    expect(slot.getByTestId("settings-panel").textContent).not.toContain("--writer-provider");
+    for (const id of ["team", "work"]) expect(slot.getByTestId(`${id}-panel`).textContent).not.toContain("--writer-provider");
     // Diagnostics sit folded inside Maintenance, away from the settings tabs.
-    expect(slot.getByTestId("service-panel").hasAttribute("hidden")).toBe(true);
+    expect(slot.queryByTestId("service-panel")).toBeNull();
+    openTab(slot, "service");
     expect(slot.getByTestId("diagnostics-disclosure").hasAttribute("open")).toBe(false);
-    fireEvent.mouseDown(slot.getByTestId("tab-service"), { button:0 });
     expect(slot.getByTestId("field-s024").textContent).toContain(en.legacyFastModeExplanation);
     expect(slot.getByTestId("cli-preview")).toBeTruthy();
     await finish(harness, slot);
@@ -522,6 +524,7 @@ describe("native writer settings against the registered SQLite backend", () => {
     const { harness, slot } = await mountWithBackend();
     await choosePickerValue({ providerId:"acp-cursor", model:"not-in-catalog", reasoningLevel:"medium" });
     await waitFor(() => expect(slot.getByTestId("setting-validation-error")).toBeTruthy());
+    fireEvent.click(slot.getByTestId("role-open-writer"));
     expect(slot.getByTestId("writer-save-error")).toBeTruthy();
     expect(writerPicker(slot).getAttribute("data-provider")).toBe("acp-cursor");
     expect(writerPicker(slot).getAttribute("data-model")).toBe("not-in-catalog");

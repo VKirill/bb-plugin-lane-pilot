@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openAllTabs, openTab } from "./ui-tabs";
 import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library/react";
-import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { mountPage, missingStack, screenFixture } from "./ui-harness";
 import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
 import { en, ru, setLocaleOverride, t, validationMessage } from "../i18n";
 import { EXTERNAL_OPS } from "../src/constants";
@@ -16,115 +16,18 @@ vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.f
 // Under load React updates and debounced saves settle after the 1 s default; await the real condition instead.
 configure({ asyncUtilTimeout: 10_000 });
 
-function screenFixture() {
-  const values = Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, row.defaultValue]));
-  values["writer.provider"] = "codex";
-  values["writer.model"] = "test-model";
-  values["writer.reasoning_effort"] = "medium";
-  return {
-    projectId: "proj_ui",
-    hostId: "host_ui",
-    workspacePath: "/tmp/lane-pilot-ui",
-    explicitKeys: ["writer.provider", "writer.model", "writer.reasoning_effort"],
-    values,
-    versions: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, 1])),
-    importSource: { completed: true, at: 1, routingPath: "/tmp/routing.profile.yaml", nightPath: "/tmp/night-shift.yaml" },
-    runs: [{
-      id: "lprun_1",
-      state: "running",
-      kind: "bb",
-      created_at: 1,
-      updated_at: 1,
-      cliReceiptJson: null,
-      stageCount: 1,
-      attempts: [{
-        id: "lpattempt_1",
-        state: "running",
-        attempt_no: 1,
-        thread_id: "thr_writer",
-        reason: null,
-        task_id: "task_1",
-        cliReceiptJson: null,
-      }],
-    }],
-    unapplied: [{ key: "plan_critique.mode", reason: "no proven runtime channel" }],
-    cliPreview: { argv:["run", "--provider", "codex", "--service-tier", "fast"], env:{}, applied:["writer.provider"], unapplied:[] },
-    legacyStack: true,
-    lastSnapshotPath: "/tmp/snapshot",
-    lastReceiptJson: "{\"action\":\"install\"}",
-    writerResultJson: "{\"status\":\"accepted\",\"output\":\"hello from writer\"}",
-    writerResultPatch: "--- /dev/null\n+++ b/writer-output.txt\n@@ -0,0 +1,1 @@\n+hello from writer\n",
-    cliReceiptJson: null,
-    qaHosts: [
-      { id:"host_ui", name:"Writer", status:"connected", connected:true },
-      { id:"host-qa-mini", name:"Mini", status:"connected", connected:true },
-    ],
-    lastWriterTrace: null,
-  };
-}
-
-// Maintenance shows the Lane Stack install only after a check finds it missing.
-const missingStack = () => ({
-  hostId:"host_ui", laneStack:{ present:false, version:null, sourceSha:null },
-  openCode:{ present:true, version:"1.18.30" }, workspace:{ path:"/tmp/lane-pilot-ui", present:true },
-  targetSha:"abc123", matchesTarget:false, scenario:"S3",
-});
-
-async function mountPage(
-  rpc: Record<string, (input: unknown) => unknown> = {},
-  context: { projectId: string | null; threadId: string | null } = { projectId:"proj_ui", threadId:null },
-  subPath = "",
-  warm = true,
-) {
-  const app = await loadPluginApp(() => import("../app"));
-  const slot = renderSlot(app.navPanels[0]!, { subPath }, {
-    context,
-    providers:{ status:"ready", providers:[{
-      id:"codex", displayName:"Codex", available:true,
-      capabilities:{ modelCatalogScope:"host", permissionModes:[], supportsFork:false, supportsNativeUserQuestion:false,
-        supportsServiceTier:true, supportsSessionRewind:false, supportsThreadArchive:false, supportsThreadRename:false },
-      serviceTiers:[{ id:"default", label:"Default" }, { id:"fast", label:"Fast" }],
-    }] as never },
-    rpc: {
-      get_preferences: (input: unknown) => ({ locale: (input as {suggestedLocale:"en"|"ru"}).suggestedLocale, preference:"auto", lastProjectId: null }),
-      set_locale: (input: unknown) => ({ locale: (input as {locale:"auto"|"en"|"ru"; suggestedLocale:"en"|"ru"}).locale === "auto" ? (input as {suggestedLocale:"en"|"ru"}).suggestedLocale : (input as {locale:"en"|"ru"}).locale, preference: (input as {locale:"auto"|"en"|"ru"}).locale }),
-      remember_project: () => ({ ok:true }),
-      list_projects: () => ({ projects:[{ id:"proj_ui", name:"UI test" }], lastProjectId:"proj_ui" }),
-      finish_run: () => ({ projectId:"proj_ui", finishedRunIds:[], closed:true }),
-      get_screen: () => screenFixture(),
-      list_run_stages: () => ({ stages: [{
-        contractVersion:1, runId:"lprun_1", taskId:"task_1", stageId:"plan-critique", state:"passed",
-        inputSha256:"a".repeat(64), outputSha256:"b".repeat(64), attempt:1,
-        providerId:"codex", model:"test-model", threadId:"thr_critic",
-        hasResult:true, reason:null, updatedAt:1,
-      }] }),
-      get_stage_result: () => ({ found:true, result:{ decision:"approve", summary:"Plan checked", findings:[] } }),
-      get_globals: () => ({ defaults: {}, revision: 0, agents: [] }),
-      save_setting: () => ({ ok: true, conflict: false, version: 2, value: true }),
-      save_settings: () => ({ ok:true, conflict:false, values:{}, versions:{} }),
-      cancel_attempt: () => ({ ok: true, state: "canceled", reason: null }),
-      retry_attempt: () => ({ ok: true, state: "queued", attemptId: "lpattempt_2", reason: null }),
-      resume_runs: () => ({ resumed: [], skipped: [], finished: [] }),
-      stack_detect: () => ({
-        hostId:"host_ui", laneStack:{ present:true, version:"1.38.0", sourceSha:"abc123" },
-        openCode:{ present:true, version:"1.18.30" }, workspace:{ path:"/tmp/lane-pilot-ui", present:true },
-        targetSha:"abc123", matchesTarget:true, scenario:"S1",
-      }),
-      stack_install: () => ({ status: "ok" }),
-      stack_connect: () => ({ status: "ok" }),
-      stack_rollback: () => ({ status: "ok" }),
-      ...rpc,
-    },
-  });
-  // Tabs mount when first opened and most tests read several of them: open each once (as an owner browsing would) and come back.
-  if (warm && context.projectId) await openAllTabs(slot);
-  return slot;
-}
-
 // Each test mounts the whole settings page (about 0.8 s of jsdom rendering alone, 1-5 s with its waits; the first import of
 // the app is 1.3 s). The per-test budget is the file's 60 s above: a describe-level `timeout: 20_000` used to override it,
 // and under a parallel run (load 18-20) a different one of the 36 tests crossed 20 s each time. A test that times out keeps
 // running and mounts its page into the next test's DOM, so the DOM is emptied before each test as well as after.
+/** Opens the Team tab and the drawer of one role row; returns the drawer. */
+function openRole(slot: { getByTestId: (id: string) => HTMLElement }, role: string) {
+  openTab(slot, "team");
+  const opener = slot.getByTestId(`role-open-${role}`);
+  if (opener.getAttribute("aria-expanded") !== "true") fireEvent.click(opener);
+  return slot.getByTestId(`role-drawer-${role}`);
+}
+
 describe("Lane Pilot UI", () => {
   beforeEach(() => { cleanup(); document.body.innerHTML = ""; });
   afterEach(() => {
@@ -148,7 +51,7 @@ describe("Lane Pilot UI", () => {
     expect(slot.queryByRole("button", { name:en.openProject })).toBeNull();
     expect(slot.getByTestId("scope-rail")).toBeTruthy();
     expect(slot.getByTestId("scope-nav").querySelector(".grid")).toBeNull();
-    expect(slot.getByTestId("tab-settings").closest("[data-testid='project-settings']")).toBeTruthy();
+    expect(slot.getByTestId("tab-work").closest("[data-testid='project-settings']")).toBeTruthy();
     expect(slot.getByTestId("main-agent").textContent).toContain(en.mainAgent);
     expect(slot.getByTestId("main-agent").textContent).not.toMatch(/spawn|compiled/i);
     slot.lifecycle.unmount();
@@ -157,19 +60,20 @@ describe("Lane Pilot UI", () => {
   it("keeps technical fields in Diagnostics and renders each storage key once", async () => {
     const slot = await mountPage();
     expect(slot.queryByTestId("field-s004")).toBeNull();
-    expect(slot.getByTestId("settings-panel").textContent).not.toContain("CAS version");
-    expect(slot.getByTestId("settings-panel").textContent).not.toContain("--writer-provider");
-    expect(slot.getByTestId("settings-panel").querySelector("[data-storage-key='adoc.177']")).toBeNull();
-    expect(slot.getByTestId("settings-panel").querySelector("[data-storage-key='adoc.166']")).toBeNull();
+    expect(slot.getByTestId("work-panel").textContent).not.toContain("CAS version");
+    expect(slot.getByTestId("work-panel").textContent).not.toContain("--writer-provider");
+    expect(slot.getByTestId("work-panel").querySelector("[data-storage-key='adoc.177']")).toBeNull();
+    expect(slot.getByTestId("work-panel").querySelector("[data-storage-key='adoc.166']")).toBeNull();
     expect(slot.getByTestId("pm-read-settings")).toBeTruthy();
-    openTab(slot, "checks");
+    // The critics' model rows live in the Team table now.
+    openTab(slot, "team");
     expect(slot.getByTestId("plan-critique-settings")).toBeTruthy();
     expect(slot.getByTestId("plan-critique-settings").textContent).not.toContain("plan_critique.agent");
     expect(slot.getByTestId("plan-critique-settings").textContent).not.toMatch(/dispatch|changes_requested/);
     expect(slot.getByTestId("code-critique-settings")).toBeTruthy();
-    openTab(slot, "settings");
-    expect(slot.getByTestId("settings-panel").textContent).not.toContain(`${en.fieldDefault}:`);
-    expect(slot.getByTestId("settings-panel").textContent).not.toContain(`${en.fieldEffective}:`);
+    openTab(slot, "work");
+    expect(slot.getByTestId("work-panel").textContent).not.toContain(`${en.fieldDefault}:`);
+    expect(slot.getByTestId("work-panel").textContent).not.toContain(`${en.fieldEffective}:`);
     fireEvent.click(slot.getByTestId("help-pm_read.min_lines"));
     expect(slot.getByTestId("help-dialog-pm_read.min_lines").textContent).toContain(en.largeFileThresholdHelp);
     openTab(slot, "service");
@@ -209,9 +113,12 @@ describe("Lane Pilot UI", () => {
     expect(t("tabSettings")).toBe(ru.tabSettings);
     expect(t("confirmBody")).toBe(ru.confirmBody);
     const slot = await mountPage();
-    expect(slot.getByTestId("tab-settings").textContent).toBe(ru.tabSettings);
-    expect(slot.getByTestId("tab-checks").textContent).toBe(ru.tabChecks);
-    expect(slot.getByTestId("tab-monitor").textContent).toBe(ru.tabMonitor);
+    expect(slot.getByTestId("tab-overview").textContent).toBe(ru.tabOverview);
+    expect(slot.getByTestId("tab-team").textContent).toBe(ru.tabTeam);
+    expect(slot.getByTestId("tab-work").textContent).toBe(ru.tabWork);
+    expect(slot.getByTestId("tab-knowledge").textContent).toBe(ru.tabKnowledge);
+    expect(slot.getByTestId("tab-automation").textContent).toBe(ru.tabAutomation);
+    expect(slot.getByTestId("tab-runs").textContent).toBe(ru.tabRuns);
     slot.lifecycle.unmount();
   });
 
@@ -220,7 +127,7 @@ describe("Lane Pilot UI", () => {
       save_setting: () => ({ ok: false, conflict: true, version: 3, value: "other" }),
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const sw = slot.container.querySelector("[data-testid='settings-panel'] [data-testid='jev-settings'] [role='switch']") as HTMLButtonElement;
+    const sw = openRole(slot, "writer").querySelector("[data-testid='jev-settings'] [role='switch']") as HTMLButtonElement;
     fireEvent.click(sw);
     await slot.findByTestId("cas-conflict");
     slot.lifecycle.unmount();
@@ -240,7 +147,7 @@ describe("Lane Pilot UI", () => {
       } }),
     });
     await slot.findByTestId("writer-picker");
-    fireEvent.click(slot.container.querySelector("[data-testid='settings-panel'] [data-testid='jev-settings'] [role='switch']") as HTMLButtonElement);
+    fireEvent.click(openRole(slot, "writer").querySelector("[data-testid='jev-settings'] [role='switch']") as HTMLButtonElement);
     await slot.findByTestId("setting-validation-error");
     expect(slot.getByText(ru.validationInvalidChoice.replace("{key}", "writer.provider").replace("{allowed}", "agy, grok, qwen"))).toBeTruthy();
     expect(slot.queryByTestId("cas-conflict")).toBeNull();
@@ -250,16 +157,21 @@ describe("Lane Pilot UI", () => {
   it("keeps the writer selection in one native catalog picker", async () => {
     const slot = await mountPage();
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const settings = slot.container.querySelector("[data-testid='settings-panel']")!;
-    expect(settings?.querySelector("[data-testid='writer-picker'] [data-testid='bb-provider-model-picker']")).not.toBeNull();
-    expect(settings.querySelector("[data-testid='writer-effort-mode']")).not.toBeNull();
-    expect(settings.querySelector("[data-testid='browser-qa-host']")).toBeNull();
-    expect(slot.getByTestId("checks-panel").querySelector("[data-testid='browser-qa-host']")).not.toBeNull();
-    expect(slot.getByTestId("checks-panel").querySelector("[data-testid='night-review-settings']")).not.toBeNull();
-    expect(settings.querySelector("[data-testid='night-review-settings']")).toBeNull();
-    expect(settings.querySelector("[data-testid='field-s004']")).toBeNull();
-    expect(settings.querySelector("[data-testid='field-s022']")).toBeNull();
-    expect(settings.querySelector("[data-testid='field-s023']")).toBeNull();
+    // Every model picker sits in the Team table, one row per role; the Work tab keeps the policies and no picker.
+    const team = slot.getByTestId("team-panel");
+    const work = slot.getByTestId("work-panel");
+    expect(team.querySelector("[data-testid='writer-picker'] [data-testid='bb-provider-model-picker']")).not.toBeNull();
+    expect(openRole(slot, "writer").querySelector("[data-testid='writer-effort-mode']")).not.toBeNull();
+    expect(team.querySelector("[data-testid='access-role-writer'] [data-testid='browser-qa-host']")).toBeNull();
+    expect(team.querySelector("[data-testid='access-role-browser_qa'] [data-testid='browser-qa-host']")).not.toBeNull();
+    expect(team.querySelector("[data-testid='access-role-night_reviewer'] [data-testid='night-review-settings']")).not.toBeNull();
+    expect(work.querySelector("[data-testid='bb-provider-model-picker']")).toBeNull();
+    expect(work.querySelector("[data-testid='writer-picker']")).toBeNull();
+    expect(work.querySelector("[data-testid='browser-qa-host']")).toBeNull();
+    expect(work.querySelector("[data-testid='night-review-settings']")).toBeNull();
+    expect(slot.container.querySelector("[data-testid='field-s004']")).toBeNull();
+    expect(slot.container.querySelector("[data-testid='field-s022']")).toBeNull();
+    expect(slot.container.querySelector("[data-testid='field-s023']")).toBeNull();
     slot.lifecycle.unmount();
   });
 
@@ -282,7 +194,7 @@ describe("Lane Pilot UI", () => {
     fireEvent.click(field.querySelector("button[role='combobox']") as HTMLButtonElement);
     fireEvent.click(slot.getByRole("option", { name: en.enumWorkspaceWorktree }));
     await waitFor(() => expect(saved).toContainEqual(expect.objectContaining({ key:"adoc.040", value:"worktree" })));
-    expect(slot.getByTestId("browser-qa-host-select")).toBeTruthy();
+    expect(openRole(slot, "browser_qa").querySelector("[data-testid='browser-qa-host-select']")).toBeTruthy();
     expect(slot.getByTestId("browser-qa-host").textContent).not.toContain(en.browserQaHostNone);
     slot.lifecycle.unmount();
     Object.defineProperty(navigator, "language", { configurable: true, value: "ru-RU" });
@@ -314,7 +226,7 @@ describe("Lane Pilot UI", () => {
   it("offers only the Lane Stack check until it finds something to do, and rollback only with a snapshot", async () => {
     const base = screenFixture();
     const slot = await mountPage({ get_screen: () => ({ ...base, lastSnapshotPath: null }) });
-    fireEvent.mouseDown(slot.getByTestId("tab-service"), { button:0 });
+    openTab(slot, "service");
     await slot.findByTestId("stack-detect");
     expect(slot.queryByTestId("install-stack")).toBeNull();
     expect(slot.queryByTestId("connect-opencode")).toBeNull();
@@ -337,7 +249,7 @@ describe("Lane Pilot UI", () => {
       native_install_status: () => ({ status, error: null }),
       native_install_start: (input) => { started.push(input); status = "installing"; return { started: true }; },
     });
-    fireEvent.mouseDown(slot.getByTestId("tab-service"), { button:0 });
+    openTab(slot, "service");
     await waitFor(() => expect(slot.getByTestId("native-install-state").dataset.state).toBe("todo"), { timeout: 5000 });
     fireEvent.click(slot.getByTestId("native-install-now"));
     await waitFor(() => expect(started).toEqual([{ hostId:"host_ui" }]), { timeout: 5000 });
@@ -346,7 +258,7 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
     status = "enabled";
     const ready = await mountPage({ get_screen: () => withBinding, native_install_status: () => ({ status, error: null }) });
-    fireEvent.mouseDown(ready.getByTestId("tab-service"), { button:0 });
+    openTab(ready, "service");
     await waitFor(() => expect(ready.getByTestId("native-install-state").dataset.state).toBe("ok"), { timeout: 5000 });
     expect(ready.queryByTestId("native-install-now")).toBeNull();
     ready.lifecycle.unmount();
@@ -388,7 +300,7 @@ describe("Lane Pilot UI", () => {
       const slot = await mountPage({
         get_preferences: () => ({ locale, preference:locale, lastProjectId:null }),
       });
-      fireEvent.mouseDown(slot.getByTestId("tab-service"), { button:0 });
+      openTab(slot, "service");
       openTab(slot, "service");
       await waitFor(() => expect(slot.getByTestId("install-panel").hidden).toBe(false));
       fireEvent.click(slot.getByText(locale === "ru" ? ru.detect : en.detect));
@@ -438,28 +350,32 @@ describe("Lane Pilot UI", () => {
 
   it("shows one card per run with its attempts inside, the same on every width", async () => {
     const slot = await mountPage();
-    fireEvent.mouseDown(slot.getByTestId("tab-monitor"), { button:0 });
     openTab(slot, "monitor");
-    await waitFor(() => expect(slot.getByTestId("run-monitor").hidden).toBe(false));
+    await waitFor(() => expect(slot.getByTestId("runs-panel").hidden).toBe(false));
     const card = await slot.findByTestId("run-lprun_1");
     expect(card.querySelector('[data-testid="attempt-lpattempt_1"]')).not.toBeNull();
     expect(slot.getByTestId("run-monitor").querySelector("table")).toBeNull();
     slot.lifecycle.unmount();
   });
 
-  it("lists runs in progress first, newest next, and opens the history 20 at a time", async () => {
+  it("lists the runs in progress apart from the history, newest first, and opens the history 20 at a time", async () => {
     const base = screenFixture();
     const run = (id: string, state: string, updated: number) => ({ ...base.runs[0]!, id, state, updated_at: updated, attempts: [], stageCount: 0 });
     base.runs = [run("lprun_old", "closed", 1), ...Array.from({ length: 21 }, (_, i) => run(`lprun_h${i}`, "closed", 100 + i)), run("lprun_live", "running", 2)];
     const slot = await mountPage({ get_screen: () => base });
     openTab(slot, "monitor");
+    // Active: only what is in progress; the closed runs wait in the history.
+    const active = await slot.findByTestId("run-list");
+    expect(Array.from(active.children).map((card) => card.getAttribute("data-testid"))).toEqual(["run-lprun_live"]);
+    expect(slot.queryByTestId("runs-show-more")).toBeNull();
+    openTab(slot, "monitor", "history");
     const list = await slot.findByTestId("run-list");
     const ids = () => Array.from(list.children).map((card) => card.getAttribute("data-testid"));
-    expect(ids()[0]).toBe("run-lprun_live");
-    expect(ids()[1]).toBe("run-lprun_h20");
+    expect(ids()[0]).toBe("run-lprun_h20");
+    expect(ids()).not.toContain("run-lprun_live");
     expect(ids()).toHaveLength(20);
     fireEvent.click(slot.getByTestId("runs-show-more"));
-    await waitFor(() => expect(ids()).toHaveLength(23));
+    await waitFor(() => expect(ids()).toHaveLength(22));
     expect(ids().at(-1)).toBe("run-lprun_old");
     slot.lifecycle.unmount();
   });
@@ -472,7 +388,7 @@ describe("Lane Pilot UI", () => {
     base.runs = [run("lprun_n1", 30), run("lprun_n2", 20)];
     const listRuns = vi.fn(() => ({ runs: [run("lprun_older", 10)], total: 3 }));
     const slot = await mountPage({ get_screen: () => base, list_runs: listRuns });
-    openTab(slot, "monitor");
+    openTab(slot, "monitor", "history");
     const list = await slot.findByTestId("run-list");
     expect(list.children).toHaveLength(2);
     fireEvent.click(slot.getByTestId("runs-show-more"));
@@ -513,14 +429,14 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
-  it("mounts a tab on its first open instead of all ten at once, and keeps it after", async () => {
+  it("mounts a tab on its first open instead of all six at once, and keeps it after", async () => {
     const slot = await mountPage({}, { projectId:"proj_ui", threadId:null }, "", false);
-    await slot.findByTestId("tab-settings");
-    expect(slot.getByTestId("settings-panel").children).toHaveLength(0);
-    expect(slot.getByTestId("run-monitor").children).toHaveLength(0);
+    await slot.findByTestId("tab-work");
+    expect(slot.getByTestId("work-panel").children).toHaveLength(0);
+    expect(slot.getByTestId("runs-panel").children).toHaveLength(0);
     openTab(slot, "monitor");
     await slot.findByTestId("run-list");
-    expect(slot.getByTestId("settings-panel").children).toHaveLength(0);
+    expect(slot.getByTestId("work-panel").children).toHaveLength(0);
     openTab(slot, "overview");
     expect(slot.getByTestId("run-list")).toBeTruthy();
     slot.lifecycle.unmount();
@@ -554,8 +470,8 @@ describe("Lane Pilot UI", () => {
 
     slot.lifecycle.unmount();
     const russian = await mountPage({ get_preferences: () => ({ locale:"ru", preference:"ru", lastProjectId:"proj_ui" }) });
-    await russian.findByTestId("tab-monitor");
-    await russian.findByTestId("tab-monitor");
+    await russian.findByTestId("tab-runs");
+    await russian.findByTestId("tab-runs");
     openTab(russian, "monitor");
     fireEvent.click((await russian.findByTestId("stage-receipts-lprun_1")).querySelector("summary")!);
     await waitFor(() => expect(russian.getByTestId("stage-receipts-lprun_1").textContent).toContain(ru.stagePlanCritique));
@@ -578,7 +494,8 @@ describe("Lane Pilot UI", () => {
       run.attempts[0]!.state = scenario.attemptState;
       (run.attempts[0]! as {thread_id:string|null}).thread_id = scenario.attemptState === "queued" ? null : "thr_writer";
       const slot = await mountPage({ get_screen:() => base });
-      openTab(slot, "monitor");
+      // A run in progress is listed under Active, a closed one in the History.
+      openTab(slot, "monitor", scenario.runState === "closed" ? "history" : "active");
       const row = await slot.findByTestId("attempt-lpattempt_1");
       const buttons = Array.from(row.querySelectorAll("button")).map((button) => button.textContent);
       expect(buttons.includes(en.cancel)).toBe(scenario.cancel);
@@ -594,8 +511,8 @@ describe("Lane Pilot UI", () => {
       get_preferences: () => ({ locale:"ru", preference:"ru", lastProjectId:null }),
       get_screen: () => base,
     });
-    await slot.findByText(ru.tabSettings);
-    fireEvent.click(slot.getAllByTestId("tab-monitor").at(-1)!);
+    await waitFor(() => expect(slot.getByTestId("tab-work").textContent).toBe(ru.tabWork));
+    openTab(slot, "monitor");
     expect(slot.getAllByText(ru.state_running).length).toBeGreaterThan(0);
     openTab(slot, "service");
     expect(slot.getAllByText(new RegExp(ru.unappliedNoChannel)).length).toBeGreaterThan(0);
@@ -608,15 +525,15 @@ describe("Lane Pilot UI", () => {
     const first = await mountPage({
       get_preferences: () => ({ locale:"ru", preference:"ru", lastProjectId:null }),
     });
-    await first.findByText(ru.tabSettings);
+    await waitFor(() => expect(first.getByTestId("tab-work").textContent).toBe(ru.tabWork));
     expect(document.documentElement.lang).toBe("en");
     first.lifecycle.unmount();
     setLocaleOverride(null);
     const second = await mountPage({
       get_screen: () => ({ ...base, projectId: "proj_other", values: { ...base.values } }),
     });
-    await second.findByText(en.tabSettings);
-    expect(second.queryByText(ru.tabSettings)).toBeNull();
+    await waitFor(() => expect(second.getByTestId("tab-work").textContent).toBe(en.tabWork));
+    expect(second.queryByText(ru.tabWork)).toBeNull();
     second.lifecycle.unmount();
   });
 
@@ -639,11 +556,13 @@ describe("Lane Pilot UI", () => {
         cliReceiptJson: "{\"kind\":\"cli\",\"receiptPath\":\"/tmp/cli-receipt.json\"}",
       }),
     });
-    await slot.findByTestId("cli-receipt-lprun_cli");
-    expect(slot.getByTestId("run-lprun_cli")).toBeTruthy();
+    // The receipt lives in the Service segment, which mounts when it is opened.
     openTab(slot, "service");
+    await slot.findByTestId("cli-receipt-lprun_cli");
     expect(slot.getByTestId("diagnostics-panel").textContent).toContain("cli-receipt.json");
-    openTab(slot, "monitor");
+    // The accepted CLI run is in the History.
+    openTab(slot, "monitor", "history");
+    expect(slot.getByTestId("run-lprun_cli")).toBeTruthy();
     const monitor = slot.getByTestId("run-monitor");
     expect(monitor.textContent).not.toContain(en.cancel);
     expect(monitor.textContent).not.toContain("cli-receipt.json");
@@ -724,7 +643,7 @@ describe("Lane Pilot UI", () => {
       } }),
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const field = await slot.findByTestId("night-review-settings").then((panel) => panel.querySelector("[data-testid='field-s006']") as HTMLElement);
+    const field = await slot.findByTestId("night-review-policy").then((panel) => panel.querySelector("[data-testid='field-s006']") as HTMLElement);
     expect(field).toBeTruthy();
     expect(field.querySelector("[role='slider']")).toBeNull();
     const input = field.querySelector("input[type='number']") as HTMLInputElement;
@@ -753,7 +672,7 @@ describe("Lane Pilot UI", () => {
       },
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const input = slot.getByTestId("night-review-settings").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
+    const input = slot.getByTestId("night-review-policy").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "1" } });
     fireEvent.blur(input);
     await waitFor(() => expect(deferred.length).toBe(1));
@@ -775,7 +694,7 @@ describe("Lane Pilot UI", () => {
       save_setting: () => ({ ok: false, conflict: true, version: 9, value: 3 }),
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const input = slot.getByTestId("night-review-settings").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
+    const input = slot.getByTestId("night-review-policy").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "10" } });
     fireEvent.blur(input);
     await slot.findByTestId("cas-conflict");
@@ -785,19 +704,22 @@ describe("Lane Pilot UI", () => {
 
   it("keeps picker keys off the settings list and shows the advanced rows on demand", async () => {
     const slot = await mountPage();
-    fireEvent.mouseDown(slot.getByTestId("tab-settings"), { button:0 });
-    expect(slot.getByTestId("settings-panel").querySelector("[data-testid='field-s004']")).toBeNull();
+    openTab(slot, "work");
+    expect(slot.getByTestId("work-panel").querySelector("[data-testid='field-s004']")).toBeNull();
     expect(slot.getByTestId("settings-execution")).toBeTruthy();
-    expect(slot.getByTestId("checks-panel").querySelector("[data-testid='browser-qa-host']")).toBeTruthy();
+    expect(slot.getByTestId("team-panel").querySelector("[data-testid='browser-qa-host']")).toBeTruthy();
     expect(slot.queryByTestId("settings-search")).toBeNull();
+    expect(slot.getByTestId("work-night").hidden).toBe(true);
+    openTab(slot, "knowledge", "memory");
     expect(slot.getByTestId("memory-advanced").hidden).toBe(true);
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     expect(slot.getByTestId("settings-group-workspace")).toBeTruthy();
+    expect(slot.getByTestId("work-night").hidden).toBe(false);
     expect(slot.getByTestId("memory-advanced").hidden).toBe(false);
     expect(slot.getByTestId("memory-advanced").textContent).toContain(en.settingMemoryMaintain);
     expect(slot.getByTestId("memory-advanced").textContent).toContain(en.fieldUnitTokens);
     expect(slot.getByTestId("memory-advanced").textContent).not.toContain("memory.core_budget");
-    expect(slot.getByTestId("settings-panel").querySelector("[data-testid='settings-group-memory']")).toBeNull();
+    expect(slot.getByTestId("work-panel").querySelector("[data-testid='settings-group-memory']")).toBeNull();
     slot.lifecycle.unmount();
   });
 
@@ -808,6 +730,7 @@ describe("Lane Pilot UI", () => {
     const slot = await mountPage({
       get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: null }),
     });
+    openTab(slot, "work");
     expect(slot.getByTestId("settings-depth").textContent).toContain(ru.settingsBasic);
     expect(slot.getByTestId("settings-depth").textContent).toContain(ru.settingsAdvanced);
     slot.lifecycle.unmount();
@@ -827,13 +750,16 @@ describe("Lane Pilot UI", () => {
         return { ok: true, conflict: false, version: input.expectedVersion + 1, value: input.value };
       },
     });
-    await slot.findByTestId("settings-panel");
+    await slot.findByTestId("status-writer");
     fireEvent.click(slot.getAllByRole("tab", { name: "General settings" })[0]!);
     await waitFor(() => expect(slot.getByTestId("project-settings").querySelector("h1")?.textContent).toBe("General settings"));
-    expect(slot.queryByTestId("tab-monitor")).toBeNull();
-    expect(slot.queryByTestId("tab-overview")).toBeNull();
+    // The system level has the same six tabs; runs belong to projects, the language to the system.
+    expect(slot.getByTestId("tab-runs")).toBeTruthy();
     expect(slot.queryByTestId("main-agent")).toBeNull();
     expect(slot.getByTestId("language-setting")).toBeTruthy();
+    openTab(slot, "runs");
+    expect(slot.getByTestId("runs-global-empty")).toBeTruthy();
+    openTab(slot, "work");
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     const field = await slot.findByTestId("field-s371");
     fireEvent.click(field.querySelector("button[role='combobox']") as HTMLButtonElement);
@@ -861,7 +787,7 @@ describe("Lane Pilot UI", () => {
       get_screen: getScreen,
       reset_project_settings: () => { reset = true; return { ok: true, conflict: false, values: { "helper.placement": null }, versions: { "helper.placement": 2 } }; },
     });
-    fireEvent.mouseDown(slot.getByTestId("tab-settings"), { button:0 });
+    openTab(slot, "work");
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     const row = slot.getByTestId("field-s371");
     await waitFor(() => expect(row.textContent).toContain("Set on this project"));
