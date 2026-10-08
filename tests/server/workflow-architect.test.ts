@@ -233,7 +233,7 @@ describe("workflow architect tools", () => {
     const claude = result.models.providers.find((row: { provider: string }) => row.provider === "claude-code");
     expect(claude).toMatchObject({ machines: ["MacBook", "Mac mini"], serviceTiers: ["fast"] });
     // The efforts are the ones a node may name; a model only the Mac mini has says so.
-    expect(claude.models).toEqual([{ id: "claude-haiku-5-5", efforts: ["low"], only: ["Mac mini"] }, { id: "claude-opus-5-5", efforts: ["high"], default: true }].sort((a, b) => claude.models.findIndex((m: { id: string }) => m.id === a.id) - claude.models.findIndex((m: { id: string }) => m.id === b.id)));
+    expect(claude.models).toEqual([{ id: "claude-haiku-5-5", efforts: ["low"], only: ["Mac mini"], notOnThisMachine: true }, { id: "claude-opus-5-5", efforts: ["high"], default: true }].sort((a, b) => claude.models.findIndex((m: { id: string }) => m.id === a.id) - claude.models.findIndex((m: { id: string }) => m.id === b.id)));
     expect(result.models.providers.find((row: { provider: string }) => row.provider === "codex")).toMatchObject({ machines: ["Mac mini"] });
     expect(result.models.presets["cheap-fast"]).toMatchObject({ provider: "claude-code", model: "claude-haiku-5-5", reasoning: "low", offered: true, machines: ["Mac mini"] });
     expect(result.models.presets["ins-check"]).toMatchObject({ provider: "acp-cursor", offered: false });

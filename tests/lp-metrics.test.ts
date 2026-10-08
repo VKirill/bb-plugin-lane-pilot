@@ -32,7 +32,7 @@ const REASONS: Array<[string, string]> = [
   ["blocked", "missing expected_outputs a.ts"], ["blocked", "ownership run scope invalid: run task a: unsafe path ../x"],
   ["provider_error", "429 too many"], ["empty_output", "no files"], ["spawn_rejected", "internal_error: spawn_rejected"], ["blocked", ""],
 ];
-const NAMED = new Set(["harness", "infra", "merge", "limit", "budget", "judgment"]);
+const NAMED = new Set(["dirty_base", "harness", "infra", "merge", "limit", "budget", "judgment"]);
 
 describe("lp-metrics views", () => {
   it("classify a failed attempt as failureClass does, collapsing task, provider and contract into other", () => {

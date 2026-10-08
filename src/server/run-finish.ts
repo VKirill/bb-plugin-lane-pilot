@@ -93,7 +93,7 @@ export type WorktreeSnapshot = (hostId:string, worktreePath:string, name:string)
 export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, snapshot: WorktreeSnapshot, now = Date.now(), signal?: AbortSignal): Promise<string[]> {
   const rows = db.prepare(`SELECT a.environment_id AS environmentId, a.holder_thread_id AS holderThreadId, a.state, a.updated_at AS updatedAt, a.run_id AS runId,
       r.writer_environment_id AS runEnvironmentId, json_extract(t.contract_json,'$.area') AS area,
-      EXISTS(SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.created_at>a.created_at) AS superseded
+      EXISTS(SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND (b.created_at>a.created_at OR (b.created_at=a.created_at AND b.rowid>a.rowid))) AS superseded
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
     WHERE a.environment_id IS NOT NULL OR a.holder_thread_id IS NOT NULL`).all() as Array<{
       environmentId:string|null; holderThreadId:string|null; state:string; updatedAt:number; runId:string; runEnvironmentId:string|null; superseded:number; area:string|null }>;
@@ -150,7 +150,7 @@ export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: Re
 export async function cleanupStickyLaneWorktrees(db: ReturnType<typeof openDatabase>, remove:(hostId:string, basePath:string, worktreePath:string) => Promise<boolean>, released:Set<string>, now = Date.now(), signal?: AbortSignal): Promise<string[]> {
   const rows = db.prepare(`SELECT a.workspace_path AS path, r.writer_workspace_path AS base, r.writer_host_id AS hostId, a.state, a.updated_at AS updatedAt,
       json_extract(t.contract_json,'$.area') IS NOT NULL AS area,
-      EXISTS(SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.created_at>a.created_at) AS superseded
+      EXISTS(SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND (b.created_at>a.created_at OR (b.created_at=a.created_at AND b.rowid>a.rowid))) AS superseded
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_task t ON t.id=a.task_id
     WHERE a.environment_id IS NULL AND a.workspace_path IS NOT NULL AND a.workspace_path<>r.writer_workspace_path`).all() as Array<{
       path:string; base:string|null; hostId:string|null; state:string; updatedAt:number; area:number; superseded:number }>;
