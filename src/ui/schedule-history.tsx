@@ -7,6 +7,8 @@ import type { RunView, ScheduleView } from "../schedule/views";
 import { HELPER_PANEL_ACTION } from "./helper-threads";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { RunPill, errorText, fill, fmtTime } from "./schedule-parts";
+import { usdText } from "./schedule-who";
+import { modelShort, providerShort } from "./workflow-models";
 
 const PAGE = 20;
 const LIVE = new Set<RunView["status"]>(["queued", "running", "waiting"]);
@@ -17,6 +19,21 @@ export function useOpenRunThread() {
   return (threadId: string, title: string) => {
     if (!navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: title.slice(0, 40), params: { threadId } })) navigate.toThread(threadId);
   };
+}
+
+/** What a run used and where: the model and cost from the run thread's usage («unknown» when none was reported) and the machine it ran on. */
+function RunMeta({ run }: { run: RunView }) {
+  const thread = run.refKind === "thread";
+  const cost = !run.usageKnown ? t("schRunCostUnknown") : run.costUsd === null ? t("schRunCostNoPrice") : fill(t("schRunCost"), { usd: usdText(run.costUsd) });
+  const model = [providerShort(run.providerId), modelShort(run.model)].filter(Boolean).join(" · ");
+  if (!model && !thread && !run.hostName) return null;
+  return (
+    <p className="flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground" data-testid={`sch-run-meta-${run.id}`}>
+      {model ? <span className="min-w-0 break-words" data-testid={`sch-run-model-${run.id}`}>{fill(t("schRunModel"), { model })}</span> : null}
+      {thread ? <span data-testid={`sch-run-cost-${run.id}`} data-known={run.usageKnown ? "1" : "0"}>{cost}</span> : null}
+      {run.hostName ? <span className="min-w-0 break-words" data-testid={`sch-run-host-${run.id}`}>{fill(t("schMachine"), { name: run.hostName })}</span> : null}
+    </p>
+  );
 }
 
 export function RunRow({ run, name, onCancel }: { run: RunView; name: string; onCancel?: (runId: string) => void }) {
@@ -35,6 +52,7 @@ export function RunRow({ run, name, onCancel }: { run: RunView; name: string; on
           {onCancel && LIVE.has(run.status) ? <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" data-testid={`sch-run-cancel-${run.id}`} onClick={() => onCancel(run.id)}>{t("schCancelRun")}</Button> : null}
         </span>
       </div>
+      <RunMeta run={run} />
       {run.error ? <p className="break-words text-xs text-destructive-text" data-testid={`sch-run-error-${run.id}`}>{t("schHistoryError")}: {run.error}</p> : null}
       {run.output ? (
         <details className="text-xs">

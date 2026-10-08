@@ -8,12 +8,15 @@ import type { Services } from "../services";
 export function schedulesRpc(_ctx: ServerCore, services: Services) {
   const board = () => services.schedules;
   return {
-    schedule_list: async ({ projectId, next }) => ({ schedules: board().list({ ...(projectId ? { projectId } : {}), ...(next !== undefined ? { next } : {}) }), hosts: await board().hostOptions(), now: Date.now() }),
-    schedule_get: ({ id, runs, next }) => {
+    schedule_list: async ({ projectId, next }) => ({
+      schedules: await board().listDetailed({ ...(projectId ? { projectId } : {}), ...(next !== undefined ? { next } : {}) }), hosts: await board().hostOptions(), now: Date.now(),
+      errandDefault: board().errandDefault(projectId ?? null),
+    }),
+    schedule_get: async ({ id, runs, next }) => {
       const row = board().store.get(id);
-      return { schedule: row ? board().viewOf(row, next ?? 5) : null, runs: row ? board().runs(id, runs ?? 20) : [], runTotal: row ? board().runCount(id) : 0 };
+      return { schedule: (await board().view(id, next ?? 5)) ?? null, runs: row ? await board().runsDetailed(id, runs ?? 20) : [], runTotal: row ? board().runCount(id) : 0 };
     },
-    schedule_runs: ({ id, limit, offset }) => ({ runs: board().runs(id, limit ?? 50, offset ?? 0), total: board().runCount(id) }),
+    schedule_runs: async ({ id, limit, offset }) => ({ runs: await board().runsDetailed(id, limit ?? 50, offset ?? 0), total: board().runCount(id) }),
     schedule_preview: async ({ definition, next }) => {
       const result = await board().preview(definition, next);
       return { ok: result.ok, problems: result.problems, warnings: result.warnings, conflicts: result.conflicts, nextFires: result.nextFires, timeoutSec: result.timeoutSec };
@@ -25,8 +28,8 @@ export function schedulesRpc(_ctx: ServerCore, services: Services) {
         : { ok: false, schedule: null, problems: result.problems, warnings: [], conflicts: [] };
     },
     schedule_delete: ({ id }) => ({ ok: board().remove(id) }),
-    schedule_pause: ({ id, reason }) => ({ schedule: board().setPaused(id, true, reason) ?? null }),
-    schedule_resume: ({ id }) => ({ schedule: board().setPaused(id, false) ?? null }),
+    schedule_pause: async ({ id, reason }) => { board().setPaused(id, true, reason); return { schedule: (await board().view(id, 5)) ?? null }; },
+    schedule_resume: async ({ id }) => { board().setPaused(id, false); return { schedule: (await board().view(id, 5)) ?? null }; },
     schedule_run_now: ({ id, key }) => {
       const added = board().runNow(id, key);
       if (!added) return { ok: false, run: null, created: false, reason: "no such schedule" };

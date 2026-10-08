@@ -113,7 +113,7 @@ function asBreakdown(row?: TokenBreakdown | null): TokenBreakdown {
   return { ...ZERO, ...row };
 }
 
-function billedFrom(delta: TokenBreakdown): {
+export function billedFrom(delta: TokenBreakdown): {
   uncached: number; cacheRead: number; cacheWrite: number; output: number; input: number; cached: number; total: number;
 } {
   const cached = delta.cached > 0 ? delta.cached : delta.cacheRead + delta.cacheWrite;
@@ -292,7 +292,7 @@ type CursorRow = {
   last_turn_id: string;
 };
 
-function parseBreakdown(raw: string): TokenBreakdown {
+export function parseBreakdown(raw: string): TokenBreakdown {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== "object") return { ...ZERO };

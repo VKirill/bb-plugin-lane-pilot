@@ -105,3 +105,33 @@ export function conflictKeys(planned: ReadonlyArray<{ scheduleId: string; at: nu
   }
   return found;
 }
+
+// --- detail view ------------------------------------------------------------------------------------------------
+
+/** The fields of an errand task that say who runs it (the schema's own names); all absent means the default decides. */
+export type ModelFields = { providerId?: string | undefined; model?: string | undefined; reasoning?: string | undefined; serviceTier?: "default" | "fast" | undefined; preset?: string | undefined };
+const MODEL_KEYS = ["providerId", "model", "reasoning", "serviceTier", "preset"] as const;
+
+export function modelFieldsOf(task: ScheduleView["task"]): ModelFields {
+  if (task.kind !== "errand") return {};
+  return Object.fromEntries(MODEL_KEYS.filter((key) => task[key] !== undefined).map((key) => [key, task[key]])) as ModelFields;
+}
+
+/** The errand task with its model fields replaced by `fields` (an absent field is removed, so the next level decides). */
+export function withModelFields(task: Extract<ScheduleView["task"], { kind: "errand" }>, fields: ModelFields): ScheduleView["task"] {
+  const rest = Object.fromEntries(Object.entries(task).filter(([key]) => !(MODEL_KEYS as readonly string[]).includes(key)));
+  return { ...rest, ...Object.fromEntries(MODEL_KEYS.filter((key) => fields[key] !== undefined).map((key) => [key, fields[key]])) } as ScheduleView["task"];
+}
+
+/** The definition `schedule_upsert` takes for a stored schedule with another task, everything else as it is (the id is kept). */
+export function definitionWithTask(schedule: ScheduleView, task: ScheduleView["task"]): Record<string, unknown> {
+  const when = schedule.when.type === "cron" ? { type: "cron", cron: schedule.when.cron, timezone: schedule.when.timezone } : { type: "once", runAt: schedule.when.runAt };
+  return {
+    id: schedule.id, projectId: schedule.projectId, name: schedule.name, ...(schedule.description ? { description: schedule.description } : {}), task, when,
+    missed: schedule.missed, missedLimit: schedule.missedLimit, overlap: schedule.overlap, timeoutSec: schedule.timeoutSec, maxFailures: schedule.maxFailures,
+  };
+}
+
+/** «SelfyStudio › Marketing»: the project and its folder section, whatever of them is known. */
+export const placeText = (where: ScheduleView["where"] | undefined): string => [where?.projectName, where?.sectionName].filter(Boolean).join(" › ");
+export const machineName = (where: ScheduleView["where"] | undefined): string | null => where?.hostName ?? where?.hostId ?? null;

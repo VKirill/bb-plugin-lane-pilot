@@ -3,6 +3,7 @@ import { z } from "zod";
 import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, loadProjectSettings } from "../database";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { QA_HOST_KEY } from "../qa-host";
+import { ERRAND_BUILTIN } from "../schedule/errand-model";
 import { configuredSetting } from "./context";
 import { fullAccessSpawn } from "./pm-spawn";
 import { spawnTextId } from "./thread-keys";
@@ -16,7 +17,6 @@ import type { CatalogEntry } from "./secrets";
 import { detectRepoEdits, gitRepoStatus } from "./repo-edits";
 import type { ServerCore } from "./core";
 
-const ERRAND_MODEL = "claude-opus-5-5";
 const WAIT_STEP_MS = 5_000;
 
 /**
@@ -87,8 +87,8 @@ export function errandVerdict(output: string): { state: "done" | "blocked"; reas
 
 export type ErrandStart = {
   projectId: string; runId: string; pmThreadId: string; task: string; title?: string | undefined; authorized: boolean; accounts: readonly CatalogEntry[];
-  /** Model and reasoning of the helper thread; the errand default when absent. */
-  model?: string | undefined; reasoning?: string | undefined;
+  /** Provider, model, reasoning and fast mode of the helper thread; the errand default (claude-code, claude-opus-5-5, high) when absent. */
+  providerId?: string | undefined; model?: string | undefined; reasoning?: string | undefined; serviceTier?: "default" | "fast" | undefined;
   /** Names this one spawn: the same id repeated returns the same thread. Default: derived from the task. */
   spawnId?: string | undefined;
   /** More plugin metadata on the thread (a scheduled errand marks its origin here). */
@@ -181,10 +181,11 @@ export function mountErrands(ctx: ServerCore) {
     const setup = browserSetup(input.projectId, input.runId);
     const helperPolicy = requireHelperSpawn({ bb, db, projectId: input.projectId, runId: input.runId });
     const placement = await helperChildPlacement({ bb, db, projectId: input.projectId, runId: input.runId, role: "errand", taskTitle: input.title ?? input.task.slice(0, 60) });
+    const providerId = input.providerId ?? ERRAND_BUILTIN.providerId;
     const spawned = await fullAccessSpawn(bb, {
       ...placement,
-      ...requiredPolicyField(bb, helperPolicy, "claude-code", "errand"),
-      ...writerExecutionSelection("claude-code", input.model ?? ERRAND_MODEL, input.reasoning ?? "high", null),
+      ...requiredPolicyField(bb, helperPolicy, providerId, "errand"),
+      ...writerExecutionSelection(providerId, input.model ?? ERRAND_BUILTIN.model, input.reasoning ?? ERRAND_BUILTIN.reasoningEffort, input.serviceTier ?? null),
       prompt: errandPrompt({ task: input.task, browserHostId: setup.hostId, authorized: input.authorized, accounts: [...input.accounts] }),
       environment: { type: "reuse", environmentId },
       pluginMetadata: { role: "errand", spawnId: input.spawnId ?? `${input.runId}:${spawnTextId(input.task)}`, lanePilotRunId: input.runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode, ...input.metadata },

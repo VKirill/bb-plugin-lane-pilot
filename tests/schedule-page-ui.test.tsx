@@ -47,8 +47,8 @@ const empty = () => ({ schedules: [], hosts: [], now: Date.now() });
 describe("automation area in the page", { timeout: 20_000 }, () => {
   it("is a project tab beside Workflows and shows that project's board", async () => {
     const slot = await mountPage({ schedule_list: empty });
-    await slot.findByTestId("tab-schedule");
-    expect(slot.getByTestId("tab-schedule").textContent).toBe("Automation");
+    await slot.findByTestId("tab-automation");
+    expect(slot.getByTestId("tab-automation").textContent).toBe("Automation");
     openTab(slot, "schedule");
     await slot.findByTestId("sch-empty");
     expect(slot.rpcCalls.find((call) => call.method === "schedule_list")?.input).toEqual({ projectId: "proj_ui", next: 5 });

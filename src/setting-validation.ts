@@ -1,4 +1,5 @@
 import { PROVIDER_POOL_KEY, providerPoolProblem } from "./provider-pool";
+import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "./schedule/errand-model";
 import "./jev/judgments/route-workflow";
 import "./jev/judgments/repair-group";
 import "./jev/judgments/failure-class";
@@ -52,6 +53,11 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
     const ok = row && typeof row.provider === "string" && row.provider && typeof row.model === "string" && row.model
       && (effort === undefined || (typeof effort === "string" && WORKFLOW_EFFORTS.includes(effort))) && (tier === undefined || tier === "fast" || tier === "default");
     return ok ? null : { code: "invalid_choice", key, params: [key, "{provider, model, reasoning_effort?, service_tier?}"] };
+  }
+  // The default model of scheduled errands: a complete provider + model pair, or a preset.
+  if (key === SCHEDULE_ERRAND_DEFAULT_KEY) {
+    const problem = errandDefaultProblem(value);
+    return problem ? { code: "invalid_choice", key, params: [key, problem] } : null;
   }
   if (key === PROVIDER_POOL_KEY) {
     const problem = providerPoolProblem(value);

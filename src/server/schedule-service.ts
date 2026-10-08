@@ -1,6 +1,7 @@
 import { loadProjectSettings } from "../database";
 import { QA_HOST_KEY, mapListedQaHosts } from "../qa-host";
 import { fireList, findConflicts, runView, scheduleView } from "../schedule/board";
+import { PRESET_SLUGS, presetSlug } from "../workflow/model-presets";
 import { normalizeSchedule, type NormalizedWhen, type ScheduleDefinition, type ScheduleTask } from "../schedule/model";
 import { scheduleFailureNotice } from "../schedule/outcome";
 import { createScheduler } from "../schedule/scheduler";
@@ -9,6 +10,9 @@ import type { ScheduleConflict, ScheduleView } from "../schedule/views";
 import { configuredSetting } from "./context";
 import type { ServerCore } from "./core";
 import { allowedSecretNames } from "./secrets";
+import { errandModelView, readErrandDefault } from "./schedule-default";
+import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./schedule-place";
+import { NO_USAGE, scheduleCost, threadUsage } from "./schedule-usage";
 import { createScheduleExecutors } from "./schedule-executors";
 import type { Services } from "./services";
 import { createWorkflowLibrary } from "./workflow-library";
@@ -56,11 +60,27 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
     return typeof host === "string" && host.trim() ? host.trim() : null;
   }
 
-  function viewOf(row: ScheduleRow, next: number): ScheduleView {
+  type Hosts = Awaited<ReturnType<typeof hostOptions>>;
+  /** `extra` carries what only BB can tell (host names, the project's folder and section); without it `where` holds what the row itself knows. */
+  function viewOf(row: ScheduleRow, next: number, extra?: { place?: ProjectPlace | undefined; hosts?: Hosts | undefined }): ScheduleView {
     const last = store.lastRuns([row.id]).get(row.id);
     const active = store.unfinishedRuns(row.id).filter((run) => run.status === "running" || run.status === "waiting");
-    return scheduleView(row, { nextFires: scheduler.nextFires(row, Math.min(Math.max(next, 0), MAX_NEXT)), machine: machineOf(row.project_id, taskOf(row)), last, active });
+    const task = taskOf(row);
+    const model = task.kind === "errand" ? errandModelView(db, row.project_id, task) : null;
+    const cost = model ? scheduleCost(db, row.id, model.model) : null;
+    const where = whereOf(task, extra?.place, (id) => extra?.hosts?.find((host) => host.id === id)?.name ?? null);
+    return scheduleView(row, { nextFires: scheduler.nextFires(row, Math.min(Math.max(next, 0), MAX_NEXT)), machine: machineOf(row.project_id, task), last, active, model, cost, where });
   }
+
+  /** The views of rows with the names and folders BB knows: the project, its section, the machine. */
+  async function viewsOf(rows: readonly ScheduleRow[], next: number): Promise<ScheduleView[]> {
+    const [hosts, places] = await Promise.all([hostOptions(), projectPlaces(ctx, services, rows.map((row) => row.project_id))]);
+    return rows.map((row) => viewOf(row, next, { hosts, place: places.get(row.project_id) }));
+  }
+  const view = async (id: string, next: number): Promise<ScheduleView | undefined> => {
+    const row = store.get(id);
+    return row ? (await viewsOf([row], next))[0] : undefined;
+  };
 
   /** A stored schedule as the definition `save` takes, to change a part of it and save it again. */
   function definitionOf(row: ScheduleRow): Record<string, unknown> {
@@ -75,6 +95,8 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
   function list(input: { projectId?: string; next?: number }): ScheduleView[] {
     return store.list(input.projectId ? { projectId: input.projectId } : {}).map((row) => viewOf(row, input.next ?? DEFAULT_NEXT));
   }
+  const listDetailed = (input: { projectId?: string; next?: number }) => viewsOf(store.list(input.projectId ? { projectId: input.projectId } : {}), input.next ?? DEFAULT_NEXT);
+  const errandDefault = (projectId: string | null) => readErrandDefault(db, projectId);
 
   /** What stops a definition (problems) and what the owner should know (warnings). Reads, never writes. */
   async function check(definition: ScheduleDefinition & { when: NormalizedWhen }, selfId: string | undefined): Promise<{ problems: string[]; warnings: string[]; conflicts: ScheduleConflict[] }> {
@@ -90,6 +112,10 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
         if (missing.length) problems.push(`task.inputs: the workflow needs ${missing.join(", ")}`);
         if (workflow.status !== "published") warnings.push(`workflow "${workflow.id}" is ${workflow.status}: a scheduled run is refused until it is published${workflow.status === "tested" ? " (run it once for real from the Workflows tab first)" : ""}`);
       }
+    }
+    if (task.kind === "errand") {
+      if (task.providerId && !task.model) problems.push("task.providerId: a provider needs a model (task.model)");
+      if (task.preset && !presetSlug(task.preset)) problems.push(`task.preset: no model preset "${task.preset}" (known: ${PRESET_SLUGS.join(", ")})`);
     }
     if (task.kind === "script" || task.kind === "errand") {
       const hosts = await hostOptions();
@@ -141,7 +167,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
     const row = existing ? store.update(existing.id, normalized.value)! : store.insert(normalized.value, { createdBy: by, state: "active" });
     bb.log.info(`Lane Pilot schedule ${existing ? "changed" : "created"}: ${row.id} «${row.name}» (${row.kind}) by ${by}`);
     ctx.realtime.notify(row.project_id, "schedule");
-    return { ok: true, schedule: viewOf(row, DEFAULT_NEXT), warnings: checked.warnings, conflicts: checked.conflicts };
+    return { ok: true, schedule: (await viewsOf([row], DEFAULT_NEXT))[0]!, warnings: checked.warnings, conflicts: checked.conflicts };
   }
 
   function remove(id: string): boolean {
@@ -177,6 +203,16 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
   }
 
   const runs = (id: string, limit = 50, offset = 0) => store.runsOf(id, Math.min(Math.max(limit, 1), 200), Math.max(offset, 0)).map(runView);
+  const threadHost = createThreadHosts(ctx);
+  /** The runs with what each used (model and cost from its thread's token usage) and the machine it ran on. */
+  async function runsDetailed(id: string, limit = 50, offset = 0) {
+    const hosts = await hostOptions();
+    return Promise.all(runs(id, limit, offset).map(async (run) => {
+      const thread = run.refKind === "thread" && run.refId ? run.refId : null;
+      const hostId = (thread ? await threadHost(thread).catch(() => null) : null) ?? run.hostId;
+      return { ...run, ...(thread ? threadUsage(db, thread) : NO_USAGE), hostName: hostId ? hosts.find((host) => host.id === hostId)?.name ?? hostId : null };
+    }));
+  }
   const runCount = (id: string): number => (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_schedule_run WHERE schedule_id=?").get(id) as { n: number }).n;
 
   /** Planned fire times of the active schedules in [from, to] and the runs that happened in it, for a calendar. */
@@ -197,6 +233,6 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
   /** The tick of the core's isolated schedule: fire times become runs, runs are started and watched for the tick's budget. */
   const tick = (signal?: AbortSignal) => scheduler.tick(signal ? { signal } : {});
 
-  return { schedules: { scheduler, store, list, viewOf, definitionOf, preview, save, remove, setPaused, runNow, cancelRun, runs, runCount, calendar, tick, hostOptions } };
+  return { schedules: { scheduler, store, list, listDetailed, view, errandDefault, runsDetailed, viewOf, definitionOf, preview, save, remove, setPaused, runNow, cancelRun, runs, runCount, calendar, tick, hostOptions } };
 }
 export type ScheduleService = ReturnType<typeof createScheduleService>["schedules"];

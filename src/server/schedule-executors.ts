@@ -5,6 +5,7 @@ import { finalRuleOf, workflowFinish } from "../schedule/outcome";
 import type { Executor, ExecutorInput, PollResult } from "../schedule/scheduler";
 import type { ScheduleKind, ScheduleTask } from "../schedule/model";
 import type { ServerCore } from "./core";
+import { errandModelForRun } from "./schedule-default";
 import { allowedSecretNames, secretFixLines, secretProblem } from "./secrets";
 import type { Services } from "./services";
 
@@ -59,9 +60,11 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
         "If the task needs a decision, an approval or access you do not have, finish with `ERRAND: blocked: <what is needed>` instead of guessing.",
         "", task.task,
       ].join("\n");
+      // The same resolution the board shows on the card (src/schedule/errand-model.ts): the task, its preset, the Automation default, the errand role.
+      const model = await errandModelForRun(ctx, schedule.project_id, pm.pmThreadId, task);
       const started = await services.errands.startErrand({
         projectId: schedule.project_id, runId: pm.runId, pmThreadId: pm.pmThreadId, task: brief, title: task.title ?? schedule.name, authorized: task.authorized,
-        accounts: resolved.accounts, model: task.model, reasoning: task.reasoning, spawnId: `schedule:${run.run_key}`,
+        accounts: resolved.accounts, providerId: model.providerId, model: model.model, reasoning: model.reasoningEffort, serviceTier: model.serviceTier ?? undefined, spawnId: `schedule:${run.run_key}`,
         // A thread that carries this origin cannot create or change schedules (schedule-tools.ts).
         metadata: { origin: "schedule", scheduleId: schedule.id, scheduleRunKey: run.run_key },
       });

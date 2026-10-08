@@ -6,9 +6,11 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import type { ScheduleView } from "../schedule/views";
+import type { ErrandDefaultView, ScheduleView } from "../schedule/views";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { modelFieldsOf, withModelFields, type ModelFields } from "./schedule-model";
 import { errorText, fill, fmtTime } from "./schedule-parts";
+import { WhoLine, WhoPicker, defaultSeed } from "./schedule-who";
 
 type Preview = { problems: string[]; warnings: string[]; conflicts: Array<{ name: string; machine: string; windowMinutes: number }>; nextFires: number[] };
 type Hosts = Array<{ id: string; name: string; connected: boolean }>;
@@ -26,8 +28,8 @@ function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; 
 }
 
 /** The manual create / edit form. Every change is checked by `schedule_preview`, which shows the next runs and what is wrong before anything is saved. */
-export function ScheduleForm({ projectId, projects, hosts, existing, initialRunAt, locale, onSaved, onCancel }: {
-  projectId: string | null; projects: ReadonlyArray<{ id: string; name: string }>; hosts: Hosts; existing?: ScheduleView | null;
+export function ScheduleForm({ projectId, projects, hosts, existing, errandDefault, initialRunAt, locale, onSaved, onCancel }: {
+  projectId: string | null; projects: ReadonlyArray<{ id: string; name: string }>; hosts: Hosts; existing?: ScheduleView | null; errandDefault?: ErrandDefaultView | undefined;
   /** A one-time task prefilled for this moment (a click on a calendar day). */
   initialRunAt?: number | null; locale: Locale; onSaved: () => void; onCancel: () => void;
 }) {
@@ -40,6 +42,7 @@ export function ScheduleForm({ projectId, projects, hosts, existing, initialRunA
   const [inputsText, setInputsText] = useState(task?.kind === "workflow" ? JSON.stringify(task.inputs) : "{}");
   const [errandText, setErrandText] = useState(task?.kind === "errand" ? task.task : "");
   const [authorized, setAuthorized] = useState(task?.kind === "errand" ? task.authorized : false);
+  const [fields, setFields] = useState<ModelFields>(task?.kind === "errand" ? modelFieldsOf(task) : {});
   const [accounts, setAccounts] = useState(task?.kind === "errand" ? (task.accounts ?? []).join(", ") : "");
   const [hostId, setHostId] = useState(task?.kind === "script" ? task.hostId : hosts[0]?.id ?? "");
   const [command, setCommand] = useState(task?.kind === "script" ? task.command : "");
@@ -74,14 +77,14 @@ export function ScheduleForm({ projectId, projects, hosts, existing, initialRunA
       if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) return { error: t("schFormBadJson") };
       taskBody = { ...(task?.kind === "workflow" ? task : {}), kind, workflowId, inputs };
     } else if (kind === "errand") {
-      taskBody = { ...(task?.kind === "errand" ? task : {}), kind, task: errandText, authorized, accounts: accounts.split(",").map((item) => item.trim()).filter(Boolean) };
+      taskBody = withModelFields({ ...(task?.kind === "errand" ? task : {}), kind, task: errandText, authorized, accounts: accounts.split(",").map((item) => item.trim()).filter(Boolean) } as Extract<ScheduleView["task"], { kind: "errand" }>, fields) as Record<string, unknown>;
     } else {
       taskBody = { ...(task?.kind === "script" ? task : {}), kind, hostId, command, cwd };
     }
     const when = whenType === "cron" ? { type: "cron", cron: cron.trim(), ...(timezone.trim() ? { timezone: timezone.trim() } : {}) } : { type: "once", runAt: new Date(runAt).getTime() };
     const policies = existing ? { missed: existing.missed, missedLimit: existing.missedLimit, overlap: existing.overlap, timeoutSec: existing.timeoutSec, maxFailures: existing.maxFailures } : {};
     return { definition: { ...(existing ? { id: existing.id } : {}), projectId: project, name: name.trim(), ...(existing?.description ? { description: existing.description } : {}), task: taskBody, when, ...policies } };
-  }, [project, kind, workflowId, inputsText, errandText, authorized, accounts, hostId, command, cwd, whenType, cron, timezone, runAt, name, existing, task]);
+  }, [project, kind, workflowId, inputsText, errandText, authorized, accounts, fields, hostId, command, cwd, whenType, cron, timezone, runAt, name, existing, task]);
 
   const definition = "definition" in built ? built.definition : null;
   const definitionKey = definition ? JSON.stringify(definition) : "";
@@ -145,6 +148,10 @@ export function ScheduleForm({ projectId, projects, hosts, existing, initialRunA
 
           {kind === "errand" ? <>
             <Field label={t("schFormErrandText")} htmlFor="sch-errand"><textarea id="sch-errand" className={AREA} rows={4} data-testid="sch-errand" value={errandText} onChange={(event) => setErrandText(event.target.value)} /></Field>
+            <Field label={t("schWhoTitle")}>
+              {existing?.model ? <WhoLine model={existing.model} testId="sch-form-who-now" /> : null}
+              <WhoPicker projectId={project || null} fields={fields} resolved={existing?.model ?? null} fallback={defaultSeed(errandDefault?.effective)} testId="sch-form-who" onChange={setFields} />
+            </Field>
             <label className="flex items-center gap-2 text-sm"><Switch checked={authorized} onCheckedChange={setAuthorized} data-testid="sch-authorized" aria-label={t("schFormAuthorized")} />{t("schFormAuthorized")}</label>
             <Field label={t("schFormAccounts")} htmlFor="sch-accounts"><Input id="sch-accounts" className="h-8 font-mono text-sm" data-testid="sch-accounts" value={accounts} onChange={(event) => setAccounts(event.target.value)} /></Field>
           </> : null}

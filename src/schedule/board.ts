@@ -1,13 +1,15 @@
 import type { NormalizedWhen } from "./model";
 import { taskOf, whenOf, type RunRow, type ScheduleRow } from "./store";
 import { fireTimes } from "./time";
-import type { BoardColumn, RunView, ScheduleConflict, ScheduleView } from "./views";
+import type { BoardColumn, CostView, ModelView, RunView, ScheduleConflict, ScheduleView, WhereView } from "./views";
 
 export const runView = (row: RunRow): RunView => ({
   id: row.id, scheduleId: row.schedule_id, scheduledAt: row.scheduled_at, trigger: row.trigger, status: row.status, reason: row.reason,
   queuedAt: row.queued_at, startedAt: row.started_at, finishedAt: row.finished_at,
   durationMs: row.started_at !== null && row.finished_at !== null ? Math.max(0, row.finished_at - row.started_at) : null,
   refKind: row.ref_kind, refId: row.ref_id, hostId: row.host_id, exitCode: row.exit_code, output: row.output, error: row.error, truncated: row.truncated === 1,
+  // Usage and the machine's name are read from the run thread by the service (schedule-usage.ts); the bare row knows neither.
+  providerId: null, model: null, tokens: null, costUsd: null, usageKnown: false, hostName: null,
 });
 
 /**
@@ -29,13 +31,13 @@ export function fireList(when: NormalizedWhen, from: number, until: number, cap:
   return fireTimes(when.cron, when.timezone, from - 1, { limit: cap, untilMs: until });
 }
 
-export function scheduleView(row: ScheduleRow, input: { nextFires: number[]; machine: string | null; last: RunRow | undefined; active: readonly RunRow[] }): ScheduleView {
+export function scheduleView(row: ScheduleRow, input: { nextFires: number[]; machine: string | null; last: RunRow | undefined; active: readonly RunRow[]; model: ModelView | null; cost: CostView | null; where: WhereView }): ScheduleView {
   return {
     id: row.id, projectId: row.project_id, name: row.name, description: row.description, task: taskOf(row), when: whenOf(row),
     missed: row.missed_policy, missedLimit: row.missed_limit, overlap: row.overlap, timeoutSec: row.timeout_sec, maxFailures: row.max_failures,
     state: row.state, pauseReason: row.pause_reason, consecutiveFailures: row.consecutive_failures, createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at,
     nextFires: input.nextFires, machine: input.machine, lastRun: input.last ? runView(input.last) : null, active: input.active.map(runView),
-    column: boardColumn(row, input.active, input.last),
+    column: boardColumn(row, input.active, input.last), model: input.model, cost: input.cost, where: input.where,
   };
 }
 

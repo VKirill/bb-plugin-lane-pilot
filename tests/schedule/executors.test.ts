@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const observe = vi.hoisted(() => ({ result: { kind: "observing", detail: "" } as { kind: string; detail?: string; via?: string } }));
 vi.mock("@lane-pilot/thread-observe", () => ({ observeStageChild: async () => observe.result }));
 
+import Database from "better-sqlite3";
 import { createScheduleExecutors } from "../../src/server/schedule-executors";
 import type { ExecutorInput } from "../../src/schedule/scheduler";
 import type { RunRow, ScheduleRow } from "../../src/schedule/store";
@@ -11,11 +12,21 @@ const schedule = { id: "sch_1", project_id: "p1", name: "Nightly check", timeout
 const run = (extra: Partial<RunRow> = {}) => ({ id: "srun_1", schedule_id: "sch_1", run_key: "sch_1:1790000000000", scheduled_at: 1_790_000_000_000, ref_id: null, ...extra }) as RunRow;
 const input = (task: ExecutorInput["task"], extra: Partial<RunRow> = {}): ExecutorInput => ({ schedule, task, run: run(extra) });
 
-function world() {
+function settingsDb(rows: Record<string, unknown> = {}) {
+  const db = new Database(":memory:");
+  db.exec("CREATE TABLE lane_pilot_project_settings (project_id TEXT, binding_id TEXT, key TEXT, value TEXT, version INTEGER, updated_at INTEGER)");
+  for (const [key, value] of Object.entries(rows)) db.prepare("INSERT INTO lane_pilot_project_settings VALUES (?,?,?,?,1,0)").run(key.startsWith("*:") ? "*" : "p1", "", key.replace(/^\*:/, ""), JSON.stringify(value));
+  return db;
+}
+
+function world(options: { settings?: Record<string, unknown>; pm?: { providerId: string; model: string } | null } = {}) {
   const calls = { workflowStart: [] as Array<Record<string, any>>, errandStart: [] as Array<Record<string, any>>, resolve: [] as Array<Record<string, any>>, cancel: [] as string[], stopped: [] as string[] };
   const summaries = new Map<string, Record<string, any>>();
   let pm: { pmThreadId: string; runId: string } | null = { pmThreadId: "thr_pm", runId: "lprun_1" };
-  const ctx = { bb: { sdk: { threads: { stop: async ({ threadId }: { threadId: string }) => { calls.stopped.push(threadId); } } }, log: { warn: () => undefined } }, db: {}, host: {}, secrets: {} } as never;
+  const ctx = {
+    bb: { sdk: { threads: { stop: async ({ threadId }: { threadId: string }) => { calls.stopped.push(threadId); }, defaultExecutionOptions: async () => (options.pm ? options.pm : {}) } }, log: { warn: () => undefined } },
+    db: settingsDb(options.settings), host: {}, secrets: {},
+  } as never;
   const services = {
     workflowTriggers: {
       pmOf: () => pm,
@@ -72,11 +83,40 @@ describe("the errand executor", () => {
     expect(ref).toEqual({ refKind: "thread", refId: "thr_errand", hostId: "mini" });
     expect(calls.resolve[0]).toMatchObject({ projectId: "p1", runId: "lprun_1", pmThreadId: "thr_pm", names: ["ELBA_LOGIN"] });
     const started = calls.errandStart[0]!;
-    expect(started).toMatchObject({ projectId: "p1", runId: "lprun_1", pmThreadId: "thr_pm", authorized: false, model: "claude-opus-5-5", reasoning: "high",
+    expect(started).toMatchObject({ projectId: "p1", runId: "lprun_1", pmThreadId: "thr_pm", authorized: false, providerId: "claude-code", model: "claude-opus-5-5", reasoning: "high",
       spawnId: "schedule:sch_1:1790000000000", metadata: { origin: "schedule", scheduleId: "sch_1", scheduleRunKey: "sch_1:1790000000000" } });
     expect(started.task).toContain("This is a scheduled run of «Nightly check»");
     expect(started.task).toContain("ERRAND: blocked");
     expect(started.task).toContain("Check the open invoices in Elba");
+  });
+
+  const bare = { kind: "errand" as const, task: "Check the open invoices in Elba and report the total.", authorized: false, accounts: [] as string[] };
+
+  it("starts on the built-in errand model when nothing names one", async () => {
+    const { executors, calls } = world();
+    await executors.errand.start(input(bare));
+    expect(calls.errandStart[0]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoning: "high" });
+    expect(calls.errandStart[0]!.serviceTier).toBeUndefined();
+  });
+
+  it("passes the provider, model, effort and fast mode of the task's own pair to the errand start", async () => {
+    const { executors, calls } = world();
+    await executors.errand.start(input({ ...bare, providerId: "codex", model: "gpt-6-luna", reasoning: "medium", serviceTier: "fast" }));
+    expect(calls.errandStart[0]).toMatchObject({ providerId: "codex", model: "gpt-6-luna", reasoning: "medium", serviceTier: "fast" });
+  });
+
+  it("starts on the Automation default of the project, over the global one, and on a preset of the task over both", async () => {
+    const { executors, calls } = world({ settings: { "schedule.errand_default": { provider: "codex", model: "gpt-6-luna", reasoning_effort: "low" }, "*:schedule.errand_default": { preset: "strong" } } });
+    await executors.errand.start(input(bare));
+    expect(calls.errandStart[0]).toMatchObject({ providerId: "codex", model: "gpt-6-luna", reasoning: "low" });
+    await executors.errand.start(input({ ...bare, preset: "cheap-fast" }));
+    expect(calls.errandStart[1]).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5", reasoning: "low" });
+  });
+
+  it("uses the global Automation default when the project has none", async () => {
+    const { executors, calls } = world({ settings: { "*:schedule.errand_default": { preset: "ins-psychology" } } });
+    await executors.errand.start(input(bare));
+    expect(calls.errandStart[0]).toMatchObject({ providerId: "codex", model: "gpt-5.6-luna", reasoning: "max" });
   });
 
   it("fails with the reason when there is no PM chat or an account is not allowed", async () => {

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { conflictSchema, hostOptionSchema, runViewSchema, scheduleViewSchema } from "./views";
+import { conflictSchema, errandDefaultSchema, hostOptionSchema, runViewSchema, scheduleViewSchema } from "./views";
 
 /**
  * The RPCs of the schedule board (spread into `rpcContract`, src/contracts.ts). The board, the calendar and the create form use
@@ -16,7 +16,7 @@ export const scheduleRpcContract = {
   /** Every schedule of a project (or of the hub), each with its next fire times, last run and board column, and the machines a script can run on. */
   schedule_list: {
     input: z.object({ projectId: projectId.optional(), next: nextCount.optional() }).strict(),
-    output: z.object({ schedules: z.array(scheduleViewSchema), hosts: z.array(hostOptionSchema), now: z.number() }).strict(),
+    output: z.object({ schedules: z.array(scheduleViewSchema), hosts: z.array(hostOptionSchema), now: z.number(), errandDefault: errandDefaultSchema }).strict(),
   },
   /** One schedule with its newest runs (`runs`, default 20). */
   schedule_get: {

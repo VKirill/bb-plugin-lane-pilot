@@ -17,7 +17,8 @@ const at = (day: number, hour: number, minute = 0, month = 9) => new Date(2026, 
 
 const run = (id: string, scheduleId: string, status: RunView["status"], extra: Partial<RunView> = {}): RunView => ({
   id, scheduleId, scheduledAt: at(7, 9), trigger: "tick", status, reason: null, queuedAt: at(7, 9), startedAt: at(7, 9), finishedAt: at(7, 9, 1), durationMs: 60_000,
-  refKind: null, refId: null, hostId: null, exitCode: null, output: null, error: null, truncated: false, ...extra,
+  refKind: null, refId: null, hostId: null, exitCode: null, output: null, error: null, truncated: false,
+  providerId: null, model: null, tokens: null, costUsd: null, usageKnown: false, hostName: null, ...extra,
 });
 
 function schedule(id: string, column: ScheduleView["column"], extra: Partial<ScheduleView> = {}): ScheduleView {
@@ -25,7 +26,8 @@ function schedule(id: string, column: ScheduleView["column"], extra: Partial<Sch
     id, projectId: "proj_a", name: `Task ${id}`, description: "", task: { kind: "errand", task: `Check the leads of ${id}`, authorized: false, accounts: [] } as ScheduleView["task"],
     when: { type: "cron", cron: "0 9 * * 1-5", timezone: "Europe/Madrid" }, missed: "run_once", missedLimit: 5, overlap: "skip", timeoutSec: 3600, maxFailures: 3,
     state: column === "paused" ? "paused" : "active", pauseReason: null, consecutiveFailures: 0, createdBy: "owner", createdAt: at(1, 9), updatedAt: at(7, 9),
-    nextFires: [at(9, 9), at(10, 9)], machine: null, lastRun: null, active: [], column, ...extra,
+    nextFires: [at(9, 9), at(10, 9)], machine: null, lastRun: null, active: [], column,
+    model: null, cost: null, where: { projectName: null, sectionId: null, sectionName: null, sectionPath: null, hostId: null, hostName: null, cwd: null }, ...extra,
   };
 }
 

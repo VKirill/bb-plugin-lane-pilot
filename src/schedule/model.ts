@@ -22,9 +22,12 @@ export const errandTaskSchema = z.object({
   authorized: z.boolean().default(false),
   /** Env Catalog names the helper reads itself (the owner must have allowed each for the project). */
   accounts: z.array(envName).max(8).default([]),
-  /** The model of the errand's thread; the errand default when absent. */
+  /** Who runs it (src/schedule/errand-model.ts): the task's own provider + model (`model` alone means claude-code), or a model preset name; absent, the Automation default and the errand role default decide. */
+  providerId: z.string().min(1).max(120).optional(),
   model: z.string().min(1).max(120).optional(),
-  reasoning: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+  reasoning: z.enum(["low", "medium", "high", "xhigh", "ultracode", "max"]).optional(),
+  serviceTier: z.enum(["default", "fast"]).optional(),
+  preset: z.string().min(1).max(120).optional(),
 }).strict();
 
 export const scriptTaskSchema = z.object({
