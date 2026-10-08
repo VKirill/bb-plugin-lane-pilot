@@ -3,9 +3,11 @@ import type { CompiledMainAgent } from "../agent-profile";
 import { readyComposerSnapshot, spawnEnvironmentFromSelection } from "../composer-selection";
 import type { ComposerSelectionSnapshot } from "../composer-selection";
 import { TARGET_SHA } from "../constants";
-import { claimActivation, createRun, freezeRunBinding, getActivation, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../database";
+import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../database";
 import { ownerCardBlock } from "../anamnesis/card";
 import { anamnesisFor } from "../anamnesis/wiring";
+import { pmRulesPromptBlock } from "../learning/pm-rules";
+import { ruleBudget } from "../learning/rule-budget";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { buildRunPolicy } from "../stages/run-policy";
 import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../workspace/routing";
@@ -149,7 +151,9 @@ export function createActivation(ctx: ServerCore, services: Services) {
           ? writerExecutionSelection(spawnProviderId, spawnModel, native.reasoningLevel, spawnTier)
           : { providerId: spawnProviderId, model: spawnModel, executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const } }),
         // The owner's confirmed, non-sensitive facts (anamnesis A5), within 1800 characters; nothing when there are none or the store is out of reach.
-        prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native), pmHasGuard(settings["main.agent"])) + await ownerCardBlock(anamnesisFor(ctx).hub),
+        prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native), pmHasGuard(settings["main.agent"])) + await ownerCardBlock(anamnesisFor(ctx).hub)
+          // The rules the owner's corrections produced for the PM, within a token budget (src/learning/pm-rules.ts).
+          + pmRulesPromptBlock(db, projectId, getRunSettingsScopes(db, runId), ruleBudget("pm")),
         environment: (snapshotEnv ?? (managedWorkspace
           ? { type:"host", hostId:config.hostId, workspace:{ type:"managed-worktree", baseBranch:{ kind:"default" } } }
           : { type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.pmWorkspacePath } })) as never,
