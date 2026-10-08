@@ -72,9 +72,9 @@ def log(message: str) -> None:
     print(f"{time.strftime('%T')} drill: {message}", file=sys.stderr, flush=True)
 
 
-def run(args: list[str], stdin: str | None = None, timeout: int = 180) -> tuple[int, str, str]:
+def run(args: list[str], stdin: str | None = None, timeout: int = 180, env: dict[str, str] | None = None) -> tuple[int, str, str]:
     try:
-        done = subprocess.run(args, input=stdin, capture_output=True, text=True, timeout=timeout)
+        done = subprocess.run(args, input=stdin, capture_output=True, text=True, timeout=timeout, env=env)
         return done.returncode, done.stdout, done.stderr
     except subprocess.TimeoutExpired:
         return 124, "", f"timeout after {timeout}s: {' '.join(args[:3])}"
@@ -486,7 +486,10 @@ def setting_rpc(method: str, payload: dict) -> dict:
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
         json.dump(payload, handle)
     try:
-        rc, out, err = bb("plugin", "rpc", "call", "lane-pilot", method, "--input-file", handle.name, "--json", timeout=60)
+        # The drill writes the sandbox project's writer.model on the owner's command (bb-plugin-push runs it): the call goes
+        # out as the owner's CLI, not as the agent session that started the push, so the owner is not asked for each of them.
+        owner_env = {k: v for k, v in os.environ.items() if k not in ("BB_VK_THREAD_TOKEN", "BB_THREAD_ID")}
+        rc, out, err = run([BB, "plugin", "rpc", "call", "lane-pilot", method, "--input-file", handle.name, "--json"], timeout=60, env=owner_env)
     finally:
         os.unlink(handle.name)
     if rc != 0:

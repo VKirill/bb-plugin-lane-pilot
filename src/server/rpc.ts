@@ -19,10 +19,13 @@ import { canaryRpc } from "./canary";
 import { sessionMemoryRpc } from "./session-memory";
 import { createWorkflowArchitect } from "./workflow-architect";
 import { architectStartRpc } from "./architect-start";
+import { createOwnerGate, guardOwnerOnlyRpc } from "./owner-gate";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
-  ctx.bb.rpc.register(rpcContract, {
+  // The methods that change configuration or runs answer to the owner only (owner-gate.ts).
+  const gate = createOwnerGate({ db: ctx.db, ownerAsk: ctx.ownerAsk, log: ctx.log });
+  ctx.bb.rpc.register(rpcContract, guardOwnerOnlyRpc({
     ...preferencesRpc(ctx, services),
     ...runsRpc(ctx, services),
     ...settingsRpc(ctx, services),
@@ -41,5 +44,5 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),
-  });
+  }, gate));
 }

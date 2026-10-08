@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-lane-pilot",
-  "version": "0.1.195",
+  "version": "0.1.196",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || ^24.0.0 || ^26.0.0",
@@ -30,7 +30,8 @@
       "contributeEnv": {
         "timeoutMs": 10000
       }
-    }
+    },
+    "rpcCallerPolicy": true
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1",
