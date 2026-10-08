@@ -51,6 +51,32 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       })));
     return listed.map((run) => ({ ...run, pmThread: pmThreads.get(run.id) ?? null }));
   };
+  // The BB plugin list and the skills catalog cost host calls (the skills catalog is ~385 KB) and change rarely: kept per catalog project for a minute.
+  const catalogCache = new Map<string, { at: number; value: { pluginRows: Array<{ id?: string; name?: string; displayName?: string }>; skillRows: Array<{ name?: string; description?: string }> } }>();
+  const CATALOG_TTL_MS = 60_000;
+  const loadCatalog = async (projectId: string, isGlobal: boolean) => {
+    const cached = catalogCache.get(projectId);
+    if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return cached.value;
+    const pluginsRequest = (bb.sdk.plugins.list() as Promise<unknown>).catch(() => []);
+    // The skills catalog of the project; some BB versions want an environment, so the project's own is tried next.
+    // The global scope has no catalog of its own; the first project's stands in for it.
+    const listedProjects = isGlobal ? await (bb.sdk.projects.list() as Promise<unknown>).catch(() => []) : [];
+    const projectRows = (Array.isArray(listedProjects) ? listedProjects : ((listedProjects as { projects?: unknown[] })?.projects ?? [])) as Array<{ id?: string }>;
+    const catalogProject = isGlobal ? projectRows.find((p) => p?.id)?.id ?? projectId : projectId;
+    const listSkills = (environmentId: string | null) => bb.sdk.skills.list({ projectId: catalogProject, environmentId } as never) as Promise<unknown>;
+    let skills: unknown = await listSkills(null).catch((cause) => { ctx.log(`helper_access_view skills: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+    if (!skills) {
+      const envs = await (bb.sdk.environments.list({ projectId: catalogProject } as never) as Promise<unknown>).catch(() => []);
+      const env = (Array.isArray(envs) ? envs : ((envs as { environments?: unknown[] })?.environments ?? [])) as Array<{ id?: string }>;
+      if (env[0]?.id) skills = await listSkills(env[0].id).catch((cause) => { ctx.log(`helper_access_view skills (env): ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
+    }
+    const skillRows = (Array.isArray(skills) ? skills : ((skills as { skills?: unknown[] })?.skills ?? [])) as Array<{ name?: string; description?: string }>;
+    const plugins = await pluginsRequest;
+    const pluginRows = (Array.isArray(plugins) ? plugins : ((plugins as { plugins?: unknown[] })?.plugins ?? [])) as Array<{ id?: string; name?: string; displayName?: string }>;
+    const value = { pluginRows, skillRows };
+    if (pluginRows.length || skillRows.length) catalogCache.set(projectId, { at: Date.now(), value });
+    return value;
+  };
   const refusedBy = (key: string, message: string) => ({ code: "incompatible_setting" as const, key, params: [key, message] });
   return {
     helper_access_view: async ({ projectId, sectionId }) => {
@@ -67,7 +93,10 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         [isGlobal ? "global" : "project", new Set(listSettingRows(db, projectId, "").map((row) => row.key))],
         ...scopes.map((binding) => ["section", new Set(listSettingRows(db, projectId, binding).map((row) => row.key))] as ["section", Set<string>]),
       ];
-      const originOf = (key: string) => { let found: "global" | "project" | "section" | null = null; for (const [name, keys] of scopeRows) if (keys.has(key)) found = name; return found; };
+      const originIn = (rows: typeof scopeRows, key: string) => { let found: "global" | "project" | "section" | null = null; for (const [name, keys] of rows) if (keys.has(key)) found = name; return found; };
+      const originOf = (key: string) => originIn(scopeRows, key);
+      // What the role falls back to when this level's change is removed: the origin one level up (none at the global level).
+      const originBelow = (key: string) => isGlobal ? null : originIn(scopeRows.slice(0, -1), key);
       const roles = HELPER_ROLES.map((role) => {
         const key = roleAccessKey(role);
         const access = parseRoleAccess(settings[key]);
@@ -75,25 +104,12 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
           role, key, version: versions[key] ?? 0, value: own.get(key)?.value ?? null,
           inherited: !own.has(key) && settings[key] !== undefined,
           origin: originOf(key),
+          originBelow: originBelow(key),
           groups: Object.fromEntries(ACCESS_GROUPS.map((group) => [group, effectiveGroup(role, group, access)])) as never,
           switches: Object.fromEntries(ACCESS_SWITCHES.map((sw) => [sw, effectiveSwitch(sw, access)])) as never,
         };
       });
-      const plugins = await (bb.sdk.plugins.list() as Promise<unknown>).catch(() => []);
-      const pluginRows = (Array.isArray(plugins) ? plugins : ((plugins as { plugins?: unknown[] })?.plugins ?? [])) as Array<{ id?: string; name?: string; displayName?: string }>;
-      // The skills catalog of the project; some BB versions want an environment, so the project's own is tried next.
-      // The global scope has no catalog of its own; the first project's stands in for it.
-      const listedProjects = isGlobal ? await (bb.sdk.projects.list() as Promise<unknown>).catch(() => []) : [];
-      const projectRows = (Array.isArray(listedProjects) ? listedProjects : ((listedProjects as { projects?: unknown[] })?.projects ?? [])) as Array<{ id?: string }>;
-      const catalogProject = isGlobal ? projectRows.find((p) => p?.id)?.id ?? projectId : projectId;
-      const listSkills = (environmentId: string | null) => bb.sdk.skills.list({ projectId: catalogProject, environmentId } as never) as Promise<unknown>;
-      let skills: unknown = await listSkills(null).catch((cause) => { ctx.log(`helper_access_view skills: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
-      if (!skills) {
-        const envs = await (bb.sdk.environments.list({ projectId: catalogProject } as never) as Promise<unknown>).catch(() => []);
-        const env = (Array.isArray(envs) ? envs : ((envs as { environments?: unknown[] })?.environments ?? [])) as Array<{ id?: string }>;
-        if (env[0]?.id) skills = await listSkills(env[0].id).catch((cause) => { ctx.log(`helper_access_view skills (env): ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
-      }
-      const skillRows = (Array.isArray(skills) ? skills : ((skills as { skills?: unknown[] })?.skills ?? [])) as Array<{ name?: string; description?: string }>;
+      const { pluginRows, skillRows } = await loadCatalog(projectId, isGlobal);
       return {
         mode: parsed.ok ? parsed.settings.mode : "invalid",
         modeOrigin: originOf("helper.context_mode"),

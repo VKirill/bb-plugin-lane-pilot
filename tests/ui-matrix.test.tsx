@@ -482,6 +482,21 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
+  it("does not reload the project screen when the Agents scope is opened and left again", async () => {
+    const screen = vi.fn(() => screenFixture());
+    const sections = vi.fn(() => ({ sections: [] }));
+    const slot = await mountPage({ get_screen: screen, list_sections: sections }, { projectId:"proj_ui", threadId:null }, "", false);
+    await slot.findByTestId("status-writer");
+    expect(screen).toHaveBeenCalledTimes(1);
+    const calls = sections.mock.calls.length;
+    fireEvent.click(within(slot.getByTestId("scope-rail")).getByRole("tab", { name: en.navAgents }));
+    fireEvent.click(slot.getByTestId("project-item-proj_ui"));
+    await slot.findByTestId("status-writer");
+    expect(screen).toHaveBeenCalledTimes(1);
+    expect(sections.mock.calls.length).toBe(calls + 1);
+    slot.lifecycle.unmount();
+  });
+
   it("mounts a tab on its first open instead of all ten at once, and keeps it after", async () => {
     const slot = await mountPage({}, { projectId:"proj_ui", threadId:null }, "", false);
     await slot.findByTestId("tab-settings");

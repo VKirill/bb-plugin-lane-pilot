@@ -186,5 +186,10 @@ describe("rule scope and trial", () => {
     expect(stats).toMatchObject({ applied: 2, appliedAccepted: 1, lastAppliedAt: 20 });
     // a3 repeated the mistake but was never given the rule: a miss of the picker, not of the rule.
     expect(stats.recurrences.map((row) => row.attemptId)).toEqual(["a2"]);
+    // The batch gives the same numbers for every rule at once.
+    const { ruleTrialStatsMany } = await import("../src/index");
+    const many = ruleTrialStatsMany(db, "p", [{ id: "rule-x", since: 5 }, { id: "rule-y", since: 0 }]);
+    expect(many.get("rule-x")).toEqual(stats);
+    expect(many.get("rule-y")).toEqual({ applied: 0, appliedAccepted: 0, recurrences: [], lastAppliedAt: null });
   });
 });

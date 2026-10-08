@@ -1092,6 +1092,8 @@ export const rpcContract = defineRpcContract({
         role: z.string(), key: z.string(), version: z.number().int(), value: z.unknown(), inherited: z.boolean(),
         /** Which scope the role's change comes from; null = the role profile in code. */
         origin: z.enum(["global", "project", "section"]).nullable(),
+        /** The same one level up: what the role shows once this level's change is removed. */
+        originBelow: z.enum(["global", "project", "section"]).nullable(),
         groups: z.object({ bbPlugins: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict(), skills: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict(), mcpServers: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict(), nativePlugins: z.object({ names: z.array(z.string()).nullable(), source: z.enum(["role","owner"]) }).strict() }).strict(),
         switches: z.object({ userInstructions: z.object({ include: z.boolean(), source: z.enum(["role","owner"]) }).strict(), projectInstructions: z.object({ include: z.boolean(), source: z.enum(["role","owner"]) }).strict() }).strict(),
       }).strict()),

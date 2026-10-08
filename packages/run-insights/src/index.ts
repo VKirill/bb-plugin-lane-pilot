@@ -38,6 +38,7 @@ export {
   reviseAdoptedRule,
   RULE_TRIAL,
   ruleTrialStats,
+  ruleTrialStatsMany,
   setRuleTrial,
   type RuleEvent,
   type RuleEventAction,

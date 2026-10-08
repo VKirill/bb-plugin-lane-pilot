@@ -489,6 +489,34 @@ export function ruleTrialStats(db: RulesDatabase, projectId: string, ruleId: str
   };
 }
 
+/**
+ * `ruleTrialStats` for many rules in two queries instead of two per rule: the rules list of a project with two dozen
+ * rules re-read the attempts' reasoning traces once per rule. Same numbers, same derivation.
+ */
+export function ruleTrialStatsMany(db: RulesDatabase, projectId: string, rules: ReadonlyArray<{ id: string; since: number }>): Map<string, RuleTrialStats> {
+  const out = new Map<string, RuleTrialStats>();
+  if (!rules.length) return out;
+  const picked = db.prepare(`SELECT a.id, a.state, a.created_at AS at, p.value AS ruleId FROM lane_pilot_attempt_reasoning r
+      JOIN lane_pilot_attempt a ON a.id=r.attempt_id JOIN lane_pilot_run run ON run.id=a.run_id,
+      json_each(COALESCE(json_extract(r.trace_json,'$.dispatchContext.rulesPicked.picked'),'[]')) p
+    WHERE run.project_id=?`).all(projectId) as Array<{ id: string; state: string; at: number; ruleId: string }>;
+  const triaged = db.prepare(`SELECT attempt_id AS attemptId, task_id AS taskId, reason, same_rule_id AS ruleId, failed_at AS failedAt FROM lane_pilot_failure_triage
+    WHERE project_id=? AND same_rule_id IS NOT NULL AND status='ok'`).all(projectId) as Array<{ attemptId: string; taskId: string; reason: string; ruleId: string; failedAt: number }>;
+  for (const { id, since } of rules) {
+    const applied = picked.filter((row) => row.ruleId === id && row.at >= since);
+    const ids = new Set(applied.map((row) => row.id));
+    const recurrences = triaged.filter((row) => row.ruleId === id && row.failedAt >= since && ids.has(row.attemptId))
+      .map(({ attemptId, taskId, reason }) => ({ attemptId, taskId, reason }));
+    out.set(id, {
+      applied: applied.length,
+      appliedAccepted: applied.filter((row) => row.state === "accepted").length,
+      recurrences,
+      lastAppliedAt: applied.length ? Math.max(...applied.map((row) => row.at)) : null,
+    });
+  }
+  return out;
+}
+
 export const RULE_TRIAL = {
   /** Attempts given the rule without a recurrence before it is confirmed. */
   confirmAfterApplied: 5,

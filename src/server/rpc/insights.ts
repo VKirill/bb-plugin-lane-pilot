@@ -1,5 +1,5 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStats, routingHint, setRuleAudience, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
+import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStatsMany, routingHint, setRuleAudience, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
 import { acceptanceStats } from "../../acceptance-stats";
 import { rpcContract } from "../../contracts";
 import { loadProjectSettings } from "../../database";
@@ -8,6 +8,11 @@ import { configuredSetting } from "../context";
 import { acceptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, revokeRule } from "../insights";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
+
+type DocsStatus = Awaited<ReturnType<Services["docsPlaceStatus"]>>;
+/** How long the verdict of a folder is reused by the tab, and how long one open waits for a slow machine. */
+const DOCS_STATUS_TTL_MS = 5 * 60_000;
+const DOCS_STATUS_WAIT_MS = 1_500;
 
 const RISKS = ["low", "medium", "high", "critical"] as const;
 
@@ -18,6 +23,7 @@ const ruleView = ({ id, rule, author, state, occurrences, taskCount, examples, e
 /** What the settings screen shows next to the writer picker: first-try acceptance per risk against the configured pair. */
 export function insightsRpc(ctx: ServerCore, services: Services) {
   const { db } = ctx;
+  const docsStatusCache = new Map<string, { at: number; status: DocsStatus }>();
   return {
     get_routing_hint: async ({ projectId, days }) => {
       const stats = writerAcceptanceStats(db, { projectId, since: Date.now() - (days ?? 90) * 86_400_000 });
@@ -36,12 +42,15 @@ export function insightsRpc(ctx: ServerCore, services: Services) {
         const settings = memorySettingsFor(db, projectId);
         memory = { enabled: settings.enabled, inject: settings.inject };
       } catch { /* invalid memory settings: rules are listed, injection is reported off */ }
+      const rows = listRuleProposals(db, projectId);
+      // One pass over the traces for all the rules in force, not one per rule.
+      const trials = ruleTrialStatsMany(db, projectId, rows.filter((row) => row.state === "accepted").map((row) => ({ id: row.id, since: row.revisionStartedAt ?? row.decidedAt ?? 0 })));
       return {
         // Rules in force show how their current wording fares: attempts given it, accepted, mistakes repeated anyway.
-        proposals: await Promise.all(listRuleProposals(db, projectId).map(async (row) => {
+        proposals: await Promise.all(rows.map(async (row) => {
           const label = await services.ruleScan.scanLabel(projectId, row.scope, sections);
           if (row.state !== "accepted") return ruleView(row, null, label);
-          const stats = ruleTrialStats(db, projectId, row.id, row.revisionStartedAt ?? row.decidedAt ?? 0);
+          const stats = trials.get(row.id)!;
           return ruleView(row, { applied: stats.applied, appliedAccepted: stats.appliedAccepted, recurrences: stats.recurrences.length }, label);
         })),
         memory,
@@ -71,17 +80,36 @@ export function insightsRpc(ctx: ServerCore, services: Services) {
     },
     docs_overview: async ({ projectId, recheck }) => {
       const places = await services.docsPlaces(projectId);
-      const rows = [];
-      for (const place of places) {
+      // Folders are asked at the same time (each is a call to its machine), the answers are kept for a few minutes, and
+      // a machine that is slow to answer does not hold the tab: the last known answer (or none yet) is shown and the
+      // call finishes into the cache for the next open. «Recheck» asks again and waits.
+      const rows = await Promise.all(places.map(async (place) => {
         const settings = loadProjectSettings(db, projectId, place.scopes);
         const mode = parseDocsSettings(Object.fromEntries(["docs.enabled","docs.maintain","docs.since","docs.page_cap","docs.hour"].map((key) => [key, configuredSetting(settings, key)]))).mode;
-        const status = mode === "auto" ? await services.docsPlaceStatus(projectId, place, { force: recheck }) : { verdict: null, cadence: "nightly" as const, lastReadAt: services.docsLastRead(place) };
+        let status: DocsStatus;
+        if (mode !== "auto") status = { verdict: null, cadence: "nightly" as const, lastReadAt: services.docsLastRead(place) };
+        else {
+          const key = `${projectId}|${place.hostId}|${place.path}`;
+          const hit = docsStatusCache.get(key);
+          if (!recheck && hit && Date.now() - hit.at < DOCS_STATUS_TTL_MS) status = hit.status;
+          else {
+            const pending = services.docsPlaceStatus(projectId, place, { force: recheck }).then((fresh) => { docsStatusCache.set(key, { at: Date.now(), status: fresh }); return fresh; });
+            if (recheck) status = await pending;
+            else {
+              let timer: ReturnType<typeof setTimeout> | undefined;
+              const early = await Promise.race([pending.catch(() => null), new Promise<null>((done) => { timer = setTimeout(() => done(null), DOCS_STATUS_WAIT_MS); })]);
+              clearTimeout(timer);
+              pending.catch(() => undefined);
+              status = early ?? hit?.status ?? { verdict: null, cadence: "nightly" as const, lastReadAt: services.docsLastRead(place) };
+            }
+          }
+        }
         const v = status.verdict;
-        rows.push({ hostId: place.hostId, path: place.path, name: place.name, scopes: place.scopes, mode,
+        return { hostId: place.hostId, path: place.path, name: place.name, scopes: place.scopes, mode,
           verdict: v ? { need: v.need, reason: v.reason, confidence: v.confidence, at: v.at,
             facts: { codeFiles: v.facts.codeFiles, contentFiles: v.facts.contentFiles, commits30d: v.facts.commits30d, manifests: v.facts.manifests.slice(0, 5), docsPages: v.facts.docsPages } } : null,
-          cadence: status.cadence, lastReadAt: status.lastReadAt });
-      }
+          cadence: status.cadence, lastReadAt: status.lastReadAt };
+      }));
       return { places: rows };
     },
     /** The «Rescan» button; returns at once, the screen polls list_rule_proposals for progress. */

@@ -689,6 +689,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   // «Общие настройки» edit the global level every project inherits, with the same panel as a project.
   const projectId = activeScope === "globals" ? GLOBAL_SETTINGS_PROJECT_ID : selectedProjectId ?? routeProjectId ?? (subPath || null);
   const isGlobal = projectId === GLOBAL_SETTINGS_PROJECT_ID;
+  // The project screen (get_screen and everything it feeds) is what «Projects» and «General settings» show; «Agents», «Tokens» and «Workflows» keep it hidden and must not pay for it.
+  const projectScreenActive = activeScope === "projects" || activeScope === "globals";
   // A section keeps its own settings over its project's; null edits the project itself.
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [routingStats, setRoutingStats] = useState<RoutingStats | null>(null);
@@ -817,13 +819,14 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     writerDraftRef.current = null;
     setWriterDraft(null);
     try {
+      // The council, routing and defaults lists do not depend on the screen: they start with it, not after it.
+      void rpc.call("get_council_defaults", { projectId }).then((defaults) => { if (generation === loadGeneration.current) setCouncilDefaults((defaults as { seats: typeof councilDefaults }).seats); }).catch(() => setCouncilDefaults([]));
+      void rpc.call("list_councils", { projectId }).then((listed) => { if (generation === loadGeneration.current) setCouncils((listed as { councils: CouncilRow[] }).councils); }).catch(() => setCouncils([]));
+      void rpc.call("get_routing_hint", { projectId }).then((hint) => { if (generation === loadGeneration.current) setRoutingStats(hint as RoutingStats); }).catch(() => setRoutingStats(null));
       const next = await rpc.call("get_screen", { ...scoped, projectId }) as ScreenPayload;
       if (generation !== loadGeneration.current) return;
       setData(next);
       runsWindow.current = next.runsLimit ?? next.runs.length;
-      void rpc.call("get_council_defaults", { projectId }).then((defaults) => { if (generation === loadGeneration.current) setCouncilDefaults((defaults as { seats: typeof councilDefaults }).seats); }).catch(() => setCouncilDefaults([]));
-      void rpc.call("list_councils", { projectId }).then((listed) => { if (generation === loadGeneration.current) setCouncils((listed as { councils: CouncilRow[] }).councils); }).catch(() => setCouncils([]));
-      void rpc.call("get_routing_hint", { projectId }).then((hint) => { if (generation === loadGeneration.current) setRoutingStats(hint as RoutingStats); }).catch(() => setRoutingStats(null));
       if (next.lastSnapshotPath) setSnapshotPath(next.lastSnapshotPath);
       setResultSource(next.writerResultJson);
       setResultPatch(next.writerResultPatch);
@@ -832,7 +835,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     }
   }, [projectId, selectedSectionId, rpc]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!projectScreenActive) return;
+    // Coming back from another scope keeps what is loaded; a different project or section loads its own screen.
+    const held = dataRef.current;
+    if (held && held.projectId === projectId && (held.sectionId ?? null) === selectedSectionId) return;
+    void load();
+  }, [load, projectScreenActive]);
 
   // The runs panel reads its list on its own: the next page of the history, and a light re-read of what is loaded
   // (no screen reload, so nothing blanks) when an attempt changes or the slow poll fires.
@@ -858,8 +867,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
       if (generation === loadGeneration.current) mergeRuns(page.runs as ScreenPayload["runs"], page.total, true);
     } catch { /* the next signal or poll retries */ }
   }, [projectId, isGlobal, selectedSectionId, rpc]);
-  const runsPollMs = useLpRealtime(isGlobal ? null : projectId, ["helpers"], () => { void refreshRuns(); });
-  const runsVisible = tab === "monitor" || tab === "overview";
+  const runsPollMs = useLpRealtime(isGlobal || !projectScreenActive ? null : projectId, ["helpers"], () => { void refreshRuns(); });
+  const runsVisible = projectScreenActive && (tab === "monitor" || tab === "overview");
   useEffect(() => {
     if (!runsVisible || !projectId || isGlobal) return;
     const timer = setInterval(() => { void refreshRuns(); }, runsPollMs);
@@ -869,11 +878,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   useEffect(() => {
     setSelectedSectionId(null);
     setSections([]);
-    if (!projectId || isGlobal) return;
+  }, [projectId]);
+  useEffect(() => {
+    if (!projectId || isGlobal || !projectScreenActive) return;
     let current = true;
     void rpc.call("list_sections", { projectId }).then((result) => { if (current) setSections(result.sections); }).catch(() => undefined);
     return () => { current = false; };
-  }, [projectId, rpc]);
+  }, [projectId, projectScreenActive, rpc]);
 
   // Leaving the global level drops cached project screens: their inherited values may have changed.
   useEffect(() => {
