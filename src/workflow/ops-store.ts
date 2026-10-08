@@ -1,5 +1,5 @@
 import type { LanePilotDatabase } from "../database";
-import type { StoredWorkflow } from "./store";
+import { legacyDefinitionSha256, type StoredWorkflow } from "./store";
 import type { Workflow } from "./schema";
 import type { WorkflowProblem } from "./validate";
 
@@ -66,7 +66,7 @@ export function createStatusResolver(db: LanePilotDatabase) {
       const file = workflow.status;
       if (file === "draft" || file === "deprecated") return { status: file, notes: [] };
       if (item.origin !== "builtin") {
-        const tested = receipt(workflow.id, item.sha256);
+        const tested = receipt(workflow.id, item.sha256) ?? receipt(workflow.id, legacyDefinitionSha256(workflow));
         if (!tested?.green) {
           return { status: "draft", notes: [{ level: "warning", code: "untested",
             message: `The file says "${file}", but there is no green test run for exactly this version of it: it counts as a draft until its tests pass (run its tests from the Workflows tab).` }] };
