@@ -89,4 +89,42 @@ describe("re-running one node of a finished run", () => {
     await engine.idle();
     expect(engine.get(runId)).toMatchObject({ status: "succeeded", output: { summary: ["a", "b"] } });
   });
+
+  // Audit 2026-10-08 r2, B1: a failed run fires its abort controller; a re-run used to reuse the fired one.
+  it("a cancel after the re-run of a failed run still aborts the re-run's step", async () => {
+    const db = journalDb();
+    let fail = true;
+    const signals: AbortSignal[] = [];
+    const engine = engineOn(db, {
+      search: ok(() => ({ items: ["a"], count: 1, kind: "fresh" })),
+      write: { reentrant: true, run: (ctx: StepContext) => { if (fail) throw new Error("down"); signals.push(ctx.signal); return new Promise(() => undefined); } },
+    });
+    const { runId, done } = engine.start({ workflow: wf(), inputs: { query: "q" } });
+    expect(await done).toMatchObject({ status: "failed" });
+    fail = false;
+    expect(await engine.rerunNode(runId, "write")).toMatchObject({ ok: true });
+    for (let tick = 0; tick < 50 && !signals.length; tick++) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.aborted).toBe(false);
+    expect(engine.cancel(runId)).toBe(true);
+    expect(signals[0]!.aborted).toBe(true);
+  });
+
+  it("the goal audit of a re-run gets a live signal", async () => {
+    const db = journalDb();
+    let fail = true;
+    const audited: boolean[] = [];
+    const engine = engineOn(db, {
+      search: ok(() => ({ items: ["a"], count: 1, kind: "fresh" })),
+      write: ok(() => { if (fail) throw new Error("down"); return { text: "written" }; }),
+    }, { auditGoals: async (input) => { audited.push(input.signal.aborted); return { met: input.goals.map((goal) => goal.id), unmet: [] }; } });
+    const goals = [{ id: "g1", done_when: "it is written", evidence: "text in the output" }];
+    const { runId, done } = engine.start({ workflow: wf(), inputs: { query: "q" }, goals });
+    expect(await done).toMatchObject({ status: "failed" });
+    fail = false;
+    expect(await engine.rerunNode(runId, "write")).toMatchObject({ ok: true });
+    await engine.idle();
+    expect(engine.get(runId)).toMatchObject({ status: "succeeded" });
+    expect(audited).toEqual([false]);
+  });
 });

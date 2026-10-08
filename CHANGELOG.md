@@ -10,6 +10,7 @@ From a self-repair of «Lane Pilot nightly docs failed for <path> docs» (treba 
 ## Audit 2026-10-08 round 2 — P0 items 1–6
 
 - **`docs-maintenance-hourly` no longer fails every hour with `running -> skipped` (item 5).** `runDocsMaintenance` opened the stage (`pending → running`) before it decided the pass was not needed (docs off, or the folder is not worth docs), and `running → skipped` is not a legal stage move: the hourly schedule threw on that project, and since the per-project loop had no `try`, every project after it was skipped; the stage stayed `running` for good (hub: layout-A3 since 05:00). The skip is now decided before the stage opens (`pending → skipped`); a receipt a crashed pass left `running` with no child ends `canceled` with the same reason. `runScheduledDocsMaintenance` wraps each project, logs a failure as a warning and goes on (a stop of the plugin still aborts).
+- **A cancel still stops a re-run, and the goal audit of a re-run is not born aborted (item 6, audit B1).** Since 0.1.193 `failRun` and the budget block fire the run's abort controller, and `rerunNode` of that run kept it in `aborts`: the re-run's steps listened to a controller that had already fired, so `cancel`/stop no longer interrupted them, and `closeAfterAudit` handed the goal auditor an aborted signal (the run closed as `goal_audit_unavailable` without a check). `rerunNode` now puts a fresh `AbortController` in before it kicks the run.
 
 ## 0.1.193
 

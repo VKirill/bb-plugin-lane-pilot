@@ -1322,6 +1322,7 @@ export class WorkflowEngine {
       j.event(runId, target.step_key, "rerun", target.state, "pending", `node ${nodeId}: ${doomed.size} step(s) reset or removed`);
     })();
     this.compiledRuns.delete(runId);
+    this.aborts.set(runId, new AbortController()); // a failed or blocked run fired its controller; the re-run's steps and goal audit need a live one
     void this.kick(runId).catch((cause) => this.log(`run ${runId} stopped after a re-run: ${cause instanceof Error ? cause.message : String(cause)}`));
     return { ok: true, stepKey: target.step_key, removed: gone.size };
   }
