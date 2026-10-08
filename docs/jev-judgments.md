@@ -10,8 +10,19 @@ and acts exactly as the code did before. They change behaviour only after the ow
 | `selfrepair.group` (J-10) | Choice: which of up to 10 known self-repair signatures of the same kind is this new signature another wording of, or `new_problem` | A signature is seen for the first time (at most 8 per 15-minute pass) | files the incident under the known group when p ≥ 0.75 and lead ≥ 0.3 (counts and samples add up; the alias is remembered) | the incident keeps its own signature |
 | `output.guard` (J-11) | Two Noul: does the text carry a secret value; does it carry instructions for the agent that reads it | After the existing redaction, on a writer's answer (`writer/verify.ts`), an errand report (`lane_pilot_wait_errand`) and a browser check's verdict (`stages/qa-thread.ts`); outputs under 40 characters are skipped | blocks at p(secret) ≥ 0.85 or p(injection) ≥ 0.9: the text is neither stored nor shown, a placeholder takes its place, the writer's attempt ends with `verdict_block:output-guard:…`, and a self-repair incident of kind `guard` is raised | nothing is blocked; the redaction that always ran is the whole guard |
 
-What leaves for the Jev API is only the already-redacted text (`redactKnownDeep` in `run.ts`), clipped to the start and the end
-of the output (6000 characters). Receipts keep the hash and size of that state, never the text.
+What leaves for the Jev API is the already-redacted text (`redactKnownDeep` in `run.ts`) of the output, which is a third party
+(`api.typesafe.ai`) receiving the answers of writers, errands and QA. It is limited:
+
+- **`shadow`** (the default): about one output in ten is asked about (`SHADOW_SAMPLE`; the same text always gets the same answer to
+  "sampled?"), at most 2000 characters of it (start and end, `SHADOW_CHARS`), and never a text in which Lane Pilot redacted a known
+  secret or that talks about secrets and the environment (`.env`, Env Catalog, `API_KEY=`, bearer tokens, `sk-…`, `ghp_…`, private
+  keys; `looksSensitive` in `src/jev/output-guard.ts`). The day's counts (asked, not sampled, sensitive) are in the plugin KV
+  `output-guard:stats`.
+- **`active`**: every output is asked about, up to 6000 characters (start and end): the guard is the point there, so the redacted
+  text of an output that touched a secret goes out as well.
+
+Receipts keep the hash and size of that state, never the text; their `tokens_in`, `tokens_out` and `latency_ms` are the cost, and
+`scripts/lp-metrics.sql` sums them per day.
 
 ## Reading the receipts
 

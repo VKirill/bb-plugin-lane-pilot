@@ -12,19 +12,19 @@ import { defineJudgment, noul, noulOf } from "../registry";
  */
 export const OUTPUT_GUARD_ID = "output.guard";
 export type OutputKind = "writer" | "errand" | "browser";
-export type OutputGuardInput = { kind: OutputKind; text: string };
+export type OutputGuardInput = { kind: OutputKind; text: string; /** How much of a long text goes out; the default is `GUARD_CHARS`. */ limit?: number };
 export type OutputGuardDecision = { blocked: false } | { blocked: true; reason: "secret" | "injection" };
 
 /** The part of a long output the questions read: its start and its end, where a report keeps what matters. */
 export const GUARD_CHARS = 6_000;
-export const clipForGuard = (text: string): string => (text.length <= GUARD_CHARS ? text : `${text.slice(0, GUARD_CHARS / 2)}\n[…]\n${text.slice(-GUARD_CHARS / 2)}`);
+export const clipForGuard = (text: string, limit = GUARD_CHARS): string => (text.length <= limit ? text : `${text.slice(0, limit / 2)}\n[…]\n${text.slice(-limit / 2)}`);
 
 export const outputGuard = defineJudgment<OutputGuardInput, OutputGuardDecision>({
   id: OUTPUT_GUARD_ID,
   version: 1,
   defaultMode: "shadow",
   timeoutMs: 5_000,
-  stateBuilder: (input) => ({ produced_by: input.kind, output: clipForGuard(input.text) }),
+  stateBuilder: (input) => ({ produced_by: input.kind, output: clipForGuard(input.text, input.limit) }),
   questions: () => ({
     secret: noul(
       "Does `output` contain the value of a secret written out in full: an API key, access token, password, private key, session cookie or other credential that someone could use?",

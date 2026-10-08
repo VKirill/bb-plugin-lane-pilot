@@ -13,6 +13,7 @@ function database(since = "") {
     create table lane_pilot_run(id text primary key, project_id text not null);
     create table lane_pilot_attempt(id text primary key, run_id text not null, task_id text not null, state text not null, reason text, created_at integer not null, harness_version text);
     create table lane_pilot_failure_triage(project_id text, attempt_id text, reason text, origin text, failed_at integer);
+    create table lane_pilot_jev_receipt(id integer primary key autoincrement, judgment text, mode text, status text, input_chars integer, latency_ms integer, tokens_in integer, tokens_out integer, at integer);
     create temp table lp_params(days integer, since_version text); insert into lp_params values (7, '${since}');`);
   db.exec(views);
   return db;

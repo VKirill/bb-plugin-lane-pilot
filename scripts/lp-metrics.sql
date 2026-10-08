@@ -40,3 +40,10 @@ select '== Sandbox and drills (separate)' as report;
 select count(*) attempts, sum(state='accepted') accepted, round(100.0*sum(state='accepted')/nullif(count(*),0),1) accepted_pct, sum(cls='harness') lp_fault,
   count(distinct project) projects
 from lp_attempt_class where scope='sandbox' and created_at > (select ms from lp_cut);
+
+-- What the Jev output guard (J-11) costs: calls, characters sent to the Jev API, tokens and latency, by day and mode.
+select '== Jev output guard (J-11) calls in the window' as report;
+select date(at / 1000, 'unixepoch') day, mode, count(*) calls, sum(status != 'ok') failed, sum(input_chars) chars_sent,
+  coalesce(sum(tokens_in), 0) tokens_in, coalesce(sum(tokens_out), 0) tokens_out, cast(avg(latency_ms) as integer) avg_latency_ms
+from lane_pilot_jev_receipt where judgment = 'output.guard' and at > (select ms from lp_cut)
+group by 1, 2 order by 1 desc, 2;
