@@ -26,8 +26,11 @@ const INFRA_BACKOFF_MS = 10 * 60_000;
 const INFRA_REDRIVE_LIMIT = 3;
 /** A task parked for a secret is dropped from the sweep after this long; the PM sends it again. */
 const SECRET_PARK_MS = 24 * 3600_000;
+// Writers wait while a machine has less than 15 GB or 5 % of its disk free, whichever is SMALLER: a large disk needs no 5 % (23 GB
+// of a 460 GB Mac mini held every writer at 16 GB free, 2026-10-08), a small one never has 15 GB to spare. Never below 3 GB.
 const DISK_MIN_FREE_BYTES = 15 * 2 ** 30;
 const DISK_MIN_FREE_SHARE = 0.05;
+const DISK_FLOOR_BYTES = 3 * 2 ** 30;
 
 export type ParkedTask = {
   projectId:string; runId:string; taskId:string; pmThreadId:string; klass:FailureClass;
@@ -222,7 +225,7 @@ export function createStability(ctx:ServerCore, services:Services) {
   async function diskHolds(hostId:string, path:string):Promise<string | null> {
     const free = await ctx.host.call("diskFree", { requestedHostId:hostId, path }, { hostId, timeoutMs:15_000 }).catch(() => null);
     if (!free || !free.totalBytes) return null;
-    const low = free.freeBytes < Math.max(DISK_MIN_FREE_BYTES, free.totalBytes * DISK_MIN_FREE_SHARE);
+    const low = free.freeBytes < Math.max(DISK_FLOOR_BYTES, Math.min(DISK_MIN_FREE_BYTES, free.totalBytes * DISK_MIN_FREE_SHARE));
     return low ? `only ${Math.round(free.freeBytes / 2 ** 30)} GB free on ${hostId}` : null;
   }
 

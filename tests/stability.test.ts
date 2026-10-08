@@ -243,3 +243,21 @@ describe("harness_version on the attempt", () => {
     expect((await stability.loadParked()).map((row) => row.taskId)).toEqual(["T1"]);
   });
 });
+
+describe("disk hold", () => {
+  const GB = 2 ** 30;
+  const holds = async (freeGb:number, totalGb:number) => {
+    const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    const host = { call:async () => ({ freeBytes:freeGb * GB, totalBytes:totalGb * GB }) };
+    const { stability } = createStability({ bb, db, host, log:() => undefined } as never, { activeWriterTasks:new Set() } as never);
+    return stability.diskHolds("host_mini", "/srv/p");
+  };
+  it("holds writers below the smaller of 15 GB and 5 % of the disk, never below 3 GB (Mac mini 460 GB held at 16 GB free, 2026-10-08)", async () => {
+    expect(await holds(16, 460)).toBeNull();
+    expect(await holds(14, 460)).toMatch(/only 14 GB free/);
+    expect(await holds(6, 100)).toBeNull();
+    expect(await holds(4, 100)).toMatch(/GB free/);
+    expect(await holds(2, 40)).toMatch(/GB free/);
+  });
+});
