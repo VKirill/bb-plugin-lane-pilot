@@ -5,6 +5,7 @@
 Audit 2026-10-08 round 3.
 
 - **`docs-maintenance-hourly` no longer retries a run whose PM chat is gone (item 8).** Hub, layout-A3: the PM chat `thr_9u6bj5c6bq` of an accepted run was deleted, so the run (state `accepted`, never closed by the abandoned-run sweep) kept being picked up every hour, `runDocsMaintenance` threw `Thread not found` on its first read of the chat, and the `docs-maintenance` receipt stayed `running` (`docs_spawn_requested`, no child) since 05:00 UTC. The hourly pass now looks at the PM chat before it starts maintenance; when it is deleted or archived, every open `docs-maintenance` receipt of that run ends `canceled` with `pm_chat_gone` and the project is skipped. The stuck hub receipt closes on the first hourly tick after the deploy.
+- **A task parked for a dirty base checkout stops after three restarts, not twelve (item 11).** A restart took the task out of the parked list together with its `redrives` count, so a second failure started at zero and the loop ran until the attempt budget (12 full writer runs). The count and the `since` moment of a restarted task are now kept for a day (`stability:redrives`) and picked up when the task is parked again; the backoff doubles with it. A secret wait is not counted. Test: three restarts, no fourth, PM told.
 
 ## 0.1.195
 

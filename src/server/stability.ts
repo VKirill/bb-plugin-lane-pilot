@@ -24,6 +24,9 @@ const BREAKER_PROBE_MS = 30 * 60_000;
 const REDRIVE_PER_SWEEP = 3;
 const INFRA_BACKOFF_MS = 10 * 60_000;
 const INFRA_REDRIVE_LIMIT = 3;
+const REDRIVES_KEY = "stability:redrives";
+/** The count of a restarted task is kept this long; a failure a day later starts a new count. */
+const REDRIVE_MEMO_MS = 24 * 3600_000;
 /** A task parked for a secret is dropped from the sweep after this long; the PM sends it again. */
 const SECRET_PARK_MS = 24 * 3600_000;
 // Writers wait while a machine has less than 15 GB or 5 % of its disk free, whichever is SMALLER: a large disk needs no 5 % (23 GB
@@ -85,6 +88,22 @@ export function createStability(ctx:ServerCore, services:Services) {
   }
   async function saveParked(list:ParkedTask[]) { await bb.storage.kv.set(PARKED_KEY, list); }
 
+  /**
+   * What a restarted task had used up. A restart leaves the parked list (the task runs again), so the count of its
+   * redrives lived only in the row and a second failure began at zero: dirty_base looped up to the 12 attempts of the
+   * budget instead of three (audit round 3, B5). The memo outlives the row for a day.
+   */
+  async function loadRedrives():Promise<Record<string, { redrives:number; since?:number; at:number }>> {
+    const stored = await bb.storage.kv.get(REDRIVES_KEY).catch(() => null);
+    return stored && typeof stored === "object" && !Array.isArray(stored) ? stored as Record<string, { redrives:number; since?:number; at:number }> : {};
+  }
+  async function rememberRedrive(row:ParkedTask, redrives:number, now:number) {
+    const memo = await loadRedrives();
+    for (const [key, value] of Object.entries(memo)) if (now - value.at > REDRIVE_MEMO_MS) delete memo[key];
+    memo[`${row.runId}:${row.taskId}`] = { redrives, since:row.since ?? row.at, at:now };
+    await bb.storage.kv.set(REDRIVES_KEY, memo);
+  }
+
   /** Tells each PM once a minute at most, in one message, which of its tasks were parked or restarted. */
   function notePm(pmThreadId:string, line:string) {
     if (!pmThreadId) return;
@@ -127,8 +146,9 @@ export function createStability(ctx:ServerCore, services:Services) {
     if (klass === "harness") noteHarnessFailure(input.projectId, fingerprint, now);
     const list = await loadParked();
     const previous = list.find((row) => row.runId === input.runId && row.taskId === input.taskId);
+    const memo = previous ? undefined : (await loadRedrives())[`${input.runId}:${input.taskId}`];
     const entry:ParkedTask = { projectId:input.projectId, runId:input.runId, taskId:input.taskId, pmThreadId:input.pmThreadId, klass,
-      reason:input.reason.slice(0, 400), fingerprint, version:VERSION, at:now, since:previous?.since, redrives:previous?.redrives ?? 0 };
+      reason:input.reason.slice(0, 400), fingerprint, version:VERSION, at:now, since:previous?.since ?? memo?.since, redrives:previous?.redrives ?? memo?.redrives ?? 0 };
     await saveParked([...list.filter((row) => row !== previous), entry]);
     bb.log.info(`Lane Pilot parked ${input.taskId} (${klass}: ${fingerprint})`);
     if (waitingSecret) notePm(input.pmThreadId, `${input.taskId} waits for a secret its checks need (${input.reason.slice(0, 160)}); call env_request for it, or ask the owner to allow it in secrets.allow. It restarts by itself once the access is in place, no attempt is spent.`);
@@ -209,6 +229,8 @@ export function createStability(ctx:ServerCore, services:Services) {
       const attempt = getAttempt(db, attemptId);
       const ok = attempt ? await services.enqueueResumedWriter(row.projectId, attempt).catch(() => false) : false;
       if (!ok) { keep.push({ ...row, redrives:row.redrives + 1, at:now }); continue; }
+      // A task waiting for a secret is not counted against the redrive limit.
+      await rememberRedrive(row, waiting ? row.redrives : row.redrives + 1, now);
       perProject.set(row.projectId, count + 1);
       started.push(row.taskId);
       notePm(row.pmThreadId, `${row.taskId} restarted from its writer stage (${waiting ? "its secret is in place" : row.klass === "harness" ? `Lane Pilot ${VERSION} fixed «${row.fingerprint}»` : "machine fault retry"}).`);

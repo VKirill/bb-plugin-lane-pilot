@@ -103,6 +103,27 @@ describe("a dirty base checkout", () => {
     expect(await stability.sweep(11 * 60_000)).toEqual(["T5"]);
     expect(resumed).toEqual(["T5"]);
   });
+
+  // Audit 2026-10-08 round 3, B5: a restart left the parked list and took its count with it, so the loop ran up to 12 writers.
+  it("counts the restarts across failures: three restarts, then no fourth", async () => {
+    const { stability, resumed } = setup();
+    // Ahead of the clock: the restarts create real attempts, which must be older than the simulated failures.
+    const MIN = 60_000, T0 = Date.now() + 30 * 24 * 60 * MIN;
+    const fail = (at:number) => stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T6", pmThreadId:"pm", state:"validation_failed", reason:dirty }, T0 + at);
+    await fail(0);
+    expect(await stability.sweep(T0 + 11 * MIN)).toEqual(["T6"]);
+    expect(await stability.loadParked()).toEqual([]);
+    await fail(12 * MIN);
+    expect((await stability.loadParked())[0]).toMatchObject({ redrives:1 });
+    expect(await stability.sweep(T0 + 12 * MIN + 21 * MIN)).toEqual(["T6"]);
+    await fail(40 * MIN);
+    expect(await stability.sweep(T0 + 40 * MIN + 41 * MIN)).toEqual(["T6"]);
+    await fail(90 * MIN);
+    expect((await stability.loadParked())[0]).toMatchObject({ redrives:3 });
+    expect(await stability.sweep(T0 + 90 * MIN + 24 * 60 * MIN - 1)).toEqual([]);
+    expect(resumed).toEqual(["T6", "T6", "T6"]);
+    expect(await stability.loadParked()).toEqual([]);
+  });
 });
 
 describe("breaker", () => {
