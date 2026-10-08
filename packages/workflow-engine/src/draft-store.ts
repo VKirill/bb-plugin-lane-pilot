@@ -1,9 +1,10 @@
+import type { LanePilotDatabase } from "./db";
 import { randomUUID } from "node:crypto";
-import type { LanePilotDatabase } from "./database";
-import { applyDraftOps, checkDraft, newDraftDefinition, slugWorkflowId } from "../workflow/draft";
-import type { DraftCheck, DraftOp, DraftScope, RawDefinition, Refusal } from "../workflow";
-import type { DraftTestResult } from "../workflow";
-import type { ValidateOptions } from "../workflow";
+
+import { applyDraftOps, checkDraft, newDraftDefinition, slugWorkflowId } from "./draft";
+import type { DraftCheck, DraftOp, DraftScope, RawDefinition, Refusal } from "./draft";
+import type { DraftTestResult } from "./draft-test";
+import type { ValidateOptions } from "./validate";
 
 /** Appended to the plugin's migrations (append only): drafts of workflows and their version history. */
 export const draftMigrations: string[] = [

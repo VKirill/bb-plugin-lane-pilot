@@ -1,6 +1,5 @@
-import { BUILTIN_SOURCES } from "./builtin";
-import { globalWorkflowDir, loadWorkflowStore } from "../storage";
-import type { WorkflowFileSource, WorkflowStore } from "../storage";
+import { globalWorkflowDir, loadWorkflowStore } from "./store";
+import type { WorkflowFileSource, WorkflowStore } from "./store";
 
 /**
  * The workflows an instance can offer and run: the built-in ones plus the global files of the hub (`~/.lane-pilot/workflows`),
@@ -15,15 +14,15 @@ export type WorkflowCatalog = {
   invalidate(): void;
 };
 
-export function createWorkflowCatalog(options: { globalDir?: string | null; files?: WorkflowFileSource; ttlMs?: number; now?: () => number; log?: (message: string) => void;
-  resolveStatus?: Parameters<typeof loadWorkflowStore>[0]["resolveStatus"] } = {}): WorkflowCatalog {
+export function createWorkflowCatalog(options: { builtin: Parameters<typeof loadWorkflowStore>[0]["builtin"]; globalDir?: string | null; files?: WorkflowFileSource; ttlMs?: number; now?: () => number; log?: (message: string) => void;
+  resolveStatus?: Parameters<typeof loadWorkflowStore>[0]["resolveStatus"] }): WorkflowCatalog {
   const now = options.now ?? Date.now;
   const ttl = options.ttlMs ?? 30_000;
   let last: WorkflowStore | null = null, loadedAt = 0, loading: Promise<WorkflowStore> | null = null;
   const globalDir = options.globalDir === undefined ? globalWorkflowDir() : options.globalDir ?? undefined;
   const load = async (): Promise<WorkflowStore> => {
     try {
-      const next = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, files: options.files, globalDir, ...(options.resolveStatus ? { resolveStatus: options.resolveStatus } : {}) });
+      const next = await loadWorkflowStore({ builtin: options.builtin, files: options.files, globalDir, ...(options.resolveStatus ? { resolveStatus: options.resolveStatus } : {}) });
       last = next; loadedAt = now();
       for (const problem of next.problems) options.log?.(`workflow file ${problem.source} not loaded: ${problem.problems.filter((item) => item.level === "error").map((item) => item.message).join("; ")}`);
       return next;

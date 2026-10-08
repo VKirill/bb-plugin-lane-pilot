@@ -2,12 +2,12 @@ import { dirname } from "node:path";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { BUILTIN_SOURCES } from "../builtin";
-import type { Field, Workflow } from "../schema";
+import type { Field, Workflow } from "@lane-pilot/workflow-engine";
 import { sha256Text } from "../../storage";
-import { parseGoals } from "../goals";
+import { parseGoals } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
 import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../../storage";
-import { workflowView, type WorkflowView } from "../view";
+import { workflowView, type WorkflowView } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 

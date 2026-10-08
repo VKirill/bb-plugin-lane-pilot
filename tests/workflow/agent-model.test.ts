@@ -6,9 +6,9 @@ import { resolveStepExecutors, DELEGATED_ACTIONS } from "../../src/rooms/workflo
 import { validateSettingValue, validateSettingsObject } from "../../src/rooms/settings/setting-validation";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { BUILTIN_PRESETS, PRESET_FIELDS, PRESET_SLUGS, presetKey, presetSelection, presetSlug } from "@lane-pilot/models";
-import type { StepContext } from "../../src/rooms/workflow/engine";
-import type { GraphNode } from "../../src/rooms/workflow/schema";
-import { loadWorkflow, parseWorkflow } from "../../src/rooms/workflow/validate";
+import type { StepContext } from "@lane-pilot/workflow-engine";
+import type { GraphNode } from "@lane-pilot/workflow-engine";
+import { loadWorkflow, parseWorkflow } from "@lane-pilot/workflow-engine";
 import { workflow } from "./fixtures";
 
 const pm = { providerId: "codex", model: "gpt-6-luna" };

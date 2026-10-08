@@ -25,7 +25,7 @@ import { NONE, routeWorkflow } from "../src/rooms/workflow/route-workflow";
 import { choiceOf } from "@lane-pilot/jev";
 import { createJev } from "@lane-pilot/jev";
 import { createJevRouterModel } from "../src/rooms/workflow/route-model";
-import { routeIntent, scorerOutput, type RouterModel } from "../src/rooms/workflow/router";
+import { routeIntent, scorerOutput, type RouterModel } from "@lane-pilot/workflow-engine";
 import { publishedCatalog } from "../tests/workflow/router-catalog";
 import { EVAL_SET, HELD_OUT_SET, RESERVE_SET } from "../tests/workflow/router-eval-set";
 

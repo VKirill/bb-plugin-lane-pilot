@@ -2,11 +2,11 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { GATE_CATEGORIES, HARNESS_VERSION, appendGateEvaluation, casResetSettings, casUpsertSetting, casUpsertSettings, claimActivation, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, countAttempts, countChargedAttempts, countStageReceipts, countThreadTurns, createAttempt, createRun, createTask, endSpawnFailure, findOpenNativeRun, freeTaskId, freezeRunBinding, getActivation, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getSettingVersions, getStageReceiptResult, getTask, getTaskGitBase, getTaskPlan, importSettingsOnce, inspectState, latestTaskAttemptState, listAttemptsForTask, listCheckDurations, listGateEvents, listLiveTasksForRun, listOpenAttempts, listRunsPage, listRunsWithAttempts, listSecretIssuance, listSettingRows, listStageEvents, listStageReceiptSummaries, listStageReceipts, listTaskKinds, listTaskTerminalStates, listTasksForRun, listUnansweredWriterQuestions, listUnfinishedStages, loadProjectSettings, loadPrototypeConfig, loadRunHelperPolicyJson, onAttemptChanged, openDatabase, persistRunHelperPolicyJson, recordCheckDuration, recordFinishedAttempt, recordSecretIssuance, releaseActivation, saveProjectSetting, savePrototypeConfig, saveReasoningTrace, saveStageReceipt, saveTaskGitBase, saveTaskPlan, searchMemoryRecords, sectionBindingId, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setIllegalTransitionLog, setReasoningThread, setRunObjective, setRunSettingsScopes, setRunState, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt, updateTaskContract } from "./database";
 export type { GateEventRow, LanePilotDatabase, RunHistoryRow, StageEventRow, StageReceiptRow } from "./database";
-export { createDraftStore } from "./draft-store";
-export type { DraftRow, DraftStore } from "./draft-store";
-export { casWriteWorkflowFile, sha256Text } from "./files";
-export { TERMINAL_RUN, createJournal, sha256, stableId } from "./journal";
-export type { EffectRow, Journal, RunRow, RunStatus, StepRow } from "./journal";
-export { createStatusResolver } from "./ops-store";
-export { definitionSha256, globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir } from "./store";
-export type { StoredWorkflow, WorkflowFileSource, WorkflowStore } from "./store";
+export { createDraftStore } from "@lane-pilot/workflow-engine";
+export type { DraftRow, DraftStore } from "@lane-pilot/workflow-engine";
+export { casWriteWorkflowFile, sha256Text } from "@lane-pilot/workflow-engine";
+export { TERMINAL_RUN, createJournal, sha256, stableId } from "@lane-pilot/workflow-engine";
+export type { EffectRow, Journal, RunRow, RunStatus, StepRow } from "@lane-pilot/workflow-engine";
+export { createStatusResolver } from "@lane-pilot/workflow-engine";
+export { definitionSha256, globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir } from "@lane-pilot/workflow-engine";
+export type { StoredWorkflow, WorkflowFileSource, WorkflowStore } from "@lane-pilot/workflow-engine";

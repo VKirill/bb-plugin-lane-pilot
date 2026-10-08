@@ -13,7 +13,7 @@ import type { ArchitectDeps } from "../src/rooms/workflow/server/workflow-archit
 import type { ServerCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { connectOps, insertAfterOps, newNode, problemMaps, readWhen, viewEdgeIndexes, writeWhen, whenError, expressionError, uniqueId } from "../src/rooms/workflow/ui/workflow-edit-model";
-import { draftView } from "../src/rooms/workflow/draft-view";
+import { draftView } from "@lane-pilot/workflow-engine/ui";
 import { BROWSER_DIGEST_STEPS } from "./workflow/architect-fixture";
 
 // The graph pulls in xyflow and elkjs on first use; a cold import under load can pass the 5 s default.

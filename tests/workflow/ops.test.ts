@@ -6,7 +6,7 @@ import type { ServerCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
 import { createWorkflowLibrary } from "../../src/rooms/workflow/server/workflow-library";
 import { createWorkflowOps } from "../../src/rooms/workflow/server/workflow-ops";
-import { createStatusResolver } from "../../src/rooms/storage/ops-store";
+import { createStatusResolver } from "@lane-pilot/workflow-engine";
 import { engineOn, journalDb, ok, wf } from "./engine-helpers";
 import { workflow } from "./fixtures";
 

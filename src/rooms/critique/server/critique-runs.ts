@@ -17,9 +17,9 @@ import { buildExecutionPacket, renderPacketExcerpts } from "../../tasks/executio
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../pm-read";
 import { boundedAgentName } from "../role";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../specialist";
-import { reasonForStatus } from "../verdict";
+import { reasonForStatus } from "@lane-pilot/workflow-engine";
 import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../quality-mode";
-import type { Verdict, VerdictStatus } from "../verdict";
+import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
 import { configuredSetting } from "../../core/server";
 import { fullAccessSpawn } from "../../core/server";

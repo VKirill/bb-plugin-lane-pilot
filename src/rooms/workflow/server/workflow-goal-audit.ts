@@ -1,8 +1,8 @@
-import { agentPrompt, dataBlock, outputContract } from "../agent-output";
-import type { EngineOptions } from "../engine";
-import { goalsSha } from "../goals";
-import type { GoalAudit } from "../goals";
-import type { Field } from "../schema";
+import { agentPrompt, dataBlock, outputContract } from "@lane-pilot/workflow-engine";
+import type { EngineOptions } from "@lane-pilot/workflow-engine";
+import { goalsSha } from "@lane-pilot/workflow-engine";
+import type { GoalAudit } from "@lane-pilot/workflow-engine";
+import type { Field } from "@lane-pilot/workflow-engine";
 import { redactKnown } from "@lane-pilot/kit";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";

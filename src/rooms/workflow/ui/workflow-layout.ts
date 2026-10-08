@@ -1,4 +1,4 @@
-import type { WorkflowView, ViewNode, ViewEdge } from "../view";
+import type { WorkflowView, ViewNode, ViewEdge } from "@lane-pilot/workflow-engine";
 
 /**
  * Where the nodes of a workflow graph go. elkjs does the layering (it handles loops and nested graphs); this module feeds it

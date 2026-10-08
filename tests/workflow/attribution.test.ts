@@ -4,8 +4,8 @@ import { migrations } from "../../src/rooms/storage/database";
 import type { ServerCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
 import { createWorkflowLibrary } from "../../src/rooms/workflow/server/workflow-library";
-import { PIPELINE_RUNS_ATTRIBUTION } from "../../src/rooms/storage/ops-store";
-import { runRecords } from "../../src/rooms/workflow/run-stats";
+import { PIPELINE_RUNS_ATTRIBUTION } from "@lane-pilot/workflow-engine";
+import { runRecords } from "@lane-pilot/workflow-engine";
 import { wf } from "./engine-helpers";
 
 /** Stats per real workflow: the 24 runs of the old per-task pipeline were counted under the chain that took its id. */

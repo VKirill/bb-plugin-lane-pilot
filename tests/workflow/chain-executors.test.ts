@@ -11,11 +11,11 @@ import type { Services } from "../../src/rooms/core/server/services";
 import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
 import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
 import type { ChainRuntime } from "../../src/rooms/workflow/server/workflow-runtime";
-import { registerPureActions } from "../../src/rooms/workflow/actions";
-import { WorkflowEngine } from "../../src/rooms/workflow/engine";
-import { registerReducers } from "../../src/rooms/workflow/reducers";
-import { parseWorkflow } from "../../src/rooms/workflow/validate";
-import type { Workflow } from "../../src/rooms/workflow/schema";
+import { registerPureActions } from "@lane-pilot/workflow-engine";
+import { WorkflowEngine } from "@lane-pilot/workflow-engine";
+import { registerReducers } from "@lane-pilot/workflow-engine";
+import { parseWorkflow } from "@lane-pilot/workflow-engine";
+import type { Workflow } from "@lane-pilot/workflow-engine";
 
 /**
  * The executors of a chain on the host, against a fake BB: a helper thread is a scripted answer, the PM's checkout is a real git

@@ -8,7 +8,7 @@ import { setJevForTests } from "@lane-pilot/jev";
 import type { JevAnswer, JevQuestion } from "@lane-pilot/jev";
 import { invoiceInput, registerInvoiceActions } from "../../src/rooms/workflow/server/workflow-invoice";
 import { engineOn, journalDb } from "../workflow/engine-helpers";
-import { parseWorkflow } from "../../src/rooms/workflow/validate";
+import { parseWorkflow } from "@lane-pilot/workflow-engine";
 
 afterEach(() => setJevForTests(null));
 

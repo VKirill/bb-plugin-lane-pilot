@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
-import type { DraftOp } from "../draft";
+import type { DraftOp } from "@lane-pilot/workflow-engine";
 import type { DraftDoc } from "./workflow-drafts";
 import type { ModelError } from "./workflow-edit-model";
 

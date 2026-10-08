@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { workflowSchema } from "../../src/rooms/workflow/schema";
-import type { Workflow } from "../../src/rooms/workflow/schema";
-import { outputFields } from "../../src/rooms/workflow/lower";
-import { loadWorkflow, parseWorkflow, WorkflowError } from "../../src/rooms/workflow/validate";
+import { workflowSchema } from "@lane-pilot/workflow-engine";
+import type { Workflow } from "@lane-pilot/workflow-engine";
+import { outputFields } from "@lane-pilot/workflow-engine";
+import { loadWorkflow, parseWorkflow, WorkflowError } from "@lane-pilot/workflow-engine";
 import { codes, workflow } from "./fixtures";
 
 const problems = (source: unknown, options = {}) => { const loaded = loadWorkflow(source, options); return loaded.ok ? loaded.warnings : loaded.problems; };

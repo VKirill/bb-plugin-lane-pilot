@@ -1,11 +1,11 @@
 import { HARNESS_VERSION } from "../../storage";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
-import { LP_TASK_PIPELINE, builtinWorkflow } from "../builtin";
-import { createWorkflowCatalog } from "../catalog";
-import { ENGINE_COMPAT_VERSION, WorkflowEngine } from "../engine";
+import { BUILTIN_SOURCES, LP_TASK_PIPELINE, builtinWorkflow } from "../builtin";
+import { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
+import { ENGINE_COMPAT_VERSION, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
-import { registerPureActions } from "../actions";
-import { registerReducers } from "../reducers";
+import { registerPureActions } from "@lane-pilot/workflow-engine";
+import { registerReducers } from "@lane-pilot/workflow-engine";
 import { createWorkflowAgents } from "./workflow-agent";
 import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
@@ -33,7 +33,7 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     ctx.realtime.notify(LP_ALL_PROJECTS, "workflow", undefined, runId);
   };
   const statuses = createStatusResolver(db);
-  const workflowCatalog = createWorkflowCatalog({ log: (message) => bb.log.warn(`Lane Pilot ${message}`), resolveStatus: statuses.resolve });
+  const workflowCatalog = createWorkflowCatalog({ builtin: BUILTIN_SOURCES, log: (message) => bb.log.warn(`Lane Pilot ${message}`), resolveStatus: statuses.resolve });
   const workflowAgents = createWorkflowAgents();
   const engine = new WorkflowEngine({
     db, harnessVersion: HARNESS_VERSION, compatVersion: ENGINE_COMPAT_VERSION,

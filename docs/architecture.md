@@ -24,6 +24,8 @@ bb-plugin-lane-pilot/
 │   ├── jev/                      Jev client, registry, thresholds, run wrapper, receipts, three generic judgments
 │   ├── host-calls/               runOnHost: runCommand on a BB host with the timeout rules in one place
 │   ├── settings-catalog/         ui-catalog (generated), channels, defaults, provider pool, bookkeeping paths
+│   ├── contracts/                the zod schemas several rooms share (task-v2, stage receipt, workflow view, install receipt ...)
+│   ├── workflow-engine/          schema, validator, expressions, engine, router, journal and stores, catalog, view; no built-in workflows
 │   ├── i18n/                     t(), locale detection, the chrome dictionary and ten partial dictionaries
 │   └── council handoff memory-core resilience run-insights thread-observe   (older packages, own READMEs)
 └── src/rooms/                    one folder per domain
@@ -34,15 +36,15 @@ bb-plugin-lane-pilot/
         └── …                     everything else is private to the room
 ```
 
-Rooms (files, lines of TypeScript; the lines include the index files):
+Rooms (files, lines of TypeScript; the lines include the index files). There are nine packages new in this layout: kit, ui-kit, models, jev, host-calls, settings-catalog, i18n, contracts, workflow-engine.
 
 | Room | Files | Lines | server / ui | Public faces |
 |---|---:|---:|---|---|
 | `anamnesis` | 30 | 3602 | 0 / 2 | domain, ui |
-| `contracts` | 10 | 1888 | 0 / 0 | domain (index.ts assembles `hostContract` and `rpcContract` from `schemas`, `host` and seven `rpc-*` parts) |
+| `contracts` | 9 | 1521 | 0 / 0 | domain (index.ts assembles `hostContract` and `rpcContract` from `host` and seven `rpc-*` parts; the schemas are `@lane-pilot/contracts`) |
 | `core` | 17 | 1654 | 17 / 0 | server (ServerCore, Services, RPC aggregator, schedules, thread keys) |
 | `council` | 4 | 661 | 2 / 2 | server, ui |
-| `critique` | 19 | 2556 | 3 / 2 | domain, server, ui |
+| `critique` | 17 | 2330 | 3 / 2 | domain, server, ui |
 | `docs` | 10 | 1691 | 3 / 2 | domain, server, ui |
 | `host-worker` | 4 | 1040 | 0 / 0 | domain (host handlers, jobs, script runner) |
 | `learning` | 21 | 2103 | 0 / 0 | domain |
@@ -59,13 +61,13 @@ Rooms (files, lines of TypeScript; the lines include the index files):
 | `self-repair` | 7 | 1862 | 5 / 2 | server, ui |
 | `settings` | 15 | 2434 | 4 / 6 | domain, server, ui |
 | `stability` | 12 | 1296 | 9 / 0 | domain, server |
-| `storage` | 7 | 2017 | 0 / 0 | domain (database.ts and the workflow stores it imports) |
-| `tasks` | 14 | 966 | 4 / 0 | domain, server |
+| `storage` | 2 | 1397 | 0 / 0 | domain (database.ts; the workflow stores are in `@lane-pilot/workflow-engine`) |
+| `tasks` | 13 | 924 | 4 / 0 | domain, server |
 | `tools` | 6 | 1125 | 5 / 0 | server |
 | `ui-shell` | 19 | 2385 | 0 / 19 | ui (page, tabs, project header and rail) |
 | `usage` | 6 | 1021 | 4 / 2 | server, ui |
 | `verification` | 22 | 3685 | 6 / 0 | domain, server |
-| `workflow` | 75 | 13542 | 22 / 23 | domain, server, ui (the pure engine is still here, see Open) |
+| `workflow` | 50 | 7923 | 22 / 23 | domain, server, ui (the engine itself is `@lane-pilot/workflow-engine`) |
 | `writer` | 33 | 6138 | 17 / 2 | domain, server, ui |
 
 `scripts/refactor/rooms.ts` is the table that says which file is in which room; `rooms-plan.ts` reports what is unmapped.
@@ -96,8 +98,8 @@ server.ts  host.ts  app.tsx
 
 ## Open
 
-- `@lane-pilot/workflow-engine` is not a package yet: the engine files in `src/rooms/workflow` import the storage stores, `database.ts` types and a critique helper directly, and `contracts` needs them as schemas; ports (`WorkflowStore`, `Journal`, `OpsStore`) come first.
-- `@lane-pilot/contracts` is a room, not a package: it assembles the schedule and anamnesis contract fragments that live in their rooms; `host-jobs` (core) waits for it.
+- `rpcContract` and `hostContract` stay in the `contracts` room, not in `@lane-pilot/contracts`: they assemble the schedule and anamnesis fragments that live in their rooms. `host-jobs` (core) needs `HOST_JOB_KINDS` and could move to `host-calls` once the fragments are in the package.
+- The built-in workflows (`workflows/*.json`) are listed in `src/rooms/workflow/builtin.ts` and handed to `createWorkflowCatalog`; the engine package has no repository-root data.
 - The tests are still in `tests/` (vitest also looks in `src/rooms/**/tests`); only the tests of the packages moved with them.
 - `src/rooms/storage/database.ts` (1 300 lines, 78 functions) is not split into per-room stores yet; `core/server/services.ts` still names every module's type (51-file type cycle).
 

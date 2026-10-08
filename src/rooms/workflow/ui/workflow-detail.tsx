@@ -6,7 +6,7 @@ import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
-import type { ViewEdge, ViewNode, WorkflowView } from "../view";
+import type { ViewEdge, ViewNode, WorkflowView } from "@lane-pilot/workflow-engine";
 import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
 import { useLpRealtime } from "../../ui-shell/ui";
 import { useObservedWidth } from "@lane-pilot/ui-kit";

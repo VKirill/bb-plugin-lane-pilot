@@ -1,13 +1,13 @@
-import { PURE_ACTION_KEYS, pureActionExecutor } from "../../src/rooms/workflow/actions";
+import { PURE_ACTION_KEYS, pureActionExecutor } from "@lane-pilot/workflow-engine";
 import { writeFileSync } from "node:fs";
 import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
-import type { RunGoal } from "../../src/rooms/workflow/goals";
-import type { NodeExecutor, RunSummary, StepContext } from "../../src/rooms/workflow/engine";
-import { executorKey, lowerWorkflow, outputFields } from "../../src/rooms/workflow/lower";
-import { registerReducers } from "../../src/rooms/workflow/reducers";
-import type { Field, QualityMode, Workflow } from "../../src/rooms/workflow/schema";
-import { loadWorkflowStore } from "../../src/rooms/storage/store";
-import type { WorkflowStore } from "../../src/rooms/storage/store";
+import type { RunGoal } from "@lane-pilot/workflow-engine";
+import type { NodeExecutor, RunSummary, StepContext } from "@lane-pilot/workflow-engine";
+import { executorKey, lowerWorkflow, outputFields } from "@lane-pilot/workflow-engine";
+import { registerReducers } from "@lane-pilot/workflow-engine";
+import type { Field, QualityMode, Workflow } from "@lane-pilot/workflow-engine";
+import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
+import type { WorkflowStore } from "@lane-pilot/workflow-engine";
 import { engineOn, journalDb, rows } from "./engine-helpers";
 
 /**

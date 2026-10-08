@@ -1,5 +1,5 @@
-import { settleVerdict } from "../critique";
-import type { Verdict, VerdictFinding } from "../critique";
+import { settleVerdict } from "./verdict";
+import type { Verdict, VerdictFinding } from "./verdict";
 import type { NodeExecutor, StepContext } from "./engine";
 
 /**

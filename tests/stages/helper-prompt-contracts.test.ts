@@ -13,7 +13,7 @@ import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique
 import { STAGE_IDS } from "@lane-pilot/contracts";
 import { docsMaintenancePrompt, nightlyDocsPrompt } from "../../src/rooms/docs/docs";
 import { gateTriagePrompt, parseGateTriageResult } from "../../src/rooms/verification/gate-triage";
-import { extractModelJson } from "../../src/rooms/critique/model-json";
+import { extractModelJson } from "@lane-pilot/workflow-engine";
 import { nightFixBlockedReason, nightFixPrompt } from "../../src/rooms/night/night-fix";
 import { nightReviewPrompt, parseNightReviewResult } from "../../src/rooms/night/night";
 import { onboardingPrompt, parseOnboardingPreview } from "../../src/rooms/project-life/onboarding";

@@ -5,7 +5,7 @@ import type { rpcContract, stepExecutorSchema } from "../../contracts";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import type { CatalogProvider, ModelCatalog } from "@lane-pilot/models";
-import type { ViewNode, WorkflowView } from "../view-core";
+import type { ViewNode, WorkflowView } from "@lane-pilot/workflow-engine/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { choiceRefusal, type ModelChoice } from "./workflow-model-ops";
 import { NativeModelPicker } from "./workflow-native-picker";

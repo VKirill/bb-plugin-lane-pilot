@@ -3,8 +3,8 @@ import { MiniMap, Panel, ReactFlow, ReactFlowProvider, useReactFlow, type NodeCh
 import { t, type Locale } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Icon } from "@lane-pilot/ui-kit";
-import { edgeCaption } from "../edge-label";
-import type { ViewNode, WorkflowView } from "../view";
+import { edgeCaption } from "@lane-pilot/workflow-engine/ui";
+import type { ViewNode, WorkflowView } from "@lane-pilot/workflow-engine";
 import { isBranching, layoutGraph, type Direction, type Expansions, type Layout } from "./workflow-layout";
 import { nodeTitle } from "./workflow-titles";
 import type { NodeRun } from "./workflow-run";

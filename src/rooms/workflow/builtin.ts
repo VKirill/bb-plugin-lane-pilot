@@ -40,8 +40,8 @@ import uiAudit from "../../../workflows/ui-audit.json";
 import webResearch from "../../../workflows/web-research.json";
 import xToTelegramDigest from "../../../workflows/x-to-telegram-digest.json";
 import yearReview from "../../../workflows/year-review.json";
-import type { Workflow } from "./schema";
-import { parseWorkflow } from "./validate";
+import type { Workflow } from "@lane-pilot/workflow-engine";
+import { parseWorkflow } from "@lane-pilot/workflow-engine";
 
 /** The workflows that ship with Lane Pilot (`workflows/*.json`, inlined by the bundler). Add a file here to add one (a test checks that every file is listed). */
 export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = [

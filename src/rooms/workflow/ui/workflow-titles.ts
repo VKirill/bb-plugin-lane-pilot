@@ -1,5 +1,5 @@
 import { t, type Locale } from "@lane-pilot/i18n";
-import type { ViewNode } from "../view";
+import type { ViewNode } from "@lane-pilot/workflow-engine";
 
 /** The name a node shows: its title in the owner's language, else its label, else its id; the entry and exit are named by the screen. */
 export const nodeTitle = (node: ViewNode, locale: Locale): string =>

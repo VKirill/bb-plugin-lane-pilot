@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { clipped, extractModelJson, NO_TOOLS_LINE } from "./model-json";
+import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 
 export type PmReadSettings = {
   enabled:boolean;

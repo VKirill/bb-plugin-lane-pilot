@@ -1,4 +1,4 @@
-import { scorerOutput, type RouterCard, type RouterModelInput, type RouterModelOutput } from "./router";
+import { scorerOutput, type RouterCard, type RouterModelInput, type RouterModelOutput } from "@lane-pilot/workflow-engine";
 import { choice, choiceOf, defineJudgment, noul, noulOf, type Answers } from "@lane-pilot/jev";
 
 /**

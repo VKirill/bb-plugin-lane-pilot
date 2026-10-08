@@ -6,10 +6,10 @@ import type { LanePilotDatabase } from "../../src/rooms/storage/database";
 import { routeTool, runWorkflowTool, workflowStatusTool } from "../../src/rooms/workflow/server/workflow-tools";
 import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-tools";
 import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
-import { WorkflowEngine } from "../../src/rooms/workflow/engine";
-import { loadWorkflowStore } from "../../src/rooms/storage/store";
-import type { WorkflowStore } from "../../src/rooms/storage/store";
-import { WorkflowError } from "../../src/rooms/workflow/validate";
+import { WorkflowEngine } from "@lane-pilot/workflow-engine";
+import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
+import type { WorkflowStore } from "@lane-pilot/workflow-engine";
+import { WorkflowError } from "@lane-pilot/workflow-engine";
 import { ok, wf } from "./engine-helpers";
 
 const PROJECT = "proj-1", PM = "pm-thread-1", RUN = "lprun-1";

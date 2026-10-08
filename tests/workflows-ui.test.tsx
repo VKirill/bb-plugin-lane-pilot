@@ -379,7 +379,7 @@ const draftV2 = () => ({
 
 describe("draft view", () => {
   it("reads an unfinished draft leniently and says what a patch changed", async () => {
-    const { draftView, draftChanges } = await import("../src/rooms/workflow/draft-view");
+    const { draftView, draftChanges } = await import("@lane-pilot/workflow-engine/ui");
     const first = draftView(draftV1());
     expect(first.nodes.map((node) => node.id)).toEqual(["$start", "search"]);
     // The edge to a node that is not there yet is left out, not an error.

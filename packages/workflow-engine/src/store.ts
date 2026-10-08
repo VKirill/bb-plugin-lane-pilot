@@ -1,9 +1,9 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { Workflow } from "../workflow";
-import { loadWorkflow, validateWorkflow } from "../workflow/validate";
-import type { WorkflowProblem } from "../workflow";
+import type { Workflow } from "./schema";
+import { loadWorkflow, validateWorkflow } from "./validate";
+import type { WorkflowProblem } from "./validate";
 import { sha256Hex } from "@lane-pilot/kit";
 
 /** Where workflow files are read from: the hub's disk here, the host of a project's machine later. */

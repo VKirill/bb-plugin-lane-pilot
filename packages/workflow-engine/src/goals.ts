@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { sha256 } from "../storage";
+import { sha256 } from "./journal";
 
 /**
  * The goals of a run (K7): what the owner agreed the run is for, as the router wrote them (`done_when` says when the goal is

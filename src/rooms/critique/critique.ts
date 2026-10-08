@@ -1,9 +1,9 @@
 import { z } from "zod";
 import type { CoverageFinding } from "./critique-coverage";
-import { clipped, extractModelJson, NO_TOOLS_LINE } from "./model-json";
+import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 import { PLAN_CRITIC_METHOD } from "./role-method";
-import { isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, settleVerdict, statusToLegacyDecision, verdictSchema, verdictSummary, verdictSeverityToLegacy, withoutDecision } from "./verdict";
-import type { Verdict, VerdictStatus } from "./verdict";
+import { isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, settleVerdict, statusToLegacyDecision, verdictSchema, verdictSummary, verdictSeverityToLegacy, withoutDecision } from "@lane-pilot/workflow-engine";
+import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 
 export const critiqueResultSchema = z.object({
   decision: z.enum(["approve", "changes_requested"]),

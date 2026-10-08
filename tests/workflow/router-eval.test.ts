@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIN_CONFIDENCE, routeIntent } from "../../src/rooms/workflow/router";
+import { MIN_CONFIDENCE, routeIntent } from "@lane-pilot/workflow-engine";
 import { publishedCatalog, realCatalog } from "./router-catalog";
 import { EVAL_SET, HELD_OUT_SET, RESERVE_SET } from "./router-eval-set";
 

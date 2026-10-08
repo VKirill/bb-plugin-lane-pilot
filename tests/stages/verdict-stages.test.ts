@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, critiqueFromStageResult, parseCodeCritique, parseCodeCritiqueSettings, shouldRequestRepair } from "../../src/rooms/critique/code-critique";
 import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
-import { reasonForStatus } from "../../src/rooms/critique/verdict";
+import { reasonForStatus } from "@lane-pilot/workflow-engine";
 import { parseSpecialistResult, specialistPrompt } from "../../src/rooms/critique/specialist";
 
 const evidence = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });

@@ -5,9 +5,9 @@ import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/d
 import { commandsScript, createWorkflowPreflight, parseCommandAnswers } from "../../src/rooms/workflow/server/workflow-preflight";
 import { runWorkflowTool } from "../../src/rooms/workflow/server/workflow-tools";
 import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-tools";
-import { checkRequires, effectiveRequires, preflightRefusal, secretName, toolGroup } from "../../src/rooms/workflow/preflight";
-import type { RequirePorts } from "../../src/rooms/workflow/preflight";
-import type { Workflow } from "../../src/rooms/workflow/schema";
+import { checkRequires, effectiveRequires, preflightRefusal, secretName, toolGroup } from "@lane-pilot/workflow-engine";
+import type { RequirePorts } from "@lane-pilot/workflow-engine";
+import type { Workflow } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow, builtinWorkflows } from "../../src/rooms/workflow/builtin";
 import { wf } from "./engine-helpers";
 

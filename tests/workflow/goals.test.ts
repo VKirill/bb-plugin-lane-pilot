@@ -6,10 +6,10 @@ import type { Services } from "../../src/rooms/core/server/services";
 import { createGoalAuditor } from "../../src/rooms/workflow/server/workflow-goal-audit";
 import { amendGoalsTool, runWorkflowTool, workflowStatusTool } from "../../src/rooms/workflow/server/workflow-tools";
 import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-tools";
-import { agentPrompt, outputContract } from "../../src/rooms/workflow/agent-output";
-import type { StepContext } from "../../src/rooms/workflow/engine";
-import { goalsBlock, goalsSha, parseGoals, regroundDue } from "../../src/rooms/workflow/goals";
-import type { GoalAudit, RunGoal } from "../../src/rooms/workflow/goals";
+import { agentPrompt, outputContract } from "@lane-pilot/workflow-engine";
+import type { StepContext } from "@lane-pilot/workflow-engine";
+import { goalsBlock, goalsSha, parseGoals, regroundDue } from "@lane-pilot/workflow-engine";
+import type { GoalAudit, RunGoal } from "@lane-pilot/workflow-engine";
 import { engineOn, journalDb, ok, rows, wf } from "./engine-helpers";
 
 const GOALS: RunGoal[] = [

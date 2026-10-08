@@ -7,7 +7,7 @@ import { choiceOf, type Answers } from "@lane-pilot/jev";
 import { createJev } from "@lane-pilot/jev";
 import type { JevClient } from "@lane-pilot/jev";
 import type { JevAnswer, JevChoiceQuestion, JevQuestion } from "@lane-pilot/jev";
-import { MIN_CONFIDENCE, routeIntent, type RouterCard, type RouterModel } from "../../src/rooms/workflow/router";
+import { MIN_CONFIDENCE, routeIntent, type RouterCard, type RouterModel } from "@lane-pilot/workflow-engine";
 import { EVAL_SET } from "../workflow/router-eval-set";
 import { publishedCatalog } from "../workflow/router-catalog";
 

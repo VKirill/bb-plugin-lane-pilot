@@ -1,4 +1,4 @@
-import type { DraftOp } from "../../src/rooms/workflow/draft";
+import type { DraftOp } from "@lane-pilot/workflow-engine";
 
 /**
  * The patches the architect makes for «search the web in the browser, analyse documents, write a summary, send it to

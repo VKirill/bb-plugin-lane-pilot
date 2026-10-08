@@ -3,8 +3,8 @@ import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Icon, type IconName } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
-import { cronProblem, timezoneProblem } from "../cron";
-import { conditionText } from "../view-core";
+import { cronProblem, timezoneProblem } from "@lane-pilot/workflow-engine/ui";
+import { conditionText } from "@lane-pilot/workflow-engine/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { ChipsField, Field, FieldListEditor, NumberField, Section, SelectField, SwitchField, TextArea, TextField, say, typeLabel } from "./workflow-edit-fields";
 import {

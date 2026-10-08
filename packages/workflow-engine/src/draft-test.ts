@@ -1,4 +1,5 @@
-import type { LanePilotDatabase } from "../storage";
+import type { LanePilotDatabase } from "./db";
+
 import { WorkflowEngine } from "./engine";
 import type { NodeExecutor, StepContext } from "./engine";
 import { PURE_ACTION_KEYS, pureActionExecutor } from "./actions";

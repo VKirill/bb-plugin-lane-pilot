@@ -5,7 +5,7 @@ import { resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agen
 import { createWorkflowModels } from "../../src/rooms/workflow/server/workflow-models";
 import { resolveStepExecutors } from "../../src/rooms/workflow/server/workflow-step-executors";
 import { offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
-import { modelsSection } from "../../src/rooms/workflow/capabilities";
+import { modelsSection } from "@lane-pilot/workflow-engine";
 import { presetKey } from "@lane-pilot/models";
 import type { ServerCore } from "../../src/rooms/core/server/core";
 import { journalDb } from "./engine-helpers";

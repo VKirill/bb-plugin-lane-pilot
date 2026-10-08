@@ -1,4 +1,5 @@
-import type { LanePilotDatabase } from "./database";
+import type { LanePilotDatabase } from "./db";
+
 import { sha256Hex } from "@lane-pilot/kit";
 
 /**

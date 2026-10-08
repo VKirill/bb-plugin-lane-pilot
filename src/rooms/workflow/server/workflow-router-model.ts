@@ -1,6 +1,6 @@
-import { outputContract, agentPrompt } from "../agent-output";
-import type { RouterModel, RouterModelOutput } from "../router";
-import type { Field } from "../schema";
+import { outputContract, agentPrompt } from "@lane-pilot/workflow-engine";
+import type { RouterModel, RouterModelOutput } from "@lane-pilot/workflow-engine";
+import type { Field } from "@lane-pilot/workflow-engine";
 import type { WorkflowAgents } from "./workflow-agent";
 import type { ChainRuntime } from "./workflow-runtime";
 import { sha256Hex } from "@lane-pilot/kit";

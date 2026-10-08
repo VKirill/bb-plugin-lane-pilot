@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { clipped, extractModelJson, NO_TOOLS_LINE } from "./model-json";
+import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 import { CODE_CRITIC_METHOD } from "./role-method";
-import { VERDICT_STATUSES, isVerdictShape, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "./verdict";
-import type { Verdict, VerdictFinding, VerdictStatus } from "./verdict";
+import { VERDICT_STATUSES, isVerdictShape, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
+import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
 
 export const CODE_CRITIQUE_STAGE = "code-critique" as const;

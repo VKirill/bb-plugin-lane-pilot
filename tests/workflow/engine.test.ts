@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { WorkflowEngine } from "../../src/rooms/workflow/engine";
-import type { NodeExecutor } from "../../src/rooms/workflow/engine";
+import { WorkflowEngine } from "@lane-pilot/workflow-engine";
+import type { NodeExecutor } from "@lane-pilot/workflow-engine";
 import { engineOn, journalDb, ok, rows, stepStates, wf } from "./engine-helpers";
 
 const search = ok(() => ({ items: ["a", "b", "c"], count: 3, kind: "fresh" }));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { NodeExecutor, StepContext } from "../../src/rooms/workflow/engine";
+import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { engineOn, journalDb, ok, rows, stepStates, wf } from "./engine-helpers";
 
 /**

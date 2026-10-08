@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
-import { globalWorkflowDir } from "../../src/rooms/storage/store";
+import { globalWorkflowDir } from "@lane-pilot/workflow-engine";
 import { BROWSER_DIGEST_STEPS } from "../workflow/architect-fixture";
 
 /** The editor's RPCs: the same drafts, validator, tests and publish as the architect's tools, called without a chat. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { NodeExecutor } from "../../src/rooms/workflow/engine";
+import type { NodeExecutor } from "@lane-pilot/workflow-engine";
 import { CrashError, engineOn, journalDb, ok, rows, stepStates, wf } from "./engine-helpers";
 
 const until = async (what: string, read: () => unknown, ms = 3000) => {

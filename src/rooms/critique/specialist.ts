@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { clipped, extractModelJson, NO_TOOLS_LINE } from "./model-json";
-import { isSerious, isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSummary, withoutDecision } from "./verdict";
-import type { Verdict, VerdictStatus } from "./verdict";
+import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
+import { isSerious, isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
+import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 
 export const specialistResultSchema = z.object({
   decision: z.enum(["approve", "block"]),

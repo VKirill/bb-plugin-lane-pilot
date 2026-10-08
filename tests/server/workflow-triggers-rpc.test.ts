@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
-import { globalWorkflowDir } from "../../src/rooms/storage/store";
+import { globalWorkflowDir } from "@lane-pilot/workflow-engine";
 
 /** The whole path of a schedule: a file in the owner's folder, its tests, the automation, the tick that starts it through the CLI, and the Run button's RPC. */
 const projectId = "proj_sched";

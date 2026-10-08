@@ -1,8 +1,8 @@
 import type { z } from "zod";
 import type { rpcContract, workflowTrialCaseSchema } from "../../contracts";
 import { HARNESS_VERSION } from "../../storage";
-import { runDraftTest, testCasesOf } from "../draft-test";
-import type { DraftTestResult } from "../draft-test";
+import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
+import type { DraftTestResult } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";

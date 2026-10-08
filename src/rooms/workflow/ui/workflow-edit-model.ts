@@ -1,6 +1,6 @@
 import type { I18nKey } from "@lane-pilot/i18n";
-import type { DraftOp } from "../draft";
-import type { WorkflowView } from "../view-core";
+import type { DraftOp } from "@lane-pilot/workflow-engine";
+import type { WorkflowView } from "@lane-pilot/workflow-engine/ui";
 import type { GraphProblems } from "./workflow-graph";
 
 /**

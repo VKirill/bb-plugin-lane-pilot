@@ -1,4 +1,4 @@
-import type { RouterModel, RouterModelOutput } from "./router";
+import type { RouterModel, RouterModelOutput } from "@lane-pilot/workflow-engine";
 import { NONE, routeWorkflow } from "./route-workflow";
 import { choiceOf } from "@lane-pilot/jev";
 import type { Answers } from "@lane-pilot/jev";
