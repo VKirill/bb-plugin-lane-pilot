@@ -103,6 +103,22 @@ describe("the RPCs of the board", () => {
     expect(elsewhere.conflicts).toEqual([]);
   });
 
+  it("warns about a duplicate by name or by the same task and time, and saves it anyway", async () => {
+    const { rpc, tool } = await setup();
+    const first = await rpc("schedule_upsert", { definition: script({ name: "Sync keys" }) });
+    expect(first.warnings.join(" ")).not.toMatch(/duplicate/);
+    const sameName = await rpc("schedule_upsert", { definition: script({ name: " sync KEYS ", when: { type: "cron", cron: "0 3 * * *", timezone: "UTC" } }) });
+    expect(sameName.ok).toBe(true);
+    expect(sameName.warnings.join(" ")).toMatch(/duplicate of «Sync keys» \(/);
+    const sameJob = await tool({ action: "create", definition: (({ projectId: _p, ...rest }) => rest)(script({ name: "Other name" })) });
+    expect(sameJob.state).toBe("created");
+    expect(sameJob.warnings.join(" ")).toMatch(/duplicate of «Sync keys»/);
+    const different = await rpc("schedule_upsert", { definition: script({ name: "Unrelated", when: { type: "cron", cron: "0 4 * * *", timezone: "UTC" } }) });
+    expect(different.warnings.join(" ")).not.toMatch(/duplicate/);
+    const resaved = await rpc("schedule_upsert", { definition: { ...script({ name: "Sync keys" }), id: first.schedule.id } });
+    expect(resaved.warnings.join(" ")).not.toMatch(/duplicate of «Sync keys» \(/);
+  });
+
   it("changes, pauses and resumes, and the calendar lists the planned times", async () => {
     const { rpc } = await setup();
     const made = (await rpc("schedule_upsert", { definition: script() })).schedule;

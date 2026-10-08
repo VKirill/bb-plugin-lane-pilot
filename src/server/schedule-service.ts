@@ -108,6 +108,11 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
       if (gate.denied.length) warnings.push(`${gate.denied.join(", ")}: the project list «Secrets checks may use» (secrets.allow) leaves it out; add it there or the run fails`);
     }
     if ((task.kind === "workflow" || task.kind === "errand") && !services.workflowTriggers.pmOf(definition.projectId)) warnings.push("the project has no open Lane Pilot PM chat; a run needs one for its threads and questions");
+    // The same job scheduled twice (a PM that did not call list first, a retried create) runs twice: say so, the caller decides.
+    const twins = store.list({ projectId: definition.projectId, states: ["active", "paused"] }).filter((row) => row.id !== selfId
+      && (row.name.trim().toLowerCase() === definition.name.trim().toLowerCase()
+        || (JSON.stringify(taskOf(row)) === JSON.stringify(task) && JSON.stringify(whenOf(row)) === JSON.stringify(definition.when))));
+    if (twins.length) warnings.push(`looks like a duplicate of ${twins.map((row) => `«${row.name}» (${row.id})`).join(", ")}: same name, or the same task at the same time; update or delete one of them if it is not meant`);
     const machine = machineOf(definition.projectId, task);
     const conflicts = machine
       ? findConflicts({ when: definition.when }, store.list({ projectId: definition.projectId, states: ["active"] })

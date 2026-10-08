@@ -4,6 +4,8 @@
 
 Ideas taken from the Synapse AI talk (evaluation: `.bb/chats/thr_jn6c4d4rfj/artifacts/synapse/EVALUATION.md`); the rest was skipped or already done.
 
+- **Saving a schedule that looks like one already there now says so (`src/server/schedule-service.ts`).** The answer of `lane_pilot_schedule create`/`update` and the board's save carry a warning when an active or paused schedule of the project has the same name (case and edge spaces ignored) or the same task at the same time. The save still goes through; the caller decides. No new tool.
+
 - **The same reminder set twice is one reminder (`src/server/relay.ts`).** A retried call or a PM that forgot it had already set a reminder put a second identical card in the chat. `remind` now returns the open reminder of the same thread with the same note (case and edge spaces ignored), the same watched thread and tasks, and a due time within a minute. No refusal, no new tool.
 
 ## 0.1.197
