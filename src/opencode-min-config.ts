@@ -72,6 +72,22 @@ export const OPENCODE_BASH_DENY: readonly string[] = [
   ...["ovh-main", "ovh-vps", "vechkasov-ovh", "selfystudio-work", "claude-dev-key", "10.8.0.1", "54.37.129.153"].flatMap((host) => [`*ssh *${host}*`, `*scp *${host}*`, `*sftp *${host}*`, `*rsync *${host}*`]),
   "*base64*|*sh*",
   "*base64*|*bash*",
+  // Audit 2026-10-08 round 4. The patterns above name `bb` in lower case with one space; the forms below are what got past them: `$BB_CLI env-catalog set`,
+  // a path to bb, the hub address in other notations. A glob cannot read quoting or runs of spaces: this is the second line, the server check is the first.
+  ...["set", "delete", "export", "import-machine-env"].map((sub) => `*env-catalog ${sub}*`),
+  "*env-catalog*--raw*",
+  "*rpc*call*env-catalog*",
+  ...["save_", "reset_", "set_", "stack_install", "stack_connect", "stack_rollback", "native_install_start", "decide_rule_proposal", "rule_set_audience", "memory_record_delete", "prepare_native_session"]
+    .map((method) => `*rpc*call*lane-pilot ${method}*`),
+  ...["config", "token", "disable", "enable", "reload", "remove", "safe-mode"].map((sub) => `*plugin ${sub}*`),
+  // The schedule board runs commands on the owner's machines with the owner's accounts; the anamnesis holds what Lane Pilot knows about the owner. Both are the owner's.
+  ...["schedule_upsert", "schedule_delete", "schedule_pause", "schedule_resume", "schedule_run_now", "schedule_cancel_run", "anamnesis"]
+    .map((method) => `*rpc*call*lane-pilot ${method}*`),
+  ...["create", "update", "delete", "pause", "resume", "run-now", "cancel-run"].map((sub) => `*lane-pilot schedule ${sub}*`),
+  "*lane-pilot anamnesis*",
+  // The hub in the notations ssh reads besides its names and 10.8.0.1 / 54.37.129.153 (octal and mixed spellings, other than 012.010.0.1, are not listed).
+  ...["rescue-vps", "10.8.1", "10.524289", "0x0a080001", "0x0A080001", "0xa080001", "0xA080001", "168296449", "012.010.0.1", "0x36258199", "908427673", "ffff:"]
+    .flatMap((host) => [`*ssh *${host}*`, `*scp *${host}*`, `*sftp *${host}*`, `*rsync *${host}*`]),
 ];
 
 /** The machine's `permission` with the deny rules added to its `bash` rules (a plain `bash: "allow"` becomes `{ "*": "allow" }` first; a global string becomes `{ "*": … }`). */
