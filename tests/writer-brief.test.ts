@@ -245,9 +245,11 @@ describe("writer brief", () => {
 
   it("brief includes sandbox NEEDS_HUMAN instruction and done definition", () => {
     const brief = writerPrompt(task);
-    expect(brief).toContain("Lane Pilot runs the contract's verification itself, in a sandbox.");
+    expect(brief).not.toContain("verification itself");
     expect(brief).toContain("NEEDS_HUMAN: check <command> cannot run in the sandbox: <error>");
-    expect(brief).toContain("Done when every verification command exits 0 and your answer lists the changed paths.");
+    // One statement of who runs the checks (instructions audit 2, 2026-10-08): the old pair said Lane Pilot runs them and the writer must make them exit 0.
+    expect(brief).toContain("Done when your change is complete and each verification command would exit 0; Lane Pilot runs them in a sandbox and returns a failure to you in this thread.");
+    expect(brief).not.toContain("Done when every verification command exits 0");
   });
 });
 
