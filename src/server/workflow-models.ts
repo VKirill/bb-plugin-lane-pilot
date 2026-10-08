@@ -1,14 +1,17 @@
 import type { z } from "zod";
 import type { rpcContract } from "../contracts";
+import { casResetSettings, casUpsertSetting, getSettingVersions, listSettingRows } from "../database";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
 import { mapListedQaHosts } from "../qa-host";
 import type { DraftStore } from "../workflow/draft-store";
 import type { CatalogProvider, ModelCatalog } from "../workflow/model-catalog";
 import type { ServerCore } from "./core";
 import { stringAt } from "./values";
+import { MODEL_OVERRIDE_PREFIX, modelOverrideKey } from "./workflow-agent-model";
 import { resolveStepExecutors, type PmPair } from "./workflow-step-executors";
 
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
+type Input<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["input"]>;
 
 const CATALOG_TTL_MS = 60_000;
 const CALL_TIMEOUT_MS = 8_000;
@@ -94,9 +97,10 @@ export function createWorkflowModels(ctx: ServerCore, deps: { drafts: Pick<Draft
     async stepExecutors(input: { workflowId?: string; draftId?: string; projectId?: string }): Promise<Output<"workflow_step_executors">> {
       let nodes: ReadonlyArray<unknown> | null = null;
       let projectId = input.projectId;
+      let workflowId = input.workflowId;
       if (input.draftId) {
         const draft = deps.drafts.get(input.draftId);
-        if (draft) { nodes = Array.isArray(draft.definition.nodes) ? draft.definition.nodes : []; projectId ??= draft.projectId; }
+        if (draft) { nodes = Array.isArray(draft.definition.nodes) ? draft.definition.nodes : []; projectId ??= draft.projectId; workflowId = draft.workflowId; }
       } else if (input.workflowId) {
         const found = await deps.source({ id: input.workflowId, ...(projectId ? { projectId } : {}) });
         if (found) nodes = found.workflow.nodes;
@@ -108,8 +112,27 @@ export function createWorkflowModels(ctx: ServerCore, deps: { drafts: Pick<Draft
         projectId ? pmPairOf(ctx, projectId).catch(() => null) : Promise.resolve(null),
         within(catalog.get(), CATALOG_WAIT_MS).catch(() => null),
       ]);
+      // The keys the project holds itself tell an override of the project from one for all projects.
+      const ownKeys = new Set(projectId && Object.keys(settings).some((key) => key.startsWith(MODEL_OVERRIDE_PREFIX)) ? listSettingRows(ctx.db, projectId).map((row) => row.key) : []);
       // A catalog that lists nothing (no machine answered) is no evidence that a model is missing.
-      return { found: true, executors: resolveStepExecutors({ nodes, settings, pm, catalog: offered?.providers.length ? offered : null }), pm };
+      return { found: true, executors: resolveStepExecutors({ nodes, settings, pm, catalog: offered?.providers.length ? offered : null, workflowId, ownKeys }), pm };
+    },
+    /** Writes or drops the owner's override of one step: a settings row of the project, or of all projects. */
+    async setOverride(input: Input<"workflow_model_override">): Promise<Output<"workflow_model_override">> {
+      const projectId = input.scope === "global" ? GLOBAL_SETTINGS_PROJECT_ID : input.projectId;
+      const key = modelOverrideKey(input.workflowId, input.nodeId);
+      const known = listSettingRows(ctx.db, projectId).some((row) => row.key === key);
+      const versions = getSettingVersions(ctx.db, projectId, [key]);
+      if (!input.choice) {
+        if (!known) return { ok: true };
+        const result = casResetSettings(ctx.db, { projectId, keys: [key], expectedVersions: versions, validationKeys: [key], validatedRows: listSettingRows(ctx.db, projectId) });
+        return result.ok ? { ok: true } : { ok: false, reason: "conflict" };
+      }
+      const { providerId, model, effort, serviceTier } = input.choice;
+      const value = { provider: providerId, model, ...(effort ? { reasoning_effort: effort } : {}), service_tier: serviceTier === "fast" ? "fast" : "default" };
+      const result = casUpsertSetting(ctx.db, { projectId, key, value, expectedVersion: versions[key] ?? 0 });
+      if (result.ok) return { ok: true };
+      return { ok: false, reason: result.conflict ? "conflict" : result.validation.params[1] ?? "invalid" };
     },
     modelCatalog: (input: { refresh?: boolean }): Promise<Output<"workflow_model_catalog">> => catalog.get(input.refresh === true),
   };

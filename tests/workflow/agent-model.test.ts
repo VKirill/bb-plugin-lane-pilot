@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { agentRequest, withResolvedModel, type HelperRequest } from "../../src/server/workflow-agent";
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "../../src/server/workflow-agent-model";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, modelOverrideKey, resolveAgentModel } from "../../src/server/workflow-agent-model";
 import { resolveStepExecutors, DELEGATED_ACTIONS } from "../../src/server/workflow-step-executors";
 import { validateSettingValue, validateSettingsObject } from "../../src/setting-validation";
 import { VISIBLE_CATALOG } from "../../src/ui-catalog";
@@ -220,5 +220,85 @@ describe("the Models view says what the executor spawns", () => {
       }
     }
     expect(compared).toBeGreaterThan(100);
+  });
+});
+
+describe("the owner's model override of one step", () => {
+  const at = { workflowId: "lp.plan", nodeId: "plan" };
+  const key = modelOverrideKey("lp.plan", "plan");
+  const overrideRow = { provider: "codex", model: "gpt-6-sol", reasoning_effort: "low", service_tier: "fast" };
+  const pickAt = (node: Record<string, string>, settings: Record<string, unknown>, where: typeof at | null = at) =>
+    resolveAgentModel({ role: "planner", node, settings, pm, ...(where ? { at: where } : {}) });
+
+  it("beats the node's fields, its preset, the role's stage, the generic selection and the PM, and names its key", () => {
+    const settings = { [key]: overrideRow, "plan_critique.provider": "acp-opencode", "plan_critique.model": "zai/glm-5.3-flash", "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-sonnet-5-5" };
+    expect(pickAt({ provider: "claude-code", model: "claude-opus-5", model_preset: "strong" }, settings)).toMatchObject({
+      providerId: "codex", model: "gpt-6-sol", reasoningEffort: "low", serviceTier: "fast", source: "override", sourceKey: key, inherited: false, issues: [],
+    });
+  });
+
+  it("applies only to its own workflow and node, and only when it is a complete pair", () => {
+    const settings = { [key]: overrideRow };
+    expect(pickAt({}, settings, { workflowId: "lp.plan", nodeId: "other" }).source).toBe("pm");
+    expect(pickAt({}, settings, { workflowId: "other", nodeId: "plan" }).source).toBe("pm");
+    expect(pickAt({}, settings, null).source).toBe("pm");
+    expect(pickAt({}, { [key]: { provider: "codex" } }).source).toBe("pm");
+    expect(pickAt({}, { [key]: "codex" }).source).toBe("pm");
+  });
+
+  it("keeps the level below's effort when the override names none, and the default tier otherwise", () => {
+    const settings = { [key]: { provider: "codex", model: "gpt-6-sol" }, "plan_critique.provider": "codex", "plan_critique.model": "gpt-6-luna", "plan_critique.reasoning_effort": "high" };
+    expect(pickAt({}, settings)).toMatchObject({ model: "gpt-6-sol", reasoningEffort: "high", serviceTier: null, source: "override" });
+  });
+
+  it("is what the executor spawns and what the Models view shows, for every shipped agent step and errand action", async () => {
+    const dir = new URL("../../workflows/", import.meta.url);
+    let compared = 0;
+    for (const file of readdirSync(dir).filter((name) => name.endsWith(".json"))) {
+      let flow: ReturnType<typeof parseWorkflow>;
+      try { flow = parseWorkflow(JSON.parse(readFileSync(new URL(file, dir), "utf8"))); } catch { continue; }
+      const settings: Record<string, unknown> = {};
+      for (const node of flow.nodes) {
+        settings[modelOverrideKey(flow.id, node.id)] = { provider: "codex", model: "gpt-6-sol", reasoning_effort: "medium", service_tier: "fast" };
+        const child = (node as { child?: unknown }).child;
+        if (node.type === "parallel" && child) settings[modelOverrideKey(flow.id, `${node.id}:child`)] = { provider: "codex", model: "gpt-6-sol", reasoning_effort: "medium", service_tier: "fast" };
+      }
+      const rt = rtFor(settings, pm);
+      const shown = new Map(resolveStepExecutors({ nodes: flow.nodes, settings, pm, workflowId: flow.id, ownKeys: new Set() }).map((row) => [row.nodeId, row]));
+      for (const node of flow.nodes) {
+        const key = String((node as { uses?: string }).uses ?? (node as { action?: string }).action ?? "");
+        let request: HelperRequest | null = null;
+        if (node.type === "agent" && !String((node as { uses?: string }).uses ?? "").startsWith("lp.")) request = requestFor(flow, node as Extract<GraphNode, { type: "agent" }>, rt);
+        else if (node.type === "action" && (DELEGATED_ACTIONS as readonly string[]).includes(key)) {
+          request = { rt, workflowRunId: "r", workflowId: flow.id, stepKey: "s", nodeId: node.id, spawnKey: "k", role: "errand", title: "t", prompt: "", fields: [] } as unknown as HelperRequest;
+        }
+        if (!request) continue;
+        const spawned = await withResolvedModel(request);
+        const row = shown.get(node.id)!;
+        expect({ file, node: node.id, provider: row.providerId, model: row.model, effort: row.reasoningEffort, tier: row.serviceTier, scope: row.overrideScope })
+          .toEqual({ file, node: node.id, provider: spawned.provider, model: spawned.model, effort: spawned.reasoning, tier: spawned.serviceTier ?? null, scope: "global" });
+        compared += 1;
+      }
+    }
+    expect(compared).toBeGreaterThan(40);
+  });
+
+  it("is told apart in the view: the project's own row is «project», one inherited from all projects is «global»", () => {
+    const settings = { [key]: overrideRow };
+    const nodes = [{ id: "plan", type: "agent", role: "planner" }, { id: "lint", type: "action", action: "lp.lint" }];
+    const view = (ownKeys: string[]) => resolveStepExecutors({ nodes, settings, pm, workflowId: "lp.plan", ownKeys: new Set(ownKeys) });
+    expect(view([key])[0]).toMatchObject({ source: "override", sourceKey: key, canOverride: true, overrideScope: "project" });
+    expect(view([])[0]).toMatchObject({ source: "override", overrideScope: "global" });
+    // Without a workflow id (a draft of a new workflow) nothing applies; a step with no model cannot be overridden.
+    expect(resolveStepExecutors({ nodes, settings, pm })[0]).toMatchObject({ source: "pm", canOverride: false, overrideScope: null });
+    expect(view([key])[1]).toMatchObject({ mode: "none", canOverride: false });
+  });
+
+  it("is validated as a setting", () => {
+    expect(validateSettingValue(key, overrideRow)).toBeNull();
+    expect(validateSettingValue(key, { provider: "codex", model: "x" })).toBeNull();
+    for (const bad of [{ provider: "codex" }, "codex", { provider: "codex", model: "x", reasoning_effort: "ultra" }, { provider: "codex", model: "x", service_tier: "turbo" }]) {
+      expect(validateSettingValue(key, bad)).toMatchObject({ code: "invalid_choice", key });
+    }
   });
 });

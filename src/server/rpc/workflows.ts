@@ -17,6 +17,7 @@ export function workflowsRpc(ctx: ServerCore, services: Services) {
     workflow_run_snapshot: ({ runId }) => library.runSnapshot({ runId }),
     workflow_step_executors: (input) => models.stepExecutors(input),
     workflow_model_catalog: (input) => models.modelCatalog(input),
+    workflow_model_override: (input) => models.setOverride(input),
     workflow_draft_create: async ({ projectId, workflowId, mode, scope }) => {
       const found = await library.source({ id: workflowId, projectId });
       if (!found) return { draftId: null, workflowId: null, reused: false, reason: "not_found" };
@@ -39,5 +40,5 @@ export function workflowsRpc(ctx: ServerCore, services: Services) {
       const draft = architect.createFrom({ projectId, scope: scope ?? "global", workflowId: copyId, definition: { ...definition, name, version: 1 }, name, description: found.workflow.description });
       return { draftId: draft.id, workflowId: copyId, reused: false };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_list" | "workflow_get" | "workflow_run_snapshot" | "workflow_draft_create" | "workflow_step_executors" | "workflow_model_catalog">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_list" | "workflow_get" | "workflow_run_snapshot" | "workflow_draft_create" | "workflow_step_executors" | "workflow_model_catalog" | "workflow_model_override">;
 }
