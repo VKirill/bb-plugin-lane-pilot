@@ -34,22 +34,51 @@ const ORIGIN_LABEL: Record<(typeof ORIGINS)[number], I18nKey> = {
   writer: "rulesOrigin_writer", orchestrator: "rulesOrigin_orchestrator", environment: "rulesOrigin_environment", task: "rulesOrigin_task", unclear: "rulesOrigin_unclear",
 };
 
+/** The model that sorts failures and writes rule proposals for a project, read from the rules listing and saved on its own. */
+export function useRulesAnalyzer(projectId: string | null): {
+  analyzer: ExperimentalProviderModelPickerValue | null; loaded: boolean; touched: { current: boolean };
+  save: (next: ExperimentalProviderModelPickerValue) => Promise<void>;
+} {
+  const rpc = useRpc<typeof rpcContract>();
+  const [analyzer, setAnalyzer] = useState<Analyzer | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  // The picker reports a normalized value on mount (a model missing from the catalog, an unsupported effort); only a
+  // change the owner made by hand is saved, or opening the screen would silently replace the analyzer.
+  const touched = useRef(false);
+  useEffect(() => {
+    if (!projectId) { setAnalyzer(null); setLoaded(true); return; }
+    let live = true;
+    setLoaded(false);
+    void rpc.call("list_rule_proposals", { projectId }).then((listed) => { if (live) { setAnalyzer((listed as Listed).analyzer); setLoaded(true); } }).catch(() => { if (live) setLoaded(true); });
+    return () => { live = false; };
+  }, [projectId, rpc]);
+  const save = async (next: ExperimentalProviderModelPickerValue) => {
+    if (!touched.current || !projectId) return;
+    try {
+      const saved = await rpc.call("save_rules_analyzer", { projectId, analyzer: {
+        providerId: next.providerId, model: next.model, reasoningLevel: next.reasoningLevel,
+        serviceTier: next.serviceTier === "fast" ? "fast" : next.serviceTier === "default" ? "default" : null,
+      } });
+      setAnalyzer((saved as { analyzer: Analyzer }).analyzer);
+    } catch (cause) {
+      toast.error(t("rulesFailed"), { description: cause instanceof Error ? cause.message : String(cause) });
+    }
+  };
+  return {
+    analyzer: analyzer ? { providerId: analyzer.providerId, model: analyzer.model, reasoningLevel: analyzer.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"], ...(analyzer.serviceTier ? { serviceTier: analyzer.serviceTier } : {}) } : null,
+    loaded, touched, save,
+  };
+}
+
 /**
  * Repeated writer failures the owner turns into project rules, and the rules already in force. Jev's sorting of
  * failed attempts is summarised on top; «Rescan» runs the sorting and the analyzer model on demand.
  */
-export function RuleProposals({ projectId, picker }: {
-  projectId: string;
-  picker: (value: ExperimentalProviderModelPickerValue, onChange: (next: ExperimentalProviderModelPickerValue) => void) => ReactNode;
-}) {
+export function RuleProposals({ projectId }: { projectId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const [listed, setListed] = useState<Listed | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  // The picker reports a normalized value on mount (a model missing from the catalog, an unsupported effort); only a
-  // change the owner made by hand is saved, or opening the screen would silently replace the analyzer.
-  const touched = useRef(false);
-
   const load = useCallback(async () => {
     try { setListed(await rpc.call("list_rule_proposals", { projectId }) as Listed); } catch { setListed(null); }
   }, [projectId, rpc]);
@@ -87,19 +116,6 @@ export function RuleProposals({ projectId, picker }: {
     }
   };
 
-  const saveAnalyzer = async (next: ExperimentalProviderModelPickerValue) => {
-    if (!touched.current) return;
-    try {
-      await rpc.call("save_rules_analyzer", { projectId, analyzer: {
-        providerId: next.providerId, model: next.model, reasoningLevel: next.reasoningLevel,
-        serviceTier: next.serviceTier === "fast" ? "fast" : next.serviceTier === "default" ? "default" : null,
-      } });
-      await load();
-    } catch (cause) {
-      toast.error(t("rulesFailed"), { description: cause instanceof Error ? cause.message : String(cause) });
-    }
-  };
-
   const proposals = listed?.proposals ?? [];
   const pending = proposals.filter((row) => row.state === "proposed");
   const accepted = proposals.filter((row) => row.state === "accepted");
@@ -107,7 +123,6 @@ export function RuleProposals({ projectId, picker }: {
   const memoryOn = listed ? listed.memory.enabled && listed.memory.inject : true;
   const scan = listed?.scan;
   const triage = listed?.triage;
-  const analyzer = listed?.analyzer;
 
   const meta = (proposal: Proposal) => (
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -184,13 +199,7 @@ export function RuleProposals({ projectId, picker }: {
       ) : null}
 
       <div className="max-w-xl space-y-2">
-        <div className="text-xs font-medium">{t("rulesAnalyzer")}</div>
-        <p className="text-xs text-muted-foreground">{t("rulesAnalyzerHelp")}</p>
-        <div onPointerDownCapture={() => { touched.current = true; }} onKeyDownCapture={() => { touched.current = true; }}>
-        {picker(analyzer
-          ? { providerId: analyzer.providerId, model: analyzer.model, reasoningLevel: analyzer.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"], ...(analyzer.serviceTier ? { serviceTier: analyzer.serviceTier } : {}) }
-          : { providerId: "", model: "", reasoningLevel: "none" }, (next) => { void saveAnalyzer(next); })}
-        </div>
+        <p className="text-xs text-muted-foreground" data-testid="rules-analyzer-note">{t("rulesAnalyzerWhere")}</p>
         <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" variant="outline" disabled={scanning || !listed} onClick={() => void rescan()}>{scanning ? t("rulesScanRunning") : t("rulesScan")}</Button>
           {scan && scan.state !== "idle" && scan.state !== "running" ? (
@@ -202,10 +211,10 @@ export function RuleProposals({ projectId, picker }: {
             </span>
           ) : null}
         </div>
-        {scan?.reason?.startsWith("jev_unavailable") ? <p className="text-xs text-amber-600">{t("rulesScanJevOff")}</p> : null}
+        {scan?.reason?.startsWith("jev_unavailable") ? <p className="text-xs lp-text-warning">{t("rulesScanJevOff")}</p> : null}
       </div>
 
-      {!memoryOn && (pending.length > 0 || accepted.length > 0) ? <p className="max-w-xl text-xs text-amber-600" data-testid="rules-memory-off">{t("rulesMemoryOff")}</p> : null}
+      {!memoryOn && (pending.length > 0 || accepted.length > 0) ? <p className="max-w-xl text-xs lp-text-warning" data-testid="rules-memory-off">{t("rulesMemoryOff")}</p> : null}
       {listed && proposals.length === 0 ? <p className="text-xs text-muted-foreground">{t("rulesEmpty")}</p> : null}
       {pending.length > 0 ? <div className="space-y-2">
         <div className="text-xs font-medium">{t("rulesPending")}</div>

@@ -123,7 +123,7 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
           >
             <Icon name={roleOf(row).icon} className="size-3" />
             {isVerifying ? (
-              <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-emerald-500" data-testid="verifying-dot" aria-hidden />
+              <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-success" data-testid="verifying-dot" aria-hidden />
             ) : (
               <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-primary" data-testid="active-dot" aria-hidden />
             )}

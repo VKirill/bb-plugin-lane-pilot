@@ -176,7 +176,7 @@ export function SettingHelp({ row }: { row: CatalogRow }) {
 export const InheritanceContext = createContext<{ locale: Locale; data: ScreenPayload | null; reset: (keys: string[]) => void } | null>(null);
 
 export function inheritanceSummary(storageKey: string, locale: Locale, data: ScreenPayload | null): string {
-  if (data?.explicitKeys?.includes(storageKey)) return locale === "ru" ? "Задано в этом проекте" : "Set on this project";
+  if (data?.explicitKeys?.includes(storageKey)) return t("inheritSetHere");
   if (data?.inheritedKeys?.includes(storageKey)) return t("inheritedFromGlobal");
   return t("inheritDefaultShort");
 }
@@ -218,7 +218,7 @@ export function SettingField({
           ) : null}
           {inheritance?.data?.explicitKeys?.includes(row.storageKey) ? (
             <Button variant="ghost" size="sm" className="h-7 px-2" disabled={disabled} onClick={() => inheritance.reset([row.storageKey])}>
-              {inheritance.locale === "ru" ? "Наследовать" : "Reset to inherited"}
+              {t("inheritResetShort")}
             </Button>
           ) : null}
         </div>

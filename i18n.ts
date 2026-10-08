@@ -7,6 +7,7 @@ import { modelsEn, modelsRu } from "./src/i18n-workflow-models";
 import { canvasEn, canvasRu } from "./src/i18n-workflow-canvas";
 import { scheduleEn, scheduleRu } from "./src/i18n-schedule";
 import { anamnesisEn, anamnesisRu } from "./src/i18n-anamnesis";
+import { tabsEn, tabsRu } from "./src/i18n-tabs";
 
 const chromeEn = {
   panelTitle: "Lane Pilot",
@@ -95,9 +96,9 @@ const chromeEn = {
   tabPick: "Settings page",
   languageHelp: "Language of the Lane Pilot screens. Auto follows BB.",
   overviewSetup: "Getting started",
-  overviewWriterMissing: "Not chosen yet. Pick the model that writes the code under Execution.",
+  overviewWriterMissing: "Not chosen yet. Pick the model that writes the code in Team.",
   overviewStack: "Lane Pilot on the machine",
-  overviewStackHelp: "Installs itself the first time you enable Lane Pilot in a chat. Its state is under Maintenance.",
+  overviewStackHelp: "Installs itself the first time you enable Lane Pilot in a chat. Its state is under Runs, Service.",
   overviewStart: "Start a run",
   overviewStartHelp: "In a new chat, press «Enable Lane Pilot» under the message box and send the task.",
   overviewRuns: "Runs in progress: {n}",
@@ -353,7 +354,7 @@ const chromeEn = {
   memoryKindCore: "always",
   memoryKindNote: "on demand",
   memoryRecordRemove: "Remove",
-  memoryRecordIsRule: "This is a rule: remove it on the Rules tab.",
+  memoryRecordIsRule: "This is a rule: remove it in Knowledge, Rules.",
   memoryRecordGone: "This record is already gone.",
   docsNeeded: "docs kept",
   docsNotNeeded: "no docs",
@@ -622,6 +623,8 @@ const chromeEn = {
   fieldUnitThreads: "threads",
   fieldUnitPercent: "%",
   inheritDefaultShort: "Default",
+  inheritSetHere: "Set on this project",
+  inheritResetShort: "Reset to inherited",
   inheritProjectShort: "This project",
   settingMemoryEnabled: "Project memory",
   settingMemoryEnabledHelp: "Turns project memory on for later runs. Already open threads keep their current context.",
@@ -788,7 +791,7 @@ const chromeEn = {
   enumBoolOn: "Enabled",
   enumBoolOff: "Disabled",
   enumUnsupported: "Unsupported value",
-  enumUnsupportedDetails: "This stored option is not in the current list. The technical code is on the Diagnostics tab.",
+  enumUnsupportedDetails: "This stored option is not in the current list. The technical code is in Runs, Service.",
   enumTailSupervisor: "Supervisor output",
   enumTailExecutor: "Executor output",
   enumTailProvider: "Provider output",
@@ -1072,9 +1075,9 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   tabPick: "Раздел настроек",
   languageHelp: "Язык экранов Lane Pilot. «Авто» — как в BB.",
   overviewSetup: "С чего начать",
-  overviewWriterMissing: "Ещё не выбрана. Выберите модель, которая пишет код, на вкладке «Исполнение».",
+  overviewWriterMissing: "Ещё не выбрана. Выберите модель, которая пишет код, на вкладке «Команда».",
   overviewStack: "Lane Pilot на машине",
-  overviewStackHelp: "Ставится сам, когда вы впервые включите Lane Pilot в чате. Состояние — на вкладке «Обслуживание».",
+  overviewStackHelp: "Ставится сам, когда вы впервые включите Lane Pilot в чате. Состояние — в «Прогоны», раздел «Сервис».",
   overviewStart: "Запустить работу",
   overviewStartHelp: "В новом чате нажмите «Включить Lane Pilot» под полем ввода и отправьте задачу.",
   overviewRuns: "Идёт прогонов: {n}",
@@ -1330,7 +1333,7 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   memoryKindCore: "всегда",
   memoryKindNote: "по запросу",
   memoryRecordRemove: "Убрать",
-  memoryRecordIsRule: "Это правило: его снимают на вкладке «Правила».",
+  memoryRecordIsRule: "Это правило: его снимают в «Знания», раздел «Правила».",
   memoryRecordGone: "Этой записи уже нет.",
   docsNeeded: "ведём документацию",
   docsNotNeeded: "без документации",
@@ -1599,6 +1602,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   fieldUnitRounds: "раундов",
   fieldUnitSeconds: "секунд",
   inheritDefaultShort: "По умолчанию",
+  inheritSetHere: "Задано в этом проекте",
+  inheritResetShort: "Наследовать",
   inheritProjectShort: "Этот проект",
   settingMemoryEnabled: "Память проекта",
   settingMemoryEnabledHelp: "Включает память проекта для следующих запусков. Уже открытые треды свой контекст не меняют.",
@@ -1765,7 +1770,7 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   enumBoolOn: "Включено",
   enumBoolOff: "Выключено",
   enumUnsupported: "Неподдерживаемое значение",
-  enumUnsupportedDetails: "Сохранённый вариант отсутствует в текущем списке. Технический код — на вкладке «Диагностика».",
+  enumUnsupportedDetails: "Сохранённый вариант отсутствует в текущем списке. Технический код — в «Прогоны», раздел «Сервис».",
   enumTailSupervisor: "Вывод supervisor",
   enumTailExecutor: "Вывод executor",
   enumTailProvider: "Вывод провайдера",
@@ -1962,8 +1967,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_tavily: "Ищет в сети и собирает отчёты с источниками.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...anamnesisEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...anamnesisRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...anamnesisEn, ...tabsEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...anamnesisRu, ...tabsRu };
 
 export type I18nKey = keyof typeof en;
 export type Locale = "en" | "ru";
