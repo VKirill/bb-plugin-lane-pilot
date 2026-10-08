@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { infrastructureReason } from "./infra";
 import {
   DEFAULT_SOURCES, SOURCES, maxSensitivity, recordId, recordInputSchema, scrubQuote, sensitivityFloor, unsafeReason,
   type AnamnesisRecord, type AnamnesisRecordFull, type Evidence, type HistoryEntry, type Kind, type Sensitivity, type Source, type Status,
@@ -36,6 +37,9 @@ export type ListFilter = {
 
 export type EditPatch = { title?: string; statement?: string; attributes?: Record<string, unknown>; sensitivity?: Sensitivity; confidence?: number; status?: Status };
 
+/** What `purgeTechnical` found among the unconfirmed records: counts by why, by status and by kind. */
+export type PurgeReport = { dryRun: boolean; scanned: number; deleted: number; byReason: Record<string, number>; byStatus: Record<string, number>; byKind: Record<string, number>; kept: { confirmed: number; ownerTouched: number } };
+
 export type Counts = {
   records: number; evidence: number;
   byKind: Record<string, number>; byStatus: Record<string, number>; bySensitivity: Record<string, number>;
@@ -63,6 +67,8 @@ CREATE TABLE IF NOT EXISTS tombstones(id TEXT PRIMARY KEY, cutoff INTEGER NOT NU
 CREATE TABLE IF NOT EXISTS checkpoints(source TEXT PRIMARY KEY, at INTEGER NOT NULL, detail TEXT NOT NULL DEFAULT '{}', updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS sources(source TEXT PRIMARY KEY, enabled INTEGER NOT NULL, changed_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS loads(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, mode TEXT NOT NULL, report TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS notes_files(file TEXT PRIMARY KEY, hash TEXT NOT NULL, written_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS notes_lines(record_id TEXT PRIMARY KEY, file TEXT NOT NULL, line TEXT NOT NULL);
 `;
 
 export type Store = ReturnType<typeof openStore>;
@@ -123,6 +129,9 @@ export function openStore(path: string = anamnesisDbPath()) {
     const id = recordId(input.kind, input.key);
     const bad = unsafeReason(input.title) ?? unsafeReason(input.statement);
     if (bad) return { id, action: "ignored", reason: `unsafe_text: ${bad}`, newEvidence: 0 };
+    // Infrastructure (an address, an ssh command, a key path, a variable name) is never about the owner as a person; the owner may still write it himself.
+    const infra = owner ? null : infrastructureReason(input.title, input.statement);
+    if (infra) return { id, action: "ignored", reason: `infrastructure: ${infra}`, newEvidence: 0 };
 
     let evidence: Evidence[] = input.evidence.map((item) => ({ ...item, ...(item.quote ? { quote: scrubQuote(item.quote) } : {}) }));
     if (owner && !evidence.length) evidence = [{ source: "manual", ref: `owner:${now}`, at: now }];
@@ -281,7 +290,7 @@ export function openStore(path: string = anamnesisDbPath()) {
     forgetAll(now = Date.now()): { removed: number } {
       return tx(() => {
         const removed = num(one("SELECT count(*) AS n FROM records")?.n);
-        for (const table of ["evidence", "history", "records", "tombstones", "checkpoints", "loads"]) run(`DELETE FROM ${table}`);
+        for (const table of ["evidence", "history", "records", "tombstones", "checkpoints", "loads", "notes_lines"]) run(`DELETE FROM ${table}`);
         run("INSERT INTO tombstones(id,cutoff) VALUES ('*',?)", now);
         return { removed };
       });
@@ -302,6 +311,70 @@ export function openStore(path: string = anamnesisDbPath()) {
         return { evidence, records: orphans.length };
       });
     },
+
+    /**
+     * One-shot cleanup of what the first load put in that is not about the owner as a person: unconfirmed records (draft or candidate)
+     * that no one has touched whose evidence comes only from the project data (journal, registry, Lane Pilot runs, Claude memories of
+     * type project or reference, BB memories that are not preferences, the message counts of a BB project), or whose text is
+     * infrastructure. Confirmed, rejected and owner-touched records are never touched.
+     */
+    purgeTechnical(options: { dryRun?: boolean } = {}): PurgeReport {
+      const dryRun = options.dryRun === true;
+      const report: PurgeReport = { dryRun, scanned: 0, deleted: 0, byReason: {}, byStatus: {}, byKind: {}, kept: { confirmed: 0, ownerTouched: 0 } };
+      const technical = (source: string, record: AnamnesisRecord): boolean => {
+        if (source === "journal" || source === "registry" || source === "lp-runs") return true;
+        if (source === "claude-memory") return !["user", "feedback"].includes(String(record.attributes.type ?? ""));
+        if (source === "bb-memory") return record.attributes.memoryKind !== "preference";
+        return false;
+      };
+      return tx(() => {
+        report.kept.confirmed = num(one("SELECT count(*) AS n FROM records WHERE status='confirmed'")?.n);
+        report.kept.ownerTouched = num(one("SELECT count(*) AS n FROM records WHERE status IN ('draft','candidate') AND manual_at>0")?.n);
+        const rows = all(`${SELECT} WHERE r.status IN ('draft','candidate') AND r.manual_at=0`).map(toRecord);
+        report.scanned = rows.length;
+        for (const record of rows) {
+          const sources = all("SELECT DISTINCT source FROM evidence WHERE record_id=?", record.id).map((row) => String(row.source));
+          let reason: string | null = null;
+          if (infrastructureReason(record.title, record.statement)) reason = "infrastructure";
+          else if (record.kind === "project" && record.attributes.bbProjectId !== undefined) reason = "project_activity";
+          else if (sources.length && sources.every((source) => technical(source, record))) reason = "technical_source";
+          if (!reason) continue;
+          report.deleted += 1;
+          report.byReason[reason] = (report.byReason[reason] ?? 0) + 1;
+          report.byStatus[record.status] = (report.byStatus[record.status] ?? 0) + 1;
+          report.byKind[record.kind] = (report.byKind[record.kind] ?? 0) + 1;
+          if (!dryRun) { run("DELETE FROM records WHERE id=?", record.id); run("DELETE FROM history WHERE record_id=?", record.id); }
+        }
+        return report;
+      });
+    },
+
+    /** For each record, its newest evidence and, when messages taught it, the thread of the newest message: what the notes files point to. */
+    evidenceHeads(): Map<string, { latest: { source: string; at: number }; thread?: string }> {
+      const heads = new Map<string, { latest: { source: string; at: number }; thread?: string }>();
+      for (const row of all("SELECT record_id, source, MAX(at) AS at FROM evidence GROUP BY record_id")) heads.set(String(row.record_id), { latest: { source: String(row.source), at: num(row.at) } });
+      for (const row of all("SELECT record_id, ref, MAX(at) AS at FROM evidence WHERE source='bb-message' GROUP BY record_id")) {
+        const head = heads.get(String(row.record_id));
+        if (head) head.thread = String(row.ref).split(":")[0]!;
+      }
+      return heads;
+    },
+
+    /** Where the portrait files stand: the hash of what was last written per file and the line written for each record. */
+    notesState(): { files: Map<string, string>; lines: Map<string, { file: string; line: string }> } {
+      return {
+        files: new Map(all("SELECT file, hash FROM notes_files").map((row) => [String(row.file), String(row.hash)])),
+        lines: new Map(all("SELECT record_id, file, line FROM notes_lines").map((row) => [String(row.record_id), { file: String(row.file), line: String(row.line) }])),
+      };
+    },
+    saveNotesState(file: string, hash: string, lines: ReadonlyMap<string, string>, now = Date.now()): void {
+      tx(() => {
+        run("INSERT INTO notes_files(file,hash,written_at) VALUES (?,?,?) ON CONFLICT(file) DO UPDATE SET hash=excluded.hash, written_at=excluded.written_at", file, hash, now);
+        run("DELETE FROM notes_lines WHERE file=?", file);
+        for (const [id, line] of lines) run("INSERT OR REPLACE INTO notes_lines(record_id,file,line) VALUES (?,?,?)", id, file, line);
+      });
+    },
+    dropNotesLine(id: string): void { run("DELETE FROM notes_lines WHERE record_id=?", id); },
 
     cutoff: (): number => num(one("SELECT cutoff FROM tombstones WHERE id='*'")?.cutoff),
 

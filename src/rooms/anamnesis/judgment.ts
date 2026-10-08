@@ -8,38 +8,41 @@ import type { Kind } from "./model";
  *
  * Three questions in one request: the kind of fact (or `nothing`), whether the fragment is about the owner at all rather than a
  * task for an assistant, and whether it touches health, family, money, documents or clients. `decide` takes a kind only when it
- * is clear; anything else is `nothing`, which stores nothing. Receipts keep the hash and size of the text, never the text.
+ * is clear; anything else is `nothing`, which stores nothing. Family and health fragments are judged too (personal data masked
+ * first); they are stored as sensitive records. Receipts keep the hash and size of the text, never the text.
  */
 export const FRAGMENT_JUDGMENT_ID = "anamnesis.fragment";
-export const FRAGMENT_KINDS: readonly Kind[] = ["skill", "project", "event", "person", "interest", "preference", "fact", "tool"];
+/** What the portrait of the owner holds: who he is, what he knows and can do, the people close to him, hobbies, interests, life events, preferences. Projects and tools are work, not the person. */
+export const FRAGMENT_KINDS: readonly Kind[] = ["self", "knowledge", "skill", "person", "hobby", "interest", "event", "preference", "fact"];
 export type FragmentInput = { text: string };
 export type FragmentDecision = { kind: Kind | "nothing"; kindP: number; aboutOwner: number; sensitive: number };
 
 export const fragmentJudgment = defineJudgment<FragmentInput, FragmentDecision>({
   id: FRAGMENT_JUDGMENT_ID,
-  version: 1,
+  version: 2,
   // Used only from an explicit command of the owner, so it is active; the command is the consent.
   defaultMode: "active",
   timeoutMs: 6_000,
   stateBuilder: (input) => ({ fragment: input.text }),
   questions: () => ({
     kind: choice(
-      "`fragment` is a message the person wrote to their assistants. Does it state something lasting about the person who wrote it, and what kind? Choose `nothing` when it only asks for something to be done, asks a question, reacts to the current work or states a one-off detail of the task.",
+      "`fragment` is a message the person wrote to their assistants. Does it state something lasting about the person who wrote it as a human being, and what kind? Choose `nothing` when it only asks for something to be done, asks a question, reacts to the current work, describes a server, a key, an address or other technical setup, or states a one-off detail of the task.",
       {
-        skill: "Something the person can do or knows: a tool, language, method or area of expertise they use or are learning.",
-        project: "A project, product or business of the person, and their role or progress in it.",
-        event: "Something that happened on a date and is worth remembering: a launch, a decision, a trip, a milestone.",
-        person: "A person around the writer (colleague, client, relative, friend, contractor) and who they are to the writer.",
-        interest: "A topic the person is drawn to beyond a single task.",
+        self: "Who the person is: character, values, beliefs, how they think, work and make decisions, what matters to them.",
+        knowledge: "Something the person knows or has studied: a subject area, a body of knowledge, education.",
+        skill: "Something the person can do: a craft, a language, a method or a tool they use well or are learning.",
+        person: "A person close to the writer (spouse, child, parent, relative, friend, colleague) and who they are to the writer.",
+        hobby: "An activity the person does for pleasure in their free time.",
+        interest: "A topic the person is drawn to, reads about or follows beyond a single task.",
+        event: "Something that happened to the person on a date and is worth remembering: a move, a trip, a birth, a launch, a decision, a milestone.",
         preference: "How the person likes things done, communicated or decided; a standing rule they want followed.",
-        fact: "A stable fact about the person: where they live, their role, languages, setup, circumstances.",
-        tool: "A service, device, machine or account the person uses as part of their setup.",
-        nothing: "A request, question, status check, reaction or detail that is only about the current task.",
+        fact: "A stable biographical fact about the person: where they live, their role, languages, family situation, health circumstances.",
+        nothing: "A request, question, status check, reaction, technical detail or anything that is only about the current task.",
       },
     ),
     about_owner: noul(
-      "Is `fragment` about the person who wrote it (who they are, what they do or know, their projects, people, interests or ways of working), as opposed to only instructing an assistant about a task?",
-      { true: "«I run a small agency», «I always want reports in Russian», «my daughter starts school», «I'm learning Blender»", false: "«fix the failing test», «why is the build red», «run it again», «ok, merge it»" },
+      "Is `fragment` about the person who wrote it as a human being (who they are, what they know or can do, their family and close people, hobbies, interests, ways of living and working), as opposed to only instructing an assistant about a task?",
+      { true: "«I run a small agency», «my daughter starts school», «I'm learning Blender», «I like cycling», «I always want reports in Russian»", false: "«fix the failing test», «why is the build red», «ssh to the server and restart it», «ok, merge it»" },
     ),
     sensitive: noul(
       "Does `fragment` touch health, family or relationships, money or taxes, identity documents, or the writer's clients and their business?",

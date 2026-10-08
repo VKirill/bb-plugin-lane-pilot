@@ -6,8 +6,9 @@ import type { SourceRecord, SourceScan } from "./common";
 
 /**
  * Memories that already exist (A3, read only). Claude Code's per-folder memory files: the front-matter `description` of each
- * topic file, never the body. BB's global memories: the `summary` of each. Procedures and references describe how to work, not who
- * the owner is, and are skipped (counted).
+ * topic file, never the body. BB's global memories: the `summary` of each. Only what is about the owner as a person is taken: Claude
+ * memories of type `user` (a fact about him) and `feedback` (a preference); BB memories of kind `preference`. Project notes, references,
+ * procedures, facts and decisions about the work describe the work, not the owner, and are skipped (counted).
  */
 export function parseFrontMatter(text: string): Record<string, string> {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
@@ -20,7 +21,7 @@ export function parseFrontMatter(text: string): Record<string, string> {
   return out;
 }
 
-const CLAUDE_KINDS: Record<string, Kind> = { user: "fact", feedback: "preference", project: "fact" };
+const CLAUDE_KINDS: Record<string, Kind> = { user: "fact", feedback: "preference" };
 
 export async function scanClaudeMemory(home: string): Promise<SourceScan> {
   const base = join(home, ".claude", "projects");
@@ -50,7 +51,7 @@ export async function scanClaudeMemory(home: string): Promise<SourceScan> {
   return { source: "claude-memory", items: files, records, ...(skipped ? { note: `${skipped} files without a usable type or name were skipped` } : {}) };
 }
 
-const BB_KINDS: Record<string, Kind> = { preference: "preference", fact: "fact", decision: "fact" };
+const BB_KINDS: Record<string, Kind> = { preference: "preference" };
 
 type CatalogEntry = { id?: string; name?: string; summary?: string; kind?: string; tags?: string[]; importance?: number; version?: number; updatedAt?: number };
 
@@ -67,7 +68,7 @@ export function recordsFromBbCatalog(memories: CatalogEntry[]): SourceScan {
       confidence: 0.7, firstSeen: at, lastSeen: at, evidence: [{ source: "bb-memory", ref: `${memory.id}@v${memory.version ?? 1}`, at }],
     });
   }
-  return { source: "bb-memory", items: memories.length, records, ...(skipped ? { note: `${skipped} memories (procedures, references) describe how to work, not the owner, and were skipped` } : {}) };
+  return { source: "bb-memory", items: memories.length, records, ...(skipped ? { note: `${skipped} memories (procedures, references) describe the work, not the owner, and were skipped` } : {}) };
 }
 
 /** BB's global memories through the `bb` CLI of the machine; without it the source reports why and adds nothing. */

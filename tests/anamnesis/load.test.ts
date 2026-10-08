@@ -59,65 +59,72 @@ const EVENTS = () => ({
   thr_sa1: [turn("Я веду небольшое агентство и делаю сайты для клиентов в Мадриде", 100)],
 });
 const SOURCES = ["git", "journal", "registry", "bb-message", "lp-runs"] as const;
+/** The project data (journal, registry, Lane Pilot runs) is off by default; some tests switch it on to cover the code that reads it. */
+const withProjectData = async (deps: LoadDeps) => { for (const source of ["journal", "lp-runs"] as const) await deps.hub.ask({ op: "sources", set: { source, enabled: true } }); };
 
 describe("the first load", () => {
-  it("a plan counts everything, prices the Jev pass, sends nothing and leaves no file on the machine", async () => {
+  it("a plan counts the messages, prices the Jev pass, sends nothing and leaves no file on the machine; project data is off by default", async () => {
     const judge = vi.fn();
     const report = await loadAnamnesis(makeDeps(EVENTS(), judge), { mode: "plan", sources: SOURCES, classify: true });
     expect(judge).not.toHaveBeenCalled();
-    expect(report.messages).toMatchObject({ total: 5, threads: 2, projects: 2, tooShort: 1, heldBackSensitive: 1, eligibleForJev: 3 });
-    expect(report.lpRuns).toEqual({ enabled: true, runs: 2, projects: 1 });
-    expect(report.hostSources.find((s) => s.source === "journal")).toMatchObject({ items: 1, records: 1, outcome: { created: 1 } });
-    expect(report.cost).toMatchObject({ jevMessages: 3, estimatedTokens: 3 * JEV_TOKENS_PER_MESSAGE });
+    // The message about the son is eligible now: family and health messages are no longer held back (they go masked).
+    expect(report.messages).toMatchObject({ total: 5, threads: 2, projects: 2, tooShort: 1, infrastructure: 0, eligibleForJev: 4 });
+    expect(report.lpRuns).toBeNull();
+    expect(report.hostSources.map((s) => s.source)).not.toContain("journal");
+    expect(report.cost).toMatchObject({ jevMessages: 4, estimatedTokens: 4 * JEV_TOKENS_PER_MESSAGE });
     expect(report.classify?.note).toMatch(/no fragment is sent/);
     expect(existsSync(join(dir, "store"))).toBe(false);
     expect(formatReport(report)).not.toMatch(/отчёты|агентство|сын/);
   });
 
-  it("a run stores drafts: projects from messages and runs, journal events, checkpoints; nothing is confirmed", async () => {
+  it("a run stores drafts from the project data only when it is switched on; the messages make no project records; nothing is confirmed", async () => {
     const deps = makeDeps(EVENTS());
+    await withProjectData(deps);
     const report = await loadAnamnesis(deps, { mode: "run", sources: SOURCES });
-    expect(report.hubRecords?.stored?.counts).toEqual({ created: 2, updated: 1 });   // BB-сервис gets runs on top of messages
+    expect(report.hubRecords?.stored?.counts).toEqual({ created: 1 });   // Lane Pilot's runs of BB-сервис; the message counts are not stored
     const status = await deps.hub.ask({ op: "status" });
-    expect(status.counts.byStatus).toEqual({ draft: 3 });
+    expect(status.counts.byStatus).toEqual({ draft: 2 });   // the runs' project and the journal event
     expect(status.sources.find((s) => s.source === "bb-message")!.checkpoint).toBe(NOW);
     expect(status.loads).toHaveLength(1);
     const { record } = await deps.hub.ask({ op: "get", id: "project:bb-сервис" });
-    expect(record).toMatchObject({ attributes: { messages: 4, threads: 1, lpRuns: 2 } });
-    expect(record!.evidence.map((e) => e.source).sort()).toEqual(["bb-message", "bb-message", "bb-message", "bb-message", "lp-runs", "lp-runs"]);
-    expect(record!.evidence.every((e) => !e.quote)).toBe(true);
+    expect(record).toMatchObject({ attributes: { lpRuns: 2 } });
+    expect(record!.attributes.bbProjectId).toBeUndefined();
+    expect(record!.evidence.map((e) => e.source)).toEqual(["lp-runs", "lp-runs"]);
+    expect((await deps.hub.ask({ op: "get", id: "project:selfystudio" })).record).toBeNull();
     const again = await loadAnamnesis(deps, { mode: "run", sources: SOURCES });
-    expect(again.hubRecords?.stored?.counts).toEqual({ unchanged: 3 });
+    expect(again.hubRecords?.stored?.counts).toEqual({ unchanged: 1 });
   });
 
-  it("classifies only when asked: fragments are masked, locally sensitive ones held back, results become candidates", async () => {
+  it("classifies only when asked: fragments are masked, infrastructure is never sent, family and health go and become sensitive candidates", async () => {
     const sent: string[] = [];
     const judge: LoadDeps["judge"] = async (texts) => { sent.push(...texts); return texts.map((text): FragmentDecision | null =>
       text.includes("отчёты") ? { kind: "preference", kindP: 0.9, aboutOwner: 0.95, sensitive: 0.05 }
         : text.includes("агентство") ? { kind: "fact", kindP: 0.8, aboutOwner: 0.9, sensitive: 0.6 }
+        : text.includes("сын") ? { kind: "person", kindP: 0.9, aboutOwner: 0.9, sensitive: 0.8 }
         : text.includes("запусти") ? { kind: "nothing", kindP: 0.9, aboutOwner: 0.1, sensitive: 0 } : null); };
     const deps = makeDeps({ thr_bb1: [...EVENTS().thr_bb1, turn("мой ключ API_KEY=supersecretvalue99 нужен для отчёты", 4)], thr_sa1: EVENTS().thr_sa1 }, judge);
     const report = await loadAnamnesis(deps, { mode: "run", sources: SOURCES, classify: true });
     expect(sent).toHaveLength(4);
-    expect(sent.join("\n")).not.toMatch(/supersecretvalue99|сын/);
+    expect(sent.join("\n")).not.toMatch(/supersecretvalue99|API_KEY/);
+    expect(sent.join("\n")).toContain("сын");
+    expect(report.messages).toMatchObject({ infrastructure: 1 });
     expect(report.classify).toMatchObject({ asked: 4, kept: 3, nothing: 1, unavailable: 0 });
     const { records } = await deps.hub.ask({ op: "list", statuses: ["candidate"], includeSensitive: true });
     expect(records).toHaveLength(3);
     const agency = records.find((r) => r.statement.includes("агентство"))!;
     expect(agency).toMatchObject({ kind: "fact", sensitivity: "sensitive", status: "candidate" });
+    expect(records.find((r) => r.statement.includes("сын"))).toMatchObject({ kind: "person", sensitivity: "sensitive", status: "candidate" });
     expect((await deps.hub.ask({ op: "list", statuses: ["candidate"] })).records.map((r) => r.id)).not.toContain(agency.id);
     const full = (await deps.hub.ask({ op: "get", id: agency.id, includeSensitive: true })).record!;
     expect(full.evidence[0]).toMatchObject({ source: "bb-message", quote: expect.stringContaining("агентство") });
     expect(full.attributes).toMatchObject({ origin: "jev-fragment" });
   });
 
-  it("holds sensitive fragments back unless the owner allows them, and counts a fragment Jev could not judge", async () => {
+  it("counts a fragment Jev could not judge", async () => {
     const judge: LoadDeps["judge"] = async (texts) => texts.map(() => null);
     const deps = makeDeps(EVENTS(), judge);
-    const withheld = await loadAnamnesis(deps, { mode: "run", sources: ["bb-message"], classify: true });
-    expect(withheld.classify).toMatchObject({ asked: 3, unavailable: 3, kept: 0 });
-    const allowed = await loadAnamnesis(deps, { mode: "run", sources: ["bb-message"], classify: true, allowSensitiveToJev: true });
-    expect(allowed.classify!.asked).toBe(4);
+    const report = await loadAnamnesis(deps, { mode: "run", sources: ["bb-message"], classify: true });
+    expect(report.classify).toMatchObject({ asked: 4, unavailable: 4, kept: 0 });
     const noJev = await loadAnamnesis(makeDeps(EVENTS()), { mode: "run", sources: ["bb-message"], classify: true });
     expect(noJev.classify?.note).toMatch(/Jev is not available/);
   });
@@ -126,12 +133,13 @@ describe("the first load", () => {
     const sent: string[] = [];
     const report = await loadAnamnesis(makeDeps(EVENTS(), async (texts) => { sent.push(...texts); return texts.map(() => null); }), { mode: "run", sources: ["bb-message"], classify: true, maxClassify: 1 });
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toContain("запусти");
+    expect(sent[0]).toContain("сын");
     expect(report.cost.jevMessages).toBe(1);
   });
 
   it("respects switched-off sources and a narrower window", async () => {
     const deps = makeDeps(EVENTS());
+    await withProjectData(deps);
     await deps.hub.ask({ op: "sources", set: { source: "bb-message", enabled: false } });
     const report = await loadAnamnesis(deps, { mode: "plan", sources: SOURCES, since: NOW - 10 * DAY });
     expect(report.messages).toBeNull();
@@ -151,16 +159,17 @@ describe("bb lane-pilot anamnesis load, review, config", () => {
     expect(plan.stdout).toContain("tokens");
     const refused = await cli(deps, ["load", "--run", "--classify", "--sources", "bb-message"]);
     expect(refused.stderr).toMatch(/--yes/);
-    expect((await cli(deps, ["load", "--allow-sensitive-to-jev"])).stderr).toMatch(/only means something with --classify/);
+    expect((await cli(deps, ["load", "--allow-sensitive-to-jev"])).stderr).toMatch(/Unknown option/);
     expect((await cli(deps, ["load", "--since", "yesterday"])).stderr).toMatch(/YYYY-MM-DD/);
   });
 
   it("review groups drafts by kind, hides sensitive records and says how many", async () => {
     const deps = makeDeps(EVENTS());
+    await withProjectData(deps);
     await loadAnamnesis(deps, { mode: "run", sources: SOURCES });
     await deps.hub.ask({ op: "add", record: { kind: "person", key: "Anna", title: "Anna", attributes: { relation: "family" } }, reason: "told" });
     const review = await cli(deps, ["review"]);
-    expect(review.stdout).toContain("## project (2 to review)");
+    expect(review.stdout).toContain("## project (1 to review)");
     expect(review.stdout).toContain("## event (1 to review)");
     expect(review.stdout).toMatch(/1 sensitive records are hidden/);
     expect(review.stdout).not.toContain("Anna");
@@ -184,7 +193,7 @@ describe("what leaves for Jev", () => {
 
   it("masks e-mails, phones, cards, documents and addresses in every fragment, and says how many fragments it touched", async () => {
     const text = "Клиент пишет на anna.k@mail.example, телефон +7 (916) 123-45-67, карта 4111 1111 1111 1111, ИНН 7707083893, живёт на ул. Ленина, д. 5, кв. 12 — собрать все данные";
-    const { sent, report } = await sentTo({ thr_bb1: [turn(text, 3)] }, { allowSensitiveToJev: true });
+    const { sent, report } = await sentTo({ thr_bb1: [turn(text, 3)] });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toBe("Клиент пишет на [email], телефон [phone], карта [card], ИНН [inn], живёт на [address] — собрать все данные");
     expect(sent.join()).not.toMatch(/anna\.k|916|4111|7707083893|Ленина/);

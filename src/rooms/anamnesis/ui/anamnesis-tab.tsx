@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../../contracts";
 import type { AnamnesisConfig } from "../hub";
 import type { AnamnesisRecord, AnamnesisRecordFull, HistoryEntry, Kind, Sensitivity, Source, Status } from "../model";
 import type { AnamnesisRequest, OpName, ResponseOf } from "../ops";
 import { LEVELS, stepsOf, type SkillStep } from "../skills";
-import { t, type I18nKey } from "@lane-pilot/i18n";
+import { detectLocale, t, type I18nKey } from "@lane-pilot/i18n";
 import { Badge } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
@@ -22,7 +22,7 @@ import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
  */
 type View = "me" | "review" | "records" | "skills" | "timeline" | "sources" | "reports";
 const VIEWS: readonly View[] = ["me", "review", "records", "skills", "timeline", "sources", "reports"];
-const KIND_LIST: readonly Kind[] = ["self", "skill", "project", "event", "person", "interest", "preference", "fact", "tool"];
+const KIND_LIST: readonly Kind[] = ["self", "knowledge", "skill", "person", "hobby", "interest", "event", "preference", "fact", "project", "tool"];
 const STATUS_LIST: readonly Status[] = ["candidate", "draft", "confirmed", "rejected"];
 const SENSITIVITY_LIST: readonly Sensitivity[] = ["public", "private", "sensitive"];
 const PAGE = 40;
@@ -285,7 +285,7 @@ function MeView({ ask, showSensitive }: { ask: Ask; showSensitive: boolean }) {
   useEffect(() => {
     let current = true;
     const yearNumber = Number(year);
-    void ask({ op: "whoami", detail, includeDrafts: drafts, ...(showSensitive ? { includeSensitive: true } : {}), ...(publicOnly ? { publicOnly: true } : {}), ...(year && Number.isInteger(yearNumber) && yearNumber >= 2000 ? { year: yearNumber } : {}) })
+    void ask({ op: "whoami", locale: detectLocale(), detail, includeDrafts: drafts, ...(showSensitive ? { includeSensitive: true } : {}), ...(publicOnly ? { publicOnly: true } : {}), ...(year && Number.isInteger(yearNumber) && yearNumber >= 2000 ? { year: yearNumber } : {}) })
       .then((answer) => { if (current) setText(answer.text); }, (cause) => { if (current) setText(errorText(cause)); });
     return () => { current = false; };
   }, [ask, detail, drafts, showSensitive, publicOnly, year]);
@@ -304,7 +304,8 @@ function MeView({ ask, showSensitive }: { ask: Ask; showSensitive: boolean }) {
           <Input className="h-8 w-20" inputMode="numeric" placeholder="2026" aria-label={t("anmYear")} value={year} onChange={(event) => setYear(event.target.value.replace(/\D/g, "").slice(0, 4))} />
         </label>
       </div>
-      <pre className="whitespace-pre-wrap rounded-lg border border-[var(--lp-hairline)] p-3 text-xs" style={{ overflowWrap: "anywhere" }} data-testid="anm-whoami">{text ?? "…"}</pre>
+      <WhoamiSections text={text} />
+      <NotesBlock ask={ask} />
       <Disclosure compact summary={t("anmCardHeading")} testId="anm-card">
         <div className="space-y-1 pt-1">
           <p className="text-xs text-muted-foreground">{t("anmCardHelp")}</p>
@@ -312,6 +313,114 @@ function MeView({ ask, showSensitive }: { ask: Ask; showSensitive: boolean }) {
           {card ? <p className="text-xs text-muted-foreground">{card.chars} / 1800</p> : null}
         </div>
       </Disclosure>
+    </div>
+  );
+}
+
+/** The text of `whoami` as the sections it is made of: `## title (n)`, `### group`, `- item`, a first paragraph and a closing note. */
+export type WhoamiParsed = { intro: string[]; sections: Array<{ title: string; groups: Array<{ label: string | null; items: string[] }> }>; footer: string[] };
+export function parseWhoami(text: string): WhoamiParsed {
+  const parsed: WhoamiParsed = { intro: [], sections: [], footer: [] };
+  let afterBlank = false;
+  for (const line of text.split("\n")) {
+    if (!line.trim()) { afterBlank = true; continue; }
+    const section = /^## (.*)$/.exec(line), group = /^### (.*)$/.exec(line), item = /^- (.*)$/.exec(line);
+    const current = parsed.sections.at(-1);
+    if (section) { parsed.sections.push({ title: section[1]!, groups: [{ label: null, items: [] }] }); }
+    else if (group && current) { current.groups.push({ label: group[1]!, items: [] }); }
+    else if (item && current) { current.groups.at(-1)!.items.push(item[1]!); }
+    else if (/^\s{2,}\S/.test(line) && current?.groups.at(-1)?.items.length) { const items = current.groups.at(-1)!.items; items[items.length - 1] += `\n${line.trim()}`; }
+    else if (!current) parsed.intro.push(line);
+    else if (afterBlank) { parsed.footer.push(line); }
+    else current.groups.at(-1)!.items.push(line);
+    afterBlank = false;
+  }
+  return parsed;
+}
+
+const META = /^([\s\S]*?)\s(\((?:confidence|уверенность) [^\n]*\))((?:\n[\s\S]*)?)$/;
+function WhoamiItem({ text }: { text: string }) {
+  const meta = META.exec(text);
+  return meta
+    ? <li className="whitespace-pre-line" style={{ overflowWrap: "anywhere" }}>{meta[1]} <span className="text-xs text-muted-foreground">{meta[2]}</span>{meta[3]}</li>
+    : <li className="whitespace-pre-line" style={{ overflowWrap: "anywhere" }}>{text}</li>;
+}
+
+/** «Who I am» as headed sections, not a dump of text. */
+export function WhoamiSections({ text }: { text: string | null }) {
+  const parsed = useMemo(() => (text === null ? null : parseWhoami(text)), [text]);
+  return (
+    <div className="space-y-3 rounded-lg border border-[var(--lp-hairline)] p-3 text-sm" data-testid="anm-whoami">
+      {parsed === null ? <p className="text-muted-foreground">…</p> : (
+        <>
+          {parsed.intro.map((line, index) => <p key={index} className="text-xs text-muted-foreground">{line}</p>)}
+          {parsed.sections.map((section) => (
+            <section key={section.title} className="space-y-1" data-testid="anm-whoami-section">
+              <div className="flex items-baseline gap-2">
+                <h3 className="text-sm font-semibold">{section.title.replace(/ \(\d+\)$/, "")}</h3>
+                <span className="text-xs text-muted-foreground">{/ \((\d+)\)$/.exec(section.title)?.[1] ?? ""}</span>
+              </div>
+              {section.groups.map((group, index) => (
+                <div key={index} className="space-y-0.5">
+                  {group.label ? <p className="text-xs font-medium text-muted-foreground">{group.label}</p> : null}
+                  {group.items.length ? <ul className="list-disc space-y-0.5 pl-5">{group.items.map((item, i) => <WhoamiItem key={i} text={item} />)}</ul> : null}
+                </div>
+              ))}
+            </section>
+          ))}
+          {parsed.footer.map((line, index) => <p key={index} className="text-xs text-muted-foreground">{line}</p>)}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Where the Markdown files of the portrait are (on the Mac mini), with a button to open each in BB's file preview, and a pass that reads the owner's edits back. */
+function NotesBlock({ ask }: { ask: Ask }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const navigate = useBbNavigate();
+  const [notes, setNotes] = useState<ResponseOf<"notes"> | null>(null);
+  const [hostId, setHostId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void ask({ op: "notes" }).then(setNotes, () => setNotes(null));
+    void rpc.call("anamnesis", { request: { op: "host" } }).then((answer) => setHostId(String((answer.result as { hostId?: string }).hostId ?? "")), () => setHostId(null));
+  }, [ask, rpc]);
+  const open = (path: string) => {
+    const opened = hostId ? navigate.experimental_openFilePreview({ target: { kind: "host", hostId, path }, location: null }) : false;
+    if (!opened) toast.error(t("anmNotesNoHost"));
+  };
+  const sync = async () => {
+    setBusy(true);
+    try {
+      const done = await ask({ op: "notes", sync: true });
+      setNotes(done);
+      setMessage(done.error ?? t("anmNotesSynced").replace("{created}", String(done.applied.created)).replace("{edited}", String(done.applied.edited)).replace("{confirmed}", String(done.applied.confirmed)).replace("{rejected}", String(done.applied.rejected)).replace("{written}", String(done.written)));
+    } catch (cause) { toast.error(errorText(cause)); } finally { setBusy(false); }
+  };
+  if (!notes?.dir) return null;
+  return (
+    <div className="space-y-2 rounded-lg border border-[var(--lp-hairline)] p-3" data-testid="anm-notes">
+      <p className="text-sm font-medium">{t("anmNotesHeading")}</p>
+      <p className="text-xs text-muted-foreground">{t("anmNotesHelp")}</p>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-muted-foreground">{t("anmNotesFolder")}:</span>
+        <code className="min-w-0 flex-1" style={{ overflowWrap: "anywhere" }} data-testid="anm-notes-dir">{notes.dir}</code>
+        <Button size="sm" variant="outline" className="h-7 px-2" data-testid="anm-notes-open-folder" onClick={() => open(notes.dir!)}>{t("anmNotesOpen")}</Button>
+      </div>
+      <ul className="space-y-1">
+        {notes.files.map((file) => (
+          <li key={file.name} className="flex flex-wrap items-center gap-2 text-xs" data-testid={`anm-notes-file-${file.name}`}>
+            <span className="min-w-0 flex-1" style={{ overflowWrap: "anywhere" }}>{file.name} <span className="text-muted-foreground">· {file.exists ? t("anmNotesRecords").replace("{n}", String(file.records)) : t("anmNotesNone")}</span></span>
+            <Button size="sm" variant="outline" className="h-7 px-2" disabled={!file.exists} onClick={() => open(file.path)}>{t("anmNotesOpen")}</Button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" disabled={busy} data-testid="anm-notes-sync" onClick={() => void sync()}>{t("anmNotesSync")}</Button>
+        {message ? <span className="text-xs text-muted-foreground" data-testid="anm-notes-message">{message}</span> : null}
+      </div>
     </div>
   );
 }

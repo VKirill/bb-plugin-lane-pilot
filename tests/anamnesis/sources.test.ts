@@ -133,13 +133,17 @@ describe("existing memories", () => {
     write(join(dir, "who.md"), "---\nname: Role\ndescription: Runs a small agency\ntype: user\n---\nbody");
     write(join(dir, "nested.md"), "---\nname: Nested type\ndescription: type sits under metadata\nmetadata:\n  type: user\n---\nbody");
     write(join(dir, "ref.md"), "---\nname: Link\ndescription: dashboard url\ntype: reference\n---\nbody");
+    // Work notes are not about the owner as a person: a project memory (the hub, ssh keys, IPs) is dropped, whatever it says.
+    write(join(dir, "hub.md"), "---\nname: Lane Pilot hub DB and deploy\ndescription: run data on the hub SQLite; ssh -i ~/.ssh/key root@10.0.0.5\ntype: project\n---\nbody");
     write(join(dir, "nofront.md"), "just text");
     utimesSync(join(dir, "who.md"), new Date(1_700_000_000_000), new Date(1_700_000_000_000));
     const scan = await scanClaudeMemory(home);
-    expect(scan.items).toBe(5);
+    expect(scan.items).toBe(6);
     expect(scan.records.map((r) => `${r.kind}|${r.title}`).sort()).toEqual(["fact|Nested type", "fact|Role", "preference|Reports in Russian"]);
     expect(scan.records.find((r) => r.title === "Role")!.firstSeen).toBe(1_700_000_000_000);
     expect(JSON.stringify(scan.records)).not.toContain("MUST NOT");
+    expect(JSON.stringify(scan.records)).not.toMatch(/hub|10\.0\.0\.5|ssh/);
+    expect(scan.records.map((r) => r.attributes?.type).sort()).toEqual(["feedback", "user", "user"]);
     expect(parseFrontMatter("---\nname: A\n---")).toEqual({ name: "A" });
   });
 
@@ -147,6 +151,8 @@ describe("existing memories", () => {
     const scan = recordsFromBbCatalog([
       { id: "mem_1", name: "tg-style", summary: "Rich Message in Telegram", kind: "preference", version: 2, updatedAt: 1_700_000_000_000 },
       { id: "mem_2", name: "deploy-steps", summary: "how to deploy", kind: "procedure", updatedAt: 1 },
+      { id: "mem_3", name: "hub-host", summary: "the hub runs on 10.0.0.5", kind: "fact", updatedAt: 1 },
+      { id: "mem_4", name: "use-sqlite", summary: "decided to keep runs in SQLite", kind: "decision", updatedAt: 1 },
     ]);
     expect(scan.records).toHaveLength(1);
     expect(scan.records[0]).toMatchObject({ kind: "preference", key: "bbmem:tg-style" });
@@ -155,7 +161,7 @@ describe("existing memories", () => {
     const missing = await scanBbMemory(async () => { throw new Error("spawn bb ENOENT"); });
     expect(missing.records).toEqual([]);
     expect(missing.note).toMatch(/unavailable/);
-    const ok = await scanBbMemory(async () => JSON.stringify({ memories: [{ id: "m", name: "n", summary: "s", kind: "fact", updatedAt: 5 }] }));
+    const ok = await scanBbMemory(async () => JSON.stringify({ memories: [{ id: "m", name: "n", summary: "s", kind: "preference", updatedAt: 5 }, { id: "m2", name: "n2", summary: "s", kind: "fact", updatedAt: 5 }] }));
     expect(ok.records).toHaveLength(1);
   });
 });
@@ -188,6 +194,7 @@ describe("collect: plan against run", () => {
     const off = await collectSources(request, store, seams(2));
     expect(off.sources[0]).toMatchObject({ enabled: false, records: 0, note: "switched off" });
     store.setSource("claude-memory", true);
+    store.setSource("journal", true);   // the project data is off until the owner switches it on
     const mixed = await collectSources({ ...request, sources: ["claude-memory", "journal"] }, store, { ...seams(1), scans: { ...seams(1).scans, journal: async () => { throw new Error("disk gone"); } } });
     expect(mixed.sources.map((s) => [s.source, s.records, s.error])).toEqual([["claude-memory", 1, undefined], ["journal", 0, "disk gone"]]);
   });

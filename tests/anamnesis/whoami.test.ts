@@ -98,6 +98,53 @@ describe("the card for the PM", () => {
   });
 });
 
+describe("who am I in Russian", () => {
+  const PORTRAIT: WhoamiRecord[] = [
+    rec({ kind: "self", title: "Ценю честность", statement: "Ценю честность и прямоту в работе" }),
+    rec({ kind: "fact", title: "Живёт в Мадриде" }),
+    rec({ kind: "knowledge", title: "SEO", statement: "Знаю SEO и контент-маркетинг" }),
+    rec({ kind: "skill", title: "TypeScript", statement: "Commits touching 90 TypeScript files in 3 repositories, 2025-01 to 2026-10", attributes: { origin: "git", commits: 90, level: "confident" } }),
+    rec({ kind: "person", title: "Анна", statement: "Жена Анна, врач", sensitivity: "sensitive" }),
+    rec({ kind: "hobby", title: "Играю на гитаре", statement: "Играю на гитаре по вечерам", status: "draft" }),
+    rec({ kind: "interest", title: "Кино", statement: "Люблю кино Тарковского" }),
+    rec({ kind: "event", title: "Переехал в Мадрид", firstSeen: Date.UTC(2024, 2, 5) }),
+    rec({ kind: "preference", title: "Отчёты", statement: "Отчёты по-русски, коротко" }),
+    rec({ kind: "project", title: "Lane Pilot", statement: "Orchestrator" }),
+    rec({ kind: "tool", title: "Mac mini" }),
+  ];
+
+  it("has Russian headings in the order of the portrait, and no English raw text", () => {
+    const { text } = renderWhoami(PORTRAIT, { locale: "ru", includeSensitive: true });
+    const headings = [...text.matchAll(/^## (.+?) \(\d+\)$/gm)].map((m) => m[1]);
+    expect(headings).toEqual(["Кто я", "Знания", "Умения", "Семья и близкие", "Хобби", "Интересы", "Предпочтения", "Хронология"]);
+    expect(text).toContain("Что я о вас знаю");
+    expect(text).toContain("[черновик]");
+    expect(text).toMatch(/Жена Анна, врач/);
+    // A skill from git is told in Russian, not with the English statement.
+    expect(text).toContain("TypeScript — уверенно");
+    expect(text).not.toMatch(/Commits touching|confidence|evidence|Skills|\[draft\]/);
+    // The work (projects, tools) is not part of the portrait unless asked for.
+    expect(text).not.toMatch(/Lane Pilot|Mac mini/);
+    expect(renderWhoami(PORTRAIT, { locale: "ru", sections: ["projects", "tools"] }).text).toMatch(/## Проекты \(1\)[\s\S]*Lane Pilot[\s\S]*## Инструменты и окружение \(1\)/);
+  });
+
+  it("hides sensitive records in Russian too and says how many", () => {
+    const { text, hiddenSensitive } = renderWhoami(PORTRAIT, { locale: "ru" });
+    expect(hiddenSensitive).toBe(1);
+    expect(text).not.toContain("Анна");
+    expect(text).toContain("Чувствительных записей (семья, здоровье, деньги, клиенты, документы): 1");
+    expect(renderWhoami([], { locale: "ru" }).text).toContain("Пока ничего не записано");
+  });
+
+  it("English stays English for the English locale, with the portrait sections only by default", () => {
+    const { text } = renderWhoami(PORTRAIT, { locale: "en", includeSensitive: true });
+    expect(text).toContain("What I know about you");
+    expect(text).toMatch(/## Who \(2\)[\s\S]*## Knowledge \(1\)[\s\S]*## Skills \(1\)[\s\S]*## People \(1\)[\s\S]*## Hobbies \(1\)/);
+    expect(text).toContain("[draft]");
+    expect(text).not.toMatch(/Lane Pilot|Mac mini/);
+  });
+});
+
 describe("whoami through the hub, the host and the command", () => {
   const previous = process.env.LANE_PILOT_ANAMNESIS_DIR;
   let hub: ReturnType<typeof createHub>;

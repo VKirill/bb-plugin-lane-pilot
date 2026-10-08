@@ -49,11 +49,24 @@ export const hostOps = {
   }).strict(),
   /** «Who am I in your eyes», composed on the owner's machine from the records; only the text travels. Read-only. */
   whoami: z.object({
-    op: z.literal("whoami"), sections: z.array(z.enum(["identity", "skills", "projects", "timeline", "people", "interests", "preferences", "tools"])).max(8).optional(),
+    op: z.literal("whoami"), sections: z.array(z.enum(["identity", "knowledge", "skills", "people", "hobbies", "interests", "timeline", "preferences", "projects", "tools"])).max(10).optional(),
+    /** The language of the answer; the Anamnesis tab sends the UI language. English when absent. */
+    locale: z.enum(["en", "ru"]).optional(),
     detail: z.enum(["brief", "normal", "full"]).optional(), includeSensitive: z.boolean().optional(), includeDrafts: z.boolean().optional(), publicOnly: z.boolean().optional(),
     /** The review of that calendar year (skills that grew, projects, activity, milestones) instead of the sections. */
     year: z.number().int().min(2000).max(2200).optional(),
   }).strict(),
+  /**
+   * One-shot cleanup: deletes the unconfirmed records (drafts and candidates nobody touched) that came only from project data
+   * (journal, registry, Lane Pilot runs, Claude memories of type project or reference, BB memories that are not preferences) or that
+   * look like infrastructure. Confirmed records are never touched. `dryRun` only counts.
+   */
+  purge_technical: z.object({ op: z.literal("purge_technical"), dryRun: z.boolean().optional() }).strict(),
+  /**
+   * The portrait as Markdown files on this machine (the source of truth): where they are, and with `sync` a pass that reads the owner's
+   * edits back into the records and writes the files again.
+   */
+  notes: z.object({ op: z.literal("notes"), sync: z.boolean().optional() }).strict(),
   /** The short card for the PM's context: confirmed, non-sensitive records only. Read-only. */
   card: z.object({ op: z.literal("card"), maxChars: z.number().int().min(200).max(4000).optional() }).strict(),
   /** The reports kept on the machine (first loads, daily passes), newest first: counts only, no content. Read-only. */
@@ -66,7 +79,7 @@ export const hostOps = {
 } as const;
 
 export const anamnesisRequestSchema = z.union([
-  hostOps.status, hostOps.upsert, hostOps.add, hostOps.list, hostOps.get, hostOps.edit, hostOps.history, hostOps.forget, hostOps.collect, hostOps.load_report, hostOps.loads, hostOps.whoami, hostOps.card, hostOps.import_profile, hostOps.sources,
+  hostOps.status, hostOps.upsert, hostOps.add, hostOps.list, hostOps.get, hostOps.edit, hostOps.history, hostOps.forget, hostOps.collect, hostOps.load_report, hostOps.loads, hostOps.whoami, hostOps.card, hostOps.import_profile, hostOps.sources, hostOps.purge_technical, hostOps.notes,
 ]);
 export type AnamnesisRequest = z.infer<typeof anamnesisRequestSchema>;
 
@@ -101,6 +114,23 @@ export const collectResponseSchema = z.object({
 }).strict();
 export type CollectResponse = z.infer<typeof collectResponseSchema>;
 
+export const notesResponseSchema = z.object({
+  /** The folder of the files on the owner's machine; null where this host keeps none. */
+  dir: z.string().nullable(),
+  files: z.array(z.object({ name: z.string(), path: z.string(), exists: z.boolean(), records: z.number().int() }).strict()),
+  /** What the owner's edits of the files did to the records in this pass. */
+  applied: z.object({ created: z.number().int(), edited: z.number().int(), confirmed: z.number().int(), rejected: z.number().int(), skipped: z.number().int() }).strict(),
+  written: z.number().int(),
+  error: z.string().optional(),
+}).strict();
+export type NotesResponse = z.infer<typeof notesResponseSchema>;
+
+export const purgeResponseSchema = z.object({
+  dryRun: z.boolean(), scanned: z.number().int(), deleted: z.number().int(),
+  byReason: z.record(z.string(), z.number().int()), byStatus: z.record(z.string(), z.number().int()), byKind: z.record(z.string(), z.number().int()),
+  kept: z.object({ confirmed: z.number().int(), ownerTouched: z.number().int() }).strict(),
+}).strict();
+
 export const responseSchemas = {
   status: statusSchema,
   upsert: upsertSummarySchema,
@@ -116,6 +146,8 @@ export const responseSchemas = {
   whoami: z.object({ text: z.string(), included: z.number().int(), hiddenSensitive: z.number().int(), drafts: z.number().int() }).strict(),
   card: z.object({ text: z.string(), chars: z.number().int(), records: z.number().int() }).strict(),
   sources: z.object({ sources: z.array(sourceStateSchema) }).strict(),
+  purge_technical: purgeResponseSchema,
+  notes: notesResponseSchema,
   import_profile: z.object({ imported: z.number().int(), ids: z.array(z.string()), skipped: z.array(z.string()), reasons: z.record(z.string(), z.number().int()) }).strict(),
 } as const;
 export type OpName = keyof typeof responseSchemas;

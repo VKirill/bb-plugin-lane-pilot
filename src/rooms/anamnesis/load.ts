@@ -1,7 +1,8 @@
 import { candidateRecord } from "./extract";
 import type { FragmentDecision } from "./judgment";
 import type { Hub } from "./hub";
-import { scrubQuote, sensitiveReason, type Kind, type Source } from "./model";
+import { infrastructureReason } from "./infra";
+import { scrubQuote, type Kind, type Source } from "./model";
 import type { CollectResponse, HostSource, UpsertSummary } from "./ops";
 import { HOST_SOURCES } from "./ops";
 import { maskPii } from "./pii";
@@ -14,7 +15,8 @@ import { monthOf, spread } from "./sources/common";
  *
  * `plan` (the default) changes nothing and sends nothing outside: it counts, and prices the optional Jev pass.
  * `run` stores drafts. Classifying messages with Jev is a separate switch (`classify`), because that is the only step that
- * sends message text to a third party; a message that local word rules call sensitive is held back unless the owner allows it.
+ * sends message text to a third party. What is sent is masked (keys and personal data); messages about family, health or money go
+ * too and become sensitive records; a message about infrastructure (addresses, ssh, key paths, variable names) is never sent.
  */
 export const JEV_TOKENS_PER_MESSAGE = 1_100;
 export const MIN_CLASSIFY_CHARS = 30;
@@ -40,7 +42,7 @@ export type LoadDeps = {
 
 export type LoadOptions = {
   mode: "plan" | "run"; since?: number; sources?: readonly Source[];
-  classify?: boolean; maxClassify?: number; allowSensitiveToJev?: boolean; signal?: AbortSignal | undefined;
+  classify?: boolean; maxClassify?: number; signal?: AbortSignal | undefined;
 };
 
 export type LoadReport = {
@@ -49,7 +51,7 @@ export type LoadReport = {
   hostSources: CollectResponse["sources"];
   messages: null | {
     enabled: boolean; threads: number; total: number; characters: number; projects: number; byMonth: Record<string, number>;
-    tooShort: number; heldBackSensitive: number; eligibleForJev: number;
+    tooShort: number; infrastructure: number; eligibleForJev: number;
   };
   lpRuns: null | { enabled: boolean; runs: number; projects: number };
   hubRecords: null | { records: number; stored: UpsertSummary | null };
@@ -83,7 +85,7 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
   if (wanted("bb-message")) {
     const perProject = new Map<string, { at: number[]; ids: string[]; threads: Set<string>; byMonth: Record<string, number> }>();
     const byMonth: Record<string, number> = {};
-    let total = 0, characters = 0, tooShort = 0, heldBack = 0;
+    let total = 0, characters = 0, tooShort = 0, infrastructure = 0;
     const classify = options.classify === true;
     const { threads } = await scanOwnerMessages(deps.threads, { from, to: until, signal: options.signal, onMessage: (message) => {
       total += 1; characters += message.text.length;
@@ -94,23 +96,11 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
       byMonth[monthOf(message.at)] = (byMonth[monthOf(message.at)] ?? 0) + 1;
       const text = message.text.trim();
       if (text.length < MIN_CLASSIFY_CHARS) { tooShort += 1; return; }
-      if (!options.allowSensitiveToJev && sensitiveReason(text)) { heldBack += 1; return; }
+      if (infrastructureReason(text)) { infrastructure += 1; return; }
       if (classify) candidates.push(message);
     } });
-    const eligible = total - tooShort - heldBack;
-    report.messages = { enabled: true, threads, total, characters, projects: perProject.size, byMonth, tooShort, heldBackSensitive: heldBack, eligibleForJev: eligible };
-    for (const [projectId, entry] of perProject) {
-      const order = entry.at.map((at, i) => ({ at, id: entry.ids[i]! })).sort((a, b) => a.at - b.at);
-      const name = nameOf(projectId);
-      hubRecords.push({
-        kind: "project", key: name, title: name,
-        statement: `${order.length} messages in ${entry.threads.size} threads, ${monthOf(order[0]!.at)} to ${monthOf(order.at(-1)!.at)}`,
-        attributes: { bbProjectId: projectId, messages: order.length, threads: entry.threads.size, byMonth: entry.byMonth },
-        ...(/клиент|client/i.test(name) ? { sensitivity: "sensitive" } : {}),
-        confidence: 0.8, firstSeen: order[0]!.at, lastSeen: order.at(-1)!.at,
-        evidence: spread(order, 12).map((m) => ({ source: "bb-message", ref: m.id, at: m.at })),
-      });
-    }
+    const eligible = total - tooShort - infrastructure;
+    report.messages = { enabled: true, threads, total, characters, projects: perProject.size, byMonth, tooShort, infrastructure, eligibleForJev: eligible };
   }
 
   /* ---- Lane Pilot runs ---- */
@@ -162,10 +152,9 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
   /* ---- write (run only) ---- */
   report.hubRecords = { records: hubRecords.length, stored: null };
   if (options.mode === "run") {
-    const messageRecords = hubRecords.filter((r) => (r.evidence as Array<{ source: string }>)[0]?.source === "bb-message");
     const runRecords = hubRecords.filter((r) => (r.evidence as Array<{ source: string }>)[0]?.source === "lp-runs");
     const stored: UpsertSummary[] = [];
-    if (wanted("bb-message")) stored.push(await deps.hub.ask({ op: "upsert", actor: "auto:bb-message", reason: "initial load of BB history", records: messageRecords, checkpoint: { source: "bb-message", at: until } }));
+    if (wanted("bb-message")) stored.push(await deps.hub.ask({ op: "upsert", actor: "auto:bb-message", reason: "initial load of BB history", records: [], checkpoint: { source: "bb-message", at: until } }));
     if (wanted("lp-runs")) stored.push(await deps.hub.ask({ op: "upsert", actor: "auto:lp-runs", reason: "initial load of Lane Pilot runs", records: runRecords, checkpoint: { source: "lp-runs", at: until } }));
     report.hubRecords.stored = merge(stored);
     if (report.classify && candidateRecords.length) report.classify.stored = await deps.hub.ask({ op: "upsert", actor: "auto:jev-fragment", reason: "classified fragments of owner messages", records: candidateRecords });
@@ -212,7 +201,7 @@ export function formatReport(report: LoadReport): string {
   for (const s of report.hostSources) {
     lines.push(`- ${s.source}: ${s.enabled ? `${s.items} items, ${s.records} records (${Object.entries(s.outcome).map(([k, v]) => `${k} ${v}`).join(", ") || "none"})` : "off"}${s.error ? ` ERROR ${s.error}` : ""}${s.note ? ` [${s.note}]` : ""}`);
   }
-  if (report.messages) lines.push(`- bb-message: ${report.messages.total} messages in ${report.messages.threads} threads of ${report.messages.projects} projects; ${report.messages.characters} characters; ${report.messages.tooShort} too short, ${report.messages.heldBackSensitive} held back as sensitive, ${report.messages.eligibleForJev} eligible for Jev`);
+  if (report.messages) lines.push(`- bb-message: ${report.messages.total} messages in ${report.messages.threads} threads of ${report.messages.projects} projects; ${report.messages.characters} characters; ${report.messages.tooShort} too short, ${report.messages.infrastructure} about infrastructure (never sent), ${report.messages.eligibleForJev} eligible for Jev`);
   if (report.lpRuns) lines.push(`- lp-runs: ${report.lpRuns.runs} runs in ${report.lpRuns.projects} projects`);
   if (report.hubRecords) lines.push(`- project records from BB and runs: ${report.hubRecords.records}${report.hubRecords.stored ? ` (${Object.entries(report.hubRecords.stored.counts).map(([k, v]) => `${k} ${v}`).join(", ")})` : ""}`);
   if (report.classify) lines.push(`- jev classification: asked ${report.classify.asked}, kept ${report.classify.kept}, nothing ${report.classify.nothing}, unavailable ${report.classify.unavailable}${report.classify.note ? ` [${report.classify.note}]` : ""}`);

@@ -50,21 +50,44 @@ afterEach(() => { if (previousDir === undefined) delete process.env.LANE_PILOT_A
 const deps = (hub: ReturnType<typeof makeHub>, f: ReturnType<typeof fakes> | null): ExtractDeps => ({ hub, now: () => NOW, ...(f ? { judge: f.judge, match: f.match } : {}) });
 
 describe("what leaves for Jev (A4 keeps the A3 privacy rules)", () => {
-  it("sends only masked fragments; short and locally sensitive messages never leave; a second pass does not send them again", async () => {
+  it("sends only masked fragments; short messages and infrastructure never leave; a second pass does not send them again", async () => {
     const hub = makeHub(), f = fakes({ "отчёты": { kind: "preference" } });
     const batch = [
       message(1, "Всегда пиши отчёты по-русски, мой email me@example.com, коротко и без воды"),
       message(2, "ok"),
       message(3, "у меня болезнь, поэтому по утрам меня не будет на связи, отчёты потом"),
-      message(4, "мой ключ API_KEY=supersecretvalue99 нужен для отчёты, запомни это"),
+      message(4, "мой ключ sk-abcdefghijklmnopqrstuvwx нужен для отчёты, запомни это"),
+      message(5, "ssh -i ~/.ssh/id_ed25519 root@10.0.0.5 и проверь отчёты на сервере, пожалуйста"),
+      message(6, "для отчёты возьми HUB_ADMIN_TOKEN из окружения, он уже лежит на машине"),
     ];
     const report = await extractMessages(deps(hub, f), batch);
-    expect(report).toMatchObject({ considered: 4, tooShort: 1, heldBackSensitive: 1, asked: 2, masked: 1, kept: 2, created: 2, complete: true });
-    expect(f.sentToJev.join("\n")).not.toMatch(/me@example\.com|supersecretvalue99|болезнь/);
+    expect(report).toMatchObject({ considered: 6, tooShort: 1, infrastructure: 2, asked: 3, masked: 1, kept: 3, created: 3, complete: true });
+    expect(f.sentToJev.join("\n")).not.toMatch(/me@example\.com|sk-abcdef|10\.0\.0\.5|id_ed25519|HUB_ADMIN_TOKEN/);
     expect(f.sentToJev.join("\n")).toContain("[email]");
+    // A message about health is not held back any more: it goes, masked like the rest, and what comes of it is sensitive.
+    expect(f.sentToJev.join("\n")).toContain("болезнь");
+    const stored = (await hub.ask({ op: "list", includeSensitive: true })).records;
+    expect(stored.find((r) => r.statement.includes("болезнь"))).toMatchObject({ sensitivity: "sensitive", status: "candidate" });
+    expect(stored.find((r) => r.statement.includes("me@example.com") || r.statement.includes("sk-abcdef"))).toBeUndefined();
     const again = await extractMessages(deps(hub, f), batch);
-    expect(again).toMatchObject({ alreadySeen: 2, asked: 0 });
-    expect(f.sentToJev).toHaveLength(2);
+    expect(again).toMatchObject({ alreadySeen: 3, asked: 0 });
+    expect(f.sentToJev).toHaveLength(3);
+  });
+
+  it("a message about the family goes to Jev with its personal data masked, and is kept as a sensitive record of a close person", async () => {
+    const hub = makeHub(), f = fakes({ "жена": { kind: "person", sensitive: 0.9 } });
+    const report = await extractMessages(deps(hub, f), [message(1, "Моя жена Анна ждёт ребёнка в мае, её телефон +7 912 345-67-89, живём на ул. Ленина, д. 5, кв. 12")]);
+    expect(report).toMatchObject({ infrastructure: 0, asked: 1, masked: 1, kept: 1, created: 1 });
+    const sent = f.sentToJev.join("\n");
+    expect(sent).toContain("жена Анна");
+    expect(sent).toContain("[phone]");
+    expect(sent).not.toMatch(/912|Ленина/);
+    const [record] = (await hub.ask({ op: "list", includeSensitive: true, kinds: ["person"] })).records;
+    expect(record).toMatchObject({ kind: "person", sensitivity: "sensitive", status: "candidate" });
+    expect(record!.statement).toContain("[phone]");
+    expect(record!.statement).not.toMatch(/912|Ленина/);
+    // Not shown without the explicit flag.
+    expect((await hub.ask({ op: "list", kinds: ["person"] })).records).toHaveLength(0);
   });
 
   it("stops at the day's ceiling, the newest first, and tells the pass to keep the window open", async () => {
@@ -187,7 +210,7 @@ describe("the consumer and the daily pass", () => {
     };
   };
 
-  async function pass(events: Record<string, EventLike[]>, f: ReturnType<typeof fakes> | null) {
+  async function pass(events: Record<string, EventLike[]>, f: ReturnType<typeof fakes> | null, withProjectData = false) {
     const hub = makeHub();
     const extract = deps(hub, f);
     const owner = createOwnerMessageHub();
@@ -204,6 +227,8 @@ describe("the consumer and the daily pass", () => {
     const daily: DailyDeps = { hub, threads: port(events), owner, consumer, now: () => NOW,
       projectNames: async () => new Map([["proj_bb", "BB-сервис"]]), lpRuns: () => [{ id: "lprun_1", projectId: "proj_bb", createdAt: NOW - 3 * DAY }] };
     for (const source of ["claude-memory", "bb-memory"] as const) await hub.ask({ op: "sources", set: { source, enabled: false } });
+    // The project data is off by default (the portrait is about the person); this fixture switches it on to cover the pass over it.
+    if (withProjectData) for (const source of ["journal", "lp-runs"] as const) await hub.ask({ op: "sources", set: { source, enabled: true } });
     return { hub, daily, learning, owner };
   }
   const SAID = () => ({ thr_1: [turn("Всегда пиши отчёты по-русски, коротко и без воды, пожалуйста", 2), turn("запусти тесты ещё раз и покажи результат прогона", 1)] });
@@ -223,7 +248,7 @@ describe("the consumer and the daily pass", () => {
 
   it("reads the machine's sources, Lane Pilot's runs and the new messages once, shares the messages with the other layer, keeps a receipt and moves its window", async () => {
     const f = fakes({ "отчёты": { kind: "preference" } });
-    const { hub, daily, learning } = await pass(SAID(), f);
+    const { hub, daily, learning } = await pass(SAID(), f, true);
     await hub.setConfig({ extract: true });
     const report = await dailyPass(daily);
     expect(report).toMatchObject({ ran: true, checkpointAdvanced: true, lpRuns: { runs: 1, projects: 1 }, messages: { total: 2, delivered: ["anamnesis", "learning"], failed: [] } });
@@ -241,6 +266,17 @@ describe("the consumer and the daily pass", () => {
     const next = await dailyPass(later);
     expect(next.messages).toMatchObject({ window: { from: NOW, to: NOW + DAY }, total: 0 });
     expect(f.sentToJev).toHaveLength(2);
+  });
+
+  it("leaves the project data out by default: journal, registry and Lane Pilot runs are off, and nothing of them is stored", async () => {
+    const f = fakes({ "отчёты": { kind: "preference" } });
+    const { hub, daily } = await pass(SAID(), f);
+    expect((await hub.ask({ op: "sources" })).sources.filter((s) => !s.enabled).map((s) => s.source)).toEqual(expect.arrayContaining(["journal", "registry", "lp-runs"]));
+    await hub.setConfig({ extract: true });
+    const report = await dailyPass(daily);
+    expect(report.lpRuns).toBeNull();
+    expect(report.hostSources.map((s) => s.source)).not.toContain("journal");
+    expect((await hub.ask({ op: "status" })).counts.byKind).toEqual({ preference: 1 });
   });
 
   it("keeps the window open while a fragment is left, so the next pass reads it again", async () => {

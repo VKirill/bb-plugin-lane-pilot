@@ -222,6 +222,39 @@ describe("the Anamnesis tab", () => {
     expect(report.textContent).toContain("4 new messages, 2 new, 1 merged, 1 contradictions, 1 sources read");
   });
 
+  it("in Russian shows the portrait as headed sections, not a text dump, and says where the Markdown files are with buttons to open them in BB's file preview", async () => {
+    setLocaleOverride("ru");
+    await hub.ask({ op: "add", record: { kind: "hobby", key: "guitar", title: "Играю на гитаре", statement: "Играю на гитаре по вечерам" }, reason: "told" });
+    await hub.ask({ op: "add", record: { kind: "self", key: "values", title: "Ценю честность", statement: "Ценю честность и прямоту" }, reason: "told" });
+    const view = await mount();
+    await waitFor(() => expect(view.getByTestId("anm-whoami").textContent).toContain("Играю на гитаре"));
+    const box = view.getByTestId("anm-whoami");
+    const headings = Array.from(box.querySelectorAll("section h3")).map((h) => h.textContent);
+    expect(headings).toEqual(expect.arrayContaining(["Кто я", "Умения", "Хобби"]));
+    expect(box.querySelector("pre")).toBeNull();
+    expect(box.querySelectorAll("section ul li").length).toBeGreaterThanOrEqual(3);
+    expect(box.textContent).not.toMatch(/What I know|confidence|Commits|\[draft\]/);
+    expect(box.textContent).toContain("[черновик]");
+
+    const notes = await view.findByTestId("anm-notes");
+    expect(notes.textContent).toContain("Мои заметки");
+    expect(view.getByTestId("anm-notes-dir").textContent).toMatch(/notes$/);
+    const hobby = view.getByTestId("anm-notes-file-Хобби.md");
+    expect(hobby.textContent).toContain("строк: 1");
+    expect(view.getByTestId("anm-notes-file-На проверку.md").textContent).toContain("На проверку.md");
+    const button = hobby.querySelector("button")!;
+    await waitFor(() => {
+      fireEvent.click(button);
+      expect(view.inspection.navigateCalls).toContainEqual({
+        method: "experimental_openFilePreview",
+        options: { target: { kind: "host", hostId: "mini", path: expect.stringMatching(/Хобби\.md$/) }, location: null },
+      });
+    });
+    // The pass that reads the owner's edits back is one click.
+    fireEvent.click(view.getByTestId("anm-notes-sync"));
+    await waitFor(() => expect(view.getByTestId("anm-notes-message").textContent).toContain("Готово"));
+  });
+
   it("speaks Russian when the locale is Russian, and the forget-all button asks twice", async () => {
     setLocaleOverride("ru");
     const view = await mount();

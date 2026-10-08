@@ -3,6 +3,7 @@ import { anamnesisRequestSchema } from "./ops";
 import { existsSync } from "node:fs";
 import { collectSources } from "./collect";
 import { renderCard, renderWhoami, type WhoamiRecord } from "./whoami";
+import { notesDir, notesStatus, syncNotes } from "./notes";
 import { profileRecords } from "./profile-import";
 import { renderYearReview } from "./year-review";
 import { anamnesisDbPath, openStore, type Store, type UpsertResult } from "./store";
@@ -20,9 +21,21 @@ export function summarizeUpserts(results: readonly UpsertResult[]): UpsertSummar
   return { counts, reasons, ids: results.flatMap((result) => (result.id && (result.action === "created" || result.action === "updated") ? [result.id] : [])).slice(0, 500) };
 }
 
-export type HostContext = { now?: number };
+/** `notesDir` is where the portrait files live; absent, no file is read or written (tests of the store). */
+export type HostContext = { now?: number; notesDir?: string };
+
+/** The operations that change what the files say; each one is followed by a sync pass (the owner's edits are read first, then the files are written). */
+const WRITES_NOTES = new Set(["upsert", "add", "edit", "forget", "collect", "import_profile", "purge_technical", "sources"]);
 
 export async function executeRequest(request: AnamnesisRequest, store: Store, context: HostContext = {}): Promise<unknown> {
+  const response = await execute(request, store, context);
+  const wrote = request.op === "collect" ? request.mode === "run" : request.op === "sources" ? request.set !== undefined : request.op === "purge_technical" ? request.dryRun !== true : WRITES_NOTES.has(request.op);
+  // The files never fail an operation: a problem is in the answer of `notes` and is tried again at the next change.
+  if (wrote && context.notesDir) syncNotes(store, context.notesDir, context.now ?? Date.now());
+  return response;
+}
+
+async function execute(request: AnamnesisRequest, store: Store, context: HostContext): Promise<unknown> {
   const now = context.now ?? Date.now();
   switch (request.op) {
     case "status": {
@@ -61,9 +74,9 @@ export async function executeRequest(request: AnamnesisRequest, store: Store, co
       const withEvidence: WhoamiRecord[] = request.detail === "full"
         ? records.map((record, index) => (index < 300 ? { ...record, evidence: store.get(record.id, { includeSensitive: true })?.evidence ?? [] } : record))
         : records;
-      const { sections, detail, includeSensitive, includeDrafts, publicOnly, year } = request;
+      const { sections, detail, includeSensitive, includeDrafts, publicOnly, year, locale } = request;
       if (year !== undefined) return renderYearReview(records, { year, now, ...(includeSensitive ? { includeSensitive } : {}), ...(includeDrafts !== undefined ? { includeDrafts } : {}), ...(publicOnly ? { publicOnly } : {}) }) satisfies ResponseOf<"whoami">;
-      return renderWhoami(withEvidence, { ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
+      return renderWhoami(withEvidence, { ...(locale ? { locale } : {}), ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
         ...(includeDrafts !== undefined ? { includeDrafts } : {}), ...(publicOnly ? { publicOnly } : {}) }) satisfies ResponseOf<"whoami">;
     }
     case "card": return renderCard(store.list({ includeSensitive: false, statuses: ["confirmed"], limit: 2000 }), { ...(request.maxChars ? { maxChars: request.maxChars } : {}), now }) satisfies ResponseOf<"card">;
@@ -80,6 +93,8 @@ export async function executeRequest(request: AnamnesisRequest, store: Store, co
       const summary = summarizeUpserts(results);
       return { imported: results.filter((result) => result.id && result.action !== "invalid" && result.action !== "ignored").length, ids: summary.ids, skipped, reasons: summary.reasons } satisfies ResponseOf<"import_profile">;
     }
+    case "purge_technical": return store.purgeTechnical({ ...(request.dryRun ? { dryRun: true } : {}) }) satisfies ResponseOf<"purge_technical">;
+    case "notes": return (request.sync && context.notesDir ? syncNotes(store, context.notesDir, now) : notesStatus(context.notesDir ?? null)) satisfies ResponseOf<"notes">;
     case "loads": return { loads: store.loads(request.limit ?? 10).map((load) => ({ id: load.id, at: load.at, mode: load.mode, report: (load.report && typeof load.report === "object" && !Array.isArray(load.report) ? load.report : {}) as Record<string, unknown> })) } satisfies ResponseOf<"loads">;
     case "load_report": return { id: store.saveLoad(request.mode, request.report, now) } satisfies ResponseOf<"load_report">;
     case "sources": {
@@ -94,10 +109,10 @@ export async function anamnesisHandler(input: { requestedHostId: string; request
   const request = anamnesisRequestSchema.parse(input.request);
   // Reading, or planning a load, on a machine that has no store yet answers from an empty one in memory and leaves no file behind.
   const readOnly = request.op === "status" || request.op === "whoami" || request.op === "card" || request.op === "list" || request.op === "get" || request.op === "history" || request.op === "loads"
-    || (request.op === "collect" && request.mode === "plan") || (request.op === "sources" && !request.set);
+    || (request.op === "collect" && request.mode === "plan") || (request.op === "sources" && !request.set) || (request.op === "purge_technical" && request.dryRun === true) || (request.op === "notes" && !request.sync);
   const store = readOnly && !existsSync(anamnesisDbPath()) ? openStore(":memory:") : openStore();
   try {
-    return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, response: await executeRequest(request, store) };
+    return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, response: await executeRequest(request, store, { notesDir: notesDir() }) };
   } finally {
     store.close();
   }

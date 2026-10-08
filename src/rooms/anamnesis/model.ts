@@ -4,7 +4,7 @@ import { z } from "zod";
  * Anamnesis (A1): what Lane Pilot knows about its owner as a person. Short records with evidence and dates, never one block of
  * prose. Pure types and rules (no node imports) so that the contract, the hub and the host share them.
  */
-export const KINDS = ["self", "skill", "project", "event", "person", "interest", "preference", "fact", "tool"] as const;
+export const KINDS = ["self", "skill", "project", "event", "person", "interest", "preference", "fact", "tool", "knowledge", "hobby"] as const;
 export type Kind = (typeof KINDS)[number];
 
 /** `public` may leave the machine (site, resume) and is only ever set by the owner; automatic writers produce `private` or `sensitive`. */
@@ -22,9 +22,12 @@ export type Status = (typeof STATUSES)[number];
 /** Where evidence comes from. `manual` is the owner's own edit. */
 export const SOURCES = ["bb-message", "git", "journal", "registry", "claude-memory", "bb-memory", "lp-runs", "telegram", "elba", "manual"] as const;
 export type Source = (typeof SOURCES)[number];
-/** The owner switches source categories on and off (spec §3). Telegram and Elba stay off until the owner turns them on. */
+/**
+ * The owner switches source categories on and off (spec §3). The portrait is about the owner as a person, so the project data (the
+ * journal, the registry, Lane Pilot's runs) is off, as are Telegram and Elba, until the owner turns them on.
+ */
 export const DEFAULT_SOURCES: Record<Exclude<Source, "manual">, boolean> = {
-  "bb-message": true, git: true, journal: true, registry: true, "claude-memory": true, "bb-memory": true, "lp-runs": true, telegram: false, elba: false,
+  "bb-message": true, git: true, journal: false, registry: false, "claude-memory": true, "bb-memory": true, "lp-runs": false, telegram: false, elba: false,
 };
 
 export const MAX_QUOTE = 240;

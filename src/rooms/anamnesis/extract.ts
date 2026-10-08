@@ -1,5 +1,6 @@
 import { SENSITIVE_FROM, type FragmentDecision, type MatchDecision, type MatchInput } from "./judgment";
 import type { Hub } from "./hub";
+import { infrastructureReason } from "./infra";
 import { scrubQuote, sensitiveReason, type AnamnesisRecord, type Kind } from "./model";
 import type { UpsertSummary } from "./ops";
 import { maskPii } from "./pii";
@@ -9,12 +10,13 @@ import { sha256Hex } from "@lane-pilot/kit";
 /**
  * Learning from the owner's messages as they come (A4): the at-message path and the daily pass use this one function.
  *
- * A message passes four gates, each cheaper than the next: long enough, not about health/money/family by the local word rules
- * (those are held back and never leave), not seen before, and inside the day's ceiling. What is left is masked (keys by `scrubQuote`,
- * personal data by `maskPii`) and goes to Jev: «is this about the owner, and what kind of fact». A kept fragment is compared with the
+ * A message passes four gates, each cheaper than the next: long enough, not about infrastructure (an address, an ssh command, a key
+ * path, an environment variable: never about the owner as a person), not seen before, and inside the day's ceiling. What is left is
+ * masked (keys by `scrubQuote`, personal data by `maskPii`) and goes to Jev: «is this about the owner, and what kind of fact». Messages
+ * about family, health or money go too, masked; what comes of them is stored as `sensitive`. A kept fragment is compared with the
  * nearest record of the same kind (in code first, then Jev): a restatement adds evidence to that record, a contradiction becomes a
  * candidate marked `contradicts` that the owner sees (the old record is never changed), anything else is a new record.
- * Sensitive fragments are stored as sensitive candidates and are never compared, so no sensitive record text goes to Jev either.
+ * Sensitive fragments are stored as sensitive candidates and are never compared with the known records.
  */
 export const MIN_FRAGMENT_CHARS = 30;
 export const MAX_FRAGMENT_CHARS = 1_500;
@@ -41,14 +43,14 @@ export type ExtractDeps = {
 };
 
 export type ExtractReport = {
-  live: boolean; considered: number; tooShort: number; heldBackSensitive: number; alreadySeen: number; overCeiling: number;
+  live: boolean; considered: number; tooShort: number; infrastructure: number; alreadySeen: number; overCeiling: number;
   asked: number; masked: number; nothing: number; unavailable: number; kept: number;
   created: number; merged: number; contradictions: number; duplicates: number; stored: UpsertSummary | null;
   /** False while a fragment is left (cut by the ceiling or not judged): the daily pass then keeps its window open. */
   complete: boolean; note?: string;
 };
 
-const emptyReport = (live: boolean): ExtractReport => ({ live, considered: 0, tooShort: 0, heldBackSensitive: 0, alreadySeen: 0, overCeiling: 0,
+const emptyReport = (live: boolean): ExtractReport => ({ live, considered: 0, tooShort: 0, infrastructure: 0, alreadySeen: 0, overCeiling: 0,
   asked: 0, masked: 0, nothing: 0, unavailable: 0, kept: 0, created: 0, merged: 0, contradictions: 0, duplicates: 0, stored: null, complete: true });
 
 const sha = (text: string): string => sha256Hex(text).slice(0, 12);
@@ -59,14 +61,18 @@ export const madridHour = (at: number): number => Number(new Intl.DateTimeFormat
 
 /** The candidate a classified fragment becomes (also used by the first load). */
 export function candidateRecord(message: OwnerMessage, decision: FragmentDecision & { kind: Kind }, status: "candidate" | "draft" = "candidate", extraAttributes: Record<string, unknown> = {}): Record<string, unknown> {
-  const text = scrubQuote(message.text, 240);
+  // Personal data (phones, cards, documents, addresses, e-mails) never enters the portrait; the owner's own words around it do.
+  const text = maskPii(scrubQuote(message.text, 240)).text;
   return {
     kind: decision.kind, key: `msg-${sha(message.id)}`, title: text.slice(0, 80), statement: text, status,
-    ...(decision.sensitive >= SENSITIVE_FROM ? { sensitivity: "sensitive" } : {}),
+    ...(isSensitive(decision, text) ? { sensitivity: "sensitive" } : {}),
     attributes: { origin: "jev-fragment", kindP: Math.round(decision.kindP * 100) / 100, aboutOwner: Math.round(decision.aboutOwner * 100) / 100, sensitiveP: Math.round(decision.sensitive * 100) / 100, ...extraAttributes },
     confidence: Math.min(decision.kindP, decision.aboutOwner), evidence: [messageEvidence(message, text)],
   };
 }
+
+/** A fragment is sensitive when Jev says so or when the local word rules (family, health, money, documents) do. */
+const isSensitive = (decision: FragmentDecision, text: string): boolean => decision.sensitive >= SENSITIVE_FROM || sensitiveReason(text) !== null;
 
 const stem = (word: string): string => word.slice(0, 5);
 const wordsOf = (text: string): Set<string> => new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 2).map(stem));
@@ -119,7 +125,7 @@ async function extractNow(deps: ExtractDeps, messages: readonly OwnerMessage[], 
   for (const message of messages) {
     const text = message.text.trim();
     if (text.length < MIN_FRAGMENT_CHARS) { report.tooShort += 1; continue; }
-    if (sensitiveReason(text)) { report.heldBackSensitive += 1; continue; }
+    if (infrastructureReason(text)) { report.infrastructure += 1; continue; }
     if (seen.has(sha(message.id))) { report.alreadySeen += 1; continue; }
     eligible.push(message);
   }
@@ -161,7 +167,7 @@ async function extractNow(deps: ExtractDeps, messages: readonly OwnerMessage[], 
   }
 
   // The known records a fragment may restate: non-sensitive, of the same kind. A sensitive fragment is never compared.
-  const comparable = firsts.filter((item) => item.decision.sensitive < SENSITIVE_FROM);
+  const comparable = firsts.filter((item) => !isSensitive(item.decision, item.masked));
   const known = new Map<Kind, AnamnesisRecord[]>();
   for (const kind of new Set(comparable.map((item) => item.decision.kind))) known.set(kind, (await hub.ask({ op: "list", kinds: [kind], limit: 300 })).records);
   const nearest = new Map<Kept, AnamnesisRecord>();
@@ -189,7 +195,7 @@ async function extractNow(deps: ExtractDeps, messages: readonly OwnerMessage[], 
       continue;
     }
     // A sensitive fragment always waits as a candidate: the owner looks at it before it becomes a draft.
-    const confident = Math.min(item.decision.kindP, item.decision.aboutOwner) >= DRAFT_FROM && item.decision.sensitive < SENSITIVE_FROM;
+    const confident = Math.min(item.decision.kindP, item.decision.aboutOwner) >= DRAFT_FROM && !isSensitive(item.decision, item.masked);
     const created = record && relation?.relation === "contradicts"
       ? candidateRecord(item.message, item.decision, "candidate", { contradicts: [record.id] })
       : candidateRecord(item.message, item.decision, confident ? "draft" : "candidate");

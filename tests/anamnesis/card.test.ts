@@ -23,7 +23,7 @@ afterEach(() => { if (previousDir === undefined) delete process.env.LANE_PILOT_A
 /** What the owner said himself: confirmed at once. */
 const told = (record: Record<string, unknown>) => hub.ask({ op: "add", record: record as never, reason: "told" });
 /** What a load found: a draft until the owner confirms it. */
-const found = (key: string, kind = "skill") => hub.ask({ op: "upsert", actor: "auto:journal", reason: "load", records: [{ kind, key, title: key, statement: key, confidence: 0.8, evidence: [{ source: "journal", ref: `j:${key}`, at: 1 }] }] as never });
+const found = (key: string, kind = "skill") => hub.ask({ op: "upsert", actor: "auto:chat", reason: "load", records: [{ kind, key, title: key, statement: key, confidence: 0.8, evidence: [{ source: "bb-message", ref: `j:${key}`, at: 1 }] }] as never });
 
 describe("the owner card in the PM's prompt", () => {
   it("is empty (no block, no noise) until the owner has confirmed something", async () => {

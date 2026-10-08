@@ -22,9 +22,11 @@ export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis forget <id> | --all --yes | --source SOURCE --yes",
   "bb lane-pilot anamnesis sources [--set SOURCE=on|off]",
   "bb lane-pilot anamnesis config [--authors EMAIL,NAME] [--roots /path,/path] [--max-classify N] [--extract on|off] [--telegram-channels @name,@name]",
-  "bb lane-pilot anamnesis load [--run] [--since YYYY-MM-DD] [--sources a,b] [--classify --yes [--max-classify N] [--allow-sensitive-to-jev]] [--json]",
+  "bb lane-pilot anamnesis load [--run] [--since YYYY-MM-DD] [--sources a,b] [--classify --yes [--max-classify N]] [--json]",
   "bb lane-pilot anamnesis review [--limit N]",
-  "bb lane-pilot anamnesis whoami [--sections identity,skills,projects,timeline,people,interests,preferences,tools] [--detail brief|normal|full] [--confirmed-only] [--include-sensitive] [--public-only] [--year YYYY]",
+  "bb lane-pilot anamnesis whoami [--sections identity,knowledge,skills,people,hobbies,interests,preferences,timeline,projects,tools] [--detail brief|normal|full] [--locale ru|en] [--confirmed-only] [--include-sensitive] [--public-only] [--year YYYY]",
+  "bb lane-pilot anamnesis purge-technical [--dry-run]",
+  "bb lane-pilot anamnesis notes [--sync]",
   "bb lane-pilot anamnesis card [--max-chars N]",
   "bb lane-pilot anamnesis import-profile --profile '<JSON of bb memory-profile get --json>'",
 ].join("\n");
@@ -43,7 +45,7 @@ const OPTIONS = {
   sensitivity: { type: "string" }, reason: { type: "string" }, confidence: { type: "string" }, all: { type: "boolean" }, yes: { type: "boolean" },
   source: { type: "string" }, set: { type: "string" }, help: { type: "boolean" },
   run: { type: "boolean" }, classify: { type: "boolean" }, since: { type: "string" }, sources: { type: "string" }, "max-classify": { type: "string" },
-  "allow-sensitive-to-jev": { type: "boolean" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, year: { type: "string" }, profile: { type: "string" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" }, extract: { type: "string" }, "telegram-channels": { type: "string" },
+  "dry-run": { type: "boolean" }, sync: { type: "boolean" }, locale: { type: "string" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, year: { type: "string" }, profile: { type: "string" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" }, extract: { type: "string" }, "telegram-channels": { type: "string" },
 } as const;
 
 const day = (at: number | null): string => (at ? new Date(at).toISOString().slice(0, 10) : "—");
@@ -167,23 +169,39 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
       if (!deps.load) throw new Error("load is not available here");
       const mode = values.run ? "run" : "plan";
       if (values.classify && mode === "run" && !values.yes) throw new Error("--classify sends masked message fragments to Jev (TypeSafe), the only outside service used; add --yes to allow it. Plan first: without --run it prices the pass and sends nothing.");
-      if (values["allow-sensitive-to-jev"] && !values.classify) throw new Error("--allow-sensitive-to-jev only means something with --classify");
       let since: number | undefined;
       if (values.since) { since = Date.parse(`${values.since}T00:00:00Z`); if (!Number.isFinite(since)) throw new Error("--since must be YYYY-MM-DD"); }
       const sources = values.sources ? values.sources.split(",").map((name) => oneOf(name.trim(), SOURCES.filter((source) => source !== "manual"), "source") as Source) : undefined;
       const report = await deps.load({ mode, ...(since !== undefined ? { since } : {}), ...(sources ? { sources } : {}), classify: values.classify === true,
-        ...(values["max-classify"] ? { maxClassify: Number(values["max-classify"]) } : {}), allowSensitiveToJev: values["allow-sensitive-to-jev"] === true });
+        ...(values["max-classify"] ? { maxClassify: Number(values["max-classify"]) } : {}) });
       return out(report, values.json, () => `${formatReport(report)}
 (default window: the last ${DEFAULT_LOOKBACK_DAYS} days)`);
     }
     case "whoami": {
       const sections = values.sections ? values.sections.split(",").map((name) => oneOf(name.trim(), SECTIONS, "section") as Section) : undefined;
       const detail = oneOf(values.detail, DETAILS, "detail") as Detail | undefined;
+      const locale = oneOf(values.locale, ["ru", "en"] as const, "locale");
       const year = values.year === undefined ? undefined : Number(values.year);
       if (year !== undefined && !(Number.isInteger(year) && year >= 2000 && year <= 2200)) throw new Error("--year must be a calendar year such as 2026");
-      const result = await hub.ask({ op: "whoami", ...(year !== undefined ? { year } : {}), ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
+      const result = await hub.ask({ op: "whoami", ...(locale ? { locale } : {}), ...(year !== undefined ? { year } : {}), ...(sections ? { sections } : {}), ...(detail ? { detail } : {}), ...(includeSensitive ? { includeSensitive } : {}),
         ...(values["confirmed-only"] ? { includeDrafts: false } : {}), ...(values["public-only"] ? { publicOnly: true } : {}) });
       return out(result, values.json, () => result.text);
+    }
+    case "purge-technical": {
+      const result = await hub.ask({ op: "purge_technical", ...(values["dry-run"] ? { dryRun: true } : {}) });
+      return out(result, values.json, () => [
+        `${result.dryRun ? "would delete" : "deleted"} ${result.deleted} of ${result.scanned} unconfirmed records that nobody touched`,
+        `by reason: ${JSON.stringify(result.byReason)}; by status: ${JSON.stringify(result.byStatus)}; by kind: ${JSON.stringify(result.byKind)}`,
+        `kept: ${result.kept.confirmed} confirmed, ${result.kept.ownerTouched} touched by you (never deleted)`,
+      ].join("\n"));
+    }
+    case "notes": {
+      const result = await hub.ask({ op: "notes", ...(values.sync ? { sync: true } : {}) });
+      return out(result, values.json, () => [
+        `folder: ${result.dir ?? "none on this machine"}`,
+        ...result.files.map((file) => `${file.exists ? "+" : "-"} ${file.name} (${file.records} records)`),
+        ...(values.sync ? [`synced: ${result.applied.created} added, ${result.applied.edited} edited, ${result.applied.confirmed} confirmed, ${result.applied.rejected} rejected from your edits; ${result.written} files written${result.error ? `; ERROR ${result.error}` : ""}`] : []),
+      ].join("\n"));
     }
     case "card": {
       const result = await hub.ask({ op: "card", ...(values["max-chars"] ? { maxChars: Number(values["max-chars"]) } : {}) });
