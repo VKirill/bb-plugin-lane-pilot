@@ -3,7 +3,8 @@ import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MAN
 import { detectCompiledMainAgentCapability } from "../../agent-profile";
 import { buildCliInvocation } from "../../argv-builder";
 import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../constants";
-import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, getSettingVersions, listRunsWithAttempts, listSettingRows, listStageReceipts, loadProjectSettings, loadPrototypeConfig, sectionBindingId } from "../../database";
+import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, sectionBindingId } from "../../database";
+import type { RunHistoryRow } from "../../database";
 import { writerServiceTier } from "../../jev-reasoning";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "../../lp-defaults";
 import { mapListedQaHosts } from "../../qa-host";
@@ -17,9 +18,39 @@ import { rpcContract } from "../../contracts";
 import type { ServerCore } from "../core";
 import type { Services } from "../services";
 
+/** Runs the screen carries up front (plus every open one); older history comes page by page from `list_runs`. */
+const SCREEN_RUNS_LIMIT = 10;
+
 export function settingsRpc(ctx: ServerCore, services: Services) {
   const { bb, cliSettingsFor, db, host, listProjectSections, screenWriterBinding, sectionChain, serializedKv, settingsAbove, writerBindingKey } = ctx;
   const protectedSettings = createProtectedSettings({ db, ownerAsk: ctx.ownerAsk, log: ctx.log });
+  // Runs as the screen shows them: a stage count only; `list_run_stages` lists the rows and `get_stage_result` loads one body.
+  const runViews = async (runs: RunHistoryRow[], values: Record<string, unknown>) => {
+    const listed = runs.map((run) => ({
+      id: run.id,
+      state: run.closed_at ? "closed" : run.state,
+      kind: run.kind,
+      created_at: run.created_at,
+      updated_at: run.updated_at,
+      cliReceiptJson: asJsonText(values[cliReceiptRunKey(run.id)]),
+      stageCount: countStageReceipts(db, run.id),
+      attempts: run.attempts.map((attempt) => ({
+        ...attempt,
+        cliReceiptJson: asJsonText(values[cliReceiptAttemptKey(attempt.id)]),
+      })),
+    }));
+    // Open runs carry their PM chat's title and status; closed ones are history and are not looked up.
+    const pmThreads = new Map(await Promise.all(runs
+      .filter((run) => !run.closed_at && run.pm_thread_id)
+      .map(async (run) => {
+        let thread: unknown = null;
+        let status: string | null = null;
+        try { thread = await bb.sdk.threads.get({ threadId: run.pm_thread_id! }); status = stringAt(thread, "status"); }
+        catch (cause) { if (/\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause))) status = "gone"; }
+        return [run.id, { id: run.pm_thread_id!, title: stringAt(thread, "title"), status }] as const;
+      })));
+    return listed.map((run) => ({ ...run, pmThread: pmThreads.get(run.id) ?? null }));
+  };
   const refusedBy = (key: string, message: string) => ({ code: "incompatible_setting" as const, key, params: [key, message] });
   return {
     helper_access_view: async ({ projectId, sectionId }) => {
@@ -75,7 +106,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).map(([id, groups]) => [id, [...groups]])),
       };
     },
-    get_screen: async ({ projectId, sectionId }) => {
+    get_screen: async ({ projectId, sectionId, runsLimit }) => {
       // A section shows its own values over its parents', its project's and the global ones.
       const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];
       const bindingId = scopes.at(-1) ?? "";
@@ -130,39 +161,15 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         settings: config ? await cliSettingsFor(projectId, config) : settings,
       });
       const unapplied = invocation.unapplied.map((item) => ({ key: item.key, reason: item.reason }));
-      const listed = listRunsWithAttempts(db, projectId).map((run) => {
-        const runReceipt = asJsonText(values[cliReceiptRunKey(run.id)]);
-        return {
-          id:run.id,
-          state: run.closed_at ? "closed" : run.state,
-          kind:run.kind,
-          created_at:run.created_at,
-          updated_at:run.updated_at,
-          cliReceiptJson: runReceipt,
-          stages:listStageReceipts(db, run.id),
-          attempts: run.attempts.map((attempt) => ({
-            ...attempt,
-            cliReceiptJson: asJsonText(values[cliReceiptAttemptKey(attempt.id)]),
-          })),
-        };
-      });
+      const runsWindow = runsLimit ?? SCREEN_RUNS_LIMIT;
+      const page = listRunsPage(db, projectId, { limit: runsWindow, offset: 0, pinOpen: true });
+      const listed = await runViews(page.runs, values);
       const latestReceipt = listed
         .flatMap((run) => [
           ...run.attempts.map((attempt) => attempt.cliReceiptJson),
           run.cliReceiptJson,
         ])
         .find((text) => text != null) ?? null;
-      // Open runs carry their PM chat's title and status; closed ones are history and are not looked up.
-      const pmThreads = new Map(await Promise.all(listRunsWithAttempts(db, projectId)
-        .filter((run) => !run.closed_at && run.pm_thread_id)
-        .map(async (run) => {
-          let thread: unknown = null;
-          let status: string | null = null;
-          try { thread = await bb.sdk.threads.get({ threadId: run.pm_thread_id! }); status = stringAt(thread, "status"); }
-          catch (cause) { if (/\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause))) status = "gone"; }
-          return [run.id, { id: run.pm_thread_id!, title: stringAt(thread, "title"), status }] as const;
-        })));
-      for (const run of listed) (run as { pmThread?: unknown }).pmThread = pmThreads.get(run.id) ?? null;
       return {
         projectId,
         sectionId: sectionId ?? null,
@@ -187,6 +194,8 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
             : null,
         },
         runs: listed,
+        runsTotal: page.total,
+        runsLimit: runsWindow,
         unapplied,
         cliPreview: {
           argv: invocation.argv,
@@ -233,6 +242,13 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         })(),
       };
     },
+    list_runs: async ({ projectId, sectionId, offset, limit, pinOpen }) => {
+      const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];
+      const page = listRunsPage(db, projectId, { limit, offset, pinOpen });
+      return { runs: await runViews(page.runs, loadProjectSettings(db, projectId, scopes)), total: page.total };
+    },
+    list_run_stages: ({ runId }) => ({ stages: listStageReceiptSummaries(db, runId) }),
+    get_stage_result: ({ runId, taskId, stageId }) => getStageReceiptResult(db, runId, taskId, stageId),
     save_setting: ({ projectId, sectionId, key, value, expectedVersion }) => {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
       const held = protectedSettings.check({ projectId, bindingId, changes:[{ key, value }] });
@@ -331,5 +347,5 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       await bb.storage.kv.set(writerBindingKey(projectId), { hostId, path });
       return { ok: true };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "helper_access_view" | "get_screen" | "save_setting" | "reset_project_settings" | "save_settings" | "save_writer_binding">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "helper_access_view" | "get_screen" | "list_runs" | "list_run_stages" | "get_stage_result" | "save_setting" | "reset_project_settings" | "save_settings" | "save_writer_binding">;
 }

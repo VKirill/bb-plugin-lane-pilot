@@ -47,6 +47,8 @@ import { HelpSup } from "./help-sup";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "../state-machine";
 import type { StageReceipt } from "../stages/contract";
+import { StageResult } from "./stage-result";
+import { useLpRealtime } from "./use-lp-realtime";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa-host";
 import { presentEnumLabel } from "../enum-labels";
 import { OwnedSettings } from "./owned-settings";
@@ -68,8 +70,14 @@ import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
 import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys } from "../writer-fallbacks";
 
+/** History comes this many runs at a time. */
+const RUNS_PAGE = 20;
+
 const CARD_HEAD = "space-y-1 px-3 pb-2 pt-3";
 const CARD_BODY = "px-3 pb-3 pt-0";
+
+/** A stage row as the list shows it: its result body loads when the owner opens it. */
+type StageSummary = Omit<StageReceipt, "result"> & { hasResult?: boolean };
 
 type ScreenPayload = {
   projectId: string;
@@ -81,6 +89,9 @@ type ScreenPayload = {
   versions: Record<string, number>;
   explicitKeys: string[];
   importSource: { completed: boolean; at: number | null; routingPath: string | null; nightPath: string | null };
+  /** All runs of the project; `runs` holds the newest few and every open one. */
+  runsTotal?: number;
+  runsLimit?: number;
   runs: Array<{
     id: string;
     state: string;
@@ -89,7 +100,8 @@ type ScreenPayload = {
     updated_at: number;
     cliReceiptJson: string | null;
     pmThread?: { id: string; title: string | null; status: string | null } | null;
-    stages?: StageReceipt[];
+    /** How many stage rows the run has; the rows themselves load when the owner opens the list. */
+    stageCount?: number;
     attempts: Array<{
       id: string;
       state: string;
@@ -616,6 +628,34 @@ function runTone(state: string): "default" | "secondary" | "destructive" | "outl
   return "outline";
 }
 
+/** The stage receipts of a run: the screen carries only their count, the rows load when the list is opened. */
+function RunStages({ runId, count }: { runId: string; count: number }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [stages, setStages] = useState<StageSummary[] | "failed" | null>(null);
+  const open = (isOpen: boolean) => {
+    if (!isOpen) return;
+    void rpc.call("list_run_stages", { runId }).then((listed) => setStages(listed.stages as StageSummary[])).catch(() => setStages("failed"));
+  };
+  return <Disclosure compact testId={`stage-receipts-${runId}`} summary={`${t("stageReceipts")} (${count})`} onToggle={open}>
+    {stages === null ? <p className="text-xs text-muted-foreground">{t("stageResultLoading")}</p>
+      : stages === "failed" ? <p className="text-xs text-muted-foreground">{t("stageResultFailed")}</p>
+        : <div className="divide-y divide-border">
+          {stages.map((stage) => (
+            <div key={`${stage.taskId}-${stage.stageId}`} className="space-y-2 py-3 first:pt-0 last:pb-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-medium">{stageTitle(stage.stageId)}</span>
+                <Badge variant={runTone(stage.state)}>{stateLabel(stage.state)}</Badge>
+              </div>
+              <div className="break-all font-mono text-xs text-muted-foreground">{stage.taskId} · SHA-256 {stage.inputSha256.slice(0, 12)}{stage.outputSha256 ? ` / ${stage.outputSha256.slice(0, 12)}` : ""}</div>
+              {stage.reason ? <p className="text-xs text-muted-foreground">{t("stageReason")}: {stage.reason}</p> : null}
+              {stage.hasResult ? <StageResult runId={runId} taskId={stage.taskId} stageId={stage.stageId} /> : null}
+              {!stage.hasResult && !stage.reason ? <p className="text-xs text-muted-foreground">{t("stageNoEvidence")}</p> : null}
+            </div>
+          ))}
+        </div>}
+  </Disclosure>;
+}
+
 type MonitorRun = ScreenPayload["runs"][number];
 type MonitorAttempt = MonitorRun["attempts"][number];
 
@@ -663,6 +703,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const providers = useProviders();
   const [tab, setTab] = useState("overview");
   const [runsShown, setRunsShown] = useState(20);
+  // How many of the newest runs the screen has fetched; the rest of the history comes by `list_runs` pages.
+  const runsWindow = useRef(0);
   const [nativeState, setNativeState] = useState<{ status: string; error: string | null } | null>(null);
   const [data, setData] = useState<ScreenPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -765,6 +807,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
       const next = await rpc.call("get_screen", { ...scoped, projectId }) as ScreenPayload;
       if (generation !== loadGeneration.current) return;
       setData(next);
+      runsWindow.current = next.runsLimit ?? next.runs.length;
       void rpc.call("get_council_defaults", { projectId }).then((defaults) => { if (generation === loadGeneration.current) setCouncilDefaults((defaults as { seats: typeof councilDefaults }).seats); }).catch(() => setCouncilDefaults([]));
       void rpc.call("list_councils", { projectId }).then((listed) => { if (generation === loadGeneration.current) setCouncils((listed as { councils: CouncilRow[] }).councils); }).catch(() => setCouncils([]));
       void rpc.call("get_routing_hint", { projectId }).then((hint) => { if (generation === loadGeneration.current) setRoutingStats(hint as RoutingStats); }).catch(() => setRoutingStats(null));
@@ -777,6 +820,38 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   }, [projectId, selectedSectionId, rpc]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // The runs panel reads its list on its own: the next page of the history, and a light re-read of what is loaded
+  // (no screen reload, so nothing blanks) when an attempt changes or the slow poll fires.
+  const mergeRuns = (incoming: ScreenPayload["runs"], total: number, replaceAll: boolean) => setData((prev) => {
+    if (!prev || prev.projectId !== projectId) return prev;
+    const known = new Set(incoming.map((run) => run.id));
+    return { ...prev, runsTotal: total, runs: replaceAll ? incoming : [...prev.runs.filter((run) => !known.has(run.id)), ...incoming] };
+  });
+  const loadMoreRuns = async () => {
+    if (!projectId) return;
+    const offset = runsWindow.current;
+    const generation = loadGeneration.current;
+    const page = await rpc.call("list_runs", { ...scoped, projectId, offset, limit: RUNS_PAGE });
+    if (generation !== loadGeneration.current) return;
+    runsWindow.current = offset + RUNS_PAGE;
+    mergeRuns(page.runs as ScreenPayload["runs"], page.total, false);
+  };
+  const refreshRuns = useCallback(async () => {
+    if (!projectId || isGlobal || !dataRef.current || dataRef.current.projectId !== projectId) return;
+    const generation = loadGeneration.current;
+    try {
+      const page = await rpc.call("list_runs", { ...(selectedSectionId ? { sectionId: selectedSectionId } : {}), projectId, offset: 0, limit: Math.max(runsWindow.current, 1), pinOpen: true });
+      if (generation === loadGeneration.current) mergeRuns(page.runs as ScreenPayload["runs"], page.total, true);
+    } catch { /* the next signal or poll retries */ }
+  }, [projectId, isGlobal, selectedSectionId, rpc]);
+  const runsPollMs = useLpRealtime(isGlobal ? null : projectId, ["helpers"], () => { void refreshRuns(); });
+  const runsVisible = tab === "monitor" || tab === "overview";
+  useEffect(() => {
+    if (!runsVisible || !projectId || isGlobal) return;
+    const timer = setInterval(() => { void refreshRuns(); }, runsPollMs);
+    return () => clearInterval(timer);
+  }, [runsVisible, projectId, isGlobal, refreshRuns, runsPollMs]);
 
   useEffect(() => {
     setSelectedSectionId(null);
@@ -2035,27 +2110,12 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                           </div>
                         ))}
                         {run.state !== "closed" && !hasOpenAttempt ? <Button size="sm" variant="outline" onClick={() => void finishRuns(run.id)} disabled={finishing}>{finishing ? t("finishRunBusy") : t("finishRun")}</Button> : null}
-                        {run.stages?.length ? <Disclosure compact testId={`stage-receipts-${run.id}`} summary={`${t("stageReceipts")} (${run.stages.length})`}>
-                          <div className="divide-y divide-border">
-                    {run.stages?.map((stage) => (
-                      <div key={`${stage.taskId}-${stage.stageId}`} className="space-y-2 py-3 first:pt-0 last:pb-0">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-sm font-medium">{stageTitle(stage.stageId)}</span>
-                          <Badge variant={runTone(stage.state)}>{stateLabel(stage.state)}</Badge>
-                        </div>
-                        <div className="break-all font-mono text-xs text-muted-foreground">{stage.taskId} · SHA-256 {stage.inputSha256.slice(0, 12)}{stage.outputSha256 ? ` / ${stage.outputSha256.slice(0, 12)}` : ""}</div>
-                        {stage.reason ? <p className="text-xs text-muted-foreground">{t("stageReason")}: {stage.reason}</p> : null}
-                        {stage.result != null ? <SourceCode content={JSON.stringify(stage.result, null, 2)} path={`${stage.stageId}-receipt.json`} overflow="scroll" /> : null}
-                        {stage.result == null && !stage.reason ? <p className="text-xs text-muted-foreground">{t("stageNoEvidence")}</p> : null}
-                      </div>
-                    ))}
-                          </div>
-                        </Disclosure> : null}
+                        {run.stageCount ? <RunStages runId={run.id} count={run.stageCount} /> : null}
                       </SurfaceBody>
                     </Surface>;
                   })}
                 </div>
-                {ordered.length > runsShown ? <Button size="sm" variant="outline" data-testid="runs-show-more" onClick={() => setRunsShown((count) => count + 20)}>{t("runsShowMore").replace("{n}", String(Math.min(20, ordered.length - runsShown)))}</Button> : null}
+                {ordered.length > runsShown || (data.runsTotal ?? 0) > runsWindow.current ? <Button size="sm" variant="outline" data-testid="runs-show-more" onClick={() => { setRunsShown((count) => count + RUNS_PAGE); if ((data.runsTotal ?? 0) > runsWindow.current) void loadMoreRuns(); }}>{t("runsShowMore").replace("{n}", String(Math.min(RUNS_PAGE, Math.max(ordered.length - runsShown, (data.runsTotal ?? 0) - runsWindow.current))))}</Button> : null}
               </>;
             })()}
             <p className="sr-only">{[...RUN_STATES, ...ATTEMPT_STATES].join(" ")}</p>

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+Speed of the settings page (audit ui-perf-structure-audit, 2026-10-08):
+- **`get_screen` is small again (85 MB to 0.5 MB for SelfyStudio, 4.5-5.3 s on the hub to 20-40 ms on a copy of its database).** The screen carried the full `result_json` of every stage receipt of every run (82.7 MB of 85). Now `runs[]` holds the newest 10 runs plus every open one, each with `stageCount` only; `runsTotal`/`runsLimit` say how much history exists. New RPCs: `list_runs {projectId, sectionId?, offset, limit, pinOpen?}` (older history, 20 at a time from «Show more»), `list_run_stages {runId}` (the stage rows without bodies, loaded when «Stage receipts» is opened) and `get_stage_result {runId, taskId, stageId}` (one body, loaded when its «Result» is opened). `listStageReceipts` and `listRunsWithAttempts` are unchanged for the other callers (new `listRunsPage`, `listStageReceiptSummaries`, `getStageReceiptResult`, `countStageReceipts`). The runs panel merges pages by run id and re-reads the loaded window by `list_runs` (no screen reload) on a `helpers` signal of the project channel and on the live fallback poll while «Overview» or «Runs» is open.
+
+
 ## 0.1.195
 
 - **OpenCode helpers start again.** The host contract of `prepareOpencodeMinimal` refused the `requestedHostId` every host call carries, so on the live hub (0.1.194) each OpenCode helper's minimal-config preparation failed and the helper was refused (fail-closed). A new test checks every server `host.call` against its host contract.

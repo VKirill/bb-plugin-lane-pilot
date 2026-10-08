@@ -35,12 +35,7 @@ function screenFixture() {
       created_at: 1,
       updated_at: 1,
       cliReceiptJson: null,
-      stages: [{
-        contractVersion:1, runId:"lprun_1", taskId:"task_1", stageId:"plan-critique", state:"passed",
-        inputSha256:"a".repeat(64), outputSha256:"b".repeat(64), attempt:1,
-        providerId:"codex", model:"test-model", threadId:"thr_critic",
-        result:{ decision:"approve", summary:"Plan checked", findings:[] }, reason:null, updatedAt:1,
-      }],
+      stageCount: 1,
       attempts: [{
         id: "lpattempt_1",
         state: "running",
@@ -95,6 +90,13 @@ async function mountPage(
       list_projects: () => ({ projects:[{ id:"proj_ui", name:"UI test" }], lastProjectId:"proj_ui" }),
       finish_run: () => ({ projectId:"proj_ui", finishedRunIds:[], closed:true }),
       get_screen: () => screenFixture(),
+      list_run_stages: () => ({ stages: [{
+        contractVersion:1, runId:"lprun_1", taskId:"task_1", stageId:"plan-critique", state:"passed",
+        inputSha256:"a".repeat(64), outputSha256:"b".repeat(64), attempt:1,
+        providerId:"codex", model:"test-model", threadId:"thr_critic",
+        hasResult:true, reason:null, updatedAt:1,
+      }] }),
+      get_stage_result: () => ({ found:true, result:{ decision:"approve", summary:"Plan checked", findings:[] } }),
       get_globals: () => ({ defaults: {}, revision: 0, agents: [] }),
       save_setting: () => ({ ok: true, conflict: false, version: 2, value: true }),
       save_settings: () => ({ ok:true, conflict:false, values:{}, versions:{} }),
@@ -441,7 +443,7 @@ describe("Lane Pilot UI", () => {
 
   it("lists runs in progress first, newest next, and opens the history 20 at a time", async () => {
     const base = screenFixture();
-    const run = (id: string, state: string, updated: number) => ({ ...base.runs[0]!, id, state, updated_at: updated, attempts: [], stages: [] });
+    const run = (id: string, state: string, updated: number) => ({ ...base.runs[0]!, id, state, updated_at: updated, attempts: [], stageCount: 0 });
     base.runs = [run("lprun_old", "closed", 1), ...Array.from({ length: 21 }, (_, i) => run(`lprun_h${i}`, "closed", 100 + i)), run("lprun_live", "running", 2)];
     const slot = await mountPage({ get_screen: () => base });
     fireEvent.click(slot.getByTestId("tab-monitor"));
@@ -456,21 +458,45 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
+  it("fetches older runs page by page when the screen holds only the newest ones", async () => {
+    const base = screenFixture();
+    const run = (id: string, updated: number) => ({ ...base.runs[0]!, id, state: "closed", updated_at: updated, attempts: [], stageCount: 0 });
+    (base as { runsTotal?: number; runsLimit?: number }).runsTotal = 3;
+    (base as { runsTotal?: number; runsLimit?: number }).runsLimit = 2;
+    base.runs = [run("lprun_n1", 30), run("lprun_n2", 20)];
+    const listRuns = vi.fn(() => ({ runs: [run("lprun_older", 10)], total: 3 }));
+    const slot = await mountPage({ get_screen: () => base, list_runs: listRuns });
+    fireEvent.click(slot.getByTestId("tab-monitor"));
+    const list = await slot.findByTestId("run-list");
+    expect(list.children).toHaveLength(2);
+    fireEvent.click(slot.getByTestId("runs-show-more"));
+    await waitFor(() => expect(list.children).toHaveLength(3));
+    expect(listRuns).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj_ui", offset: 2, limit: 20 }));
+    expect(slot.queryByTestId("runs-show-more")).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
   it("shows persisted stage receipts with translated stage labels", async () => {
     setLocaleOverride("en");
     const slot = await mountPage();
     fireEvent.click(slot.getByTestId("tab-monitor"));
     const card = await slot.findByTestId("stage-receipts-lprun_1");
+    expect(card.textContent).toContain("(1)");
+    fireEvent.click(card.querySelector("summary")!);
+    await waitFor(() => expect(card.textContent).toContain(en.stagePlanCritique));
     expect(card.textContent).toContain(en.stagePlanCritique);
     expect(card.textContent).toContain(en.state_passed);
-    expect(card.textContent).toContain("Plan checked");
+    expect(card.textContent).not.toContain("Plan checked");
+    fireEvent.click(slot.getByTestId("stage-result-lprun_1-task_1-plan-critique").querySelector("summary")!);
+    await waitFor(() => expect(card.textContent).toContain("Plan checked"));
 
     slot.lifecycle.unmount();
     const russian = await mountPage({ get_preferences: () => ({ locale:"ru", preference:"ru", lastProjectId:"proj_ui" }) });
     await russian.findByTestId("tab-monitor");
     await russian.findByTestId("tab-monitor");
     fireEvent.click(russian.getByTestId("tab-monitor"));
-    expect(russian.getByTestId("stage-receipts-lprun_1").textContent).toContain(ru.stagePlanCritique);
+    fireEvent.click((await russian.findByTestId("stage-receipts-lprun_1")).querySelector("summary")!);
+    await waitFor(() => expect(russian.getByTestId("stage-receipts-lprun_1").textContent).toContain(ru.stagePlanCritique));
     russian.lifecycle.unmount();
     setLocaleOverride(null);
   });
