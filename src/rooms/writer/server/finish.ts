@@ -82,8 +82,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     basePath:string, commitSha:string, produced:string[], live:boolean) {
     integrationGateRunner.noteMergedTask({ taskId:input.taskId, commitSha, threadId:input.writerThreadId, attemptId:input.attemptId, produced });
     const drained = !listOpenAttempts(db).some((row) => row.project_id === input.projectId && row.id !== input.attemptId);
+    // Called without await: a throw here must never become an unhandled rejection, which kills the whole BB server.
     return integrationGateRunner.maybeRunGate({ runId:input.runId, projectId:input.projectId, pmThreadId:input.pmThreadId, basePath,
-      configHostId:input.config.hostId, trigger:drained ? "drain" : "merge", ...(live ? { live:true } : {}) });
+      configHostId:input.config.hostId, trigger:drained ? "drain" : "merge", ...(live ? { live:true } : {}) })
+      .catch((cause:unknown) => { ctx.log(`integration-gate: failed after merging ${input.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`); return { ran:false }; });
   }
 
   /** Who holds the checkout: the open attempt whose task the holder's commit message names. */

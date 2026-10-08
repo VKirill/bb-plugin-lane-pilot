@@ -1,7 +1,7 @@
 import type { TaskV2, PrototypeConfig } from "../../contracts";
 import type { LanePilotDatabase, StageReceiptRow } from "../../storage";
 import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
-import { recordStage } from "../../runs/server/stage-records";
+import { recordGateEvaluation } from "../../runs/server/stage-records";
 import { stringAt } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
@@ -279,7 +279,7 @@ export class IntegrationGateRunner {
       this.inFlight = false;
       const waiting = this.drainWaiting;
       this.drainWaiting = null;
-      if (waiting && result.ran && this.mergesSinceLastGate > 0) void this.maybeRunGate(waiting);
+      if (waiting && result.ran && this.mergesSinceLastGate > 0) void this.maybeRunGate(waiting).catch((cause: unknown) => this.ctx.log(`integration-gate: queued run failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     }
   }
 
@@ -339,16 +339,16 @@ export class IntegrationGateRunner {
       mergesChecked: this.mergesSinceLastGate,
     };
 
+    // The gate's verdict is a gate evaluation of the batch. It used to be written over the last merged task's own
+    // `verification` receipt, which was already passed: «illegal stage transition verification: passed -> failed» was
+    // thrown from a fire-and-forget call and took the whole BB server down (2026-10-08 21:05 UTC).
     if (hasTaskInDb) {
-      recordStage(db, {
-        runId,
-        taskId: runTaskId,
-        stageId: "verification",
-        state: passed ? "passed" : "failed",
-        input: gateCommand,
-        result: receiptResult,
-        reason: passed ? null : `integration-gate failed with exit code ${exitCode}`,
-      });
+      try {
+        recordGateEvaluation(db, { projectId, runId, taskId: runTaskId, gate: "verification", status: passed ? "passed" : "failed",
+          attempt: 0, input: gateCommand, summary: receiptResult });
+      } catch (cause) {
+        this.ctx.log(`integration-gate: could not record the verdict: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
     }
 
     if (passed) {

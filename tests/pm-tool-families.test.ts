@@ -53,6 +53,18 @@ describe("the PM's folded tool list", () => {
     expect(await call("lane_pilot_relay", { action: "list" })).toBe(await call("lane_pilot_relay_list", {}));
   });
 
+  it("takes a number or a list sent as text (the live PM sent inMinutes:\"45\" and taskIds:\"[...]\" on 2026-10-08)", async () => {
+    const harness = await start();
+    const outcome = async (args: Record<string, unknown>) => {
+      try { return String(await harness.behavior.callAgentTool("lane_pilot_relay", args, ctx)); } catch (cause) { return String(cause); }
+    };
+    const asText = await outcome({ action: "remind", inMinutes: "45", note: "check the task", taskIds: '["metrika-fix"]' });
+    expect(asText).not.toMatch(/expected number|expected array|Invalid arguments/i);
+    expect(asText).toBe(await outcome({ action: "remind", inMinutes: 45, note: "check the task", taskIds: ["metrika-fix"] }));
+    // Text that is not the field's type is still refused.
+    expect(await outcome({ action: "remind", inMinutes: "soon", note: "x" })).toMatch(/invalid/i);
+  });
+
   it("refuses an unknown action and an argument that belongs to another action, as the old tools refused unknown arguments", async () => {
     const harness = await start();
     const call = (name: string, args: Record<string, unknown>) => harness.behavior.callAgentTool(name, args, ctx);

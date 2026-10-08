@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.202
+
+- **The integration gate no longer takes the BB server down.** On the first live SelfyStudio task the batch gate wrote its red verdict over the merged task's own, already passed `verification` receipt; «illegal stage transition verification: passed -> failed» was thrown from a call nobody awaited, and the unhandled rejection stopped the whole BB server (21:05 UTC); a dispatch in flight was lost. The gate's verdict is now a gate event of the batch, and both fire-and-forget gate calls catch and log.
+- **Family tools take a number or a list sent as text.** The live PM sent `lane_pilot_relay {action:"remind", inMinutes:"45", taskIds:"[...]"}` three times and was refused; a non-text field now also takes a JSON string of its type (the old tool still checks the value).
+
 ## 0.1.201
 
 - **Rooms refactor back (as 0.1.199).** Its drill failure was not the code: the Mac mini had 12 GB free, below the disk hold, so writers waited (the same tasks stayed queued under 0.1.198 too). Test temp dirs (41 GB in $TMPDIR, 150k `bb-fake-plugin-host-*`) were cleared.

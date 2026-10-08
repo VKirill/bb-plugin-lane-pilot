@@ -13,6 +13,33 @@ function shapeOf(tool: ObservedTool): z.ZodRawShape {
   return (tool.parameters as z.ZodObject).shape;
 }
 
+/** The kind under optional/default/nullable wrappers. */
+function baseKind(schema: z.ZodType): string {
+  let current: any = schema;
+  for (let i = 0; i < 6 && current?._zod?.def; i += 1) {
+    const def = current._zod.def;
+    if (["optional", "default", "nullable", "prefault", "readonly"].includes(def.type) && def.innerType) { current = def.innerType; continue; }
+    return def.type;
+  }
+  return "unknown";
+}
+
+/**
+ * Agents often send a number or a list as text ("45", "[\"a\"]"), mostly when the tool's schema came through ToolSearch.
+ * A family field that is not text also takes a JSON string of its own type; the old tool still checks the value.
+ */
+function lenient(schema: z.ZodType): z.ZodType {
+  if (!["number", "int", "bigint", "boolean", "array", "object", "record", "tuple"].includes(baseKind(schema))) return schema;
+  const fromText = z.string().transform((text, ctx) => {
+    try { return JSON.parse(text) as unknown; } catch { ctx.addIssue({ code: "custom", message: "expected JSON of the field's type" }); return z.NEVER; }
+  }).pipe(schema);
+  return z.union([schema, fromText]);
+}
+
+function lenientShape(tool: ObservedTool): z.ZodRawShape {
+  return Object.fromEntries(Object.entries(shapeOf(tool)).map(([key, field]) => [key, lenient(field as z.ZodType)]));
+}
+
 /** BB caps a tool's static instructions; a family that does not fit says only what each action's instructions say. */
 const INSTRUCTIONS_MAX = 4000;
 
@@ -32,7 +59,8 @@ function mountFamily(ctx: ServerCore, name: string, family: ToolFamily): void {
     if (!tool) throw new Error(`tool family ${name}: ${oldName} is not registered`);
     return { action, tool };
   });
-  const variants = members.map(({ action, tool }) => z.object({ action: z.literal(action), ...shapeOf(tool) }).strict());
+  const variants = members.map(({ action, tool }) => z.object({ action: z.literal(action), ...lenientShape(tool) }).strict());
+  const lenientArgs = new Map(members.map(({ action, tool }) => [action, z.object(lenientShape(tool)).strict()]));
   const byAction = new Map(members.map((member) => [member.action, member.tool]));
   const actionList = members.map((member) => member.action).join(", ");
   registerObservedTool(ctx.bb.agents, {
@@ -44,7 +72,8 @@ function mountFamily(ctx: ServerCore, name: string, family: ToolFamily): void {
       const { action, ...rest } = input as { action: string } & Record<string, unknown>;
       const tool = byAction.get(action)!;
       // The old handler gets exactly what the old tool took: its own schema, strictness and defaults included.
-      return tool.execute(tool.parameters.parse(rest), context);
+      // A value sent as text is turned back into its type first.
+      return tool.execute(tool.parameters.parse(lenientArgs.get(action)!.parse(rest)), context);
     },
   });
 }

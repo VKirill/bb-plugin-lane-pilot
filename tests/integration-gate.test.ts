@@ -258,7 +258,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
     expect(res.passed).toBe(true);
   });
 
-  it("runs on queue_drained trigger and records integration-gate stage receipt", async () => {
+  it("runs on queue_drained trigger and records the gate verdict as a gate event, not over the task's verification receipt", async () => {
     db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
     saveProjectSetting(db, "proj-1", "integration.gate_command", 'node -e "process.exit(0)"');
 
@@ -283,9 +283,23 @@ describe("IntegrationGateRunner with mock core & services", () => {
     expect(res.ran).toBe(true);
     expect(res.passed).toBe(true);
 
-    const receipts = db.prepare(`SELECT * FROM lane_pilot_stage_receipt WHERE run_id='run-1' AND stage_id='verification'`).all() as Array<any>;
-    expect(receipts.length).toBeGreaterThan(0);
-    expect(receipts[0].state).toBe("passed");
+    const events = db.prepare(`SELECT * FROM lane_pilot_gate_event WHERE run_id='run-1' AND gate='verification'`).all() as Array<any>;
+    expect(events.length).toBe(1);
+    expect(events[0].status).toBe("passed");
+    expect(db.prepare(`SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id='run-1' AND stage_id='verification'`).get()).toBeUndefined();
+  });
+
+  it("a red gate after the task's own verification passed does not throw (it took the BB server down on 2026-10-08)", async () => {
+    db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
+    db.prepare(`INSERT INTO lane_pilot_stage_receipt (run_id, task_id, stage_id, contract_version, state, input_sha256, attempt, updated_at)
+      VALUES ('run-1','task-1','verification',1,'passed','x',0,0)`).run();
+    saveProjectSetting(db, "proj-1", "integration.gate_command", 'node -e "process.exit(1)"');
+    const runner = new IntegrationGateRunner(mockCore, mockServices);
+    runner.noteMergedTask({ taskId: "task-1", commitSha: "sha-1", threadId: "thr-1", attemptId: "att-1", produced: ["src/foo.ts"] });
+    const res = await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: process.cwd(), configHostId: "host-1", trigger: "drain" });
+    expect(res).toMatchObject({ ran: true, passed: false });
+    const receipt = db.prepare(`SELECT state FROM lane_pilot_stage_receipt WHERE run_id='run-1' AND task_id='task-1' AND stage_id='verification'`).get() as { state: string };
+    expect(receipt.state).toBe("passed");
   });
 
   it("routes failing gate to the culprit writer thread without creating a new task id", async () => {
@@ -361,8 +375,8 @@ describe("IntegrationGateRunner with mock core & services", () => {
 
       expect(res).toMatchObject({ ran: true, passed: true });
       expect(runs()).toBe(1);
-      const receipt = db.prepare(`SELECT result_json FROM lane_pilot_stage_receipt WHERE run_id='run-1' AND stage_id='verification'`).get() as { result_json: string };
-      expect(JSON.parse(receipt.result_json)).toMatchObject({ command: "npm test", source: "detected", passed: true, mergesChecked: 2 });
+      const event = db.prepare(`SELECT status FROM lane_pilot_gate_event WHERE run_id='run-1' AND gate='verification'`).get() as { status: string };
+      expect(event.status).toBe("passed");
     });
 
     it("a red gate goes to the culprit writer's thread and tells the PM which command was detected", async () => {
