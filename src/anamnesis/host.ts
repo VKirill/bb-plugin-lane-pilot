@@ -80,6 +80,7 @@ export async function executeRequest(request: AnamnesisRequest, store: Store, co
       const summary = summarizeUpserts(results);
       return { imported: results.filter((result) => result.id && result.action !== "invalid" && result.action !== "ignored").length, ids: summary.ids, skipped, reasons: summary.reasons } satisfies ResponseOf<"import_profile">;
     }
+    case "loads": return { loads: store.loads(request.limit ?? 10).map((load) => ({ id: load.id, at: load.at, mode: load.mode, report: (load.report && typeof load.report === "object" && !Array.isArray(load.report) ? load.report : {}) as Record<string, unknown> })) } satisfies ResponseOf<"loads">;
     case "load_report": return { id: store.saveLoad(request.mode, request.report, now) } satisfies ResponseOf<"load_report">;
     case "sources": {
       if (request.set) store.setSource(request.set.source, request.set.enabled, now);
@@ -92,7 +93,7 @@ export async function executeRequest(request: AnamnesisRequest, store: Store, co
 export async function anamnesisHandler(input: { requestedHostId: string; request: unknown }): Promise<{ hostId: string; response: unknown }> {
   const request = anamnesisRequestSchema.parse(input.request);
   // Reading, or planning a load, on a machine that has no store yet answers from an empty one in memory and leaves no file behind.
-  const readOnly = request.op === "status" || request.op === "whoami" || request.op === "card" || request.op === "list" || request.op === "get" || request.op === "history"
+  const readOnly = request.op === "status" || request.op === "whoami" || request.op === "card" || request.op === "list" || request.op === "get" || request.op === "history" || request.op === "loads"
     || (request.op === "collect" && request.mode === "plan") || (request.op === "sources" && !request.set);
   const store = readOnly && !existsSync(anamnesisDbPath()) ? openStore(":memory:") : openStore();
   try {

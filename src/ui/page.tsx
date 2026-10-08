@@ -63,6 +63,7 @@ import { CriticValue } from "./critic-value";
 import { AcceptanceStats } from "./acceptance-stats";
 import { WriterReuse } from "./writer-reuse";
 import { AgentAccess } from "./agent-access";
+import { AnamnesisTab } from "./anamnesis-tab";
 import { TokenUsage } from "./token-usage";
 import { WorkflowsScreen } from "./workflows";
 import { MemoryRecords } from "./memory-records";
@@ -415,7 +416,7 @@ function StatusRow({ state, title, detail, action, testId }: { state: "ok" | "to
 
 const TAB_LABELS: Record<string, I18nKey> = {
   overview: "tabOverview", settings: "tabSettings", checks: "tabChecks", council: "tabCouncil",
-  memory: "tabMemory", access: "tabAccess", rules: "tabRules", workflows: "tabWorkflows", monitor: "tabMonitor", service: "tabService",
+  memory: "tabMemory", access: "tabAccess", anamnesis: "tabAnamnesis", rules: "tabRules", workflows: "tabWorkflows", monitor: "tabMonitor", service: "tabService",
 };
 /** Tabs the Basic/Advanced switch applies to. */
 const SETTINGS_TABS = new Set(["settings", "checks", "council", "memory"]);
@@ -895,7 +896,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   }, [isGlobal]);
 
   // Runs and maintenance belong to the project and its machine; the global level has no overview or rules.
-  const tabs = isGlobal ? ["settings", "checks", "council", "memory", "access"]
+  const tabs = isGlobal ? ["settings", "checks", "council", "memory", "access", "anamnesis"]
     : selectedSectionId ? ["overview", "settings", "checks", "council", "memory", "access", "rules"]
       : ["overview", "settings", "checks", "council", "memory", "access", "rules", "workflows", "monitor", "service"];
   useEffect(() => {
@@ -1937,6 +1938,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             </> : null}
           </TabsContent>
 
+          {tabs.includes("anamnesis") ? <>
+          <TabsContent value="anamnesis" forceMount={true} className="space-y-6" hidden={tab !== "anamnesis"} data-testid="anamnesis-panel">
+            {visited.current.has("anamnesis") ? <AnamnesisTab /> : null}
+          </TabsContent>
+          </> : null}
           {tabs.includes("rules") ? <>
           <TabsContent value="rules" forceMount={true} className="space-y-6" hidden={tab !== "rules"} data-testid="rules-panel">
             {visited.current.has("rules") ? <>

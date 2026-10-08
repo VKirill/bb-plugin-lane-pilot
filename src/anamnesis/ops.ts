@@ -56,6 +56,8 @@ export const hostOps = {
   }).strict(),
   /** The short card for the PM's context: confirmed, non-sensitive records only. Read-only. */
   card: z.object({ op: z.literal("card"), maxChars: z.number().int().min(200).max(4000).optional() }).strict(),
+  /** The reports kept on the machine (first loads, daily passes), newest first: counts only, no content. Read-only. */
+  loads: z.object({ op: z.literal("loads"), limit: z.number().int().min(1).max(20).optional() }).strict(),
   /** Keeps the report of a load on the machine, for the owner's review. */
   load_report: z.object({ op: z.literal("load_report"), mode: z.enum(["plan", "run", "daily"]), report: z.record(z.string(), z.unknown()) }).strict(),
   /** Moves the card of the retired memory-profile plugin into records the owner confirmed (A9). */
@@ -64,7 +66,7 @@ export const hostOps = {
 } as const;
 
 export const anamnesisRequestSchema = z.union([
-  hostOps.status, hostOps.upsert, hostOps.add, hostOps.list, hostOps.get, hostOps.edit, hostOps.history, hostOps.forget, hostOps.collect, hostOps.load_report, hostOps.whoami, hostOps.card, hostOps.import_profile, hostOps.sources,
+  hostOps.status, hostOps.upsert, hostOps.add, hostOps.list, hostOps.get, hostOps.edit, hostOps.history, hostOps.forget, hostOps.collect, hostOps.load_report, hostOps.loads, hostOps.whoami, hostOps.card, hostOps.import_profile, hostOps.sources,
 ]);
 export type AnamnesisRequest = z.infer<typeof anamnesisRequestSchema>;
 
@@ -110,6 +112,7 @@ export const responseSchemas = {
   forget: z.object({ removed: z.number().int(), evidence: z.number().int().optional() }).strict(),
   collect: collectResponseSchema,
   load_report: z.object({ id: z.number().int() }).strict(),
+  loads: z.object({ loads: z.array(z.object({ id: z.number().int(), at: z.number(), mode: z.string(), report: z.record(z.string(), z.unknown()) }).strict()) }).strict(),
   whoami: z.object({ text: z.string(), included: z.number().int(), hiddenSensitive: z.number().int(), drafts: z.number().int() }).strict(),
   card: z.object({ text: z.string(), chars: z.number().int(), records: z.number().int() }).strict(),
   sources: z.object({ sources: z.array(sourceStateSchema) }).strict(),
