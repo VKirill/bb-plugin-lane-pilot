@@ -179,7 +179,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       if (first) { first = false; await new Promise((wake) => setTimeout(wake, 2_000)); }
       const mark = threadWatchMark(bb);
       if (stringAt(await bb.sdk.threads.get({ threadId }).catch(() => null), "status") === "idle") return;
-      await sleepUntilThreadSignal(bb, threadId, mark, 2_000);
+      await sleepUntilThreadSignal(bb, threadId, mark, 2_000, undefined, { deadlineAt: deadline });
     }
   }
 

@@ -18,6 +18,9 @@ import type { VerdictStatus } from "../stages/verdict";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../contracts";
 import type { ServerCore } from "./core";
+import { jev } from "../jev/runtime";
+import { GUARD_BLOCKED_KEY, type GuardBlock } from "../jev/output-guard";
+import { MAX_CANDIDATES, repairGroup } from "../jev/judgments/repair-group";
 
 /**
  * Self-repair: every 15 minutes Lane Pilot looks for failures that are its own fault (triage origin
@@ -61,7 +64,7 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
 
 export type Incident = {
   signature: string;
-  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook";
+  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook" | "guard";
   projectId: string;
   runId: string;
   taskId: string;
@@ -91,7 +94,11 @@ type SignatureRecord = {
    */
   pending?: { worktree: RepairWorktree; at: number } | null;
 };
-type SelfRepairState = { cursor: number; lastTickAt: number | null; signatures: Record<string, SignatureRecord>; spawned: Array<{ at: number; threadId: string; signature: string }> };
+type SelfRepairState = {
+  cursor: number; lastTickAt: number | null; signatures: Record<string, SignatureRecord>; spawned: Array<{ at: number; threadId: string; signature: string }>;
+  /** A signature Jev filed under a known group (J-10): the next sighting goes there without asking again. */
+  aliases: Record<string, string>;
+};
 
 export const CONFIG_KEY = "self-repair:config";
 const STATE_KEY = "self-repair:state";
@@ -161,6 +168,27 @@ export function isDue(record: SignatureRecord, now: number, version = VERSION): 
   if (record.verdict === "not-lane-pilot" || record.verdict === "needs-owner") return now - record.spawnedAt > MUTE_MS;
   if (record.verdict === "fixed" || record.verdict === "already-fixed") return version !== record.spawnVersion || now - record.spawnedAt > REPEAT_AFTER_MS;
   return now - record.spawnedAt > REPEAT_AFTER_MS;
+}
+
+/** How much a kind of incident matters when it is real: a closed project (breaker) or a parked task outranks a log line or a drill. */
+const KIND_SEVERITY: Record<Incident["kind"], number> = { breaker: 5, guard: 5, parked: 4, blocked: 3, stuck: 3, triage: 3, repeat: 3, hook: 2, queued: 2, stage: 2, log: 1, drill: 0.4 };
+const IMPACT_FLOOR = 0.3;
+
+/**
+ * Which due problem gets the next repair (audit 2026-10-08 round 2, #20: the oldest first meant a drill artifact from days ago
+ * outranked a fresh failure in a real project; 148 signatures, 0 repairs). Severity of its kind, times how often it happened
+ * (log scale), times how recently (halves every day), times how many real projects it hit (a drill, the sandbox and a log line
+ * with no project count as none and weigh 0.3). Higher goes first; equal scores go to the older.
+ */
+export function repairPriority(signature: string, record: Pick<SignatureRecord, "count" | "lastAt" | "samples">, now: number, ignoredProjects: ReadonlySet<string> = new Set()): number {
+  const kind = signature.slice(0, signature.indexOf(":")) as Incident["kind"];
+  const severity = KIND_SEVERITY[kind] ?? 1;
+  const frequency = 1 + Math.min(5, Math.log2(Math.max(1, record.count)));
+  const days = Math.max(0, now - record.lastAt) / 86_400_000;
+  const freshness = 0.5 ** days;
+  const projects = new Set(record.samples.map((sample) => sample.projectId).filter((id) => id && id !== "-" && !ignoredProjects.has(id)));
+  const impact = projects.size === 0 ? IMPACT_FLOOR : Math.min(3, 1 + 0.5 * (projects.size - 1));
+  return Math.round(severity * frequency * freshness * impact * 1000) / 1000;
 }
 
 /** Failure lines of the plugin log newer than `since`, as incidents. */
@@ -241,7 +269,7 @@ export function createSelfRepair(ctx: ServerCore) {
     const raw = await bb.storage.kv.get(STATE_KEY).catch(() => null);
     const row = raw && typeof raw === "object" ? raw as Partial<SelfRepairState> : {};
     const signatures = Object.fromEntries(Object.entries(row.signatures ?? {}).map(([key, record]) => [key, { ...record, samples: record.samples ?? [] }]));
-    return { cursor: row.cursor ?? Date.now() - 3_600_000, lastTickAt: row.lastTickAt ?? null, signatures, spawned: row.spawned ?? [] };
+    return { cursor: row.cursor ?? Date.now() - 3_600_000, lastTickAt: row.lastTickAt ?? null, signatures, spawned: row.spawned ?? [], aliases: row.aliases ?? {} };
   }
 
   /** Failures since the cursor that look like Lane Pilot's fault, plus attempts stuck now. */
@@ -312,6 +340,14 @@ export function createSelfRepair(ctx: ServerCore) {
       out.push({ signature: reasonSignature("breaker", open.fingerprint), kind: "breaker", projectId, runId: "-", taskId: "-",
         attemptId: `breaker:${projectId}:${open.openedAt}`, pmThreadId: null, writerThreadId: null, version: VERSION,
         reason: `the project's writers have been held ${Math.round((now - open.openedAt) / 60_000)} min: several tasks failed on «${open.fingerprint}»`, at: now });
+    }
+    // J-11: an output the guard withheld (a secret value, instructions for the reader) is raised once, whatever its project.
+    const guarded = await bb.storage.kv.get(GUARD_BLOCKED_KEY).catch(() => null);
+    for (const row of (Array.isArray(guarded) ? guarded : []) as GuardBlock[]) {
+      if (row.at <= since || ignored.has(row.projectId)) continue;
+      out.push({ signature: reasonSignature("guard", `${row.kind} output withheld by the output guard: ${row.reason}`), kind: "guard", projectId: row.projectId, runId: row.runId ?? "-", taskId: row.subject ?? "-",
+        attemptId: `guard:${row.at}`, pmThreadId: null, writerThreadId: null, version: VERSION,
+        reason: `a ${row.kind} output was withheld by the output guard (${row.reason}); it was neither stored nor shown. Find where the ${row.reason === "secret" ? "value came from and why it was not masked" : "instructions came from and what let them reach the output"}.`, at: row.at });
     }
     const drill = await bb.storage.kv.get(DRILL_KEY).catch(() => null);
     for (const [hostId, row] of Object.entries((drill && typeof drill === "object" ? drill : {}) as Record<string, DrillOutcome>)) {
@@ -438,6 +474,51 @@ export function createSelfRepair(ctx: ServerCore) {
     if (opened) ctx.log(`self-repair: asked the owner about @thread:${threadId} (needs-owner)`);
   }
 
+  /** Signatures filed under a known group per pass: each is one Jev request, and the rest wait for the next pass. */
+  const REGROUP_PER_TICK = 8;
+  const MAX_ALIASES = 500;
+
+  /**
+   * J-10: a signature seen for the first time may be another wording of a problem already known. Jev picks the known group of
+   * the same kind it belongs to (`selfrepair.group`); in shadow mode the answer is only recorded and every signature stays its own
+   * group, as before. Without Jev, or when it does not answer, nothing changes.
+   */
+  async function regroup(incidents: Incident[], current: SelfRepairState, cfg: SelfRepairConfig): Promise<number> {
+    for (const row of incidents) {
+      const alias = current.aliases[row.signature];
+      if (alias && current.signatures[alias]) row.signature = alias;
+    }
+    const instance = jev();
+    if (!instance) return 0;
+    const fresh = [...new Set(incidents.filter((row) => !current.signatures[row.signature]).map((row) => row.signature))].slice(0, REGROUP_PER_TICK);
+    const jobs: Array<{ signature: string; input: Parameters<typeof repairGroup.fallback>[0] }> = [];
+    for (const signature of fresh) {
+      const sample = incidents.find((row) => row.signature === signature)!;
+      const candidates = Object.entries(current.signatures)
+        .filter(([key]) => key.startsWith(`${sample.kind}:`))
+        .sort(([, a], [, b]) => b.count - a.count || b.lastAt - a.lastAt)
+        .slice(0, MAX_CANDIDATES)
+        .map(([key, record]) => ({ signature: key, text: key.split(":").slice(2).join(":"), count: record.count }));
+      if (candidates.length) jobs.push({ signature, input: { kind: sample.kind, reason: sample.reason, candidates } });
+    }
+    if (!jobs.length) return 0;
+    const settings = await ctx.effectiveProjectSettings(cfg.projectId).then((value) => value.values, () => ({} as Record<string, unknown>));
+    const verdicts = await instance.judgeMany(repairGroup, jobs.map((job) => job.input), { projectId: cfg.projectId, subject: "selfrepair", settings }).catch(() => []);
+    let filed = 0;
+    jobs.forEach((job, index) => {
+      const verdict = verdicts[index];
+      const target = verdict?.by === "jev" ? verdict.decision.signature : null;
+      if (!target || !current.signatures[target]) return;
+      current.aliases[job.signature] = target;
+      for (const row of incidents) if (row.signature === job.signature) row.signature = target;
+      ctx.log(`self-repair: «${job.signature.split(":").slice(2).join(":").slice(0, 80)}» filed under the known problem «${target.split(":").slice(2).join(":").slice(0, 80)}» (Jev)`);
+      filed += 1;
+    });
+    const entries = Object.entries(current.aliases);
+    if (entries.length > MAX_ALIASES) current.aliases = Object.fromEntries(entries.slice(-MAX_ALIASES));
+    return filed;
+  }
+
   /**
    * One pass: collect since the cursor, remember each kind of problem with a few samples, start at most one repair
    * thread for the oldest kind nobody has taken yet. Kinds that wait (a repair running, the daily limit) stay in the
@@ -450,6 +531,8 @@ export function createSelfRepair(ctx: ServerCore) {
     const now = Date.now();
     signal?.throwIfAborted();
     const incidents = await collect(options.since ?? current.cursor, cfg);
+    signal?.throwIfAborted();
+    if (!options.dryRun) await regroup(incidents, current, cfg);
     signal?.throwIfAborted();
     const groups = new Map<string, Incident[]>();
     for (const row of incidents) groups.set(row.signature, [...(groups.get(row.signature) ?? []), row]);
@@ -483,9 +566,10 @@ export function createSelfRepair(ctx: ServerCore) {
         await settleWorktree(record, signature, now);
       }
     }
+    const ignored = new Set(cfg.ignoreProjects);
     const due = Object.entries(current.signatures)
       .filter(([, record]) => isDue(record, now))
-      .sort(([, a], [, b]) => a.firstAt - b.firstAt);
+      .sort(([signatureA, a], [signatureB, b]) => repairPriority(signatureB, b, now, ignored) - repairPriority(signatureA, a, now, ignored) || a.firstAt - b.firstAt);
     let spawned: string | null = null;
     let reason = due.length ? "" : "nothing new";
     const today = current.spawned.filter((row) => now - row.at < 86_400_000);
@@ -575,7 +659,7 @@ export function createSelfRepair(ctx: ServerCore) {
       lastTickAt: current.lastTickAt,
       knownSignatures: Object.keys(current.signatures).length,
       waiting: Object.entries(current.signatures).map(([signature, record]) => ({
-        signature: signature.slice(0, 140), count: record.count, due: isDue(record, Date.now()), verdict: record.verdict ?? null, status: repairStatus(record.verdict), threadId: record.threadId,
+        signature: signature.slice(0, 140), count: record.count, due: isDue(record, Date.now()), priority: repairPriority(signature, record, Date.now(), new Set(cfg.ignoreProjects)), verdict: record.verdict ?? null, status: repairStatus(record.verdict), threadId: record.threadId,
         branch: record.worktree?.branch ?? null, outcome: record.outcome ?? null,
       })),
     };

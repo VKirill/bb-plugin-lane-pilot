@@ -83,7 +83,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
       throw new Error(`${timeoutMessage}:${decision.via}:${decision.detail}`);
     }
     lastDetail = decision.detail;
-    await sleepUntilThreadSignal(bb, threadId, mark, 1000);
+    await sleepUntilThreadSignal(bb, threadId, mark, 1000, undefined, { deadlineAt: deadline, ...(shouldStop ? { maxMs: 1000 } : {}) });
   }
   throw new Error(`${timeoutMessage}:incomplete:${lastDetail}`);
 }
@@ -118,7 +118,7 @@ export async function observeStageChild(
       return { kind:"product_failure", via:decision.via, detail:decision.detail };
     }
     lastDetail = decision.detail;
-    await sleepUntilThreadSignal(bb, threadId, mark, 1000);
+    await sleepUntilThreadSignal(bb, threadId, mark, 1000, undefined, { deadlineAt: deadline });
   }
   return { kind:"observing", detail:lastDetail };
 }

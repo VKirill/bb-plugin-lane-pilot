@@ -5,7 +5,7 @@ import { compileMainAgentProfile } from "../src/agent-profile";
 import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/database";
 import { sessionOverrideAgentsJson } from "../src/native-agent-definition";
 import { nativeSelectionMarker } from "../src/native-session";
-import { prepareNativeSessionRecord } from "../src/native-dispatch";
+import { prepareNativeSessionRecord, traceNativeDispatch } from "../src/native-dispatch";
 
 const stockNativeAgentsJson = () => sessionOverrideAgentsJson({
   agentId: "dev-orchestrator",
@@ -490,4 +490,11 @@ it("a handoff to a new thread keeps the Lane Pilot profile of the chat it contin
   (mention.input.blocks as unknown as Array<{ mentions: unknown[] }>)[0]!.mentions = [{ start: 8, end: 28, resource: { kind: "thread", threadId: "thr_pmsource", projectId: "project_a", label: "PM" } }];
   await hook(mention);
   expect(await fake.harness.behavior.resolveProviderEnv("claude-code", { threadId: "thr_mentions", hostId: "host_a", projectId: "project_a" })).toEqual([]);
+});
+
+it("the dispatch trace is a debug line, never a warning (it was 2661 of 2663 hub warnings)", () => {
+  const lines: string[] = [];
+  const log = { debug: (line: string) => lines.push(`debug ${line}`), warn: (line: string) => lines.push(`warn ${line}`) };
+  traceNativeDispatch(log, "dispatch.start", { thread: "t1", reason: null, skipped: undefined });
+  expect(lines).toEqual(["debug native-trace dispatch.start thread=t1 reason=null"]);
 });

@@ -110,7 +110,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
  * through the Browser Automation plugin. The owner can open the thread and watch; before this the check ran a runner
  * script with its own Chrome on the QA machine, outside BB.
  */
-export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDisposed">, input: {
+export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDisposed"> & Partial<Pick<ServerCore, "outputGuard">>, input: {
   projectId: string; runId: string; pmThreadId: string; taskTitle: string; qaHostId: string; timeoutSec: number;
   url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; devServer?: string; vpnAddress?: string | null;
   agent: { providerId: string; model: string; effort: string };
@@ -135,7 +135,7 @@ export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDispose
   if (!threadId) throw new Error("browser_qa_thread_id_missing");
   const deadline = Date.now() + input.timeoutSec * 1000;
   input.onSpawned?.(threadId, deadline);
-  const verdict = await awaitQaVerdict(ctx, threadId, deadline, input.timeoutSec);
+  const verdict = await awaitQaVerdict(ctx, threadId, deadline, input.timeoutSec, { projectId: input.projectId, runId: input.runId });
   // A reload stopped the wait, not the thread: the next load picks its verdict up (resumeBrowserQaThreads).
   if (!verdict) throw new Error("browser_qa_wait_interrupted_by_reload");
   return verdict;
@@ -145,26 +145,28 @@ export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDispose
  * Waits for a check thread's verdict until the deadline; a thread still working then is stopped and the check is
  * blocked. Null when the plugin is unloaded meanwhile: the thread goes on and its verdict is still to be read.
  */
-export async function awaitQaVerdict(ctx: Pick<ServerCore, "bb" | "isDisposed">, threadId: string, deadline: number, timeoutSec: number)
+export async function awaitQaVerdict(ctx: Pick<ServerCore, "bb" | "isDisposed"> & Partial<Pick<ServerCore, "outputGuard">>, threadId: string, deadline: number, timeoutSec: number, scope?: { projectId: string; runId: string })
   : Promise<(QaVerdict & { threadId: string; link: string }) | null> {
   const { bb } = ctx;
   const link = `@thread:${threadId}`;
+  /** The verdict as read from the thread's output, after the output guard (J-11): a blocked one is a blocked check with the reason. */
+  const read = async (): Promise<QaVerdict & { threadId: string; link: string }> => {
+    const raw = (await bb.sdk.threads.output({ threadId })).output;
+    const text = typeof raw === "string" ? raw : outputText(raw);
+    const guarded = ctx.outputGuard && scope ? await ctx.outputGuard({ kind: "browser", text, projectId: scope.projectId, runId: scope.runId, subject: threadId }) : null;
+    if (guarded?.blocked) return { verdict: "blocked", status: "block", summary: `output_guard_blocked:${guarded.reason}`, cases: [], threadId, link };
+    return { ...redactKnownDeep(parseQaVerdict(guarded ? guarded.text : text)), threadId, link };
+  };
   while (Date.now() < deadline) {
     if (ctx.isDisposed()) return null;
     const observed = await observeStageChild(bb, threadId, Math.min(10_000, Math.max(1, deadline - Date.now())));
     if (ctx.isDisposed()) return null;
-    if (observed.kind === "completed") {
-      const raw = (await bb.sdk.threads.output({ threadId })).output;
-      return { ...redactKnownDeep(parseQaVerdict(typeof raw === "string" ? raw : outputText(raw))), threadId, link };
-    }
+    if (observed.kind === "completed") return await read();
     if (observed.kind === "product_failure") return { verdict: "blocked", status: "block", summary: `browser_qa_thread_failed:${observed.via}:${observed.detail}`, cases: [], threadId, link };
   }
   // Past the deadline (also when adopted after a long outage): a finished thread still has its verdict.
   const last = await observeStageChild(bb, threadId, 1);
-  if (last.kind === "completed") {
-    const raw = (await bb.sdk.threads.output({ threadId })).output;
-    return { ...redactKnownDeep(parseQaVerdict(typeof raw === "string" ? raw : outputText(raw))), threadId, link };
-  }
+  if (last.kind === "completed") return await read();
   await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
   return { verdict: "blocked", status: "block", summary: `browser_qa_thread_timeout_${timeoutSec}s`, cases: [], threadId, link };
 }

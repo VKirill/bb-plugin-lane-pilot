@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, critiqueFromStageResult, parseCodeCritique, parseCodeCritiqueSettings, shouldRequestRepair } from "../../src/stages/code-critique";
 import { critiquePrompt, parseCritique } from "../../src/stages/critique";
+import { reasonForStatus } from "../../src/stages/verdict";
 import { parseSpecialistResult, specialistPrompt } from "../../src/stages/specialist";
 
 const evidence = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });
@@ -63,6 +64,16 @@ describe("code critique: unified verdict, old output still read", () => {
     expect(shouldRequestRepair({ settings, result: parsed, round: 0 })).toBe(false);
   });
 
+  it("a critical unmet requirement is a rework with a repair round; the block is the single-model verdict the PM is told about", () => {
+    const parsed = parseCodeCritique(answer("block", [f({ severity: "critical", finding: "acceptance line 2 is unmet: the handler is a stub" })]));
+    expect(parsed.status).toBe("rework");
+    expect(shouldRequestRepair({ settings, result: parsed, round: 0 })).toBe(true);
+    // the round limit ends it: a requirement still unmet after the repair round stops the task
+    expect(shouldRequestRepair({ settings, result: parsed, round: settings.maxRounds })).toBe(false);
+    const blocked = parseCodeCritique(answer("rework", [f({ severity: "critical", dimension: "security", finding: "writes the owner's token to the log" })]));
+    expect(reasonForStatus(blocked.status, "code-critique", blocked, "code_critique_blocked")).toContain("single-model verdict");
+  });
+
   it("more than 5 high findings are a block, five are a rework", () => {
     expect(parseCodeCritique(answer("rework", Array.from({ length: 6 }, (_, i) => f({ line: i + 1 })))).status).toBe("block");
     expect(parseCodeCritique(answer("block", Array.from({ length: 5 }, (_, i) => f({ line: i + 1 })))).status).toBe("rework");
@@ -74,7 +85,7 @@ describe("code critique: unified verdict, old output still read", () => {
   });
 
   it("a stored result keeps its status for a replay", () => {
-    const stored = { ...parseCodeCritique(answer("rework", [f({ severity: "critical" })])) };
+    const stored = { ...parseCodeCritique(answer("rework", [f({ severity: "critical", finding: "writes the owner's token to the log" })])) };
     expect(critiqueFromStageResult(stored)?.status).toBe("block");
     expect(critiqueFromStageResult({ decision: "changes_requested", summary: "s", findings: [{ id: "a", severity: "blocking", finding: "f", criterion: "c" }] })?.status).toBe("rework");
     expect(critiqueFromStageResult({ decision: "approve", summary: "s", findings: [] })?.status).toBe("pass");

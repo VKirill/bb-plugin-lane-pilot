@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
@@ -114,8 +114,12 @@ async function mountPage(
   });
 }
 
-// Each test mounts the whole settings page (1-3 s alone); the 5 s unit default is too tight under a parallel run.
-describe("Lane Pilot UI", { timeout: 20_000 }, () => {
+// Each test mounts the whole settings page (about 0.8 s of jsdom rendering alone, 1-5 s with its waits; the first import of
+// the app is 1.3 s). The per-test budget is the file's 60 s above: a describe-level `timeout: 20_000` used to override it,
+// and under a parallel run (load 18-20) a different one of the 36 tests crossed 20 s each time. A test that times out keeps
+// running and mounts its page into the next test's DOM, so the DOM is emptied before each test as well as after.
+describe("Lane Pilot UI", () => {
+  beforeEach(() => { cleanup(); document.body.innerHTML = ""; });
   afterEach(() => {
     cleanup();
     setLocaleOverride(null);

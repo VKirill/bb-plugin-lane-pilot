@@ -158,4 +158,34 @@ describe("waiting for a thread: reads per minute", () => {
     await vi.advanceTimersByTimeAsync(20_000);
     await expect(waiting).resolves.toBeUndefined();
   });
+  it("a short probe ends at its own deadline, not at the 20 s fallback", async () => {
+    const fake = fakeBb({ withEvents: true });
+    installThreadSignals(fake.bb);
+    const started = Date.now();
+    let endedAt = -1;
+    const observing = observeStageChild(fake.bb, "w1", 5_000).then((result) => { endedAt = Date.now() - started; return result; });
+    await vi.advanceTimersByTimeAsync(5_100);
+    expect(endedAt).toBeGreaterThanOrEqual(0);
+    expect(endedAt).toBeLessThanOrEqual(5_100);
+    expect(await observing).toMatchObject({ kind: "observing" });
+  });
+
+  it("an instant read (1 ms) of a running thread does not block for the fallback", async () => {
+    const fake = fakeBb({ withEvents: true });
+    installThreadSignals(fake.bb);
+    const observing = observeStageChild(fake.bb, "w1", 1);
+    await vi.advanceTimersByTimeAsync(50);
+    await expect(observing).resolves.toMatchObject({ kind: "observing" });
+  });
+
+  it("a stop check is looked at every second even when BB sends no event", async () => {
+    const fake = fakeBb({ withEvents: true });
+    installThreadSignals(fake.bb);
+    let stop: string | null = null;
+    const waiting = waitThreadIdle(fake.bb, "w1", "writer", undefined, undefined, () => stop).then(() => "done", (cause: Error) => cause.message);
+    await vi.advanceTimersByTimeAsync(3_000);
+    stop = "follow_up_deleted";
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(await waiting).toBe("writer:follow_up_deleted");
+  });
 });

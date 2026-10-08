@@ -18,6 +18,7 @@ import { registerLaneWorktreeProvider } from "./src/server/environment-provider"
 import { scheduleIsolated } from "./src/server/schedules";
 import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "./src/server/deploy-drain";
 import { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./src/server/writer-silence";
+import { threadPendingInteractions } from "./src/server/owner-ask";
 import type { Services } from "./src/server/services";
 import { createStageChildren } from "./src/server/stages/children";
 import { createDocsStage } from "./src/server/stages/docs";
@@ -117,6 +118,7 @@ export default async function plugin(bb: BbPluginApi) {
     } }), { timeoutMs: 10 * 60_000 });
   const sweepSilentWriters = (signal?: AbortSignal) => sweepWriterSilence({
     bb, signal, getThread:(threadId) => ctx.getThreadBounded(threadId), isDisposed:ctx.isDisposed, log:(line) => bb.log.info(line),
+    waitingForOwner:async (threadId) => await ctx.ownerAsk.pending(threadId) || (await threadPendingInteractions(bb, threadId)) > 0,
     openAttempts:() => listOpenAttempts(db),
     silenceMinutes:(projectId, runId) => {
       const minutes = Number(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))["writer.silence_nudge_min"]);
@@ -179,6 +181,7 @@ export default async function plugin(bb: BbPluginApi) {
           const adopted = adoptWaitingRules(db);
           if (adopted) bb.log.info(`Lane Pilot put ${adopted} waiting rule(s) on trial`);
         });
+        await step("recovery of lost owner questions", () => ctx.ownerAsk.recoverLost());
         await step("browser check recovery", () => {
           const adopted = services.resumeBrowserQaThreads();
           if (adopted) bb.log.info(`Lane Pilot adopted ${adopted} browser check(s) left running by a reload`);

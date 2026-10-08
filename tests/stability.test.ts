@@ -92,6 +92,19 @@ describe("parked tasks", () => {
   });
 });
 
+describe("a dirty base checkout", () => {
+  const dirty = "merge_failed: git merge failed: error: Your local changes to the following files would be overwritten by merge:\n  .agents/PROGRESS.md";
+  it("parks the task instead of running another writer over it, retries after the backoff, and gives up after three tries with a note", async () => {
+    const { stability, resumed } = setup();
+    expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T5", pmThreadId:"pm", state:"validation_failed", reason:dirty }, 0)).toBe(true);
+    const [row] = await stability.loadParked();
+    expect(row).toMatchObject({ taskId:"T5", klass:"dirty_base" });
+    expect(await stability.sweep(60_000)).toEqual([]);
+    expect(await stability.sweep(11 * 60_000)).toEqual(["T5"]);
+    expect(resumed).toEqual(["T5"]);
+  });
+});
+
 describe("breaker", () => {
   it("holds new writers after three tasks fail on the same fault, lets one probe through later", async () => {
     const { stability } = setup();

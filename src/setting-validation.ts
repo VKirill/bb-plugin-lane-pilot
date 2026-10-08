@@ -1,5 +1,8 @@
 import { PROVIDER_POOL_KEY, providerPoolProblem } from "./provider-pool";
 import "./jev/judgments/route-workflow";
+import "./jev/judgments/repair-group";
+import "./jev/judgments/failure-class";
+import "./jev/judgments/output-guard";
 import { listJudgments } from "./jev/registry";
 import { jevSettingProblem } from "./jev/thresholds";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "./ui-catalog";

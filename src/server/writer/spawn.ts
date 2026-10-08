@@ -523,9 +523,15 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       return null;
     }
     await host.call("gitPrepareWorktree",{requestedHostId:hostId,basePath,worktreePath:created.path},{hostId,timeoutMs:600_000}).catch(()=>undefined);
-    const prepared=await workspaceDirt(input.config,created.path,input.runId);
-    if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
-    if(!setAttemptWorkspace(db,input.attemptId,{path:created.path,environmentId:null,decision})) throw new WriterSelectionError("attempt_workspace_cas_conflict");
+    // Until the attempt row holds the path no sweep knows the worktree (about 2 GB each): a refusal below removes it here.
+    const dropWorktree=async (reason:string) => {
+      if (getAttempt(db,input.attemptId)?.workspace_path===created.path) return;
+      await host.call("gitRemoveWorktree",{requestedHostId:hostId,basePath,worktreePath:created.path!},{hostId,timeoutMs:60_000})
+        .catch((cause)=>bb.log.warn(`Lane Pilot could not remove the worktree of ${input.attemptId} after ${reason}: ${cause instanceof Error?cause.message:String(cause)}`));
+    };
+    const prepared=await workspaceDirt(input.config,created.path,input.runId).catch(async (cause)=>{ await dropWorktree("a baseline error"); throw cause; });
+    if(!prepared.ok) { await dropWorktree("a failed baseline"); throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`); }
+    if(!setAttemptWorkspace(db,input.attemptId,{path:created.path,environmentId:null,decision})) { await dropWorktree("a binding conflict"); throw new WriterSelectionError("attempt_workspace_cas_conflict"); }
     return {path:created.path,dirtBefore:prepared.snapshots};
   }
 

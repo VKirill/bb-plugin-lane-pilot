@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, readlink, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
@@ -40,13 +40,19 @@ const isObject = (value: unknown): value is Json => typeof value === "object" &&
 const pluginName = (spec: unknown): string => (typeof spec === "string" ? spec : Array.isArray(spec) && typeof spec[0] === "string" ? spec[0] : "");
 const stem = (name: string) => basename(name, extname(name));
 
-/** Which plugins a thread keeps: always Lane Pilot's own, plus the auth plugin of the provider it runs on, plus the owner's list. */
+/**
+ * Which plugins a thread keeps: always Lane Pilot's own, the owner's list, every authentication plugin (a name with `auth` in
+ * it: gemini-auth, openai-codex-auth, anthropic-auth, antigravity-auth, oauth ones), and any plugin named for the provider the
+ * thread runs on. An auth plugin adds no tools or instructions, and a helper that goes to a provider whose plugin was left out has
+ * no way to sign in (audit 2026-10-08 round 2, B7). What is left out are plugins that add tools or text: cursor-acp, memory
+ * capture and the like.
+ */
 export function keepsPlugin(name: string, providerId: string | null, extra: readonly string[]): boolean {
   const lower = name.toLowerCase();
   if (lower.includes("opencode-lane")) return true;
   if (extra.some((part) => part && lower.includes(part.toLowerCase()))) return true;
-  if (providerId === "google" && lower.includes("gemini-auth")) return true;
-  if (providerId && /cursor/.test(providerId) && /cursor/.test(lower)) return true;
+  if (lower.includes("auth")) return true;
+  if (providerId && providerId.length >= 3 && lower.includes(providerId.toLowerCase())) return true;
   return false;
 }
 
@@ -74,7 +80,11 @@ async function link(target: string, path: string): Promise<void> {
   const existing = await readlink(path).catch(() => null);
   if (existing === target) return;
   await rm(path, { recursive: true, force: true });
-  await symlink(target, path);
+  // A concurrent run linked it between the remove and here: fine when it points where we want.
+  await symlink(target, path).catch(async (cause: NodeJS.ErrnoException) => {
+    if (cause.code === "EEXIST" && (await readlink(path).catch(() => null)) === target) return;
+    throw cause;
+  });
 }
 
 /** Links every entry of `from` into `into` except those `skip` names; links that no longer have a source are removed. */
@@ -89,7 +99,8 @@ async function mirror(from: string, into: string, skip: (name: string) => boolea
 
 async function writeIfChanged(path: string, content: string): Promise<void> {
   if ((await readFile(path, "utf8").catch(() => null)) === content) return;
-  const staging = `${path}.${process.pid}.tmp`;
+  // Unique per call: runs of one process (a fan-out of helpers) must not share a staging file.
+  const staging = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   await writeFile(staging, content, { mode: 0o600 });
   await rename(staging, path);
 }
@@ -98,7 +109,16 @@ async function writeIfChanged(path: string, content: string): Promise<void> {
  * Builds (or refreshes) the config home for a thread and says where it is. Null when there is nothing to leave out or nothing to
  * build from: no global OpenCode config on this machine, a switch that turns it off, or a config that is already minimal.
  */
-export async function prepareOpencodeMinimal(input: OpencodeMinInput): Promise<OpencodeMinResult | null> {
+export function prepareOpencodeMinimal(input: OpencodeMinInput): Promise<OpencodeMinResult | null> {
+  // One run at a time per data dir: the helpers of a fan-out call this together and write the same files and links.
+  const previous = queues.get(input.dataDir) ?? Promise.resolve();
+  const run = previous.then(() => build(input), () => build(input));
+  queues.set(input.dataDir, run.then(() => undefined, () => undefined));
+  return run;
+}
+const queues = new Map<string, Promise<void>>();
+
+async function build(input: OpencodeMinInput): Promise<OpencodeMinResult | null> {
   const home = input.home ?? homedir();
   const env = input.env ?? process.env;
   const owner = await readFile(join(home, OPENCODE_MIN_SWITCH), "utf8").then((text) => parseJsonc(text) as unknown, () => null);

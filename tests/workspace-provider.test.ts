@@ -4,7 +4,7 @@ import type { PrototypeConfig, TaskV2 } from "../src/contracts";
 import { HARNESS_VERSION, createAttempt, createRun, createTask, getAttempt, openDatabase, setRunThread } from "../src/database";
 import { LANE_WORKTREE_PROVIDER_ID, LANE_WORKTREE_RETIRE_GRACE_MS, laneWorktreeInputs, registerLaneWorktreeProvider } from "../src/server/environment-provider";
 import { createWriterSpawn } from "../src/server/writer/spawn";
-import { PROVIDER_FAILURES_BEFORE_DISABLE, createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../src/workspace/provider-gate";
+import { PROVIDER_FAILURES_BEFORE_DISABLE, PROVIDER_PROBE_AFTER_MS, createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../src/workspace/provider-gate";
 
 const config = (folder: string): PrototypeConfig => ({
   projectId: "P", hostId: "h", pmWorkspacePath: folder, writerWorkspacePath: folder,
@@ -167,12 +167,47 @@ describe("the provider gate", () => {
     expect(await gate.usable("h")).toBe(true);
   });
 
-  it("stays off until the plugin version changes", async () => {
+  it("stays off for the hour, and a new plugin version starts clean", async () => {
     const { gate, make } = memoryGate("1.0.0");
     for (let n = 0; n < PROVIDER_FAILURES_BEFORE_DISABLE; n += 1) await gate.failed("h", "x");
     expect(await gate.usable("h")).toBe(false);
     expect(await make("1.0.0").usable("h")).toBe(false);
     expect(await make("1.0.1").usable("h")).toBe(true);
+  });
+
+  it("is tried again an hour after it was switched off: a success clears it, one failure switches it off for another hour", async () => {
+    let clock = 1_000_000;
+    const store = new Map<string, unknown>();
+    const warnings: string[] = [];
+    const kv = { get: async (key: string) => store.get(key) as never, set: async (key: string, value: unknown) => { store.set(key, value); } };
+    const gate = createProviderGate({ kv: kv as never, serialized: (work) => work(), version: "1", warn: (line) => warnings.push(line), now: () => clock });
+    for (let n = 0; n < PROVIDER_FAILURES_BEFORE_DISABLE; n += 1) await gate.failed("h", "environment_timeout:provisioning");
+    clock += PROVIDER_PROBE_AFTER_MS - 1;
+    expect(await gate.usable("h")).toBe(false);
+    clock += 1;
+    expect(await gate.usable("h")).toBe(true);
+    // The probe fails: off again at once, with its own warning, for a new hour.
+    expect(await gate.failed("h", "environment_timeout:provisioning")).toBe(true);
+    expect(warnings).toHaveLength(2);
+    expect(await gate.usable("h")).toBe(false);
+    clock += PROVIDER_PROBE_AFTER_MS;
+    expect(await gate.usable("h")).toBe(true);
+    await gate.succeeded("h");
+    expect(await gate.failed("h", "x")).toBe(false);
+    expect(await gate.usable("h")).toBe(true);
+  });
+
+  it("reset lifts the switch-off now, on one machine or on all of them, and the status lists what the gate knows", async () => {
+    const store = new Map<string, unknown>();
+    const kv = { get: async (key: string) => store.get(key) as never, set: async (key: string, value: unknown) => { store.set(key, value); }, list: async (prefix = "") => [...store.keys()].filter((key) => key.startsWith(prefix)) };
+    const gate = createProviderGate({ kv: kv as never, serialized: (work) => work(), version: "1", warn: () => undefined, now: () => 5_000 });
+    for (const host of ["h1", "h2"]) for (let n = 0; n < PROVIDER_FAILURES_BEFORE_DISABLE; n += 1) await gate.failed(host, "x");
+    expect((await gate.hosts()).map((row) => [row.hostId, row.disabled, row.probeAt])).toEqual([["h1", true, 5_000 + PROVIDER_PROBE_AFTER_MS], ["h2", true, 5_000 + PROVIDER_PROBE_AFTER_MS]]);
+    expect(await gate.reset("h1")).toEqual(["h1"]);
+    expect(await gate.usable("h1")).toBe(true);
+    expect(await gate.usable("h2")).toBe(false);
+    expect(await gate.reset()).toEqual(["h2"]);
+    expect(await gate.usable("h2")).toBe(true);
   });
 
   it("lists the provider only where this BB offers it", async () => {
@@ -218,7 +253,7 @@ describe("waiting for the provider's environment", () => {
 
 type World = {
   folder?: string; prefix?: string; worktreeFolder?: string; kind?: "bb" | "cli"; projectRoot?: boolean; otherRoot?: string; noGit?: boolean;
-  providers?: unknown[] | "no-api"; settings?: Record<string, unknown>; createReason?: string;
+  providers?: unknown[] | "no-api"; settings?: Record<string, unknown>; createReason?: string; dirtFails?: boolean;
   environment?: (spawnNo: number) => unknown; spawn?: (args: { environment: { type: string } }, spawnNo: number) => unknown;
 };
 
@@ -232,6 +267,7 @@ function world(options: World = {}) {
   createTask(db, { id: "t1", runId: "run", kind: "bb", contract: task(folder) });
   for (const id of ["a1", "a2", "a3", "a4"]) createAttempt(db, { id, runId: "run", taskId: "t1" });
   const hostCalls: string[] = [];
+  const removeCalls: Array<Record<string, unknown>> = [];
   const spawned: Array<Record<string, unknown>> = [];
   const stopped: string[] = [];
   const archived: string[] = [];
@@ -271,13 +307,15 @@ function world(options: World = {}) {
     db,
     serializedKv: <T>(work: () => Promise<T>) => work(),
     host: {
-      call: async (method: string, input: { command?: string }) => {
+      call: async (method: string, input: { command?: string; cwd?: string }) => {
         hostCalls.push(method);
         if (method === "runCommand") {
           const command = input.command ?? "";
+          if (options.dirtFails && input.cwd === made) return { hostId: "h", exitCode: 1, stdout: "", stderr: "status failed" };
           if (command === "git rev-parse --is-inside-work-tree") return options.noGit ? { hostId: "h", exitCode: 128, stdout: "", stderr: "fatal: not a git repository" } : { hostId: "h", exitCode: 0, stdout: "true\n", stderr: "" };
           return { hostId: "h", exitCode: 0, stdout: command === "git rev-parse --show-prefix" ? (options.prefix ?? "apps/bot/\n") : "[]", stderr: "" };
         }
+        if (method === "gitRemoveWorktree") removeCalls.push(input as never);
         if (method === "gitCreateWorktree") {
           return options.createReason ? { status: "failed", path: null, branch: null, reason: options.createReason } : { status: "ready", path: made, branch: "lane/a1", reason: null };
         }
@@ -289,7 +327,7 @@ function world(options: World = {}) {
   const services = { providerBreaker: { decide: () => ({ allow: true }) }, ruleScan: { chainForRun: async () => [] }, reconcileAttemptThread: async () => "writer-recovered", recoverLostHolderThread: async () => null };
   const writer = createWriterSpawn(ctx as never, services as never);
   const start = (attemptId = "a1") => writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "t1", attemptId, config: config(folder), task: task(folder), plan: "edit", pmThreadId: "pm" });
-  return { db, bb, hostCalls, spawned, stopped, archived, infos, warns, start, made, folder };
+  return { db, bb, hostCalls, removeCalls, spawned, stopped, archived, infos, warns, start, made, folder };
 }
 
 const providerEnvironment = (path: string, basePath: string, name = "a1") => ({
@@ -397,6 +435,14 @@ describe("a writer attempt that falls back to the old worktree path", () => {
     expect(w.infos.join("\n")).not.toMatch(/\bfailed\b/);
   });
 
+  it("removes the worktree it made when the baseline cannot be read: no attempt row holds it, so no sweep would find it", async () => {
+    const w = world({ dirtFails: true });
+    const result = await w.start().catch((cause: Error) => cause);
+    expect(JSON.stringify(result) + String((result as { message?: string }).message)).toMatch(/attempt_worktree_baseline_failed/);
+    expect(w.removeCalls).toEqual([{ requestedHostId: "h", basePath: w.folder, worktreePath: w.made }]);
+    expect(getAttempt(w.db, "a1")?.workspace_path).toBeNull();
+  });
+
   it("starts again on the old path when BB refuses the provider at the spawn", async () => {
     const w = world({ spawn: (args, spawnNo) => { if (spawnNo === 1) throw new Error('The "lane-pilot-worktree" environment provider is not registered'); return null; } });
     expect(await w.start()).toMatchObject({ ok: true, workspacePath: w.made });
@@ -415,12 +461,12 @@ describe("a writer attempt that falls back to the old worktree path", () => {
     const w = world({ environment: (spawnNo) => spawnNo % 2 === 1 ? { status: "error", statusMessage: "no" } : { status: "ready" } });
     for (const id of ["a1", "a2", "a3"]) expect(await w.start(id), id).toMatchObject({ ok: true });
     expect(w.warns).toHaveLength(1);
-    expect(w.warns[0]).toMatch(new RegExp(`failed 3 times in a row on host h.*until the plugin version changes`));
+    expect(w.warns[0]).toMatch(new RegExp(`failed 3 times in a row on host h.*for 60 min`));
     const before = w.spawned.length;
     expect(await w.start("a4")).toMatchObject({ ok: true });
     expect(w.spawned).toHaveLength(before + 1);
     expect(w.spawned.at(-1)!.environment).toEqual(unmanaged(w.made));
-    expect(await w.bb.storage.kv.get("workspace-provider:host:h")).toEqual({ version: HARNESS_VERSION, failures: 3, disabled: true });
+    expect(await w.bb.storage.kv.get("workspace-provider:host:h")).toMatchObject({ version: HARNESS_VERSION, failures: 3, disabled: true });
     expect(w.infos.some((line) => /switched off on this machine/.test(line))).toBe(true);
   });
 

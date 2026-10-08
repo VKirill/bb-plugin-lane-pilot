@@ -46,10 +46,15 @@ function machine(config = CONFIG) {
 const names = (dir: string) => readdirSync(dir).sort();
 
 describe("which plugins a helper thread keeps", () => {
-  it("keeps Lane Pilot's plugin, the owner's list and the auth plugin of the model's provider, nothing else", () => {
+  it("keeps Lane Pilot's plugin, the owner's list, every auth plugin and the plugin named for the model's provider, nothing else", () => {
     expect(keepsPlugin("./plugins/opencode-lane.ts", null, [])).toBe(true);
-    expect(keepsPlugin("opencode-gemini-auth@latest", "router9", [])).toBe(false);
-    expect(keepsPlugin("opencode-gemini-auth@latest", "google", [])).toBe(true);
+    // Auth plugins add no tools or text, and a helper whose provider's plugin was left out cannot sign in (B7).
+    for (const auth of ["opencode-gemini-auth@latest", "opencode-openai-codex-auth", "opencode-anthropic-auth", "opencode-antigravity-auth", "some-oauth-plugin"]) {
+      expect(keepsPlugin(auth, "router9", []), auth).toBe(true);
+      expect(keepsPlugin(auth, null, []), `${auth} with no known model`).toBe(true);
+    }
+    expect(keepsPlugin("opencode-openai-codex", "openai", [])).toBe(true);
+    expect(keepsPlugin("opencode-openai-codex", "router9", [])).toBe(false);
     expect(keepsPlugin("cursor-acp", "zai-coding-plan", [])).toBe(false);
     expect(keepsPlugin("cursor-acp", "cursor-acp", [])).toBe(true);
     expect(keepsPlugin("./plugins/agentmemory-capture.ts", "router9", [])).toBe(false);
@@ -63,11 +68,11 @@ describe("the minimal config home", () => {
     const before = readFileSync(join(real, "opencode.json"), "utf8");
     const result = await prepareOpencodeMinimal({ home, dataDir, model: "router9/ag/gemini-3.8-flash-high", env: {} });
     expect(result).not.toBeNull();
-    expect(result!.kept.sort()).toEqual(["./plugins/opencode-lane.ts", "plugins/opencode-lane", "plugins/opencode-lane.ts"].sort());
-    expect(result!.left).toEqual(expect.arrayContaining(["opencode-gemini-auth@latest", "cursor-acp", "@rama_nigg/open-cursor@latest", "plugins/agentmemory-capture.ts", "plugin/cursor-acp.js"]));
+    expect(result!.kept.sort()).toEqual(["./plugins/opencode-lane.ts", "opencode-gemini-auth@latest", "plugins/opencode-lane", "plugins/opencode-lane.ts"].sort());
+    expect(result!.left).toEqual(expect.arrayContaining(["cursor-acp", "@rama_nigg/open-cursor@latest", "plugins/agentmemory-capture.ts", "plugin/cursor-acp.js"]));
     const dir = join(result!.configHome, "opencode");
     const config = JSON.parse(readFileSync(join(dir, "opencode.json"), "utf8")) as Record<string, unknown>;
-    expect(config.plugin).toEqual(["./plugins/opencode-lane.ts"]);
+    expect(config.plugin).toEqual(["opencode-gemini-auth@latest", "./plugins/opencode-lane.ts"]);
     expect(config).not.toHaveProperty("agent");
     expect(config).not.toHaveProperty("command");
     // The MCP names and providers stay: BB's session policy reads the servers it switches off from this file.
@@ -90,14 +95,24 @@ describe("the minimal config home", () => {
     expect(names(real)).toEqual(expect.arrayContaining(["AGENTS.md", "plugin", "plugins", "opencode.json.bak.1"]));
   });
 
-  it("keeps the gemini auth plugin for a google model, in a config home of its own", async () => {
+  it("keeps the auth plugin whatever the model, so one config home serves every model of the machine", async () => {
     const { home, dataDir } = machine();
     const plain = await prepareOpencodeMinimal({ home, dataDir, model: "router9/x", env: {} });
     const google = await prepareOpencodeMinimal({ home, dataDir, model: "google/gemini-3-pro", env: {} });
-    expect(google!.configHome).not.toBe(plain!.configHome);
-    expect((JSON.parse(readFileSync(join(google!.configHome, "opencode", "opencode.json"), "utf8")) as { plugin: string[] }).plugin).toEqual(["opencode-gemini-auth@latest", "./plugins/opencode-lane.ts"]);
-    // The same thread asks again and gets the same home: a session is not restarted over a changed environment.
-    expect((await prepareOpencodeMinimal({ home, dataDir, model: "router9/x", env: {} }))!.configHome).toBe(plain!.configHome);
+    const unknown = await prepareOpencodeMinimal({ home, dataDir, model: null, env: {} });
+    expect(google!.configHome).toBe(plain!.configHome);
+    expect(unknown!.configHome).toBe(plain!.configHome);
+    expect((JSON.parse(readFileSync(join(unknown!.configHome, "opencode", "opencode.json"), "utf8")) as { plugin: string[] }).plugin).toEqual(["opencode-gemini-auth@latest", "./plugins/opencode-lane.ts"]);
+  });
+
+  it("is safe to build many times at once: a fan-out of helpers shares the files and the links", async () => {
+    const { home, dataDir } = machine();
+    const results = await Promise.all(Array.from({ length: 12 }, (_, index) => prepareOpencodeMinimal({ home, dataDir, model: index % 2 ? "google/x" : "router9/x", env: {} })));
+    expect(new Set(results.map((row) => row?.configHome)).size).toBe(1);
+    expect(results.every((row) => row !== null)).toBe(true);
+    const dir = join(results[0]!.configHome, "opencode");
+    expect(JSON.parse(readFileSync(join(dir, "opencode.json"), "utf8"))).toHaveProperty("plugin");
+    expect(readdirSync(dir).some((name) => name.endsWith(".tmp"))).toBe(false);
   });
 
   it("follows the machine's config when it changes and drops links whose source is gone", async () => {
@@ -140,6 +155,6 @@ describe("the minimal config home", () => {
     writeFileSync(join(keep.home, ".lane-pilot", "opencode-min.json"), `{ "keepPlugins": ["agentmemory"] }`);
     const kept = await prepareOpencodeMinimal({ home: keep.home, dataDir: keep.dataDir, model: null, env: {} });
     expect(names(join(kept!.configHome, "opencode", "plugins"))).toEqual(["agentmemory-capture.ts", "opencode-lane", "opencode-lane.ts"]);
-    expect((JSON.parse(readFileSync(join(kept!.configHome, "opencode", "opencode.json"), "utf8")) as { plugin: string[] }).plugin).toEqual(["./plugins/agentmemory-capture.ts", "./plugins/opencode-lane.ts"]);
+    expect((JSON.parse(readFileSync(join(kept!.configHome, "opencode", "opencode.json"), "utf8")) as { plugin: string[] }).plugin).toEqual(["opencode-gemini-auth@latest", "./plugins/agentmemory-capture.ts", "./plugins/opencode-lane.ts"]);
   });
 });

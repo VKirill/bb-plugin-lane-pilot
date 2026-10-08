@@ -1,13 +1,21 @@
 /** @vitest-environment jsdom */
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { buildOwnerAskPayload } from "../src/owner-ask";
 
+// The first import of the whole app takes 1-2 s alone and several times that on a loaded machine; at the 5 s default a test
+// that timed out kept running and mounted its form into the next test's DOM («Found multiple elements by
+// data-testid=owner-ask-options», audit 2026-10-08). The app is loaded once, under its own budget, and every query is
+// scoped to the form of its own test, so a form left over from another test cannot be found by mistake.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
+
+let app: Awaited<ReturnType<typeof loadPluginApp>>;
+beforeAll(async () => { app = await loadPluginApp(() => import("../app")); });
+beforeEach(() => { cleanup(); document.body.innerHTML = ""; });
 afterEach(() => cleanup());
 
 async function mount(payload: unknown) {
-  const app = await loadPluginApp(() => import("../app"));
   const registration = app.pendingInteractions.find((row) => row.id === "lane-pilot-ask");
   if (!registration) throw new Error("the owner question renderer is not registered");
   const submitted: unknown[] = [];
@@ -17,7 +25,8 @@ async function mount(payload: unknown) {
     submit: async (value: unknown) => { submitted.push(value); },
     cancel: async () => { cancelled += 1; },
   }, { context: { projectId: "proj_1", threadId: "thr_pm" } });
-  return { view, submitted, cancelled: () => cancelled };
+  // Queries stay inside this form's own container.
+  return { view: Object.assign(view, within(view.container)), submitted, cancelled: () => cancelled };
 }
 
 describe("the owner's question form (H8)", () => {
