@@ -270,6 +270,21 @@ describe("self-repair", () => {
     expect(text).toContain("bb thread tell");
   });
 
+  it("tells the repair where the hub's run data is from the configuration, with today's values as the default", async () => {
+    const workspace = { path: "/wt/r/lane-pilot", branch: "lane/r", basePath: "/repo/lane-pilot" };
+    const byDefault = repairPrompt([], "blocked:abc:x", workspace);
+    expect(byDefault).toContain("ssh -i ~/.ssh/oracle_bb ubuntu@10.8.0.1, sqlite3 /home/ubuntu/.bb/plugins/lane-pilot/data.db");
+    expect(byDefault).toContain("Plugin log: /home/ubuntu/.bb/plugins/lane-pilot/logs/plugin.log on the hub.");
+    const env = setup();
+    await createSelfRepair(env.ctx).setConfig({ hubSsh: "ssh ops@hub2", hubDb: "/srv/lp/data.db", hubLog: "/srv/lp/plugin.log" });
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    await createSelfRepair(env.ctx).tick({ since: 0 });
+    const prompt = String(env.spawns[0]!.prompt);
+    expect(prompt).toContain("on the hub: ssh ops@hub2, sqlite3 /srv/lp/data.db (");
+    expect(prompt).toContain("Plugin log: /srv/lp/plugin.log on the hub.");
+    expect(prompt).not.toContain("oracle_bb");
+  });
+
   describe("own worktree (E2)", () => {
     const fixed = "Готово.\nSELF-REPAIR-VERDICT: fixed";
 

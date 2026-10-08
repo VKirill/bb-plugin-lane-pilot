@@ -38,6 +38,10 @@ export type SelfRepairConfig = {
   maxPerDay: number;
   /** Projects whose failures are deliberate (the sandbox). */
   ignoreProjects: string[];
+  /** Where the run data lives, as the repair thread is told to reach it: the hub's ssh command, its SQLite file and the plugin log. */
+  hubSsh: string;
+  hubDb: string;
+  hubLog: string;
 };
 
 export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
@@ -50,6 +54,9 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
   reasoningLevel: "high",
   maxPerDay: 4,
   ignoreProjects: ["proj_3tb652jpsi"],
+  hubSsh: "ssh -i ~/.ssh/oracle_bb ubuntu@10.8.0.1",
+  hubDb: "/home/ubuntu/.bb/plugins/lane-pilot/data.db",
+  hubLog: "/home/ubuntu/.bb/plugins/lane-pilot/logs/plugin.log",
 };
 
 export type Incident = {
@@ -182,7 +189,7 @@ function readTail(path: string, bytes: number): string {
   } finally { closeSync(fd); }
 }
 
-export function repairPrompt(incidents: Incident[], signature: string, workspace: { path: string; branch: string; basePath: string }): string {
+export function repairPrompt(incidents: Incident[], signature: string, workspace: { path: string; branch: string; basePath: string }, hub: Pick<SelfRepairConfig, "hubSsh" | "hubDb" | "hubLog"> = SELF_REPAIR_DEFAULTS): string {
   const lines = incidents.slice(0, 6).map((row) =>
     `- ${row.kind} · ${new Date(row.at).toISOString()} · project ${row.projectId} · run ${row.runId} · task ${row.taskId} · attempt ${row.attemptId}` +
     `${row.pmThreadId ? ` · PM @thread:${row.pmThreadId}` : ""}${row.writerThreadId ? ` · writer @thread:${row.writerThreadId}` : ""}\n  reason: ${row.reason.slice(0, 600)}`);
@@ -202,7 +209,7 @@ export function repairPrompt(incidents: Incident[], signature: string, workspace
     "",
     "Work in this order:",
     "For a «log» incident the evidence is the plugin log line itself: find the code that writes it and why it fails.",
-    "1. Reproduce from data. Run data is on the hub: ssh -i ~/.ssh/oracle_bb ubuntu@10.8.0.1, sqlite3 /home/ubuntu/.bb/plugins/lane-pilot/data.db (lane_pilot_attempt, lane_pilot_stage_receipt, lane_pilot_failure_triage). Threads: bb thread messages <id> --json, bb thread output <id>. Plugin log: /home/ubuntu/.bb/plugins/lane-pilot/logs/plugin.log on the hub.",
+    `1. Reproduce from data. Run data is on the hub: ${hub.hubSsh}, sqlite3 ${hub.hubDb} (lane_pilot_attempt, lane_pilot_stage_receipt, lane_pilot_failure_triage). Threads: bb thread messages <id> --json, bb thread output <id>. Plugin log: ${hub.hubLog} on the hub.`,
     "2. Check whether it is already fixed: compare the failure time with git log and CHANGELOG.md. The watcher can report a failure that happened just before a fix was deployed. If a later release fixed it and the log shows no new occurrence, change no code; go to step 6.",
     "3. Decide whose fault it is. If it is not Lane Pilot's (writer mistake, wrong task contract, the project's own code or machine), change no code, because a code change here would hide a problem that belongs to the PM; go to step 6 and tell the PM what to do differently.",
     "4. If it is Lane Pilot's (this repository, including the guard in lane-stack/hooks/; the claude-lane-stack copy of the guard and the VK core are not, see the last paragraph), fix the cause, not the symptom. Follow AGENTS.md and CLAUDE.md here (GitNexus impact before edits, detect-changes before commit) and add a test that fails without the fix. Verify against the real case, because unit tests here have missed real failures before: build the test from the failing data you pulled in step 1 and run what you can from your worktree. The code you commit runs nowhere until the release train deploys it, so name in the report what must be checked live after that deploy (scripts/lp-drill.sh runs the sandbox drills).",
@@ -503,7 +510,7 @@ export function createSelfRepair(ctx: ServerCore) {
           projectId: cfg.projectId,
           environment: { type: "host", hostId: worktree.hostId, workspace: { type: "unmanaged", path: worktree.path } },
           title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
-          prompt: repairPrompt(record.samples, signature, worktree),
+          prompt: repairPrompt(record.samples, signature, worktree, cfg),
           ...writerExecutionSelection(cfg.providerId, cfg.model, cfg.reasoningLevel, "default"),
           pluginMetadata: { role: "self-repair", signature, spawnId, repairBranch: worktree.branch },
         } as Parameters<typeof fullAccessSpawn>[1]);
